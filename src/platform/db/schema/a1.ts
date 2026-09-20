@@ -188,9 +188,7 @@ export const temporaryPermissionGrants = appSchema.table(
       .notNull()
       .references(() => tenants.id),
     membershipId: uuid('membership_id').notNull(),
-    permissionCode: text('permission_code')
-      .notNull()
-      .references(() => permissionDefinitions.code),
+    permissionCode: text('permission_code').notNull(),
     scopeType: text('scope_type').notNull(),
     legalEntityId: uuid('legal_entity_id'),
     stationId: uuid('station_id'),
@@ -213,6 +211,11 @@ export const temporaryPermissionGrants = appSchema.table(
       columns: [table.tenantId, table.membershipId],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'temporary_permission_grants_membership_fk',
+    }),
+    foreignKey({
+      columns: [table.permissionCode],
+      foreignColumns: [permissionDefinitions.code],
+      name: 'temporary_permission_grants_permission_code_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.legalEntityId],

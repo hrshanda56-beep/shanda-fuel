@@ -61,5 +61,16 @@ describe('PostgreSQL integration harness', () => {
       'security_events_append',
       'security_events_context',
     ]);
+
+    const constraintNames = await client<{ conname: string }[]>`
+      select c.conname
+      from pg_constraint c
+      join pg_namespace n on n.oid = c.connamespace
+      where n.nspname in ('auth', 'app', 'platform')
+    `;
+    expect(constraintNames).toContainEqual({
+      conname: 'temporary_permission_grants_permission_code_fk',
+    });
+    expect(constraintNames.every(({ conname }) => conname.length <= 63)).toBe(true);
   });
 });
