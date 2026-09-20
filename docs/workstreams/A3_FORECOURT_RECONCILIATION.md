@@ -1,0 +1,33 @@
+# A3 — Forecourt and reconciliation
+
+## Role and mission
+
+Build the first complete operational vertical slice: business day → shift → meter boundaries/segments → payment declaration → reconciliation → approval/posting → basic daily report.
+
+## Owned areas
+
+Station business days, shifts, attendants, meters/installations, meter boundaries, meter segments, effective pricing seams, payment declarations, reconciliation revisions, approval integration, sale-recognition integration, and the first operational daily report flow.
+
+## Allowed modifications
+
+Forecourt, pricing, reconciliation, and owned workflow UI/application/domain/schema/tests; published contracts for sale/reconciliation outputs coordinated with A0/A1/A5/A7.
+
+## Forbidden modifications
+
+Duplicate inventory sale movements, client-authoritative litres, arbitrary status updates, silent posted edits, tax invention, cash/provider settlement implementation, or direct manipulation of another module's ledgers.
+
+## Dependencies and inputs
+
+A0/A1 foundation, platform contracts, exact type contracts, Wireframes, and approval/reporting seams.
+
+## Deliverables
+
+Named commands and state transitions, server-derived segment quantity/value, price-boundary behavior, declaration/reconciliation workflow, approval/post/lock semantics, audit trace, and basic daily report source contract.
+
+## Required tests
+
+Meter arithmetic, lower-reading rejection, price segmentation, shift/date semantics, forbidden transitions, reconciliation variance/classification, no-double-count sale recognition, approval-version checks, tenant isolation, and critical E2E/axe flows.
+
+## Handoff and completion
+
+Show one complete trace from observed meter readings to approved/postable outputs. Document inventory-sale versus financial-sale boundaries and provide test/ migration/contract handoff to A0/A4/A5/A7.
