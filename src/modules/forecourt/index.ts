@@ -61,6 +61,7 @@ export {
 export { buildDailyForecourtReport } from './report';
 export {
   createForecourtCommandContext,
+  databaseForecourtTransactionPort,
   executeForecourtCommand,
   resolveForecourtCommandContext,
 } from './application';

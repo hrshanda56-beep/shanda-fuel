@@ -1,4 +1,5 @@
 import { AppError } from '../../platform/errors';
+import { withTenantTransaction } from '../../platform/db/transaction';
 import {
   authorize,
   type AccessScope,
@@ -92,6 +93,16 @@ export type ForecourtTransactionPort = {
     context: ForecourtCommandContext,
     work: (transaction: ForecourtTransaction) => Promise<T>,
   ): Promise<T>;
+};
+
+/** Production transaction adapter: A1's trusted context sets fail-closed DB GUCs. */
+export const databaseForecourtTransactionPort: ForecourtTransactionPort = {
+  run<T>(
+    context: ForecourtCommandContext,
+    work: (transaction: ForecourtTransaction) => Promise<T>,
+  ) {
+    return withTenantTransaction(context.authority.transaction, work);
+  },
 };
 
 export type IdempotencyPort = {
