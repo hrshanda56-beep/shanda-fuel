@@ -207,4 +207,29 @@ describe('A3 authoritative command seam', () => {
       }),
     ).rejects.toThrow(/not authorized/);
   });
+
+  it('requires and invokes the transaction-bound optimistic version check', async () => {
+    const calls: string[] = [];
+    await expect(
+      executeForecourtCommand({
+        context: context(),
+        commandType: 'CloseMeters',
+        permissionCode: 'shift.close',
+        idempotencyKey: 'retry-key-6',
+        requestHash: 'hash-6',
+        subjectType: 'Shift',
+        subjectId: ids.station,
+        expectedVersion: 4,
+        assertExpectedVersion: async (_transaction, version) => {
+          calls.push(`version:${version}`);
+          throw new Error('stale version');
+        },
+        ports: ports(calls),
+        execute: async () => ({ result: 'closed' as const }),
+      }),
+    ).rejects.toThrow('stale version');
+    expect(calls).toContain('version:4');
+    expect(calls).toContain('transaction.rollback');
+    expect(calls).not.toContain('business');
+  });
 });

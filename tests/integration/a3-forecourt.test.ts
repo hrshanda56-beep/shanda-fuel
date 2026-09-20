@@ -31,6 +31,9 @@ const ids = {
   openingA: 'a3000000-0000-4000-8000-000000000121',
   closingA: 'a3000000-0000-4000-8000-000000000122',
   segmentA: 'a3000000-0000-4000-8000-000000000131',
+  priceA: 'a3000000-0000-4000-8000-000000000141',
+  reconciliationA: 'a3000000-0000-4000-8000-000000000151',
+  revisionA: 'a3000000-0000-4000-8000-000000000161',
 };
 
 let client: Sql;
@@ -139,6 +142,57 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           insert into app.meter_boundaries (tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
           values ('${ids.tenantA}', '${ids.stationA2}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'SHIFT_OPEN', 'AVAILABLE', 1000.000, '2026-09-20T06:00:00Z', '2026-09-20T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}')
         `),
+      ).rejects.toThrow();
+    } finally {
+      await client.unsafe('reset role');
+    }
+  });
+
+  it('rejects runtime rewrites of sealed, locked, approved, and activated history', async () => {
+    await client.unsafe('set role app_runtime');
+    try {
+      await setContext(ids.tenantA, ids.actorA, ids.membershipA);
+      await expect(
+        client.unsafe(`update app.meter_segments set litres = 10.000 where id = '${ids.segmentA}'`),
+      ).rejects.toThrow();
+      await expect(
+        client.unsafe(`delete from app.meter_segments where id = '${ids.segmentA}'`),
+      ).rejects.toThrow();
+
+      await client.unsafe(`
+        insert into app.selling_prices (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+        values ('${ids.priceA}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-09-20T15:00:00Z', 1.600000, 'ACTIVE', '${ids.membershipA}');
+        insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
+        values ('${ids.reconciliationA}', '${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'APPROVED');
+        insert into app.reconciliation_revisions (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations, approved_by)
+        values ('${ids.revisionA}', '${ids.tenantA}', '${ids.stationA}', '${ids.reconciliationA}', 1, 'APPROVED', 15.1875, 15.1875, 0, 'INFORMATIONAL', '[]'::jsonb, '${ids.membershipA}');
+      `);
+      await expect(
+        client.unsafe(
+          `update app.selling_prices set unit_price = 1.700000 where id = '${ids.priceA}'`,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        client.unsafe(
+          `update app.reconciliation_revisions set expected_sales = 99 where id = '${ids.revisionA}'`,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        client.unsafe(
+          `update app.reconciliations set state = 'POSTED' where id = '${ids.reconciliationA}'`,
+        ),
+      ).rejects.toThrow();
+
+      await client.unsafe(
+        `update app.station_business_days set state = 'CLOSED' where id = '${ids.dayA}'`,
+      );
+      await client.unsafe(
+        `update app.station_business_days set state = 'LOCKED' where id = '${ids.dayA}'`,
+      );
+      await expect(
+        client.unsafe(
+          `update app.station_business_days set business_date = '2026-09-21' where id = '${ids.dayA}'`,
+        ),
       ).rejects.toThrow();
     } finally {
       await client.unsafe('reset role');
