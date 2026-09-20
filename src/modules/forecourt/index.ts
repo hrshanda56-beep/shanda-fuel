@@ -14,6 +14,7 @@ export {
   exceptionallyCloseShift,
   finalizeBusinessDay,
   lockReconciliation,
+  lockBusinessDay,
   markNotOperated,
   markOperationsComplete,
   newBusinessDay,
@@ -47,15 +48,22 @@ export type {
   StationBusinessDay,
   StationBusinessDayState,
   VarianceClassification,
+  PersistedPriceBoundaryState,
 } from './domain';
+export type { TrustedActor } from './trusted-actor';
 export {
   businessDayLockedEvent,
   meterSegmentSealedEvent,
   priceBoundaryActivatedEvent,
   reconciliationApprovedEvent,
+  reconciliationPostedEvent,
 } from './contracts';
 export { buildDailyForecourtReport } from './report';
-export { executeForecourtCommand } from './application';
+export {
+  createForecourtCommandContext,
+  executeForecourtCommand,
+  resolveForecourtCommandContext,
+} from './application';
 export type {
   ForecourtAuditPort,
   ForecourtCommandContext,
@@ -63,6 +71,9 @@ export type {
   ForecourtOutboxPort,
   IdempotencyPort,
   IdempotencyRequest,
+  ForecourtCommandInput,
+  ForecourtTransaction,
+  ForecourtTransactionPort,
 } from './application';
 export type {
   BusinessDayLockedEvent,

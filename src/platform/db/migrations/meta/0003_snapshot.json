@@ -1,5 +1,5 @@
 {
-  "id": "1a83f483-19ad-4fc4-a238-77bec5d27ecc",
+  "id": "04b66f8b-4b83-4b6e-8fad-ef3eaa7c3b76",
   "prevId": "7f7a38e8-d5b2-4329-97fd-db822ec2191b",
   "version": "7",
   "dialect": "postgresql",
@@ -1342,6 +1342,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "attendant_id": {
+          "name": "attendant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "on_behalf_of": {
           "name": "on_behalf_of",
           "type": "uuid",
@@ -1431,10 +1437,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "meter_installation_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -1447,10 +1455,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "business_day_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -1463,10 +1473,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "shift_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -1496,6 +1508,22 @@
           "columnsFrom": [
             "tenant_id",
             "entered_by"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_boundaries_attendant_fk": {
+          "name": "meter_boundaries_attendant_fk",
+          "tableFrom": "meter_boundaries",
+          "tableTo": "memberships",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "attendant_id"
           ],
           "columnsTo": [
             "tenant_id",
@@ -1705,6 +1733,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "meter_installations_tenant_station_id_uidx": {
+          "name": "meter_installations_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         }
@@ -1923,10 +1960,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "nozzle_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -1939,10 +1978,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "meter_installation_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -1955,10 +1996,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "opening_boundary_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -1971,10 +2014,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "closing_boundary_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -2003,10 +2048,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "business_day_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -2019,10 +2066,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "shift_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -2092,6 +2141,7 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "station_id",
             "opening_boundary_id"
           ]
         },
@@ -2100,6 +2150,7 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "station_id",
             "closing_boundary_id"
           ]
         }
@@ -2764,6 +2815,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "station_id": {
+          "name": "station_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "reconciliation_id": {
           "name": "reconciliation_id",
           "type": "uuid",
@@ -2916,10 +2973,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "reconciliation_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -2965,6 +3024,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "reconciliation_revisions_tenant_station_id_uidx": {
+          "name": "reconciliation_revisions_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         },
@@ -3107,10 +3175,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "business_day_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -3132,7 +3202,17 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "station_id",
             "business_day_id"
+          ]
+        },
+        "reconciliations_tenant_station_id_uidx": {
+          "name": "reconciliations_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
+            "id"
           ]
         }
       },
@@ -3517,10 +3597,12 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
+            "station_id",
             "business_day_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -3686,6 +3768,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "station_business_days_tenant_station_id_uidx": {
+          "name": "station_business_days_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         },

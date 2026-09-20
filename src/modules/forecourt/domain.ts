@@ -12,9 +12,15 @@ import {
   type Money,
   type UnitPrice,
 } from '../../platform/domain/primitives';
+import { assertTrustedActor, type TrustedActor } from './trusted-actor';
 
 export type StationBusinessDayState =
-  'NOT_STARTED' | 'OPEN' | 'OPERATIONS_COMPLETE' | 'CLOSED' | 'EXCEPTIONALLY_CLOSED';
+  'NOT_STARTED' | 'OPEN' | 'OPERATIONS_COMPLETE' | 'CLOSED' | 'EXCEPTIONALLY_CLOSED' | 'LOCKED';
+
+/**
+ * A3 domain commands accept this value only after the A1 authority resolver
+ * has created it. The identity and membership fields are never request data.
+ */
 export type ShiftState =
   | 'PLANNED'
   | 'OPEN'
@@ -68,6 +74,7 @@ export type MeterBoundary = {
   confirmedAt: string;
   confirmedBy: string;
   enteredBy: string;
+  attendantId: string;
   onBehalfOf?: string;
   exceptionReason?: string;
 };
@@ -88,6 +95,7 @@ export type MeterSegment = {
   nozzleId: string;
   meterInstallationId: string;
   businessDayId: string;
+  businessDate?: BusinessDate;
   shiftId: string;
   openingBoundaryId: string;
   closingBoundaryId: string;
@@ -139,8 +147,7 @@ export type MeterSegmentInput = {
   closingBoundary: MeterBoundary;
   productId: string;
   attendantId: string;
-  enteredBy: string;
-  onBehalfOf?: string;
+  actor: TrustedActor;
   unitPrice: string;
   currency?: CurrencyCode;
   startAt: string;
@@ -174,9 +181,14 @@ export function exceptionallyCloseBusinessDay(
   reason: string,
 ): StationBusinessDay {
   requireReason(reason, 'ExceptionalCloseBusinessDay');
-  if (day.state === 'CLOSED' || day.state === 'EXCEPTIONALLY_CLOSED')
+  if (day.state === 'CLOSED' || day.state === 'EXCEPTIONALLY_CLOSED' || day.state === 'LOCKED')
     throw invalidTransition('ExceptionalCloseBusinessDay', day.state);
   return { ...day, state: 'EXCEPTIONALLY_CLOSED', version: day.version + 1 };
+}
+
+export function lockBusinessDay(day: StationBusinessDay): StationBusinessDay {
+  assertState(day.state, 'CLOSED', 'LockBusinessDay');
+  return { ...day, state: 'LOCKED', version: day.version + 1 };
 }
 
 export function startShift(shift: Shift, day: StationBusinessDay): Shift {
@@ -247,11 +259,14 @@ export function confirmBoundary(input: {
   priorSealedReading?: MeterReading;
   effectiveAt: string;
   confirmedAt: string;
-  confirmedBy: string;
-  enteredBy: string;
-  onBehalfOf?: string;
+  actor: TrustedActor;
+  responsibleAttendantId: string;
   exceptionReason?: string;
 }): MeterBoundary {
+  assertTrustedActor(input.actor);
+  if (input.actor.tenantId !== input.tenantId || input.actor.stationId !== input.stationId) {
+    throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this station');
+  }
   if (input.reading.status === 'AVAILABLE') validateReading(input.reading.value);
   const reading =
     input.reason === 'SHIFT_OPEN'
@@ -262,12 +277,28 @@ export function confirmBoundary(input: {
         })
       : input.reading;
   if (reading.status === 'UNAVAILABLE') requireReason(reading.reason, 'ConfirmBoundary');
-  if (input.onBehalfOf && input.onBehalfOf === input.confirmedBy)
-    throw new AppError(
-      'VALIDATION_FAILED',
-      'On-behalf-of attendant cannot equal the entering actor',
-    );
-  return { ...input, reading, exceptionReason: input.exceptionReason };
+  const onBehalfOf =
+    input.responsibleAttendantId !== input.actor.membershipId
+      ? input.responsibleAttendantId
+      : undefined;
+  return {
+    id: input.id,
+    tenantId: input.tenantId,
+    stationId: input.stationId,
+    nozzleId: input.nozzleId,
+    meterInstallationId: input.meterInstallationId,
+    businessDayId: input.businessDayId,
+    shiftId: input.shiftId,
+    reason: input.reason,
+    reading,
+    effectiveAt: input.effectiveAt,
+    confirmedAt: input.confirmedAt,
+    confirmedBy: input.actor.membershipId,
+    enteredBy: input.actor.membershipId,
+    attendantId: input.responsibleAttendantId,
+    onBehalfOf,
+    exceptionReason: input.exceptionReason,
+  };
 }
 
 export function confirmAttendantHandover(input: {
@@ -280,7 +311,7 @@ export function confirmAttendantHandover(input: {
   businessDayId: string;
   shiftId: string;
   newAttendantId: string;
-  enteredBy: string;
+  actor: TrustedActor;
   effectiveAt: string;
   confirmedAt: string;
   onBehalfOf?: string;
@@ -303,9 +334,8 @@ export function confirmAttendantHandover(input: {
     priorSealedReading: input.priorBoundary.reading,
     effectiveAt: input.effectiveAt,
     confirmedAt: input.confirmedAt,
-    confirmedBy: input.enteredBy,
-    enteredBy: input.enteredBy,
-    onBehalfOf: input.onBehalfOf,
+    actor: input.actor,
+    responsibleAttendantId: input.newAttendantId,
   });
 }
 
@@ -324,6 +354,10 @@ export function replaceMeterInstallation(
 }
 
 export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
+  assertTrustedActor(input.actor);
+  if (input.actor.tenantId !== input.tenantId || input.actor.stationId !== input.stationId) {
+    throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this station');
+  }
   const { openingBoundary, closingBoundary } = input;
   if (
     openingBoundary.tenantId !== closingBoundary.tenantId ||
@@ -384,8 +418,8 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
     closingBoundaryId: closingBoundary.id,
     productId: input.productId,
     attendantId: input.attendantId,
-    enteredBy: input.enteredBy,
-    onBehalfOf: input.onBehalfOf,
+    enteredBy: input.actor.membershipId,
+    onBehalfOf: input.attendantId !== input.actor.membershipId ? input.attendantId : undefined,
     openingReading: openingBoundary.reading.value,
     closingReading: closingBoundary.reading.value,
     litres: quantity,
@@ -423,14 +457,28 @@ export function assertNoOverlappingOperationalSegments(
     );
 }
 
-export function activatePriceChange(price: SellingPrice, boundaryComplete: boolean): SellingPrice {
+export type PersistedPriceBoundaryState = Readonly<{
+  affectedBoundaries: readonly Readonly<{ id: string; state: 'SEALED' | 'OPEN' }>[];
+  serverNow: string;
+}>;
+
+export function activatePriceChange(
+  price: SellingPrice,
+  persistedState: PersistedPriceBoundaryState,
+): SellingPrice {
   if (price.state !== 'PENDING_STATION_ACTIVATION' && price.state !== 'BOUNDARIES_IN_PROGRESS')
     throw invalidTransition('ActivatePriceChange', price.state);
-  if (!boundaryComplete)
+  if (
+    persistedState.affectedBoundaries.length === 0 ||
+    persistedState.affectedBoundaries.some((boundary) => boundary.state !== 'SEALED')
+  )
     throw new AppError(
       'CONFLICT',
       'All affected nozzle boundaries must be sealed before price activation',
     );
+  if (!Number.isFinite(Date.parse(persistedState.serverNow))) {
+    throw new AppError('VALIDATION_FAILED', 'Price activation requires a server timestamp');
+  }
   return { ...price, state: 'ACTIVE' };
 }
 export function requestPriceChange(price: SellingPrice): SellingPrice {
@@ -466,6 +514,18 @@ function validateReading(value: string): void {
     throw new AppError('VALIDATION_FAILED', 'Meter readings cannot be negative');
 }
 
+function assertActorCoversRevision(actor: TrustedActor, revision: ReconciliationRevision): void {
+  if (actor.tenantId !== revision.tenantId || actor.stationId !== revision.stationId) {
+    throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this reconciliation');
+  }
+}
+
+function assertServerTimestamp(value: string, command: string): void {
+  if (!Number.isFinite(Date.parse(value))) {
+    throw new AppError('VALIDATION_FAILED', `${command} requires a server timestamp`);
+  }
+}
+
 export type ReconciliationPaymentCategory =
   'CASH' | 'ELECTRONIC' | 'CUSTOMER_ACCOUNT' | 'PREPAID' | 'BENEFIT_INTERNAL' | 'OTHER';
 export type PaymentDeclaration = {
@@ -498,6 +558,7 @@ export type ReconciliationRevision = {
   tenantId: string;
   stationId: string;
   businessDayId: string;
+  businessDate?: BusinessDate;
   state: ReconciliationState;
   expectedSales: Money;
   declarations: readonly PaymentDeclaration[];
@@ -507,6 +568,8 @@ export type ReconciliationRevision = {
   varianceExplanation?: string;
   submittedBy?: string;
   approvedBy?: string;
+  postedBy?: string;
+  lockedBy?: string;
   postedAt?: string;
   lockedAt?: string;
 };
@@ -530,6 +593,7 @@ export function calculateReconciliation(input: {
   tenantId: string;
   stationId: string;
   businessDayId: string;
+  businessDate?: string;
   segments: readonly MeterSegment[];
   declarations: readonly PaymentDeclaration[];
   policy: ReconciliationPolicy;
@@ -568,6 +632,7 @@ export function calculateReconciliation(input: {
     tenantId: input.tenantId,
     stationId: input.stationId,
     businessDayId: input.businessDayId,
+    ...(input.businessDate ? { businessDate: businessDate(input.businessDate) } : {}),
     state: 'READY',
     expectedSales,
     declarations: input.declarations.map((declaration) => ({ ...declaration })),
@@ -578,9 +643,11 @@ export function calculateReconciliation(input: {
 }
 export function submitReconciliation(
   revision: ReconciliationRevision,
-  submittedBy: string,
+  actor: TrustedActor,
   explanation?: string,
 ): ReconciliationRevision {
+  assertTrustedActor(actor);
+  assertActorCoversRevision(actor, revision);
   if (revision.state !== 'READY' && revision.state !== 'RETURNED')
     throw invalidTransition('SubmitReconciliation', revision.state);
   if (revision.varianceClassification !== 'INFORMATIONAL' && !explanation?.trim())
@@ -588,7 +655,7 @@ export function submitReconciliation(
   return {
     ...revision,
     state: 'SUBMITTED',
-    submittedBy,
+    submittedBy: actor.membershipId,
     varianceExplanation: explanation?.trim(),
   };
 }
@@ -616,24 +683,44 @@ export function rejectReconciliation(
 }
 export function approveReconciliation(
   revision: ReconciliationRevision,
-  approverId: string,
+  actor: TrustedActor,
 ): ReconciliationRevision {
+  assertTrustedActor(actor);
+  assertActorCoversRevision(actor, revision);
   assertState(revision.state, 'PENDING_APPROVAL', 'ApproveReconciliation');
-  if (revision.submittedBy === approverId)
+  if (revision.submittedBy === actor.membershipId)
     throw new AppError('FORBIDDEN', 'A reconciliation cannot be approved by its submitting actor');
-  return { ...revision, state: 'APPROVED', approvedBy: approverId };
+  return { ...revision, state: 'APPROVED', approvedBy: actor.membershipId };
 }
 export function postReconciliation(
   revision: ReconciliationRevision,
-  postedAt: string,
+  actor: TrustedActor,
+  serverNow: string,
 ): ReconciliationRevision {
+  assertTrustedActor(actor);
+  assertActorCoversRevision(actor, revision);
   assertState(revision.state, 'APPROVED', 'PostReconciliation');
-  return { ...revision, state: 'POSTED', postedAt };
+  assertServerTimestamp(serverNow, 'PostReconciliation');
+  return {
+    ...revision,
+    state: 'POSTED',
+    postedAt: serverNow,
+    postedBy: actor.membershipId,
+  };
 }
 export function lockReconciliation(
   revision: ReconciliationRevision,
-  lockedAt: string,
+  actor: TrustedActor,
+  serverNow: string,
 ): ReconciliationRevision {
+  assertTrustedActor(actor);
+  assertActorCoversRevision(actor, revision);
   assertState(revision.state, 'POSTED', 'LockReconciliation');
-  return { ...revision, state: 'LOCKED', lockedAt };
+  assertServerTimestamp(serverNow, 'LockReconciliation');
+  return {
+    ...revision,
+    state: 'LOCKED',
+    lockedAt: serverNow,
+    lockedBy: actor.membershipId,
+  };
 }

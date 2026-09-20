@@ -1,6 +1,6 @@
 # Implementation status
 
-Status: **A3 CORE FORECOURT SLICE IMPLEMENTED IN ISOLATED WORKTREE — INTEGRATION REVIEW PENDING**
+Status: **A3 CORE FORECOURT SLICE IMPLEMENTED WITH SECURITY/INTEGRATION REMEDIATION — INTEGRATION REVIEW PENDING**
 
 ## Current integration base
 
@@ -47,6 +47,7 @@ Remediation validation: the namespace migration was applied successfully to Post
 - [x] Meter installation, effective boundaries/segments, attendant handover metadata, exact server-derived sales, and nozzle overlap constraints.
 - [x] Payment declarations, signed variance calculation, immutable revision flow, return/approve/post/lock transitions, and typed downstream events.
 - [x] Rebuildable basic daily report source contract and representative mobile-first operational surface.
+- [x] A1-derived trusted command context, explicit station-scoped permissions, on-behalf-of provenance, transaction-bound idempotency/audit/outbox, station-aware composite FKs, immutable-state database guards, versioned reconciliation events, and event-contract tests.
 - [ ] A0 integration of canonical migration and production command adapters; PostgreSQL integration/E2E gates require the isolated branch to be reviewed and merged through `main`.
 
 ## Phase 3 — Inventory, Tanks, Deliveries & Costing

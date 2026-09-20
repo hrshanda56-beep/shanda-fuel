@@ -129,6 +129,11 @@ export const meterInstallations = appSchema.table(
   },
   (table) => [
     unique('meter_installations_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('meter_installations_tenant_station_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.id,
+    ),
     index('meter_installations_tenant_nozzle_effective_idx').on(
       table.tenantId,
       table.nozzleId,
@@ -169,6 +174,11 @@ export const stationBusinessDays = appSchema.table(
   },
   (table) => [
     unique('station_business_days_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('station_business_days_tenant_station_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.id,
+    ),
     unique('station_business_days_station_date_uidx').on(
       table.tenantId,
       table.stationId,
@@ -219,8 +229,12 @@ export const shifts = appSchema.table(
       name: 'shifts_station_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.businessDayId],
-      foreignColumns: [stationBusinessDays.tenantId, stationBusinessDays.id],
+      columns: [table.tenantId, table.stationId, table.businessDayId],
+      foreignColumns: [
+        stationBusinessDays.tenantId,
+        stationBusinessDays.stationId,
+        stationBusinessDays.id,
+      ],
       name: 'shifts_business_day_fk',
     }),
   ],
@@ -291,6 +305,7 @@ export const meterBoundaries = appSchema.table(
     confirmedAt: utcTimestamp('confirmed_at').notNull(),
     confirmedBy: uuid('confirmed_by').notNull(),
     enteredBy: uuid('entered_by').notNull(),
+    attendantId: uuid('attendant_id').notNull(),
     onBehalfOf: uuid('on_behalf_of'),
     exceptionReason: text('exception_reason'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
@@ -308,18 +323,26 @@ export const meterBoundaries = appSchema.table(
       name: 'meter_boundaries_nozzle_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.meterInstallationId],
-      foreignColumns: [meterInstallations.tenantId, meterInstallations.id],
+      columns: [table.tenantId, table.stationId, table.meterInstallationId],
+      foreignColumns: [
+        meterInstallations.tenantId,
+        meterInstallations.stationId,
+        meterInstallations.id,
+      ],
       name: 'meter_boundaries_installation_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.businessDayId],
-      foreignColumns: [stationBusinessDays.tenantId, stationBusinessDays.id],
+      columns: [table.tenantId, table.stationId, table.businessDayId],
+      foreignColumns: [
+        stationBusinessDays.tenantId,
+        stationBusinessDays.stationId,
+        stationBusinessDays.id,
+      ],
       name: 'meter_boundaries_business_day_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.shiftId],
-      foreignColumns: [shifts.tenantId, shifts.id],
+      columns: [table.tenantId, table.stationId, table.shiftId],
+      foreignColumns: [shifts.tenantId, shifts.stationId, shifts.id],
       name: 'meter_boundaries_shift_fk',
     }),
     foreignKey({
@@ -331,6 +354,11 @@ export const meterBoundaries = appSchema.table(
       columns: [table.tenantId, table.enteredBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'meter_boundaries_entered_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.attendantId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'meter_boundaries_attendant_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.onBehalfOf],
@@ -371,31 +399,43 @@ export const meterSegments = appSchema.table(
   },
   (table) => [
     unique('meter_segments_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('meter_segments_opening_boundary_uidx').on(table.tenantId, table.openingBoundaryId),
-    unique('meter_segments_closing_boundary_uidx').on(table.tenantId, table.closingBoundaryId),
+    unique('meter_segments_opening_boundary_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.openingBoundaryId,
+    ),
+    unique('meter_segments_closing_boundary_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.closingBoundaryId,
+    ),
     index('meter_segments_reconciliation_lookup_idx').on(
       table.tenantId,
       table.businessDayId,
       table.stationId,
     ),
     foreignKey({
-      columns: [table.tenantId, table.nozzleId],
-      foreignColumns: [nozzles.tenantId, nozzles.id],
+      columns: [table.tenantId, table.stationId, table.nozzleId],
+      foreignColumns: [nozzles.tenantId, nozzles.stationId, nozzles.id],
       name: 'meter_segments_nozzle_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.meterInstallationId],
-      foreignColumns: [meterInstallations.tenantId, meterInstallations.id],
+      columns: [table.tenantId, table.stationId, table.meterInstallationId],
+      foreignColumns: [
+        meterInstallations.tenantId,
+        meterInstallations.stationId,
+        meterInstallations.id,
+      ],
       name: 'meter_segments_installation_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.openingBoundaryId],
-      foreignColumns: [meterBoundaries.tenantId, meterBoundaries.id],
+      columns: [table.tenantId, table.stationId, table.openingBoundaryId],
+      foreignColumns: [meterBoundaries.tenantId, meterBoundaries.stationId, meterBoundaries.id],
       name: 'meter_segments_opening_boundary_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.closingBoundaryId],
-      foreignColumns: [meterBoundaries.tenantId, meterBoundaries.id],
+      columns: [table.tenantId, table.stationId, table.closingBoundaryId],
+      foreignColumns: [meterBoundaries.tenantId, meterBoundaries.stationId, meterBoundaries.id],
       name: 'meter_segments_closing_boundary_fk',
     }),
     foreignKey({
@@ -404,13 +444,17 @@ export const meterSegments = appSchema.table(
       name: 'meter_segments_product_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.businessDayId],
-      foreignColumns: [stationBusinessDays.tenantId, stationBusinessDays.id],
+      columns: [table.tenantId, table.stationId, table.businessDayId],
+      foreignColumns: [
+        stationBusinessDays.tenantId,
+        stationBusinessDays.stationId,
+        stationBusinessDays.id,
+      ],
       name: 'meter_segments_business_day_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.shiftId],
-      foreignColumns: [shifts.tenantId, shifts.id],
+      columns: [table.tenantId, table.stationId, table.shiftId],
+      foreignColumns: [shifts.tenantId, shifts.stationId, shifts.id],
       name: 'meter_segments_shift_fk',
     }),
     foreignKey({
@@ -445,7 +489,12 @@ export const reconciliations = appSchema.table(
   },
   (table) => [
     unique('reconciliations_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('reconciliations_business_day_uidx').on(table.tenantId, table.businessDayId),
+    unique('reconciliations_business_day_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.businessDayId,
+    ),
+    unique('reconciliations_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     index('reconciliations_station_state_idx').on(table.tenantId, table.stationId, table.state),
     foreignKey({
       columns: [table.tenantId, table.stationId],
@@ -453,8 +502,12 @@ export const reconciliations = appSchema.table(
       name: 'reconciliations_station_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.businessDayId],
-      foreignColumns: [stationBusinessDays.tenantId, stationBusinessDays.id],
+      columns: [table.tenantId, table.stationId, table.businessDayId],
+      foreignColumns: [
+        stationBusinessDays.tenantId,
+        stationBusinessDays.stationId,
+        stationBusinessDays.id,
+      ],
       name: 'reconciliations_business_day_fk',
     }),
   ],
@@ -465,6 +518,7 @@ export const reconciliationRevisions = appSchema.table(
   {
     id: id(),
     tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
     reconciliationId: uuid('reconciliation_id').notNull(),
     revision: integer('revision').notNull(),
     state: text('state').notNull().default('READY'),
@@ -487,6 +541,11 @@ export const reconciliationRevisions = appSchema.table(
   },
   (table) => [
     unique('reconciliation_revisions_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('reconciliation_revisions_tenant_station_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.id,
+    ),
     unique('reconciliation_revisions_number_uidx').on(
       table.tenantId,
       table.reconciliationId,
@@ -494,8 +553,8 @@ export const reconciliationRevisions = appSchema.table(
     ),
     index('reconciliation_revisions_state_idx').on(table.tenantId, table.state),
     foreignKey({
-      columns: [table.tenantId, table.reconciliationId],
-      foreignColumns: [reconciliations.tenantId, reconciliations.id],
+      columns: [table.tenantId, table.stationId, table.reconciliationId],
+      foreignColumns: [reconciliations.tenantId, reconciliations.stationId, reconciliations.id],
       name: 'reconciliation_revisions_reconciliation_fk',
     }),
     foreignKey({
