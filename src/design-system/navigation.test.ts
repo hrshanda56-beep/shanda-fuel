@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { filterNavigationItems, primaryNavigation } from './navigation';
+import { filterNavigationItems, mobileNavigation, primaryNavigation } from './navigation';
 
 describe('permission-aware navigation', () => {
   it('keeps public navigation and removes items without the required permission', () => {
@@ -14,5 +14,14 @@ describe('permission-aware navigation', () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]?.label).toBe('Home');
+  });
+
+  it('keeps the mobile model limited to Home, Tasks, Work and More', () => {
+    expect(mobileNavigation.map((item) => item.mobileLabel)).toEqual([
+      'Home',
+      'Tasks',
+      'Work',
+      'More',
+    ]);
   });
 });

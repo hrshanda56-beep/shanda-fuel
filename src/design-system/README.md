@@ -21,9 +21,15 @@ The shell provides:
 ## Shared patterns
 
 Use the primitives in `primitives.tsx` for buttons, status badges, cards, fields,
-loading, empty, error, conflict, and offline states. Keep persistent labels and
-supporting help text on fields. Use `data-label` on table cells when a table must
-collapse into a mobile card pattern.
+numeric inputs, loading/skeleton, empty, error, access-denied, not-found,
+conflict, offline, risk-confirmation, and evidence states. Keep persistent labels
+and supporting help text on fields. Use `data-label` on table cells when a table
+must collapse into a mobile card pattern; the shared CSS turns those rows into
+labelled cards on phone widths.
+
+Use `formatters.ts` for presentation-only money, litre, ratio, percentage, date,
+business-date, and status labels. These helpers preserve decimal text and never
+become a source of financial truth.
 
 The status tones are semantic, not the sole carrier of meaning: each important
 state also includes readable text. Focus styles and reduced-motion behavior are
@@ -39,3 +45,5 @@ part of the global token layer in `src/app/globals.css`.
   authoritative server responses and must not be calculated in these components.
 - Offline language describes drafts only; it must never imply submitted, approved,
   posted, or locked state.
+- Theme tokens support light, explicit dark (`data-theme="dark"`), explicit light,
+  and system preference. Prefer semantic tokens over new raw color literals.

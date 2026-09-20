@@ -14,3 +14,11 @@ test('foundation honors reduced motion preference', async ({ page }) => {
   await expect(page.locator('.loading-dot')).toBeVisible();
   await expect(page.locator('html')).toHaveCSS('scroll-behavior', 'auto');
 });
+
+test('foundation remains accessible with dark system preference', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});

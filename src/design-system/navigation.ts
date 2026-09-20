@@ -52,6 +52,13 @@ export const primaryNavigation = [
   },
 ] as const satisfies readonly NavigationItem[];
 
+export const mobileNavigation = [
+  primaryNavigation[0],
+  primaryNavigation[2],
+  primaryNavigation[1],
+  primaryNavigation[5],
+] as const satisfies readonly NavigationItem[];
+
 /**
  * The browser receives an already-authorized permission projection. It never
  * decides whether a command is allowed; server-side authorization remains the

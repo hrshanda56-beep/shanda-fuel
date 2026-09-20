@@ -10,6 +10,18 @@ A0 candidate branch: `agent/a0-integration-foundation` in the isolated managed w
 
 The A0 baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. PostgreSQL integration now fails closed when unconfigured and passes against a dedicated migrated test database.
 
+## A2 — UI foundation
+
+Workstream branch: `agent/a2-ui-foundation` in `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a2`, based on required integration baseline `cd63d48b7a142905722d7c9ec76da053c29fbbb4`.
+
+- [x] Semantic light/dark/system tokens, typography, spacing, focus, reduced-motion, and tabular-number conventions.
+- [x] Responsive AppShell with context surface, breadcrumbs, desktop sidebar, and Home / Tasks / Work / More mobile navigation seam.
+- [x] Permission-projection navigation filter that does not authorize commands in the browser.
+- [x] Reusable controls, forms, numeric/date presentation formatters, status badges, responsive table/card patterns, evidence, risk-confirmation, and truthful loading/empty/error/conflict/offline/permission/not-found states.
+- [x] Synthetic representative dashboard/form/state surfaces with unit, Playwright, and axe coverage.
+
+A2 remains presentation-only. A1 supplies live actor/permission contracts; A0/integration owns shared tooling and platform wiring. No database, persistence, financial calculation, business command, authentication, or RLS work is included here.
+
 ## Phase 0 — Repository & Engineering Foundation
 
 - [x] A0 establishes the technical baseline and pinned compatible toolchain.

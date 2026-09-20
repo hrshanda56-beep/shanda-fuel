@@ -19,4 +19,7 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(page.getByLabel('Draft note')).toBeVisible();
   await expect(page.getByLabel('Reason')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
+  await expect(
+    page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('link'),
+  ).toHaveText(['Home', 'Tasks', 'Work', 'More']);
 });

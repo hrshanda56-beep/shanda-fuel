@@ -2,6 +2,7 @@ import {
   cloneElement,
   isValidElement,
   type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
   type ReactElement,
   type ReactNode,
 } from 'react';
@@ -10,21 +11,97 @@ type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
+  loading?: boolean;
   children: ReactNode;
 };
 
-export function Button({ variant = 'primary', className = '', children, ...props }: ButtonProps) {
+export function Button({
+  variant = 'primary',
+  className = '',
+  loading = false,
+  disabled,
+  children,
+  ...props
+}: ButtonProps) {
   return (
-    <button className={`button button-${variant} ${className}`.trim()} {...props}>
+    <button
+      className={`button button-${variant} ${loading ? 'button-loading' : ''} ${className}`.trim()}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...props}
+    >
+      {loading ? <span className="button-spinner" aria-hidden="true" /> : null}
       {children}
     </button>
   );
 }
 
-type StatusTone = 'positive' | 'neutral' | 'warning' | 'critical' | 'offline';
+export type StatusTone =
+  | 'positive'
+  | 'neutral'
+  | 'informational'
+  | 'warning'
+  | 'critical'
+  | 'pending'
+  | 'locked'
+  | 'offline';
 
 export function StatusBadge({ tone, children }: { tone: StatusTone; children: ReactNode }) {
   return <span className={`status status-${tone}`}>{children}</span>;
+}
+
+export function NumericInput({
+  label,
+  id,
+  hint,
+  error,
+  required = false,
+  optional = false,
+  unit,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & {
+  label: string;
+  id: string;
+  hint?: string;
+  error?: string;
+  required?: boolean;
+  optional?: boolean;
+  unit?: string;
+}) {
+  const hintId = hint ? `${id}-hint` : undefined;
+  const errorId = error ? `${id}-error` : undefined;
+  const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>
+        {label}
+        {required ? <span aria-hidden="true"> *</span> : null}
+        {optional && !required ? <span className="field-optional"> (optional)</span> : null}
+      </label>
+      {hint ? (
+        <p className="field-hint" id={hintId}>
+          {hint}
+        </p>
+      ) : null}
+      <div className="numeric-input-wrap">
+        <input
+          {...props}
+          id={id}
+          inputMode="decimal"
+          type="text"
+          aria-describedby={describedBy}
+          aria-invalid={error ? true : undefined}
+        />
+        {unit ? <span className="numeric-unit">{unit}</span> : null}
+      </div>
+      {error ? (
+        <p className="field-error" id={errorId} role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function Card({
@@ -50,6 +127,7 @@ export function Field({
   hint,
   error,
   required = false,
+  optional = false,
   children,
 }: {
   id: string;
@@ -57,6 +135,7 @@ export function Field({
   hint?: string;
   error?: string;
   required?: boolean;
+  optional?: boolean;
   children: ReactNode;
 }) {
   const descriptionId = hint ? `${id}-hint` : undefined;
@@ -77,6 +156,7 @@ export function Field({
       <label htmlFor={id}>
         {label}
         {required ? <span aria-hidden="true"> *</span> : null}
+        {optional && !required ? <span className="field-optional"> (optional)</span> : null}
       </label>
       {hint ? (
         <p className="field-hint" id={descriptionId}>
@@ -102,6 +182,16 @@ export function LoadingState({ label = 'Loading' }: { label?: string }) {
   );
 }
 
+export function Skeleton({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="skeleton-group" role="status" aria-label="Loading content">
+      {Array.from({ length: lines }, (_, index) => (
+        <span className={`skeleton-line skeleton-line-${index + 1}`} key={index} />
+      ))}
+    </div>
+  );
+}
+
 export function ErrorState({
   title = 'Something needs attention',
   message,
@@ -118,6 +208,17 @@ export function ErrorState({
         <p>{message}</p>
       </div>
       {action ? <div className="state-action">{action}</div> : null}
+    </div>
+  );
+}
+
+export function SuccessState({ title = 'Saved', message }: { title?: string; message: string }) {
+  return (
+    <div className="state state-success" role="status" aria-live="polite">
+      <div>
+        <h3>{title}</h3>
+        <p>{message}</p>
+      </div>
     </div>
   );
 }
@@ -155,6 +256,148 @@ export function ConflictState({
       </div>
     </div>
   );
+}
+
+export function AccessDeniedState({
+  message = 'You do not have access to this area. Ask an authorised administrator if you need it.',
+}: {
+  message?: string;
+}) {
+  return (
+    <div className="state state-access-denied" role="alert">
+      <div>
+        <h3>Access restricted</h3>
+        <p>{message}</p>
+      </div>
+    </div>
+  );
+}
+
+export function NotFoundState({
+  message = 'The requested record is unavailable or may have moved.',
+}: {
+  message?: string;
+}) {
+  return (
+    <div className="state state-not-found" role="status">
+      <div>
+        <h3>Not found</h3>
+        <p>{message}</p>
+      </div>
+    </div>
+  );
+}
+
+export function DialogFrame({
+  title,
+  description,
+  children,
+  closeHref = '#main-content',
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  closeHref?: string;
+}) {
+  const titleId = `${slugify(title)}-dialog-title`;
+  const descriptionId = description ? `${slugify(title)}-dialog-description` : undefined;
+
+  return (
+    <div className="dialog-backdrop">
+      <section
+        className="dialog-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <div className="dialog-heading">
+          <div>
+            <h2 id={titleId}>{title}</h2>
+            {description ? <p id={descriptionId}>{description}</p> : null}
+          </div>
+          <a className="dialog-close" href={closeHref} aria-label={`Close ${title}`}>
+            ×
+          </a>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+export function BottomSheet({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="bottom-sheet" aria-labelledby={`${slugify(title)}-sheet-title`}>
+      <span className="sheet-handle" aria-hidden="true" />
+      <h2 id={`${slugify(title)}-sheet-title`}>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+export function RiskConfirmation({
+  title,
+  consequence,
+  actionLabel,
+}: {
+  title: string;
+  consequence: string;
+  actionLabel: string;
+}) {
+  return (
+    <div className="risk-confirmation" role="group" aria-labelledby="risk-confirmation-title">
+      <div>
+        <StatusBadge tone="warning">Review consequence</StatusBadge>
+        <h3 id="risk-confirmation-title">{title}</h3>
+        <p>{consequence}</p>
+      </div>
+      <Button type="button" variant="danger">
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+type EvidenceState = 'pending' | 'uploading' | 'failed' | 'verified' | 'available';
+
+export function EvidenceFile({
+  name,
+  state,
+  detail,
+}: {
+  name: string;
+  state: EvidenceState;
+  detail?: string;
+}) {
+  const tone: StatusTone =
+    state === 'failed'
+      ? 'critical'
+      : state === 'verified' || state === 'available'
+        ? 'positive'
+        : 'pending';
+
+  return (
+    <div className="evidence-file">
+      <div>
+        <strong>{name}</strong>
+        {detail ? <p>{detail}</p> : null}
+      </div>
+      <StatusBadge tone={tone}>{formatEvidenceState(state)}</StatusBadge>
+    </div>
+  );
+}
+
+function formatEvidenceState(state: EvidenceState) {
+  return state === 'verified'
+    ? 'Verified'
+    : state === 'available'
+      ? 'Available'
+      : state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
 export function OfflineBanner() {

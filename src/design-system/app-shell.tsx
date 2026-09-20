@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 import {
   filterNavigationItems,
+  mobileNavigation,
   primaryNavigation,
   type NavigationItem,
   type PermissionCode,
@@ -20,12 +21,21 @@ type AppShellProps = {
   };
   role: string;
   userName: string;
+  breadcrumbs?: readonly { label: string; href?: string }[];
 };
 
-export function AppShell({ children, grantedPermissions, context, role, userName }: AppShellProps) {
+export function AppShell({
+  children,
+  grantedPermissions,
+  context,
+  role,
+  userName,
+  breadcrumbs = [],
+}: AppShellProps) {
   const pathname = usePathname();
-  const items = filterNavigationItems(primaryNavigation, new Set(grantedPermissions));
-  const mobileItems = items.slice(0, 4);
+  const granted = new Set(grantedPermissions);
+  const items = filterNavigationItems(primaryNavigation, granted);
+  const mobileItems = filterNavigationItems(mobileNavigation, granted);
 
   return (
     <div className="app-shell">
@@ -42,7 +52,7 @@ export function AppShell({ children, grantedPermissions, context, role, userName
             <span className="brand-byline">by ShandaHR</span>
           </span>
         </div>
-        <div className="topbar-context" aria-label="Active work context">
+        <div className="topbar-context" role="group" aria-label="Active work context">
           <span>{context.organisation}</span>
           <span className="context-separator" aria-hidden="true">
             /
@@ -73,6 +83,7 @@ export function AppShell({ children, grantedPermissions, context, role, userName
         </aside>
 
         <main className="main-content" id="main-content">
+          {breadcrumbs.length > 0 ? <Breadcrumbs items={breadcrumbs} /> : null}
           {children}
         </main>
       </div>
@@ -83,6 +94,26 @@ export function AppShell({ children, grantedPermissions, context, role, userName
         ))}
       </nav>
     </div>
+  );
+}
+
+export function Breadcrumbs({ items }: { items: readonly { label: string; href?: string }[] }) {
+  return (
+    <nav className="breadcrumbs" aria-label="Breadcrumb">
+      <ol>
+        {items.map((item, index) => (
+          <li key={`${item.label}-${index}`}>
+            {item.href && index < items.length - 1 ? (
+              <a href={item.href}>{item.label}</a>
+            ) : (
+              <span aria-current={index === items.length - 1 ? 'page' : undefined}>
+                {item.label}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 

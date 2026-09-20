@@ -1,14 +1,27 @@
 import { AppShell } from '@/design-system/app-shell';
 import {
+  formatBusinessDate,
+  formatLitres,
+  formatMoney,
+  formatPercentage,
+} from '@/design-system/formatters';
+import {
+  AccessDeniedState,
   Button,
   Card,
   ConflictState,
+  EvidenceFile,
   EmptyState,
   ErrorState,
   Field,
   LoadingState,
+  NotFoundState,
+  NumericInput,
   OfflineBanner,
+  RiskConfirmation,
+  Skeleton,
   StatusBadge,
+  SuccessState,
 } from '@/design-system/primitives';
 
 const demoPermissions = [
@@ -30,6 +43,7 @@ export default function HomePage() {
       }}
       role="Supervisor"
       userName="Demo user"
+      breadcrumbs={[{ label: 'Home' }]}
     >
       <OfflineBanner />
       <div className="page-header">
@@ -57,6 +71,32 @@ export default function HomePage() {
           <strong className="metric-value">Draft safe</strong>
           <span className="metric-meta">No authoritative action pending</span>
         </Card>
+      </section>
+
+      <section className="formatting-grid" aria-labelledby="formatting-title">
+        <div className="section-heading">
+          <p className="eyebrow">Presentation-only formatting</p>
+          <h2 id="formatting-title">Readable operational values</h2>
+          <p>Values are synthetic display examples; server/domain code remains authoritative.</p>
+        </div>
+        <div className="formatting-values">
+          <Card className="format-card">
+            <span className="metric-label">Money</span>
+            <strong className="numeric format-value">{formatMoney('12500.00')}</strong>
+          </Card>
+          <Card className="format-card">
+            <span className="metric-label">Litres</span>
+            <strong className="numeric format-value">{formatLitres('1050.375')}</strong>
+          </Card>
+          <Card className="format-card">
+            <span className="metric-label">Variance</span>
+            <strong className="numeric format-value">{formatPercentage('4.25')}</strong>
+          </Card>
+          <Card className="format-card">
+            <span className="metric-label">Business date</span>
+            <strong className="format-value">{formatBusinessDate('2026-09-20')}</strong>
+          </Card>
+        </div>
       </section>
 
       <div className="content-grid">
@@ -159,8 +199,24 @@ export default function HomePage() {
             />
           </Card>
           <Card className="state-card">
+            <h3>Success</h3>
+            <SuccessState message="The draft is saved locally and awaits online confirmation." />
+          </Card>
+          <Card className="state-card">
             <h3>Conflict</h3>
             <ConflictState />
+          </Card>
+          <Card className="state-card">
+            <h3>Skeleton</h3>
+            <Skeleton lines={3} />
+          </Card>
+          <Card className="state-card">
+            <h3>Permission</h3>
+            <AccessDeniedState />
+          </Card>
+          <Card className="state-card">
+            <h3>Not found</h3>
+            <NotFoundState />
           </Card>
         </div>
       </section>
@@ -177,6 +233,15 @@ export default function HomePage() {
           <Field id="reason" label="Reason" error="A reason is required before submission.">
             <textarea id="reason" name="reason" rows={3} placeholder="Explain the exception" />
           </Field>
+          <NumericInput
+            id="quantity"
+            name="quantity"
+            label="Quantity"
+            hint="Use the unit shown; authoritative validation happens on the server."
+            unit="L"
+            placeholder="0.000"
+            optional
+          />
           <div className="form-actions">
             <Button type="button" variant="primary">
               Save draft
@@ -187,6 +252,24 @@ export default function HomePage() {
           </div>
         </form>
       </Card>
+
+      <section className="component-grid" aria-labelledby="component-title">
+        <div className="section-heading">
+          <p className="eyebrow">Risk and evidence patterns</p>
+          <h2 id="component-title">Explicit before authoritative action</h2>
+          <p>These controls describe consequences and evidence state without posting anything.</p>
+        </div>
+        <RiskConfirmation
+          title="Return reconciliation"
+          consequence="The current revision will go back for correction and cannot be approved as submitted."
+          actionLabel="Return reconciliation"
+        />
+        <EvidenceFile
+          name="delivery-note-demo.pdf"
+          state="verified"
+          detail="Synthetic evidence · private storage reference pending A0 platform wiring"
+        />
+      </section>
     </AppShell>
   );
 }

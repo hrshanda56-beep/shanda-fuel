@@ -13,6 +13,15 @@
 - `main` remained untouched during implementation.
 - Remediation validation: PostgreSQL 16 migration application and 2-test integration suite passed against a dedicated ephemeral test database; missing `DATABASE_URL` fails the integration gate clearly.
 
+## A2 UI foundation implementation candidate
+
+- Branch: `agent/a2-ui-foundation`
+- Worktree: `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a2`
+- Base: required integration baseline `cd63d48b7a142905722d7c9ec76da053c29fbbb4`
+- Scope: semantic design tokens/themes, responsive shell, permission-aware navigation seam, reusable presentation primitives, responsive tables/cards, truthful states, accessibility conventions, and synthetic demos/tests.
+- Status: implementation complete in the isolated worktree; requires A2 review, integration review, and merge through `main`. A2 does not merge itself.
+- Dependencies/assumptions: A2 consumes a serializable, already-authorized permission projection and leaves actor, tenant, authorization, database, and platform contracts to A1/A0.
+
 ## Branch and worktree policy
 
 Each active agent gets one Codex task, one branch, and one isolated worktree. Agents never share a working checkout and never work directly on `main`. The preparation branch is `prep/agent-readiness`; later workstream branch conventions are listed below.
