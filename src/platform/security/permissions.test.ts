@@ -18,6 +18,7 @@ const actor: AuthorizationActor = {
   membershipActive: true,
   strongAuthenticationAt: new Date('2026-09-20T08:00:00.000Z'),
   strongAuthenticationExpiresAt: new Date('2026-09-20T18:00:00.000Z'),
+  strongAuthenticationVerified: true,
   roleAssignments: [
     {
       roleCode: 'SUPERVISOR',
@@ -105,6 +106,30 @@ describe('permission authorization', () => {
         now,
       }),
     ).toThrow('not authorized');
+  });
+
+  it('does not authorize a revoked temporary grant', () => {
+    const temporaryActor = {
+      ...actor,
+      roleAssignments: [],
+      temporaryGrants: [
+        {
+          permissionCode: 'report.view' as const,
+          tenantId,
+          scopeType: 'TENANT' as const,
+          expiresAt: new Date('2026-09-20T18:00:00.000Z'),
+          revokedAt: new Date('2026-09-20T09:00:00.000Z'),
+        },
+      ],
+    };
+    expect(
+      isAuthorized({
+        actor: temporaryActor,
+        permissionCode: 'report.view',
+        requestedScope: { tenantId, scopeType: 'TENANT' },
+        now: new Date('2026-09-20T10:00:00.000Z'),
+      }),
+    ).toBe(false);
   });
 
   it('keeps the default catalogue centrally defined', () => {

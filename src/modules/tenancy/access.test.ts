@@ -27,7 +27,7 @@ describe('tenant membership guard', () => {
     ).toThrow('active membership');
     expect(() =>
       assertActiveTenantMembership(
-        { ...context, membershipId: undefined },
+        { ...context, membershipId: '' },
         { ...context, status: 'ACTIVE' },
       ),
     ).toThrow('active membership');

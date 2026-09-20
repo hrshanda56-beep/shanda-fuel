@@ -1,5 +1,5 @@
 import { AppError } from '../../platform/errors';
-import type { TenantTransactionContext } from '../../platform/db';
+import type { TenantTransactionInput } from '../../platform/db';
 
 export type ActiveMembership = {
   tenantId: string;
@@ -15,7 +15,7 @@ export type MembershipStatus = 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'LOCKED' | '
  * queries. Database RLS remains the second, independent enforcement layer.
  */
 export function assertActiveTenantMembership(
-  context: TenantTransactionContext,
+  context: Pick<TenantTransactionInput, 'tenantId' | 'membershipId' | 'actorId'>,
   membership: ActiveMembership,
 ): void {
   if (

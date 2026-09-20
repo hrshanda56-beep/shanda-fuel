@@ -3,11 +3,12 @@ import { AppError } from '../errors';
 export type SessionRecord = {
   sessionId: string;
   userId: string;
-  membershipId: string;
+  membershipId?: string;
   expiresAt: Date;
   revokedAt?: Date;
   strongAuthenticatedAt?: Date;
   strongAuthenticationExpiresAt?: Date;
+  strongAuthenticationVerified?: boolean;
   stepUpLevel?: 0 | 1 | 2;
   stepUpExpiresAt?: Date;
 };
@@ -21,6 +22,7 @@ export function assertSessionActive(session: SessionRecord, now = new Date()): v
 export function assertStrongAuthentication(session: SessionRecord, now = new Date()): void {
   assertSessionActive(session, now);
   if (
+    session.strongAuthenticationVerified !== true ||
     !session.strongAuthenticatedAt ||
     (session.strongAuthenticationExpiresAt &&
       session.strongAuthenticationExpiresAt.getTime() <= now.getTime())

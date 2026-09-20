@@ -234,6 +234,8 @@ create table if not exists app.temporary_permission_grants (
   station_id uuid,
   expires_at timestamptz not null,
   reason text not null,
+  revoked_at timestamptz,
+  revoked_by_membership_id uuid,
   created_at timestamptz not null default now(),
   unique (tenant_id, id),
   foreign key (tenant_id, membership_id)
@@ -249,9 +251,32 @@ create table if not exists app.temporary_permission_grants (
   )
 );
 
+create or replace function app.revoke_membership_grants_on_status_change()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.status <> 'ACTIVE' and old.status = 'ACTIVE' then
+    update app.temporary_permission_grants
+    set revoked_at = coalesce(revoked_at, now())
+    where tenant_id = new.tenant_id
+      and membership_id = new.id
+      and revoked_at is null;
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists revoke_membership_grants on app.memberships;
+create trigger revoke_membership_grants
+after update of status on app.memberships
+for each row execute function app.revoke_membership_grants_on_status_change();
+
 create table if not exists platform.security_events (
   id uuid primary key,
-  tenant_id uuid not null references app.tenants(id),
+  event_scope text not null check (event_scope in ('IDENTITY', 'TENANT', 'PLATFORM')),
+  tenant_id uuid references app.tenants(id),
+  membership_id uuid,
   actor_id uuid,
   event_code text not null,
   request_id uuid not null,
@@ -260,7 +285,13 @@ create table if not exists platform.security_events (
   key_id text not null,
   algorithm text not null check (algorithm = 'hmac-sha256'),
   signature text not null,
-  unique (tenant_id, id)
+  unique (event_scope, tenant_id, id),
+  foreign key (tenant_id, membership_id)
+    references app.memberships (tenant_id, id),
+  check (
+    (event_scope = 'TENANT' and tenant_id is not null)
+    or (event_scope in ('IDENTITY', 'PLATFORM') and tenant_id is null)
+  )
 );
 
 create or replace function app.current_tenant_id() returns uuid
@@ -290,12 +321,25 @@ language sql stable as $$
   end
 $$;
 
+create or replace function app.has_active_membership() returns boolean
+language sql stable
+as $$
+  select exists (
+    select 1
+    from app.memberships m
+    where m.tenant_id = app.current_tenant_id()
+      and m.id = app.current_membership_id()
+      and m.identity_id = app.current_actor_id()
+      and m.status = 'ACTIVE'
+  )
+$$;
+
 alter table app.tenants enable row level security;
 alter table app.tenants force row level security;
 drop policy if exists tenants_context on app.tenants;
 create policy tenants_context on app.tenants
-  using (id = app.current_tenant_id())
-  with check (id = app.current_tenant_id());
+  using (id = app.current_tenant_id() and app.has_active_membership())
+  with check (id = app.current_tenant_id() and app.has_active_membership());
 
 do $$
 declare
@@ -304,7 +348,6 @@ begin
   foreach table_name in array array[
     'legal_entities',
     'stations',
-    'memberships',
     'membership_role_assignments',
     'temporary_permission_grants'
   ] loop
@@ -312,21 +355,62 @@ begin
     execute format('alter table app.%I force row level security', table_name);
     execute format('drop policy if exists tenant_context on app.%I', table_name);
     execute format(
-      'create policy tenant_context on app.%I using (tenant_id = app.current_tenant_id()) with check (tenant_id = app.current_tenant_id())',
+      'create policy tenant_context on app.%I using (tenant_id = app.current_tenant_id() and app.has_active_membership()) with check (tenant_id = app.current_tenant_id() and app.has_active_membership())',
       table_name
     );
   end loop;
 end $$;
 
+drop policy if exists temporary_grant_revocation on app.temporary_permission_grants;
+create policy temporary_grant_revocation on app.temporary_permission_grants
+  for update
+  using (
+    tenant_id = app.current_tenant_id()
+    and (
+      app.has_active_membership()
+      or membership_id = app.current_membership_id()
+    )
+  )
+  with check (
+    tenant_id = app.current_tenant_id()
+    and revoked_at is not null
+  );
+
+alter table app.memberships enable row level security;
+alter table app.memberships force row level security;
+drop policy if exists tenant_context on app.memberships;
+create policy tenant_context on app.memberships
+  using (
+    tenant_id = app.current_tenant_id()
+    and id = app.current_membership_id()
+    and identity_id = app.current_actor_id()
+  )
+  with check (
+    tenant_id = app.current_tenant_id()
+    and id = app.current_membership_id()
+    and identity_id = app.current_actor_id()
+  );
+
+drop policy if exists memberships_identity_lookup on app.memberships;
+create policy memberships_identity_lookup on app.memberships
+  for select using (identity_id = app.current_actor_id());
+
 alter table platform.security_events enable row level security;
 alter table platform.security_events force row level security;
 drop policy if exists security_events_context on platform.security_events;
 create policy security_events_context on platform.security_events
-  using (tenant_id = app.current_tenant_id())
-  with check (tenant_id = app.current_tenant_id());
+  using (
+    (event_scope = 'TENANT' and tenant_id = app.current_tenant_id() and app.has_active_membership())
+    or false
+  )
+  with check (
+    (event_scope = 'TENANT' and tenant_id = app.current_tenant_id() and app.has_active_membership())
+    or (event_scope in ('IDENTITY', 'PLATFORM') and tenant_id is null)
+  );
 
 -- The migration owner creates app_runtime, job_runtime and diagnostics_readonly
 -- in each environment. They are not schema owners and must not receive
--- BYPASSRLS. After provisioning, revoke UPDATE/DELETE on security_events from
--- app_runtime and job_runtime; role setup is environment-specific and is not
--- embedded in an application migration.
+-- BYPASSRLS. Grant INSERT (and narrowly scoped tenant SELECT where needed) on
+-- security_events to the intended writer role only. Do not grant UPDATE or
+-- DELETE to app_runtime or job_runtime; role setup is environment-specific
+-- and is not embedded in an application migration.

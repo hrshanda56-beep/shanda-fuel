@@ -4,8 +4,10 @@ The centralized A1 permission catalogue is implemented in `src/platform/security
 
 Permission codes, not role-name checks, are authoritative. Role templates only expand to permission codes and every assignment carries an explicit tenant/legal-entity/station scope and optional expiry.
 
-High-risk permission codes additionally require a current strong-authenticated session. Step-up authentication is enforced by the session contract for commands that require it. Temporary grants are time-bounded and do not widen tenant scope.
+High-risk permission codes additionally require a current strong-authenticated session with a verified server-side assertion; timestamps alone never satisfy the gate. Step-up authentication is enforced by the session contract for commands that require it. Temporary grants are time-bounded, revocable, and do not widen tenant scope.
 
 The migration-ready seed tables and RLS relationships are in [`architecture/a1-platform-security-migration.sql`](architecture/a1-platform-security-migration.sql); A0 owns canonical migration ordering and integration.
 
 Owner is a scoped role template, not an authorization bypass. Named role-mutation commands reject self-elevation, require an explicit ownership-transfer confirmation for granting OWNER, and preserve the last active owner.
+
+The stable `PERMISSION_CODES` and server authorization result are the A2 integration seam. UI code consumes a typed projection of that result and does not import or reimplement authorization rules.

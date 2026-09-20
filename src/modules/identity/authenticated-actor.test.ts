@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { requireAuthenticatedActor, type AuthenticatedActorContext } from './authenticated-actor';
+import {
+  requireAuthenticatedActor,
+  revokeIdentitySessions,
+  resolveAuthenticatedActor,
+  type AuthenticatedActorContext,
+} from './authenticated-actor';
 
 const request = new Request('https://fuel.example.test/app/home');
 const actor: AuthenticatedActorContext = {
@@ -33,5 +38,53 @@ describe('authenticated actor resolver', () => {
     await expect(
       requireAuthenticatedActor(request, async () => actor, new Date('2026-09-20T10:00:00.000Z')),
     ).resolves.toEqual(actor);
+  });
+
+  it('uses the Better Auth server API and rejects mismatched identity/session claims', async () => {
+    const getSession = async () => ({
+      user: { id: actor.identityId },
+      session: {
+        id: actor.session.sessionId,
+        userId: actor.identityId,
+        expiresAt: actor.session.expiresAt,
+      },
+    });
+    const resolved = await resolveAuthenticatedActor(
+      request,
+      { api: { getSession } },
+      new Date('2026-09-20T10:00:00.000Z'),
+    );
+    expect(resolved?.identityId).toBe(actor.identityId);
+
+    await expect(
+      resolveAuthenticatedActor(
+        request,
+        {
+          api: {
+            getSession: async () => ({
+              user: { id: actor.identityId },
+              session: {
+                id: actor.session.sessionId,
+                userId: '66666666-6666-4666-8666-666666666666',
+                expiresAt: actor.session.expiresAt,
+              },
+            }),
+          },
+        },
+        new Date('2026-09-20T10:00:00.000Z'),
+      ),
+    ).rejects.toThrow('invalid');
+  });
+
+  it('can revoke all sessions through Better Auth for identity compromise', async () => {
+    let revoked = false;
+    await revokeIdentitySessions(request, {
+      api: {
+        revokeSessions: async () => {
+          revoked = true;
+        },
+      },
+    });
+    expect(revoked).toBe(true);
   });
 });

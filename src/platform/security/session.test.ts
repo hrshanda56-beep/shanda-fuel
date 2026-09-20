@@ -14,6 +14,7 @@ const baseSession: SessionRecord = {
   expiresAt: new Date('2026-09-20T11:00:00.000Z'),
   strongAuthenticatedAt: new Date('2026-09-20T09:55:00.000Z'),
   strongAuthenticationExpiresAt: new Date('2026-09-20T10:30:00.000Z'),
+  strongAuthenticationVerified: true,
   stepUpLevel: 2,
   stepUpExpiresAt: new Date('2026-09-20T10:10:00.000Z'),
 };
@@ -50,6 +51,12 @@ describe('session security', () => {
         { ...baseSession, strongAuthenticationExpiresAt: new Date('2026-09-20T09:59:00.000Z') },
         now,
       ),
+    ).toThrow('Strong authentication');
+  });
+
+  it('rejects an unverified strong-authentication timestamp', () => {
+    expect(() =>
+      assertStrongAuthentication({ ...baseSession, strongAuthenticationVerified: false }, now),
     ).toThrow('Strong authentication');
   });
 });

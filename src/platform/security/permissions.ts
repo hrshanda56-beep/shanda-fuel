@@ -43,6 +43,7 @@ export type RoleAssignment = AccessScope & {
 export type TemporaryPermissionGrant = AccessScope & {
   permissionCode: PermissionCode;
   expiresAt: Date;
+  revokedAt?: Date;
 };
 
 export type AuthorizationActor = {
@@ -52,6 +53,7 @@ export type AuthorizationActor = {
   membershipActive: boolean;
   strongAuthenticationAt?: Date;
   strongAuthenticationExpiresAt?: Date;
+  strongAuthenticationVerified?: boolean;
   stepUpLevel?: 0 | 1 | 2;
   roleAssignments: readonly RoleAssignment[];
   temporaryGrants?: readonly TemporaryPermissionGrant[];
@@ -141,8 +143,8 @@ export function scopeCovers(grant: AccessScope, requested: AccessScope): boolean
   return grant.stationId === requested.stationId && grant.legalEntityId === requested.legalEntityId;
 }
 
-function isActive(expiresAt: Date | undefined, now: Date): boolean {
-  return !expiresAt || expiresAt.getTime() > now.getTime();
+function isActive(expiresAt: Date | undefined, now: Date, revokedAt?: Date): boolean {
+  return !revokedAt && (!expiresAt || expiresAt.getTime() > now.getTime());
 }
 
 function roleHasPermission(roleCode: RoleCode, permissionCode: PermissionCode): boolean {
@@ -159,6 +161,7 @@ export function isAuthorized(input: {
   const { actor, permissionCode, requestedScope } = input;
   if (!actor.membershipActive || actor.tenantId !== requestedScope.tenantId) return false;
   const currentStrongAuthentication =
+    actor.strongAuthenticationVerified === true &&
     actor.strongAuthenticationAt &&
     (!actor.strongAuthenticationExpiresAt || actor.strongAuthenticationExpiresAt > now);
   if (highRiskPermissions.has(permissionCode) && !currentStrongAuthentication) return false;
@@ -170,7 +173,7 @@ export function isAuthorized(input: {
   );
   const temporaryGrant = actor.temporaryGrants?.some(
     (grant) =>
-      isActive(grant.expiresAt, now) &&
+      isActive(grant.expiresAt, now, grant.revokedAt) &&
       grant.permissionCode === permissionCode &&
       scopeCovers(grant, requestedScope),
   );

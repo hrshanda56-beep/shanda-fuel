@@ -2,7 +2,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export type SignedSecurityEvent = {
   eventId: string;
+  eventScope?: 'IDENTITY' | 'TENANT' | 'PLATFORM';
   tenantId?: string;
+  membershipId?: string;
   actorId?: string;
   eventCode: string;
   requestId: string;
@@ -32,8 +34,10 @@ function canonicalize(value: UnsignedSecurityEvent): string {
     stableValue({
       actorId: value.actorId ?? null,
       details: value.details,
+      eventScope: value.eventScope ?? null,
       eventCode: value.eventCode,
       eventId: value.eventId,
+      membershipId: value.membershipId ?? null,
       occurredAt: value.occurredAt,
       requestId: value.requestId,
       tenantId: value.tenantId ?? null,

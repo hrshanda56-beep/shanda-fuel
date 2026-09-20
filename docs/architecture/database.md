@@ -8,6 +8,6 @@ The canonical migration history is `src/platform/db/migrations/` and is owned by
 
 CI applies this migration history to an ephemeral PostgreSQL test database before running the integration suite. The integration gate requires `DATABASE_URL` and fails clearly when it is absent.
 
-`withTenantTransaction` requires tenant and actor context and sets transaction-local context keys. A1 owns the complete fail-closed PostgreSQL RLS implementation and the final runtime-role policy.
+`withTenantTransaction` requires a branded server-owned tenant, actor, and membership context and sets transaction-local context keys. A1 owns the complete fail-closed PostgreSQL RLS implementation and the migration-ready runtime-role policy.
 
 The target logical schemas are `auth`, `app`, and `platform`; the runtime must fail closed when tenant context is absent.

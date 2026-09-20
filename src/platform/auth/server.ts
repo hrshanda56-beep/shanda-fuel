@@ -1,9 +1,14 @@
 import 'server-only';
 import { betterAuth } from 'better-auth/minimal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { getServerEnv } from '@/platform/config/env';
-import { getDatabase } from '@/platform/db';
-import { AppError } from '@/platform/errors';
+import { getServerEnv } from '../config/env';
+import { getDatabase } from '../db';
+import { AppError } from '../errors';
+
+export const AUTH_SECURITY_POLICY = {
+  publicSignUpDisabled: true,
+  strongAuthenticationMode: 'fail-closed-until-verified' as const,
+} as const;
 
 /**
  * Better Auth owns identity/session mechanics. Memberships and business
@@ -27,7 +32,10 @@ export function getAuth() {
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.APP_URL,
     trustedOrigins: [env.APP_URL],
-    emailAndPassword: { enabled: true },
+    emailAndPassword: {
+      enabled: true,
+      disableSignUp: AUTH_SECURITY_POLICY.publicSignUpDisabled,
+    },
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,

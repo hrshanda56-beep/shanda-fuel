@@ -1,12 +1,16 @@
 import { sql } from 'drizzle-orm';
 import { getDatabase, type Database } from './client';
-import { parseTenantTransactionContext, type TenantTransactionContext } from './tenant-context';
+import {
+  assertTrustedTenantTransactionContext,
+  type TenantTransactionContext,
+} from './tenant-context';
 
 export async function withTenantTransaction<T>(
   context: TenantTransactionContext,
   work: (transaction: Parameters<Parameters<Database['transaction']>[0]>[0]) => Promise<T>,
 ): Promise<T> {
-  const validContext = parseTenantTransactionContext(context);
+  assertTrustedTenantTransactionContext(context);
+  const validContext = context;
   const database = getDatabase();
 
   return database.transaction(async (transaction) => {
