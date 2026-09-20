@@ -13,4 +13,5 @@ Technical defaults that do not change business meaning will be recorded here as 
 - Vitest is the unit/integration test runner; Playwright with axe is the browser/accessibility harness.
 - Drizzle ORM with the `postgres` driver is the PostgreSQL boundary. Runtime access is pooled; migrations use the direct URL convention.
 - `decimal.js` is the exact application-boundary arithmetic implementation for money, litres, prices, and weighted-average cost primitives.
+- Domain decimal constructors enforce the Blueprint scales without silent rounding: Money `NUMERIC(20,4)`, Litres `NUMERIC(18,3)`, UnitPrice `NUMERIC(20,6)`, WeightedAverageCost `NUMERIC(20,8)`, IntermediateDecimal `NUMERIC(24,8)`, and Ratio `NUMERIC(18,8)`. Explicit `quantize` calls are the only rounding boundary.
 - A0 creates only the `auth`, `app`, and `platform` PostgreSQL namespaces. Business tables, RLS policies, and production credentials remain owned by later workstreams.

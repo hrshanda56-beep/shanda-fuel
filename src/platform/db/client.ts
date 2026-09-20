@@ -1,3 +1,4 @@
+import 'server-only';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
 import { assertDatabaseConfigured } from '@/platform/config/env';

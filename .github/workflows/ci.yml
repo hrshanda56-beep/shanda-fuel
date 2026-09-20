@@ -41,12 +41,15 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Wait for PostgreSQL
+        run: pg_isready --host 127.0.0.1 --port 5432 --username postgres --dbname shanda_fuel_test
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm db:migrate:test
+      - run: pnpm db:check
       - run: pnpm test:unit
       - run: pnpm test:integration
-      - run: pnpm db:check
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e

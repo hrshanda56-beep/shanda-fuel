@@ -16,12 +16,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:unit": "vitest run",
-    "test:integration": "vitest run tests/integration",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
     "db:check": "drizzle-kit check",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:migrate:test": "drizzle-kit migrate"
   },
   "dependencies": {
     "decimal.js": "^10.6.0",
@@ -30,6 +31,7 @@
     "postgres": "^3.4.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "server-only": "^0.0.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {

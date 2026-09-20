@@ -1,6 +1,6 @@
 # Implementation status
 
-Status: **A0 FOUNDATION IMPLEMENTED — PENDING INTEGRATION REVIEW**
+Status: **A0 REMEDIATION IMPLEMENTED — PR #1 OPEN FOR RE-REVIEW**
 
 ## Current integration base
 
@@ -8,7 +8,7 @@ Status: **A0 FOUNDATION IMPLEMENTED — PENDING INTEGRATION REVIEW**
 
 A0 candidate branch: `agent/a0-integration-foundation` in the isolated managed worktree `a0-integration-foundation`. It must enter `main` through review; `main` remains untouched.
 
-This baseline contains specifications and coordination documentation only. No substantial Shanda Fuel application or business logic has been started.
+The A0 baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. PostgreSQL integration now fails closed when unconfigured and passes against a dedicated migrated test database.
 
 ## Phase 0 — Repository & Engineering Foundation
 
@@ -17,6 +17,8 @@ This baseline contains specifications and coordination documentation only. No su
 - [x] Drizzle/PostgreSQL development and migration workflow is established.
 - [x] Environment validation and secret-safe configuration exist.
 - [x] Modular monolith boundaries are implemented.
+
+Remediation validation: the namespace migration was applied successfully to PostgreSQL 16 in a dedicated ephemeral test database; `pnpm test:integration` executed 2 real PostgreSQL assertions against it. Unit discovery is separate and does not include integration tests.
 
 ## Phase 1 — Tenancy, Identity, Authorization & Security
 

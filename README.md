@@ -45,4 +45,6 @@ pnpm build
 
 Database commands use `DATABASE_DIRECT_URL` for direct migration connections where available. Never point local commands at production. The canonical migration history is owned by A0/integration; feature agents propose reviewed migration-ready changes rather than creating competing histories.
 
+`pnpm test:integration` is a fail-closed PostgreSQL gate: it requires `DATABASE_URL`, applies/uses a dedicated test database, and does not silently skip when configuration is absent. `pnpm test:unit` remains PostgreSQL-independent.
+
 Health endpoints are available at `/api/health` (liveness only) and `/api/readiness` (reports database readiness without exposing secrets). Database access is server-only.
