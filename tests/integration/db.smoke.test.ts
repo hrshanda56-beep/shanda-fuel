@@ -33,4 +33,44 @@ describe('PostgreSQL integration harness', () => {
 
     expect(rows.map((row) => row.schema_name)).toEqual(['app', 'auth', 'platform']);
   });
+
+  it('sees the ordered canonical migration history and security objects', async () => {
+    const migrations = await client<{ tag: string }[]>`
+      select hash as tag from drizzle.__drizzle_migrations order by created_at
+    `;
+    expect(migrations).toHaveLength(3);
+
+    const objects = await client<{ schema_name: string; table_name: string }[]>`
+      select table_schema as schema_name, table_name
+      from information_schema.tables
+      where (table_schema, table_name) in (
+        ('auth', 'user'), ('auth', 'session'), ('auth', 'account'), ('auth', 'verification'),
+        ('app', 'tenants'), ('app', 'memberships'), ('platform', 'security_events')
+      )
+      order by table_schema, table_name
+    `;
+    expect(objects).toHaveLength(7);
+
+    const policies = await client<{ policyname: string }[]>`
+      select policyname
+      from pg_policies
+      where schemaname = 'platform' and tablename = 'security_events'
+      order by policyname
+    `;
+    expect(policies.map((row) => row.policyname)).toEqual([
+      'security_events_append',
+      'security_events_context',
+    ]);
+
+    const constraintNames = await client<{ conname: string }[]>`
+      select c.conname
+      from pg_constraint c
+      join pg_namespace n on n.oid = c.connamespace
+      where n.nspname in ('auth', 'app', 'platform')
+    `;
+    expect(constraintNames).toContainEqual({
+      conname: 'temporary_permission_grants_permission_code_fk',
+    });
+    expect(constraintNames.every(({ conname }) => conname.length <= 63)).toBe(true);
+  });
 });

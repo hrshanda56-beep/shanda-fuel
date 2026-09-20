@@ -29,6 +29,7 @@ jobs:
     env:
       APP_ENV: test
       APP_URL: http://127.0.0.1:3000
+      BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
       DATABASE_DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
     steps:
@@ -43,10 +44,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Wait for PostgreSQL
         run: pg_isready --host 127.0.0.1 --port 5432 --username postgres --dbname shanda_fuel_test
+      - name: Bootstrap database roles
+        run: scripts/db/bootstrap-test.sh
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm db:migrate:test
+      - name: Assign migration metadata ownership
+        run: psql "$DATABASE_DIRECT_URL" --set ON_ERROR_STOP=1 --command "ALTER SCHEMA drizzle OWNER TO migration_owner; ALTER TABLE drizzle.__drizzle_migrations OWNER TO migration_owner;"
       - run: pnpm db:check
       - run: pnpm test:unit
       - run: pnpm test:integration

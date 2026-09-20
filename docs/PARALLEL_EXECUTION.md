@@ -2,7 +2,7 @@
 
 ## Integration Base
 
-`A0 candidate based on 12a2fe42d1909a0e1b92ba66ec47d72afa7bab25; remediation pushed to PR #1, pending re-review and merge`
+`origin/main at cd63d48b7a142905722d7c9ec76da053c29fbbb4; A1 security remediation PR #2 is open with CI passing and review pending`
 
 ## A0 implementation candidate
 
@@ -12,6 +12,15 @@
 - Status: Phase 0 foundation remediation implemented and validated; A0 does not merge itself to `main`.
 - `main` remained untouched during implementation.
 - Remediation validation: PostgreSQL 16 migration application and 2-test integration suite passed against a dedicated ephemeral test database; missing `DATABASE_URL` fails the integration gate clearly.
+
+## A1 implementation candidate
+
+- Branch: `agent/a1-platform-security`
+- Worktree: `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`
+- Base: `origin/main` at `cd63d48b7a142905722d7c9ec76da053c29fbbb4`
+- Pull request: [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2)
+- Status: Better Auth server-side actor resolution, trusted tenant authority, canonical `0001`/`0002` migrations, executable role bootstrap, fail-closed context handling, tenant-scoped append-only event tests, and expanded PostgreSQL isolation tests are implemented on the A1 candidate. Fresh PostgreSQL CI verification passes; A0 final review remains pending; A1 does not self-merge.
+- Coordination: A0's approved dependency decision is applied: Better Auth 1.7.5 with Drizzle ORM ^0.45.2 and Drizzle Kit ^0.31.7. `docs/architecture/a1-platform-security-migration.sql` is documentation/reference only; tests use canonical migrations. Pre-tenant identity security events remain a future separate stream and are not nullable rows in `platform.security_events`.
 
 ## Branch and worktree policy
 

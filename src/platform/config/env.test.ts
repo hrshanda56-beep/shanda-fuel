@@ -18,4 +18,25 @@ describe('server environment validation', () => {
   it('rejects malformed URLs', () => {
     expect(() => getServerEnv({ APP_ENV: 'local', APP_URL: 'not-a-url' })).toThrow();
   });
+
+  it('rejects an insecure production origin', () => {
+    expect(() =>
+      getServerEnv({
+        APP_ENV: 'production',
+        APP_URL: 'http://fuel.shandahr.com',
+        DATABASE_URL: 'postgresql://configured',
+        BETTER_AUTH_SECRET: 'a'.repeat(32),
+      }),
+    ).toThrow('HTTPS');
+  });
+
+  it('requires the production authentication secret', () => {
+    expect(() =>
+      getServerEnv({
+        APP_ENV: 'production',
+        APP_URL: 'https://fuel.shandahr.com',
+        DATABASE_URL: 'postgresql://configured',
+      }),
+    ).toThrow();
+  });
 });

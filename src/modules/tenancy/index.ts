@@ -1,2 +1,7 @@
-/** Business tenancy contracts are owned by A1; this is the public module boundary. */
-export {};
+export type {
+  TenantTransactionContext,
+  TenantTransactionInput,
+} from '@/platform/db/tenant-context';
+export { parseTenantTransactionContext } from '@/platform/db';
+export { assertActiveTenantMembership } from './access';
+export type { ActiveMembership, MembershipStatus } from './access';

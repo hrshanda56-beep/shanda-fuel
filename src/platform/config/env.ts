@@ -25,6 +25,20 @@ const envSchema = z
         message: 'Required in production',
       });
     }
+    if (value.APP_ENV === 'production' && new URL(value.APP_URL).protocol !== 'https:') {
+      context.addIssue({
+        code: 'custom',
+        path: ['APP_URL'],
+        message: 'HTTPS is required in production',
+      });
+    }
+    if (value.APP_ENV === 'production' && !value.BETTER_AUTH_SECRET) {
+      context.addIssue({
+        code: 'custom',
+        path: ['BETTER_AUTH_SECRET'],
+        message: 'Required in production',
+      });
+    }
   });
 
 export type ServerEnv = z.infer<typeof envSchema>;
