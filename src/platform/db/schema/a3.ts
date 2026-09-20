@@ -57,6 +57,7 @@ export const pumps = appSchema.table(
   },
   (table) => [
     unique('pumps_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('pumps_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     unique('pumps_tenant_station_number_uidx').on(table.tenantId, table.stationId, table.number),
     index('pumps_tenant_station_idx').on(table.tenantId, table.stationId),
     foreignKey({
@@ -81,6 +82,7 @@ export const nozzles = appSchema.table(
   },
   (table) => [
     unique('nozzles_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('nozzles_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     unique('nozzles_tenant_pump_number_uidx').on(table.tenantId, table.pumpId, table.number),
     index('nozzles_tenant_station_idx').on(table.tenantId, table.stationId),
     foreignKey({

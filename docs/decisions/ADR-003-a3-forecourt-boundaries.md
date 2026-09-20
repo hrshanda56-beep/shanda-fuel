@@ -10,7 +10,7 @@ Keep `Meter` and `MeterInstallation` separate, make `MeterSegment` the immutable
 
 Reconciliation declarations classify meter-derived expected sales. Submission creates a revision flow ending in approval, posting, and locking; variance is `accounted - expected` and never becomes employee debt or revenue automatically. A3 publishes typed meter-sealed and reconciliation approval/posting contracts, leaving inventory consumption and financial settlement to A4/A5.
 
-The migration applies tenant-aware composite foreign keys, forced RLS, effective-range exclusion constraints, exact numeric columns, and nozzle exclusivity. The command seam accepts the central idempotency, audit, and outbox ports rather than creating parallel implementations.
+The migration `0003_a3_forecourt_reconciliation.sql` applies tenant-aware composite foreign keys, forced RLS, effective-range exclusion constraints, exact numeric columns, and nozzle exclusivity. The command seam accepts the central idempotency, audit, and outbox ports rather than creating parallel implementations.
 
 ## Consequences
 

@@ -1,5 +1,5 @@
 {
-  "id": "aa34e2d9-67b3-4447-9248-ceb392add582",
+  "id": "1a83f483-19ad-4fc4-a238-77bec5d27ecc",
   "prevId": "7f7a38e8-d5b2-4329-97fd-db822ec2191b",
   "version": "7",
   "dialect": "postgresql",
@@ -2325,6 +2325,15 @@
             "id"
           ]
         },
+        "nozzles_tenant_station_id_uidx": {
+          "name": "nozzles_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ]
+        },
         "nozzles_tenant_pump_number_uidx": {
           "name": "nozzles_tenant_pump_number_uidx",
           "nullsNotDistinct": false,
@@ -2712,6 +2721,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "pumps_tenant_station_id_uidx": {
+          "name": "pumps_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         },

@@ -85,6 +85,7 @@ CREATE TABLE "app"."nozzles" (
 	"status" text DEFAULT 'ACTIVE' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "nozzles_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "nozzles_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id"),
 	CONSTRAINT "nozzles_tenant_pump_number_uidx" UNIQUE("tenant_id","pump_id","number")
 );
 --> statement-breakpoint
@@ -122,6 +123,7 @@ CREATE TABLE "app"."pumps" (
 	"status" text DEFAULT 'ACTIVE' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "pumps_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "pumps_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id"),
 	CONSTRAINT "pumps_tenant_station_number_uidx" UNIQUE("tenant_id","station_id","number")
 );
 --> statement-breakpoint
