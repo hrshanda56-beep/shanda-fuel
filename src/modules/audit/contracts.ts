@@ -7,13 +7,11 @@ import {
 import { sql } from 'drizzle-orm';
 import { getDatabase, type Database } from '../../platform/db';
 
-export type SecurityEventScope = 'IDENTITY' | 'TENANT' | 'PLATFORM';
 export type AuditActorType = 'HUMAN' | 'SYSTEM' | 'SUPPORT';
 
 export type AuditEventDraft = {
   eventId: string;
-  eventScope: SecurityEventScope;
-  tenantId?: string;
+  tenantId: string;
   membershipId?: string;
   actorId?: string;
   actorType: AuditActorType;
@@ -29,27 +27,13 @@ export type AuditEventDraft = {
   metadata?: Record<string, unknown>;
 };
 
-function assertEventScope(draft: AuditEventDraft): void {
-  if (draft.eventScope === 'TENANT' && !draft.tenantId) {
-    throw new Error('Tenant security events require tenantId');
-  }
-  if (draft.eventScope !== 'TENANT' && draft.tenantId) {
-    throw new Error('Identity and platform security events cannot carry tenantId');
-  }
-  if (draft.membershipId && draft.eventScope !== 'TENANT') {
-    throw new Error('Membership security events require tenant scope');
-  }
-}
-
 export function signAuditEvent(
   draft: AuditEventDraft,
   key: { keyId: string; secret: string },
 ): SignedSecurityEvent {
-  assertEventScope(draft);
   return signSecurityEvent(
     {
       eventId: draft.eventId,
-      eventScope: draft.eventScope,
       tenantId: draft.tenantId,
       membershipId: draft.membershipId,
       actorId: draft.actorId,
@@ -80,10 +64,10 @@ export async function appendSecurityEvent(
   const signed = signAuditEvent(draft, key);
   await executor.execute(sql`
     insert into platform.security_events (
-      id, event_scope, tenant_id, membership_id, actor_id, event_code,
+      id, tenant_id, membership_id, actor_id, event_code,
       request_id, occurred_at, details, key_id, algorithm, signature
     ) values (
-      ${signed.eventId}, ${signed.eventScope}, ${signed.tenantId ?? null},
+      ${signed.eventId}, ${signed.tenantId},
       ${signed.membershipId ?? null}, ${signed.actorId ?? null}, ${signed.eventCode},
       ${signed.requestId}, ${signed.occurredAt}, ${JSON.stringify(signed.details)}::jsonb,
       ${signed.keyId}, ${signed.algorithm}, ${signed.signature}

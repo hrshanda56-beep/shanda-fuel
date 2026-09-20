@@ -274,8 +274,7 @@ for each row execute function app.revoke_membership_grants_on_status_change();
 
 create table if not exists platform.security_events (
   id uuid primary key,
-  event_scope text not null check (event_scope in ('IDENTITY', 'TENANT', 'PLATFORM')),
-  tenant_id uuid references app.tenants(id),
+  tenant_id uuid not null references app.tenants(id),
   membership_id uuid,
   actor_id uuid,
   event_code text not null,
@@ -285,13 +284,9 @@ create table if not exists platform.security_events (
   key_id text not null,
   algorithm text not null check (algorithm = 'hmac-sha256'),
   signature text not null,
-  unique (event_scope, tenant_id, id),
+  unique (tenant_id, id),
   foreign key (tenant_id, membership_id)
-    references app.memberships (tenant_id, id),
-  check (
-    (event_scope = 'TENANT' and tenant_id is not null)
-    or (event_scope in ('IDENTITY', 'PLATFORM') and tenant_id is null)
-  )
+    references app.memberships (tenant_id, id)
 );
 
 create or replace function app.current_tenant_id() returns uuid
@@ -400,13 +395,15 @@ alter table platform.security_events force row level security;
 drop policy if exists security_events_context on platform.security_events;
 create policy security_events_context on platform.security_events
   using (
-    (event_scope = 'TENANT' and tenant_id = app.current_tenant_id() and app.has_active_membership())
-    or false
+    tenant_id = app.current_tenant_id() and app.has_active_membership()
   )
   with check (
-    (event_scope = 'TENANT' and tenant_id = app.current_tenant_id() and app.has_active_membership())
-    or (event_scope in ('IDENTITY', 'PLATFORM') and tenant_id is null)
+    tenant_id = app.current_tenant_id() and app.has_active_membership()
   );
+
+-- This stream is intentionally tenant-scoped. Login, MFA, recovery, and other
+-- pre-tenant identity events require a separately designed global stream; they
+-- must not bypass this table's tenant RLS through a nullable tenant_id.
 
 -- The migration owner creates app_runtime, job_runtime and diagnostics_readonly
 -- in each environment. They are not schema owners and must not receive

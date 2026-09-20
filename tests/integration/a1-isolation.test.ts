@@ -230,10 +230,10 @@ describe('A1 PostgreSQL tenant isolation', () => {
       const eventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
       await client`
         insert into platform.security_events (
-          id, event_scope, tenant_id, membership_id, actor_id, event_code,
+          id, tenant_id, membership_id, actor_id, event_code,
           request_id, details, key_id, algorithm, signature
         ) values (
-          ${eventId}, 'TENANT', ${tenantA}, ${membershipA}, ${actorA},
+          ${eventId}, ${tenantA}, ${membershipA}, ${actorA},
           'SECURITY_TEST', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
           '{}'::jsonb, 'test-key', 'hmac-sha256', 'test-signature'
         )
@@ -249,24 +249,22 @@ describe('A1 PostgreSQL tenant isolation', () => {
     }
   });
 
-  it('allows identity-scoped pre-tenant events without exposing them to tenant reads', async () => {
+  it('rejects pre-tenant events in the tenant-scoped security event stream', async () => {
     await client.unsafe(`set role ${runtimeRole}`);
     try {
       await client.unsafe('reset app.tenant_id');
       await client.unsafe('reset app.membership_id');
       await client.unsafe(`select set_config('app.actor_id', '${actorA}', false)`);
-      await client`
+      await expect(client`
         insert into platform.security_events (
-          id, event_scope, actor_id, event_code, request_id,
+          id, tenant_id, actor_id, event_code, request_id,
           details, key_id, algorithm, signature
         ) values (
-          'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'IDENTITY', ${actorA},
+          'cccccccc-cccc-4ccc-8ccc-cccccccccccc', null, ${actorA},
           'LOGIN', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
           '{}'::jsonb, 'test-key', 'hmac-sha256', 'test-signature'
         )
-      `;
-      const visible = await client`select id from platform.security_events`;
-      expect(visible).toEqual([]);
+      `).rejects.toThrow();
     } finally {
       await client.unsafe('reset role');
       await client.unsafe('reset app.actor_id');

@@ -8,7 +8,7 @@ Status: **A1 SECURITY REMEDIATION CANDIDATE — PR #2 OPEN, CI PASS, A0 MIGRATIO
 
 A1 candidate branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2). It must enter `main` through review; `main` remains untouched. The candidate includes a migration-ready proposal that A0 must fold into the canonical migration sequence.
 
-The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. The A1 remediation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, explicit security-event scope, and PostgreSQL negative tests. Static, unit, build, and expanded PostgreSQL validation pass in CI. Canonical migration integration and review remain pending.
+The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. The A1 remediation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, tenant-scoped append-only security events, and PostgreSQL negative tests. A0's approved dependency compatibility decision is applied with Better Auth 1.7.5, Drizzle ORM ^0.45.2, and Drizzle Kit ^0.31.7. Static, unit, build, and expanded PostgreSQL validation pass in CI. Canonical migration integration and review remain pending.
 
 ## Phase 0 — Repository & Engineering Foundation
 
