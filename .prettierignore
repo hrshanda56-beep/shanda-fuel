@@ -1,0 +1,13 @@
+.next
+coverage
+dist
+node_modules
+out
+playwright-report
+test-results
+pnpm-lock.yaml
+next-env.d.ts
+docs/reference
+docs/onboarding/Shanda_Fuel_Discovery_Setup_Forms_Pack.xlsx
+docs/
+src/platform/db/migrations/meta/

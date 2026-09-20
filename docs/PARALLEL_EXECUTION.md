@@ -2,7 +2,16 @@
 
 ## Integration Base
 
-`NOT YET ESTABLISHED — awaiting A0 baseline`
+`A0 candidate based on 12a2fe42d1909a0e1b92ba66ec47d72afa7bab25; remediation pushed to PR #1, pending re-review and merge`
+
+## A0 implementation candidate
+
+- Branch: `agent/a0-integration-foundation`
+- Worktree: isolated managed worktree `a0-integration-foundation`
+- Base: `origin/main` at `12a2fe42d1909a0e1b92ba66ec47d72afa7bab25`
+- Status: Phase 0 foundation remediation implemented and validated; A0 does not merge itself to `main`.
+- `main` remained untouched during implementation.
+- Remediation validation: PostgreSQL 16 migration application and 2-test integration suite passed against a dedicated ephemeral test database; missing `DATABASE_URL` fails the integration gate clearly.
 
 ## Branch and worktree policy
 
