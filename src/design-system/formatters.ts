@@ -41,8 +41,28 @@ export function formatDate(value: DateInput, locale = 'en-GB'): string {
 
 /** Business dates are date-only values and must not shift with the browser timezone. */
 export function formatBusinessDate(value: string, locale = 'en-GB'): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return '—';
-  return formatDate(`${value}T12:00:00Z`, locale);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return '—';
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return '—';
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
 }
 
 export function formatStatusLabel(value: string): string {

@@ -32,6 +32,21 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   ).toHaveText(['Home', 'Tasks', 'Work', 'More']);
 });
 
+test('shared button defaults and modal triggers do not submit forms accidentally', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  await expect(page.getByRole('button', { name: 'Open accessible dialog' })).toHaveAttribute(
+    'type',
+    'button',
+  );
+  await expect(page.getByRole('button', { name: 'Open mobile sheet' })).toHaveAttribute(
+    'type',
+    'button',
+  );
+});
+
 test('accessible dialog traps focus, closes with Escape, and restores focus', async ({ page }) => {
   await page.goto('/');
   const trigger = page.getByRole('button', { name: 'Open accessible dialog' });

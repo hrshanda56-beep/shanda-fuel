@@ -29,11 +29,13 @@ export function Button({
   loading = false,
   disabled,
   children,
+  type = 'button',
   ...props
 }: ButtonProps) {
   return (
     <button
       className={`button button-${variant} ${loading ? 'button-loading' : ''} ${className}`.trim()}
+      type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       {...props}

@@ -21,9 +21,31 @@ describe('presentation formatters', () => {
     expect(formatDecimal('not-a-number')).toBe('—');
   });
 
-  it('keeps date-only business dates stable and labels statuses', () => {
-    expect(formatBusinessDate('2026-09-20', 'en-GB')).toBe('20 Sept 2026');
+  it('keeps date-only business dates stable across viewer timezones', () => {
+    const originalTimezone = process.env.TZ;
+
+    try {
+      for (const timezone of [
+        'UTC',
+        'Africa/Harare',
+        'America/Los_Angeles',
+        'Pacific/Kiritimati',
+      ]) {
+        process.env.TZ = timezone;
+        expect(formatBusinessDate('2026-09-20', 'en-GB')).toBe('20 Sept 2026');
+      }
+    } finally {
+      if (originalTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTimezone;
+    }
+  });
+
+  it('rejects malformed and impossible business dates', () => {
     expect(formatBusinessDate('20/09/2026')).toBe('—');
+    expect(formatBusinessDate('2026-02-30')).toBe('—');
+  });
+
+  it('labels statuses', () => {
     expect(formatStatusLabel('PENDING_APPROVAL')).toBe('Pending Approval');
   });
 });
