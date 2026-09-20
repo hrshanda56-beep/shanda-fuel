@@ -1074,8 +1074,8 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "temporary_permission_grants_permission_code_permission_definitions_code_fk": {
-          "name": "temporary_permission_grants_permission_code_permission_definitions_code_fk",
+        "temporary_permission_grants_permission_code_fk": {
+          "name": "temporary_permission_grants_permission_code_fk",
           "tableFrom": "temporary_permission_grants",
           "tableTo": "permission_definitions",
           "schemaTo": "platform",
