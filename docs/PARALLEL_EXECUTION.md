@@ -2,7 +2,7 @@
 
 ## Integration Base
 
-`origin/main at cd63d48b7a142905722d7c9ec76da053c29fbbb4; A1 security remediation PR #2 is open with validation pending and review pending`
+`origin/main at cd63d48b7a142905722d7c9ec76da053c29fbbb4; A1 security remediation PR #2 is open with CI passing and review pending`
 
 ## A0 implementation candidate
 

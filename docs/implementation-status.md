@@ -1,6 +1,6 @@
 # Implementation status
 
-Status: **A1 SECURITY REMEDIATION CANDIDATE — PR #2 OPEN, VALIDATION PENDING, A0 MIGRATION INTEGRATION PENDING**
+Status: **A1 SECURITY REMEDIATION CANDIDATE — PR #2 OPEN, CI PASS, A0 MIGRATION INTEGRATION PENDING**
 
 ## Current integration base
 
@@ -8,7 +8,7 @@ Status: **A1 SECURITY REMEDIATION CANDIDATE — PR #2 OPEN, VALIDATION PENDING, 
 
 A1 candidate branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2). It must enter `main` through review; `main` remains untouched. The candidate includes a migration-ready proposal that A0 must fold into the canonical migration sequence.
 
-The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. The A1 remediation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, explicit security-event scope, and PostgreSQL negative tests. Static/unit/build validation is local; expanded PostgreSQL validation is pending CI. Canonical migration integration and review remain pending.
+The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. The A1 remediation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, explicit security-event scope, and PostgreSQL negative tests. Static, unit, build, and expanded PostgreSQL validation pass in CI. Canonical migration integration and review remain pending.
 
 ## Phase 0 — Repository & Engineering Foundation
 
