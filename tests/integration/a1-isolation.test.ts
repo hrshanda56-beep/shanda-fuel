@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
+import { makeSignature } from 'better-auth/crypto';
 import { resolveAuthenticatedActor } from '../../src/modules/identity/authenticated-actor';
 import { resolveTenantExecutionContext } from '../../src/modules/tenancy/authority';
 import { getAuth } from '../../src/platform/auth/server';
@@ -94,7 +95,7 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
       )
       order by table_schema
     `;
-    expect(columns.map((row) => row.data_type)).toEqual(['USER-DEFINED', 'USER-DEFINED']);
+    expect(columns.map((row) => row.data_type)).toEqual(['uuid', 'uuid']);
     expect(columns.map((row) => row.column_name)).toEqual(['identity_id', 'id']);
     const types = await client<
       { table_schema: string; table_name: string; column_name: string; udt_name: string }[]
@@ -380,6 +381,8 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
     process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+    const authSecret = process.env.BETTER_AUTH_SECRET;
+    if (!authSecret) throw new Error('BETTER_AUTH_SECRET is required for this integration test');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
     const expiredAt = new Date(Date.now() - 60 * 1000);
     await client`
@@ -430,14 +433,16 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
     expect(Number(counts[0]?.user_count)).toBeGreaterThanOrEqual(3);
 
     const auth = getAuth();
+    const signedSessionToken = `${authSessionToken}.${await makeSignature(authSessionToken, authSecret)}`;
+    const signedExpiredSessionToken = `${expiredSessionToken}.${await makeSignature(expiredSessionToken, authSecret)}`;
     const request = new Request('http://127.0.0.1:3000/api/auth/get-session', {
-      headers: { cookie: `shanda-fuel.session_token=${authSessionToken}` },
+      headers: { cookie: `shanda-fuel.session_token=${signedSessionToken}` },
     });
     const loaded = await auth.api.getSession({ headers: request.headers });
     expect(loaded?.user.id).toBe(actorA);
     expect(loaded?.session.userId).toBe(actorA);
     const expired = await auth.api.getSession({
-      headers: new Headers({ cookie: `shanda-fuel.session_token=${expiredSessionToken}` }),
+      headers: new Headers({ cookie: `shanda-fuel.session_token=${signedExpiredSessionToken}` }),
     });
     expect(expired).toBeNull();
 
