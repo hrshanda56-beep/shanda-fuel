@@ -5,4 +5,5 @@
  * add schema files under their owned module/platform boundaries; A0 integrates
  * their reviewed migration sequence into this directory.
  */
-export {};
+export * from './auth';
+export * from './a1';

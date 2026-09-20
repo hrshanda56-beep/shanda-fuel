@@ -3,6 +3,7 @@ import { betterAuth } from 'better-auth/minimal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { getServerEnv } from '../config/env';
 import { getDatabase } from '../db';
+import { authTables } from '../db/schema';
 import { AppError } from '../errors';
 
 export const AUTH_SECURITY_POLICY = {
@@ -26,6 +27,7 @@ export function getAuth() {
   return betterAuth({
     database: drizzleAdapter(getDatabase(), {
       provider: 'pg',
+      schema: authTables,
       schemaName: 'auth',
       transaction: true,
     }),
@@ -39,6 +41,14 @@ export function getAuth() {
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
+      additionalFields: {
+        revokedAt: { type: 'date', required: false, input: false },
+        strongAuthenticatedAt: { type: 'date', required: false, input: false },
+        strongAuthenticationExpiresAt: { type: 'date', required: false, input: false },
+        strongAuthenticationVerified: { type: 'boolean', required: false, input: false },
+        stepUpLevel: { type: 'number', required: false, input: false },
+        stepUpExpiresAt: { type: 'date', required: false, input: false },
+      },
     },
     advanced: {
       cookiePrefix: 'shanda-fuel',

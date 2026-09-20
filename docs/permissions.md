@@ -6,7 +6,7 @@ Permission codes, not role-name checks, are authoritative. Role templates only e
 
 High-risk permission codes additionally require a current strong-authenticated session with a verified server-side assertion; timestamps alone never satisfy the gate. Step-up authentication is enforced by the session contract for commands that require it. Temporary grants are time-bounded, revocable, and do not widen tenant scope.
 
-The migration-ready seed tables and RLS relationships are in [`architecture/a1-platform-security-migration.sql`](architecture/a1-platform-security-migration.sql); A0 owns canonical migration ordering and integration.
+The canonical seed tables and RLS relationships are in `src/platform/db/migrations/0002_a1_tenant_authorization_security.sql`. The architecture SQL at [`architecture/a1-platform-security-migration.sql`](architecture/a1-platform-security-migration.sql) is reference-only and is never executed by tests or deployment.
 
 Owner is a scoped role template, not an authorization bypass. Named role-mutation commands reject self-elevation, require an explicit ownership-transfer confirmation for granting OWNER, and preserve the last active owner.
 

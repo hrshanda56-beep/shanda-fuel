@@ -19,8 +19,8 @@
 - Worktree: `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`
 - Base: `origin/main` at `cd63d48b7a142905722d7c9ec76da053c29fbbb4`
 - Pull request: [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2)
-- Status: Better Auth server-side actor resolution, trusted tenant authority, fail-closed context handling, migration-ready RLS/role/audit proposal, tenant-scoped append-only event tests, and expanded PostgreSQL isolation tests are implemented as a remediation candidate. A0 canonical migration integration, production DB role bootstrap, and review remain pending; A1 does not self-merge.
-- Coordination: A0's approved dependency decision is applied: Better Auth 1.7.5 with Drizzle ORM ^0.45.2 and Drizzle Kit ^0.31.7. The SQL in `docs/architecture/a1-platform-security-migration.sql` is intentionally noncanonical and must be sequenced by A0. Pre-tenant identity security events remain a future separate stream and are not nullable rows in `platform.security_events`.
+- Status: Better Auth server-side actor resolution, trusted tenant authority, canonical `0001`/`0002` migrations, executable role bootstrap, fail-closed context handling, tenant-scoped append-only event tests, and expanded PostgreSQL isolation tests are implemented on the A1 candidate. Fresh PostgreSQL CI verification and A0 final review remain pending; A1 does not self-merge.
+- Coordination: A0's approved dependency decision is applied: Better Auth 1.7.5 with Drizzle ORM ^0.45.2 and Drizzle Kit ^0.31.7. `docs/architecture/a1-platform-security-migration.sql` is documentation/reference only; tests use canonical migrations. Pre-tenant identity security events remain a future separate stream and are not nullable rows in `platform.security_events`.
 
 ## Branch and worktree policy
 
