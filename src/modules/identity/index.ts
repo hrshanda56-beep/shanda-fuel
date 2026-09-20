@@ -1,2 +1,4 @@
-/** Identity integration is owned by A1; this is the public module boundary. */
-export {};
+export { assertSessionActive, assertStepUp, assertStrongAuthentication } from '@/platform/security';
+export type { SessionRecord } from '@/platform/security';
+export { requireAuthenticatedActor } from './authenticated-actor';
+export type { AuthenticatedActorContext, AuthenticatedActorResolver } from './authenticated-actor';

@@ -1,2 +1,2 @@
-/** Audit workflows are owned by later workstreams; this is the public module boundary. */
-export {};
+export { signSecurityEvent, verifySecurityEvent } from '@/platform/security';
+export type { SignedSecurityEvent } from '@/platform/security';
