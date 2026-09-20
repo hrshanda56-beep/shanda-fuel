@@ -40,8 +40,16 @@ const betterAuthSessionSchema = z.object({
     revokedAt: z.coerce.date().nullable().optional(),
     strongAuthenticatedAt: z.coerce.date().nullable().optional(),
     strongAuthenticationExpiresAt: z.coerce.date().nullable().optional(),
-    strongAuthenticationVerified: z.boolean().optional(),
-    stepUpLevel: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+    strongAuthenticationVerified: z
+      .boolean()
+      .nullable()
+      .optional()
+      .transform((value) => value ?? undefined),
+    stepUpLevel: z
+      .union([z.literal(0), z.literal(1), z.literal(2)])
+      .nullable()
+      .optional()
+      .transform((value) => value ?? undefined),
     stepUpExpiresAt: z.coerce.date().nullable().optional(),
   }),
 });
