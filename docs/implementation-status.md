@@ -1,14 +1,28 @@
 # Implementation status
 
-Status: **A1 CANONICAL MIGRATION / DB-ROLE REMEDIATION — PR #2 OPEN, CI PASSING**
+Status: **A1 SECURITY FOUNDATION MERGED — A2 UI FOUNDATION IN FINAL INTEGRATION**
 
 ## Current integration base
 
-`cd63d48b7a142905722d7c9ec76da053c29fbbb4` (`origin/main`, required A1 integration baseline)
+`7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb` (`origin/main`, approved A1 integration baseline)
 
-A1 candidate branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2). It must enter `main` through review; `main` remains untouched. Canonical migrations `0001` and `0002` are present and verified; the architecture SQL proposal remains reference-only. A0 integration verification passed, and PR #2 remains pending final independent security review and merge.
+A1 branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2), approved and merged into `main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`. Canonical migrations `0001` and `0002` are present and verified; the architecture SQL proposal remains reference-only. A0 integration verification and the fresh PostgreSQL CI path passed.
 
-The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. The A1 remediation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, tenant-scoped append-only security events, canonical migrations `0001`/`0002`, executable role bootstrap, and real PostgreSQL negative tests. A0's approved dependency compatibility decision is applied with Better Auth 1.7.5, Drizzle ORM ^0.45.2, and Drizzle Kit ^0.31.7. Local static/unit/schema gates pass, and PR #2 CI passes the fresh PostgreSQL migration, role bootstrap, Better Auth, RLS, and privilege validation path.
+The approved A1 foundation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, tenant-scoped append-only security events, canonical migrations `0001`/`0002`, executable role bootstrap, and real PostgreSQL negative tests. A0's approved dependency compatibility decision is applied with Better Auth 1.7.5, Drizzle ORM ^0.45.2, and Drizzle Kit ^0.31.7. The merged foundation retains the fresh PostgreSQL migration, role bootstrap, Better Auth, RLS, and privilege validation path.
+
+## A2 — UI foundation
+
+Workstream branch: `agent/a2-ui-foundation` in `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a2`, based on required integration baseline `cd63d48b7a142905722d7c9ec76da053c29fbbb4`, now integrating approved `origin/main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`.
+
+- [x] Semantic light/dark/system tokens, typography, spacing, focus, reduced-motion, and tabular-number conventions.
+- [x] Responsive AppShell with context surface, breadcrumbs, desktop sidebar, and Home / Tasks / Work / More mobile navigation seam.
+- [x] Permission-projection navigation filter that does not authorize commands in the browser.
+- [x] Reusable controls, forms, numeric/date presentation formatters, status badges, responsive table/card patterns, evidence, risk-confirmation, and truthful loading/empty/error/conflict/offline/permission/not-found states.
+- [x] Synthetic representative dashboard/form/state surfaces with unit, Playwright, and axe coverage.
+
+A2 remains presentation-only. A1 supplies live actor/permission contracts; A0/integration owns shared tooling and platform wiring. No database, persistence, financial calculation, business command, authentication, or RLS work is included here.
+
+Remediation for PR #3: mobile operating context now includes an accessible optional shift slot; dialog/bottom-sheet primitives manage focus, Escape, inert background, and restoration; mobile navigation uses valid list semantics; required controls use native/ARIA required state; AppShell consumes typed `NavigationProjection` keys rather than raw permission identifiers; BusinessDate formatting is timezone-invariant; theme-sensitive values use semantic tokens; and shared Buttons default safely to `type="button"`.
 
 ## Phase 0 — Repository & Engineering Foundation
 

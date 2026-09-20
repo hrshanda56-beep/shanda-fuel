@@ -2,7 +2,7 @@
 
 ## Integration Base
 
-`origin/main at cd63d48b7a142905722d7c9ec76da053c29fbbb4; A1 security remediation PR #2 is open with CI passing and review pending`
+`origin/main at 7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb; A1 security foundation merged; A2 PR #3 is undergoing final integration`
 
 ## A0 implementation candidate
 
@@ -13,14 +13,24 @@
 - `main` remained untouched during implementation.
 - Remediation validation: PostgreSQL 16 migration application and 2-test integration suite passed against a dedicated ephemeral test database; missing `DATABASE_URL` fails the integration gate clearly.
 
-## A1 implementation candidate
+## A1 platform/security implementation
 
 - Branch: `agent/a1-platform-security`
 - Worktree: `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`
-- Base: `origin/main` at `cd63d48b7a142905722d7c9ec76da053c29fbbb4`
 - Pull request: [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2)
-- Status: Better Auth server-side actor resolution, trusted tenant authority, canonical `0001`/`0002` migrations, executable role bootstrap, fail-closed context handling, tenant-scoped append-only event tests, and expanded PostgreSQL isolation tests are implemented on the A1 candidate. Fresh PostgreSQL CI verification passes; A0 final review remains pending; A1 does not self-merge.
-- Coordination: A0's approved dependency decision is applied: Better Auth 1.7.5 with Drizzle ORM ^0.45.2 and Drizzle Kit ^0.31.7. `docs/architecture/a1-platform-security-migration.sql` is documentation/reference only; tests use canonical migrations. Pre-tenant identity security events remain a future separate stream and are not nullable rows in `platform.security_events`.
+- Status: approved and merged into `main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`; Better Auth actor resolution, trusted tenant authority, canonical `0001`/`0002` migrations, executable role bootstrap, fail-closed context handling, tenant-scoped append-only event tests, and PostgreSQL isolation tests are now part of the integration baseline.
+- Coordination: Better Auth 1.7.5 with Drizzle ORM ^0.45.2 and Drizzle Kit ^0.31.7. `docs/architecture/a1-platform-security-migration.sql` remains documentation/reference only; canonical migrations are authoritative. Pre-tenant identity security events remain a future separate stream.
+
+## A2 UI foundation implementation candidate
+
+- Branch: `agent/a2-ui-foundation`
+- Worktree: `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a2`
+- Base: required integration baseline `cd63d48b7a142905722d7c9ec76da053c29fbbb4`
+- Scope: semantic design tokens/themes, responsive shell, permission-aware navigation seam, reusable presentation primitives, responsive tables/cards, truthful states, accessibility conventions, and synthetic demos/tests.
+- Status: implementation complete in the isolated worktree; requires A2 review, integration review, and merge through `main`. A2 does not merge itself.
+- Dependencies/assumptions: A2 consumes a serializable, already-authorized permission projection and leaves actor, tenant, authorization, database, and platform contracts to A1/A0.
+- PR #3 remediation: mobile operating context, accessible modal focus behavior, valid mobile navigation list semantics, required-field semantics, typed `NavigationProjection`, timezone-invariant BusinessDate formatting, semantic theme tokens, and safe Button defaults are covered by regression tests.
+- Status: independently approved; merged A1 foundation is now integrated locally for final combined validation. A2 does not merge itself to `main`.
 
 ## Branch and worktree policy
 
