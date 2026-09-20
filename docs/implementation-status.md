@@ -1,6 +1,6 @@
 # Implementation status
 
-Status: **A1 CANONICAL MIGRATION / DB-ROLE REMEDIATION — PR #2 OPEN, CI PENDING**
+Status: **A1 CANONICAL MIGRATION / DB-ROLE REMEDIATION — PR #2 OPEN, CI PASSING**
 
 ## Current integration base
 
@@ -8,7 +8,7 @@ Status: **A1 CANONICAL MIGRATION / DB-ROLE REMEDIATION — PR #2 OPEN, CI PENDIN
 
 A1 candidate branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2). It must enter `main` through review; `main` remains untouched. The candidate includes a migration-ready proposal that A0 must fold into the canonical migration sequence.
 
-The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. The A1 remediation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, tenant-scoped append-only security events, canonical migrations `0001`/`0002`, executable role bootstrap, and real PostgreSQL negative tests. A0's approved dependency compatibility decision is applied with Better Auth 1.7.5, Drizzle ORM ^0.45.2, and Drizzle Kit ^0.31.7. Local static/unit/schema gates pass; fresh PostgreSQL migration and role validation are pending CI for this revision.
+The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. The A1 remediation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, tenant-scoped append-only security events, canonical migrations `0001`/`0002`, executable role bootstrap, and real PostgreSQL negative tests. A0's approved dependency compatibility decision is applied with Better Auth 1.7.5, Drizzle ORM ^0.45.2, and Drizzle Kit ^0.31.7. Local static/unit/schema gates pass, and PR #2 CI passes the fresh PostgreSQL migration, role bootstrap, Better Auth, RLS, and privilege validation path.
 
 ## Phase 0 — Repository & Engineering Foundation
 
@@ -22,10 +22,10 @@ Remediation validation: the namespace migration was applied successfully to Post
 
 ## Phase 1 — Tenancy, Identity, Authorization & Security
 
-- [ ] Authentication integration (canonical Better Auth schema and adapter smoke path are supplied; CI verification remains pending).
-- [ ] Tenant, legal entity, station, membership, role, permission, and scope foundation (canonical `0002` migration supplied; CI verification remains pending).
-- [ ] Tenant context, RLS, runtime role separation, audit/security foundation (canonical RLS/grants and bootstrap supplied; CI verification remains pending).
-- [ ] Automated tenant-isolation tests (real PostgreSQL CRUD, missing-context, composite-FK, role ownership, and privilege-negative coverage supplied; CI verification remains pending).
+- [x] Authentication integration (canonical Better Auth schema, adapter persistence, session expiration, and actor-resolution path verified in CI).
+- [x] Tenant, legal entity, station, membership, role, permission, and scope foundation (canonical `0002` migration and UUID membership identity compatibility verified in CI).
+- [x] Tenant context, RLS, runtime role separation, audit/security foundation (canonical RLS/grants, append-only event privileges, and bootstrap verified in CI).
+- [x] Automated tenant-isolation tests (real PostgreSQL CRUD, missing-context, composite-FK, role ownership, and privilege-negative coverage verified in CI).
 
 ## Phase 2 — Core Forecourt Vertical Slice
 
