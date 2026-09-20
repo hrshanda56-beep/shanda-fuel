@@ -1,10 +1,11 @@
 import 'server-only';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
-import { assertDatabaseConfigured } from '@/platform/config/env';
-import { AppError } from '@/platform/errors';
+import { assertDatabaseConfigured } from '../config/env';
+import { AppError } from '../errors';
+import * as schema from './schema';
 
-export type Database = PostgresJsDatabase;
+export type Database = PostgresJsDatabase<typeof schema>;
 
 let pooledClient: Sql | undefined;
 let pooledDatabase: Database | undefined;
@@ -14,7 +15,7 @@ export function getDatabase(): Database {
 
   const url = assertDatabaseConfigured();
   pooledClient = postgres(url, { max: 10, prepare: false, onnotice: () => undefined });
-  pooledDatabase = drizzle(pooledClient);
+  pooledDatabase = drizzle(pooledClient, { schema });
   return pooledDatabase;
 }
 

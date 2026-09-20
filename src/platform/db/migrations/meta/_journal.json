@@ -8,6 +8,20 @@
       "when": 1789886946460,
       "tag": "0000_platform_namespaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789910491026,
+      "tag": "0001_a1_auth_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789910593531,
+      "tag": "0002_a1_tenant_authorization_security",
+      "breakpoints": true
     }
   ]
 }

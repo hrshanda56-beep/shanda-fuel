@@ -1,18 +1,18 @@
 # Implementation status
 
-Status: **A0 REMEDIATION IMPLEMENTED — PR #1 OPEN FOR RE-REVIEW**
+Status: **A1 SECURITY FOUNDATION MERGED — A2 UI FOUNDATION IN FINAL INTEGRATION**
 
 ## Current integration base
 
-`12a2fe42d1909a0e1b92ba66ec47d72afa7bab25` (official PRE-A0 baseline)
+`7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb` (`origin/main`, approved A1 integration baseline)
 
-A0 candidate branch: `agent/a0-integration-foundation` in the isolated managed worktree `a0-integration-foundation`. It must enter `main` through review; `main` remains untouched.
+A1 branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2), approved and merged into `main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`. Canonical migrations `0001` and `0002` are present and verified; the architecture SQL proposal remains reference-only. A0 integration verification and the fresh PostgreSQL CI path passed.
 
-The A0 baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. PostgreSQL integration now fails closed when unconfigured and passes against a dedicated migrated test database.
+The approved A1 foundation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, tenant-scoped append-only security events, canonical migrations `0001`/`0002`, executable role bootstrap, and real PostgreSQL negative tests. A0's approved dependency compatibility decision is applied with Better Auth 1.7.5, Drizzle ORM ^0.45.2, and Drizzle Kit ^0.31.7. The merged foundation retains the fresh PostgreSQL migration, role bootstrap, Better Auth, RLS, and privilege validation path.
 
 ## A2 — UI foundation
 
-Workstream branch: `agent/a2-ui-foundation` in `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a2`, based on required integration baseline `cd63d48b7a142905722d7c9ec76da053c29fbbb4`.
+Workstream branch: `agent/a2-ui-foundation` in `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a2`, based on required integration baseline `cd63d48b7a142905722d7c9ec76da053c29fbbb4`, now integrating approved `origin/main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`.
 
 - [x] Semantic light/dark/system tokens, typography, spacing, focus, reduced-motion, and tabular-number conventions.
 - [x] Responsive AppShell with context surface, breadcrumbs, desktop sidebar, and Home / Tasks / Work / More mobile navigation seam.
@@ -22,7 +22,7 @@ Workstream branch: `agent/a2-ui-foundation` in `/Users/wolftech/1TheStudio/1The 
 
 A2 remains presentation-only. A1 supplies live actor/permission contracts; A0/integration owns shared tooling and platform wiring. No database, persistence, financial calculation, business command, authentication, or RLS work is included here.
 
-Remediation for PR #3: mobile operating context now includes an accessible optional shift slot; dialog/bottom-sheet primitives manage focus, Escape, inert background, and restoration; mobile navigation uses valid list semantics; required controls use native/ARIA required state; and AppShell consumes typed `NavigationProjection` keys rather than raw permission identifiers.
+Remediation for PR #3: mobile operating context now includes an accessible optional shift slot; dialog/bottom-sheet primitives manage focus, Escape, inert background, and restoration; mobile navigation uses valid list semantics; required controls use native/ARIA required state; AppShell consumes typed `NavigationProjection` keys rather than raw permission identifiers; BusinessDate formatting is timezone-invariant; theme-sensitive values use semantic tokens; and shared Buttons default safely to `type="button"`.
 
 ## Phase 0 — Repository & Engineering Foundation
 
@@ -36,10 +36,10 @@ Remediation validation: the namespace migration was applied successfully to Post
 
 ## Phase 1 — Tenancy, Identity, Authorization & Security
 
-- [ ] Authentication integration.
-- [ ] Tenant, legal entity, station, membership, role, permission, and scope foundation.
-- [ ] Tenant context, RLS, runtime role separation, audit/security foundation.
-- [ ] Automated tenant-isolation tests.
+- [x] Authentication integration (canonical Better Auth schema, adapter persistence, session expiration, and actor-resolution path verified in CI).
+- [x] Tenant, legal entity, station, membership, role, permission, and scope foundation (canonical `0002` migration and UUID membership identity compatibility verified in CI).
+- [x] Tenant context, RLS, runtime role separation, audit/security foundation (canonical RLS/grants, append-only event privileges, and bootstrap verified in CI).
+- [x] Automated tenant-isolation tests (real PostgreSQL CRUD, missing-context, composite-FK, role ownership, and privilege-negative coverage verified in CI).
 
 ## Phase 2 — Core Forecourt Vertical Slice
 
