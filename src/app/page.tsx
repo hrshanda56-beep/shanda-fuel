@@ -5,11 +5,14 @@ import {
   formatMoney,
   formatPercentage,
 } from '@/design-system/formatters';
+import { syntheticNavigationProjection } from '@/design-system/navigation';
 import {
   AccessDeniedState,
   Button,
   Card,
   ConflictState,
+  BottomSheet,
+  DialogFrame,
   EvidenceFile,
   EmptyState,
   ErrorState,
@@ -24,22 +27,15 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 
-const demoPermissions = [
-  'operations:view',
-  'actions:view',
-  'money:view',
-  'reports:view',
-  'settings:view',
-] as const;
-
 export default function HomePage() {
   return (
     <AppShell
-      grantedPermissions={demoPermissions}
+      navigationProjection={syntheticNavigationProjection}
       context={{
         organisation: 'Demo organisation',
         station: 'Demo station',
         businessDate: '20 Sep 2026',
+        shift: 'Morning shift',
       }}
       role="Supervisor"
       userName="Demo user"
@@ -269,6 +265,22 @@ export default function HomePage() {
           state="verified"
           detail="Synthetic evidence · private storage reference pending A0 platform wiring"
         />
+        <div className="modal-demo-grid">
+          <DialogFrame
+            trigger={<Button variant="secondary">Open accessible dialog</Button>}
+            title="Confirm return"
+            description="This is a synthetic modal surface for future named commands."
+          >
+            <p>Focus is contained here until the dialog is closed.</p>
+          </DialogFrame>
+          <BottomSheet
+            trigger={<Button variant="quiet">Open mobile sheet</Button>}
+            title="Quick context"
+            description="Short contextual tasks can use this responsive presentation."
+          >
+            <p>Longer workflows should remain full pages.</p>
+          </BottomSheet>
+        </div>
       </section>
     </AppShell>
   );

@@ -289,6 +289,47 @@ p {
   font-size: 0.85rem;
 }
 
+.context-shift {
+  padding-left: 0.65rem;
+  border-left: 1px solid var(--color-border);
+  color: var(--color-brand);
+  font-weight: 700;
+}
+
+.mobile-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.mobile-context div {
+  min-width: 0;
+}
+
+.mobile-context span,
+.mobile-context strong {
+  display: block;
+}
+
+.mobile-context span {
+  color: var(--color-ink-muted);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mobile-context strong {
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .context-date {
   padding-left: 0.65rem;
   border-left: 1px solid var(--color-border);
@@ -1013,6 +1054,10 @@ textarea::placeholder {
   background: rgb(0 0 0 / 45%);
 }
 
+.dialog-backdrop-sheet {
+  align-items: end;
+}
+
 .dialog-panel,
 .bottom-sheet {
   width: min(100%, 32rem);
@@ -1041,7 +1086,10 @@ textarea::placeholder {
   flex: 0 0 auto;
   place-items: center;
   border-radius: var(--radius-sm);
+  border: 0;
+  background: transparent;
   color: var(--color-ink-muted);
+  cursor: pointer;
   font-size: 1.5rem;
   line-height: 1;
   text-decoration: none;
@@ -1054,6 +1102,17 @@ textarea::placeholder {
 .bottom-sheet {
   width: 100%;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.modal-trigger {
+  display: inline-block;
+}
+
+.modal-demo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
 }
 
 .sheet-handle {
@@ -1069,12 +1128,19 @@ textarea::placeholder {
   position: sticky;
   z-index: 5;
   bottom: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: block;
   padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom));
   border-top: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-surface) 96%, transparent);
   box-shadow: 0 -0.5rem 1.25rem rgb(21 59 49 / 6%);
+}
+
+.mobile-nav ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 .mobile-nav-item {
@@ -1189,6 +1255,10 @@ textarea::placeholder {
 @media (min-width: 48rem) {
   .topbar-context {
     display: flex;
+  }
+
+  .mobile-context {
+    display: none;
   }
 
   .main-content {

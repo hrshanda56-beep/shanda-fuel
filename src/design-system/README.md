@@ -6,15 +6,18 @@ station, financial, or product master data.
 
 ## AppShell
 
-`AppShell` receives a server-authorized permission projection as a serializable array.
-It filters navigation affordances for the current view, but it does not authorize
-commands. Server-side authentication, tenant context, permission evaluation, and
-authoritative command confirmation remain required for every product workflow.
+`AppShell` receives a server-authorized, serializable `NavigationProjection[]`.
+It renders stable UI navigation keys and enabled/visible state, but it does not
+interpret permission identifiers or authorize commands. A1/platform authorization
+maps canonical permissions to this presentation projection. Server-side
+authentication, tenant context, permission evaluation, and authoritative command
+confirmation remain required for every product workflow.
 
 The shell provides:
 
 - desktop sidebar navigation and a mobile bottom navigation bar;
 - visible organisation, station, business-date, role, and user context slots;
+- a compact mobile operating-context region with an optional shift slot;
 - a skip link and semantic landmarks;
 - a stable place for truthful weak-connection/offline messaging.
 
@@ -47,3 +50,8 @@ part of the global token layer in `src/app/globals.css`.
   posted, or locked state.
 - Theme tokens support light, explicit dark (`data-theme="dark"`), explicit light,
   and system preference. Prefer semantic tokens over new raw color literals.
+- `DialogFrame` and `BottomSheet` are accessible modal primitives: they move focus
+  into the surface, contain Tab focus, close on Escape, make the background inert,
+  and restore focus to the trigger.
+- Required `Field` and `NumericInput` controls apply native `required` plus
+  `aria-required`; optional controls do not receive either required state.

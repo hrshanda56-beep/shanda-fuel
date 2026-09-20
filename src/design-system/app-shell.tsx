@@ -4,20 +4,21 @@ import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import {
-  filterNavigationItems,
   mobileNavigation,
   primaryNavigation,
-  type NavigationItem,
-  type PermissionCode,
+  projectNavigationItems,
+  type NavigationProjection,
+  type ProjectedNavigationItem,
 } from './navigation';
 
 type AppShellProps = {
   children: ReactNode;
-  grantedPermissions: readonly PermissionCode[];
+  navigationProjection: readonly NavigationProjection[];
   context: {
     organisation: string;
     station: string;
     businessDate: string;
+    shift?: string;
   };
   role: string;
   userName: string;
@@ -26,16 +27,15 @@ type AppShellProps = {
 
 export function AppShell({
   children,
-  grantedPermissions,
+  navigationProjection,
   context,
   role,
   userName,
   breadcrumbs = [],
 }: AppShellProps) {
   const pathname = usePathname();
-  const granted = new Set(grantedPermissions);
-  const items = filterNavigationItems(primaryNavigation, granted);
-  const mobileItems = filterNavigationItems(mobileNavigation, granted);
+  const items = projectNavigationItems(primaryNavigation, navigationProjection);
+  const mobileItems = projectNavigationItems(mobileNavigation, navigationProjection);
 
   return (
     <div className="app-shell">
@@ -59,12 +59,34 @@ export function AppShell({
           </span>
           <span>{context.station}</span>
           <span className="context-date">{context.businessDate}</span>
+          {context.shift ? <span className="context-shift">{context.shift}</span> : null}
         </div>
         <div className="user-context">
           <span className="user-name">{userName}</span>
           <span className="user-role">{role}</span>
         </div>
       </header>
+
+      <div className="mobile-context" role="region" aria-label="Active mobile work context">
+        <div>
+          <span>Organisation</span>
+          <strong>{context.organisation}</strong>
+        </div>
+        <div>
+          <span>Station</span>
+          <strong>{context.station}</strong>
+        </div>
+        <div>
+          <span>Business date</span>
+          <strong>{context.businessDate}</strong>
+        </div>
+        {context.shift ? (
+          <div>
+            <span>Shift</span>
+            <strong>{context.shift}</strong>
+          </div>
+        ) : null}
+      </div>
 
       <div className="app-body">
         <aside className="sidebar">
@@ -89,9 +111,11 @@ export function AppShell({
       </div>
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        {mobileItems.map((item) => (
-          <NavigationLink key={item.href} item={item} active={isActive(item, pathname)} mobile />
-        ))}
+        <ul>
+          {mobileItems.map((item) => (
+            <NavigationLink key={item.href} item={item} active={isActive(item, pathname)} mobile />
+          ))}
+        </ul>
       </nav>
     </div>
   );
@@ -122,16 +146,18 @@ function NavigationLink({
   active,
   mobile = false,
 }: {
-  item: NavigationItem;
+  item: ProjectedNavigationItem;
   active: boolean;
   mobile?: boolean;
 }) {
   return (
     <li className={mobile ? 'mobile-nav-item' : undefined}>
       <a
-        className={`nav-link ${active ? 'nav-link-active' : ''}`.trim()}
-        href={item.href}
+        className={`nav-link ${active ? 'nav-link-active' : ''} ${!item.enabled ? 'nav-link-disabled' : ''}`.trim()}
+        href={item.enabled ? item.href : undefined}
         aria-current={active ? 'page' : undefined}
+        aria-disabled={!item.enabled || undefined}
+        tabIndex={item.enabled ? undefined : -1}
       >
         <span className="nav-link-label">
           {mobile ? (item.mobileLabel ?? item.label) : item.label}
@@ -142,7 +168,7 @@ function NavigationLink({
   );
 }
 
-function isActive(item: NavigationItem, pathname: string | null) {
+function isActive(item: ProjectedNavigationItem, pathname: string | null) {
   if (item.href === '/') return pathname === '/';
   return pathname === item.href;
 }

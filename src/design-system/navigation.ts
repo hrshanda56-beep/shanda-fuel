@@ -1,54 +1,65 @@
-export type PermissionCode = string;
+export type NavigationKey = 'home' | 'tasks' | 'work' | 'money' | 'reports' | 'more';
+
+export type NavigationProjection = {
+  key: NavigationKey;
+  visible: boolean;
+  enabled: boolean;
+};
 
 export type NavigationItem = {
+  key: NavigationKey;
   href: string;
   label: string;
   mobileLabel?: string;
   description: string;
-  requiredPermission?: PermissionCode;
+};
+
+export type ProjectedNavigationItem = NavigationItem & {
+  enabled: boolean;
 };
 
 export const primaryNavigation = [
   {
+    key: 'home',
     href: '/',
     label: 'Home',
     mobileLabel: 'Home',
     description: 'Business health and next actions',
   },
   {
+    key: 'work',
     href: '#operations',
     label: 'Operations',
     mobileLabel: 'Work',
     description: 'Station day, shifts and operations',
-    requiredPermission: 'operations:view',
   },
   {
+    key: 'tasks',
     href: '#actions',
     label: 'Action Center',
     mobileLabel: 'Tasks',
     description: 'Approvals, exceptions and follow-up',
-    requiredPermission: 'actions:view',
   },
   {
+    key: 'money',
     href: '#money',
     label: 'Money',
     mobileLabel: 'Money',
     description: 'Cash, banking and settlements',
-    requiredPermission: 'money:view',
   },
   {
+    key: 'reports',
     href: '#reports',
     label: 'Reports',
     mobileLabel: 'Reports',
     description: 'Posted reports and explanations',
-    requiredPermission: 'reports:view',
   },
   {
+    key: 'more',
     href: '#settings',
     label: 'Settings',
     mobileLabel: 'More',
     description: 'Controlled configuration and access',
-    requiredPermission: 'settings:view',
   },
 ] as const satisfies readonly NavigationItem[];
 
@@ -60,15 +71,27 @@ export const mobileNavigation = [
 ] as const satisfies readonly NavigationItem[];
 
 /**
- * The browser receives an already-authorized permission projection. It never
- * decides whether a command is allowed; server-side authorization remains the
- * source of truth for every authoritative action.
+ * Presentation contract only. A1/platform authorization maps canonical
+ * permissions to these stable UI keys before the projection reaches AppShell.
  */
-export function filterNavigationItems(
+export const syntheticNavigationProjection: readonly NavigationProjection[] = [
+  { key: 'home', visible: true, enabled: true },
+  { key: 'tasks', visible: true, enabled: true },
+  { key: 'work', visible: true, enabled: true },
+  { key: 'money', visible: true, enabled: true },
+  { key: 'reports', visible: true, enabled: true },
+  { key: 'more', visible: true, enabled: true },
+];
+
+export function projectNavigationItems(
   items: readonly NavigationItem[],
-  grantedPermissions: ReadonlySet<PermissionCode>,
-): NavigationItem[] {
-  return items.filter(
-    (item) => !item.requiredPermission || grantedPermissions.has(item.requiredPermission),
-  );
+  projection: readonly NavigationProjection[],
+): ProjectedNavigationItem[] {
+  const byKey = new Map(projection.map((item) => [item.key, item]));
+
+  return items.flatMap((item) => {
+    const state = byKey.get(item.key);
+    if (!state?.visible) return [];
+    return [{ ...item, enabled: state.enabled }];
+  });
 }

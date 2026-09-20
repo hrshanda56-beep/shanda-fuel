@@ -21,6 +21,7 @@
 - Scope: semantic design tokens/themes, responsive shell, permission-aware navigation seam, reusable presentation primitives, responsive tables/cards, truthful states, accessibility conventions, and synthetic demos/tests.
 - Status: implementation complete in the isolated worktree; requires A2 review, integration review, and merge through `main`. A2 does not merge itself.
 - Dependencies/assumptions: A2 consumes a serializable, already-authorized permission projection and leaves actor, tenant, authorization, database, and platform contracts to A1/A0.
+- PR #3 remediation: mobile operating context, accessible modal focus behavior, valid mobile navigation list semantics, required-field semantics, and typed `NavigationProjection` integration contract are covered by regression tests.
 
 ## Branch and worktree policy
 

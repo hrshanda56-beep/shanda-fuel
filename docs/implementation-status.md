@@ -22,6 +22,8 @@ Workstream branch: `agent/a2-ui-foundation` in `/Users/wolftech/1TheStudio/1The 
 
 A2 remains presentation-only. A1 supplies live actor/permission contracts; A0/integration owns shared tooling and platform wiring. No database, persistence, financial calculation, business command, authentication, or RLS work is included here.
 
+Remediation for PR #3: mobile operating context now includes an accessible optional shift slot; dialog/bottom-sheet primitives manage focus, Escape, inert background, and restoration; mobile navigation uses valid list semantics; required controls use native/ARIA required state; and AppShell consumes typed `NavigationProjection` keys rather than raw permission identifiers.
+
 ## Phase 0 — Repository & Engineering Foundation
 
 - [x] A0 establishes the technical baseline and pinned compatible toolchain.

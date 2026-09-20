@@ -1,19 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
-import { filterNavigationItems, mobileNavigation, primaryNavigation } from './navigation';
+import {
+  mobileNavigation,
+  primaryNavigation,
+  projectNavigationItems,
+  syntheticNavigationProjection,
+} from './navigation';
 
-describe('permission-aware navigation', () => {
-  it('keeps public navigation and removes items without the required permission', () => {
-    const items = filterNavigationItems(primaryNavigation, new Set(['operations:view']));
+describe('typed navigation projection', () => {
+  it('renders only visible projected keys and preserves enabled state', () => {
+    const items = projectNavigationItems(primaryNavigation, [
+      { key: 'home', visible: true, enabled: true },
+      { key: 'tasks', visible: false, enabled: false },
+      { key: 'work', visible: true, enabled: false },
+    ]);
 
-    expect(items.map((item) => item.label)).toEqual(['Home', 'Operations']);
+    expect(items.map((item) => item.key)).toEqual(['home', 'work']);
+    expect(items[1]?.enabled).toBe(false);
   });
 
-  it('does not treat role names as navigation authority', () => {
-    const items = filterNavigationItems(primaryNavigation, new Set());
-
-    expect(items).toHaveLength(1);
-    expect(items[0]?.label).toBe('Home');
+  it('does not interpret raw permission identifiers in the design system', () => {
+    expect(
+      syntheticNavigationProjection.every((item) => 'key' in item && !('permission' in item)),
+    ).toBe(true);
   });
 
   it('keeps the mobile model limited to Home, Tasks, Work and More', () => {

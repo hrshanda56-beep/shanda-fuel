@@ -1,11 +1,19 @@
+'use client';
+
 import {
   cloneElement,
   isValidElement,
+  useEffect,
+  useId,
+  useRef,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
+  type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
 
@@ -92,6 +100,8 @@ export function NumericInput({
           type="text"
           aria-describedby={describedBy}
           aria-invalid={error ? true : undefined}
+          aria-required={required ? true : undefined}
+          required={required || undefined}
         />
         {unit ? <span className="numeric-unit">{unit}</span> : null}
       </div>
@@ -143,10 +153,17 @@ export function Field({
   const describedBy = [descriptionId, errorId].filter(Boolean).join(' ') || undefined;
   const control = isValidElement(children)
     ? cloneElement(
-        children as ReactElement<{ 'aria-describedby'?: string; 'aria-invalid'?: boolean }>,
+        children as ReactElement<{
+          'aria-describedby'?: string;
+          'aria-invalid'?: boolean;
+          'aria-required'?: boolean;
+          required?: boolean;
+        }>,
         {
           'aria-describedby': describedBy,
           'aria-invalid': error ? true : undefined,
+          'aria-required': required ? true : undefined,
+          required: required || undefined,
         },
       )
     : children;
@@ -288,51 +305,183 @@ export function NotFoundState({
   );
 }
 
-export function DialogFrame({
-  title,
-  description,
-  children,
-  closeHref = '#main-content',
-}: {
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+type ModalProps = {
+  trigger: ReactElement;
   title: string;
   description?: string;
   children: ReactNode;
-  closeHref?: string;
-}) {
-  const titleId = `${slugify(title)}-dialog-title`;
-  const descriptionId = description ? `${slugify(title)}-dialog-description` : undefined;
+  presentation?: 'dialog' | 'sheet';
+};
+
+export function DialogFrame({
+  trigger,
+  title,
+  description,
+  children,
+  presentation = 'dialog',
+}: ModalProps) {
+  const [open, setOpen] = useState(false);
+  const triggerContainerRef = useRef<HTMLSpanElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const instanceId = useId().replace(/:/g, '');
+  const titleId = `${slugify(title)}-${instanceId}-title`;
+  const descriptionId = description ? `${slugify(title)}-${instanceId}-description` : undefined;
+  const portalTarget = open && typeof document !== 'undefined' ? document.body : null;
+
+  useEffect(() => {
+    if (!open) return;
+
+    const modalOverlay = document.querySelector<HTMLElement>('[data-modal-overlay="true"]');
+    if (!modalOverlay) return;
+
+    const triggerContainer = triggerContainerRef.current;
+    restoreFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : (triggerContainer?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ?? null);
+    const siblings = Array.from(document.body.children).filter((child) => child !== modalOverlay);
+    const inertBefore = siblings.map((child) => ({
+      child,
+      inert: (child as HTMLElement & { inert?: boolean }).inert ?? false,
+      ariaHidden: child.getAttribute('aria-hidden'),
+    }));
+    const bodyOverflow = document.body.style.overflow;
+
+    siblings.forEach((child) => {
+      (child as HTMLElement & { inert?: boolean }).inert = true;
+      child.setAttribute('aria-hidden', 'true');
+    });
+    document.body.style.overflow = 'hidden';
+
+    const focusDialog = () => {
+      const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      (firstFocusable ?? dialogRef.current)?.focus();
+    };
+    const animationFrame = window.requestAnimationFrame(focusDialog);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+
+      const focusables = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      );
+      if (focusables.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = bodyOverflow;
+      inertBefore.forEach(({ child, inert, ariaHidden }) => {
+        (child as HTMLElement & { inert?: boolean }).inert = inert;
+        if (ariaHidden === null) child.removeAttribute('aria-hidden');
+        else child.setAttribute('aria-hidden', ariaHidden);
+      });
+      const restoreTarget =
+        restoreFocusRef.current ?? triggerContainer?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      window.requestAnimationFrame(() => restoreTarget?.focus());
+      restoreFocusRef.current = null;
+    };
+  }, [open]);
+
+  const openDialog = () => {
+    setOpen(true);
+  };
+
+  const triggerElement = trigger as ReactElement<{
+    onClick?: (event: MouseEvent<HTMLElement>) => void;
+  }>;
 
   return (
-    <div className="dialog-backdrop">
-      <section
-        className="dialog-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-      >
-        <div className="dialog-heading">
-          <div>
-            <h2 id={titleId}>{title}</h2>
-            {description ? <p id={descriptionId}>{description}</p> : null}
-          </div>
-          <a className="dialog-close" href={closeHref} aria-label={`Close ${title}`}>
-            ×
-          </a>
-        </div>
-        {children}
-      </section>
-    </div>
+    <>
+      <span className="modal-trigger" ref={triggerContainerRef}>
+        {cloneElement(triggerElement, {
+          onClick: (event: MouseEvent<HTMLElement>) => {
+            triggerElement.props.onClick?.(event);
+            if (!event.defaultPrevented) openDialog();
+          },
+        })}
+      </span>
+      {open && portalTarget
+        ? createPortal(
+            <div
+              className={`dialog-backdrop ${presentation === 'sheet' ? 'dialog-backdrop-sheet' : ''}`.trim()}
+              data-modal-overlay="true"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setOpen(false);
+              }}
+            >
+              <section
+                className={`dialog-panel ${presentation === 'sheet' ? 'bottom-sheet' : ''}`.trim()}
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                aria-describedby={descriptionId}
+                tabIndex={-1}
+              >
+                {presentation === 'sheet' ? (
+                  <span className="sheet-handle" aria-hidden="true" />
+                ) : null}
+                <div className="dialog-heading">
+                  <div>
+                    <h2 id={titleId}>{title}</h2>
+                    {description ? <p id={descriptionId}>{description}</p> : null}
+                  </div>
+                  <button
+                    className="dialog-close"
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    aria-label={`Close ${title}`}
+                  >
+                    ×
+                  </button>
+                </div>
+                {children}
+              </section>
+            </div>,
+            portalTarget,
+          )
+        : null}
+    </>
   );
 }
 
-export function BottomSheet({ title, children }: { title: string; children: ReactNode }) {
+export function BottomSheet({
+  trigger,
+  title,
+  description,
+  children,
+}: Omit<ModalProps, 'presentation'>) {
   return (
-    <section className="bottom-sheet" aria-labelledby={`${slugify(title)}-sheet-title`}>
-      <span className="sheet-handle" aria-hidden="true" />
-      <h2 id={`${slugify(title)}-sheet-title`}>{title}</h2>
+    <DialogFrame trigger={trigger} title={title} description={description} presentation="sheet">
       {children}
-    </section>
+    </DialogFrame>
   );
 }
 
