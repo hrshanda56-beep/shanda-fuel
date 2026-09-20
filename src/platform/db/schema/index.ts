@@ -7,3 +7,4 @@
  */
 export * from './auth';
 export * from './a1';
+export * from './a3';

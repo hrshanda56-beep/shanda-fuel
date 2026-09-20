@@ -22,6 +22,13 @@
       "when": 1789910593531,
       "tag": "0002_a1_tenant_authorization_security",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789932317760,
+      "tag": "0003_careful_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

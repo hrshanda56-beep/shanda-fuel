@@ -1,4 +1,5 @@
 import { AppShell } from '@/design-system/app-shell';
+import { ForecourtWorkspace } from '@/modules/forecourt/ui/forecourt-workspace';
 import {
   formatBusinessDate,
   formatLitres,
@@ -42,6 +43,15 @@ export default function HomePage() {
       breadcrumbs={[{ label: 'Home' }]}
     >
       <OfflineBanner />
+      <ForecourtWorkspace
+        businessDate="20 Sep 2026"
+        shiftLabel="Morning shift"
+        shiftState="OPEN"
+        openNozzles={2}
+        sealedNozzles={0}
+        reconciliationState="DRAFT"
+        connection="online"
+      />
       <div className="page-header">
         <div>
           <p className="eyebrow">Supervisor workspace</p>

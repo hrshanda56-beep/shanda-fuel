@@ -1,2 +1,74 @@
-/** Forecourt workflows are owned by later workstreams; this is the public module boundary. */
-export {};
+export {
+  activatePriceChange,
+  approvePriceChange,
+  approveReconciliation,
+  assertNoOverlappingOperationalSegments,
+  calculateExpectedSales,
+  calculateReconciliation,
+  cancelBeforeStart,
+  closeMeters,
+  completeShift,
+  confirmAttendantHandover,
+  confirmBoundary,
+  exceptionallyCloseBusinessDay,
+  exceptionallyCloseShift,
+  finalizeBusinessDay,
+  lockReconciliation,
+  markNotOperated,
+  markOperationsComplete,
+  newBusinessDay,
+  openBusinessDay,
+  postReconciliation,
+  replaceMeterInstallation,
+  rejectReconciliation,
+  resolveOpeningReading,
+  requestPriceChange,
+  requestReconciliationApproval,
+  returnReconciliation,
+  sealMeterSegment,
+  startShift,
+  submitReconciliation,
+} from './domain';
+export type {
+  BoundaryReason,
+  MeterBoundary,
+  MeterInstallation,
+  MeterReading,
+  MeterSegment,
+  MeterSegmentInput,
+  PaymentDeclaration,
+  ReconciliationPaymentCategory,
+  ReconciliationPolicy,
+  ReconciliationRevision,
+  ReconciliationState,
+  SellingPrice,
+  Shift,
+  ShiftState,
+  StationBusinessDay,
+  StationBusinessDayState,
+  VarianceClassification,
+} from './domain';
+export {
+  businessDayLockedEvent,
+  meterSegmentSealedEvent,
+  priceBoundaryActivatedEvent,
+  reconciliationApprovedEvent,
+} from './contracts';
+export { buildDailyForecourtReport } from './report';
+export { executeForecourtCommand } from './application';
+export type {
+  ForecourtAuditPort,
+  ForecourtCommandContext,
+  ForecourtCommandPorts,
+  ForecourtOutboxPort,
+  IdempotencyPort,
+  IdempotencyRequest,
+} from './application';
+export type {
+  BusinessDayLockedEvent,
+  ForecourtEvent,
+  MeterSegmentSealedEvent,
+  PriceBoundaryActivatedEvent,
+  ReconciliationApprovedEvent,
+  ReconciliationPostedEvent,
+} from './contracts';

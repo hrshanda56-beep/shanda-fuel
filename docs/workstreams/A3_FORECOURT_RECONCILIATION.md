@@ -31,3 +31,7 @@ Meter arithmetic, lower-reading rejection, price segmentation, shift/date semant
 ## Handoff and completion
 
 Show one complete trace from observed meter readings to approved/postable outputs. Document inventory-sale versus financial-sale boundaries and provide test/ migration/contract handoff to A0/A4/A5/A7.
+
+## A3 implementation handoff
+
+The isolated `agent/a3-core-forecourt` slice now contains the framework-free domain/state-machine layer, exact decimal meter/reconciliation calculations, typed event contracts, the A3 schema proposal and canonical migration `0003_careful_lord_hawal.sql`, tenant/RLS/effective-range constraints, permission-code additions, command-pipeline ports for idempotency/audit/outbox, and the representative responsive operational surface. A0 must review/integrate the canonical migration and role-permission seed additions before merge. A4 consumes `forecourt.meter_segment_sealed.v1`; A5/A7 consume reconciliation approval/posting snapshots.

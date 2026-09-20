@@ -48,6 +48,14 @@ Each active agent gets one Codex task, one branch, and one isolated worktree. Ag
 - `agent/a7-reporting`
 - `agent/a8-hardening`
 
+## A3 core forecourt implementation
+
+- Branch: `agent/a3-core-forecourt`
+- Worktree: `/Users/wolftech/.codex/worktrees/a3-core-forecourt/shanda-fuel`
+- Base: `3a0e02f0cda165e6a68f42b7d85ef44c9bb1b556`
+- Status: domain, schema/migration proposal, RLS/effective-range constraints, typed A4/A5/A7 contracts, authorization catalogue additions, and representative UI implemented; A0/integration review and real PostgreSQL/E2E execution remain before merge.
+- Shared-file note: the A3 migration registers permission definitions but does not broadly seed role grants; A0/A1 must review the role-grant matrix before integration.
+
 These are conventions, not a requirement to create every branch immediately.
 
 ## Shared-file ownership

@@ -1,6 +1,6 @@
 # Implementation status
 
-Status: **A1 SECURITY FOUNDATION MERGED — A2 UI FOUNDATION IN FINAL INTEGRATION**
+Status: **A3 CORE FORECOURT SLICE IMPLEMENTED IN ISOLATED WORKTREE — INTEGRATION REVIEW PENDING**
 
 ## Current integration base
 
@@ -43,10 +43,11 @@ Remediation validation: the namespace migration was applied successfully to Post
 
 ## Phase 2 — Core Forecourt Vertical Slice
 
-- [ ] Business day and shift workflow.
-- [ ] Meter installation, boundaries, segments, and server-derived sales.
-- [ ] Payment declaration, reconciliation, approval/posting, and locking.
-- [ ] Basic daily report and audit trace.
+- [x] Framework-free business-day and shift state machines with explicit not-operated/exceptional exits.
+- [x] Meter installation, effective boundaries/segments, attendant handover metadata, exact server-derived sales, and nozzle overlap constraints.
+- [x] Payment declarations, signed variance calculation, immutable revision flow, return/approve/post/lock transitions, and typed downstream events.
+- [x] Rebuildable basic daily report source contract and representative mobile-first operational surface.
+- [ ] A0 integration of canonical migration and production command adapters; PostgreSQL integration/E2E gates require the isolated branch to be reviewed and merged through `main`.
 
 ## Phase 3 — Inventory, Tanks, Deliveries & Costing
 
