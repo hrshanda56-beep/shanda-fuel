@@ -30,6 +30,8 @@ describe('authenticated actor resolver', () => {
   });
 
   it('returns the validated actor context', async () => {
-    await expect(requireAuthenticatedActor(request, async () => actor)).resolves.toEqual(actor);
+    await expect(
+      requireAuthenticatedActor(request, async () => actor, new Date('2026-09-20T10:00:00.000Z')),
+    ).resolves.toEqual(actor);
   });
 });

@@ -1,5 +1,6 @@
 export {
   authorize,
+  assertRoleMutationAllowed,
   assertValidScope,
   DEFAULT_ROLE_PERMISSIONS,
   isAuthorized,
@@ -15,6 +16,7 @@ export type {
   RoleCode,
   ScopeType,
   TemporaryPermissionGrant,
+  RoleMutation,
 } from './permissions';
 export { assertSessionActive, assertStepUp, assertStrongAuthentication } from './session';
 export type { SessionRecord } from './session';

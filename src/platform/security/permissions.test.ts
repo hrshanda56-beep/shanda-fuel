@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   authorize,
+  assertRoleMutationAllowed,
   DEFAULT_ROLE_PERMISSIONS,
   isAuthorized,
   scopeCovers,
@@ -33,7 +34,7 @@ describe('permission authorization', () => {
     expect(
       isAuthorized({
         actor,
-        permissionCode: 'shift.start',
+        permissionCode: 'station.view',
         requestedScope: { tenantId, scopeType: 'STATION', legalEntityId, stationId },
       }),
     ).toBe(true);
@@ -43,7 +44,7 @@ describe('permission authorization', () => {
     expect(
       isAuthorized({
         actor,
-        permissionCode: 'shift.start',
+        permissionCode: 'station.view',
         requestedScope: {
           tenantId,
           scopeType: 'STATION',
@@ -55,7 +56,7 @@ describe('permission authorization', () => {
     expect(
       isAuthorized({
         actor,
-        permissionCode: 'shift.start',
+        permissionCode: 'station.view',
         requestedScope: {
           tenantId: '77777777-7777-4777-8777-777777777777',
           scopeType: 'TENANT',
@@ -68,7 +69,7 @@ describe('permission authorization', () => {
     expect(
       isAuthorized({
         actor: { ...actor, strongAuthenticationAt: undefined },
-        permissionCode: 'reconciliation.post',
+        permissionCode: 'membership.manage',
         requestedScope: { tenantId, scopeType: 'STATION', legalEntityId, stationId },
       }),
     ).toBe(false);
@@ -108,12 +109,54 @@ describe('permission authorization', () => {
 
   it('keeps the default catalogue centrally defined', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.OWNER).toContain('audit.view');
-    expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT).not.toContain('bank.account.manage');
+    expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT).not.toContain('membership.manage');
     expect(
       scopeCovers(
         { tenantId, scopeType: 'TENANT' },
         { tenantId, scopeType: 'STATION', legalEntityId, stationId },
       ),
     ).toBe(true);
+  });
+
+  it('rejects a tenant scope carrying narrower identifiers', () => {
+    expect(() =>
+      scopeCovers(
+        { tenantId, scopeType: 'TENANT', legalEntityId },
+        { tenantId, scopeType: 'TENANT' },
+      ),
+    ).toThrow('narrower identifiers');
+  });
+
+  it('protects ownership and prevents self-elevation', () => {
+    expect(() =>
+      assertRoleMutationAllowed({
+        actorMembershipId: 'same',
+        targetMembershipId: 'same',
+        targetRoleCode: 'ADMINISTRATOR',
+        operation: 'GRANT',
+        targetCurrentlyOwner: false,
+        activeOwnerCount: 2,
+      }),
+    ).toThrow('own role assignment');
+    expect(() =>
+      assertRoleMutationAllowed({
+        actorMembershipId: 'owner-a',
+        targetMembershipId: 'owner-b',
+        targetRoleCode: 'OWNER',
+        operation: 'REVOKE',
+        targetCurrentlyOwner: true,
+        activeOwnerCount: 1,
+      }),
+    ).toThrow('last active owner');
+    expect(() =>
+      assertRoleMutationAllowed({
+        actorMembershipId: 'owner-a',
+        targetMembershipId: 'member-b',
+        targetRoleCode: 'OWNER',
+        operation: 'GRANT',
+        targetCurrentlyOwner: false,
+        activeOwnerCount: 1,
+      }),
+    ).toThrow('ownership transfer');
   });
 });

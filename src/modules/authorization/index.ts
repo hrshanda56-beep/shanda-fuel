@@ -1,5 +1,6 @@
 export {
   authorize,
+  assertRoleMutationAllowed,
   DEFAULT_ROLE_PERMISSIONS,
   isAuthorized,
   PERMISSION_CODES,
@@ -14,4 +15,5 @@ export type {
   RoleCode,
   ScopeType,
   TemporaryPermissionGrant,
+  RoleMutation,
 } from '@/platform/security';

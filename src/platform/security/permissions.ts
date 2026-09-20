@@ -1,6 +1,7 @@
 import { AppError } from '../errors';
 
 export const PERMISSION_CODES = [
+  'tenant.context.select',
   'tenant.view',
   'tenant.manage',
   'legal_entity.view',
@@ -13,73 +14,9 @@ export const PERMISSION_CODES = [
   'membership.disable',
   'role.view',
   'role.manage',
-  'shift.view',
-  'shift.start',
-  'shift.close',
-  'shift.exceptionally_close',
-  'shift.mark_not_operated',
-  'meter.view',
-  'meter.boundary.capture',
-  'meter.correction.request',
-  'meter.replace',
-  'price.view',
-  'price.change.request',
-  'price.change.approve',
-  'price.change.activate',
-  'delivery.view',
-  'delivery.create',
-  'delivery.verify',
-  'delivery.offload',
-  'delivery.confirm',
-  'delivery.post',
-  'delivery.reverse',
-  'inventory.view',
-  'inventory.adjust.request',
-  'inventory.adjust.approve',
-  'inventory.transfer.dispatch',
-  'inventory.transfer.receive',
-  'cash.view',
-  'cash.count',
-  'cash.handover.prepare',
-  'cash.handover.confirm',
-  'cash.dispute.resolve',
-  'cash.collection.create',
-  'bank.view',
-  'bank.deposit.record',
-  'bank.deposit.confirm',
-  'bank.account.manage',
-  'settlement.view',
-  'settlement.batch.record',
-  'settlement.match',
-  'settlement.confirm',
-  'supplier.view',
-  'supplier.manage',
-  'supplier.invoice.create',
-  'supplier.invoice.approve',
-  'supplier.payment.create',
-  'supplier.payment.approve',
-  'supplier.credit_note.create',
-  'customer.view',
-  'customer.manage',
-  'customer.fuel.authorize',
-  'customer.limit.override',
-  'customer.payment.create',
-  'expense.view',
-  'expense.create',
-  'expense.approve',
-  'reconciliation.view',
-  'reconciliation.submit',
-  'reconciliation.return',
-  'reconciliation.approve',
-  'reconciliation.post',
-  'approval.view',
-  'approval.act',
-  'exception.view',
-  'exception.manage',
   'document.view',
   'document.upload',
   'report.view',
-  'report.financial.view',
   'report.export',
   'audit.view',
 ] as const;
@@ -121,29 +58,21 @@ export type AuthorizationActor = {
 };
 
 const highRiskPermissions = new Set<PermissionCode>([
+  'tenant.manage',
+  'legal_entity.manage',
+  'station.manage',
   'membership.manage',
   'membership.disable',
   'role.manage',
-  'price.change.approve',
-  'price.change.activate',
-  'delivery.post',
-  'delivery.reverse',
-  'inventory.adjust.approve',
-  'bank.account.manage',
-  'bank.deposit.confirm',
-  'supplier.payment.approve',
-  'customer.limit.override',
-  'expense.approve',
-  'reconciliation.approve',
-  'reconciliation.post',
-  'approval.act',
   'report.export',
 ]);
 
 const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
   OWNER: PERMISSION_CODES,
   ADMINISTRATOR: [
+    'tenant.context.select',
     'tenant.view',
+    'tenant.manage',
     'legal_entity.view',
     'legal_entity.manage',
     'station.view',
@@ -154,96 +83,32 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'membership.disable',
     'role.view',
     'role.manage',
+    'document.view',
+    'document.upload',
     'report.view',
     'report.export',
     'audit.view',
   ],
   FINANCE: [
+    'tenant.context.select',
     'tenant.view',
     'legal_entity.view',
     'station.view',
-    'cash.view',
-    'cash.collection.create',
-    'bank.view',
-    'bank.deposit.record',
-    'bank.deposit.confirm',
-    'settlement.view',
-    'settlement.batch.record',
-    'settlement.match',
-    'settlement.confirm',
-    'supplier.view',
-    'supplier.invoice.create',
-    'supplier.invoice.approve',
-    'supplier.payment.create',
-    'supplier.payment.approve',
-    'supplier.credit_note.create',
-    'customer.view',
-    'customer.manage',
-    'customer.payment.create',
-    'expense.view',
-    'expense.create',
-    'expense.approve',
-    'reconciliation.view',
-    'reconciliation.approve',
-    'reconciliation.post',
-    'approval.view',
-    'approval.act',
-    'exception.view',
-    'exception.manage',
     'document.view',
     'document.upload',
     'report.view',
-    'report.financial.view',
     'report.export',
     'audit.view',
   ],
   SUPERVISOR: [
+    'tenant.context.select',
     'tenant.view',
     'station.view',
-    'shift.view',
-    'shift.start',
-    'shift.close',
-    'shift.exceptionally_close',
-    'shift.mark_not_operated',
-    'meter.view',
-    'meter.boundary.capture',
-    'meter.correction.request',
-    'meter.replace',
-    'price.view',
-    'delivery.view',
-    'delivery.create',
-    'delivery.verify',
-    'delivery.offload',
-    'delivery.confirm',
-    'inventory.view',
-    'cash.view',
-    'cash.count',
-    'cash.handover.prepare',
-    'cash.handover.confirm',
-    'cash.collection.create',
-    'expense.view',
-    'expense.create',
-    'reconciliation.view',
-    'reconciliation.submit',
-    'exception.view',
-    'exception.manage',
     'document.view',
     'document.upload',
     'report.view',
   ],
-  ATTENDANT: [
-    'station.view',
-    'shift.view',
-    'meter.view',
-    'cash.view',
-    'cash.count',
-    'customer.view',
-    'customer.fuel.authorize',
-    'customer.payment.create',
-    'reconciliation.view',
-    'reconciliation.submit',
-    'document.view',
-  ],
+  ATTENDANT: ['tenant.context.select', 'station.view'],
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<RoleCode, readonly PermissionCode[]>> =
@@ -251,6 +116,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<RoleCode, readonly Permis
 
 export function assertValidScope(scope: AccessScope): void {
   if (!scope.tenantId) throw new AppError('FORBIDDEN', 'Tenant scope is required');
+  if (scope.scopeType === 'TENANT' && (scope.legalEntityId || scope.stationId)) {
+    throw new AppError('FORBIDDEN', 'Tenant scope cannot include narrower identifiers');
+  }
   if (scope.scopeType === 'LEGAL_ENTITY' && !scope.legalEntityId) {
     throw new AppError('FORBIDDEN', 'Legal-entity scope is required');
   }
@@ -319,5 +187,42 @@ export function authorize(input: {
     throw new AppError('FORBIDDEN', 'The actor is not authorized for this action or scope', {
       permissionCode: input.permissionCode,
     });
+  }
+}
+
+export type RoleMutation = {
+  actorMembershipId: string;
+  targetMembershipId: string;
+  targetRoleCode: RoleCode;
+  operation: 'GRANT' | 'REVOKE';
+  targetCurrentlyOwner: boolean;
+  activeOwnerCount: number;
+  ownershipTransferConfirmed?: boolean;
+};
+
+/** Guardrails for named membership/ownership commands; no owner bypass exists. */
+export function assertRoleMutationAllowed(mutation: RoleMutation): void {
+  if (mutation.actorMembershipId === mutation.targetMembershipId) {
+    throw new AppError(
+      'FORBIDDEN',
+      'A membership cannot elevate or mutate its own role assignment',
+    );
+  }
+  if (
+    mutation.operation === 'REVOKE' &&
+    mutation.targetCurrentlyOwner &&
+    mutation.activeOwnerCount <= 1
+  ) {
+    throw new AppError('INVARIANT_VIOLATION', 'The last active owner cannot be removed');
+  }
+  if (
+    mutation.operation === 'GRANT' &&
+    mutation.targetRoleCode === 'OWNER' &&
+    !mutation.ownershipTransferConfirmed
+  ) {
+    throw new AppError(
+      'FORBIDDEN',
+      'Owner assignment requires an explicit ownership transfer command',
+    );
   }
 }

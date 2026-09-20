@@ -2,26 +2,59 @@
 -- src/platform/db/migrations history before any environment applies it.
 -- This file is intentionally not a canonical migration.
 
-create table if not exists auth.identities (
+-- Better Auth core tables. The application config uses the auth schema
+-- namespace and UUID identifiers; A0 should integrate the generated Drizzle
+-- shape into canonical migration history before deployment.
+create table if not exists auth."user" (
   id uuid primary key,
-  external_subject text not null unique,
-  email text,
-  display_name text not null,
-  disabled_at timestamptz,
+  name text not null,
+  email text not null unique,
+  email_verified boolean not null default false,
+  image text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create table if not exists auth.sessions (
+create table if not exists auth.session (
   id uuid primary key,
-  identity_id uuid not null references auth.identities(id),
+  user_id uuid not null references auth."user"(id),
+  token text not null unique,
   expires_at timestamptz not null,
+  ip_address text,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   revoked_at timestamptz,
   strong_authenticated_at timestamptz,
   strong_authentication_expires_at timestamptz,
   step_up_level smallint not null default 0 check (step_up_level between 0 and 2),
-  step_up_expires_at timestamptz,
-  created_at timestamptz not null default now()
+  step_up_expires_at timestamptz
+);
+
+create table if not exists auth.account (
+  id uuid primary key,
+  user_id uuid not null references auth."user"(id),
+  account_id text not null,
+  provider_id text not null,
+  access_token text,
+  refresh_token text,
+  access_token_expires_at timestamptz,
+  refresh_token_expires_at timestamptz,
+  scope text,
+  id_token text,
+  password text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (provider_id, account_id)
+);
+
+create table if not exists auth.verification (
+  id uuid primary key,
+  identifier text not null,
+  value text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists app.tenants (
@@ -65,9 +98,11 @@ create table if not exists app.stations (
 create table if not exists app.memberships (
   id uuid primary key,
   tenant_id uuid not null references app.tenants(id),
-  identity_id uuid not null references auth.identities(id),
-  status text not null default 'ACTIVE' check (status in ('INVITED', 'ACTIVE', 'DISABLED')),
+  identity_id uuid not null references auth."user"(id),
+  status text not null default 'ACTIVE' check (status in ('INVITED', 'ACTIVE', 'SUSPENDED', 'LOCKED', 'DISABLED')),
   disabled_at timestamptz,
+  suspended_at timestamptz,
+  locked_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (tenant_id, id),
@@ -91,6 +126,79 @@ create table if not exists platform.role_permissions (
   permission_code text not null references platform.permission_definitions(code),
   primary key (role_code, permission_code)
 );
+
+-- A1 seeds only platform/basic permissions. Business-domain workstreams add
+-- their own reviewed permission codes when those domains are implemented.
+insert into platform.permission_definitions (code, description) values
+  ('tenant.context.select', 'Select the active tenant context'),
+  ('tenant.view', 'View tenant metadata'),
+  ('tenant.manage', 'Manage tenant metadata'),
+  ('legal_entity.view', 'View legal-entity metadata'),
+  ('legal_entity.manage', 'Manage legal-entity metadata'),
+  ('station.view', 'View station metadata'),
+  ('station.manage', 'Manage station metadata'),
+  ('membership.view', 'View tenant memberships'),
+  ('membership.invite', 'Invite an identity to a tenant'),
+  ('membership.manage', 'Manage membership and role assignments'),
+  ('membership.disable', 'Disable a tenant membership'),
+  ('role.view', 'View role definitions and assignments'),
+  ('role.manage', 'Manage role assignments'),
+  ('document.view', 'View tenant documents'),
+  ('document.upload', 'Upload tenant documents'),
+  ('report.view', 'View available reports'),
+  ('report.export', 'Export a report'),
+  ('audit.view', 'View tenant audit events')
+on conflict (code) do nothing;
+
+insert into platform.role_definitions (code, description) values
+  ('OWNER', 'Tenant owner'),
+  ('ADMINISTRATOR', 'Tenant administrator'),
+  ('FINANCE', 'Finance operator'),
+  ('SUPERVISOR', 'Station supervisor'),
+  ('ATTENDANT', 'Station attendant')
+on conflict (code) do nothing;
+
+insert into platform.role_permissions (role_code, permission_code)
+select 'OWNER', code from platform.permission_definitions
+on conflict do nothing;
+
+insert into platform.role_permissions (role_code, permission_code) values
+  ('ADMINISTRATOR', 'tenant.context.select'),
+  ('ADMINISTRATOR', 'tenant.view'),
+  ('ADMINISTRATOR', 'tenant.manage'),
+  ('ADMINISTRATOR', 'legal_entity.view'),
+  ('ADMINISTRATOR', 'legal_entity.manage'),
+  ('ADMINISTRATOR', 'station.view'),
+  ('ADMINISTRATOR', 'station.manage'),
+  ('ADMINISTRATOR', 'membership.view'),
+  ('ADMINISTRATOR', 'membership.invite'),
+  ('ADMINISTRATOR', 'membership.manage'),
+  ('ADMINISTRATOR', 'membership.disable'),
+  ('ADMINISTRATOR', 'role.view'),
+  ('ADMINISTRATOR', 'role.manage'),
+  ('ADMINISTRATOR', 'document.view'),
+  ('ADMINISTRATOR', 'document.upload'),
+  ('ADMINISTRATOR', 'report.view'),
+  ('ADMINISTRATOR', 'report.export'),
+  ('ADMINISTRATOR', 'audit.view'),
+  ('FINANCE', 'tenant.context.select'),
+  ('FINANCE', 'tenant.view'),
+  ('FINANCE', 'legal_entity.view'),
+  ('FINANCE', 'station.view'),
+  ('FINANCE', 'document.view'),
+  ('FINANCE', 'document.upload'),
+  ('FINANCE', 'report.view'),
+  ('FINANCE', 'report.export'),
+  ('FINANCE', 'audit.view'),
+  ('SUPERVISOR', 'tenant.context.select'),
+  ('SUPERVISOR', 'tenant.view'),
+  ('SUPERVISOR', 'station.view'),
+  ('SUPERVISOR', 'document.view'),
+  ('SUPERVISOR', 'document.upload'),
+  ('SUPERVISOR', 'report.view'),
+  ('ATTENDANT', 'tenant.context.select'),
+  ('ATTENDANT', 'station.view')
+on conflict do nothing;
 
 create table if not exists app.membership_role_assignments (
   id uuid primary key,

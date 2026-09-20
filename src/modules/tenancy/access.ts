@@ -5,8 +5,10 @@ export type ActiveMembership = {
   tenantId: string;
   membershipId: string;
   actorId: string;
-  active: boolean;
+  status: MembershipStatus;
 };
+
+export type MembershipStatus = 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'LOCKED' | 'DISABLED';
 
 /**
  * Must run after Better Auth session resolution and before opening business
@@ -17,7 +19,7 @@ export function assertActiveTenantMembership(
   membership: ActiveMembership,
 ): void {
   if (
-    !membership.active ||
+    membership.status !== 'ACTIVE' ||
     membership.tenantId !== context.tenantId ||
     membership.membershipId !== context.membershipId ||
     membership.actorId !== context.actorId

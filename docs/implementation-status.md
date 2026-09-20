@@ -1,14 +1,14 @@
 # Implementation status
 
-Status: **A0 REMEDIATION IMPLEMENTED — PR #1 OPEN FOR RE-REVIEW**
+Status: **A1 IMPLEMENTATION CANDIDATE — PR #2 OPEN, PENDING CI AND A0 MIGRATION INTEGRATION**
 
 ## Current integration base
 
-`12a2fe42d1909a0e1b92ba66ec47d72afa7bab25` (official PRE-A0 baseline)
+`cd63d48b7a142905722d7c9ec76da053c29fbbb4` (`origin/main`, required A1 integration baseline)
 
-A0 candidate branch: `agent/a0-integration-foundation` in the isolated managed worktree `a0-integration-foundation`. It must enter `main` through review; `main` remains untouched.
+A1 candidate branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2). It must enter `main` through review; `main` remains untouched. The candidate includes a migration-ready proposal that A0 must fold into the canonical migration sequence.
 
-The A0 baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. PostgreSQL integration now fails closed when unconfigured and passes against a dedicated migrated test database.
+The current main baseline contains engineering infrastructure and no substantial Shanda Fuel business logic. A1 static, unit, and build validation passes locally; PostgreSQL isolation validation is a required CI gate and does not silently skip when `DATABASE_URL` is absent locally.
 
 ## Phase 0 — Repository & Engineering Foundation
 
@@ -22,10 +22,10 @@ Remediation validation: the namespace migration was applied successfully to Post
 
 ## Phase 1 — Tenancy, Identity, Authorization & Security
 
-- [ ] Authentication integration.
-- [ ] Tenant, legal entity, station, membership, role, permission, and scope foundation.
-- [ ] Tenant context, RLS, runtime role separation, audit/security foundation.
-- [ ] Automated tenant-isolation tests.
+- [ ] Authentication integration (A1 candidate adds the server-only Better Auth boundary; canonical auth schema integration remains pending review).
+- [ ] Tenant, legal entity, station, membership, role, permission, and scope foundation (A1 candidate supplied the application contracts and migration-ready schema proposal).
+- [ ] Tenant context, RLS, runtime role separation, audit/security foundation (A1 candidate supplied the fail-closed RLS and role-separation proposal).
+- [ ] Automated tenant-isolation tests (A1 candidate adds real PostgreSQL CRUD, missing-context, composite-FK, and non-bypass runtime-role coverage; CI result pending).
 
 ## Phase 2 — Core Forecourt Vertical Slice
 

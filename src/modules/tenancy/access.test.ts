@@ -9,24 +9,26 @@ const context = {
 
 describe('tenant membership guard', () => {
   it('accepts the active membership that matches the request context', () => {
-    expect(() => assertActiveTenantMembership(context, { ...context, active: true })).not.toThrow();
+    expect(() =>
+      assertActiveTenantMembership(context, { ...context, status: 'ACTIVE' }),
+    ).not.toThrow();
   });
 
   it('denies disabled, mismatched, and missing membership context', () => {
-    expect(() => assertActiveTenantMembership(context, { ...context, active: false })).toThrow(
-      'active membership',
-    );
+    expect(() =>
+      assertActiveTenantMembership(context, { ...context, status: 'SUSPENDED' }),
+    ).toThrow('active membership');
     expect(() =>
       assertActiveTenantMembership(context, {
         ...context,
         tenantId: '44444444-4444-4444-8444-444444444444',
-        active: true,
+        status: 'ACTIVE',
       }),
     ).toThrow('active membership');
     expect(() =>
       assertActiveTenantMembership(
         { ...context, membershipId: undefined },
-        { ...context, active: true },
+        { ...context, status: 'ACTIVE' },
       ),
     ).toThrow('active membership');
   });

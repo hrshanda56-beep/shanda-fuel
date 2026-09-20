@@ -16,6 +16,7 @@ const legalEntityA = '33333333-3333-4333-8333-333333333333';
 const legalEntityB = '44444444-4444-4444-8444-444444444444';
 const actorA = '55555555-5555-4555-8555-555555555555';
 const actorB = '66666666-6666-4666-8666-666666666666';
+const runtimeRole = 'a1_runtime_test';
 
 let client: ReturnType<typeof postgres>;
 
@@ -36,6 +37,27 @@ describe('A1 PostgreSQL tenant isolation', () => {
       'utf8',
     );
     await client.unsafe(proposal);
+    await client.unsafe(`
+      do $$
+      begin
+        if not exists (select 1 from pg_roles where rolname = '${runtimeRole}') then
+          create role ${runtimeRole}
+            login password 'a1-runtime-test'
+            nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls;
+        end if;
+      end $$;
+    `);
+    await client.unsafe(
+      `alter role ${runtimeRole} nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls`,
+    );
+    await client.unsafe(`grant usage on schema app, platform to ${runtimeRole}`);
+    await client.unsafe(`grant select, insert, update, delete on
+      app.tenants, app.legal_entities, app.stations, app.memberships,
+      app.membership_role_assignments, app.temporary_permission_grants,
+      platform.security_events to ${runtimeRole}`);
+    await client.unsafe(`grant execute on function
+      app.current_tenant_id(), app.current_actor_id(), app.current_membership_id()
+      to ${runtimeRole}`);
   });
 
   afterAll(async () => {
@@ -43,52 +65,111 @@ describe('A1 PostgreSQL tenant isolation', () => {
   });
 
   it('isolates SELECT and UPDATE across tenants', async () => {
-    await client.begin(async (transaction) => {
-      await setTenantContext(transaction, tenantA, actorA);
-      await transaction`
-        insert into app.tenants (id, name, slug)
-        values (${tenantA}, 'Tenant A', 'a-isolation-test')
-        on conflict (id) do update set name = excluded.name
-      `;
-      await transaction`
-        insert into app.legal_entities (id, tenant_id, legal_name)
-        values (${legalEntityA}, ${tenantA}, 'Tenant A Legal Entity')
-        on conflict (id) do nothing
-      `;
+    await client.unsafe(`set role ${runtimeRole}`);
+    try {
+      await client.begin(async (transaction) => {
+        await setTenantContext(transaction, tenantA, actorA);
+        await transaction`
+          insert into app.tenants (id, name, slug)
+          values (${tenantA}, 'Tenant A', 'a-isolation-test')
+          on conflict (id) do update set name = excluded.name
+        `;
+        await transaction`
+          insert into app.legal_entities (id, tenant_id, legal_name)
+          values (${legalEntityA}, ${tenantA}, 'Tenant A Legal Entity')
+          on conflict (id) do nothing
+        `;
 
-      await setTenantContext(transaction, tenantB, actorB);
-      await transaction`
-        insert into app.tenants (id, name, slug)
-        values (${tenantB}, 'Tenant B', 'b-isolation-test')
-        on conflict (id) do update set name = excluded.name
-      `;
-      await transaction`
-        insert into app.legal_entities (id, tenant_id, legal_name)
-        values (${legalEntityB}, ${tenantB}, 'Tenant B Legal Entity')
-        on conflict (id) do nothing
-      `;
+        await setTenantContext(transaction, tenantB, actorB);
+        await transaction`
+          insert into app.tenants (id, name, slug)
+          values (${tenantB}, 'Tenant B', 'b-isolation-test')
+          on conflict (id) do update set name = excluded.name
+        `;
+        await transaction`
+          insert into app.legal_entities (id, tenant_id, legal_name)
+          values (${legalEntityB}, ${tenantB}, 'Tenant B Legal Entity')
+          on conflict (id) do nothing
+        `;
 
-      await setTenantContext(transaction, tenantA, actorA);
-      const visible = await transaction<{ id: string }[]>`
-        select id from app.tenants order by id
-      `;
-      expect(visible.map((row) => row.id)).toEqual([tenantA]);
+        await setTenantContext(transaction, tenantA, actorA);
+        const visible = await transaction<{ id: string }[]>`
+          select id from app.tenants order by id
+        `;
+        expect(visible.map((row) => row.id)).toEqual([tenantA]);
 
-      const crossTenantUpdate = await transaction`
-        update app.tenants set name = 'cross-tenant-write'
-        where id = ${tenantB}
+        const crossTenantUpdate = await transaction`
+          update app.tenants set name = 'cross-tenant-write'
+          where id = ${tenantB}
+        `;
+        expect(crossTenantUpdate.count).toBe(0);
+      });
+    } finally {
+      await client.unsafe('reset role');
+    }
+  });
+
+  it('rejects cross-tenant INSERT and DELETE, and fails closed without context', async () => {
+    await client.unsafe(`set role ${runtimeRole}`);
+    try {
+      await setTenantContext(client, tenantA, actorA);
+      await expect(
+        client`
+          insert into app.tenants (id, name, slug)
+          values ('77777777-7777-4777-8777-777777777777', 'Tenant B Copy', 'b-copy')
+        `,
+      ).rejects.toThrow();
+
+      const crossTenantDelete = await client`
+        delete from app.tenants where id = ${tenantB}
       `;
-      expect(crossTenantUpdate.count).toBe(0);
-    });
+      expect(crossTenantDelete.count).toBe(0);
+
+      await client.unsafe('reset app.tenant_id');
+      await client.unsafe('reset app.actor_id');
+      const visibleWithoutContext = await client<{ id: string }[]>`
+        select id from app.tenants
+      `;
+      expect(visibleWithoutContext).toEqual([]);
+      await expect(
+        client`
+          insert into app.tenants (id, name, slug)
+          values ('88888888-8888-4888-8888-888888888888', 'No Context', 'no-context')
+        `,
+      ).rejects.toThrow();
+    } finally {
+      await client.unsafe('reset role');
+    }
   });
 
   it('rejects a cross-tenant composite foreign-key link', async () => {
-    await setTenantContext(client, tenantA, actorA);
-    await expect(
-      client`
-        insert into app.stations (id, tenant_id, legal_entity_id, code, name)
-        values ('77777777-7777-4777-8777-777777777777', ${tenantA}, ${legalEntityB}, 'BAD', 'Bad link')
-      `,
-    ).rejects.toThrow();
+    await client.unsafe(`set role ${runtimeRole}`);
+    try {
+      await setTenantContext(client, tenantA, actorA);
+      await expect(
+        client`
+          insert into app.stations (id, tenant_id, legal_entity_id, code, name)
+          values ('99999999-9999-4999-8999-999999999999', ${tenantA}, ${legalEntityB}, 'BAD', 'Bad link')
+        `,
+      ).rejects.toThrow();
+    } finally {
+      await client.unsafe('reset role');
+    }
+  });
+
+  it('uses a non-bypass runtime role that cannot disable RLS', async () => {
+    const role = await client<{ rolbypassrls: boolean }[]>`
+      select rolbypassrls from pg_roles where rolname = ${runtimeRole}
+    `;
+    expect(role[0]?.rolbypassrls).toBe(false);
+
+    await client.unsafe(`set role ${runtimeRole}`);
+    try {
+      await expect(
+        client.unsafe('alter table app.tenants disable row level security'),
+      ).rejects.toThrow();
+    } finally {
+      await client.unsafe('reset role');
+    }
   });
 });
