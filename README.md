@@ -26,3 +26,23 @@ The initial operating context is TEI Oils / Triumph Energy Investments in Zimbab
 The onboarding workbook contains real-world configuration placeholders. Blank or unknown station, bank, tank, supplier, customer, threshold, tax-policy, or opening-balance values are not software-development blockers and must not be fabricated into code. Tax treatment remains tax-ready but externally confirmed.
 
 The current repository state is **pre-A0 repository preparation**. A0 should establish the technical baseline before later agents implement product slices.
+
+## Development foundation
+
+The A0 foundation is a Node-runtime Next.js App Router application with strict TypeScript, pnpm, Vitest, Playwright/axe, Drizzle ORM, and PostgreSQL seams. Product modules are intentionally scaffolds until their owning workstreams begin.
+
+```sh
+pnpm install
+pnpm dev
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test:unit
+pnpm test:integration
+pnpm test:e2e
+pnpm build
+```
+
+Database commands use `DATABASE_DIRECT_URL` for direct migration connections where available. Never point local commands at production. The canonical migration history is owned by A0/integration; feature agents propose reviewed migration-ready changes rather than creating competing histories.
+
+Health endpoints are available at `/api/health` (liveness only) and `/api/readiness` (reports database readiness without exposing secrets). Database access is server-only.

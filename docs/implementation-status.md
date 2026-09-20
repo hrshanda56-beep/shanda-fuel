@@ -1,20 +1,22 @@
 # Implementation status
 
-Status: **PRE-A0 REPOSITORY PREPARATION**
+Status: **A0 FOUNDATION IMPLEMENTED — PENDING INTEGRATION REVIEW**
 
 ## Current integration base
 
-`Not yet established.`
+`12a2fe42d1909a0e1b92ba66ec47d72afa7bab25` (official PRE-A0 baseline)
+
+A0 candidate branch: `agent/a0-integration-foundation` in the isolated managed worktree `a0-integration-foundation`. It must enter `main` through review; `main` remains untouched.
 
 This baseline contains specifications and coordination documentation only. No substantial Shanda Fuel application or business logic has been started.
 
 ## Phase 0 — Repository & Engineering Foundation
 
-- [ ] A0 establishes the technical baseline and pinned compatible toolchain.
-- [ ] Shared lint, format, typecheck, unit, integration, E2E, accessibility, and CI gates exist.
-- [ ] Drizzle/PostgreSQL development and migration workflow is established.
-- [ ] Environment validation and secret-safe configuration exist.
-- [ ] Modular monolith boundaries are implemented.
+- [x] A0 establishes the technical baseline and pinned compatible toolchain.
+- [x] Shared lint, format, typecheck, unit, integration, E2E, accessibility, and CI gates exist.
+- [x] Drizzle/PostgreSQL development and migration workflow is established.
+- [x] Environment validation and secret-safe configuration exist.
+- [x] Modular monolith boundaries are implemented.
 
 ## Phase 1 — Tenancy, Identity, Authorization & Security
 
