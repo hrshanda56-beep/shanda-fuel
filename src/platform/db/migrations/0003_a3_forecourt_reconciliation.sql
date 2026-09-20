@@ -18,7 +18,8 @@ CREATE TABLE "app"."meter_boundaries" (
 	"on_behalf_of" uuid,
 	"exception_reason" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "meter_boundaries_tenant_id_id_uidx" UNIQUE("tenant_id","id")
+	CONSTRAINT "meter_boundaries_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "meter_boundaries_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id")
 );
 --> statement-breakpoint
 CREATE TABLE "app"."meter_installations" (
@@ -200,7 +201,8 @@ CREATE TABLE "app"."shifts" (
 	"completed_at" timestamp with time zone,
 	"not_operated_reason" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "shifts_tenant_id_id_uidx" UNIQUE("tenant_id","id")
+	CONSTRAINT "shifts_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "shifts_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id")
 );
 --> statement-breakpoint
 CREATE TABLE "app"."station_business_days" (
@@ -286,78 +288,42 @@ CREATE INDEX "station_business_days_station_state_idx" ON "app"."station_busines
 
 -- Reviewed A3 integrity and security layer.
 CREATE EXTENSION IF NOT EXISTS btree_gist;
-
 INSERT INTO platform.permission_definitions (code, description) VALUES
   ('business_day.view', 'View station business days'), ('business_day.open', 'Open a station business day'),
-  ('shift.view', 'View station shifts'), ('shift.start', 'Start a planned shift'),
-  ('shift.close', 'Close shift meters and complete operations'), ('shift.exceptionally_close', 'Exceptionally close a shift'),
-  ('shift.mark_not_operated', 'Mark a planned shift as not operated'), ('meter.view', 'View meter installations and readings'),
-  ('meter.boundary.capture', 'Capture a confirmed meter boundary'), ('meter.correction.request', 'Request a controlled meter correction'),
-  ('meter.replace', 'Replace a meter installation'), ('price.view', 'View effective selling prices'),
-  ('price.change.request', 'Request a selling price change'), ('price.change.approve', 'Approve a selling price change'),
-  ('price.change.activate', 'Activate an approved selling price boundary'), ('reconciliation.view', 'View station reconciliations'),
-  ('reconciliation.submit', 'Submit a reconciliation revision'), ('reconciliation.return', 'Return a reconciliation for correction'),
-  ('reconciliation.approve', 'Approve a reconciliation revision'), ('reconciliation.post', 'Post an approved reconciliation revision'),
-  ('approval.view', 'View approval requests'), ('approval.act', 'Act on an approval request'),
-  ('exception.view', 'View operational exceptions'), ('exception.manage', 'Resolve operational exceptions')
+  ('shift.view', 'View station shifts'), ('shift.start', 'Start a planned shift'), ('shift.close', 'Close shift meters and complete operations'),
+  ('shift.exceptionally_close', 'Exceptionally close a shift'), ('shift.mark_not_operated', 'Mark a planned shift as not operated'),
+  ('meter.view', 'View meter installations and readings'), ('meter.boundary.capture', 'Capture a confirmed meter boundary'),
+  ('meter.correction.request', 'Request a controlled meter correction'), ('meter.replace', 'Replace a meter installation'),
+  ('price.view', 'View effective selling prices'), ('price.change.request', 'Request a selling price change'),
+  ('price.change.approve', 'Approve a selling price change'), ('price.change.activate', 'Activate an approved selling price boundary'),
+  ('reconciliation.view', 'View station reconciliations'), ('reconciliation.submit', 'Submit a reconciliation revision'),
+  ('reconciliation.return', 'Return a reconciliation for correction'), ('reconciliation.approve', 'Approve a reconciliation revision'),
+  ('reconciliation.post', 'Post an approved reconciliation revision'), ('approval.view', 'View approval requests'),
+  ('approval.act', 'Act on an approval request'), ('exception.view', 'View operational exceptions'), ('exception.manage', 'Resolve operational exceptions')
 ON CONFLICT (code) DO NOTHING;
 
-ALTER TABLE app.station_business_days
-  ADD CONSTRAINT station_business_days_state_ck CHECK (state IN ('NOT_STARTED', 'OPEN', 'OPERATIONS_COMPLETE', 'CLOSED', 'EXCEPTIONALLY_CLOSED', 'LOCKED'));
-ALTER TABLE app.reconciliations
-  ADD CONSTRAINT reconciliations_state_ck CHECK (state IN ('DRAFT', 'READY', 'SUBMITTED', 'PENDING_APPROVAL', 'RETURNED', 'REJECTED', 'APPROVED', 'POSTED', 'LOCKED'));
-ALTER TABLE app.reconciliation_revisions
-  ADD CONSTRAINT reconciliation_revisions_state_ck CHECK (state IN ('READY', 'SUBMITTED', 'PENDING_APPROVAL', 'RETURNED', 'REJECTED', 'APPROVED', 'POSTED', 'LOCKED'));
-ALTER TABLE app.meter_boundaries
-  ADD CONSTRAINT meter_boundaries_on_behalf_ck CHECK (on_behalf_of IS NULL OR on_behalf_of <> entered_by);
-ALTER TABLE app.meter_segments
-  ADD CONSTRAINT meter_segments_reading_ck CHECK (closing_reading >= opening_reading OR controlled_exception),
-  ADD CONSTRAINT meter_segments_litres_ck CHECK (litres >= 0 AND (controlled_exception OR litres = closing_reading - opening_reading));
-
-ALTER TABLE app.meter_installations ADD CONSTRAINT meter_installations_no_overlap EXCLUDE USING gist (
-  tenant_id WITH =, station_id WITH =, nozzle_id WITH =,
-  tstzrange(effective_from, COALESCE(effective_to, 'infinity'::timestamptz), '[)') WITH &&
-);
-ALTER TABLE app.meter_segments ADD CONSTRAINT meter_segments_nozzle_no_overlap EXCLUDE USING gist (
-  tenant_id WITH =, station_id WITH =, nozzle_id WITH =,
-  tstzrange(segment_start_at, segment_end_at, '[)') WITH &&
-);
-ALTER TABLE app.selling_prices ADD CONSTRAINT selling_prices_effective_no_overlap EXCLUDE USING gist (
-  tenant_id WITH =, station_id WITH =, product_id WITH =,
-  tstzrange(effective_from, COALESCE(effective_to, 'infinity'::timestamptz), '[)') WITH &&
-) WHERE (state <> 'CANCELLED');
+ALTER TABLE app.station_business_days ADD CONSTRAINT station_business_days_state_ck CHECK (state IN ('NOT_STARTED', 'OPEN', 'OPERATIONS_COMPLETE', 'CLOSED', 'EXCEPTIONALLY_CLOSED', 'LOCKED'));
+ALTER TABLE app.reconciliations ADD CONSTRAINT reconciliations_state_ck CHECK (state IN ('DRAFT', 'READY', 'SUBMITTED', 'PENDING_APPROVAL', 'RETURNED', 'REJECTED', 'APPROVED', 'POSTED', 'LOCKED'));
+ALTER TABLE app.reconciliation_revisions ADD CONSTRAINT reconciliation_revisions_state_ck CHECK (state IN ('READY', 'SUBMITTED', 'PENDING_APPROVAL', 'RETURNED', 'REJECTED', 'APPROVED', 'POSTED', 'LOCKED'));
+ALTER TABLE app.meter_boundaries ADD CONSTRAINT meter_boundaries_on_behalf_ck CHECK (on_behalf_of IS NULL OR on_behalf_of <> entered_by);
+ALTER TABLE app.meter_segments ADD CONSTRAINT meter_segments_reading_ck CHECK (closing_reading >= opening_reading OR controlled_exception), ADD CONSTRAINT meter_segments_litres_ck CHECK (litres >= 0 AND (controlled_exception OR litres = closing_reading - opening_reading));
+ALTER TABLE app.meter_installations ADD CONSTRAINT meter_installations_no_overlap EXCLUDE USING gist (tenant_id WITH =, station_id WITH =, nozzle_id WITH =, tstzrange(effective_from, COALESCE(effective_to, 'infinity'::timestamptz), '[)') WITH &&);
+ALTER TABLE app.meter_segments ADD CONSTRAINT meter_segments_nozzle_no_overlap EXCLUDE USING gist (tenant_id WITH =, station_id WITH =, nozzle_id WITH =, tstzrange(segment_start_at, segment_end_at, '[)') WITH &&);
+ALTER TABLE app.selling_prices ADD CONSTRAINT selling_prices_effective_no_overlap EXCLUDE USING gist (tenant_id WITH =, station_id WITH =, product_id WITH =, tstzrange(effective_from, COALESCE(effective_to, 'infinity'::timestamptz), '[)') WITH &&) WHERE (state <> 'CANCELLED');
 
 CREATE OR REPLACE FUNCTION app.reject_authoritative_forecourt_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    IF TG_TABLE_NAME = 'meter_segments' OR OLD.state IN ('APPROVED', 'POSTED', 'LOCKED', 'CLOSED', 'EXCEPTIONALLY_CLOSED') THEN
-      RAISE EXCEPTION 'authoritative forecourt history is append-only';
-    END IF;
+    IF TG_TABLE_NAME = 'meter_segments' OR OLD.state IN ('APPROVED', 'POSTED', 'LOCKED', 'CLOSED', 'EXCEPTIONALLY_CLOSED') THEN RAISE EXCEPTION 'authoritative forecourt history is append-only'; END IF;
     RETURN OLD;
   END IF;
   IF TG_TABLE_NAME = 'meter_segments' THEN
     RAISE EXCEPTION 'sealed meter segments are immutable; use a correction or reversal';
   ELSIF TG_TABLE_NAME = 'reconciliation_revisions' AND OLD.state IN ('SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'POSTED', 'LOCKED') THEN
-    IF OLD.state IN ('APPROVED', 'POSTED', 'LOCKED')
-       OR NEW.reconciliation_id IS DISTINCT FROM OLD.reconciliation_id
-       OR NEW.station_id IS DISTINCT FROM OLD.station_id
-       OR NEW.revision IS DISTINCT FROM OLD.revision
-       OR NEW.expected_sales IS DISTINCT FROM OLD.expected_sales
-       OR NEW.accounted_sales IS DISTINCT FROM OLD.accounted_sales
-       OR NEW.variance IS DISTINCT FROM OLD.variance
-       OR NEW.currency IS DISTINCT FROM OLD.currency
-       OR NEW.variance_classification IS DISTINCT FROM OLD.variance_classification
-       OR NEW.declarations IS DISTINCT FROM OLD.declarations
-       OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
-       OR (OLD.state <> 'PENDING_APPROVAL' AND NEW.variance_explanation IS DISTINCT FROM OLD.variance_explanation AND NEW.state <> 'RETURNED')
-    THEN
-      RAISE EXCEPTION 'submitted and posted reconciliation revision values are immutable';
-    END IF;
+    IF OLD.state IN ('APPROVED', 'POSTED', 'LOCKED') OR NEW.reconciliation_id IS DISTINCT FROM OLD.reconciliation_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.revision IS DISTINCT FROM OLD.revision OR NEW.expected_sales IS DISTINCT FROM OLD.expected_sales OR NEW.accounted_sales IS DISTINCT FROM OLD.accounted_sales OR NEW.variance IS DISTINCT FROM OLD.variance OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.variance_classification IS DISTINCT FROM OLD.variance_classification OR NEW.declarations IS DISTINCT FROM OLD.declarations OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by OR (OLD.state <> 'PENDING_APPROVAL' AND NEW.variance_explanation IS DISTINCT FROM OLD.variance_explanation AND NEW.state <> 'RETURNED') THEN RAISE EXCEPTION 'submitted and posted reconciliation revision values are immutable'; END IF;
   ELSIF TG_TABLE_NAME = 'station_business_days' AND OLD.state IN ('CLOSED', 'EXCEPTIONALLY_CLOSED', 'LOCKED') THEN
-    IF OLD.state <> 'CLOSED' OR NEW.state <> 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_date IS DISTINCT FROM OLD.business_date THEN
-      RAISE EXCEPTION 'closed and locked business days are immutable';
-    END IF;
+    IF OLD.state <> 'CLOSED' OR NEW.state <> 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_date IS DISTINCT FROM OLD.business_date THEN RAISE EXCEPTION 'closed and locked business days are immutable'; END IF;
   ELSIF TG_TABLE_NAME = 'selling_prices' AND OLD.state IN ('ACTIVE', 'FAILED_ACTIVATION') THEN
     RAISE EXCEPTION 'historical activated prices are immutable';
   ELSIF TG_TABLE_NAME = 'reconciliations' AND OLD.state IN ('APPROVED', 'POSTED', 'LOCKED') THEN
@@ -382,24 +348,15 @@ BEGIN
   END LOOP;
 END
 $$;
-
 DO $$
 DECLARE table_name text;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') THEN
     ALTER SCHEMA app OWNER TO migration_owner;
-    FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP
-      EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name);
-    END LOOP;
+    FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name); END LOOP;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO app_runtime;
-  END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN
-    GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO job_runtime;
-  END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN
-    GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO diagnostics_readonly;
-  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN GRANT SELECT, INSERT, UPDATE, DELETE ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO app_runtime; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO job_runtime; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO diagnostics_readonly; END IF;
 END
 $$;

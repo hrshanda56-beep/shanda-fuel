@@ -1,5 +1,5 @@
 {
-  "id": "04b66f8b-4b83-4b6e-8fad-ef3eaa7c3b76",
+  "id": "891beb64-0388-445c-92ff-51da15f5896f",
   "prevId": "7f7a38e8-d5b2-4329-97fd-db822ec2191b",
   "version": "7",
   "dialect": "postgresql",
@@ -1556,6 +1556,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "meter_boundaries_tenant_station_id_uidx": {
+          "name": "meter_boundaries_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         }
@@ -3616,6 +3625,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "shifts_tenant_station_id_uidx": {
+          "name": "shifts_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         }

@@ -217,6 +217,7 @@ export const shifts = appSchema.table(
   },
   (table) => [
     unique('shifts_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('shifts_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     index('shifts_station_day_state_idx').on(
       table.tenantId,
       table.stationId,
@@ -312,6 +313,7 @@ export const meterBoundaries = appSchema.table(
   },
   (table) => [
     unique('meter_boundaries_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('meter_boundaries_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     index('meter_boundaries_operational_lookup_idx').on(
       table.tenantId,
       table.nozzleId,
