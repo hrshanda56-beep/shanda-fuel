@@ -1881,7 +1881,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         select count(*)::int as count from app.forecourt_outbox
         where aggregate_id in (${ids.routeRaceSegment}, ${ids.routeRacePrice}, ${ids.commandRaceReconciliation}, ${ids.commandRaceDay})
       `,
-    ).resolves.toEqual([{ count: 4 }]);
+    ).resolves.toEqual([{ count: 5 }]);
     await expect(
       client<{ count: number }[]>`
         select count(*)::int as count from platform.security_events
