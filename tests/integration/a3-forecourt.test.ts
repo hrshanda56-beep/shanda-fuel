@@ -2636,7 +2636,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     });
     await expect(client<{ count: number }[]>`
       select count(*)::int as count from app.meter_boundaries
-      where tenant_id=${ids.tenantA} and nozzle_id=${ids.nozzleB}
+      where tenant_id=${ids.tenantA} and nozzle_id=${priceDuplicateNozzle}
         and price_change_id=${priceDuplicate} and reason='PRICE_CHANGE'
     `).resolves.toEqual([{ count: 1 }]);
     await expectDenied({
