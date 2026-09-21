@@ -2109,7 +2109,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       responsibleAttendantId: ids.membershipA,
       reason: 'PRICE_CHANGE',
       readingStatus: 'AVAILABLE',
-      readingValue: '0.000',
+      readingValue: '3000.000',
       priceChangeId: price,
       expectedVersion: 0,
     });
@@ -2117,8 +2117,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       postCommand(priceInput(priceBoundaryA), 'a3-remediation-price-a'),
       postCommand(priceInput(priceBoundaryB), 'a3-remediation-price-b'),
     ]);
-    const priceBodies = await Promise.all([priceA.clone().text(), priceB.clone().text()]);
-    expect([priceA.status, priceB.status].sort(), priceBodies.join(' | ')).toEqual([200, 409]);
+    expect([priceA.status, priceB.status].sort()).toEqual([200, 409]);
     await expect(client<{ count: number }[]>`
       select count(*)::int as count from app.meter_boundaries
       where price_change_id=${price} and nozzle_id=${ids.nozzleB} and reason='PRICE_CHANGE'
