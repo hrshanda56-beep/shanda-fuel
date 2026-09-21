@@ -2200,4 +2200,520 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       where aggregate_id=${reconciliation} and event_type='reconciliation.revision_corrected.v1'
     `).resolves.toEqual([{ event_type: 'reconciliation.revision_corrected.v1', event_version: 1 }]);
   });
+
+  it('proves final A1 security denials through PostgreSQL production handlers', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const actorRawToken = 'a3-route-session-token';
+    const actorToken = `${actorRawToken}.${await makeSignature(actorRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const attendantRawToken = 'a3-negative-session-token';
+    const attendantToken = `${attendantRawToken}.${await makeSignature(attendantRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const id = () => randomUUID();
+
+    const resetBoundary = id();
+    const resetInvalidTarget = id();
+    const replacementHistoricalBoundary = id();
+    const replacementInvalidBoundary = id();
+    const correctionInvalidLineageSegment = id();
+    const correctionInvalidLineageRevision = id();
+    const correctionInvalidLineageOpening = id();
+    const correctionInvalidLineageClosing = id();
+    const priceWrongProduct = id();
+    const priceSuperseded = id();
+    const priceNewer = id();
+    const priceDuplicate = id();
+    const priceBoundaryOne = id();
+    const priceBoundaryTwo = id();
+    const revisionReturnedDay = id();
+    const revisionReturnedReconciliation = id();
+    const revisionReturned = id();
+    const revisionNonReturnedDay = id();
+    const revisionNonReturnedReconciliation = id();
+    const revisionNonReturned = id();
+
+    const postWithToken = (token: string, input: Record<string, unknown>, key: string) =>
+      forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${token}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+
+    async function expectDenied(input: {
+      token?: string;
+      commandType: string;
+      subjectId: string;
+      key: string;
+      body: Record<string, unknown>;
+      statuses: number[];
+    }) {
+      const before = await client<{ outbox: number; audit: number }[]>`
+        select
+          (select count(*)::int from app.forecourt_outbox where tenant_id=${ids.tenantA}) as outbox,
+          (select count(*)::int from platform.security_events
+             where event_code=${`FORECOURT.${input.commandType}`}
+               and details->>'subjectId'=${input.subjectId}) as audit
+      `;
+      const response = await postWithToken(input.token ?? actorToken, input.body, input.key);
+      expect(input.statuses).toContain(response.status);
+      const after = await client<{ outbox: number; audit: number }[]>`
+        select
+          (select count(*)::int from app.forecourt_outbox where tenant_id=${ids.tenantA}) as outbox,
+          (select count(*)::int from platform.security_events
+             where event_code=${`FORECOURT.${input.commandType}`}
+               and details->>'subjectId'=${input.subjectId}) as audit
+      `;
+      expect(after).toEqual(before);
+      await expect(client<{ status: string }[]>`
+        select status from app.forecourt_idempotency_records
+        where tenant_id=${ids.tenantA} and idempotency_key=${input.key}
+      `).resolves.toEqual([]);
+    }
+
+    const installationB = await client<{ version: number }[]>`
+      select version from app.meter_installations
+      where tenant_id=${ids.tenantA} and station_id=${ids.stationA} and id=${ids.installationB}
+    `;
+    const installationBVersion = installationB[0]!.version;
+
+    const resetInput = {
+      commandType: 'ResetMeter',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      boundaryId: resetBoundary,
+      nozzleId: ids.nozzleB,
+      meterInstallationId: ids.installationB,
+      businessDayId: ids.routeDay,
+      shiftId: ids.routeShift,
+      responsibleAttendantId: ids.membershipA,
+      readingValue: '3100.000',
+      reason: 'security evidence reset',
+      expectedVersion: installationBVersion,
+    };
+    await expectDenied({
+      token: attendantToken,
+      commandType: 'ResetMeter',
+      subjectId: ids.installationB,
+      key: 'a3-evidence-reset-no-permission',
+      body: resetInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'ResetMeter',
+      subjectId: ids.installationB,
+      key: 'a3-evidence-reset-wrong-station',
+      body: { ...resetInput, stationId: ids.stationA2 },
+      statuses: [403],
+    });
+    await client.unsafe(
+      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
+    );
+    try {
+      await expectDenied({
+        commandType: 'ResetMeter',
+        subjectId: ids.installationB,
+        key: 'a3-evidence-reset-weak-assurance',
+        body: resetInput,
+        statuses: [403],
+      });
+    } finally {
+      await client.unsafe(
+        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
+      );
+    }
+    await expectDenied({
+      commandType: 'ResetMeter',
+      subjectId: ids.installationB,
+      key: 'a3-evidence-reset-stale-version',
+      body: { ...resetInput, expectedVersion: installationBVersion + 1 },
+      statuses: [409],
+    });
+    await expectDenied({
+      commandType: 'ResetMeter',
+      subjectId: resetInvalidTarget,
+      key: 'a3-evidence-reset-invalid-target',
+      body: { ...resetInput, boundaryId: resetInvalidTarget, meterInstallationId: id() },
+      statuses: [404],
+    });
+    await expectDenied({
+      commandType: 'ResetMeter',
+      subjectId: ids.installationB,
+      key: 'a3-evidence-reset-provenance',
+      body: { ...resetInput, actorId: ids.actorD, serverTimestamp: '2026-09-21T00:00:00Z' },
+      statuses: [400],
+    });
+
+    const replacementHistoricalInput = {
+      commandType: 'ReplaceMeter',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      oldInstallationId: ids.installationA,
+      oldMeterId: ids.meterA,
+      newMeterId: ids.meterB,
+      nozzleId: ids.nozzleA,
+      businessDayId: ids.routeDay,
+      shiftId: ids.routeShift,
+      boundaryId: replacementHistoricalBoundary,
+      responsibleAttendantId: ids.membershipA,
+      openingReading: '1012.125',
+      reason: 'historical installation evidence',
+      expectedVersion: 1,
+    };
+    await expectDenied({
+      token: attendantToken,
+      commandType: 'ReplaceMeter',
+      subjectId: ids.installationA,
+      key: 'a3-evidence-replace-no-permission',
+      body: replacementHistoricalInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'ReplaceMeter',
+      subjectId: ids.installationA,
+      key: 'a3-evidence-replace-wrong-station',
+      body: { ...replacementHistoricalInput, stationId: ids.stationA2 },
+      statuses: [403],
+    });
+    await client.unsafe(
+      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
+    );
+    try {
+      await expectDenied({
+        commandType: 'ReplaceMeter',
+        subjectId: ids.installationA,
+        key: 'a3-evidence-replace-weak-assurance',
+        body: replacementHistoricalInput,
+        statuses: [403],
+      });
+    } finally {
+      await client.unsafe(
+        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
+      );
+    }
+    await expectDenied({
+      commandType: 'ReplaceMeter',
+      subjectId: ids.installationA,
+      key: 'a3-evidence-replace-historical',
+      body: replacementHistoricalInput,
+      statuses: [404],
+    });
+    const replacementInvalidLineageInput = {
+      ...replacementHistoricalInput,
+      oldInstallationId: ids.installationB,
+      oldMeterId: ids.meterB,
+      nozzleId: ids.nozzleA,
+      newMeterId: ids.meterA,
+      boundaryId: replacementInvalidBoundary,
+      expectedVersion: installationBVersion,
+    };
+    await expectDenied({
+      commandType: 'ReplaceMeter',
+      subjectId: ids.installationB,
+      key: 'a3-evidence-replace-invalid-lineage',
+      body: replacementInvalidLineageInput,
+      statuses: [404],
+    });
+    await expectDenied({
+      commandType: 'ReplaceMeter',
+      subjectId: ids.installationB,
+      key: 'a3-evidence-replace-provenance',
+      body: { ...replacementInvalidLineageInput, actorId: ids.actorD, performedBy: ids.actorD },
+      statuses: [400],
+    });
+
+    const correctionInput = {
+      commandType: 'CorrectMeterSegment',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      sourceSegmentId: ids.segmentA,
+      correctedSegmentId: correctionInvalidLineageRevision,
+      responsibleAttendantId: ids.membershipA,
+      correctedClosingReading: '1011.000',
+      reason: 'security evidence correction',
+      expectedVersion: 1,
+    };
+    await expectDenied({
+      token: attendantToken,
+      commandType: 'CorrectMeterSegment',
+      subjectId: correctionInvalidLineageRevision,
+      key: 'a3-evidence-correction-no-permission',
+      body: correctionInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'CorrectMeterSegment',
+      subjectId: correctionInvalidLineageRevision,
+      key: 'a3-evidence-correction-wrong-station',
+      body: { ...correctionInput, stationId: ids.stationA2 },
+      statuses: [403],
+    });
+    await client.unsafe(
+      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
+    );
+    try {
+      await expectDenied({
+        commandType: 'CorrectMeterSegment',
+        subjectId: correctionInvalidLineageRevision,
+        key: 'a3-evidence-correction-weak-assurance',
+        body: correctionInput,
+        statuses: [403],
+      });
+    } finally {
+      await client.unsafe(
+        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
+      );
+    }
+    await expectDenied({
+      commandType: 'CorrectMeterSegment',
+      subjectId: correctionInvalidLineageRevision,
+      key: 'a3-evidence-correction-invalid-source',
+      body: { ...correctionInput, sourceSegmentId: ids.correctionSegment },
+      statuses: [409],
+    });
+
+    await client.unsafe(`
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+         reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${correctionInvalidLineageOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}',
+         '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'CORRECTION', 'AVAILABLE', 1010.125,
+         '2026-09-21T06:00:00Z', '2026-09-21T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+        ('${correctionInvalidLineageClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}',
+         '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'CORRECTION', 'AVAILABLE', 1012.125,
+         '2026-09-21T07:00:00Z', '2026-09-21T07:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
+      insert into app.meter_segments
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+         opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by,
+         opening_reading, closing_reading, litres, unit_price, expected_sale_value,
+         boundary_reason, segment_start_at, segment_end_at, sealed_at, state)
+      values
+        ('${correctionInvalidLineageSegment}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}',
+         '${ids.installationB}', '${ids.routeDay}', '${ids.routeShift}', '${correctionInvalidLineageOpening}',
+         '${correctionInvalidLineageClosing}', '${ids.productB}', '${ids.membershipA}', '${ids.membershipA}',
+         1010.125, 1012.125, 2, 1.5, 3, 'SHIFT_CLOSE',
+         '2026-09-21T06:00:00Z', '2026-09-21T07:00:00Z', '2026-09-21T07:00:01Z', 'OPEN');
+      update app.meter_segments set state='SEALED', version=1
+      where id='${correctionInvalidLineageSegment}';
+    `);
+    await expectDenied({
+      commandType: 'CorrectMeterSegment',
+      subjectId: correctionInvalidLineageRevision,
+      key: 'a3-evidence-correction-invalid-lineage',
+      body: { ...correctionInput, sourceSegmentId: correctionInvalidLineageSegment },
+      statuses: [422],
+    });
+    await expectDenied({
+      commandType: 'CorrectMeterSegment',
+      subjectId: correctionInvalidLineageRevision,
+      key: 'a3-evidence-correction-provenance',
+      body: { ...correctionInput, actorId: ids.actorD, serverTimestamp: '2026-09-21T07:00:00Z' },
+      statuses: [400],
+    });
+
+    await client.unsafe(`
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
+      values
+        ('${priceWrongProduct}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-07-01T00:00:00Z', '2026-07-02T00:00:00Z', 1.700000, 'DRAFT', '${ids.membershipA}'),
+        ('${priceSuperseded}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-07-03T00:00:00Z', '2026-07-04T00:00:00Z', 1.710000, 'DRAFT', '${ids.membershipA}'),
+        ('${priceNewer}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-07-04T00:00:00Z', '2026-07-05T00:00:00Z', 1.720000, 'DRAFT', '${ids.membershipA}'),
+        ('${priceDuplicate}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-07-06T00:00:00Z', '2026-07-07T00:00:00Z', 1.730000, 'DRAFT', '${ids.membershipA}');
+      update app.selling_prices
+      set state='PENDING_APPROVAL'
+      where id in ('${priceWrongProduct}', '${priceSuperseded}', '${priceNewer}', '${priceDuplicate}');
+      update app.selling_prices
+      set state='APPROVED'
+      where id in ('${priceWrongProduct}', '${priceSuperseded}', '${priceNewer}', '${priceDuplicate}');
+      update app.selling_prices
+      set state='PENDING_STATION_ACTIVATION'
+      where id in ('${priceWrongProduct}', '${priceSuperseded}', '${priceNewer}', '${priceDuplicate}');
+    `);
+    const priceBoundaryInput = {
+      commandType: 'ConfirmPriceChangeBoundary',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      boundaryId: priceBoundaryOne,
+      nozzleId: ids.nozzleB,
+      meterInstallationId: ids.installationB,
+      businessDayId: ids.routeDay,
+      shiftId: ids.routeShift,
+      responsibleAttendantId: ids.membershipA,
+      reason: 'PRICE_CHANGE',
+      readingStatus: 'AVAILABLE',
+      readingValue: '3000.000',
+      priceChangeId: priceWrongProduct,
+      expectedVersion: 0,
+    };
+    await expectDenied({
+      token: attendantToken,
+      commandType: 'ConfirmPriceChangeBoundary',
+      subjectId: priceBoundaryOne,
+      key: 'a3-evidence-price-no-permission',
+      body: priceBoundaryInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'ConfirmPriceChangeBoundary',
+      subjectId: priceBoundaryOne,
+      key: 'a3-evidence-price-wrong-station',
+      body: { ...priceBoundaryInput, stationId: ids.stationA2 },
+      statuses: [403],
+    });
+    await client.unsafe(
+      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
+    );
+    try {
+      await expectDenied({
+        commandType: 'ConfirmPriceChangeBoundary',
+        subjectId: priceBoundaryOne,
+        key: 'a3-evidence-price-weak-assurance',
+        body: priceBoundaryInput,
+        statuses: [403],
+      });
+    } finally {
+      await client.unsafe(
+        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
+      );
+    }
+    await expectDenied({
+      commandType: 'ConfirmPriceChangeBoundary',
+      subjectId: priceBoundaryOne,
+      key: 'a3-evidence-price-wrong-product',
+      body: priceBoundaryInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'ConfirmPriceChangeBoundary',
+      subjectId: priceBoundaryOne,
+      key: 'a3-evidence-price-superseded',
+      body: { ...priceBoundaryInput, priceChangeId: priceSuperseded },
+      statuses: [409],
+    });
+    const duplicatePriceInput = {
+      ...priceBoundaryInput,
+      priceChangeId: priceDuplicate,
+      boundaryId: priceBoundaryOne,
+    };
+    const duplicatePositive = await postWithToken(
+      actorToken,
+      duplicatePriceInput,
+      'a3-evidence-price-positive-control',
+    );
+    expect(duplicatePositive.status).toBe(200);
+    await expectDenied({
+      commandType: 'ConfirmPriceChangeBoundary',
+      subjectId: priceBoundaryTwo,
+      key: 'a3-evidence-price-duplicate-cycle',
+      body: { ...duplicatePriceInput, boundaryId: priceBoundaryTwo },
+      statuses: [409],
+    });
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.meter_boundaries
+      where tenant_id=${ids.tenantA} and nozzle_id=${ids.nozzleB}
+        and price_change_id=${priceDuplicate} and reason='PRICE_CHANGE'
+    `).resolves.toEqual([{ count: 1 }]);
+    await expectDenied({
+      commandType: 'ConfirmPriceChangeBoundary',
+      subjectId: priceBoundaryTwo,
+      key: 'a3-evidence-price-forged-readiness',
+      body: {
+        ...duplicatePriceInput,
+        boundaryId: priceBoundaryTwo,
+        activationReady: true,
+        confirmedAt: '2026-09-21T07:00:00Z',
+      },
+      statuses: [400],
+    });
+
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+      values
+        ('${revisionReturnedDay}', '${ids.tenantA}', '${ids.stationA}', '2027-01-10', 'NOT_STARTED'),
+        ('${revisionNonReturnedDay}', '${ids.tenantA}', '${ids.stationA}', '2027-01-11', 'NOT_STARTED');
+      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
+      values
+        ('${revisionReturnedReconciliation}', '${ids.tenantA}', '${ids.stationA}', '${revisionReturnedDay}', 'DRAFT'),
+        ('${revisionNonReturnedReconciliation}', '${ids.tenantA}', '${ids.stationA}', '${revisionNonReturnedDay}', 'DRAFT');
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance,
+         variance_classification, declarations, source_segment_ids, source_shift_ids)
+      values
+        ('${revisionReturned}', '${ids.tenantA}', '${ids.stationA}', '${revisionReturnedReconciliation}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb),
+        ('${revisionNonReturned}', '${ids.tenantA}', '${ids.stationA}', '${revisionNonReturnedReconciliation}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb);
+      update app.reconciliation_revisions set state='SUBMITTED' where id in ('${revisionReturned}', '${revisionNonReturned}');
+      update app.reconciliation_revisions set state='PENDING_APPROVAL' where id='${revisionReturned}';
+      update app.reconciliation_revisions set state='RETURNED', variance_explanation='security evidence correction' where id='${revisionReturned}';
+    `);
+    const correctedRevisionInput = {
+      commandType: 'CreateCorrectedReconciliationRevision',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      sourceRevisionId: revisionReturned,
+      revisionId: id(),
+      expectedVersion: 0,
+      reason: 'security evidence corrected revision',
+    };
+    await expectDenied({
+      token: attendantToken,
+      commandType: 'CreateCorrectedReconciliationRevision',
+      subjectId: correctedRevisionInput.revisionId,
+      key: 'a3-evidence-revision-no-permission',
+      body: correctedRevisionInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'CreateCorrectedReconciliationRevision',
+      subjectId: correctedRevisionInput.revisionId,
+      key: 'a3-evidence-revision-wrong-station',
+      body: { ...correctedRevisionInput, stationId: ids.stationA2 },
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'CreateCorrectedReconciliationRevision',
+      subjectId: id(),
+      key: 'a3-evidence-revision-non-returned',
+      body: { ...correctedRevisionInput, sourceRevisionId: revisionNonReturned, revisionId: id() },
+      statuses: [409],
+    });
+    await expectDenied({
+      commandType: 'CreateCorrectedReconciliationRevision',
+      subjectId: correctedRevisionInput.revisionId,
+      key: 'a3-evidence-revision-unrelated-reconciliation',
+      body: { ...correctedRevisionInput, reconciliationId: revisionNonReturnedReconciliation },
+      statuses: [400],
+    });
+    await expectDenied({
+      commandType: 'CreateCorrectedReconciliationRevision',
+      subjectId: correctedRevisionInput.revisionId,
+      key: 'a3-evidence-revision-stale-version',
+      body: { ...correctedRevisionInput, expectedVersion: 99 },
+      statuses: [409],
+    });
+    await expectDenied({
+      commandType: 'CreateCorrectedReconciliationRevision',
+      subjectId: correctedRevisionInput.revisionId,
+      key: 'a3-evidence-revision-provenance',
+      body: {
+        ...correctedRevisionInput,
+        createdBy: ids.actorD,
+        correctedBy: ids.actorD,
+        serverTimestamp: '2026-09-21T07:00:00Z',
+      },
+      statuses: [400],
+    });
+
+    await expectDenied({
+      commandType: 'ResetMeter',
+      subjectId: ids.installationB,
+      key: 'a3-evidence-responsible-ineligible',
+      body: { ...resetInput, responsibleAttendantId: ids.membershipC },
+      statuses: [403],
+    });
+  });
 });
