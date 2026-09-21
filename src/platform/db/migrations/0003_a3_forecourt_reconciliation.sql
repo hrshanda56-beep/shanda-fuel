@@ -572,10 +572,10 @@ RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE allowed boolean := false;
 BEGIN
   IF NEW.state = OLD.state THEN RETURN NEW; END IF;
-  IF TG_TABLE_NAME = 'reconciliation_revisions'
-     AND NEW.state IN ('APPROVED', 'POSTED')
-     AND NEW.variance_classification = 'BLOCKING' THEN
-    RAISE EXCEPTION 'blocking reconciliation variance requires a corrected or resolved revision';
+  IF TG_TABLE_NAME = 'reconciliation_revisions' THEN
+    IF NEW.state IN ('APPROVED', 'POSTED') AND NEW.variance_classification = 'BLOCKING' THEN
+      RAISE EXCEPTION 'blocking reconciliation variance requires a corrected or resolved revision';
+    END IF;
   END IF;
   IF TG_TABLE_NAME = 'station_business_days' THEN
     allowed := (OLD.state, NEW.state) IN (('NOT_STARTED','OPEN'),('OPEN','OPERATIONS_COMPLETE'),('OPERATIONS_COMPLETE','CLOSED'),('CLOSED','LOCKED'),('NOT_STARTED','EXCEPTIONALLY_CLOSED'),('OPEN','EXCEPTIONALLY_CLOSED'),('OPERATIONS_COMPLETE','EXCEPTIONALLY_CLOSED'));
