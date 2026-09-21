@@ -2625,7 +2625,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       duplicatePriceInput,
       'a3-evidence-price-positive-control',
     );
-    expect(duplicatePositive.status).toBe(200);
+    expect(duplicatePositive.status, await duplicatePositive.text()).toBe(200);
     await expectDenied({
       commandType: 'ConfirmPriceChangeBoundary',
       subjectId: priceBoundaryTwo,
