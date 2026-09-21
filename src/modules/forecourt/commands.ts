@@ -68,8 +68,8 @@ type BoundaryRow = {
   reading_status: MeterBoundary['reading']['status'];
   reading_value: string | null;
   unavailable_reason: string | null;
-  effective_at: Date;
-  confirmed_at: Date;
+  effective_at: Date | string;
+  confirmed_at: Date | string;
   confirmed_by: string;
   entered_by: string;
   attendant_id: string;
@@ -600,8 +600,8 @@ function boundaryFromRow(row: BoundaryRow): MeterBoundary {
       row.reading_status === 'AVAILABLE'
         ? { status: 'AVAILABLE', value: row.reading_value ?? '' }
         : { status: 'UNAVAILABLE', reason: row.unavailable_reason ?? '' },
-    effectiveAt: row.effective_at.toISOString(),
-    confirmedAt: row.confirmed_at.toISOString(),
+    effectiveAt: timestamp(row.effective_at)!,
+    confirmedAt: timestamp(row.confirmed_at)!,
     confirmedBy: row.confirmed_by,
     enteredBy: row.entered_by,
     attendantId: row.attendant_id,
