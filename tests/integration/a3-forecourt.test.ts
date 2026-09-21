@@ -44,10 +44,15 @@ const ids = {
   membershipB: 'a3000000-0000-4000-8000-000000000042',
   membershipC: 'a3000000-0000-4000-8000-000000000043',
   productA: 'a3000000-0000-4000-8000-000000000051',
+  productB: 'a3000000-0000-4000-8000-000000000052',
   pumpA: 'a3000000-0000-4000-8000-000000000061',
+  pumpB: 'a3000000-0000-4000-8000-000000000062',
   nozzleA: 'a3000000-0000-4000-8000-000000000071',
+  nozzleB: 'a3000000-0000-4000-8000-000000000072',
   meterA: 'a3000000-0000-4000-8000-000000000081',
+  meterB: 'a3000000-0000-4000-8000-000000000082',
   installationA: 'a3000000-0000-4000-8000-000000000091',
+  installationB: 'a3000000-0000-4000-8000-000000000092',
   dayA: 'a3000000-0000-4000-8000-000000000101',
   shiftA: 'a3000000-0000-4000-8000-000000000111',
   openingA: 'a3000000-0000-4000-8000-000000000121',
@@ -90,6 +95,8 @@ const ids = {
   raceClosing: 'a3000000-0000-4000-8000-000000000209',
   handoverA: 'a3000000-0000-4000-8000-000000000210',
   handoverB: 'a3000000-0000-4000-8000-000000000211',
+  closureShift: 'a3000000-0000-4000-8000-000000000212',
+  closureBoundary: 'a3000000-0000-4000-8000-000000000213',
 };
 
 let client: Sql;
@@ -838,15 +845,36 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
 
     await client.unsafe(`
+      insert into app.products (id, tenant_id, code, name)
+        values ('${ids.productB}', '${ids.tenantA}', 'A3-GASOLINE', 'Gasoline');
+      insert into app.pumps (id, tenant_id, station_id, number)
+        values ('${ids.pumpB}', '${ids.tenantA}', '${ids.stationA}', '2');
+      insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id)
+        values ('${ids.nozzleB}', '${ids.tenantA}', '${ids.stationA}', '${ids.pumpB}', '1', '${ids.productB}');
+      insert into app.meters (id, tenant_id, serial_number)
+        values ('${ids.meterB}', '${ids.tenantA}', 'A3-METER-2');
+      insert into app.meter_installations
+        (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
+        values ('${ids.installationB}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.meterB}', '2026-09-20T00:00:00Z', '${ids.membershipA}');
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.closureDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-22', 'NOT_STARTED');
       update app.station_business_days set state = 'OPEN' where id = '${ids.closureDay}';
       update app.station_business_days set state = 'OPERATIONS_COMPLETE' where id = '${ids.closureDay}';
       update app.station_business_days set state = 'CLOSED' where id = '${ids.closureDay}';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values
+        ('${ids.closureShift}', '${ids.tenantA}', '${ids.stationA}', '${ids.closureDay}', 'PLANNED', '2026-09-22T06:00:00Z', '2026-09-22T14:00:00Z', '2026-09-22');
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason,
+         reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${ids.closureBoundary}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${ids.closureDay}', '${ids.closureShift}', 'PRICE_CHANGE',
+         'AVAILABLE', 3000.000, '2026-09-22T06:00:00Z', '2026-09-22T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
       insert into app.selling_prices
         (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
       values
-        ('${ids.closurePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-09-22T00:00:00Z', 1.800000, 'DRAFT', '${ids.membershipC}');
+        ('${ids.closurePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-22T00:00:00Z', 1.800000, 'DRAFT', '${ids.membershipC}');
       update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.closurePrice}';
       insert into app.reconciliations
         (id, tenant_id, station_id, business_day_id, state)
@@ -1024,9 +1052,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
          reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
       values
         ('${ids.correctionOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'CORRECTION',
-         'AVAILABLE', 1000.000, '2026-09-20T06:00:00Z', '2026-09-20T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+         'AVAILABLE', 1010.000, '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
         ('${ids.correctionClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'CORRECTION',
-         'AVAILABLE', 1010.000, '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
+         'AVAILABLE', 1015.000, '2026-09-20T15:00:00Z', '2026-09-20T15:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
       insert into app.meter_segments
         (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
          opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by,
@@ -1035,8 +1063,8 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       values
         ('${ids.correctionSegment}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}',
          '${ids.correctionOpening}', '${ids.correctionClosing}', '${ids.productA}', '${ids.membershipA}', '${ids.membershipA}',
-         1000.000, 1010.000, 10.000, 1.500000, 15.0000, 'CORRECTION',
-         '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', 'OPEN', '${ids.segmentA}');
+         1010.000, 1015.000, 5.000, 1.500000, 7.5000, 'CORRECTION',
+         '2026-09-20T14:00:00Z', '2026-09-20T15:00:00Z', '2026-09-20T15:00:01Z', 'OPEN', '${ids.segmentA}');
       insert into app.reconciliation_revisions
         (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance,
          variance_classification, declarations, source_segment_ids, source_shift_ids, source_revision_id, correction_of_revision_id)
@@ -1063,17 +1091,17 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         productId: ids.productA,
         attendantId: ids.membershipA,
         enteredBy: ids.membershipA,
-        openingReading: '1000.000',
-        closingReading: '1010.000',
-        litres: litres('10.000'),
+        openingReading: '1010.000',
+        closingReading: '1015.000',
+        litres: litres('5.000'),
         unitPrice: unitPrice('1.500000'),
         currency: 'USD',
-        expectedSaleValue: money('15.0000', 'USD'),
+        expectedSaleValue: money('7.5000', 'USD'),
         openingBoundaryReason: 'CORRECTION',
         boundaryReason: 'CORRECTION',
-        startAt: '2026-09-20T06:00:00.000Z',
-        endAt: '2026-09-20T14:00:00.000Z',
-        sealedAt: '2026-09-20T14:00:01.000Z',
+        startAt: '2026-09-20T14:00:00.000Z',
+        endAt: '2026-09-20T15:00:00.000Z',
+        sealedAt: '2026-09-20T15:00:01.000Z',
         controlledException: false,
         correctionOfSegmentId: ids.segmentA,
         version: 1,
@@ -1128,7 +1156,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         values
           ('a3000000-0000-4000-8000-000000000204', '${ids.tenantA}', '${ids.stationA2}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}',
            '${ids.correctionOpening}', '${ids.correctionClosing}', '${ids.productA}', '${ids.membershipA}', '${ids.membershipA}',
-           1000, 1010, 10, 1.5, 15, 'CORRECTION', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', 'OPEN', '${ids.segmentA}')
+           1010, 1015, 5, 1.5, 7.5, 'CORRECTION', '2026-09-20T14:00:00Z', '2026-09-20T15:00:00Z', '2026-09-20T15:00:01Z', 'OPEN', '${ids.segmentA}')
       `),
     ).rejects.toThrow();
   });
@@ -1168,7 +1196,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       insert into app.selling_prices
         (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
       values
-        ('${ids.racePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-09-23T00:00:00Z', 1.900000, 'DRAFT', '${ids.membershipC}');
+        ('${ids.racePrice}', '${ids.tenantA}', '${ids.stationA2}', '${ids.productA}', '2026-09-23T00:00:00Z', 1.900000, 'DRAFT', '${ids.membershipC}');
       update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.racePrice}';
       insert into app.reconciliations
         (id, tenant_id, station_id, business_day_id, state)
@@ -1185,6 +1213,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       id: string,
       expectedVersion: number,
       updateClause: string,
+      stationId = ids.stationA,
     ): Promise<[number, number]> {
       let releaseFirst!: () => void;
       let firstLocked!: () => void;
@@ -1196,22 +1225,22 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       });
       const first = raceClient.begin(async (transaction) => {
         await transaction.unsafe(
-          `select id from app.${tableName} where tenant_id = '${ids.tenantA}' and station_id = '${ids.stationA}' and id = '${id}' for update`,
+          `select id from app.${tableName} where tenant_id = '${ids.tenantA}' and station_id = '${stationId}' and id = '${id}' for update`,
         );
         firstLocked();
         await firstReleasePromise;
         const updated = await transaction.unsafe(
-          `update app.${tableName} set ${updateClause}, version = version + 1 where tenant_id = '${ids.tenantA}' and station_id = '${ids.stationA}' and id = '${id}' and version = ${expectedVersion} returning id`,
+          `update app.${tableName} set ${updateClause}, version = version + 1 where tenant_id = '${ids.tenantA}' and station_id = '${stationId}' and id = '${id}' and version = ${expectedVersion} returning id`,
         );
         return updated.length;
       });
       await firstLockedPromise;
       const second = raceClient.begin(async (transaction) => {
         await transaction.unsafe(
-          `select id from app.${tableName} where tenant_id = '${ids.tenantA}' and station_id = '${ids.stationA}' and id = '${id}' for update`,
+          `select id from app.${tableName} where tenant_id = '${ids.tenantA}' and station_id = '${stationId}' and id = '${id}' for update`,
         );
         const updated = await transaction.unsafe(
-          `update app.${tableName} set ${updateClause}, version = version + 1 where tenant_id = '${ids.tenantA}' and station_id = '${ids.stationA}' and id = '${id}' and version = ${expectedVersion} returning id`,
+          `update app.${tableName} set ${updateClause}, version = version + 1 where tenant_id = '${ids.tenantA}' and station_id = '${stationId}' and id = '${id}' and version = ${expectedVersion} returning id`,
         );
         return updated.length;
       });
@@ -1228,6 +1257,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         ids.racePrice,
         0,
         `state = 'APPROVED', approved_by = '${ids.membershipA}', approved_at = clock_timestamp()`,
+        ids.stationA2,
       ),
     ).resolves.toEqual([1, 0]);
     await expect(
