@@ -592,6 +592,70 @@ export const meterSegments = appSchema.table(
   ],
 );
 
+/** Append-only authoritative resolution of a meter-unavailable exception. */
+export const meterExceptionResolutions = appSchema.table(
+  'meter_exception_resolutions',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    exceptionId: uuid('exception_id').notNull(),
+    resolutionKind: text('resolution_kind').notNull(),
+    resolutionBoundaryId: uuid('resolution_boundary_id').notNull(),
+    correctedSegmentId: uuid('corrected_segment_id'),
+    replacementInstallationId: uuid('replacement_installation_id'),
+    resolvedBy: uuid('resolved_by').notNull(),
+    resolvedAt: utcTimestamp('resolved_at').notNull().defaultNow(),
+    notes: text('notes'),
+  },
+  (table) => [
+    unique('meter_exception_resolutions_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('meter_exception_resolutions_exception_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.exceptionId,
+    ),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.exceptionId],
+      foreignColumns: [meterExceptions.tenantId, meterExceptions.stationId, meterExceptions.id],
+      name: 'meter_exception_resolutions_exception_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.resolutionBoundaryId],
+      foreignColumns: [meterBoundaries.tenantId, meterBoundaries.stationId, meterBoundaries.id],
+      name: 'meter_exception_resolutions_boundary_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.correctedSegmentId],
+      foreignColumns: [meterSegments.tenantId, meterSegments.stationId, meterSegments.id],
+      name: 'meter_exception_resolutions_segment_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.replacementInstallationId],
+      foreignColumns: [
+        meterInstallations.tenantId,
+        meterInstallations.stationId,
+        meterInstallations.id,
+      ],
+      name: 'meter_exception_resolutions_installation_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.resolvedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'meter_exception_resolutions_resolved_by_fk',
+    }),
+    check(
+      'meter_exception_resolutions_kind_ck',
+      sql`${table.resolutionKind} in ('AVAILABLE_BOUNDARY', 'RESET', 'REPLACEMENT', 'CORRECTION')`,
+    ),
+    foreignKey({
+      columns: [table.tenantId],
+      foreignColumns: [tenants.id],
+      name: 'meter_exception_resolutions_tenant_id_tenants_id_fk',
+    }),
+  ],
+);
+
 export const reconciliations = appSchema.table(
   'reconciliations',
   {

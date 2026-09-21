@@ -23,6 +23,7 @@ import {
   reconciliationApprovedEvent,
   reconciliationPostedEvent,
   meterBoundaryCreatedEvent,
+  meterExceptionResolvedEvent,
   meterReplacedEvent,
   reconciliationRevisionCorrectedEvent,
 } from './contracts';
@@ -67,28 +68,25 @@ async function resolveMeterException(
   exceptionId: string,
   resolutionBoundaryId: string,
   resolutionKind: string,
-  resolutionProvenance: Record<string, string | null>,
-  resolvedAt: string,
-): Promise<void> {
+  resolutionOptions: {
+    correctedSegmentId?: string;
+    replacementInstallationId?: string;
+  } = {},
+): Promise<string> {
   const rows = await transaction.execute<{ id: string }>(sql`
-    update app.meter_exceptions
-       set status = 'RESOLVED',
-           resolved_at = ${resolvedAt}::timestamptz,
-           resolved_by = ${context.actor.membershipId},
-           resolution_kind = ${resolutionKind},
-           resolution_boundary_id = ${resolutionBoundaryId},
-           resolution_provenance = ${JSON.stringify(resolutionProvenance)}::jsonb
-     where tenant_id = ${context.tenantId}
-       and station_id = ${context.stationId}
-       and id = ${exceptionId}
-       and status = 'BLOCKING'
-    returning id
+    select app.resolve_meter_exception(
+      ${context.tenantId}, ${context.stationId}, ${exceptionId},
+      ${resolutionBoundaryId}, ${resolutionKind},
+      ${resolutionOptions.correctedSegmentId ?? null}::uuid,
+      ${resolutionOptions.replacementInstallationId ?? null}::uuid
+    ) as id
   `);
-  if (rows.length !== 1)
+  if (rows.length !== 1 || !rows[0]?.id)
     throw new AppError(
       'CONFLICT',
       'The meter exception is missing, already resolved, or out of scope',
     );
+  return rows[0].id;
 }
 
 async function assertShiftMeterCloseCompleteness(
@@ -99,53 +97,42 @@ async function assertShiftMeterCloseCompleteness(
 ): Promise<void> {
   const rows = await transaction.execute<{
     open_segments: number;
-    sealed_segments: number;
-    invalid_sealed_segments: number;
+    effective_segments: number;
     participating_nozzles: number;
     terminal_nozzles: number;
   }>(sql`
+    with effective as (
+      select m.*,
+        app.meter_segment_has_terminal_shift_close(${context.tenantId}, ${context.stationId}, m.id) as has_terminal_close
+      from app.effective_meter_segments_for_shift(
+        ${context.tenantId}, ${context.stationId}, ${businessDayId}, ${shiftId}
+      ) m
+    ), open_current as (
+      select count(*)::int as count
+      from app.meter_segments m
+      where m.tenant_id=${context.tenantId} and m.station_id=${context.stationId}
+        and m.business_day_id=${businessDayId} and m.shift_id=${shiftId}
+        and m.state <> 'SEALED'
+        and not exists (
+          select 1 from app.meter_segments successor
+          where successor.tenant_id=m.tenant_id and successor.station_id=m.station_id
+            and successor.business_day_id=m.business_day_id and successor.shift_id=m.shift_id
+            and successor.nozzle_id=m.nozzle_id
+            and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
+        )
+    )
     select
-      count(*) filter (where m.state <> 'SEALED')::int as open_segments,
-      count(*) filter (where m.state = 'SEALED')::int as sealed_segments,
-      count(*) filter (where m.state = 'SEALED' and (
-        cb.id is null
-        or cb.reading_status <> 'AVAILABLE'
-        or cb.reason <> 'SHIFT_CLOSE'
-        or cb.tenant_id <> ${context.tenantId}
-        or cb.station_id <> ${context.stationId}
-        or cb.business_day_id <> ${businessDayId}
-        or cb.shift_id <> ${shiftId}
-        or cb.nozzle_id <> m.nozzle_id
-        or cb.meter_installation_id <> m.meter_installation_id
-      ))::int as invalid_sealed_segments,
-      count(distinct m.nozzle_id)::int as participating_nozzles,
-      count(distinct case
-        when m.state = 'SEALED'
-          and cb.reading_status = 'AVAILABLE'
-          and cb.reason = 'SHIFT_CLOSE'
-          and cb.tenant_id = ${context.tenantId}
-          and cb.station_id = ${context.stationId}
-          and cb.business_day_id = ${businessDayId}
-          and cb.shift_id = ${shiftId}
-          and cb.nozzle_id = m.nozzle_id
-          and cb.meter_installation_id = m.meter_installation_id
-        then m.nozzle_id end)::int as terminal_nozzles
-    from app.meter_segments m
-    left join app.meter_boundaries cb
-      on cb.tenant_id = m.tenant_id
-      and cb.station_id = m.station_id
-      and cb.id = m.closing_boundary_id
-    where m.tenant_id = ${context.tenantId}
-      and m.station_id = ${context.stationId}
-      and m.business_day_id = ${businessDayId}
-      and m.shift_id = ${shiftId}
+      (select count from open_current)::int as open_segments,
+      count(*)::int as effective_segments,
+      count(distinct nozzle_id)::int as participating_nozzles,
+      count(distinct nozzle_id) filter (where has_terminal_close)::int as terminal_nozzles
+    from effective
   `);
   const row = rows[0];
   if (
     !row ||
     Number(row.open_segments) > 0 ||
-    Number(row.sealed_segments) === 0 ||
-    Number(row.invalid_sealed_segments) > 0 ||
+    Number(row.effective_segments) === 0 ||
     Number(row.participating_nozzles) !== Number(row.terminal_nozzles)
   ) {
     throw new AppError(
@@ -181,29 +168,30 @@ async function assertBusinessDayOperationalCompleteness(
         s.state not in ('COMPLETED', 'NOT_OPERATED')
         or (s.state = 'COMPLETED' and (
           not exists (
-            select 1 from app.meter_segments m
-            where m.tenant_id = s.tenant_id and m.station_id = s.station_id
-              and m.business_day_id = s.business_day_id and m.shift_id = s.id
-              and m.state = 'SEALED'
+            select 1 from app.effective_meter_segments_for_shift(
+              s.tenant_id, s.station_id, s.business_day_id, s.id
+            )
           )
           or exists (
             select 1 from app.meter_segments m
-            where m.tenant_id = s.tenant_id and m.station_id = s.station_id
-              and m.business_day_id = s.business_day_id and m.shift_id = s.id
+            where m.tenant_id=s.tenant_id and m.station_id=s.station_id
+              and m.business_day_id=s.business_day_id and m.shift_id=s.id
               and m.state <> 'SEALED'
-          )
-          or exists (
-            select 1 from app.meter_segments m
-            where m.tenant_id = s.tenant_id and m.station_id = s.station_id
-              and m.business_day_id = s.business_day_id and m.shift_id = s.id
               and not exists (
-                select 1 from app.meter_boundaries cb
-                where cb.tenant_id = m.tenant_id and cb.station_id = m.station_id
-                  and cb.id = m.closing_boundary_id and cb.business_day_id = s.business_day_id
-                  and cb.shift_id = s.id and cb.nozzle_id = m.nozzle_id
-                  and cb.meter_installation_id = m.meter_installation_id
-                  and cb.reason = 'SHIFT_CLOSE' and cb.reading_status = 'AVAILABLE'
+                select 1 from app.meter_segments successor
+                where successor.tenant_id=m.tenant_id and successor.station_id=m.station_id
+                  and successor.business_day_id=m.business_day_id and successor.shift_id=m.shift_id
+                  and successor.nozzle_id=m.nozzle_id
+                  and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
               )
+          )
+          or (
+            select count(distinct m.nozzle_id)
+            from app.effective_meter_segments_for_shift(s.tenant_id, s.station_id, s.business_day_id, s.id) m
+          ) <> (
+            select count(distinct m.nozzle_id)
+            from app.effective_meter_segments_for_shift(s.tenant_id, s.station_id, s.business_day_id, s.id) m
+            where app.meter_segment_has_terminal_shift_close(s.tenant_id, s.station_id, m.id)
           )
         ))
       )
@@ -236,16 +224,14 @@ async function assertReconciliationSourceCompleteness(
   await assertBusinessDayOperationalCompleteness(transaction, context, businessDayId);
   const actual = await transaction.execute<{ id: string; shift_id: string }>(sql`
     select m.id, m.shift_id
-    from app.meter_segments m
-    where m.tenant_id = ${context.tenantId}
-      and m.station_id = ${context.stationId}
-      and m.business_day_id = ${businessDayId}
-      and m.state = 'SEALED'
-      and not exists (
-        select 1 from app.meter_segments successor
-        where successor.tenant_id = m.tenant_id and successor.station_id = m.station_id
-          and (successor.correction_of_segment_id = m.id or successor.reversal_of_segment_id = m.id)
-      )
+    from app.shifts s
+    cross join lateral app.effective_meter_segments_for_shift(
+      s.tenant_id, s.station_id, s.business_day_id, s.id
+    ) m
+    where s.tenant_id=${context.tenantId}
+      and s.station_id=${context.stationId}
+      and s.business_day_id=${businessDayId}
+      and s.state='COMPLETED'
     order by m.id
   `);
   const declared = Array.isArray(sourceSegmentIds)
@@ -988,24 +974,38 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
           ${boundary.confirmedBy}, ${boundary.enteredBy}, ${boundary.attendantId}, ${boundary.onBehalfOf ?? null},
           ${boundary.exceptionReason ?? null}, ${boundary.priceChangeId ?? null}, 0)
       `);
+      let resolutionId: string | undefined;
       if (commandType === 'ResolveMeterException') {
-        await resolveMeterException(
+        resolutionId = await resolveMeterException(
           transaction,
           context,
           payload.exceptionBoundaryId!,
           boundary.id,
           'AVAILABLE_BOUNDARY',
-          {
-            commandType: 'ResolveMeterException',
-            exceptionBoundaryId: payload.exceptionBoundaryId!,
-            resolutionBoundaryId: boundary.id,
-          },
-          now,
         );
       }
       return {
         result: { boundaryId: boundary.id },
         after: boundary,
+        ...(resolutionId
+          ? {
+              event: meterExceptionResolvedEvent({
+                eventId: randomUUID(),
+                tenantId: context.tenantId,
+                stationId: context.stationId,
+                businessDayId: payload.businessDayId,
+                shiftId: payload.shiftId,
+                exceptionId: payload.exceptionBoundaryId!,
+                resolutionId,
+                resolutionKind: 'AVAILABLE_BOUNDARY',
+                resolutionBoundaryId: boundary.id,
+                nozzleId: payload.nozzleId,
+                meterInstallationId: payload.meterInstallationId,
+                resolvedBy: context.actor.membershipId,
+                occurredAt: now,
+              }),
+            }
+          : {}),
         ...(commandType === 'ConfirmPriceChangeBoundary'
           ? {
               event: meterBoundaryCreatedEvent({
@@ -1172,12 +1172,6 @@ export async function resetMeterFromRequest(request: Request, input: unknown) {
           payload.exceptionBoundaryId,
           boundary.id,
           'RESET',
-          {
-            commandType: 'ResetMeter',
-            exceptionBoundaryId: payload.exceptionBoundaryId,
-            resolutionBoundaryId: boundary.id,
-          },
-          now,
         );
       }
       const advancedInstallation = await transaction.execute<{ id: string }>(sql`
@@ -1389,13 +1383,8 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
           boundary.id,
           'REPLACEMENT',
           {
-            commandType: 'ReplaceMeter',
-            exceptionBoundaryId: payload.exceptionBoundaryId,
-            resolutionBoundaryId: boundary.id,
-            replacedInstallationId: payload.oldInstallationId,
             replacementInstallationId: newInstallationId,
           },
-          now,
         );
       }
       return {
@@ -1669,12 +1658,8 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
           closingBoundary.id,
           'CORRECTION',
           {
-            commandType: 'CorrectMeterSegment',
-            exceptionBoundaryId: linkedException.id,
-            resolutionBoundaryId: closingBoundary.id,
             correctedSegmentId: segment.id,
           },
-          now,
         );
       }
       return {
@@ -2037,16 +2022,16 @@ export async function submitReconciliationFromRequest(request: Request, input: u
       const row = await loadRevision(transaction, context, payload.revisionId);
       await assertBusinessDayOperationalCompleteness(transaction, context, row.business_day_id);
       const segments = await transaction.execute<SegmentDbRow>(sql`
-        select m.*, d.business_date from app.meter_segments m
-        join app.station_business_days d on d.tenant_id=m.tenant_id and d.station_id=m.station_id and d.id=m.business_day_id
-        where m.tenant_id=${context.tenantId} and m.station_id=${context.stationId}
-          and m.business_day_id=${row.business_day_id} and m.state='SEALED'
-          and not exists (
-            select 1 from app.meter_segments successor
-            where successor.tenant_id=m.tenant_id and successor.station_id=m.station_id
-              and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
-          )
-        order by m.id for share
+        select m.*, d.business_date
+        from app.shifts s
+        join app.station_business_days d
+          on d.tenant_id=s.tenant_id and d.station_id=s.station_id and d.id=s.business_day_id
+        cross join lateral app.effective_meter_segments_for_shift(
+          s.tenant_id, s.station_id, s.business_day_id, s.id
+        ) m
+        where s.tenant_id=${context.tenantId} and s.station_id=${context.stationId}
+          and s.business_day_id=${row.business_day_id} and s.state='COMPLETED'
+        order by m.id
       `);
       const computed = calculateReconciliation({
         id: row.id,

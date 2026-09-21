@@ -319,11 +319,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       where n.nspname = 'app' and c.relname in (
         'products', 'pumps', 'nozzles', 'meters', 'meter_installations',
         'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries',
-        'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations',
+        'meter_exceptions', 'meter_exception_resolutions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations',
         'forecourt_idempotency_records', 'forecourt_outbox'
       ) order by c.relname
     `;
-    expect(rows).toHaveLength(16);
+    expect(rows).toHaveLength(17);
     expect(rows.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
   });
 
@@ -2322,6 +2322,122 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         not_operated_reason: 'Station was closed for the entire planned shift',
       },
     ]);
+  });
+
+  it('uses the named exception capability and denies direct runtime mutation', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const day = randomUUID();
+    const shift = randomUUID();
+    const unavailableBoundary = randomUUID();
+    const resolutionBoundary = randomUUID();
+    const postCommand = (input: Record<string, unknown>, key: string) =>
+      forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${signedToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${day}', '${ids.tenantA}', '${ids.stationA}', '2026-10-05', 'NOT_STARTED');
+      update app.station_business_days set state='OPEN' where id='${day}';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values ('${shift}', '${ids.tenantA}', '${ids.stationA}', '${day}', 'PLANNED',
+        '2026-10-05T06:00:00Z', '2026-10-05T14:00:00Z', '2026-10-05');
+      update app.shifts set state='OPEN' where id='${shift}';
+    `);
+
+    const reported = await postCommand(
+      {
+        commandType: 'ReportMeterUnavailable',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        boundaryId: unavailableBoundary,
+        nozzleId: ids.nozzleB,
+        meterInstallationId: ids.installationB,
+        businessDayId: day,
+        shiftId: shift,
+        responsibleAttendantId: ids.membershipA,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'UNAVAILABLE',
+        unavailableReason: 'Meter display unreadable',
+        expectedVersion: 0,
+      },
+      'a3-exception-capability-report',
+    );
+    expect(reported.status).toBe(200);
+
+    await client.unsafe('set role app_runtime');
+    try {
+      await setContext(ids.tenantA, ids.actorA, ids.membershipA);
+      await expect(
+        client.unsafe(`delete from app.meter_exceptions where id='${unavailableBoundary}'`),
+      ).rejects.toThrow(/permission denied|immutable/);
+      await expect(
+        client.unsafe(`
+          update app.meter_exceptions
+             set status='RESOLVED', resolved_by='${ids.membershipA}', resolved_at=clock_timestamp()
+           where id='${unavailableBoundary}'
+        `),
+      ).rejects.toThrow(/permission denied|named capability|immutable/);
+      await expect(
+        client.unsafe(`
+          insert into app.meter_exceptions
+            (id, tenant_id, station_id, business_day_id, shift_id, nozzle_id, meter_installation_id,
+             boundary_id, status, reason, created_by)
+          values ('${randomUUID()}', '${ids.tenantA}', '${ids.stationA}', '${day}', '${shift}',
+            '${ids.nozzleB}', '${ids.installationB}', '${unavailableBoundary}', 'RESOLVED',
+            'forged', '${ids.membershipA}')
+        `),
+      ).rejects.toThrow(/permission denied|named capability/);
+    } finally {
+      await client.unsafe('reset role');
+    }
+
+    const resolved = await postCommand(
+      {
+        commandType: 'ResolveMeterException',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        boundaryId: resolutionBoundary,
+        nozzleId: ids.nozzleB,
+        meterInstallationId: ids.installationB,
+        businessDayId: day,
+        shiftId: shift,
+        responsibleAttendantId: ids.membershipA,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'AVAILABLE',
+        readingValue: '4500.000',
+        exceptionBoundaryId: unavailableBoundary,
+        expectedVersion: 0,
+      },
+      'a3-exception-capability-resolve',
+    );
+    expect(resolved.status).toBe(200);
+    await expect(client<{ status: string }[]>`
+      select status from app.meter_exceptions where id=${unavailableBoundary}
+    `).resolves.toEqual([{ status: 'RESOLVED' }]);
+    await expect(client<{ resolution_kind: string; resolution_boundary_id: string }[]>`
+      select resolution_kind, resolution_boundary_id
+      from app.meter_exception_resolutions where exception_id=${unavailableBoundary}
+    `).resolves.toEqual([
+      { resolution_kind: 'AVAILABLE_BOUNDARY', resolution_boundary_id: resolutionBoundary },
+    ]);
+    await expect(client<{ event_type: string }[]>`
+      select event_type from app.forecourt_outbox
+      where event_type='forecourt.meter_exception_resolved.v1'
+        and payload->>'exceptionId'=${unavailableBoundary}
+    `).resolves.toEqual([{ event_type: 'forecourt.meter_exception_resolved.v1' }]);
   });
 
   it('proves final A1 security denials through PostgreSQL production handlers', async () => {

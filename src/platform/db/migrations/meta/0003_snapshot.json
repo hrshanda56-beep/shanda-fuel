@@ -2218,6 +2218,42 @@
       },
       "isRLSEnabled": false
     },
+    "app.meter_exception_resolutions": {
+      "name": "meter_exception_resolutions",
+      "schema": "app",
+      "columns": {
+        "id": { "name": "id", "type": "uuid", "primaryKey": true, "notNull": true, "default": "gen_random_uuid()" },
+        "tenant_id": { "name": "tenant_id", "type": "uuid", "primaryKey": false, "notNull": true },
+        "station_id": { "name": "station_id", "type": "uuid", "primaryKey": false, "notNull": true },
+        "exception_id": { "name": "exception_id", "type": "uuid", "primaryKey": false, "notNull": true },
+        "resolution_kind": { "name": "resolution_kind", "type": "text", "primaryKey": false, "notNull": true },
+        "resolution_boundary_id": { "name": "resolution_boundary_id", "type": "uuid", "primaryKey": false, "notNull": true },
+        "corrected_segment_id": { "name": "corrected_segment_id", "type": "uuid", "primaryKey": false, "notNull": false },
+        "replacement_installation_id": { "name": "replacement_installation_id", "type": "uuid", "primaryKey": false, "notNull": false },
+        "resolved_by": { "name": "resolved_by", "type": "uuid", "primaryKey": false, "notNull": true },
+        "resolved_at": { "name": "resolved_at", "type": "timestamp with time zone", "primaryKey": false, "notNull": true, "default": "now()" },
+        "notes": { "name": "notes", "type": "text", "primaryKey": false, "notNull": false }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "meter_exception_resolutions_tenant_id_tenants_id_fk": { "name": "meter_exception_resolutions_tenant_id_tenants_id_fk", "tableFrom": "meter_exception_resolutions", "tableTo": "tenants", "schemaTo": "app", "columnsFrom": ["tenant_id"], "columnsTo": ["id"], "onDelete": "no action", "onUpdate": "no action" },
+        "meter_exception_resolutions_exception_fk": { "name": "meter_exception_resolutions_exception_fk", "tableFrom": "meter_exception_resolutions", "tableTo": "meter_exceptions", "schemaTo": "app", "columnsFrom": ["tenant_id", "station_id", "exception_id"], "columnsTo": ["tenant_id", "station_id", "id"], "onDelete": "no action", "onUpdate": "no action" },
+        "meter_exception_resolutions_boundary_fk": { "name": "meter_exception_resolutions_boundary_fk", "tableFrom": "meter_exception_resolutions", "tableTo": "meter_boundaries", "schemaTo": "app", "columnsFrom": ["tenant_id", "station_id", "resolution_boundary_id"], "columnsTo": ["tenant_id", "station_id", "id"], "onDelete": "no action", "onUpdate": "no action" },
+        "meter_exception_resolutions_segment_fk": { "name": "meter_exception_resolutions_segment_fk", "tableFrom": "meter_exception_resolutions", "tableTo": "meter_segments", "schemaTo": "app", "columnsFrom": ["tenant_id", "station_id", "corrected_segment_id"], "columnsTo": ["tenant_id", "station_id", "id"], "onDelete": "no action", "onUpdate": "no action" },
+        "meter_exception_resolutions_installation_fk": { "name": "meter_exception_resolutions_installation_fk", "tableFrom": "meter_exception_resolutions", "tableTo": "meter_installations", "schemaTo": "app", "columnsFrom": ["tenant_id", "station_id", "replacement_installation_id"], "columnsTo": ["tenant_id", "station_id", "id"], "onDelete": "no action", "onUpdate": "no action" },
+        "meter_exception_resolutions_resolved_by_fk": { "name": "meter_exception_resolutions_resolved_by_fk", "tableFrom": "meter_exception_resolutions", "tableTo": "memberships", "schemaTo": "app", "columnsFrom": ["tenant_id", "resolved_by"], "columnsTo": ["tenant_id", "id"], "onDelete": "no action", "onUpdate": "no action" }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "meter_exception_resolutions_tenant_id_id_uidx": { "name": "meter_exception_resolutions_tenant_id_id_uidx", "nullsNotDistinct": false, "columns": ["tenant_id", "id"] },
+        "meter_exception_resolutions_exception_uidx": { "name": "meter_exception_resolutions_exception_uidx", "nullsNotDistinct": false, "columns": ["tenant_id", "station_id", "exception_id"] }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "meter_exception_resolutions_kind_ck": { "name": "meter_exception_resolutions_kind_ck", "value": "\"app\".\"meter_exception_resolutions\".\"resolution_kind\" in ('AVAILABLE_BOUNDARY', 'RESET', 'REPLACEMENT', 'CORRECTION')" }
+      },
+      "isRLSEnabled": false
+    },
     "app.meter_installations": {
       "name": "meter_installations",
       "schema": "app",

@@ -998,3 +998,241 @@ DROP TRIGGER IF EXISTS meter_exceptions_shift_business_day_guard ON app.meter_ex
 CREATE TRIGGER meter_exceptions_shift_business_day_guard
 BEFORE INSERT OR UPDATE OF tenant_id, station_id, business_day_id, shift_id ON app.meter_exceptions
 FOR EACH ROW EXECUTE FUNCTION app.validate_forecourt_shift_business_day_link();
+
+-- Canonical effective operational segment projection. Corrections and
+-- reversals leave immutable history in place but only their current successor
+-- participates in operational truth.
+CREATE OR REPLACE FUNCTION app.effective_meter_segments_for_shift(
+  p_tenant_id uuid, p_station_id uuid, p_business_day_id uuid, p_shift_id uuid
+)
+RETURNS SETOF app.meter_segments
+LANGUAGE sql STABLE SET search_path = pg_catalog, app
+AS $$
+  SELECT m.*
+    FROM app.meter_segments m
+   WHERE m.tenant_id = p_tenant_id AND m.station_id = p_station_id
+     AND m.business_day_id = p_business_day_id AND m.shift_id = p_shift_id
+     AND m.state = 'SEALED'
+     AND NOT EXISTS (
+       SELECT 1 FROM app.meter_segments successor
+        WHERE successor.tenant_id = m.tenant_id AND successor.station_id = m.station_id
+          AND successor.business_day_id = m.business_day_id
+          AND successor.shift_id = m.shift_id AND successor.nozzle_id = m.nozzle_id
+          AND (successor.correction_of_segment_id = m.id OR successor.reversal_of_segment_id = m.id)
+     )
+   ORDER BY m.id;
+$$;
+
+-- Corrections retain correction provenance rather than rewriting the physical
+-- boundary reason. Walk backwards to preserve an ancestor SHIFT_CLOSE fact.
+CREATE OR REPLACE FUNCTION app.meter_segment_has_terminal_shift_close(
+  p_tenant_id uuid, p_station_id uuid, p_segment_id uuid
+)
+RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, app
+AS $$
+  WITH RECURSIVE lineage AS (
+    SELECT m.id, m.correction_of_segment_id, m.reversal_of_segment_id,
+           m.closing_boundary_id, m.business_day_id, m.shift_id, m.nozzle_id
+      FROM app.meter_segments m
+     WHERE m.tenant_id=p_tenant_id AND m.station_id=p_station_id AND m.id=p_segment_id
+    UNION ALL
+    SELECT parent.id, parent.correction_of_segment_id, parent.reversal_of_segment_id,
+           parent.closing_boundary_id, parent.business_day_id, parent.shift_id, parent.nozzle_id
+      FROM app.meter_segments parent JOIN lineage child
+        ON parent.tenant_id=p_tenant_id AND parent.station_id=p_station_id
+       AND parent.id IN (child.correction_of_segment_id, child.reversal_of_segment_id)
+       AND parent.business_day_id=child.business_day_id
+       AND parent.shift_id=child.shift_id AND parent.nozzle_id=child.nozzle_id
+  )
+  SELECT EXISTS (
+    SELECT 1 FROM lineage l JOIN app.meter_boundaries b
+      ON b.tenant_id=p_tenant_id AND b.station_id=p_station_id AND b.id=l.closing_boundary_id
+     WHERE b.reading_status='AVAILABLE' AND b.reason='SHIFT_CLOSE'
+       AND b.business_day_id=l.business_day_id AND b.shift_id=l.shift_id
+       AND b.nozzle_id=l.nozzle_id
+  );
+$$;
+
+CREATE TABLE IF NOT EXISTS app.meter_exception_resolutions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  station_id uuid NOT NULL,
+  exception_id uuid NOT NULL,
+  resolution_kind text NOT NULL,
+  resolution_boundary_id uuid NOT NULL,
+  corrected_segment_id uuid,
+  replacement_installation_id uuid,
+  resolved_by uuid NOT NULL,
+  resolved_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  notes text,
+  CONSTRAINT meter_exception_resolutions_tenant_id_id_uidx UNIQUE (tenant_id, id),
+  CONSTRAINT meter_exception_resolutions_exception_uidx UNIQUE (tenant_id, station_id, exception_id),
+  CONSTRAINT meter_exception_resolutions_kind_ck CHECK
+    (resolution_kind IN ('AVAILABLE_BOUNDARY','RESET','REPLACEMENT','CORRECTION')),
+  CONSTRAINT meter_exception_resolutions_tenant_id_tenants_id_fk
+    FOREIGN KEY (tenant_id) REFERENCES app.tenants (id),
+  CONSTRAINT meter_exception_resolutions_exception_fk FOREIGN KEY
+    (tenant_id, station_id, exception_id)
+    REFERENCES app.meter_exceptions (tenant_id, station_id, id),
+  CONSTRAINT meter_exception_resolutions_boundary_fk FOREIGN KEY
+    (tenant_id, station_id, resolution_boundary_id)
+    REFERENCES app.meter_boundaries (tenant_id, station_id, id),
+  CONSTRAINT meter_exception_resolutions_segment_fk FOREIGN KEY
+    (tenant_id, station_id, corrected_segment_id)
+    REFERENCES app.meter_segments (tenant_id, station_id, id),
+  CONSTRAINT meter_exception_resolutions_installation_fk FOREIGN KEY
+    (tenant_id, station_id, replacement_installation_id)
+    REFERENCES app.meter_installations (tenant_id, station_id, id),
+  CONSTRAINT meter_exception_resolutions_resolved_by_fk FOREIGN KEY
+    (tenant_id, resolved_by) REFERENCES app.memberships (tenant_id, id)
+);
+ALTER TABLE app.meter_exception_resolutions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.meter_exception_resolutions FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_context ON app.meter_exception_resolutions
+  USING (tenant_id=app.current_tenant_id() AND app.has_active_membership())
+  WITH CHECK (tenant_id=app.current_tenant_id() AND app.has_active_membership());
+
+-- Typed, server-owned exception resolution capability. Resolver identity and
+-- time come from the trusted database context; arbitrary JSON cannot resolve
+-- an exception.
+CREATE OR REPLACE FUNCTION app.resolve_meter_exception(
+  p_tenant_id uuid, p_station_id uuid, p_exception_id uuid,
+  p_resolution_boundary_id uuid, p_resolution_kind text,
+  p_corrected_segment_id uuid DEFAULT NULL,
+  p_replacement_installation_id uuid DEFAULT NULL
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, app
+AS $$
+DECLARE e record; b record; c record; actor_id uuid; resolution_id uuid := gen_random_uuid();
+BEGIN
+  IF session_user NOT IN ('app_runtime','postgres')
+     OR app.current_tenant_id() IS DISTINCT FROM p_tenant_id
+     OR current_setting('app.station_id',true) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     OR current_setting('app.station_id',true)::uuid IS DISTINCT FROM p_station_id
+     OR NOT app.has_active_membership() THEN
+    RAISE EXCEPTION 'trusted station context is required for meter exception resolution';
+  END IF;
+  actor_id := app.current_membership_id();
+  SELECT x.*, source.effective_at AS exception_effective_at
+    INTO e
+    FROM app.meter_exceptions x
+    JOIN app.meter_boundaries source
+      ON source.tenant_id=x.tenant_id AND source.station_id=x.station_id AND source.id=x.boundary_id
+   WHERE x.tenant_id=p_tenant_id AND x.station_id=p_station_id AND x.id=p_exception_id
+     AND x.status='BLOCKING' AND x.exception_type='METER_UNAVAILABLE'
+   FOR UPDATE OF x;
+  IF e.id IS NULL THEN RAISE EXCEPTION 'meter exception is missing, already resolved, or out of scope'; END IF;
+
+  SELECT * INTO b FROM app.meter_boundaries
+   WHERE tenant_id=p_tenant_id AND station_id=p_station_id AND id=p_resolution_boundary_id
+     AND reading_status='AVAILABLE' AND effective_at > e.exception_effective_at
+     AND business_day_id=e.business_day_id AND shift_id=e.shift_id AND nozzle_id=e.nozzle_id;
+  IF b.id IS NULL THEN RAISE EXCEPTION 'resolution is not a later fact for the exact exception scope'; END IF;
+
+  IF p_resolution_kind IN ('AVAILABLE_BOUNDARY','RESET') THEN
+    IF b.meter_installation_id IS DISTINCT FROM e.meter_installation_id
+       OR (p_resolution_kind='RESET' AND b.reason <> 'METER_RESET') THEN
+      RAISE EXCEPTION 'resolution does not address the exact meter installation lineage';
+    END IF;
+  ELSIF p_resolution_kind='REPLACEMENT' THEN
+    IF b.reason <> 'REPLACEMENT' OR p_replacement_installation_id IS NULL
+       OR b.meter_installation_id IS DISTINCT FROM p_replacement_installation_id
+       OR b.meter_installation_id IS NOT DISTINCT FROM e.meter_installation_id THEN
+      RAISE EXCEPTION 'replacement resolution lineage is incomplete or out of scope';
+    END IF;
+  ELSIF p_resolution_kind='CORRECTION' THEN
+    IF b.reason <> 'CORRECTION' OR p_corrected_segment_id IS NULL THEN
+      RAISE EXCEPTION 'correction resolution requires a typed corrected segment';
+    END IF;
+    SELECT * INTO c FROM app.meter_segments
+     WHERE tenant_id=p_tenant_id AND station_id=p_station_id AND id=p_corrected_segment_id
+       AND state='SEALED' AND business_day_id=e.business_day_id AND shift_id=e.shift_id
+       AND nozzle_id=e.nozzle_id AND meter_installation_id=e.meter_installation_id
+       AND closing_boundary_id=p_resolution_boundary_id;
+    IF c.id IS NULL THEN RAISE EXCEPTION 'corrected segment is not the exact resolution fact'; END IF;
+  ELSE
+    RAISE EXCEPTION 'unsupported meter exception resolution kind';
+  END IF;
+
+  INSERT INTO app.meter_exception_resolutions
+    (id,tenant_id,station_id,exception_id,resolution_kind,resolution_boundary_id,
+     corrected_segment_id,replacement_installation_id,resolved_by,resolved_at)
+  VALUES (resolution_id,p_tenant_id,p_station_id,p_exception_id,p_resolution_kind,
+          p_resolution_boundary_id,p_corrected_segment_id,p_replacement_installation_id,
+          actor_id,clock_timestamp());
+  UPDATE app.meter_exceptions
+     SET status='RESOLVED', resolved_by=actor_id, resolved_at=clock_timestamp(),
+         resolution_kind=p_resolution_kind, resolution_boundary_id=p_resolution_boundary_id,
+         resolution_provenance=jsonb_build_object('resolutionId',resolution_id::text)
+   WHERE tenant_id=p_tenant_id AND station_id=p_station_id AND id=p_exception_id
+     AND status='BLOCKING';
+  IF NOT FOUND THEN RAISE EXCEPTION 'meter exception was resolved concurrently'; END IF;
+  RETURN resolution_id;
+END;
+$$;
+
+-- Revoke direct runtime mutation. The existing unavailable-boundary trigger
+-- creates immutable exception facts; the capability above is the only
+-- resolution path.
+CREATE OR REPLACE FUNCTION app.guard_meter_exception_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'meter exceptions are immutable and cannot be deleted'; END IF;
+  IF current_user NOT IN ('migration_owner','postgres') THEN
+    RAISE EXCEPTION 'meter exceptions can only be changed through the named capability';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    IF NEW.status <> 'BLOCKING' OR NEW.exception_type <> 'METER_UNAVAILABLE' THEN
+      RAISE EXCEPTION 'meter exceptions must be created as blocking meter-unavailable records';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.station_id IS DISTINCT FROM OLD.station_id
+     OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id
+     OR NEW.shift_id IS DISTINCT FROM OLD.shift_id
+     OR NEW.nozzle_id IS DISTINCT FROM OLD.nozzle_id
+     OR NEW.meter_installation_id IS DISTINCT FROM OLD.meter_installation_id
+     OR NEW.boundary_id IS DISTINCT FROM OLD.boundary_id
+     OR NEW.exception_type IS DISTINCT FROM OLD.exception_type
+     OR NEW.reason IS DISTINCT FROM OLD.reason
+     OR OLD.status <> 'BLOCKING' OR NEW.status <> 'RESOLVED'
+     OR NEW.resolved_at IS NULL OR NEW.resolved_by IS NULL
+     OR NEW.resolution_kind IS NULL OR NEW.resolution_boundary_id IS NULL THEN
+    RAISE EXCEPTION 'meter exception identity and resolved history are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS meter_exceptions_scope_guard ON app.meter_exceptions;
+CREATE TRIGGER meter_exceptions_scope_guard
+BEFORE INSERT OR UPDATE OR DELETE ON app.meter_exceptions
+FOR EACH ROW EXECUTE FUNCTION app.guard_meter_exception_mutation();
+
+REVOKE ALL ON app.meter_exceptions, app.meter_exception_resolutions FROM PUBLIC;
+REVOKE INSERT, UPDATE, DELETE ON app.meter_exceptions FROM app_runtime;
+REVOKE INSERT, UPDATE, DELETE ON app.meter_exception_resolutions FROM app_runtime;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_runtime') THEN
+    GRANT SELECT ON app.meter_exceptions, app.meter_exception_resolutions TO app_runtime;
+    GRANT EXECUTE ON FUNCTION app.effective_meter_segments_for_shift(uuid,uuid,uuid,uuid) TO app_runtime;
+    GRANT EXECUTE ON FUNCTION app.meter_segment_has_terminal_shift_close(uuid,uuid,uuid) TO app_runtime;
+    GRANT EXECUTE ON FUNCTION app.resolve_meter_exception(uuid,uuid,uuid,uuid,text,uuid,uuid) TO app_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='job_runtime') THEN
+    GRANT SELECT ON app.meter_exceptions, app.meter_exception_resolutions TO job_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='diagnostics_readonly') THEN
+    GRANT SELECT ON app.meter_exceptions, app.meter_exception_resolutions TO diagnostics_readonly;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='migration_owner') THEN
+    ALTER TABLE app.meter_exception_resolutions OWNER TO migration_owner;
+    ALTER FUNCTION app.effective_meter_segments_for_shift(uuid,uuid,uuid,uuid) OWNER TO migration_owner;
+    ALTER FUNCTION app.meter_segment_has_terminal_shift_close(uuid,uuid,uuid) OWNER TO migration_owner;
+    ALTER FUNCTION app.resolve_meter_exception(uuid,uuid,uuid,uuid,text,uuid,uuid) OWNER TO migration_owner;
+  END IF;
+END
+$$;
