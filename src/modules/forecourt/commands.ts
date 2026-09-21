@@ -22,6 +22,7 @@ import {
 import {
   approvePriceChange,
   approveReconciliation,
+  confirmAttendantHandover,
   lockReconciliation,
   lockBusinessDay,
   postReconciliation,
@@ -56,6 +57,24 @@ const sealSegmentPayload = z.object({
 
 type SealSegmentPayload = z.infer<typeof sealSegmentPayload>;
 
+const handoverPayload = z
+  .object({
+    commandType: z.literal('HandoverAttendant').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    boundaryId: z.string().uuid(),
+    priorBoundaryId: z.string().uuid(),
+    nozzleId: z.string().uuid(),
+    meterInstallationId: z.string().uuid(),
+    businessDayId: z.string().uuid(),
+    shiftId: z.string().uuid(),
+    newAttendantId: z.string().uuid(),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+type HandoverPayload = z.infer<typeof handoverPayload>;
+
 type BoundaryRow = {
   id: string;
   tenant_id: string;
@@ -84,6 +103,106 @@ function requestHash(payload: SealSegmentPayload): string {
 
 function genericRequestHash(input: unknown): string {
   return createHash('sha256').update(JSON.stringify(input)).digest('hex');
+}
+
+export async function handoverAttendantFromRequest(request: Request, input: unknown) {
+  const payload = handoverPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await resolveForecourtCommandContext({
+    request,
+    requestedTenantId: payload.tenantId,
+    stationId: payload.stationId,
+    loadStation: loadForecourtStation,
+  });
+  return executeForecourtCommand({
+    context,
+    commandType: 'HandoverAttendant',
+    idempotencyKey,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'MeterBoundary',
+    subjectId: payload.boundaryId,
+    expectedVersionSubjectId: payload.shiftId,
+    expectedVersion: payload.expectedVersion,
+    responsibleAttendantId: payload.newAttendantId,
+    auditMetadata: {
+      priorBoundaryId: payload.priorBoundaryId,
+      nozzleId: payload.nozzleId,
+      meterInstallationId: payload.meterInstallationId,
+      businessDayId: payload.businessDayId,
+      shiftId: payload.shiftId,
+    },
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<
+        BoundaryRow & {
+          business_day_state: string;
+          shift_state: string;
+          business_date: string;
+        }
+      >(sql`
+        select b.*, d.state as business_day_state, s.state as shift_state, d.business_date
+        from app.meter_boundaries b
+        join app.station_business_days d
+          on d.tenant_id = b.tenant_id and d.station_id = b.station_id and d.id = b.business_day_id
+        join app.shifts s
+          on s.tenant_id = b.tenant_id and s.station_id = b.station_id and s.id = b.shift_id
+        where b.tenant_id = ${context.tenantId}
+          and b.station_id = ${context.stationId}
+          and b.id = ${payload.priorBoundaryId}
+          and b.nozzle_id = ${payload.nozzleId}
+          and b.meter_installation_id = ${payload.meterInstallationId}
+          and b.business_day_id = ${payload.businessDayId}
+          and b.shift_id = ${payload.shiftId}
+        for update of b, d, s
+      `);
+      const row = rows[0];
+      if (!row) throw new AppError('NOT_FOUND', 'The prior meter boundary was not found');
+      if (row.business_day_state !== 'OPEN' || row.shift_state !== 'OPEN') {
+        throw new AppError(
+          'CONFLICT',
+          'Attendant handover requires an open business day and shift',
+        );
+      }
+      const now = await serverNow(transaction);
+      const boundary = confirmAttendantHandover({
+        id: payload.boundaryId,
+        priorBoundary: boundaryFromRow(row),
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        nozzleId: payload.nozzleId,
+        meterInstallationId: payload.meterInstallationId,
+        businessDayId: payload.businessDayId,
+        shiftId: payload.shiftId,
+        newAttendantId: payload.newAttendantId,
+        actor: context.actor,
+        effectiveAt: now,
+        confirmedAt: now,
+      });
+      await transaction.execute(sql`
+        insert into app.meter_boundaries
+          (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+           reason, reading_status, reading_value, unavailable_reason, effective_at, confirmed_at,
+           confirmed_by, entered_by, attendant_id, on_behalf_of, exception_reason, version)
+        values
+          (${boundary.id}, ${boundary.tenantId}, ${boundary.stationId}, ${boundary.nozzleId},
+           ${boundary.meterInstallationId}, ${boundary.businessDayId}, ${boundary.shiftId},
+           ${boundary.reason}, ${boundary.reading.status},
+           ${boundary.reading.status === 'AVAILABLE' ? boundary.reading.value : null},
+           ${boundary.reading.status === 'UNAVAILABLE' ? boundary.reading.reason : null},
+           ${boundary.effectiveAt}::timestamptz, ${boundary.confirmedAt}::timestamptz,
+           ${boundary.confirmedBy}, ${boundary.enteredBy}, ${boundary.attendantId},
+           ${boundary.onBehalfOf ?? null}, ${boundary.exceptionReason ?? null}, ${boundary.version})
+      `);
+      await transaction.execute(sql`
+        update app.shifts
+        set version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.shiftId} and version = ${payload.expectedVersion}
+      `);
+      return { result: { boundaryId: boundary.id }, after: boundary };
+    },
+  });
 }
 
 async function serverNow(

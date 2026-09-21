@@ -327,6 +327,8 @@ export type ForecourtCommandInput<T> = Readonly<{
   auditMetadata?: Readonly<Record<string, string | null>>;
   responsibleAttendantId?: string;
   expectedVersion?: number;
+  /** The workflow lock subject may differ from the newly-created audit subject. */
+  expectedVersionSubjectId?: string;
   execute: (
     transaction: ForecourtTransaction,
   ) => Promise<{ result: T; event?: ForecourtEvent; after?: unknown }>;
@@ -392,7 +394,7 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
           await input.ports.expectedVersion(
             transaction,
             FORECOURT_VERSION_SUBJECT[input.commandType],
-            input.subjectId,
+            input.expectedVersionSubjectId ?? input.subjectId,
             input.expectedVersion,
             input.context.stationId,
             input.context.tenantId,

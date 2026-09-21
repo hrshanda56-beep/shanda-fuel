@@ -5,6 +5,7 @@ import {
   activatePriceChangeFromRequest,
   approvePriceChangeFromRequest,
   approveReconciliationFromRequest,
+  handoverAttendantFromRequest,
   lockBusinessDayFromRequest,
   lockReconciliationFromRequest,
   postReconciliationFromRequest,
@@ -19,19 +20,21 @@ export async function POST(request: Request): Promise<Response> {
         ? body.commandType
         : 'SealSegment';
     const result =
-      commandType === 'ApprovePriceChange'
-        ? await approvePriceChangeFromRequest(request, body)
-        : commandType === 'ActivatePriceChange'
-          ? await activatePriceChangeFromRequest(request, body)
-          : commandType === 'ApproveReconciliation'
-            ? await approveReconciliationFromRequest(request, body)
-            : commandType === 'PostReconciliation'
-              ? await postReconciliationFromRequest(request, body)
-              : commandType === 'LockReconciliation'
-                ? await lockReconciliationFromRequest(request, body)
-                : commandType === 'LockBusinessDay'
-                  ? await lockBusinessDayFromRequest(request, body)
-                  : await sealMeterSegmentFromRequest(request, body);
+      commandType === 'HandoverAttendant'
+        ? await handoverAttendantFromRequest(request, body)
+        : commandType === 'ApprovePriceChange'
+          ? await approvePriceChangeFromRequest(request, body)
+          : commandType === 'ActivatePriceChange'
+            ? await activatePriceChangeFromRequest(request, body)
+            : commandType === 'ApproveReconciliation'
+              ? await approveReconciliationFromRequest(request, body)
+              : commandType === 'PostReconciliation'
+                ? await postReconciliationFromRequest(request, body)
+                : commandType === 'LockReconciliation'
+                  ? await lockReconciliationFromRequest(request, body)
+                  : commandType === 'LockBusinessDay'
+                    ? await lockBusinessDayFromRequest(request, body)
+                    : await sealMeterSegmentFromRequest(request, body);
     return NextResponse.json(result, { status: commandType === 'SealSegment' ? 201 : 200 });
   } catch (error) {
     if (error instanceof ZodError) {

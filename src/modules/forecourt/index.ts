@@ -74,6 +74,7 @@ export {
   activatePriceChangeFromRequest,
   approvePriceChangeFromRequest,
   approveReconciliationFromRequest,
+  handoverAttendantFromRequest,
   lockBusinessDayFromRequest,
   lockReconciliationFromRequest,
   postReconciliationFromRequest,
