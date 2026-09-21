@@ -1888,7 +1888,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
 
   it('serializes concurrent installation updates and rejects the stale winner', async () => {
     const current = await client<{ version: number }[]>`
-      select version from app.meter_installations where id = ${ids.installationA}
+      select version from app.meter_installations where id = ${ids.installationB}
     `;
     const expectedVersion = current[0]?.version ?? 0;
     let releaseFirst!: () => void;
@@ -1903,7 +1903,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const first = raceClient.begin(async (transaction) => {
       await transaction`
         select id from app.meter_installations
-        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationB}
         for update
       `;
       firstLocked();
@@ -1912,7 +1912,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         update app.meter_installations
         set version = version + 1
         where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA}
-          and id = ${ids.installationA} and version = ${expectedVersion}
+          and id = ${ids.installationB} and version = ${expectedVersion}
         returning id
       `;
       return updated.length;
@@ -1922,14 +1922,14 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const second = raceClient.begin(async (transaction) => {
       await transaction`
         select id from app.meter_installations
-        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationB}
         for update
       `;
       const updated = await transaction`
         update app.meter_installations
         set version = version + 1
         where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA}
-          and id = ${ids.installationA} and version = ${expectedVersion}
+          and id = ${ids.installationB} and version = ${expectedVersion}
         returning id
       `;
       return updated.length;
@@ -1939,7 +1939,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([1, 0]);
     await client`
       update app.meter_installations set version = ${expectedVersion}
-      where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+      where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationB}
     `;
   });
 });

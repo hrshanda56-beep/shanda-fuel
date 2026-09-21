@@ -730,7 +730,7 @@ $$;
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
-    REVOKE UPDATE ON app.meter_segments FROM app_runtime;
+    REVOKE UPDATE, DELETE ON app.meter_segments FROM app_runtime;
   END IF;
 END
 $$;
