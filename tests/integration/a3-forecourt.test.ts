@@ -931,6 +931,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
       values
         ('${ids.closurePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-22T00:00:00Z', '2026-09-23T00:00:00Z', 1.800000, 'DRAFT', '${ids.membershipC}');
+      update app.meter_boundaries set price_change_id = '${ids.closurePrice}' where id = '${ids.closureBoundary}';
       update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.closurePrice}';
       insert into app.reconciliations
         (id, tenant_id, station_id, business_day_id, state)
@@ -1127,6 +1128,12 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       update app.selling_prices
       set state = 'PENDING_APPROVAL'
       where id in ('${ids.auditFailurePrice}', '${ids.outboxFailurePrice}');
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason,
+         reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id, price_change_id)
+      values
+        ('a3000000-0000-4000-8000-000000000230', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${ids.closureDay}', '${ids.closureShift}', 'PRICE_CHANGE',
+         'AVAILABLE', 3000.000, '2026-09-24T06:00:00Z', '2026-09-24T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}', '${ids.outboxFailurePrice}');
     `);
 
     await client.unsafe(`
@@ -1643,7 +1650,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
             tenantId: ids.tenantA,
             stationId: ids.stationA,
             boundaryId,
-            priorBoundaryId: ids.routeOpening,
+            priorBoundaryId: ids.routeClosing,
             nozzleId: ids.nozzleA,
             meterInstallationId: ids.installationA,
             businessDayId: ids.routeDay,
@@ -1702,6 +1709,12 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       insert into app.selling_prices
         (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
       values ('${ids.routeRacePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-25T00:00:00Z', '2026-09-26T00:00:00Z', 1.830000, 'DRAFT', '${ids.membershipC}');
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason,
+         reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id, price_change_id)
+      values
+        ('a3000000-0000-4000-8000-000000000229', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${ids.routeDay}', '${ids.routeShift}', 'PRICE_CHANGE',
+         'AVAILABLE', 3000.000, '2026-09-25T06:00:00Z', '2026-09-25T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}', '${ids.routeRacePrice}');
       update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.routeRacePrice}';
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.commandRaceDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-26', 'NOT_STARTED');
