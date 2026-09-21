@@ -538,7 +538,12 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
   const payload = boundaryCommandPayload.parse(input);
   const commandType = payload.commandType ?? 'ConfirmBoundary';
   const highImpactReasons = new Set(['PRICE_CHANGE', 'METER_RESET', 'REPLACEMENT', 'CORRECTION']);
-  if (commandType === 'ConfirmBoundary' && highImpactReasons.has(payload.reason)) {
+  if (
+    (commandType === 'ConfirmBoundary' ||
+      commandType === 'ReportMeterUnavailable' ||
+      commandType === 'ResolveMeterException') &&
+    highImpactReasons.has(payload.reason)
+  ) {
     throw new AppError('FORBIDDEN', 'High-impact meter boundaries require their named command');
   }
   if (commandType === 'ConfirmPriceChangeBoundary') {
