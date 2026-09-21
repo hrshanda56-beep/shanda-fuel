@@ -2279,7 +2279,6 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
       values ('${shift}', '${ids.tenantA}', '${ids.stationA}', '${day}', 'PLANNED',
         '2026-10-04T06:00:00Z', '2026-10-04T14:00:00Z', '2026-10-04');
-      update app.shifts set state='OPEN' where id='${shift}';
     `);
 
     const completion = await postCommand(
