@@ -8,7 +8,6 @@ export {
   cancelBeforeStart,
   closeMeters,
   completeShift,
-  createPersistedPriceBoundaryState,
   confirmAttendantHandover,
   confirmBoundary,
   exceptionallyCloseBusinessDay,
@@ -73,6 +72,7 @@ export {
   resolveForecourtCommandContext,
 } from './application';
 export { FORECOURT_COMMAND_POLICY } from './application';
+export { sealMeterSegmentFromRequest } from './commands';
 export type {
   ForecourtAuditPort,
   ForecourtCommandContext,
@@ -84,6 +84,7 @@ export type {
   ForecourtTransaction,
   ForecourtTransactionPort,
   ForecourtCommandType,
+  ForecourtVersionSubject,
 } from './application';
 export type {
   BusinessDayLockedEvent,

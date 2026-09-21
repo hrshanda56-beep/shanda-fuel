@@ -14,6 +14,7 @@ export type MeterSegmentSealedEvent = {
   segmentId: string;
   nozzleId: string;
   meterInstallationId: string;
+  meterId: string;
   productId: string;
   attendantId: string;
   enteredBy: string;
@@ -28,12 +29,16 @@ export type MeterSegmentSealedEvent = {
   occurredAt: string;
   openingBoundaryId: string;
   closingBoundaryId: string;
+  openingBoundaryReason: string;
+  closingBoundaryReason: string;
   correctionOfSegmentId?: string;
   reversalOfSegmentId?: string;
 };
 
+import type { ReconciliationPaymentCategory, VarianceClassification } from './domain';
+
 export type DeclarationTotalSnapshot = {
-  category: string;
+  category: ReconciliationPaymentCategory;
   amount: Money;
 };
 
@@ -52,10 +57,11 @@ export type ReconciliationApprovedEvent = {
   expectedSales: Money;
   accountedSales: Money;
   variance: Money;
-  varianceClassification: string;
+  varianceClassification: VarianceClassification;
   varianceExplanation?: string;
   declarationTotals: readonly DeclarationTotalSnapshot[];
   sourceSegmentIds: readonly string[];
+  sourceShiftIds: readonly string[];
   sourceRevisionId?: string;
   correctionOfRevisionId?: string;
   approvedBy: string;
@@ -118,6 +124,7 @@ export function meterSegmentSealedEvent(
     segmentId: segment.id,
     nozzleId: segment.nozzleId,
     meterInstallationId: segment.meterInstallationId,
+    meterId: segment.meterId,
     productId: segment.productId,
     attendantId: segment.attendantId,
     enteredBy: segment.enteredBy,
@@ -132,6 +139,8 @@ export function meterSegmentSealedEvent(
     occurredAt: input.occurredAt ?? segment.sealedAt,
     openingBoundaryId: segment.openingBoundaryId,
     closingBoundaryId: segment.closingBoundaryId,
+    openingBoundaryReason: segment.openingBoundaryReason,
+    closingBoundaryReason: segment.boundaryReason,
     ...(segment.correctionOfSegmentId
       ? { correctionOfSegmentId: segment.correctionOfSegmentId }
       : {}),
@@ -170,6 +179,7 @@ export function reconciliationApprovedEvent(
       amount: declaration.amount,
     })),
     sourceSegmentIds: revision.sourceSegmentIds,
+    sourceShiftIds: revision.sourceShiftIds,
     ...(revision.sourceRevisionId ? { sourceRevisionId: revision.sourceRevisionId } : {}),
     ...(revision.correctionOfRevisionId
       ? { correctionOfRevisionId: revision.correctionOfRevisionId }

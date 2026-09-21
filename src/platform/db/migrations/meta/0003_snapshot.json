@@ -1,5 +1,5 @@
 {
-  "id": "891beb64-0388-445c-92ff-51da15f5896f",
+  "id": "467352cb-d49e-420d-8dfd-adc9cf9a6fd7",
   "prevId": "7f7a38e8-d5b2-4329-97fd-db822ec2191b",
   "version": "7",
   "dialect": "postgresql",
@@ -1247,6 +1247,268 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "app.forecourt_idempotency_records": {
+      "name": "forecourt_idempotency_records",
+      "schema": "app",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_type": {
+          "name": "command_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'IN_PROGRESS'"
+        },
+        "result_payload": {
+          "name": "result_payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "forecourt_idempotency_tenant_created_idx": {
+          "name": "forecourt_idempotency_tenant_created_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "forecourt_idempotency_records_tenant_id_tenants_id_fk": {
+          "name": "forecourt_idempotency_records_tenant_id_tenants_id_fk",
+          "tableFrom": "forecourt_idempotency_records",
+          "tableTo": "tenants",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "forecourt_idempotency_tenant_command_key_uidx": {
+          "name": "forecourt_idempotency_tenant_command_key_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "command_type",
+            "idempotency_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "forecourt_idempotency_status_ck": {
+          "name": "forecourt_idempotency_status_ck",
+          "value": "\"app\".\"forecourt_idempotency_records\".\"status\" in ('IN_PROGRESS', 'COMPLETED')"
+        },
+        "forecourt_idempotency_key_ck": {
+          "name": "forecourt_idempotency_key_ck",
+          "value": "btrim(\"app\".\"forecourt_idempotency_records\".\"idempotency_key\") <> '' and btrim(\"app\".\"forecourt_idempotency_records\".\"request_hash\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "app.forecourt_outbox": {
+      "name": "forecourt_outbox",
+      "schema": "app",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "station_id": {
+          "name": "station_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_version": {
+          "name": "event_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "aggregate_type": {
+          "name": "aggregate_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "aggregate_id": {
+          "name": "aggregate_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "forecourt_outbox_unpublished_idx": {
+          "name": "forecourt_outbox_unpublished_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "forecourt_outbox_tenant_id_tenants_id_fk": {
+          "name": "forecourt_outbox_tenant_id_tenants_id_fk",
+          "tableFrom": "forecourt_outbox",
+          "tableTo": "tenants",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "forecourt_outbox_station_fk": {
+          "name": "forecourt_outbox_station_fk",
+          "tableFrom": "forecourt_outbox",
+          "tableTo": "stations",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "forecourt_outbox_tenant_event_uidx": {
+          "name": "forecourt_outbox_tenant_event_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "event_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "app.meter_boundaries": {
       "name": "meter_boundaries",
       "schema": "app",
@@ -1359,6 +1621,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -1632,6 +1901,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1842,6 +2118,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "correction_of_segment_id": {
+          "name": "correction_of_segment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reversal_of_segment_id": {
+          "name": "reversal_of_segment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "opening_reading": {
           "name": "opening_reading",
           "type": "numeric(18, 3)",
@@ -1902,6 +2190,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "controlled_exception": {
           "name": "controlled_exception",
@@ -2142,6 +2437,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "meter_segments_tenant_station_id_uidx": {
+          "name": "meter_segments_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         },
@@ -2553,7 +2857,20 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "payment_declarations_category_ck": {
+          "name": "payment_declarations_category_ck",
+          "value": "\"app\".\"payment_declarations\".\"category\" in ('CASH', 'ELECTRONIC', 'CUSTOMER_ACCOUNT', 'PREPAID', 'BENEFIT_INTERNAL', 'OTHER')"
+        },
+        "payment_declarations_amount_ck": {
+          "name": "payment_declarations_amount_ck",
+          "value": "\"app\".\"payment_declarations\".\"amount\" >= 0"
+        },
+        "payment_declarations_currency_ck": {
+          "name": "payment_declarations_currency_ck",
+          "value": "\"app\".\"payment_declarations\".\"currency\" = 'USD'"
+        }
+      },
       "isRLSEnabled": false
     },
     "app.products": {
@@ -2893,6 +3210,32 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "source_segment_ids": {
+          "name": "source_segment_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "source_shift_ids": {
+          "name": "source_shift_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "source_revision_id": {
+          "name": "source_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "correction_of_revision_id": {
+          "name": "correction_of_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "submitted_by": {
           "name": "submitted_by",
           "type": "uuid",
@@ -2901,6 +3244,18 @@
         },
         "approved_by": {
           "name": "approved_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posted_by": {
+          "name": "posted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locked_by": {
+          "name": "locked_by",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -2928,6 +3283,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -3024,6 +3386,38 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "reconciliation_revisions_posted_by_fk": {
+          "name": "reconciliation_revisions_posted_by_fk",
+          "tableFrom": "reconciliation_revisions",
+          "tableTo": "memberships",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "posted_by"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "reconciliation_revisions_locked_by_fk": {
+          "name": "reconciliation_revisions_locked_by_fk",
+          "tableFrom": "reconciliation_revisions",
+          "tableTo": "memberships",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "locked_by"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3056,7 +3450,16 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "reconciliation_revisions_variance_classification_ck": {
+          "name": "reconciliation_revisions_variance_classification_ck",
+          "value": "\"app\".\"reconciliation_revisions\".\"variance_classification\" in ('INFORMATIONAL', 'REQUIRES_EXPLANATION', 'BLOCKING')"
+        },
+        "reconciliation_revisions_currency_ck": {
+          "name": "reconciliation_revisions_currency_ck",
+          "value": "\"app\".\"reconciliation_revisions\".\"currency\" = 'USD'"
+        }
+      },
       "isRLSEnabled": false
     },
     "app.reconciliations": {
@@ -3301,6 +3704,25 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "activated_at": {
+          "name": "activated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

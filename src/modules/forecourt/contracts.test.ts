@@ -54,6 +54,7 @@ const revision = {
   varianceClassification: 'INFORMATIONAL' as const,
   approvedBy: ids.approver,
   sourceSegmentIds: ['31111111-1111-4111-8111-111111111111'],
+  sourceShiftIds: ['32222222-2222-4222-8222-222222222222'],
 };
 
 describe('A3 event contracts', () => {
@@ -117,6 +118,7 @@ describe('A3 event contracts', () => {
         shiftId: '32222222-2222-4222-8222-222222222222',
         nozzleId: '33333333-3333-4333-8333-333333333333',
         meterInstallationId: '34444444-4444-4444-8444-444444444444',
+        meterId: '34666666-6666-4666-8666-666666666666',
         productId: '35555555-5555-4555-8555-555555555555',
         attendantId: ids.actor,
         enteredBy: ids.actor,
@@ -128,7 +130,9 @@ describe('A3 event contracts', () => {
         unitPrice: unitPrice('1.50'),
         currency: 'USD',
         expectedSaleValue: money('15.0000'),
+        openingBoundaryReason: 'SHIFT_OPEN',
         boundaryReason: 'SHIFT_CLOSE',
+        version: 0,
         startAt: '2026-09-20T06:00:00.000Z',
         endAt: '2026-09-20T14:00:00.000Z',
         sealedAt: '2026-09-20T14:00:01.000Z',

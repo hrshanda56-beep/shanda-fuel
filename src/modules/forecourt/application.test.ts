@@ -88,7 +88,7 @@ function ports(
       run: async (_context, work) => {
         calls.push('transaction.begin');
         try {
-          const result = await work({ transactionId: 'tx-1' });
+          const result = await work(undefined as never);
           calls.push('transaction.commit');
           return result;
         } catch (error) {

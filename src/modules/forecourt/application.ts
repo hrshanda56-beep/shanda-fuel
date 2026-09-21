@@ -1,5 +1,6 @@
 import { AppError } from '../../platform/errors';
 import { withTenantTransaction } from '../../platform/db/transaction';
+import type { Database } from '../../platform/db';
 import {
   authorize,
   type AccessScope,
@@ -205,7 +206,7 @@ export const FORECOURT_COMMAND_POLICY = {
 
 export type ForecourtCommandType = keyof typeof FORECOURT_COMMAND_POLICY;
 
-export type ForecourtTransaction = unknown;
+export type ForecourtTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 export type ForecourtTransactionPort = {
   run<T>(
@@ -272,7 +273,7 @@ export type ForecourtCommandPorts = {
   ) => Promise<void>;
   expectedVersion: (
     transaction: ForecourtTransaction,
-    subjectType: string,
+    subjectType: ForecourtVersionSubject,
     subjectId: string,
     expectedVersion: number,
     stationId: string,
@@ -280,6 +281,36 @@ export type ForecourtCommandPorts = {
   ) => Promise<void>;
   audit: ForecourtAuditPort;
   outbox: ForecourtOutboxPort;
+};
+
+export type ForecourtVersionSubject =
+  | 'StationBusinessDay'
+  | 'Shift'
+  | 'MeterBoundary'
+  | 'MeterSegment'
+  | 'MeterInstallation'
+  | 'SellingPrice'
+  | 'Reconciliation'
+  | 'ReconciliationRevision';
+
+export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVersionSubject> = {
+  OpenBusinessDay: 'StationBusinessDay',
+  StartShift: 'Shift',
+  CloseMeters: 'Shift',
+  CompleteShift: 'Shift',
+  ConfirmBoundary: 'Shift',
+  HandoverAttendant: 'Shift',
+  SealSegment: 'MeterInstallation',
+  ReplaceMeter: 'MeterInstallation',
+  RequestPriceChange: 'SellingPrice',
+  ApprovePriceChange: 'SellingPrice',
+  ActivatePriceChange: 'SellingPrice',
+  SubmitReconciliation: 'ReconciliationRevision',
+  ReturnReconciliation: 'ReconciliationRevision',
+  ApproveReconciliation: 'ReconciliationRevision',
+  PostReconciliation: 'ReconciliationRevision',
+  LockReconciliation: 'ReconciliationRevision',
+  LockBusinessDay: 'StationBusinessDay',
 };
 
 export type ForecourtCommandInput<T> = Readonly<{
@@ -358,7 +389,7 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
         if (input.expectedVersion !== undefined) {
           await input.ports.expectedVersion(
             transaction,
-            input.subjectType,
+            FORECOURT_VERSION_SUBJECT[input.commandType],
             input.subjectId,
             input.expectedVersion,
             input.context.stationId,

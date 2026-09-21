@@ -28,6 +28,7 @@ const ids = {
   shift: '44444444-4444-4444-8444-444444444444',
   nozzle: '55555555-5555-4555-8555-555555555555',
   installation: '66666666-6666-4666-8666-666666666666',
+  meter: '66666666-6666-4666-8666-666666666667',
   actor: '77777777-7777-4777-8777-777777777777',
   legal: '88888888-8888-4888-8888-888888888888',
 };
@@ -73,6 +74,7 @@ function segment(closingValue = '1010.125') {
     stationId: ids.station,
     nozzleId: ids.nozzle,
     meterInstallationId: ids.installation,
+    meterId: ids.meter,
     businessDayId: ids.day,
     shiftId: ids.shift,
     openingBoundary: boundary('99999999-9999-4999-8999-999999999999', 'SHIFT_OPEN', '1000.000'),
@@ -94,6 +96,16 @@ describe('A3 forecourt domain', () => {
     expect(result.expectedSaleValue.amount.toString()).toBe('15.1875');
   });
 
+  it('keeps correction and reversal lineage on superseding sealed segments', () => {
+    const correction = {
+      ...segment('1011.125'),
+      id: '12121212-1212-4212-8212-121212121212',
+      correctionOfSegmentId: '88888888-8888-4888-8888-888888888888',
+    };
+    expect(correction.correctionOfSegmentId).toBe('88888888-8888-4888-8888-888888888888');
+    expect(correction.version).toBe(0);
+  });
+
   it('rejects a lower meter reading unless a controlled reset path supplies quantity', () => {
     expect(() => segment('990.000')).toThrow(/lower closing reading/);
     const reset = sealMeterSegment({
@@ -103,6 +115,7 @@ describe('A3 forecourt domain', () => {
         stationId: ids.station,
         nozzleId: ids.nozzle,
         meterInstallationId: ids.installation,
+        meterId: ids.meter,
         businessDayId: ids.day,
         shiftId: ids.shift,
         openingBoundary: boundary('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'SHIFT_OPEN', '1000.000'),
@@ -223,6 +236,7 @@ describe('A3 forecourt domain', () => {
       unitPrice: unitPrice('1.00'),
       currency: 'USD' as const,
       requestedBy: ids.actor,
+      version: 0,
       state: 'PENDING_STATION_ACTIVATION' as const,
     };
     expect(() =>

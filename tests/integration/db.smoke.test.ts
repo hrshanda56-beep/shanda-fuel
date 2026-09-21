@@ -38,18 +38,19 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(6);
+    expect(migrations).toHaveLength(4);
 
     const objects = await client<{ schema_name: string; table_name: string }[]>`
       select table_schema as schema_name, table_name
       from information_schema.tables
       where (table_schema, table_name) in (
         ('auth', 'user'), ('auth', 'session'), ('auth', 'account'), ('auth', 'verification'),
-        ('app', 'tenants'), ('app', 'memberships'), ('platform', 'security_events')
+        ('app', 'tenants'), ('app', 'memberships'), ('app', 'forecourt_idempotency_records'),
+        ('app', 'forecourt_outbox'), ('platform', 'security_events')
       )
       order by table_schema, table_name
     `;
-    expect(objects).toHaveLength(7);
+    expect(objects).toHaveLength(9);
 
     const policies = await client<{ policyname: string }[]>`
       select policyname

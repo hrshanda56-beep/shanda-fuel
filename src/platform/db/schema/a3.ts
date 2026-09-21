@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -125,6 +126,7 @@ export const meterInstallations = appSchema.table(
     effectiveTo: utcTimestamp('effective_to'),
     installedBy: uuid('installed_by').notNull(),
     replacementReason: text('replacement_reason'),
+    version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
@@ -255,6 +257,9 @@ export const sellingPrices = appSchema.table(
     state: text('state').notNull().default('DRAFT'),
     requestedBy: uuid('requested_by').notNull(),
     approvedBy: uuid('approved_by'),
+    approvedAt: utcTimestamp('approved_at'),
+    activatedAt: utcTimestamp('activated_at'),
+    version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
@@ -309,6 +314,7 @@ export const meterBoundaries = appSchema.table(
     attendantId: uuid('attendant_id').notNull(),
     onBehalfOf: uuid('on_behalf_of'),
     exceptionReason: text('exception_reason'),
+    version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
@@ -398,6 +404,7 @@ export const meterSegments = appSchema.table(
     segmentStartAt: utcTimestamp('segment_start_at').notNull(),
     segmentEndAt: utcTimestamp('segment_end_at').notNull(),
     sealedAt: utcTimestamp('sealed_at').notNull(),
+    version: integer('version').notNull().default(0),
     controlledException: boolean('controlled_exception').notNull().default(false),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
@@ -539,6 +546,9 @@ export const reconciliationRevisions = appSchema.table(
     sourceSegmentIds: jsonb('source_segment_ids')
       .notNull()
       .default(sql`'[]'::jsonb`),
+    sourceShiftIds: jsonb('source_shift_ids')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     sourceRevisionId: uuid('source_revision_id'),
     correctionOfRevisionId: uuid('correction_of_revision_id'),
     submittedBy: uuid('submitted_by'),
@@ -549,6 +559,7 @@ export const reconciliationRevisions = appSchema.table(
     approvedAt: utcTimestamp('approved_at'),
     postedAt: utcTimestamp('posted_at'),
     lockedAt: utcTimestamp('locked_at'),
+    version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
@@ -564,6 +575,11 @@ export const reconciliationRevisions = appSchema.table(
       table.revision,
     ),
     index('reconciliation_revisions_state_idx').on(table.tenantId, table.state),
+    check(
+      'reconciliation_revisions_variance_classification_ck',
+      sql`${table.varianceClassification} in ('INFORMATIONAL', 'REQUIRES_EXPLANATION', 'BLOCKING')`,
+    ),
+    check('reconciliation_revisions_currency_ck', sql`${table.currency} = 'USD'`),
     foreignKey({
       columns: [table.tenantId, table.stationId, table.reconciliationId],
       foreignColumns: [reconciliations.tenantId, reconciliations.stationId, reconciliations.id],
@@ -608,6 +624,12 @@ export const paymentDeclarations = appSchema.table(
   (table) => [
     unique('payment_declarations_tenant_id_id_uidx').on(table.tenantId, table.id),
     index('payment_declarations_revision_idx').on(table.tenantId, table.reconciliationRevisionId),
+    check(
+      'payment_declarations_category_ck',
+      sql`${table.category} in ('CASH', 'ELECTRONIC', 'CUSTOMER_ACCOUNT', 'PREPAID', 'BENEFIT_INTERNAL', 'OTHER')`,
+    ),
+    check('payment_declarations_amount_ck', sql`${table.amount} >= 0`),
+    check('payment_declarations_currency_ck', sql`${table.currency} = 'USD'`),
     foreignKey({
       columns: [table.tenantId, table.reconciliationRevisionId],
       foreignColumns: [reconciliationRevisions.tenantId, reconciliationRevisions.id],
@@ -629,10 +651,10 @@ export const forecourtIdempotencyRecords = appSchema.table(
     commandType: text('command_type').notNull(),
     idempotencyKey: text('idempotency_key').notNull(),
     requestHash: text('request_hash').notNull(),
-    status: text('status').notNull().default('COMPLETED'),
+    status: text('status').notNull().default('IN_PROGRESS'),
     resultPayload: jsonb('result_payload').notNull(),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
-    completedAt: utcTimestamp('completed_at').notNull().defaultNow(),
+    completedAt: utcTimestamp('completed_at'),
   },
   (table) => [
     unique('forecourt_idempotency_tenant_command_key_uidx').on(
@@ -641,50 +663,11 @@ export const forecourtIdempotencyRecords = appSchema.table(
       table.idempotencyKey,
     ),
     index('forecourt_idempotency_tenant_created_idx').on(table.tenantId, table.createdAt),
-  ],
-);
-
-export const forecourtAuditEvents = appSchema.table(
-  'forecourt_audit_events',
-  {
-    id: id(),
-    tenantId: tenantId(),
-    stationId: uuid('station_id').notNull(),
-    actorId: uuid('actor_id').notNull(),
-    membershipId: uuid('membership_id').notNull(),
-    commandType: text('command_type').notNull(),
-    subjectType: text('subject_type').notNull(),
-    subjectId: uuid('subject_id').notNull(),
-    requestId: uuid('request_id').notNull(),
-    responsibleAttendantId: uuid('responsible_attendant_id'),
-    beforeSnapshot: jsonb('before_snapshot'),
-    afterSnapshot: jsonb('after_snapshot'),
-    reason: text('reason'),
-    occurredAt: utcTimestamp('occurred_at').notNull().defaultNow(),
-  },
-  (table) => [
-    unique('forecourt_audit_events_tenant_id_id_uidx').on(table.tenantId, table.id),
-    index('forecourt_audit_events_subject_idx').on(
-      table.tenantId,
-      table.subjectType,
-      table.subjectId,
-      table.occurredAt,
+    check('forecourt_idempotency_status_ck', sql`${table.status} in ('IN_PROGRESS', 'COMPLETED')`),
+    check(
+      'forecourt_idempotency_key_ck',
+      sql`btrim(${table.idempotencyKey}) <> '' and btrim(${table.requestHash}) <> ''`,
     ),
-    foreignKey({
-      columns: [table.tenantId, table.stationId],
-      foreignColumns: [stations.tenantId, stations.id],
-      name: 'forecourt_audit_events_station_fk',
-    }),
-    foreignKey({
-      columns: [table.tenantId, table.membershipId],
-      foreignColumns: [memberships.tenantId, memberships.id],
-      name: 'forecourt_audit_events_membership_fk',
-    }),
-    foreignKey({
-      columns: [table.tenantId, table.responsibleAttendantId],
-      foreignColumns: [memberships.tenantId, memberships.id],
-      name: 'forecourt_audit_events_attendant_fk',
-    }),
   ],
 );
 

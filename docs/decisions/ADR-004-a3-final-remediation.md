@@ -16,4 +16,4 @@ Meter and reconciliation events include source and correction lineage so A4/A5 c
 
 ## Consequences
 
-The A0 integration owner must review and apply migrations `0004` and `0005` in sequence and run the real PostgreSQL integration suite. The A1 security owner must verify command policy assurance behavior and the final runtime-role grant matrix.
+The A0 integration owner must apply the consolidated migration history `0000` → `0001` → `0002` → `0003` and run the real PostgreSQL integration suite. A3 uses A1's `platform.security_events` stream; no parallel forecourt audit table is part of the final schema. The A1 security owner must verify command policy assurance behavior and the final runtime-role grant matrix.

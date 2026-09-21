@@ -1,5 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
 import postgres, { type Sql } from 'postgres';
+import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
+import {
+  createForecourtCommandContext,
+  databaseForecourtTransactionPort,
+  type ForecourtCommandContext,
+  type ForecourtTransaction,
+} from '../../src/modules/forecourt/application';
+import {
+  databaseAuditPort,
+  databaseIdempotencyPort,
+  databaseOutboxPort,
+} from '../../src/modules/forecourt/persistence';
+import { businessDayLockedEvent } from '../../src/modules/forecourt/contracts';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -34,10 +48,18 @@ const ids = {
   priceA: 'a3000000-0000-4000-8000-000000000141',
   reconciliationA: 'a3000000-0000-4000-8000-000000000151',
   revisionA: 'a3000000-0000-4000-8000-000000000161',
+  auditA: 'a3000000-0000-4000-8000-000000000172',
   outboxA: 'a3000000-0000-4000-8000-000000000171',
+  rollbackAudit: 'a3000000-0000-4000-8000-000000000173',
+  rollbackOutbox: 'a3000000-0000-4000-8000-000000000174',
+  replayAudit: 'a3000000-0000-4000-8000-000000000175',
+  replayOutbox: 'a3000000-0000-4000-8000-000000000176',
+  rollbackRequest: 'a3000000-0000-4000-8000-000000000177',
+  replayRequest: 'a3000000-0000-4000-8000-000000000178',
 };
 
 let client: Sql;
+let raceClient: Sql;
 
 async function setContext(tenantId: string, actorId: string, membershipId: string) {
   await client.unsafe(`select set_config('app.tenant_id', '${tenantId}', false)`);
@@ -45,9 +67,69 @@ async function setContext(tenantId: string, actorId: string, membershipId: strin
   await client.unsafe(`select set_config('app.membership_id', '${membershipId}', false)`);
 }
 
+function productionContext(requestId: string): ForecourtCommandContext {
+  const transaction = createTrustedTenantTransactionContext({
+    tenantId: ids.tenantA,
+    actorId: ids.actorA,
+    membershipId: ids.membershipA,
+    requestId,
+  });
+  const authority = {
+    actor: {
+      identityId: ids.actorA,
+      session: {
+        sessionId: 'a3000000-0000-4000-8000-000000000179',
+        userId: ids.actorA,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+        strongAuthenticationVerified: true,
+      },
+    },
+    membership: {
+      tenantId: ids.tenantA,
+      membershipId: ids.membershipA,
+      identityId: ids.actorA,
+      actorId: ids.actorA,
+      status: 'ACTIVE' as const,
+      roleAssignments: [
+        {
+          tenantId: ids.tenantA,
+          scopeType: 'STATION' as const,
+          legalEntityId: ids.legalA,
+          stationId: ids.stationA,
+          roleCode: 'SUPERVISOR' as const,
+        },
+      ],
+      temporaryGrants: [],
+    },
+    authorization: {
+      userId: ids.actorA,
+      membershipId: ids.membershipA,
+      tenantId: ids.tenantA,
+      membershipActive: true,
+      strongAuthenticationVerified: true,
+      roleAssignments: [
+        {
+          tenantId: ids.tenantA,
+          scopeType: 'STATION' as const,
+          legalEntityId: ids.legalA,
+          stationId: ids.stationA,
+          roleCode: 'SUPERVISOR' as const,
+        },
+      ],
+      temporaryGrants: [],
+    },
+    transaction,
+  };
+  return createForecourtCommandContext({
+    authority,
+    station: { id: ids.stationA, tenantId: ids.tenantA, legalEntityId: ids.legalA },
+  });
+}
+
 describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
   beforeAll(async () => {
     client = postgres(databaseUrl, { max: 1, prepare: false });
+    raceClient = postgres(databaseUrl, { max: 2, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenantA}', 'A3 Tenant A', 'a3-tenant-a'),
@@ -71,6 +153,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
 
   afterAll(async () => {
     await client?.end();
+    await raceClient?.end();
   });
 
   it('enforces tenant visibility, composite links, RLS, and nozzle installation exclusivity', async () => {
@@ -124,10 +207,10 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         'products', 'pumps', 'nozzles', 'meters', 'meter_installations',
         'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries',
         'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations',
-        'forecourt_idempotency_records', 'forecourt_audit_events', 'forecourt_outbox'
+        'forecourt_idempotency_records', 'forecourt_outbox'
       ) order by c.relname
     `;
-    expect(rows).toHaveLength(16);
+    expect(rows).toHaveLength(15);
     expect(rows.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
   });
 
@@ -285,13 +368,13 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       ).rejects.toThrow();
 
       await client.unsafe(`
-        insert into app.forecourt_audit_events
-          (tenant_id, station_id, actor_id, membership_id, command_type, subject_type, subject_id, request_id, after_snapshot)
-        values ('${ids.tenantA}', '${ids.stationA}', '${ids.actorA}', '${ids.membershipA}', 'ConfirmBoundary', 'MeterSegment', '${ids.segmentA}', '${ids.actorA}', '{"state":"SEALED"}'::jsonb);
+        insert into platform.security_events
+          (id, tenant_id, actor_id, membership_id, event_code, request_id, details, key_id, algorithm, signature)
+        values ('${ids.auditA}', '${ids.tenantA}', '${ids.actorA}', '${ids.membershipA}', 'FORECOURT.ConfirmBoundary', '${ids.actorA}', '{"subjectType":"MeterSegment","subjectId":"${ids.segmentA}"}'::jsonb, 'test-key', 'hmac-sha256', 'test-signature');
       `);
       await expect(
         client.unsafe(
-          `update app.forecourt_audit_events set reason = 'rewrite' where tenant_id = '${ids.tenantA}'`,
+          `update platform.security_events set event_code = 'rewrite' where tenant_id = '${ids.tenantA}'`,
         ),
       ).rejects.toThrow();
 
@@ -309,5 +392,206 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     } finally {
       await client.unsafe('reset role');
     }
+  });
+
+  it('rolls back business mutation, idempotency, A1 audit, and outbox atomically', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const context = productionContext(ids.rollbackRequest);
+    const before = await client<{ version: number }[]>`
+      select version from app.meter_installations where id = ${ids.installationA}
+    `;
+
+    await expect(
+      databaseForecourtTransactionPort.run(context, async (transaction) =>
+        databaseIdempotencyPort.run(
+          transaction,
+          {
+            tenantId: ids.tenantA,
+            commandType: 'SealSegment',
+            idempotencyKey: 'integration-rollback-1',
+            requestHash: 'rollback-hash-1',
+          },
+          async () => {
+            await transaction.execute(sql`
+              update app.meter_installations
+              set version = version + 1
+              where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+            `);
+            const event = businessDayLockedEvent({
+              eventId: ids.rollbackOutbox,
+              tenantId: ids.tenantA,
+              stationId: ids.stationA,
+              businessDayId: ids.dayA,
+              businessDate: '2026-09-20',
+              lockedAt: '2026-09-20T23:00:00.000Z',
+              legalEntityId: ids.legalA,
+            });
+            await databaseAuditPort.append({
+              transaction,
+              context,
+              commandType: 'SealSegment',
+              subjectType: 'MeterInstallation',
+              subjectId: ids.installationA,
+              before: { version: before[0]?.version },
+              after: { version: (before[0]?.version ?? 0) + 1 },
+              provenance: {
+                actorId: ids.actorA,
+                membershipId: ids.membershipA,
+                tenantId: ids.tenantA,
+                stationId: ids.stationA,
+                requestId: ids.rollbackRequest,
+              },
+            });
+            await databaseOutboxPort.publish({ transaction, event, context });
+            throw new Error('forced integration rollback');
+          },
+        ),
+      ),
+    ).rejects.toThrow('forced integration rollback');
+
+    const after = await client<{ version: number }[]>`
+      select version from app.meter_installations where id = ${ids.installationA}
+    `;
+    expect(after[0]?.version).toBe(before[0]?.version);
+    expect(
+      await client`select 1 from app.forecourt_idempotency_records where idempotency_key = 'integration-rollback-1'`,
+    ).toEqual([]);
+    expect(
+      await client`select 1 from platform.security_events where id = ${ids.rollbackAudit}`,
+    ).toEqual([]);
+    expect(
+      await client`select 1 from app.forecourt_outbox where event_id = ${ids.rollbackOutbox}`,
+    ).toEqual([]);
+  });
+
+  it('replays a completed durable command once and rejects a different request hash', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const context = productionContext(ids.replayRequest);
+    let effectCount = 0;
+    const request = {
+      tenantId: ids.tenantA,
+      commandType: 'SealSegment',
+      idempotencyKey: 'integration-replay-1',
+      requestHash: 'replay-hash-1',
+    } as const;
+    const effect = async (transaction: ForecourtTransaction) => {
+      effectCount += 1;
+      await transaction.execute(sql`
+        update app.meter_installations
+        set version = version + 1
+        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+      `);
+      const event = businessDayLockedEvent({
+        eventId: ids.replayOutbox,
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        businessDayId: ids.dayA,
+        businessDate: '2026-09-20',
+        lockedAt: '2026-09-20T23:10:00.000Z',
+        legalEntityId: ids.legalA,
+      });
+      await databaseAuditPort.append({
+        transaction,
+        context,
+        commandType: 'SealSegment',
+        subjectType: 'MeterInstallation',
+        subjectId: ids.installationA,
+        provenance: {
+          actorId: ids.actorA,
+          membershipId: ids.membershipA,
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          requestId: ids.replayRequest,
+        },
+      });
+      await databaseOutboxPort.publish({ transaction, event, context });
+      return { segmentId: ids.segmentA };
+    };
+
+    const first = await databaseForecourtTransactionPort.run(context, (transaction) =>
+      databaseIdempotencyPort.run(transaction, request, () => effect(transaction)),
+    );
+    const second = await databaseForecourtTransactionPort.run(context, (transaction) =>
+      databaseIdempotencyPort.run(transaction, request, () => effect(transaction)),
+    );
+    expect(first).toEqual({ segmentId: ids.segmentA });
+    expect(second).toEqual(first);
+    expect(effectCount).toBe(1);
+
+    await expect(
+      databaseForecourtTransactionPort.run(context, (transaction) =>
+        databaseIdempotencyPort.run(
+          transaction,
+          { ...request, requestHash: 'replay-hash-different' },
+          () => effect(transaction),
+        ),
+      ),
+    ).rejects.toThrow(/reused with a new request/);
+    expect(effectCount).toBe(1);
+    expect(
+      await client`select count(*)::int as count from app.forecourt_outbox where event_id = ${ids.replayOutbox}`,
+    ).toEqual([{ count: 1 }]);
+    expect(
+      await client`select count(*)::int as count from platform.security_events where request_id = ${ids.replayRequest}`,
+    ).toEqual([{ count: 1 }]);
+  });
+
+  it('serializes concurrent installation updates and rejects the stale winner', async () => {
+    const current = await client<{ version: number }[]>`
+      select version from app.meter_installations where id = ${ids.installationA}
+    `;
+    const expectedVersion = current[0]?.version ?? 0;
+    let releaseFirst!: () => void;
+    let firstLocked!: () => void;
+    const firstLockedPromise = new Promise<void>((resolve) => {
+      firstLocked = resolve;
+    });
+    const firstReleasePromise = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const first = raceClient.begin(async (transaction) => {
+      await transaction`
+        select id from app.meter_installations
+        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+        for update
+      `;
+      firstLocked();
+      await firstReleasePromise;
+      const updated = await transaction`
+        update app.meter_installations
+        set version = version + 1
+        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA}
+          and id = ${ids.installationA} and version = ${expectedVersion}
+        returning id
+      `;
+      return updated.length;
+    });
+
+    await firstLockedPromise;
+    const second = raceClient.begin(async (transaction) => {
+      await transaction`
+        select id from app.meter_installations
+        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+        for update
+      `;
+      const updated = await transaction`
+        update app.meter_installations
+        set version = version + 1
+        where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA}
+          and id = ${ids.installationA} and version = ${expectedVersion}
+        returning id
+      `;
+      return updated.length;
+    });
+    releaseFirst();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([1, 0]);
+    await client`
+      update app.meter_installations set version = ${expectedVersion}
+      where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationA}
+    `;
   });
 });

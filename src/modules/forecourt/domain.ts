@@ -77,6 +77,7 @@ export type MeterBoundary = {
   attendantId: string;
   onBehalfOf?: string;
   exceptionReason?: string;
+  version: number;
 };
 export type MeterInstallation = {
   id: string;
@@ -87,6 +88,7 @@ export type MeterInstallation = {
   effectiveFrom: string;
   effectiveTo?: string;
   installedBy: string;
+  version: number;
 };
 export type MeterSegment = {
   id: string;
@@ -94,6 +96,7 @@ export type MeterSegment = {
   stationId: string;
   nozzleId: string;
   meterInstallationId: string;
+  meterId: string;
   businessDayId: string;
   businessDate?: BusinessDate;
   shiftId: string;
@@ -109,6 +112,7 @@ export type MeterSegment = {
   unitPrice: UnitPrice;
   currency: CurrencyCode;
   expectedSaleValue: Money;
+  openingBoundaryReason: BoundaryReason;
   boundaryReason: BoundaryReason;
   startAt: string;
   endAt: string;
@@ -116,6 +120,7 @@ export type MeterSegment = {
   controlledException: boolean;
   correctionOfSegmentId?: string;
   reversalOfSegmentId?: string;
+  version: number;
 };
 export type SellingPrice = {
   id: string;
@@ -128,6 +133,9 @@ export type SellingPrice = {
   currency: CurrencyCode;
   requestedBy: string;
   approvedBy?: string;
+  approvedAt?: string;
+  activatedAt?: string;
+  version: number;
   state:
     | 'DRAFT'
     | 'PENDING_APPROVAL'
@@ -145,6 +153,7 @@ export type MeterSegmentInput = {
   stationId: string;
   nozzleId: string;
   meterInstallationId: string;
+  meterId: string;
   businessDayId: string;
   shiftId: string;
   openingBoundary: MeterBoundary;
@@ -309,6 +318,7 @@ export function confirmBoundary(input: {
     attendantId: input.responsibleAttendantId,
     onBehalfOf,
     exceptionReason: input.exceptionReason,
+    version: 0,
   };
 }
 
@@ -437,12 +447,14 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
     attendantId: input.attendantId,
     enteredBy: input.actor.membershipId,
     onBehalfOf: input.attendantId !== input.actor.membershipId ? input.attendantId : undefined,
+    meterId: input.meterId,
     openingReading: openingBoundary.reading.value,
     closingReading: closingBoundary.reading.value,
     litres: quantity,
     unitPrice: price,
     currency: input.currency ?? 'USD',
     expectedSaleValue: money(expectedAmount, input.currency ?? 'USD'),
+    openingBoundaryReason: openingBoundary.reason,
     boundaryReason: closingBoundary.reason,
     startAt: input.startAt,
     endAt: input.endAt,
@@ -450,6 +462,7 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
     controlledException,
     ...(input.correctionOfSegmentId ? { correctionOfSegmentId: input.correctionOfSegmentId } : {}),
     ...(input.reversalOfSegmentId ? { reversalOfSegmentId: input.reversalOfSegmentId } : {}),
+    version: 0,
   };
 }
 
@@ -518,13 +531,22 @@ export function activatePriceChange(
   if (!Number.isFinite(Date.parse(persistedState.serverNow))) {
     throw new AppError('VALIDATION_FAILED', 'Price activation requires a server timestamp');
   }
-  return { ...price, state: 'ACTIVE' };
+  return {
+    ...price,
+    state: 'ACTIVE',
+    activatedAt: persistedState.serverNow,
+    version: price.version + 1,
+  };
 }
 export function requestPriceChange(price: SellingPrice): SellingPrice {
   if (price.state !== 'DRAFT') throw invalidTransition('RequestPriceChange', price.state);
   return { ...price, state: 'PENDING_APPROVAL' };
 }
-export function approvePriceChange(price: SellingPrice, actor: TrustedActor): SellingPrice {
+export function approvePriceChange(
+  price: SellingPrice,
+  actor: TrustedActor,
+  serverNow: string,
+): SellingPrice {
   assertTrustedActor(actor);
   if (price.state !== 'PENDING_APPROVAL')
     throw invalidTransition('ApprovePriceChange', price.state);
@@ -532,7 +554,14 @@ export function approvePriceChange(price: SellingPrice, actor: TrustedActor): Se
     throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this price');
   if (actor.membershipId === price.requestedBy)
     throw new AppError('FORBIDDEN', 'A price change cannot be approved by its requester');
-  return { ...price, state: 'APPROVED', approvedBy: actor.membershipId };
+  assertServerTimestamp(serverNow, 'ApprovePriceChange');
+  return {
+    ...price,
+    state: 'APPROVED',
+    approvedBy: actor.membershipId,
+    approvedAt: serverNow,
+    version: price.version + 1,
+  };
 }
 function assertState(actual: string, expected: string, command: string): void {
   if (actual !== expected) throw invalidTransition(command, actual, expected);
@@ -611,6 +640,7 @@ export type ReconciliationRevision = {
   postedAt?: string;
   lockedAt?: string;
   sourceSegmentIds: readonly string[];
+  sourceShiftIds: readonly string[];
   sourceRevisionId?: string;
   correctionOfRevisionId?: string;
 };
@@ -640,6 +670,7 @@ export function calculateReconciliation(input: {
   policy: ReconciliationPolicy;
   sourceRevisionId?: string;
   correctionOfRevisionId?: string;
+  sourceShiftIds?: readonly string[];
 }): ReconciliationRevision {
   const currency = input.policy.currency ?? input.segments[0]?.currency ?? 'USD';
   const normalizedBusinessDate = input.businessDate ? businessDate(input.businessDate) : undefined;
@@ -706,6 +737,9 @@ export function calculateReconciliation(input: {
     variance,
     varianceClassification,
     sourceSegmentIds: input.segments.map((segment) => segment.id),
+    sourceShiftIds: input.sourceShiftIds ?? [
+      ...new Set(input.segments.map((segment) => segment.shiftId)),
+    ],
     ...(input.sourceRevisionId ? { sourceRevisionId: input.sourceRevisionId } : {}),
     ...(input.correctionOfRevisionId
       ? { correctionOfRevisionId: input.correctionOfRevisionId }

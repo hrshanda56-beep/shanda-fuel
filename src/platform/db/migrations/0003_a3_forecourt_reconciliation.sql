@@ -332,6 +332,12 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+DROP TRIGGER IF EXISTS meter_segments_authoritative_guard ON app.meter_segments;
+DROP TRIGGER IF EXISTS reconciliation_revisions_authoritative_guard ON app.reconciliation_revisions;
+DROP TRIGGER IF EXISTS station_business_days_authoritative_guard ON app.station_business_days;
+DROP TRIGGER IF EXISTS selling_prices_authoritative_guard ON app.selling_prices;
+DROP TRIGGER IF EXISTS reconciliations_authoritative_guard ON app.reconciliations;
 CREATE TRIGGER meter_segments_authoritative_guard BEFORE UPDATE OR DELETE ON app.meter_segments FOR EACH ROW EXECUTE FUNCTION app.reject_authoritative_forecourt_mutation();
 CREATE TRIGGER reconciliation_revisions_authoritative_guard BEFORE UPDATE OR DELETE ON app.reconciliation_revisions FOR EACH ROW EXECUTE FUNCTION app.reject_authoritative_forecourt_mutation();
 CREATE TRIGGER station_business_days_authoritative_guard BEFORE UPDATE OR DELETE ON app.station_business_days FOR EACH ROW EXECUTE FUNCTION app.reject_authoritative_forecourt_mutation();
@@ -348,6 +354,72 @@ BEGIN
   END LOOP;
 END
 $$;
+
+-- Consolidated A3 closure DDL. A3 uses the existing A1 platform.security_events
+-- table for audit; no parallel forecourt audit table is created.
+CREATE TABLE "app"."forecourt_idempotency_records" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "command_type" text NOT NULL,
+  "idempotency_key" text NOT NULL,
+  "request_hash" text NOT NULL,
+  "status" text DEFAULT 'IN_PROGRESS' NOT NULL,
+  "result_payload" jsonb NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "completed_at" timestamp with time zone,
+  CONSTRAINT "forecourt_idempotency_tenant_command_key_uidx" UNIQUE("tenant_id","command_type","idempotency_key")
+);
+--> statement-breakpoint
+CREATE TABLE "app"."forecourt_outbox" (
+  "event_id" uuid PRIMARY KEY NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "station_id" uuid NOT NULL,
+  "event_type" text NOT NULL,
+  "event_version" integer NOT NULL,
+  "aggregate_type" text NOT NULL,
+  "aggregate_id" uuid NOT NULL,
+  "payload" jsonb NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "published_at" timestamp with time zone,
+  CONSTRAINT "forecourt_outbox_tenant_event_uidx" UNIQUE("tenant_id","event_id")
+);
+--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "posted_by" uuid;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "locked_by" uuid;--> statement-breakpoint
+ALTER TABLE "app"."forecourt_idempotency_records" ADD CONSTRAINT "forecourt_idempotency_records_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."forecourt_outbox" ADD CONSTRAINT "forecourt_outbox_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."forecourt_outbox" ADD CONSTRAINT "forecourt_outbox_station_fk" FOREIGN KEY ("tenant_id","station_id") REFERENCES "app"."stations"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD CONSTRAINT "reconciliation_revisions_posted_by_fk" FOREIGN KEY ("tenant_id","posted_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD CONSTRAINT "reconciliation_revisions_locked_by_fk" FOREIGN KEY ("tenant_id","locked_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "forecourt_idempotency_tenant_created_idx" ON "app"."forecourt_idempotency_records" USING btree ("tenant_id","created_at");--> statement-breakpoint
+CREATE INDEX "forecourt_outbox_unpublished_idx" ON "app"."forecourt_outbox" USING btree ("tenant_id","created_at");
+--> statement-breakpoint
+ALTER TABLE "app"."meter_segments" ADD COLUMN "correction_of_segment_id" uuid;--> statement-breakpoint
+ALTER TABLE "app"."meter_segments" ADD COLUMN "reversal_of_segment_id" uuid;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "source_segment_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "source_revision_id" uuid;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "correction_of_revision_id" uuid;--> statement-breakpoint
+ALTER TABLE "app"."meter_segments" ADD CONSTRAINT "meter_segments_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id");--> statement-breakpoint
+ALTER TABLE "app"."meter_segments" ADD CONSTRAINT "meter_segments_correction_of_fk" FOREIGN KEY ("tenant_id","station_id","correction_of_segment_id") REFERENCES "app"."meter_segments"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_segments" ADD CONSTRAINT "meter_segments_reversal_of_fk" FOREIGN KEY ("tenant_id","station_id","reversal_of_segment_id") REFERENCES "app"."meter_segments"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD CONSTRAINT "reconciliation_revisions_source_revision_fk" FOREIGN KEY ("tenant_id","station_id","source_revision_id") REFERENCES "app"."reconciliation_revisions"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD CONSTRAINT "reconciliation_revisions_correction_of_fk" FOREIGN KEY ("tenant_id","station_id","correction_of_revision_id") REFERENCES "app"."reconciliation_revisions"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "app"."meter_boundaries" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."meter_installations" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."meter_segments" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "source_shift_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."selling_prices" ADD COLUMN "approved_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "app"."selling_prices" ADD COLUMN "activated_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "app"."selling_prices" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE app.payment_declarations ADD CONSTRAINT payment_declarations_category_ck CHECK (category IN ('CASH', 'ELECTRONIC', 'CUSTOMER_ACCOUNT', 'PREPAID', 'BENEFIT_INTERNAL', 'OTHER'));--> statement-breakpoint
+ALTER TABLE app.payment_declarations ADD CONSTRAINT payment_declarations_amount_ck CHECK (amount >= 0);--> statement-breakpoint
+ALTER TABLE app.payment_declarations ADD CONSTRAINT payment_declarations_currency_ck CHECK (currency = 'USD');--> statement-breakpoint
+ALTER TABLE app.reconciliation_revisions ADD CONSTRAINT reconciliation_revisions_variance_classification_ck CHECK (variance_classification IN ('INFORMATIONAL', 'REQUIRES_EXPLANATION', 'BLOCKING'));--> statement-breakpoint
+ALTER TABLE app.reconciliation_revisions ADD CONSTRAINT reconciliation_revisions_currency_ck CHECK (currency = 'USD');--> statement-breakpoint
+ALTER TABLE app.forecourt_idempotency_records ADD CONSTRAINT forecourt_idempotency_status_ck CHECK (status IN ('IN_PROGRESS', 'COMPLETED'));--> statement-breakpoint
+ALTER TABLE app.forecourt_idempotency_records ADD CONSTRAINT forecourt_idempotency_key_ck CHECK (btrim(idempotency_key) <> '' AND btrim(request_hash) <> '');
 DO $$
 DECLARE table_name text;
 BEGIN
@@ -358,5 +430,214 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN GRANT SELECT, INSERT, UPDATE, DELETE ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO app_runtime; END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO job_runtime; END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO diagnostics_readonly; END IF;
+END
+$$;
+
+INSERT INTO platform.permission_definitions (code, description)
+VALUES ('business_day.lock', 'Lock a closed station business day')
+ON CONFLICT (code) DO NOTHING;
+INSERT INTO platform.role_permissions (role_code, permission_code)
+VALUES ('OWNER', 'business_day.lock'), ('ADMINISTRATOR', 'business_day.lock'), ('FINANCE', 'business_day.lock')
+ON CONFLICT DO NOTHING;
+
+CREATE OR REPLACE FUNCTION app.enforce_forecourt_initial_state()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'station_business_days' AND NEW.state <> 'NOT_STARTED' THEN
+    RAISE EXCEPTION 'station business days must be inserted as NOT_STARTED';
+  ELSIF TG_TABLE_NAME = 'shifts' AND NEW.state <> 'PLANNED' THEN
+    RAISE EXCEPTION 'shifts must be inserted as PLANNED';
+  ELSIF TG_TABLE_NAME = 'reconciliations' AND NEW.state <> 'DRAFT' THEN
+    RAISE EXCEPTION 'reconciliations must be inserted as DRAFT';
+  ELSIF TG_TABLE_NAME = 'reconciliation_revisions' AND NEW.state <> 'READY' THEN
+    RAISE EXCEPTION 'reconciliation revisions must be inserted as READY';
+  ELSIF TG_TABLE_NAME = 'selling_prices' AND NEW.state <> 'DRAFT' THEN
+    RAISE EXCEPTION 'selling prices must be inserted as DRAFT';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS station_business_days_initial_state_guard ON app.station_business_days;
+DROP TRIGGER IF EXISTS shifts_initial_state_guard ON app.shifts;
+DROP TRIGGER IF EXISTS reconciliations_initial_state_guard ON app.reconciliations;
+DROP TRIGGER IF EXISTS reconciliation_revisions_initial_state_guard ON app.reconciliation_revisions;
+DROP TRIGGER IF EXISTS selling_prices_initial_state_guard ON app.selling_prices;
+CREATE TRIGGER station_business_days_initial_state_guard BEFORE INSERT ON app.station_business_days FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
+CREATE TRIGGER shifts_initial_state_guard BEFORE INSERT ON app.shifts FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
+CREATE TRIGGER reconciliations_initial_state_guard BEFORE INSERT ON app.reconciliations FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
+CREATE TRIGGER reconciliation_revisions_initial_state_guard BEFORE INSERT ON app.reconciliation_revisions FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
+CREATE TRIGGER selling_prices_initial_state_guard BEFORE INSERT ON app.selling_prices FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
+
+CREATE OR REPLACE FUNCTION app.validate_reconciliation_revision_payload()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE declaration jsonb;
+BEGIN
+  IF jsonb_typeof(NEW.declarations) <> 'array' OR jsonb_typeof(NEW.source_segment_ids) <> 'array' OR jsonb_typeof(NEW.source_shift_ids) <> 'array' THEN
+    RAISE EXCEPTION 'reconciliation declarations and source lineage must be JSON arrays';
+  END IF;
+  FOR declaration IN SELECT value FROM jsonb_array_elements(NEW.declarations) LOOP
+    IF jsonb_typeof(declaration) <> 'object'
+       OR declaration->>'category' NOT IN ('CASH', 'ELECTRONIC', 'CUSTOMER_ACCOUNT', 'PREPAID', 'BENEFIT_INTERNAL', 'OTHER')
+       OR declaration->>'declaredBy' IS NULL OR btrim(declaration->>'declaredBy') = ''
+       OR declaration->>'amount' IS NULL OR (declaration->>'amount') !~ '^[0-9]+([.][0-9]+)?$'
+       OR (declaration->>'amount')::numeric < 0
+       OR (declaration ? 'currency' AND declaration->>'currency' <> NEW.currency) THEN
+      RAISE EXCEPTION 'reconciliation declaration has an invalid category, amount, currency, or provenance';
+    END IF;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.source_segment_ids) AS source(value)
+    WHERE jsonb_typeof(source.value) <> 'string' OR source.value #>> '{}' !~ '^[0-9a-fA-F-]{36}$') THEN
+    RAISE EXCEPTION 'reconciliation source segment lineage contains a non-UUID value';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.source_shift_ids) AS source(value)
+    WHERE jsonb_typeof(source.value) <> 'string' OR source.value #>> '{}' !~ '^[0-9a-fA-F-]{36}$') THEN
+    RAISE EXCEPTION 'reconciliation source shift lineage contains a non-UUID value';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS reconciliation_revisions_payload_guard ON app.reconciliation_revisions;
+CREATE TRIGGER reconciliation_revisions_payload_guard BEFORE INSERT OR UPDATE ON app.reconciliation_revisions FOR EACH ROW EXECUTE FUNCTION app.validate_reconciliation_revision_payload();
+
+CREATE OR REPLACE FUNCTION app.enforce_forecourt_state_transition()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE allowed boolean := false;
+BEGIN
+  IF NEW.state = OLD.state THEN RETURN NEW; END IF;
+  IF TG_TABLE_NAME = 'station_business_days' THEN
+    allowed := (OLD.state, NEW.state) IN (('NOT_STARTED','OPEN'),('OPEN','OPERATIONS_COMPLETE'),('OPERATIONS_COMPLETE','CLOSED'),('CLOSED','LOCKED'),('NOT_STARTED','EXCEPTIONALLY_CLOSED'),('OPEN','EXCEPTIONALLY_CLOSED'),('OPERATIONS_COMPLETE','EXCEPTIONALLY_CLOSED'));
+  ELSIF TG_TABLE_NAME = 'shifts' THEN
+    allowed := (OLD.state, NEW.state) IN (('PLANNED','OPEN'),('OPEN','METER_CLOSED'),('METER_CLOSED','COMPLETED'),('PLANNED','NOT_OPERATED'),('PLANNED','CANCELLED_BEFORE_START'),('OPEN','EXCEPTIONALLY_CLOSED'),('METER_CLOSED','EXCEPTIONALLY_CLOSED'));
+  ELSIF TG_TABLE_NAME IN ('reconciliations','reconciliation_revisions') THEN
+    allowed := (OLD.state, NEW.state) IN (('DRAFT','READY'),('READY','SUBMITTED'),('SUBMITTED','PENDING_APPROVAL'),('PENDING_APPROVAL','RETURNED'),('PENDING_APPROVAL','REJECTED'),('PENDING_APPROVAL','APPROVED'),('RETURNED','SUBMITTED'),('APPROVED','POSTED'),('POSTED','LOCKED'));
+  ELSIF TG_TABLE_NAME = 'selling_prices' THEN
+    allowed := (OLD.state, NEW.state) IN (('DRAFT','PENDING_APPROVAL'),('PENDING_APPROVAL','APPROVED'),('PENDING_APPROVAL','CANCELLED'),('APPROVED','SCHEDULED'),('APPROVED','PENDING_STATION_ACTIVATION'),('APPROVED','CANCELLED'),('SCHEDULED','PENDING_STATION_ACTIVATION'),('SCHEDULED','CANCELLED'),('PENDING_STATION_ACTIVATION','BOUNDARIES_IN_PROGRESS'),('PENDING_STATION_ACTIVATION','FAILED_ACTIVATION'),('BOUNDARIES_IN_PROGRESS','ACTIVE'),('BOUNDARIES_IN_PROGRESS','FAILED_ACTIVATION'),('FAILED_ACTIVATION','PENDING_STATION_ACTIVATION'),('FAILED_ACTIVATION','CANCELLED'));
+  END IF;
+  IF NOT allowed THEN RAISE EXCEPTION 'forbidden direct forecourt workflow transition: % -> % on %', OLD.state, NEW.state, TG_TABLE_NAME; END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS station_business_days_transition_guard ON app.station_business_days;
+DROP TRIGGER IF EXISTS shifts_transition_guard ON app.shifts;
+DROP TRIGGER IF EXISTS reconciliations_transition_guard ON app.reconciliations;
+DROP TRIGGER IF EXISTS reconciliation_revisions_transition_guard ON app.reconciliation_revisions;
+DROP TRIGGER IF EXISTS selling_prices_transition_guard ON app.selling_prices;
+CREATE TRIGGER station_business_days_transition_guard BEFORE UPDATE OF state ON app.station_business_days FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
+CREATE TRIGGER shifts_transition_guard BEFORE UPDATE OF state ON app.shifts FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
+CREATE TRIGGER reconciliations_transition_guard BEFORE UPDATE OF state ON app.reconciliations FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
+CREATE TRIGGER reconciliation_revisions_transition_guard BEFORE UPDATE OF state ON app.reconciliation_revisions FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
+CREATE TRIGGER selling_prices_transition_guard BEFORE UPDATE OF state ON app.selling_prices FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
+
+CREATE OR REPLACE FUNCTION app.reject_authoritative_forecourt_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF TG_TABLE_NAME = 'meter_segments' THEN
+      RAISE EXCEPTION 'sealed meter segments are immutable; use a correction or reversal';
+    ELSIF OLD.state IN ('APPROVED','POSTED','LOCKED','CLOSED','EXCEPTIONALLY_CLOSED') THEN
+      RAISE EXCEPTION 'authoritative forecourt history is append-only';
+    END IF;
+    RETURN OLD;
+  END IF;
+  IF TG_TABLE_NAME = 'meter_segments' THEN
+    RAISE EXCEPTION 'sealed meter segments are immutable; use a correction or reversal';
+  ELSIF TG_TABLE_NAME = 'reconciliation_revisions' THEN
+    IF OLD.state = 'LOCKED' THEN RAISE EXCEPTION 'locked reconciliation revisions are immutable'; END IF;
+    IF OLD.state IN ('APPROVED','POSTED') AND NOT (
+      OLD.state = 'APPROVED' AND NEW.state = 'POSTED' AND NEW.posted_by IS NOT NULL AND NEW.posted_at IS NOT NULL
+      OR OLD.state = 'POSTED' AND NEW.state = 'LOCKED' AND NEW.locked_by IS NOT NULL AND NEW.locked_at IS NOT NULL
+    ) THEN RAISE EXCEPTION 'approved and posted reconciliation revisions only accept named provenance transitions'; END IF;
+    IF OLD.state IN ('SUBMITTED','PENDING_APPROVAL','APPROVED','POSTED') AND (
+      NEW.reconciliation_id IS DISTINCT FROM OLD.reconciliation_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.revision IS DISTINCT FROM OLD.revision
+      OR NEW.expected_sales IS DISTINCT FROM OLD.expected_sales OR NEW.accounted_sales IS DISTINCT FROM OLD.accounted_sales OR NEW.variance IS DISTINCT FROM OLD.variance
+      OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.variance_classification IS DISTINCT FROM OLD.variance_classification OR NEW.declarations IS DISTINCT FROM OLD.declarations
+      OR NEW.source_segment_ids IS DISTINCT FROM OLD.source_segment_ids OR NEW.source_shift_ids IS DISTINCT FROM OLD.source_shift_ids
+      OR NEW.source_revision_id IS DISTINCT FROM OLD.source_revision_id OR NEW.correction_of_revision_id IS DISTINCT FROM OLD.correction_of_revision_id
+      OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by OR NEW.approved_by IS DISTINCT FROM OLD.approved_by
+    ) THEN RAISE EXCEPTION 'authoritative reconciliation revision values are immutable'; END IF;
+  ELSIF TG_TABLE_NAME = 'station_business_days' AND OLD.state IN ('CLOSED','EXCEPTIONALLY_CLOSED','LOCKED') THEN
+    IF OLD.state <> 'CLOSED' OR NEW.state <> 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_date IS DISTINCT FROM OLD.business_date THEN RAISE EXCEPTION 'closed and locked business days are immutable'; END IF;
+  ELSIF TG_TABLE_NAME = 'selling_prices' AND OLD.state IN ('ACTIVE','FAILED_ACTIVATION') THEN
+    RAISE EXCEPTION 'historical activated prices are immutable';
+ELSIF TG_TABLE_NAME = 'reconciliations' AND OLD.state IN ('APPROVED','POSTED','LOCKED') THEN
+    IF OLD.state = 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id THEN RAISE EXCEPTION 'approved, posted, and locked reconciliations are immutable'; END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.guard_forecourt_idempotency_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'forecourt idempotency records are append-only';
+  END IF;
+  IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.command_type IS DISTINCT FROM OLD.command_type
+     OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+     OR NEW.request_hash IS DISTINCT FROM OLD.request_hash
+     OR (OLD.status = 'COMPLETED' AND (
+       NEW.status IS DISTINCT FROM OLD.status
+       OR NEW.result_payload IS DISTINCT FROM OLD.result_payload
+       OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
+     ))
+     OR (OLD.status = 'IN_PROGRESS' AND NEW.status <> 'COMPLETED') THEN
+    RAISE EXCEPTION 'forecourt idempotency records only permit IN_PROGRESS to COMPLETED';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS forecourt_idempotency_mutation_guard ON app.forecourt_idempotency_records;
+CREATE TRIGGER forecourt_idempotency_mutation_guard
+BEFORE UPDATE OR DELETE ON app.forecourt_idempotency_records
+FOR EACH ROW EXECUTE FUNCTION app.guard_forecourt_idempotency_mutation();
+
+CREATE OR REPLACE FUNCTION app.guard_forecourt_outbox_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'forecourt outbox events are append-only';
+  END IF;
+  IF NEW.event_id IS DISTINCT FROM OLD.event_id
+     OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.station_id IS DISTINCT FROM OLD.station_id
+     OR NEW.event_type IS DISTINCT FROM OLD.event_type
+     OR NEW.event_version IS DISTINCT FROM OLD.event_version
+     OR NEW.aggregate_type IS DISTINCT FROM OLD.aggregate_type
+     OR NEW.aggregate_id IS DISTINCT FROM OLD.aggregate_id
+     OR NEW.payload IS DISTINCT FROM OLD.payload
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR (OLD.published_at IS NOT NULL AND NEW.published_at IS DISTINCT FROM OLD.published_at) THEN
+    RAISE EXCEPTION 'forecourt outbox events only permit publication marking';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS forecourt_outbox_mutation_guard ON app.forecourt_outbox;
+CREATE TRIGGER forecourt_outbox_mutation_guard
+BEFORE UPDATE OR DELETE ON app.forecourt_outbox
+FOR EACH ROW EXECUTE FUNCTION app.guard_forecourt_outbox_mutation();
+
+DO $$
+DECLARE table_name text;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY['forecourt_idempotency_records', 'forecourt_outbox'] LOOP
+    EXECUTE format('ALTER TABLE app.%I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE app.%I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('CREATE POLICY tenant_context ON app.%I USING (tenant_id = app.current_tenant_id() AND app.has_active_membership()) WITH CHECK (tenant_id = app.current_tenant_id() AND app.has_active_membership())', table_name);
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') THEN
+      EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name);
+    END IF;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    GRANT SELECT, INSERT, UPDATE ON app.forecourt_idempotency_records TO app_runtime;
+    GRANT SELECT, INSERT, UPDATE ON app.forecourt_outbox TO app_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN
+    GRANT SELECT, UPDATE ON app.forecourt_outbox TO job_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN
+    GRANT SELECT ON app.forecourt_idempotency_records, app.forecourt_outbox TO diagnostics_readonly;
+  END IF;
 END
 $$;

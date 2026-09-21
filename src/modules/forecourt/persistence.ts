@@ -1,17 +1,20 @@
+import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import { type Database } from '../../platform/db';
+import { getServerEnv } from '../../platform/config/env';
+import { securityEvents } from '../../platform/db/schema/a1';
 import { databaseForecourtTransactionPort } from './application';
-import {
-  forecourtAuditEvents,
-  forecourtIdempotencyRecords,
-  forecourtOutbox,
-} from '../../platform/db/schema/a3';
+import { forecourtIdempotencyRecords, forecourtOutbox } from '../../platform/db/schema/a3';
+import { signAuditEvent } from '../audit/contracts';
+import { withTenantTransaction } from '../../platform/db/transaction';
+import type { TenantExecutionContext } from '../tenancy/authority';
 import type {
   ForecourtAuditPort,
   ForecourtCommandPorts,
   ForecourtOutboxPort,
   ForecourtTransaction,
+  ForecourtVersionSubject,
   IdempotencyRequest,
   IdempotencyPort,
 } from './application';
@@ -19,7 +22,7 @@ import type {
 type DatabaseTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 function dbTransaction(transaction: ForecourtTransaction): DatabaseTransaction {
-  return transaction as DatabaseTransaction;
+  return transaction;
 }
 
 function jsonRoundTrip(value: unknown): unknown {
@@ -103,21 +106,44 @@ export const databaseIdempotencyPort: IdempotencyPort = {
 export const databaseAuditPort: ForecourtAuditPort = {
   async append(input) {
     const tx = dbTransaction(input.transaction);
-    await tx.insert(forecourtAuditEvents).values({
-      tenantId: input.provenance.tenantId,
-      stationId: input.provenance.stationId,
-      actorId: input.provenance.actorId,
-      membershipId: input.provenance.membershipId,
-      commandType: input.commandType,
-      subjectType: input.subjectType,
-      subjectId: input.subjectId,
-      requestId: input.provenance.requestId,
-      ...(input.provenance.responsibleAttendantId
-        ? { responsibleAttendantId: input.provenance.responsibleAttendantId }
-        : {}),
-      ...(input.before !== undefined ? { beforeSnapshot: jsonRoundTrip(input.before) } : {}),
-      ...(input.after !== undefined ? { afterSnapshot: jsonRoundTrip(input.after) } : {}),
-      ...(input.reason !== undefined ? { reason: input.reason } : {}),
+    const env = getServerEnv();
+    if (!env.AUDIT_SIGNING_KEY_ID || !env.AUDIT_SIGNING_KEY) {
+      throw new AppError('DEPENDENCY_UNAVAILABLE', 'Audit signing credentials are not configured');
+    }
+    const event = signAuditEvent(
+      {
+        eventId: randomUUID(),
+        tenantId: input.provenance.tenantId,
+        membershipId: input.provenance.membershipId,
+        actorId: input.provenance.actorId,
+        actorType: 'HUMAN',
+        actionCode: `FORECOURT.${input.commandType}`,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        requestId: input.provenance.requestId || randomUUID(),
+        occurredAt: new Date().toISOString(),
+        before: input.before,
+        after: input.after,
+        reason: input.reason,
+        metadata: {
+          stationId: input.provenance.stationId,
+          responsibleAttendantId: input.provenance.responsibleAttendantId ?? null,
+        },
+      },
+      { keyId: env.AUDIT_SIGNING_KEY_ID, secret: env.AUDIT_SIGNING_KEY },
+    );
+    await tx.insert(securityEvents).values({
+      id: event.eventId,
+      tenantId: event.tenantId,
+      membershipId: event.membershipId,
+      actorId: event.actorId,
+      eventCode: event.eventCode,
+      requestId: event.requestId,
+      occurredAt: new Date(event.occurredAt),
+      details: event.details,
+      keyId: event.keyId,
+      algorithm: event.algorithm,
+      signature: event.signature,
     });
   },
 };
@@ -154,6 +180,10 @@ const versionedSubjectTables: Record<string, string> = {
   Shift: 'shifts',
   Reconciliation: 'reconciliations',
   ReconciliationRevision: 'reconciliation_revisions',
+  MeterBoundary: 'meter_boundaries',
+  MeterSegment: 'meter_segments',
+  MeterInstallation: 'meter_installations',
+  SellingPrice: 'selling_prices',
 };
 
 async function assertAttendantEligibility(
@@ -163,8 +193,8 @@ async function assertAttendantEligibility(
   tenantId: string,
 ): Promise<void> {
   const tx = dbTransaction(transaction);
-  const rows = await tx.execute(sql`
-    SELECT 1
+  const rows = await tx.execute<{ eligible: number }>(sql`
+    SELECT 1 AS eligible
     FROM app.memberships AS membership
     JOIN app.membership_role_assignments AS assignment
       ON assignment.tenant_id = membership.tenant_id
@@ -185,7 +215,7 @@ async function assertAttendantEligibility(
 
 async function assertExpectedVersion(
   transaction: ForecourtTransaction,
-  subjectType: string,
+  subjectType: ForecourtVersionSubject,
   subjectId: string,
   expectedVersion: number,
   stationId: string,
@@ -197,12 +227,12 @@ async function assertExpectedVersion(
   }
   const qualifiedTable = sql.raw(`"app"."${tableName}"`);
   const tx = dbTransaction(transaction);
-  const rows = await tx.execute(sql`
+  const rows = await tx.execute<{ version: number | string }>(sql`
     SELECT version FROM ${qualifiedTable}
     WHERE tenant_id = ${tenantId} AND station_id = ${stationId} AND id = ${subjectId}
     FOR UPDATE
   `);
-  const row = rows[0] as { version: number | string } | undefined;
+  const row = rows[0];
   if (!row) throw new AppError('NOT_FOUND', `${subjectType} was not found in this station`);
   if (Number(row.version) !== expectedVersion) {
     throw new AppError('CONFLICT', 'The forecourt subject version is stale', {
@@ -221,4 +251,22 @@ export function databaseForecourtPorts(): ForecourtCommandPorts {
     audit: databaseAuditPort,
     outbox: databaseOutboxPort,
   };
+}
+
+/** Load the station under the same trusted A1 tenant context used by commands. */
+export async function loadForecourtStation(
+  authority: TenantExecutionContext,
+  stationId: string,
+): Promise<{ id: string; tenantId: string; legalEntityId: string } | null> {
+  return withTenantTransaction(authority.transaction, async (transaction) => {
+    const rows = await transaction.execute<{ id: string; tenantId: string; legalEntityId: string }>(
+      sql`
+      select id, tenant_id as "tenantId", legal_entity_id as "legalEntityId"
+      from app.stations
+      where tenant_id = ${authority.membership.tenantId} and id = ${stationId}
+      limit 1
+      `,
+    );
+    return rows[0] ?? null;
+  });
 }
