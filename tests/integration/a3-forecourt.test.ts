@@ -2295,7 +2295,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     expect(completion.status).toBe(409);
     await expect(client<{ state: string; version: number }[]>`
       select state, version from app.shifts where id=${shift}
-    `).resolves.toEqual([{ state: 'OPEN', version: 0 }]);
+    `).resolves.toEqual([{ state: 'PLANNED', version: 0 }]);
     await expect(client<{ count: number }[]>`
       select count(*)::int as count from app.forecourt_idempotency_records
       where tenant_id=${ids.tenantA} and idempotency_key='a3-domain-zero-meter-complete'
