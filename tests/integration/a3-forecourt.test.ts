@@ -2619,6 +2619,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       boundaryId: priceBoundaryOne,
       nozzleId: priceDuplicateNozzle,
       meterInstallationId: priceDuplicateInstallation,
+      exceptionReason: 'Initial price-cycle reading',
     };
     const duplicatePositive = await postWithToken(
       actorToken,
