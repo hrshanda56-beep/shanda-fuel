@@ -704,16 +704,16 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     );
     await client.unsafe(`
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
-        values ('${ids.routeDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-22', 'NOT_STARTED');
+        values ('${ids.routeDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-21', 'NOT_STARTED');
       update app.station_business_days set state = 'OPEN' where id = '${ids.routeDay}';
       insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-        values ('${ids.routeShift}', '${ids.tenantA}', '${ids.stationA}', '${ids.routeDay}', 'PLANNED', '2026-09-22T06:00:00Z', '2026-09-22T14:00:00Z', '2026-09-22');
+        values ('${ids.routeShift}', '${ids.tenantA}', '${ids.stationA}', '${ids.routeDay}', 'PLANNED', '2026-09-21T06:00:00Z', '2026-09-21T14:00:00Z', '2026-09-21');
       update app.shifts set state = 'OPEN' where id = '${ids.routeShift}';
       insert into app.meter_boundaries
         (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
       values
-        ('${ids.routeOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'PRICE_CHANGE', 'AVAILABLE', 1010.125, '2026-09-22T15:00:00Z', '2026-09-22T15:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
-        ('${ids.routeClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'SHIFT_CLOSE', 'AVAILABLE', 1012.125, '2026-09-22T16:00:00Z', '2026-09-22T16:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}')
+        ('${ids.routeOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'PRICE_CHANGE', 'AVAILABLE', 1010.125, '2026-09-21T06:00:00Z', '2026-09-21T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+        ('${ids.routeClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'SHIFT_CLOSE', 'AVAILABLE', 1012.125, '2026-09-21T07:00:00Z', '2026-09-21T07:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}')
     `);
     const rawToken = 'a3-route-session-token';
     const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
@@ -730,8 +730,8 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       closingBoundaryId: ids.routeClosing,
       productId: ids.productA,
       responsibleAttendantId: ids.membershipA,
-      startAt: '2026-09-22T15:00:00.000Z',
-      endAt: '2026-09-22T16:00:00.000Z',
+      startAt: '2026-09-21T06:00:00.000Z',
+      endAt: '2026-09-21T07:00:00.000Z',
       expectedVersion: 0,
     };
     const response = await forecourtCommandPost(
@@ -768,7 +768,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           'content-type': 'application/json',
           'idempotency-key': 'a3-real-route-seal-1',
         },
-        body: JSON.stringify({ ...sealInput, endAt: '2026-09-22T16:30:00.000Z' }),
+        body: JSON.stringify({ ...sealInput, endAt: '2026-09-21T07:30:00.000Z' }),
       }),
     );
     expect(conflict.status).toBe(409);
