@@ -120,10 +120,16 @@ const ids = {
 let client: Sql;
 let raceClient: Sql;
 
-async function setContext(tenantId: string, actorId: string, membershipId: string) {
+async function setContext(
+  tenantId: string,
+  actorId: string,
+  membershipId: string,
+  stationId = tenantId === ids.tenantB ? ids.stationB : ids.stationA,
+) {
   await client.unsafe(`select set_config('app.tenant_id', '${tenantId}', false)`);
   await client.unsafe(`select set_config('app.actor_id', '${actorId}', false)`);
   await client.unsafe(`select set_config('app.membership_id', '${membershipId}', false)`);
+  await client.unsafe(`select set_config('app.station_id', '${stationId}', false)`);
 }
 
 function productionContext(requestId: string): ForecourtCommandContext {
