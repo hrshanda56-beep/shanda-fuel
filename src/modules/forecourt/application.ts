@@ -1,5 +1,6 @@
 import { AppError } from '../../platform/errors';
 import { withTenantTransaction } from '../../platform/db/transaction';
+import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import type { Database } from '../../platform/db';
 import {
   authorize,
@@ -77,7 +78,15 @@ export async function resolveForecourtCommandContext(input: {
   });
   const station = await input.loadStation(authority, input.stationId);
   if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
-  return createForecourtCommandContext({ authority, station });
+  const stationAuthority: TenantExecutionContext = {
+    ...authority,
+    transaction: createTrustedTenantTransactionContext({
+      ...authority.transaction,
+      legalEntityId: station.legalEntityId,
+      stationId: station.id,
+    }),
+  };
+  return createForecourtCommandContext({ authority: stationAuthority, station });
 }
 
 export type IdempotencyRequest = Readonly<{
