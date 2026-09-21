@@ -2529,7 +2529,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         ('${priceWrongProduct}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-07-01T00:00:00Z', '2026-07-02T00:00:00Z', 1.700000, 'DRAFT', '${ids.membershipA}'),
         ('${priceSuperseded}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-07-03T00:00:00Z', '2026-07-04T00:00:00Z', 1.710000, 'DRAFT', '${ids.membershipA}'),
         ('${priceNewer}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-07-04T00:00:00Z', '2026-07-05T00:00:00Z', 1.720000, 'DRAFT', '${ids.membershipA}'),
-        ('${priceDuplicate}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2027-02-01T00:00:00Z', '2027-02-02T00:00:00Z', 1.730000, 'DRAFT', '${ids.membershipA}');
+        ('${priceDuplicate}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-27T00:00:00Z', '2026-09-28T00:00:00Z', 1.730000, 'DRAFT', '${ids.membershipA}');
       update app.selling_prices
       set state='PENDING_APPROVAL'
       where id in ('${priceWrongProduct}', '${priceSuperseded}', '${priceNewer}', '${priceDuplicate}');
