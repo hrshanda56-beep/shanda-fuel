@@ -46,6 +46,7 @@ export async function POST(request: Request): Promise<Response> {
         { status: error.httpStatus },
       );
     }
+    console.error('forecourt command failed', error);
     return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
   }
 }
