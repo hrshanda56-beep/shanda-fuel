@@ -2159,7 +2159,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       },
       'a3-remediation-correction-1',
     );
-    expect(correction.status).toBe(200);
+    expect(correction.status, await correction.clone().text()).toBe(200);
     await expect(client<{ state: string; correction_of_segment_id: string | null }[]>`
       select state, correction_of_segment_id from app.meter_segments
       where id in (${correctionSegment}, ${correctedSegment}) order by id
