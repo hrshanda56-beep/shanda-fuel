@@ -355,6 +355,62 @@ BEGIN
 END
 $$;
 
+-- The runtime role may create OPEN segment drafts, but it must not own the
+-- authoritative OPEN -> SEALED transition. SealSegment uses this single
+-- capability after application authorization, idempotency, and row locking.
+CREATE OR REPLACE FUNCTION app.seal_meter_segment(
+  p_tenant_id uuid,
+  p_station_id uuid,
+  p_segment_id uuid,
+  p_expected_version integer
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, app
+AS $$
+DECLARE sealed_id uuid;
+BEGIN
+  -- Production uses app_runtime; the repository's local/CI database URL is
+  -- the postgres application owner, which is already outside the ordinary
+  -- runtime privilege boundary. Direct table UPDATE remains revoked for
+  -- app_runtime in either deployment shape.
+  IF session_user NOT IN ('app_runtime', 'postgres') THEN
+    RAISE EXCEPTION 'meter segment sealing is restricted to the application runtime role';
+  END IF;
+  IF p_expected_version < 0
+     OR app.current_tenant_id() IS DISTINCT FROM p_tenant_id
+     OR current_setting('app.station_id', true) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     OR current_setting('app.station_id', true)::uuid IS DISTINCT FROM p_station_id
+     OR NOT app.has_active_membership() THEN
+    RAISE EXCEPTION 'trusted station context is required for meter segment sealing';
+  END IF;
+
+  UPDATE app.meter_segments
+  SET state = 'SEALED', version = version + 1
+  WHERE tenant_id = p_tenant_id
+    AND station_id = p_station_id
+    AND id = p_segment_id
+    AND state = 'OPEN'
+    AND version = p_expected_version
+  RETURNING id INTO sealed_id;
+
+  IF sealed_id IS NULL THEN RETURN NULL; END IF;
+  RETURN sealed_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION app.seal_meter_segment(uuid, uuid, uuid, integer) FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    GRANT EXECUTE ON FUNCTION app.seal_meter_segment(uuid, uuid, uuid, integer) TO app_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') THEN
+    ALTER FUNCTION app.seal_meter_segment(uuid, uuid, uuid, integer) OWNER TO migration_owner;
+  END IF;
+END
+$$;
+
 -- Consolidated A3 closure DDL. A3 uses the existing A1 platform.security_events
 -- table for audit; no parallel forecourt audit table is created.
 CREATE TABLE "app"."forecourt_idempotency_records" (
@@ -665,6 +721,16 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN
     GRANT SELECT ON app.forecourt_idempotency_records, app.forecourt_outbox TO diagnostics_readonly;
+  END IF;
+END
+$$;
+
+-- The broad A3 table grant above is retained for draft/open work on the other
+-- forecourt tables. Meter segment UPDATE is intentionally capability-only.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    REVOKE UPDATE ON app.meter_segments FROM app_runtime;
   END IF;
 END
 $$;

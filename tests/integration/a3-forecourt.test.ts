@@ -40,11 +40,14 @@ const ids = {
   actorA: 'a3000000-0000-4000-8000-000000000031',
   actorB: 'a3000000-0000-4000-8000-000000000032',
   actorC: 'a3000000-0000-4000-8000-000000000033',
+  actorD: 'a3000000-0000-4000-8000-000000000034',
   membershipA: 'a3000000-0000-4000-8000-000000000041',
   membershipB: 'a3000000-0000-4000-8000-000000000042',
   membershipC: 'a3000000-0000-4000-8000-000000000043',
+  membershipD: 'a3000000-0000-4000-8000-000000000044',
   productA: 'a3000000-0000-4000-8000-000000000051',
   productB: 'a3000000-0000-4000-8000-000000000052',
+  productC: 'a3000000-0000-4000-8000-000000000053',
   pumpA: 'a3000000-0000-4000-8000-000000000061',
   pumpB: 'a3000000-0000-4000-8000-000000000062',
   nozzleA: 'a3000000-0000-4000-8000-000000000071',
@@ -70,6 +73,7 @@ const ids = {
   rollbackRequest: 'a3000000-0000-4000-8000-000000000177',
   replayRequest: 'a3000000-0000-4000-8000-000000000178',
   routeSession: 'a3000000-0000-4000-8000-000000000179',
+  negativeSession: 'a3000000-0000-4000-8000-000000000180',
   routeOpening: 'a3000000-0000-4000-8000-000000000181',
   routeClosing: 'a3000000-0000-4000-8000-000000000182',
   routeSegment: 'a3000000-0000-4000-8000-000000000183',
@@ -85,6 +89,20 @@ const ids = {
   correctionOutbox: 'a3000000-0000-4000-8000-000000000197',
   correctionOpening: 'a3000000-0000-4000-8000-000000000205',
   correctionClosing: 'a3000000-0000-4000-8000-000000000206',
+  bypassOpening: 'a3000000-0000-4000-8000-000000000215',
+  bypassClosing: 'a3000000-0000-4000-8000-000000000216',
+  bypassSegment: 'a3000000-0000-4000-8000-000000000217',
+  auditFailurePrice: 'a3000000-0000-4000-8000-000000000218',
+  outboxFailurePrice: 'a3000000-0000-4000-8000-000000000219',
+  routeRacePrice: 'a3000000-0000-4000-8000-000000000220',
+  negativePrice: 'a3000000-0000-4000-8000-000000000221',
+  forgedBoundaryPrice: 'a3000000-0000-4000-8000-000000000222',
+  routeRaceOpening: 'a3000000-0000-4000-8000-000000000223',
+  routeRaceClosing: 'a3000000-0000-4000-8000-000000000224',
+  routeRaceSegment: 'a3000000-0000-4000-8000-000000000225',
+  commandRaceDay: 'a3000000-0000-4000-8000-000000000226',
+  commandRaceReconciliation: 'a3000000-0000-4000-8000-000000000227',
+  commandRaceRevision: 'a3000000-0000-4000-8000-000000000228',
   raceSegment: 'a3000000-0000-4000-8000-000000000198',
   racePrice: 'a3000000-0000-4000-8000-000000000199',
   raceReconciliation: 'a3000000-0000-4000-8000-000000000200',
@@ -181,11 +199,13 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       insert into auth."user" (id, name, email) values
         ('${ids.actorA}', 'A3 Actor A', 'a3-actor-a@example.test'),
         ('${ids.actorB}', 'A3 Actor B', 'a3-actor-b@example.test'),
-        ('${ids.actorC}', 'A3 Actor C', 'a3-actor-c@example.test') on conflict (id) do nothing;
+        ('${ids.actorC}', 'A3 Actor C', 'a3-actor-c@example.test'),
+        ('${ids.actorD}', 'A3 Actor D', 'a3-actor-d@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.membershipA}', '${ids.tenantA}', '${ids.actorA}', 'ACTIVE'),
         ('${ids.membershipB}', '${ids.tenantB}', '${ids.actorB}', 'ACTIVE'),
-        ('${ids.membershipC}', '${ids.tenantA}', '${ids.actorC}', 'ACTIVE') on conflict (id) do nothing;
+        ('${ids.membershipC}', '${ids.tenantA}', '${ids.actorC}', 'ACTIVE'),
+        ('${ids.membershipD}', '${ids.tenantA}', '${ids.actorD}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
         ('${ids.legalA}', '${ids.tenantA}', 'A3 Legal A'),
         ('${ids.legalA2}', '${ids.tenantA}', 'A3 Legal A2'),
@@ -200,8 +220,17 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           ('${ids.tenantA}', '${ids.membershipA}', 'ATTENDANT', 'STATION', '${ids.legalA}', '${ids.stationA}'),
           ('${ids.tenantA}', '${ids.membershipA}', 'ADMINISTRATOR', 'STATION', '${ids.legalA}', '${ids.stationA}')
         on conflict (id) do nothing;
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+        values ('${ids.tenantA}', '${ids.membershipD}', 'ATTENDANT', 'STATION', '${ids.legalA}', '${ids.stationA}')
+        on conflict (id) do nothing;
+      insert into app.products (id, tenant_id, code, name)
+        values ('${ids.productC}', '${ids.tenantA}', 'A3-TEST-PRODUCT', 'Test Product')
+        on conflict (id) do nothing;
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
         values ('${ids.routeSession}', '2030-01-01T00:00:00Z', 'a3-route-session-token', '${ids.actorA}', true, now())
+        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
+      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
+        values ('${ids.negativeSession}', '2030-01-01T00:00:00Z', 'a3-negative-session-token', '${ids.actorD}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
   });
@@ -232,16 +261,37 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           values
             ('${ids.openingA}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'SHIFT_OPEN', 'AVAILABLE', 1000.000, '2026-09-20T06:00:00Z', '2026-09-20T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
             ('${ids.closingA}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'SHIFT_CLOSE', 'AVAILABLE', 1010.125, '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
+        insert into app.meter_boundaries (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+          values
+            ('${ids.bypassOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'CORRECTION', 'AVAILABLE', 1020.000, '2026-09-20T15:00:00Z', '2026-09-20T15:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+            ('${ids.bypassClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'CORRECTION', 'AVAILABLE', 1021.000, '2026-09-20T16:00:00Z', '2026-09-20T16:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
         insert into app.meter_segments (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, boundary_reason, segment_start_at, segment_end_at, sealed_at)
           values ('${ids.segmentA}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', '${ids.openingA}', '${ids.closingA}', '${ids.productA}', '${ids.membershipA}', '${ids.membershipA}', 1000.000, 1010.125, 10.125, 1.500000, 15.1875, 'SHIFT_CLOSE', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z');
-        update app.meter_segments set state = 'SEALED', version = 1 where id = '${ids.segmentA}';
+        insert into app.meter_segments (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, boundary_reason, segment_start_at, segment_end_at, sealed_at)
+          values ('${ids.bypassSegment}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', '${ids.bypassOpening}', '${ids.bypassClosing}', '${ids.productA}', '${ids.membershipA}', '${ids.membershipA}', 1020.000, 1021.000, 1.000, 1.500000, 1.5000, 'CORRECTION', '2026-09-20T15:00:00Z', '2026-09-20T16:00:00Z', '2026-09-20T16:00:01Z');
+        select app.seal_meter_segment('${ids.tenantA}', '${ids.stationA}', '${ids.segmentA}', 0);
       `);
 
       const visible = await client<{ id: string }[]>`select id from app.meter_segments`;
-      expect(visible.map((row) => row.id)).toEqual([ids.segmentA]);
+      expect(visible.map((row) => row.id)).toEqual([ids.segmentA, ids.bypassSegment]);
       await setContext(ids.tenantB, ids.actorB, ids.membershipB);
       expect(await client`select id from app.meter_segments`).toEqual([]);
       await setContext(ids.tenantA, ids.actorA, ids.membershipA);
+      await expect(
+        client.unsafe(
+          `update app.meter_segments set state = 'SEALED', version = 1 where id = '${ids.bypassSegment}'`,
+        ),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        client<
+          {
+            can_update: boolean;
+            can_execute: boolean;
+          }[]
+        >`select
+          has_table_privilege('app_runtime', 'app.meter_segments', 'UPDATE') as can_update,
+          has_function_privilege('app_runtime', 'app.seal_meter_segment(uuid,uuid,uuid,integer)', 'EXECUTE') as can_execute`,
+      ).resolves.toEqual([{ can_update: false, can_execute: true }]);
       await expect(
         client.unsafe(`
         insert into app.meter_installations (tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
@@ -872,9 +922,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         ('${ids.closureBoundary}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${ids.closureDay}', '${ids.closureShift}', 'PRICE_CHANGE',
          'AVAILABLE', 3000.000, '2026-09-22T06:00:00Z', '2026-09-22T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
       insert into app.selling_prices
-        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+        (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
       values
-        ('${ids.closurePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-22T00:00:00Z', 1.800000, 'DRAFT', '${ids.membershipC}');
+        ('${ids.closurePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-22T00:00:00Z', '2026-09-23T00:00:00Z', 1.800000, 'DRAFT', '${ids.membershipC}');
       update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.closurePrice}';
       insert into app.reconciliations
         (id, tenant_id, station_id, business_day_id, state)
@@ -1041,6 +1091,305 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         'forecourt.business_day_locked.v1',
       ].sort(),
     );
+  });
+
+  it('rolls back failed production audit and outbox writes and permits a clean idempotent retry', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    async function postCommand(input: Record<string, unknown>, key: string) {
+      return forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${signedToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+    }
+
+    await client.unsafe(`
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
+      values
+        ('${ids.auditFailurePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-23T00:00:00Z', '2026-09-24T00:00:00Z', 1.810000, 'DRAFT', '${ids.membershipC}'),
+        ('${ids.outboxFailurePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-24T00:00:00Z', '2026-09-25T00:00:00Z', 1.820000, 'DRAFT', '${ids.membershipC}');
+      update app.selling_prices
+      set state = 'PENDING_APPROVAL'
+      where id in ('${ids.auditFailurePrice}', '${ids.outboxFailurePrice}');
+    `);
+
+    await client.unsafe(`
+      create or replace function public.a3_fail_audit() returns trigger
+      language plpgsql as $$ begin raise exception 'forced A3 audit failure'; end; $$;
+      create trigger a3_fail_audit before insert on platform.security_events
+      for each row execute function public.a3_fail_audit();
+    `);
+    try {
+      const failedAudit = await postCommand(
+        {
+          commandType: 'ApprovePriceChange',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          priceId: ids.auditFailurePrice,
+          expectedVersion: 0,
+        },
+        'a3-route-audit-failure',
+      );
+      expect(failedAudit.status).toBe(500);
+    } finally {
+      await client.unsafe('drop trigger if exists a3_fail_audit on platform.security_events');
+    }
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.selling_prices where id = ${ids.auditFailurePrice}
+      `,
+    ).resolves.toEqual([{ state: 'PENDING_APPROVAL', version: 0 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from app.forecourt_idempotency_records
+        where command_type = 'ApprovePriceChange' and idempotency_key = 'a3-route-audit-failure'
+      `,
+    ).resolves.toEqual([{ count: 0 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from platform.security_events
+        where event_code = 'FORECOURT.ApprovePriceChange'
+          and details->>'subjectId' = ${ids.auditFailurePrice}
+      `,
+    ).resolves.toEqual([{ count: 0 }]);
+
+    expect(
+      (
+        await postCommand(
+          {
+            commandType: 'ApprovePriceChange',
+            tenantId: ids.tenantA,
+            stationId: ids.stationA,
+            priceId: ids.outboxFailurePrice,
+            expectedVersion: 0,
+          },
+          'a3-route-outbox-prepare',
+        )
+      ).status,
+    ).toBe(200);
+    await client.unsafe(
+      `update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.outboxFailurePrice}'`,
+    );
+    await client.unsafe(`
+      create or replace function public.a3_fail_outbox() returns trigger
+      language plpgsql as $$ begin raise exception 'forced A3 outbox failure'; end; $$;
+      create trigger a3_fail_outbox before insert on app.forecourt_outbox
+      for each row execute function public.a3_fail_outbox();
+    `);
+    try {
+      const failedOutbox = await postCommand(
+        {
+          commandType: 'ActivatePriceChange',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          priceId: ids.outboxFailurePrice,
+          expectedVersion: 1,
+        },
+        'a3-route-outbox-failure',
+      );
+      expect(failedOutbox.status).toBe(500);
+    } finally {
+      await client.unsafe('drop trigger if exists a3_fail_outbox on app.forecourt_outbox');
+    }
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.selling_prices where id = ${ids.outboxFailurePrice}
+      `,
+    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION', version: 1 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from app.forecourt_idempotency_records
+        where command_type = 'ActivatePriceChange' and idempotency_key = 'a3-route-outbox-failure'
+      `,
+    ).resolves.toEqual([{ count: 0 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from platform.security_events
+        where event_code = 'FORECOURT.ActivatePriceChange'
+          and details->>'subjectId' = ${ids.outboxFailurePrice}
+      `,
+    ).resolves.toEqual([{ count: 0 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from app.forecourt_outbox
+        where aggregate_id = ${ids.outboxFailurePrice}
+      `,
+    ).resolves.toEqual([{ count: 0 }]);
+
+    expect(
+      (
+        await postCommand(
+          {
+            commandType: 'ActivatePriceChange',
+            tenantId: ids.tenantA,
+            stationId: ids.stationA,
+            priceId: ids.outboxFailurePrice,
+            expectedVersion: 1,
+          },
+          'a3-route-outbox-failure',
+        )
+      ).status,
+    ).toBe(200);
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.selling_prices where id = ${ids.outboxFailurePrice}
+      `,
+    ).resolves.toEqual([{ state: 'ACTIVE', version: 3 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from platform.security_events
+        where event_code = 'FORECOURT.ActivatePriceChange'
+          and details->>'subjectId' = ${ids.outboxFailurePrice}
+      `,
+    ).resolves.toEqual([{ count: 1 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from app.forecourt_outbox
+        where aggregate_id = ${ids.outboxFailurePrice}
+      `,
+    ).resolves.toEqual([{ count: 1 }]);
+    await expect(
+      client<{ status: string }[]>`
+        select status from app.forecourt_idempotency_records
+        where command_type = 'ActivatePriceChange' and idempotency_key = 'a3-route-outbox-failure'
+      `,
+    ).resolves.toEqual([{ status: 'COMPLETED' }]);
+  });
+
+  it('rejects price-route permission, assurance, station, version, provenance, and boundary forgeries', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const actorRawToken = 'a3-route-session-token';
+    const actorToken = `${actorRawToken}.${await makeSignature(actorRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const attendantRawToken = 'a3-negative-session-token';
+    const attendantToken = `${attendantRawToken}.${await makeSignature(attendantRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    async function postWithToken(token: string, input: Record<string, unknown>, key: string) {
+      return forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${token}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+    }
+    await client.unsafe(`
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
+      values
+        ('${ids.negativePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productC}', '2026-09-26T00:00:00Z', '2026-09-27T00:00:00Z', 1.910000, 'DRAFT', '${ids.membershipD}'),
+        ('${ids.forgedBoundaryPrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productC}', '2026-09-27T00:00:00Z', '2026-09-28T00:00:00Z', 1.920000, 'DRAFT', '${ids.membershipD}');
+      update app.selling_prices set state = 'PENDING_APPROVAL'
+      where id in ('${ids.negativePrice}', '${ids.forgedBoundaryPrice}');
+    `);
+
+    const priceInput = {
+      commandType: 'ApprovePriceChange',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      priceId: ids.negativePrice,
+      expectedVersion: 0,
+    };
+    expect((await postWithToken(attendantToken, priceInput, 'a3-price-no-permission')).status).toBe(
+      403,
+    );
+
+    await client.unsafe(
+      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
+    );
+    try {
+      expect((await postWithToken(actorToken, priceInput, 'a3-price-weak-assurance')).status).toBe(
+        403,
+      );
+    } finally {
+      await client.unsafe(
+        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
+      );
+    }
+
+    expect(
+      (
+        await postWithToken(
+          actorToken,
+          { ...priceInput, stationId: ids.stationB },
+          'a3-price-wrong-station',
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (await postWithToken(actorToken, { ...priceInput, expectedVersion: 99 }, 'a3-price-stale'))
+        .status,
+    ).toBe(409);
+    expect(
+      (
+        await postWithToken(
+          actorToken,
+          { ...priceInput, approvedBy: ids.membershipD },
+          'a3-price-actor-injection',
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await postWithToken(
+          actorToken,
+          { ...priceInput, approvedAt: '2026-09-21T00:00:00.000Z' },
+          'a3-price-timestamp-injection',
+        )
+      ).status,
+    ).toBe(400);
+
+    expect((await postWithToken(actorToken, priceInput, 'a3-price-negative-control')).status).toBe(
+      200,
+    );
+    expect(
+      (
+        await postWithToken(
+          actorToken,
+          { ...priceInput, priceId: ids.forgedBoundaryPrice },
+          'a3-price-forged-approve',
+        )
+      ).status,
+    ).toBe(200);
+    await client.unsafe(
+      `update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.forgedBoundaryPrice}'`,
+    );
+    const forged = await postWithToken(
+      actorToken,
+      {
+        commandType: 'ActivatePriceChange',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        priceId: ids.forgedBoundaryPrice,
+        expectedVersion: 1,
+      },
+      'a3-price-forged-boundary',
+    );
+    expect(forged.status).toBe(409);
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.selling_prices where id = ${ids.forgedBoundaryPrice}
+      `,
+    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION', version: 1 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from app.forecourt_idempotency_records
+        where command_type = 'ActivatePriceChange' and idempotency_key = 'a3-price-forged-boundary'
+      `,
+    ).resolves.toEqual([{ count: 0 }]);
   });
 
   it('persists correction and reversal lineage and carries it into the outbox snapshot', async () => {
@@ -1315,6 +1664,226 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         { version: number }[]
       >`select version from app.shifts where id = ${ids.routeShift}`,
     ).toEqual([{ version: 1 }]);
+  });
+
+  it('serializes concurrent trusted command routes for seal, price, reconciliation, and day lock', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    async function postCommand(input: Record<string, unknown>, key: string) {
+      return forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${signedToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+    }
+    await client.unsafe(`
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason,
+         reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${ids.routeRaceOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'PRICE_CHANGE',
+         'AVAILABLE', 1012.125, '2026-09-21T07:30:00Z', '2026-09-21T07:30:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+        ('${ids.routeRaceClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'SHIFT_CLOSE',
+         'AVAILABLE', 1015.125, '2026-09-21T08:30:00Z', '2026-09-21T08:30:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
+      values ('${ids.routeRacePrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-25T00:00:00Z', '2026-09-26T00:00:00Z', 1.830000, 'DRAFT', '${ids.membershipC}');
+      update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.routeRacePrice}';
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${ids.commandRaceDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-26', 'NOT_STARTED');
+      update app.station_business_days set state = 'OPEN' where id = '${ids.commandRaceDay}';
+      update app.station_business_days set state = 'OPERATIONS_COMPLETE' where id = '${ids.commandRaceDay}';
+      update app.station_business_days set state = 'CLOSED' where id = '${ids.commandRaceDay}';
+      insert into app.reconciliations
+        (id, tenant_id, station_id, business_day_id, state)
+      values ('${ids.commandRaceReconciliation}', '${ids.tenantA}', '${ids.stationA}', '${ids.commandRaceDay}', 'DRAFT');
+      update app.reconciliations set state = 'READY' where id = '${ids.commandRaceReconciliation}';
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance,
+         variance_classification, declarations, submitted_by)
+      values ('${ids.commandRaceRevision}', '${ids.tenantA}', '${ids.stationA}', '${ids.commandRaceReconciliation}', 1,
+        'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, null);
+      update app.reconciliation_revisions
+      set state = 'SUBMITTED', submitted_by = '${ids.membershipC}'
+      where id = '${ids.commandRaceRevision}';
+      update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${ids.commandRaceRevision}';
+    `);
+
+    const sealInput = {
+      commandType: 'SealSegment',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      segmentId: ids.routeRaceSegment,
+      nozzleId: ids.nozzleA,
+      meterInstallationId: ids.installationA,
+      businessDayId: ids.routeDay,
+      shiftId: ids.routeShift,
+      openingBoundaryId: ids.routeRaceOpening,
+      closingBoundaryId: ids.routeRaceClosing,
+      productId: ids.productA,
+      responsibleAttendantId: ids.membershipA,
+      startAt: '2026-09-21T07:30:00.000Z',
+      endAt: '2026-09-21T08:30:00.000Z',
+      expectedVersion: 0,
+    };
+    const seals = await Promise.all([
+      postCommand(sealInput, 'a3-command-race-seal-a'),
+      postCommand(sealInput, 'a3-command-race-seal-b'),
+    ]);
+    expect(seals.map((response) => response.status).sort()).toEqual([201, 409]);
+
+    const priceApproval = await postCommand(
+      {
+        commandType: 'ApprovePriceChange',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        priceId: ids.routeRacePrice,
+        expectedVersion: 0,
+      },
+      'a3-command-race-price-approve',
+    );
+    expect(priceApproval.status).toBe(200);
+    await client.unsafe(
+      `update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.routeRacePrice}'`,
+    );
+    const activations = await Promise.all([
+      postCommand(
+        {
+          commandType: 'ActivatePriceChange',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          priceId: ids.routeRacePrice,
+          expectedVersion: 1,
+        },
+        'a3-command-race-price-a',
+      ),
+      postCommand(
+        {
+          commandType: 'ActivatePriceChange',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          priceId: ids.routeRacePrice,
+          expectedVersion: 1,
+        },
+        'a3-command-race-price-b',
+      ),
+    ]);
+    expect(activations.map((response) => response.status).sort()).toEqual([200, 409]);
+
+    const approvals = await Promise.all([
+      postCommand(
+        {
+          commandType: 'ApproveReconciliation',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          revisionId: ids.commandRaceRevision,
+          expectedVersion: 0,
+        },
+        'a3-command-race-reconciliation-approve-a',
+      ),
+      postCommand(
+        {
+          commandType: 'ApproveReconciliation',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          revisionId: ids.commandRaceRevision,
+          expectedVersion: 0,
+        },
+        'a3-command-race-reconciliation-approve-b',
+      ),
+    ]);
+    expect(approvals.map((response) => response.status).sort()).toEqual([200, 409]);
+
+    const postings = await Promise.all([
+      postCommand(
+        {
+          commandType: 'PostReconciliation',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          revisionId: ids.commandRaceRevision,
+          expectedVersion: 1,
+        },
+        'a3-command-race-reconciliation-post-a',
+      ),
+      postCommand(
+        {
+          commandType: 'PostReconciliation',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          revisionId: ids.commandRaceRevision,
+          expectedVersion: 1,
+        },
+        'a3-command-race-reconciliation-post-b',
+      ),
+    ]);
+    expect(postings.map((response) => response.status).sort()).toEqual([200, 409]);
+
+    const locks = await Promise.all([
+      postCommand(
+        {
+          commandType: 'LockBusinessDay',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          businessDayId: ids.commandRaceDay,
+          expectedVersion: 0,
+        },
+        'a3-command-race-day-lock-a',
+      ),
+      postCommand(
+        {
+          commandType: 'LockBusinessDay',
+          tenantId: ids.tenantA,
+          stationId: ids.stationA,
+          businessDayId: ids.commandRaceDay,
+          expectedVersion: 0,
+        },
+        'a3-command-race-day-lock-b',
+      ),
+    ]);
+    expect(locks.map((response) => response.status).sort()).toEqual([200, 409]);
+
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.meter_segments where id = ${ids.routeRaceSegment}
+      `,
+    ).resolves.toEqual([{ state: 'SEALED', version: 1 }]);
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.selling_prices where id = ${ids.routeRacePrice}
+      `,
+    ).resolves.toEqual([{ state: 'ACTIVE', version: 3 }]);
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.reconciliation_revisions where id = ${ids.commandRaceRevision}
+      `,
+    ).resolves.toEqual([{ state: 'POSTED', version: 2 }]);
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.station_business_days where id = ${ids.commandRaceDay}
+      `,
+    ).resolves.toEqual([{ state: 'LOCKED', version: 1 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from app.forecourt_outbox
+        where aggregate_id in (${ids.routeRaceSegment}, ${ids.routeRacePrice}, ${ids.commandRaceReconciliation}, ${ids.commandRaceDay})
+      `,
+    ).resolves.toEqual([{ count: 4 }]);
+    await expect(
+      client<{ count: number }[]>`
+        select count(*)::int as count from platform.security_events
+        where event_code in ('FORECOURT.SealSegment', 'FORECOURT.ActivatePriceChange',
+          'FORECOURT.ApproveReconciliation', 'FORECOURT.PostReconciliation', 'FORECOURT.LockBusinessDay')
+          and details->>'subjectId' in (${ids.routeRaceSegment}, ${ids.routeRacePrice}, ${ids.commandRaceRevision}, ${ids.commandRaceDay})
+      `,
+    ).resolves.toEqual([{ count: 5 }]);
   });
 
   it('serializes concurrent installation updates and rejects the stale winner', async () => {

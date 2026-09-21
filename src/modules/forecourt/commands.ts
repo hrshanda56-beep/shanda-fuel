@@ -918,18 +918,18 @@ export async function sealMeterSegmentFromRequest(
         state: 'OPEN',
         version: 0,
       };
-      await transaction.insert(meterSegments).values(insertValues);
+      await transaction.insert(meterSegments).values(insertValues).onConflictDoNothing({
+        target: meterSegments.id,
+      });
       const sealed = await transaction.execute(sql`
-        update app.meter_segments
-        set state = 'SEALED', version = version + 1
-        where tenant_id = ${context.tenantId}
-          and station_id = ${context.stationId}
-          and id = ${payload.segmentId}
-          and state = 'OPEN'
-          and version = 0
-        returning id
+        select app.seal_meter_segment(
+          ${context.tenantId},
+          ${context.stationId},
+          ${payload.segmentId},
+          ${payload.expectedVersion}
+        ) as id
       `);
-      if (sealed.length !== 1) {
+      if (sealed.length !== 1 || !sealed[0]?.id) {
         throw new AppError('CONFLICT', 'The meter segment could not be sealed exactly once');
       }
       await transaction.execute(sql`
