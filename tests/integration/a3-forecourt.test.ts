@@ -748,6 +748,25 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     if (response.status !== 201) {
       throw new Error(`SealSegment route failed: ${await response.clone().text()}`);
     }
+    const invalidAttendant = await forecourtCommandPost(
+      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+        method: 'POST',
+        headers: {
+          cookie: `shanda-fuel.session_token=${signedToken}`,
+          'content-type': 'application/json',
+          'idempotency-key': 'a3-real-route-invalid-attendant',
+        },
+        body: JSON.stringify({
+          ...sealInput,
+          segmentId: 'a3000000-0000-4000-8000-000000000189',
+          responsibleAttendantId: ids.membershipB,
+        }),
+      }),
+    );
+    expect(invalidAttendant.status).toBe(403);
+    expect(
+      await client`select 1 from app.meter_segments where id = 'a3000000-0000-4000-8000-000000000189'`,
+    ).toEqual([]);
     const replay = await forecourtCommandPost(
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',

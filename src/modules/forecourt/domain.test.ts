@@ -15,7 +15,14 @@ import {
   type MeterBoundary,
   type Shift,
 } from './domain';
-import { activatePriceChangeFromRequest } from './commands';
+import {
+  activatePriceChangeFromRequest,
+  approvePriceChangeFromRequest,
+  approveReconciliationFromRequest,
+  lockBusinessDayFromRequest,
+  lockReconciliationFromRequest,
+  postReconciliationFromRequest,
+} from './commands';
 import { money, unitPrice } from '../../platform/domain/primitives';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { createTrustedActor } from './trusted-actor';
@@ -243,6 +250,58 @@ describe('A3 forecourt domain', () => {
           activatedAt: '2026-09-20T15:00:00.000Z',
         },
       ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects authoritative timestamp mass assignment at every production command adapter', async () => {
+    const request = () =>
+      new Request('http://localhost/api/forecourt/commands', {
+        headers: { 'idempotency-key': 'timestamp-injection-test' },
+      });
+    await expect(
+      approvePriceChangeFromRequest(request(), {
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        priceId: '17171717-1717-4717-8717-171717171717',
+        expectedVersion: 0,
+        approvedAt: '2026-09-20T15:00:00.000Z',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      approveReconciliationFromRequest(request(), {
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        revisionId: '19191919-1919-4919-8919-191919191919',
+        expectedVersion: 0,
+        approvedAt: '2026-09-20T15:00:00.000Z',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      postReconciliationFromRequest(request(), {
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        revisionId: '19191919-1919-4919-8919-191919191919',
+        expectedVersion: 0,
+        postedAt: '2026-09-20T15:00:00.000Z',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      lockReconciliationFromRequest(request(), {
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        revisionId: '19191919-1919-4919-8919-191919191919',
+        expectedVersion: 0,
+        lockedAt: '2026-09-20T15:00:00.000Z',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      lockBusinessDayFromRequest(request(), {
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        businessDayId: ids.day,
+        expectedVersion: 0,
+        lockedAt: '2026-09-20T15:00:00.000Z',
+      }),
     ).rejects.toThrow();
   });
 });
