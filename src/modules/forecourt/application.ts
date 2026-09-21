@@ -187,7 +187,7 @@ export const FORECOURT_COMMAND_POLICY = {
     requiresExpectedVersion: true,
   },
   LockBusinessDay: {
-    permissionCode: 'approval.act',
+    permissionCode: 'business_day.lock',
     requiredScopeType: 'STATION',
     assuranceRequirement: 'STEP_UP',
     requiresExpectedVersion: true,

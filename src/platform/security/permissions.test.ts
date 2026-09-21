@@ -76,6 +76,35 @@ describe('permission authorization', () => {
     ).toBe(false);
   });
 
+  it('does not let generic approval authority lock a business day', () => {
+    const genericApprovalOnly: AuthorizationActor = {
+      ...actor,
+      strongAuthenticationExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      roleAssignments: [],
+      temporaryGrants: [
+        {
+          permissionCode: 'approval.act',
+          tenantId,
+          scopeType: 'STATION',
+          legalEntityId,
+          stationId,
+          expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+        },
+      ],
+    };
+    const requestedScope = { tenantId, scopeType: 'STATION' as const, legalEntityId, stationId };
+    expect(
+      isAuthorized({ actor: genericApprovalOnly, permissionCode: 'approval.act', requestedScope }),
+    ).toBe(true);
+    expect(
+      isAuthorized({
+        actor: genericApprovalOnly,
+        permissionCode: 'business_day.lock',
+        requestedScope,
+      }),
+    ).toBe(false);
+  });
+
   it('expires temporary grants and throws a safe forbidden error', () => {
     const now = new Date('2026-09-20T10:00:00.000Z');
     const temporaryActor = {

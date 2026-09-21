@@ -85,9 +85,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         insert into app.meter_installations (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
           values ('${ids.installationA}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.meterA}', '2026-09-20T00:00:00Z', '${ids.membershipA}');
         insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
-          values ('${ids.dayA}', '${ids.tenantA}', '${ids.stationA}', '2026-09-20', 'OPEN');
+          values ('${ids.dayA}', '${ids.tenantA}', '${ids.stationA}', '2026-09-20', 'NOT_STARTED');
+        update app.station_business_days set state = 'OPEN' where id = '${ids.dayA}';
         insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-          values ('${ids.shiftA}', '${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'OPEN', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20');
+          values ('${ids.shiftA}', '${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'PLANNED', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20');
+        update app.shifts set state = 'OPEN' where id = '${ids.shiftA}';
         insert into app.meter_boundaries (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
           values
             ('${ids.openingA}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'SHIFT_OPEN', 'AVAILABLE', 1000.000, '2026-09-20T06:00:00Z', '2026-09-20T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
@@ -150,6 +152,45 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     }
   });
 
+  it('rejects authoritative workflow states on direct INSERT', async () => {
+    await client.unsafe('set role app_runtime');
+    try {
+      await setContext(ids.tenantA, ids.actorA, ids.membershipA);
+      await expect(
+        client.unsafe(`
+          insert into app.station_business_days (tenant_id, station_id, business_date, state)
+          values ('${ids.tenantA}', '${ids.stationA}', '2026-09-21', 'CLOSED')
+        `),
+      ).rejects.toThrow(/NOT_STARTED/);
+      await expect(
+        client.unsafe(`
+          insert into app.shifts (tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+          values ('${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'OPEN', '2026-09-21T06:00:00Z', '2026-09-21T14:00:00Z', '2026-09-21')
+        `),
+      ).rejects.toThrow(/PLANNED/);
+      await expect(
+        client.unsafe(`
+          insert into app.selling_prices (tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+          values ('${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-09-21T00:00:00Z', 1.700000, 'ACTIVE', '${ids.membershipA}')
+        `),
+      ).rejects.toThrow(/DRAFT/);
+      await expect(
+        client.unsafe(`
+          insert into app.reconciliations (tenant_id, station_id, business_day_id, state)
+          values ('${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'APPROVED')
+        `),
+      ).rejects.toThrow(/DRAFT/);
+      await expect(
+        client.unsafe(`
+          insert into app.reconciliation_revisions (tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations)
+          values ('${ids.tenantA}', '${ids.stationA}', '${ids.reconciliationA}', 99, 'LOCKED', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb)
+        `),
+      ).rejects.toThrow(/READY/);
+    } finally {
+      await client.unsafe('reset role');
+    }
+  });
+
   it('rejects runtime rewrites of sealed, locked, approved, and activated history', async () => {
     await client.unsafe('set role app_runtime');
     try {
@@ -163,11 +204,23 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
 
       await client.unsafe(`
         insert into app.selling_prices (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
-        values ('${ids.priceA}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-09-20T15:00:00Z', 1.600000, 'ACTIVE', '${ids.membershipA}');
+        values ('${ids.priceA}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-09-20T15:00:00Z', 1.600000, 'DRAFT', '${ids.membershipA}');
+        update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.priceA}';
+        update app.selling_prices set state = 'APPROVED' where id = '${ids.priceA}';
+        update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.priceA}';
+        update app.selling_prices set state = 'BOUNDARIES_IN_PROGRESS' where id = '${ids.priceA}';
+        update app.selling_prices set state = 'ACTIVE' where id = '${ids.priceA}';
         insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
-        values ('${ids.reconciliationA}', '${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'APPROVED');
+        values ('${ids.reconciliationA}', '${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'DRAFT');
+        update app.reconciliations set state = 'READY' where id = '${ids.reconciliationA}';
+        update app.reconciliations set state = 'SUBMITTED' where id = '${ids.reconciliationA}';
+        update app.reconciliations set state = 'PENDING_APPROVAL' where id = '${ids.reconciliationA}';
+        update app.reconciliations set state = 'APPROVED' where id = '${ids.reconciliationA}';
         insert into app.reconciliation_revisions (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations, approved_by)
-        values ('${ids.revisionA}', '${ids.tenantA}', '${ids.stationA}', '${ids.reconciliationA}', 1, 'APPROVED', 15.1875, 15.1875, 0, 'INFORMATIONAL', '[]'::jsonb, '${ids.membershipA}');
+        values ('${ids.revisionA}', '${ids.tenantA}', '${ids.stationA}', '${ids.reconciliationA}', 1, 'READY', 15.1875, 15.1875, 0, 'INFORMATIONAL', '[]'::jsonb, '${ids.membershipA}');
+        update app.reconciliation_revisions set state = 'SUBMITTED' where id = '${ids.revisionA}';
+        update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${ids.revisionA}';
+        update app.reconciliation_revisions set state = 'APPROVED' where id = '${ids.revisionA}';
       `);
       await expect(
         client.unsafe(

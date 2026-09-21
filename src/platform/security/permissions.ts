@@ -21,6 +21,7 @@ export const PERMISSION_CODES = [
   'audit.view',
   'business_day.view',
   'business_day.open',
+  'business_day.lock',
   'shift.view',
   'shift.start',
   'shift.close',
@@ -96,6 +97,7 @@ const highRiskPermissions = new Set<PermissionCode>([
   'reconciliation.approve',
   'reconciliation.post',
   'approval.act',
+  'business_day.lock',
 ]);
 
 const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
@@ -121,6 +123,7 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'audit.view',
     'business_day.view',
     'business_day.open',
+    'business_day.lock',
     'shift.view',
     'shift.start',
     'shift.close',
@@ -163,6 +166,7 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'reconciliation.post',
     'approval.view',
     'approval.act',
+    'business_day.lock',
     'exception.view',
     'exception.manage',
   ],
