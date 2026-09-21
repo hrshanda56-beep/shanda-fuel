@@ -379,11 +379,22 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
   const startAt = Date.parse(input.startAt);
   const endAt = Date.parse(input.endAt);
   const sealedAt = Date.parse(input.sealedAt);
-  if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || !Number.isFinite(sealedAt) || endAt <= startAt) {
-    throw new AppError('VALIDATION_FAILED', 'A meter segment requires a valid positive time interval');
+  if (
+    !Number.isFinite(startAt) ||
+    !Number.isFinite(endAt) ||
+    !Number.isFinite(sealedAt) ||
+    endAt <= startAt
+  ) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'A meter segment requires a valid positive time interval',
+    );
   }
   if (sealedAt < endAt) {
-    throw new AppError('VALIDATION_FAILED', 'A meter segment cannot be sealed before its interval ends');
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'A meter segment cannot be sealed before its interval ends',
+    );
   }
   if (input.actor.tenantId !== input.tenantId || input.actor.stationId !== input.stationId) {
     throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this station');

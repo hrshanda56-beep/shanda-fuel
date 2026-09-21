@@ -495,7 +495,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const context = productionContext('a3000000-0000-4000-8000-000000000184');
-    const before = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    const before = await client<
+      { version: number }[]
+    >`select version from app.meter_installations where id = ${ids.installationA}`;
     await client.unsafe(`
       create or replace function public.a3_fail_audit() returns trigger language plpgsql as $$
       begin raise exception 'test audit persistence failure'; end; $$;
@@ -505,31 +507,58 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     try {
       await expect(
         databaseForecourtTransactionPort.run(context, async (transaction) =>
-          databaseIdempotencyPort.run(transaction, {
-            tenantId: ids.tenantA, commandType: 'SealSegment', idempotencyKey: 'a3-audit-fail-1', requestHash: 'a3-audit-fail-hash',
-          }, async () => {
-            await transaction.execute(sql`update app.meter_installations set version = version + 1 where id = ${ids.installationA}`);
-            await databaseAuditPort.append({
-              transaction, context, commandType: 'SealSegment', subjectType: 'MeterSegment', subjectId: ids.segmentA,
-              provenance: { actorId: ids.actorA, membershipId: ids.membershipA, tenantId: ids.tenantA, stationId: ids.stationA, requestId: context.requestId },
-            });
-            return { ok: true };
-          }),
+          databaseIdempotencyPort.run(
+            transaction,
+            {
+              tenantId: ids.tenantA,
+              commandType: 'SealSegment',
+              idempotencyKey: 'a3-audit-fail-1',
+              requestHash: 'a3-audit-fail-hash',
+            },
+            async () => {
+              await transaction.execute(
+                sql`update app.meter_installations set version = version + 1 where id = ${ids.installationA}`,
+              );
+              await databaseAuditPort.append({
+                transaction,
+                context,
+                commandType: 'SealSegment',
+                subjectType: 'MeterSegment',
+                subjectId: ids.segmentA,
+                provenance: {
+                  actorId: ids.actorA,
+                  membershipId: ids.membershipA,
+                  tenantId: ids.tenantA,
+                  stationId: ids.stationA,
+                  requestId: context.requestId,
+                },
+              });
+              return { ok: true };
+            },
+          ),
         ),
       ).rejects.toThrow(/test audit persistence failure/);
     } finally {
-      await client.unsafe('drop trigger if exists a3_fail_audit_trigger on platform.security_events; drop function if exists public.a3_fail_audit();');
+      await client.unsafe(
+        'drop trigger if exists a3_fail_audit_trigger on platform.security_events; drop function if exists public.a3_fail_audit();',
+      );
     }
-    const after = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    const after = await client<
+      { version: number }[]
+    >`select version from app.meter_installations where id = ${ids.installationA}`;
     expect(after[0]?.version).toBe(before[0]?.version);
-    expect(await client`select 1 from app.forecourt_idempotency_records where idempotency_key = 'a3-audit-fail-1'`).toEqual([]);
+    expect(
+      await client`select 1 from app.forecourt_idempotency_records where idempotency_key = 'a3-audit-fail-1'`,
+    ).toEqual([]);
   });
 
   it('rolls back when the real outbox persistence fails', async () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const context = productionContext('a3000000-0000-4000-8000-000000000185');
-    const before = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    const before = await client<
+      { version: number }[]
+    >`select version from app.meter_installations where id = ${ids.installationA}`;
     await client.unsafe(`
       create or replace function public.a3_fail_outbox() returns trigger language plpgsql as $$
       begin raise exception 'test outbox persistence failure'; end; $$;
@@ -539,29 +568,59 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     try {
       await expect(
         databaseForecourtTransactionPort.run(context, async (transaction) =>
-          databaseIdempotencyPort.run(transaction, {
-            tenantId: ids.tenantA, commandType: 'SealSegment', idempotencyKey: 'a3-outbox-fail-1', requestHash: 'a3-outbox-fail-hash',
-          }, async () => {
-            await transaction.execute(sql`update app.meter_installations set version = version + 1 where id = ${ids.installationA}`);
-            const event = businessDayLockedEvent({
-              eventId: 'a3000000-0000-4000-8000-000000000186', tenantId: ids.tenantA, stationId: ids.stationA,
-              businessDayId: ids.dayA, businessDate: '2026-09-20', lockedAt: '2026-09-20T23:00:00Z', legalEntityId: ids.legalA,
-            });
-            await databaseAuditPort.append({
-              transaction, context, commandType: 'SealSegment', subjectType: 'MeterSegment', subjectId: ids.segmentA,
-              provenance: { actorId: ids.actorA, membershipId: ids.membershipA, tenantId: ids.tenantA, stationId: ids.stationA, requestId: context.requestId },
-            });
-            await databaseOutboxPort.publish({ transaction, event, context });
-            return { ok: true };
-          }),
+          databaseIdempotencyPort.run(
+            transaction,
+            {
+              tenantId: ids.tenantA,
+              commandType: 'SealSegment',
+              idempotencyKey: 'a3-outbox-fail-1',
+              requestHash: 'a3-outbox-fail-hash',
+            },
+            async () => {
+              await transaction.execute(
+                sql`update app.meter_installations set version = version + 1 where id = ${ids.installationA}`,
+              );
+              const event = businessDayLockedEvent({
+                eventId: 'a3000000-0000-4000-8000-000000000186',
+                tenantId: ids.tenantA,
+                stationId: ids.stationA,
+                businessDayId: ids.dayA,
+                businessDate: '2026-09-20',
+                lockedAt: '2026-09-20T23:00:00Z',
+                legalEntityId: ids.legalA,
+              });
+              await databaseAuditPort.append({
+                transaction,
+                context,
+                commandType: 'SealSegment',
+                subjectType: 'MeterSegment',
+                subjectId: ids.segmentA,
+                provenance: {
+                  actorId: ids.actorA,
+                  membershipId: ids.membershipA,
+                  tenantId: ids.tenantA,
+                  stationId: ids.stationA,
+                  requestId: context.requestId,
+                },
+              });
+              await databaseOutboxPort.publish({ transaction, event, context });
+              return { ok: true };
+            },
+          ),
         ),
       ).rejects.toThrow(/test outbox persistence failure/);
     } finally {
-      await client.unsafe('drop trigger if exists a3_fail_outbox_trigger on app.forecourt_outbox; drop function if exists public.a3_fail_outbox();');
+      await client.unsafe(
+        'drop trigger if exists a3_fail_outbox_trigger on app.forecourt_outbox; drop function if exists public.a3_fail_outbox();',
+      );
     }
-    const after = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    const after = await client<
+      { version: number }[]
+    >`select version from app.meter_installations where id = ${ids.installationA}`;
     expect(after[0]?.version).toBe(before[0]?.version);
-    expect(await client`select 1 from app.forecourt_idempotency_records where idempotency_key = 'a3-outbox-fail-1'`).toEqual([]);
+    expect(
+      await client`select 1 from app.forecourt_idempotency_records where idempotency_key = 'a3-outbox-fail-1'`,
+    ).toEqual([]);
   });
 
   it('replays a completed durable command once and rejects a different request hash', async () => {
@@ -640,7 +699,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
   it('executes SealSegment through the real authenticated route with the segment subject id', async () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
-    await client.unsafe(`update app.meter_installations set version = 1 where id = '${ids.installationA}'`);
+    await client.unsafe(
+      `update app.meter_installations set version = 1 where id = '${ids.installationA}'`,
+    );
     await client.unsafe(`
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.routeDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-22', 'NOT_STARTED');
@@ -688,7 +749,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const replay = await forecourtCommandPost(
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',
-        headers: { cookie: `shanda-fuel.session_token=${signedToken}`, 'content-type': 'application/json', 'idempotency-key': 'a3-real-route-seal-1' },
+        headers: {
+          cookie: `shanda-fuel.session_token=${signedToken}`,
+          'content-type': 'application/json',
+          'idempotency-key': 'a3-real-route-seal-1',
+        },
         body: JSON.stringify(sealInput),
       }),
     );
@@ -696,7 +761,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const conflict = await forecourtCommandPost(
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',
-        headers: { cookie: `shanda-fuel.session_token=${signedToken}`, 'content-type': 'application/json', 'idempotency-key': 'a3-real-route-seal-1' },
+        headers: {
+          cookie: `shanda-fuel.session_token=${signedToken}`,
+          'content-type': 'application/json',
+          'idempotency-key': 'a3-real-route-seal-1',
+        },
         body: JSON.stringify({ ...sealInput, endAt: '2026-09-22T16:30:00.000Z' }),
       }),
     );
