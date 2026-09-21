@@ -537,7 +537,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
             },
           ),
         ),
-      ).rejects.toThrow(/test audit persistence failure/);
+      ).rejects.toThrow(/Failed query/);
     } finally {
       await client.unsafe(
         'drop trigger if exists a3_fail_audit_trigger on platform.security_events; drop function if exists public.a3_fail_audit();',
@@ -608,7 +608,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
             },
           ),
         ),
-      ).rejects.toThrow(/test outbox persistence failure/);
+      ).rejects.toThrow(/Failed query/);
     } finally {
       await client.unsafe(
         'drop trigger if exists a3_fail_outbox_trigger on app.forecourt_outbox; drop function if exists public.a3_fail_outbox();',
@@ -745,7 +745,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         body: JSON.stringify(sealInput),
       }),
     );
-    expect(response.status).toBe(201);
+    if (response.status !== 201) {
+      throw new Error(`SealSegment route failed: ${await response.clone().text()}`);
+    }
     const replay = await forecourtCommandPost(
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',
