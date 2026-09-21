@@ -2070,14 +2070,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         'a3-remediation-replace-b',
       ),
     ]);
-    const replacementBodies = await Promise.all([
-      replacementA.clone().text(),
-      replacementB.clone().text(),
-    ]);
-    expect(
-      [replacementA.status, replacementB.status].sort(),
-      replacementBodies.join(' | '),
-    ).toEqual([200, 409]);
+    expect([replacementA.status, replacementB.status].sort()).toEqual([200, 409]);
     await expect(client<{ count: number }[]>`
       select count(*)::int as count from app.meter_installations
       where tenant_id=${ids.tenantA} and station_id=${ids.stationA}

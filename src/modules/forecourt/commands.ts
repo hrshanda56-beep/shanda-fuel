@@ -913,6 +913,7 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
     subjectType: 'MeterInstallation',
     subjectId: payload.oldInstallationId,
     expectedVersion: payload.expectedVersion,
+    responsibleAttendantId: payload.responsibleAttendantId,
     reason: payload.reason,
     auditMetadata: {
       nozzleId: payload.nozzleId,
