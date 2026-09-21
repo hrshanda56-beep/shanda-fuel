@@ -2222,6 +2222,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const priceSuperseded = id();
     const priceNewer = id();
     const priceDuplicate = id();
+    const priceDuplicateNozzle = id();
+    const priceDuplicateMeter = id();
+    const priceDuplicateInstallation = id();
     const priceBoundaryOne = id();
     const priceBoundaryTwo = id();
     const revisionReturnedDay = id();
@@ -2523,13 +2526,22 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     });
 
     await client.unsafe(`
+      insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id)
+      values ('${priceDuplicateNozzle}', '${ids.tenantA}', '${ids.stationA}', '${ids.pumpB}', '2', '${ids.productC}');
+      insert into app.meters (id, tenant_id, serial_number)
+      values ('${priceDuplicateMeter}', '${ids.tenantA}', 'A3-SECURITY-PRICE-METER');
+      insert into app.meter_installations
+        (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
+      values
+        ('${priceDuplicateInstallation}', '${ids.tenantA}', '${ids.stationA}', '${priceDuplicateNozzle}',
+         '${priceDuplicateMeter}', '2026-09-20T00:00:00Z', '${ids.membershipA}');
       insert into app.selling_prices
         (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
       values
         ('${priceWrongProduct}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-07-01T00:00:00Z', '2026-07-02T00:00:00Z', 1.700000, 'DRAFT', '${ids.membershipA}'),
         ('${priceSuperseded}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-07-03T00:00:00Z', '2026-07-04T00:00:00Z', 1.710000, 'DRAFT', '${ids.membershipA}'),
         ('${priceNewer}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-07-04T00:00:00Z', '2026-07-05T00:00:00Z', 1.720000, 'DRAFT', '${ids.membershipA}'),
-        ('${priceDuplicate}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-09-27T00:00:00Z', '2026-09-28T00:00:00Z', 1.730000, 'DRAFT', '${ids.membershipA}');
+        ('${priceDuplicate}', '${ids.tenantA}', '${ids.stationA}', '${ids.productC}', '2026-09-29T00:00:00Z', '2026-09-30T00:00:00Z', 1.730000, 'DRAFT', '${ids.membershipA}');
       update app.selling_prices
       set state='PENDING_APPROVAL'
       where id in ('${priceWrongProduct}', '${priceSuperseded}', '${priceNewer}', '${priceDuplicate}');
@@ -2605,6 +2617,8 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       ...priceBoundaryInput,
       priceChangeId: priceDuplicate,
       boundaryId: priceBoundaryOne,
+      nozzleId: priceDuplicateNozzle,
+      meterInstallationId: priceDuplicateInstallation,
     };
     const duplicatePositive = await postWithToken(
       actorToken,
