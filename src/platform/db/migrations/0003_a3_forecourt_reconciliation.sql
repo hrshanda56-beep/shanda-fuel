@@ -494,6 +494,12 @@ $$;
 INSERT INTO platform.permission_definitions (code, description)
 VALUES ('business_day.lock', 'Lock a closed station business day')
 ON CONFLICT (code) DO NOTHING;
+INSERT INTO platform.permission_definitions (code, description)
+VALUES ('business_day.close', 'Close an operationally complete station business day')
+ON CONFLICT (code) DO NOTHING;
+INSERT INTO platform.role_permissions (role_code, permission_code)
+VALUES ('OWNER', 'business_day.close'), ('ADMINISTRATOR', 'business_day.close'), ('SUPERVISOR', 'business_day.close')
+ON CONFLICT DO NOTHING;
 INSERT INTO platform.role_permissions (role_code, permission_code)
 VALUES ('OWNER', 'business_day.lock'), ('ADMINISTRATOR', 'business_day.lock'), ('FINANCE', 'business_day.lock')
 ON CONFLICT DO NOTHING;
@@ -566,12 +572,17 @@ RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE allowed boolean := false;
 BEGIN
   IF NEW.state = OLD.state THEN RETURN NEW; END IF;
+  IF TG_TABLE_NAME = 'reconciliation_revisions'
+     AND NEW.state IN ('APPROVED', 'POSTED')
+     AND NEW.variance_classification = 'BLOCKING' THEN
+    RAISE EXCEPTION 'blocking reconciliation variance requires a corrected or resolved revision';
+  END IF;
   IF TG_TABLE_NAME = 'station_business_days' THEN
     allowed := (OLD.state, NEW.state) IN (('NOT_STARTED','OPEN'),('OPEN','OPERATIONS_COMPLETE'),('OPERATIONS_COMPLETE','CLOSED'),('CLOSED','LOCKED'),('NOT_STARTED','EXCEPTIONALLY_CLOSED'),('OPEN','EXCEPTIONALLY_CLOSED'),('OPERATIONS_COMPLETE','EXCEPTIONALLY_CLOSED'));
   ELSIF TG_TABLE_NAME = 'shifts' THEN
     allowed := (OLD.state, NEW.state) IN (('PLANNED','OPEN'),('OPEN','METER_CLOSED'),('METER_CLOSED','COMPLETED'),('PLANNED','NOT_OPERATED'),('PLANNED','CANCELLED_BEFORE_START'),('OPEN','EXCEPTIONALLY_CLOSED'),('METER_CLOSED','EXCEPTIONALLY_CLOSED'));
   ELSIF TG_TABLE_NAME IN ('reconciliations','reconciliation_revisions') THEN
-    allowed := (OLD.state, NEW.state) IN (('DRAFT','READY'),('READY','SUBMITTED'),('SUBMITTED','PENDING_APPROVAL'),('PENDING_APPROVAL','RETURNED'),('PENDING_APPROVAL','REJECTED'),('PENDING_APPROVAL','APPROVED'),('RETURNED','SUBMITTED'),('APPROVED','POSTED'),('POSTED','LOCKED'));
+    allowed := (OLD.state, NEW.state) IN (('DRAFT','READY'),('READY','SUBMITTED'),('SUBMITTED','PENDING_APPROVAL'),('PENDING_APPROVAL','RETURNED'),('PENDING_APPROVAL','REJECTED'),('PENDING_APPROVAL','APPROVED'),('APPROVED','POSTED'),('POSTED','LOCKED'));
   ELSIF TG_TABLE_NAME = 'selling_prices' THEN
     allowed := (OLD.state, NEW.state) IN (('DRAFT','PENDING_APPROVAL'),('PENDING_APPROVAL','APPROVED'),('PENDING_APPROVAL','CANCELLED'),('APPROVED','SCHEDULED'),('APPROVED','PENDING_STATION_ACTIVATION'),('APPROVED','CANCELLED'),('SCHEDULED','PENDING_STATION_ACTIVATION'),('SCHEDULED','CANCELLED'),('PENDING_STATION_ACTIVATION','BOUNDARIES_IN_PROGRESS'),('PENDING_STATION_ACTIVATION','FAILED_ACTIVATION'),('BOUNDARIES_IN_PROGRESS','ACTIVE'),('BOUNDARIES_IN_PROGRESS','FAILED_ACTIVATION'),('FAILED_ACTIVATION','PENDING_STATION_ACTIVATION'),('FAILED_ACTIVATION','CANCELLED'));
   END IF;
@@ -612,6 +623,7 @@ BEGIN
       OR NEW.correction_of_segment_id IS DISTINCT FROM OLD.correction_of_segment_id OR NEW.reversal_of_segment_id IS DISTINCT FROM OLD.reversal_of_segment_id
       OR NEW.opening_reading IS DISTINCT FROM OLD.opening_reading OR NEW.closing_reading IS DISTINCT FROM OLD.closing_reading
       OR NEW.litres IS DISTINCT FROM OLD.litres OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+      OR NEW.selling_price_id IS DISTINCT FROM OLD.selling_price_id
       OR NEW.expected_sale_value IS DISTINCT FROM OLD.expected_sale_value OR NEW.currency IS DISTINCT FROM OLD.currency
       OR NEW.boundary_reason IS DISTINCT FROM OLD.boundary_reason OR NEW.segment_start_at IS DISTINCT FROM OLD.segment_start_at
       OR NEW.segment_end_at IS DISTINCT FROM OLD.segment_end_at OR NEW.sealed_at IS DISTINCT FROM OLD.sealed_at
@@ -620,6 +632,7 @@ BEGIN
     END IF;
   ELSIF TG_TABLE_NAME = 'reconciliation_revisions' THEN
     IF OLD.state = 'LOCKED' THEN RAISE EXCEPTION 'locked reconciliation revisions are immutable'; END IF;
+    IF OLD.state = 'RETURNED' THEN RAISE EXCEPTION 'returned reconciliation revisions are immutable; create a correction revision'; END IF;
     IF OLD.state IN ('APPROVED','POSTED') AND NOT (
       OLD.state = 'APPROVED' AND NEW.state = 'POSTED' AND NEW.posted_by IS NOT NULL AND NEW.posted_at IS NOT NULL
       OR OLD.state = 'POSTED' AND NEW.state = 'LOCKED' AND NEW.locked_by IS NOT NULL AND NEW.locked_at IS NOT NULL
@@ -734,3 +747,34 @@ BEGIN
   END IF;
 END
 $$;
+
+-- Final A3 lineage and correction hardening. These statements remain in the
+-- canonical, still-unmerged A3 migration.
+ALTER TABLE app.meter_boundaries ADD COLUMN IF NOT EXISTS price_change_id uuid;
+ALTER TABLE app.meter_segments ADD COLUMN IF NOT EXISTS selling_price_id uuid;
+ALTER TABLE app.selling_prices
+  ADD CONSTRAINT selling_prices_tenant_station_id_uidx UNIQUE (tenant_id, station_id, id);
+ALTER TABLE app.meter_boundaries
+  ADD CONSTRAINT meter_boundaries_price_change_fk
+  FOREIGN KEY (tenant_id, station_id, price_change_id)
+  REFERENCES app.selling_prices (tenant_id, station_id, id);
+ALTER TABLE app.meter_segments
+  ADD CONSTRAINT meter_segments_selling_price_fk
+  FOREIGN KEY (tenant_id, station_id, selling_price_id)
+  REFERENCES app.selling_prices (tenant_id, station_id, id);
+
+ALTER TABLE app.meter_segments DROP CONSTRAINT IF EXISTS meter_segments_nozzle_no_overlap;
+ALTER TABLE app.meter_segments
+  ADD CONSTRAINT meter_segments_nozzle_no_overlap
+  EXCLUDE USING gist (
+    tenant_id WITH =,
+    station_id WITH =,
+    nozzle_id WITH =,
+    tstzrange(segment_start_at, segment_end_at, '[)') WITH &&
+  ) WHERE (correction_of_segment_id IS NULL AND reversal_of_segment_id IS NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS meter_segments_one_correction_per_source_uidx
+  ON app.meter_segments (tenant_id, station_id, correction_of_segment_id)
+  WHERE correction_of_segment_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS meter_segments_one_reversal_per_source_uidx
+  ON app.meter_segments (tenant_id, station_id, reversal_of_segment_id)
+  WHERE reversal_of_segment_id IS NOT NULL;

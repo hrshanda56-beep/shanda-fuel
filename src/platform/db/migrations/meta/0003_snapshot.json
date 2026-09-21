@@ -1622,6 +1622,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "price_change_id": {
+          "name": "price_change_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "version": {
           "name": "version",
           "type": "integer",
@@ -1812,6 +1818,24 @@
           ],
           "columnsTo": [
             "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_boundaries_price_change_fk": {
+          "name": "meter_boundaries_price_change_fk",
+          "tableFrom": "meter_boundaries",
+          "tableTo": "selling_prices",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "price_change_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -2154,6 +2178,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "selling_price_id": {
+          "name": "selling_price_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "expected_sale_value": {
           "name": "expected_sale_value",
           "type": "numeric(20, 4)",
@@ -2347,6 +2377,24 @@
           ],
           "columnsTo": [
             "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_segments_selling_price_fk": {
+          "name": "meter_segments_selling_price_fk",
+          "tableFrom": "meter_segments",
+          "tableTo": "selling_prices",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "selling_price_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
             "id"
           ],
           "onDelete": "no action",
@@ -3866,6 +3914,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "selling_prices_tenant_station_id_uidx": {
+          "name": "selling_prices_tenant_station_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         }

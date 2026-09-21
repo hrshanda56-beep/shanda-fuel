@@ -24,16 +24,34 @@ type DatabaseTransaction = Parameters<Parameters<Database['transaction']>[0]>[0]
 /** Load activation boundaries only inside the caller's trusted transaction. */
 export async function loadPriceActivationBoundaries(
   transaction: ForecourtTransaction,
-  input: { tenantId: string; stationId: string; productId: string },
+  input: { tenantId: string; stationId: string; productId: string; priceId: string },
 ): Promise<readonly { id: string; state: 'SEALED' | 'OPEN' }[]> {
   const tx = dbTransaction(transaction);
   return tx.execute<{ id: string; state: 'SEALED' | 'OPEN' }>(sql`
-    select b.id,
-      case when b.reading_status = 'AVAILABLE' and b.confirmed_at is not null then 'SEALED' else 'OPEN' end as state
-    from app.meter_boundaries b
-    join app.nozzles n on n.tenant_id = b.tenant_id and n.station_id = b.station_id and n.id = b.nozzle_id
-    where b.tenant_id = ${input.tenantId} and b.station_id = ${input.stationId}
+    select n.id,
+      case when exists (
+        select 1 from app.meter_boundaries b
+        where b.tenant_id = n.tenant_id
+          and b.station_id = n.station_id
+          and b.nozzle_id = n.id
+          and b.reason = 'PRICE_CHANGE'
+          and b.price_change_id = ${input.priceId}
+          and b.reading_status = 'AVAILABLE'
+          and not exists (
+            select 1 from app.meter_boundaries newer
+            where newer.tenant_id = b.tenant_id
+              and newer.station_id = b.station_id
+              and newer.nozzle_id = b.nozzle_id
+              and newer.reason = 'PRICE_CHANGE'
+              and newer.price_change_id = b.price_change_id
+              and (newer.effective_at, newer.id) > (b.effective_at, b.id)
+          )
+      ) then 'SEALED' else 'OPEN' end as state
+    from app.nozzles n
+    where n.tenant_id = ${input.tenantId}
+      and n.station_id = ${input.stationId}
       and n.product_id = ${input.productId}
+      and n.status = 'ACTIVE'
     for update
   `);
 }

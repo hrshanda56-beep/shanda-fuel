@@ -264,6 +264,7 @@ export const sellingPrices = appSchema.table(
   },
   (table) => [
     unique('selling_prices_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('selling_prices_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     index('selling_prices_effective_lookup_idx').on(
       table.tenantId,
       table.stationId,
@@ -314,6 +315,7 @@ export const meterBoundaries = appSchema.table(
     attendantId: uuid('attendant_id').notNull(),
     onBehalfOf: uuid('on_behalf_of'),
     exceptionReason: text('exception_reason'),
+    priceChangeId: uuid('price_change_id'),
     version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
@@ -373,6 +375,11 @@ export const meterBoundaries = appSchema.table(
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'meter_boundaries_on_behalf_of_fk',
     }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.priceChangeId],
+      foreignColumns: [sellingPrices.tenantId, sellingPrices.stationId, sellingPrices.id],
+      name: 'meter_boundaries_price_change_fk',
+    }),
   ],
 );
 
@@ -398,6 +405,7 @@ export const meterSegments = appSchema.table(
     closingReading: numeric('closing_reading', { precision: 18, scale: 3 }).notNull(),
     litres: numeric('litres', { precision: 18, scale: 3 }).notNull(),
     unitPrice: numeric('unit_price', { precision: 20, scale: 6 }).notNull(),
+    sellingPriceId: uuid('selling_price_id'),
     expectedSaleValue: numeric('expected_sale_value', { precision: 20, scale: 4 }).notNull(),
     currency: text('currency').notNull().default('USD'),
     boundaryReason: text('boundary_reason').notNull(),
@@ -456,6 +464,11 @@ export const meterSegments = appSchema.table(
       columns: [table.tenantId, table.productId],
       foreignColumns: [products.tenantId, products.id],
       name: 'meter_segments_product_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.sellingPriceId],
+      foreignColumns: [sellingPrices.tenantId, sellingPrices.stationId, sellingPrices.id],
+      name: 'meter_segments_selling_price_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.stationId, table.businessDayId],

@@ -5,11 +5,22 @@ import {
   activatePriceChangeFromRequest,
   approvePriceChangeFromRequest,
   approveReconciliationFromRequest,
+  closeMetersFromRequest,
+  closeBusinessDayFromRequest,
+  completeShiftFromRequest,
+  confirmBoundaryFromRequest,
+  createCorrectedReconciliationRevisionFromRequest,
   handoverAttendantFromRequest,
   lockBusinessDayFromRequest,
   lockReconciliationFromRequest,
+  markNotOperatedFromRequest,
+  openBusinessDayFromRequest,
   postReconciliationFromRequest,
+  requestPriceChangeFromRequest,
+  returnReconciliationFromRequest,
   sealMeterSegmentFromRequest,
+  startShiftFromRequest,
+  submitReconciliationFromRequest,
 } from '../../../../modules/forecourt/commands';
 
 export async function POST(request: Request): Promise<Response> {
@@ -26,15 +37,44 @@ export async function POST(request: Request): Promise<Response> {
           ? await approvePriceChangeFromRequest(request, body)
           : commandType === 'ActivatePriceChange'
             ? await activatePriceChangeFromRequest(request, body)
-            : commandType === 'ApproveReconciliation'
-              ? await approveReconciliationFromRequest(request, body)
-              : commandType === 'PostReconciliation'
-                ? await postReconciliationFromRequest(request, body)
-                : commandType === 'LockReconciliation'
-                  ? await lockReconciliationFromRequest(request, body)
-                  : commandType === 'LockBusinessDay'
-                    ? await lockBusinessDayFromRequest(request, body)
-                    : await sealMeterSegmentFromRequest(request, body);
+            : commandType === 'OpenBusinessDay'
+              ? await openBusinessDayFromRequest(request, body)
+              : commandType === 'CloseBusinessDay'
+                ? await closeBusinessDayFromRequest(request, body)
+                : commandType === 'StartShift'
+                  ? await startShiftFromRequest(request, body)
+                  : commandType === 'ConfirmBoundary'
+                    ? await confirmBoundaryFromRequest(request, body)
+                    : commandType === 'ReportMeterUnavailable'
+                      ? await confirmBoundaryFromRequest(request, body)
+                      : commandType === 'ResolveMeterException'
+                        ? await confirmBoundaryFromRequest(request, body)
+                        : commandType === 'CloseMeters'
+                          ? await closeMetersFromRequest(request, body)
+                          : commandType === 'CompleteShift'
+                            ? await completeShiftFromRequest(request, body)
+                            : commandType === 'MarkNotOperated'
+                              ? await markNotOperatedFromRequest(request, body)
+                              : commandType === 'RequestPriceChange'
+                                ? await requestPriceChangeFromRequest(request, body)
+                                : commandType === 'SubmitReconciliation'
+                                  ? await submitReconciliationFromRequest(request, body)
+                                  : commandType === 'ReturnReconciliation'
+                                    ? await returnReconciliationFromRequest(request, body)
+                                    : commandType === 'CreateCorrectedReconciliationRevision'
+                                      ? await createCorrectedReconciliationRevisionFromRequest(
+                                          request,
+                                          body,
+                                        )
+                                      : commandType === 'ApproveReconciliation'
+                                        ? await approveReconciliationFromRequest(request, body)
+                                        : commandType === 'PostReconciliation'
+                                          ? await postReconciliationFromRequest(request, body)
+                                          : commandType === 'LockReconciliation'
+                                            ? await lockReconciliationFromRequest(request, body)
+                                            : commandType === 'LockBusinessDay'
+                                              ? await lockBusinessDayFromRequest(request, body)
+                                              : await sealMeterSegmentFromRequest(request, body);
     return NextResponse.json(result, { status: commandType === 'SealSegment' ? 201 : 200 });
   } catch (error) {
     if (error instanceof ZodError) {

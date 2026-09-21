@@ -103,6 +103,12 @@ export const FORECOURT_COMMAND_POLICY = {
     assuranceRequirement: 'STANDARD',
     requiresExpectedVersion: true,
   },
+  CloseBusinessDay: {
+    permissionCode: 'business_day.close',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
   StartShift: {
     permissionCode: 'shift.start',
     requiredScopeType: 'STATION',
@@ -121,8 +127,28 @@ export const FORECOURT_COMMAND_POLICY = {
     assuranceRequirement: 'STANDARD',
     requiresExpectedVersion: true,
   },
+  MarkNotOperated: {
+    permissionCode: 'shift.mark_not_operated',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
   ConfirmBoundary: {
     permissionCode: 'meter.boundary.capture',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
+  ReportMeterUnavailable: {
+    permissionCode: 'exception.manage',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
+  ResolveMeterException: {
+    permissionCode: 'exception.manage',
     requiredScopeType: 'STATION',
     assuranceRequirement: 'STANDARD',
     requiresExpectedVersion: true,
@@ -167,6 +193,12 @@ export const FORECOURT_COMMAND_POLICY = {
     requiresExpectedVersion: true,
   },
   SubmitReconciliation: {
+    permissionCode: 'reconciliation.submit',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  CreateCorrectedReconciliationRevision: {
     permissionCode: 'reconciliation.submit',
     requiredScopeType: 'STATION',
     assuranceRequirement: 'STANDARD',
@@ -305,10 +337,14 @@ export type ForecourtVersionSubject =
 
 export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVersionSubject> = {
   OpenBusinessDay: 'StationBusinessDay',
+  CloseBusinessDay: 'StationBusinessDay',
   StartShift: 'Shift',
   CloseMeters: 'Shift',
   CompleteShift: 'Shift',
+  MarkNotOperated: 'Shift',
   ConfirmBoundary: 'Shift',
+  ReportMeterUnavailable: 'Shift',
+  ResolveMeterException: 'Shift',
   HandoverAttendant: 'Shift',
   SealSegment: 'MeterSegment',
   ReplaceMeter: 'MeterInstallation',
@@ -316,6 +352,7 @@ export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVe
   ApprovePriceChange: 'SellingPrice',
   ActivatePriceChange: 'SellingPrice',
   SubmitReconciliation: 'ReconciliationRevision',
+  CreateCorrectedReconciliationRevision: 'ReconciliationRevision',
   ReturnReconciliation: 'ReconciliationRevision',
   ApproveReconciliation: 'ReconciliationRevision',
   PostReconciliation: 'ReconciliationRevision',

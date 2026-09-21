@@ -187,7 +187,7 @@ describe('A3 forecourt domain', () => {
     expect(() => assertNoOverlappingOperationalSegments([first], second)).toThrow(/overlapping/);
   });
 
-  it('calculates signed variance and requires explanation, then blocks self approval', () => {
+  it('blocks unresolved variance and still blocks self approval on a corrected revision', () => {
     const revision = calculateReconciliation({
       id: '12121212-1212-4212-8212-121212121212',
       reconciliationId: '13131313-1313-4313-8313-131313131313',
@@ -207,9 +207,24 @@ describe('A3 forecourt domain', () => {
       policy: { warningThreshold: '1.00', blockingThreshold: '5.00' },
     });
     expect(revision.variance.amount.toString()).toBe('5');
-    expect(() => submitReconciliation(revision, trustedActor)).toThrow(/explanation/);
+    expect(() => submitReconciliation(revision, trustedActor)).toThrow(/corrected/);
+    const corrected = calculateReconciliation({
+      ...revision,
+      id: '17171717-1717-4717-8717-171717171717',
+      revision: 2,
+      segments: [segment()],
+      policy: { warningThreshold: '1.00', blockingThreshold: '5.00' },
+      declarations: [
+        {
+          id: '18181818-1818-4818-8818-181818181818',
+          category: 'CASH',
+          amount: money('15.1875'),
+          declaredBy: ids.actor,
+        },
+      ],
+    });
     const submitted = submitReconciliation(
-      revision,
+      corrected,
       trustedActor,
       'Till count includes a documented correction',
     );

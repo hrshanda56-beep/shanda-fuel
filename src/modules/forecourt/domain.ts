@@ -77,6 +77,7 @@ export type MeterBoundary = {
   attendantId: string;
   onBehalfOf?: string;
   exceptionReason?: string;
+  priceChangeId?: string;
   version: number;
 };
 export type MeterInstallation = {
@@ -110,6 +111,8 @@ export type MeterSegment = {
   closingReading: string;
   litres: Litres;
   unitPrice: UnitPrice;
+  /** Immutable selling-price snapshot used to derive this segment. */
+  sellingPriceId?: string;
   currency: CurrencyCode;
   expectedSaleValue: Money;
   openingBoundaryReason: BoundaryReason;
@@ -162,6 +165,7 @@ export type MeterSegmentInput = {
   attendantId: string;
   actor: TrustedActor;
   unitPrice: string;
+  sellingPriceId?: string;
   currency?: CurrencyCode;
   startAt: string;
   endAt: string;
@@ -247,6 +251,7 @@ export function resolveOpeningReading(input: {
   submitted?: MeterReading;
   priorSealed?: MeterReading;
   exceptionReason?: string;
+  priceChangeId?: string;
 }): MeterReading {
   if (input.priorSealed?.status === 'AVAILABLE') {
     if (!input.submitted || input.submitted.status !== 'AVAILABLE') return input.priorSealed;
@@ -282,6 +287,7 @@ export function confirmBoundary(input: {
   actor: TrustedActor;
   responsibleAttendantId: string;
   exceptionReason?: string;
+  priceChangeId?: string;
 }): MeterBoundary {
   assertTrustedActor(input.actor);
   if (input.actor.tenantId !== input.tenantId || input.actor.stationId !== input.stationId) {
@@ -289,7 +295,7 @@ export function confirmBoundary(input: {
   }
   if (input.reading.status === 'AVAILABLE') validateReading(input.reading.value);
   const reading =
-    input.reason === 'SHIFT_OPEN'
+    input.reason === 'SHIFT_OPEN' || input.reason === 'PRICE_CHANGE'
       ? resolveOpeningReading({
           submitted: input.reading,
           priorSealed: input.priorSealedReading,
@@ -318,6 +324,7 @@ export function confirmBoundary(input: {
     attendantId: input.responsibleAttendantId,
     onBehalfOf,
     exceptionReason: input.exceptionReason,
+    ...(input.priceChangeId ? { priceChangeId: input.priceChangeId } : {}),
     version: 0,
   };
 }
@@ -475,6 +482,7 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
     closingReading: closingBoundary.reading.value,
     litres: quantity,
     unitPrice: price,
+    ...(input.sellingPriceId ? { sellingPriceId: input.sellingPriceId } : {}),
     currency: input.currency ?? 'USD',
     expectedSaleValue: money(expectedAmount, input.currency ?? 'USD'),
     openingBoundaryReason: openingBoundary.reason,
@@ -502,6 +510,8 @@ export function assertNoOverlappingOperationalSegments(
     );
   const conflict = existing
     .filter((segment) => segment.id !== candidate.id && segment.nozzleId === candidate.nozzleId)
+    .filter((segment) => !segment.correctionOfSegmentId && !segment.reversalOfSegmentId)
+    .filter(() => !candidate.correctionOfSegmentId && !candidate.reversalOfSegmentId)
     .filter((segment) => Date.parse(segment.startAt) < end && start < Date.parse(segment.endAt))
     .sort((left, right) => left.id.localeCompare(right.id))[0];
   if (conflict)
@@ -728,8 +738,12 @@ export function submitReconciliation(
 ): ReconciliationRevision {
   assertTrustedActor(actor);
   assertActorCoversRevision(actor, revision);
-  if (revision.state !== 'READY' && revision.state !== 'RETURNED')
-    throw invalidTransition('SubmitReconciliation', revision.state);
+  if (revision.state !== 'READY') throw invalidTransition('SubmitReconciliation', revision.state);
+  if (revision.varianceClassification === 'BLOCKING')
+    throw new AppError(
+      'CONFLICT',
+      'A blocking variance requires a corrected reconciliation revision before submission',
+    );
   if (revision.varianceClassification !== 'INFORMATIONAL' && !explanation?.trim())
     throw new AppError('VALIDATION_FAILED', 'A variance explanation is required before submission');
   return {
@@ -769,6 +783,8 @@ export function approveReconciliation(
   assertTrustedActor(actor);
   assertActorCoversRevision(actor, revision);
   assertState(revision.state, 'PENDING_APPROVAL', 'ApproveReconciliation');
+  if (revision.varianceClassification === 'BLOCKING')
+    throw new AppError('CONFLICT', 'A blocking variance cannot be approved');
   if (revision.submittedBy === actor.membershipId)
     throw new AppError('FORBIDDEN', 'A reconciliation cannot be approved by its submitting actor');
   assertServerTimestamp(serverNow, 'ApproveReconciliation');
@@ -787,6 +803,8 @@ export function postReconciliation(
   assertTrustedActor(actor);
   assertActorCoversRevision(actor, revision);
   assertState(revision.state, 'APPROVED', 'PostReconciliation');
+  if (revision.varianceClassification === 'BLOCKING')
+    throw new AppError('CONFLICT', 'A blocking variance cannot be posted');
   assertServerTimestamp(serverNow, 'PostReconciliation');
   return {
     ...revision,

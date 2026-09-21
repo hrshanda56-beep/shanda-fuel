@@ -23,6 +23,7 @@ export type MeterSegmentSealedEvent = {
   closingReading: string;
   litres: string;
   unitPrice: string;
+  sellingPriceId?: string;
   expectedSaleValue: Money;
   currency: CurrencyCode;
   sealedAt: string;
@@ -135,6 +136,7 @@ export function meterSegmentSealedEvent(
     closingReading: segment.closingReading,
     litres: segment.litres.toString(),
     unitPrice: segment.unitPrice.toString(),
+    ...(segment.sellingPriceId ? { sellingPriceId: segment.sellingPriceId } : {}),
     expectedSaleValue: segment.expectedSaleValue,
     currency: segment.currency,
     sealedAt: segment.sealedAt,
