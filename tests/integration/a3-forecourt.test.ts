@@ -1980,7 +1980,6 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const price = id();
     const priceBoundaryA = id();
     const priceBoundaryB = id();
-    const correctionDay = id();
     const correctionShift = id();
     const correctionOpening = id();
     const correctionClosing = id();
@@ -2128,21 +2127,18 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     `).resolves.toEqual([{ count: 1 }]);
 
     await client.unsafe(`
-      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
-        values ('${correctionDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-20', 'NOT_STARTED');
-      update app.station_business_days set state='OPEN' where id='${correctionDay}';
       insert into app.shifts
         (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-      values ('${correctionShift}', '${ids.tenantA}', '${ids.stationA}', '${correctionDay}', 'PLANNED', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20');
+      values ('${correctionShift}', '${ids.tenantA}', '${ids.stationA}', '${ids.routeDay}', 'PLANNED', '2026-09-21T13:00:00Z', '2026-09-21T14:00:00Z', '2026-09-21');
       update app.shifts set state='OPEN' where id='${correctionShift}';
       insert into app.meter_boundaries
         (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
       values
-        ('${correctionOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${correctionDay}', '${correctionShift}', 'SHIFT_OPEN', 'AVAILABLE', 2000, '2026-09-20T06:00:00Z', '2026-09-20T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
-        ('${correctionClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${correctionDay}', '${correctionShift}', 'SHIFT_CLOSE', 'AVAILABLE', 2010, '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
+        ('${correctionOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${ids.routeDay}', '${correctionShift}', 'SHIFT_OPEN', 'AVAILABLE', 2000, '2026-09-21T13:00:00Z', '2026-09-21T13:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+        ('${correctionClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${ids.routeDay}', '${correctionShift}', 'SHIFT_CLOSE', 'AVAILABLE', 2010, '2026-09-21T14:00:00Z', '2026-09-21T14:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
       insert into app.meter_segments
         (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, boundary_reason, segment_start_at, segment_end_at, sealed_at, state)
-      values ('${correctionSegment}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${correctionDay}', '${correctionShift}', '${correctionOpening}', '${correctionClosing}', '${ids.productB}', '${ids.membershipA}', '${ids.membershipA}', 2000, 2010, 10, 1.5, 15, 'SHIFT_CLOSE', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', 'OPEN');
+      values ('${correctionSegment}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${ids.routeDay}', '${correctionShift}', '${correctionOpening}', '${correctionClosing}', '${ids.productB}', '${ids.membershipA}', '${ids.membershipA}', 2000, 2010, 10, 1.5, 15, 'SHIFT_CLOSE', '2026-09-21T13:00:00Z', '2026-09-21T14:00:00Z', '2026-09-21T14:00:01Z', 'OPEN');
       update app.meter_segments set state='SEALED', version=1 where id='${correctionSegment}';
     `);
     const correction = await postCommand(
