@@ -404,6 +404,7 @@ export const meterSegments = appSchema.table(
     segmentStartAt: utcTimestamp('segment_start_at').notNull(),
     segmentEndAt: utcTimestamp('segment_end_at').notNull(),
     sealedAt: utcTimestamp('sealed_at').notNull(),
+    state: text('state').notNull().default('OPEN'),
     version: integer('version').notNull().default(0),
     controlledException: boolean('controlled_exception').notNull().default(false),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
@@ -426,6 +427,7 @@ export const meterSegments = appSchema.table(
       table.businessDayId,
       table.stationId,
     ),
+    check('meter_segments_state_ck', sql`${table.state} in ('OPEN', 'SEALED')`),
     foreignKey({
       columns: [table.tenantId, table.stationId, table.nozzleId],
       foreignColumns: [nozzles.tenantId, nozzles.stationId, nozzles.id],

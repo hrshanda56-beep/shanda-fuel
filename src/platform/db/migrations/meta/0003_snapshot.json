@@ -1,5 +1,5 @@
 {
-  "id": "467352cb-d49e-420d-8dfd-adc9cf9a6fd7",
+  "id": "f11e501f-478c-473d-a17c-9e7c835d3f91",
   "prevId": "7f7a38e8-d5b2-4329-97fd-db822ec2191b",
   "version": "7",
   "dialect": "postgresql",
@@ -2191,6 +2191,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'OPEN'"
+        },
         "version": {
           "name": "version",
           "type": "integer",
@@ -2469,7 +2476,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "meter_segments_state_ck": {
+          "name": "meter_segments_state_ck",
+          "value": "\"app\".\"meter_segments\".\"state\" in ('OPEN', 'SEALED')"
+        }
+      },
       "isRLSEnabled": false
     },
     "app.meters": {

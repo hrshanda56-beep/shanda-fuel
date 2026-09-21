@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import postgres, { type Sql } from 'postgres';
+import { makeSignature } from 'better-auth/crypto';
 import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
 import {
   createForecourtCommandContext,
@@ -14,6 +15,7 @@ import {
   databaseOutboxPort,
 } from '../../src/modules/forecourt/persistence';
 import { businessDayLockedEvent } from '../../src/modules/forecourt/contracts';
+import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -56,6 +58,12 @@ const ids = {
   replayOutbox: 'a3000000-0000-4000-8000-000000000176',
   rollbackRequest: 'a3000000-0000-4000-8000-000000000177',
   replayRequest: 'a3000000-0000-4000-8000-000000000178',
+  routeSession: 'a3000000-0000-4000-8000-000000000179',
+  routeOpening: 'a3000000-0000-4000-8000-000000000181',
+  routeClosing: 'a3000000-0000-4000-8000-000000000182',
+  routeSegment: 'a3000000-0000-4000-8000-000000000183',
+  routeDay: 'a3000000-0000-4000-8000-000000000187',
+  routeShift: 'a3000000-0000-4000-8000-000000000188',
 };
 
 let client: Sql;
@@ -128,6 +136,9 @@ function productionContext(requestId: string): ForecourtCommandContext {
 
 describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
   beforeAll(async () => {
+    process.env.APP_ENV ??= 'test';
+    process.env.APP_URL ??= 'http://127.0.0.1:3000';
+    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
     client = postgres(databaseUrl, { max: 1, prepare: false });
     raceClient = postgres(databaseUrl, { max: 2, prepare: false });
     await client.unsafe(`
@@ -140,6 +151,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.membershipA}', '${ids.tenantA}', '${ids.actorA}', 'ACTIVE'),
         ('${ids.membershipB}', '${ids.tenantB}', '${ids.actorB}', 'ACTIVE') on conflict (id) do nothing;
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+        values
+          ('${ids.tenantA}', '${ids.membershipA}', 'SUPERVISOR', 'STATION', '${ids.legalA}', '${ids.stationA}'),
+          ('${ids.tenantA}', '${ids.membershipA}', 'ATTENDANT', 'STATION', '${ids.legalA}', '${ids.stationA}')
+        on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
         ('${ids.legalA}', '${ids.tenantA}', 'A3 Legal A'),
         ('${ids.legalA2}', '${ids.tenantA}', 'A3 Legal A2'),
@@ -148,6 +164,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         ('${ids.stationA}', '${ids.tenantA}', '${ids.legalA}', 'A3A', 'A3 Station A', 'ACTIVE'),
         ('${ids.stationA2}', '${ids.tenantA}', '${ids.legalA2}', 'A3A2', 'A3 Station A2', 'ACTIVE'),
         ('${ids.stationB}', '${ids.tenantB}', '${ids.legalB}', 'A3B', 'A3 Station B', 'ACTIVE') on conflict (id) do nothing;
+      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
+        values ('${ids.routeSession}', '2030-01-01T00:00:00Z', 'a3-route-session-token', '${ids.actorA}', true, now())
+        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
   });
 
@@ -179,6 +198,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
             ('${ids.closingA}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', 'SHIFT_CLOSE', 'AVAILABLE', 1010.125, '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
         insert into app.meter_segments (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, boundary_reason, segment_start_at, segment_end_at, sealed_at)
           values ('${ids.segmentA}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', '${ids.openingA}', '${ids.closingA}', '${ids.productA}', '${ids.membershipA}', '${ids.membershipA}', 1000.000, 1010.125, 10.125, 1.500000, 15.1875, 'SHIFT_CLOSE', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z');
+        update app.meter_segments set state = 'SEALED', version = 1 where id = '${ids.segmentA}';
       `);
 
       const visible = await client<{ id: string }[]>`select id from app.meter_segments`;
@@ -269,6 +289,12 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           values ('${ids.tenantA}', '${ids.stationA}', '${ids.reconciliationA}', 99, 'LOCKED', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb)
         `),
       ).rejects.toThrow(/READY/);
+      await expect(
+        client.unsafe(`
+          insert into app.meter_segments (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, boundary_reason, segment_start_at, segment_end_at, sealed_at, state)
+          values ('a3000000-0000-4000-8000-000000000132', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.dayA}', '${ids.shiftA}', '${ids.openingA}', '${ids.closingA}', '${ids.productA}', '${ids.membershipA}', '${ids.membershipA}', 1000.000, 1010.125, 10.125, 1.500000, 15.1875, 'SHIFT_CLOSE', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20T14:00:01Z', 'SEALED')
+        `),
+      ).rejects.toThrow(/OPEN/);
     } finally {
       await client.unsafe('reset role');
     }
@@ -465,6 +491,79 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     ).toEqual([]);
   });
 
+  it('rolls back when the real A1 audit persistence fails', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const context = productionContext('a3000000-0000-4000-8000-000000000184');
+    const before = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    await client.unsafe(`
+      create or replace function public.a3_fail_audit() returns trigger language plpgsql as $$
+      begin raise exception 'test audit persistence failure'; end; $$;
+      drop trigger if exists a3_fail_audit_trigger on platform.security_events;
+      create trigger a3_fail_audit_trigger before insert on platform.security_events for each row execute function public.a3_fail_audit();
+    `);
+    try {
+      await expect(
+        databaseForecourtTransactionPort.run(context, async (transaction) =>
+          databaseIdempotencyPort.run(transaction, {
+            tenantId: ids.tenantA, commandType: 'SealSegment', idempotencyKey: 'a3-audit-fail-1', requestHash: 'a3-audit-fail-hash',
+          }, async () => {
+            await transaction.execute(sql`update app.meter_installations set version = version + 1 where id = ${ids.installationA}`);
+            await databaseAuditPort.append({
+              transaction, context, commandType: 'SealSegment', subjectType: 'MeterSegment', subjectId: ids.segmentA,
+              provenance: { actorId: ids.actorA, membershipId: ids.membershipA, tenantId: ids.tenantA, stationId: ids.stationA, requestId: context.requestId },
+            });
+            return { ok: true };
+          }),
+        ),
+      ).rejects.toThrow(/test audit persistence failure/);
+    } finally {
+      await client.unsafe('drop trigger if exists a3_fail_audit_trigger on platform.security_events; drop function if exists public.a3_fail_audit();');
+    }
+    const after = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    expect(after[0]?.version).toBe(before[0]?.version);
+    expect(await client`select 1 from app.forecourt_idempotency_records where idempotency_key = 'a3-audit-fail-1'`).toEqual([]);
+  });
+
+  it('rolls back when the real outbox persistence fails', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const context = productionContext('a3000000-0000-4000-8000-000000000185');
+    const before = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    await client.unsafe(`
+      create or replace function public.a3_fail_outbox() returns trigger language plpgsql as $$
+      begin raise exception 'test outbox persistence failure'; end; $$;
+      drop trigger if exists a3_fail_outbox_trigger on app.forecourt_outbox;
+      create trigger a3_fail_outbox_trigger before insert on app.forecourt_outbox for each row execute function public.a3_fail_outbox();
+    `);
+    try {
+      await expect(
+        databaseForecourtTransactionPort.run(context, async (transaction) =>
+          databaseIdempotencyPort.run(transaction, {
+            tenantId: ids.tenantA, commandType: 'SealSegment', idempotencyKey: 'a3-outbox-fail-1', requestHash: 'a3-outbox-fail-hash',
+          }, async () => {
+            await transaction.execute(sql`update app.meter_installations set version = version + 1 where id = ${ids.installationA}`);
+            const event = businessDayLockedEvent({
+              eventId: 'a3000000-0000-4000-8000-000000000186', tenantId: ids.tenantA, stationId: ids.stationA,
+              businessDayId: ids.dayA, businessDate: '2026-09-20', lockedAt: '2026-09-20T23:00:00Z', legalEntityId: ids.legalA,
+            });
+            await databaseAuditPort.append({
+              transaction, context, commandType: 'SealSegment', subjectType: 'MeterSegment', subjectId: ids.segmentA,
+              provenance: { actorId: ids.actorA, membershipId: ids.membershipA, tenantId: ids.tenantA, stationId: ids.stationA, requestId: context.requestId },
+            });
+            await databaseOutboxPort.publish({ transaction, event, context });
+            return { ok: true };
+          }),
+        ),
+      ).rejects.toThrow(/test outbox persistence failure/);
+    } finally {
+      await client.unsafe('drop trigger if exists a3_fail_outbox_trigger on app.forecourt_outbox; drop function if exists public.a3_fail_outbox();');
+    }
+    const after = await client<{ version: number }[]>`select version from app.meter_installations where id = ${ids.installationA}`;
+    expect(after[0]?.version).toBe(before[0]?.version);
+    expect(await client`select 1 from app.forecourt_idempotency_records where idempotency_key = 'a3-outbox-fail-1'`).toEqual([]);
+  });
+
   it('replays a completed durable command once and rejects a different request hash', async () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
@@ -536,6 +635,81 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     expect(
       await client`select count(*)::int as count from platform.security_events where request_id = ${ids.replayRequest}`,
     ).toEqual([{ count: 1 }]);
+  });
+
+  it('executes SealSegment through the real authenticated route with the segment subject id', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    await client.unsafe(`update app.meter_installations set version = 1 where id = '${ids.installationA}'`);
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${ids.routeDay}', '${ids.tenantA}', '${ids.stationA}', '2026-09-22', 'NOT_STARTED');
+      update app.station_business_days set state = 'OPEN' where id = '${ids.routeDay}';
+      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+        values ('${ids.routeShift}', '${ids.tenantA}', '${ids.stationA}', '${ids.routeDay}', 'PLANNED', '2026-09-22T06:00:00Z', '2026-09-22T14:00:00Z', '2026-09-22');
+      update app.shifts set state = 'OPEN' where id = '${ids.routeShift}';
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${ids.routeOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'PRICE_CHANGE', 'AVAILABLE', 1010.125, '2026-09-22T15:00:00Z', '2026-09-22T15:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+        ('${ids.routeClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'SHIFT_CLOSE', 'AVAILABLE', 1012.125, '2026-09-22T16:00:00Z', '2026-09-22T16:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}')
+    `);
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const sealInput = {
+      commandType: 'SealSegment',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      segmentId: ids.routeSegment,
+      nozzleId: ids.nozzleA,
+      meterInstallationId: ids.installationA,
+      businessDayId: ids.routeDay,
+      shiftId: ids.routeShift,
+      openingBoundaryId: ids.routeOpening,
+      closingBoundaryId: ids.routeClosing,
+      productId: ids.productA,
+      responsibleAttendantId: ids.membershipA,
+      startAt: '2026-09-22T15:00:00.000Z',
+      endAt: '2026-09-22T16:00:00.000Z',
+      expectedVersion: 0,
+    };
+    const response = await forecourtCommandPost(
+      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+        method: 'POST',
+        headers: {
+          cookie: `shanda-fuel.session_token=${signedToken}`,
+          'content-type': 'application/json',
+          'idempotency-key': 'a3-real-route-seal-1',
+        },
+        body: JSON.stringify(sealInput),
+      }),
+    );
+    expect(response.status).toBe(201);
+    const replay = await forecourtCommandPost(
+      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+        method: 'POST',
+        headers: { cookie: `shanda-fuel.session_token=${signedToken}`, 'content-type': 'application/json', 'idempotency-key': 'a3-real-route-seal-1' },
+        body: JSON.stringify(sealInput),
+      }),
+    );
+    expect(replay.status).toBe(201);
+    const conflict = await forecourtCommandPost(
+      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+        method: 'POST',
+        headers: { cookie: `shanda-fuel.session_token=${signedToken}`, 'content-type': 'application/json', 'idempotency-key': 'a3-real-route-seal-1' },
+        body: JSON.stringify({ ...sealInput, endAt: '2026-09-22T16:30:00.000Z' }),
+      }),
+    );
+    expect(conflict.status).toBe(409);
+    const segment = await client<{ id: string; state: string; version: number }[]>`
+      select id, state, version from app.meter_segments where id = ${ids.routeSegment}
+    `;
+    expect(segment).toEqual([{ id: ids.routeSegment, state: 'SEALED', version: 1 }]);
+    const audit = await client<{ subject_id: string }[]>`
+      select details->>'subjectId' as subject_id from platform.security_events
+      where event_code = 'FORECOURT.SealSegment' and details->>'subjectId' = ${ids.routeSegment}
+    `;
+    expect(audit).toHaveLength(1);
   });
 
   it('serializes concurrent installation updates and rejects the stale winner', async () => {

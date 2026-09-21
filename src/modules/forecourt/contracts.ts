@@ -27,6 +27,8 @@ export type MeterSegmentSealedEvent = {
   currency: CurrencyCode;
   sealedAt: string;
   occurredAt: string;
+  intervalStartAt: string;
+  intervalEndAt: string;
   openingBoundaryId: string;
   closingBoundaryId: string;
   openingBoundaryReason: string;
@@ -137,6 +139,8 @@ export function meterSegmentSealedEvent(
     currency: segment.currency,
     sealedAt: segment.sealedAt,
     occurredAt: input.occurredAt ?? segment.sealedAt,
+    intervalStartAt: segment.startAt,
+    intervalEndAt: segment.endAt,
     openingBoundaryId: segment.openingBoundaryId,
     closingBoundaryId: segment.closingBoundaryId,
     openingBoundaryReason: segment.openingBoundaryReason,

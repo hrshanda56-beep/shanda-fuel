@@ -21,6 +21,23 @@ import type {
 
 type DatabaseTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
+/** Load activation boundaries only inside the caller's trusted transaction. */
+export async function loadPriceActivationBoundaries(
+  transaction: ForecourtTransaction,
+  input: { tenantId: string; stationId: string; productId: string },
+): Promise<readonly { id: string; state: 'SEALED' | 'OPEN' }[]> {
+  const tx = dbTransaction(transaction);
+  return tx.execute<{ id: string; state: 'SEALED' | 'OPEN' }>(sql`
+    select b.id,
+      case when b.reading_status = 'AVAILABLE' and b.confirmed_at is not null then 'SEALED' else 'OPEN' end as state
+    from app.meter_boundaries b
+    join app.nozzles n on n.tenant_id = b.tenant_id and n.station_id = b.station_id and n.id = b.nozzle_id
+    where b.tenant_id = ${input.tenantId} and b.station_id = ${input.stationId}
+      and n.product_id = ${input.productId}
+    for update
+  `);
+}
+
 function dbTransaction(transaction: ForecourtTransaction): DatabaseTransaction {
   return transaction;
 }
@@ -128,6 +145,15 @@ export const databaseAuditPort: ForecourtAuditPort = {
         metadata: {
           stationId: input.provenance.stationId,
           responsibleAttendantId: input.provenance.responsibleAttendantId ?? null,
+          onBehalfOf:
+            input.provenance.responsibleAttendantId &&
+            input.provenance.responsibleAttendantId !== input.provenance.membershipId
+              ? {
+                  membershipId: input.provenance.responsibleAttendantId,
+                  actorType: 'HUMAN',
+                }
+              : null,
+          ...input.auditMetadata,
         },
       },
       { keyId: env.AUDIT_SIGNING_KEY_ID, secret: env.AUDIT_SIGNING_KEY },
@@ -233,7 +259,10 @@ async function assertExpectedVersion(
     FOR UPDATE
   `);
   const row = rows[0];
-  if (!row) throw new AppError('NOT_FOUND', `${subjectType} was not found in this station`);
+  if (!row) {
+    if (subjectType === 'MeterSegment' && expectedVersion === 0) return;
+    throw new AppError('NOT_FOUND', `${subjectType} was not found in this station`);
+  }
   if (Number(row.version) !== expectedVersion) {
     throw new AppError('CONFLICT', 'The forecourt subject version is stale', {
       expectedVersion,

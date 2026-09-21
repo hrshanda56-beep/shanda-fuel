@@ -243,6 +243,7 @@ export type ForecourtAuditPort = {
     before?: unknown;
     after?: unknown;
     reason?: string;
+    auditMetadata?: Readonly<Record<string, string | null>>;
     provenance: {
       actorId: string;
       membershipId: string;
@@ -300,7 +301,7 @@ export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVe
   CompleteShift: 'Shift',
   ConfirmBoundary: 'Shift',
   HandoverAttendant: 'Shift',
-  SealSegment: 'MeterInstallation',
+  SealSegment: 'MeterSegment',
   ReplaceMeter: 'MeterInstallation',
   RequestPriceChange: 'SellingPrice',
   ApprovePriceChange: 'SellingPrice',
@@ -323,6 +324,7 @@ export type ForecourtCommandInput<T> = Readonly<{
   ports: ForecourtCommandPorts;
   before?: unknown;
   reason?: string;
+  auditMetadata?: Readonly<Record<string, string | null>>;
   responsibleAttendantId?: string;
   expectedVersion?: number;
   execute: (
@@ -406,6 +408,7 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
           before: input.before,
           after: outcome.after,
           reason: input.reason,
+          auditMetadata: input.auditMetadata,
           provenance: {
             actorId: input.context.actor.actorId,
             membershipId: input.context.actor.membershipId,

@@ -1,5 +1,4 @@
 export {
-  activatePriceChange,
   approvePriceChange,
   approveReconciliation,
   assertNoOverlappingOperationalSegments,
@@ -48,7 +47,6 @@ export type {
   StationBusinessDay,
   StationBusinessDayState,
   VarianceClassification,
-  PersistedPriceBoundaryState,
 } from './domain';
 export type { TrustedActor } from './trusted-actor';
 export {
@@ -72,7 +70,15 @@ export {
   resolveForecourtCommandContext,
 } from './application';
 export { FORECOURT_COMMAND_POLICY } from './application';
-export { sealMeterSegmentFromRequest } from './commands';
+export {
+  activatePriceChangeFromRequest,
+  approvePriceChangeFromRequest,
+  approveReconciliationFromRequest,
+  lockBusinessDayFromRequest,
+  lockReconciliationFromRequest,
+  postReconciliationFromRequest,
+  sealMeterSegmentFromRequest,
+} from './commands';
 export type {
   ForecourtAuditPort,
   ForecourtCommandContext,

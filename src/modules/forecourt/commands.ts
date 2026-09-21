@@ -5,13 +5,36 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { meterSegments } from '../../platform/db/schema/a3';
+import { money, unitPrice } from '../../platform/domain/primitives';
 import { executeForecourtCommand } from './application';
-import { databaseForecourtPorts, loadForecourtStation } from './persistence';
-import { meterSegmentSealedEvent } from './contracts';
-import { sealMeterSegment, type MeterBoundary } from './domain';
+import {
+  databaseForecourtPorts,
+  loadForecourtStation,
+  loadPriceActivationBoundaries,
+} from './persistence';
+import {
+  businessDayLockedEvent,
+  meterSegmentSealedEvent,
+  priceBoundaryActivatedEvent,
+  reconciliationApprovedEvent,
+  reconciliationPostedEvent,
+} from './contracts';
+import {
+  approvePriceChange,
+  approveReconciliation,
+  lockReconciliation,
+  lockBusinessDay,
+  postReconciliation,
+  sealMeterSegment,
+  type MeterBoundary,
+  type ReconciliationPaymentCategory,
+  type ReconciliationRevision,
+  type SellingPrice,
+} from './domain';
 import { resolveForecourtCommandContext } from './application';
 
 const sealSegmentPayload = z.object({
+  commandType: z.literal('SealSegment').optional(),
   tenantId: z.string().uuid(),
   stationId: z.string().uuid(),
   segmentId: z.string().uuid(),
@@ -25,7 +48,6 @@ const sealSegmentPayload = z.object({
   responsibleAttendantId: z.string().uuid(),
   startAt: z.string().datetime(),
   endAt: z.string().datetime(),
-  sealedAt: z.string().datetime(),
   controlledQuantityLitres: z.string().optional(),
   correctionOfSegmentId: z.string().uuid().optional(),
   reversalOfSegmentId: z.string().uuid().optional(),
@@ -58,6 +80,441 @@ type BoundaryRow = {
 
 function requestHash(payload: SealSegmentPayload): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+function genericRequestHash(input: unknown): string {
+  return createHash('sha256').update(JSON.stringify(input)).digest('hex');
+}
+
+async function serverNow(transaction: Parameters<Parameters<import('../../platform/db').Database['transaction']>[0]>[0]): Promise<string> {
+  const rows = await transaction.execute<{ server_now: Date | string }>(sql`select clock_timestamp() as server_now`);
+  const value = rows[0]?.server_now;
+  if (!value) throw new AppError('DEPENDENCY_UNAVAILABLE', 'The database server clock is unavailable');
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+type PriceRow = {
+  id: string;
+  tenant_id: string;
+  station_id: string;
+  product_id: string;
+  effective_from: Date | string;
+  effective_to: Date | string | null;
+  unit_price: string;
+  currency: 'USD';
+  state: SellingPrice['state'];
+  requested_by: string;
+  approved_by: string | null;
+  approved_at: Date | string | null;
+  activated_at: Date | string | null;
+  version: number | string;
+};
+
+function timestamp(value: Date | string | null | undefined): string | undefined {
+  if (value == null) return undefined;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function priceFromRow(row: PriceRow): SellingPrice {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    stationId: row.station_id,
+    productId: row.product_id,
+    effectiveFrom: timestamp(row.effective_from)!,
+    ...(timestamp(row.effective_to) ? { effectiveTo: timestamp(row.effective_to) } : {}),
+    unitPrice: unitPrice(row.unit_price),
+    currency: row.currency,
+    state: row.state,
+    requestedBy: row.requested_by,
+    ...(row.approved_by ? { approvedBy: row.approved_by } : {}),
+    ...(timestamp(row.approved_at) ? { approvedAt: timestamp(row.approved_at) } : {}),
+    ...(timestamp(row.activated_at) ? { activatedAt: timestamp(row.activated_at) } : {}),
+    version: Number(row.version),
+  };
+}
+
+const priceCommandPayload = z
+  .object({
+    commandType: z.union([z.literal('ApprovePriceChange'), z.literal('ActivatePriceChange')]).optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    priceId: z.string().uuid(),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+type PriceCommandPayload = z.infer<typeof priceCommandPayload>;
+
+async function priceContext(request: Request, payload: { tenantId: string; stationId: string }) {
+  return resolveForecourtCommandContext({
+    request,
+    requestedTenantId: payload.tenantId,
+    stationId: payload.stationId,
+    loadStation: loadForecourtStation,
+  });
+}
+
+export async function approvePriceChangeFromRequest(request: Request, input: unknown) {
+  const payload = priceCommandPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'ApprovePriceChange',
+    idempotencyKey,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'SellingPrice',
+    subjectId: payload.priceId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<PriceRow>(sql`
+        select id, tenant_id, station_id, product_id, effective_from, effective_to,
+               unit_price, currency, state, requested_by, approved_by, approved_at,
+               activated_at, version
+        from app.selling_prices
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
+        for update
+      `);
+      const price = rows[0];
+      if (!price) throw new AppError('NOT_FOUND', 'Selling price was not found');
+      const updated = approvePriceChange(priceFromRow(price), context.actor, await serverNow(transaction));
+      await transaction.execute(sql`
+        update app.selling_prices
+        set state = 'APPROVED', approved_by = ${updated.approvedBy}, approved_at = ${updated.approvedAt}::timestamptz,
+            version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
+          and version = ${payload.expectedVersion}
+      `);
+      return { result: { priceId: updated.id }, after: updated };
+    },
+  });
+}
+
+export async function activatePriceChangeFromRequest(request: Request, input: unknown) {
+  const payload = priceCommandPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'ActivatePriceChange',
+    idempotencyKey,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'SellingPrice',
+    subjectId: payload.priceId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<PriceRow>(sql`
+        select id, tenant_id, station_id, product_id, effective_from, effective_to,
+               unit_price, currency, state, requested_by, approved_by, approved_at,
+               activated_at, version
+        from app.selling_prices
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
+        for update
+      `);
+      const price = rows[0];
+      if (!price) throw new AppError('NOT_FOUND', 'Selling price was not found');
+      const now = await serverNow(transaction);
+      const boundaries = await loadPriceActivationBoundaries(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        productId: price.product_id,
+      });
+      if (price.state !== 'PENDING_STATION_ACTIVATION' && price.state !== 'BOUNDARIES_IN_PROGRESS') {
+        throw new AppError('CONFLICT', `ActivatePriceChange is not allowed from ${price.state}`);
+      }
+      if (
+        boundaries.length === 0 ||
+        boundaries.some((boundary) => boundary.state !== 'SEALED')
+      ) {
+        throw new AppError('CONFLICT', 'All affected persisted meter boundaries must be complete');
+      }
+      const requiresBoundaryPhase = price.state === 'PENDING_STATION_ACTIVATION';
+      if (requiresBoundaryPhase) {
+        await transaction.execute(sql`
+          update app.selling_prices
+          set state = 'BOUNDARIES_IN_PROGRESS', version = version + 1
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
+            and version = ${payload.expectedVersion}
+        `);
+      }
+      const updated: SellingPrice = {
+        ...priceFromRow(price),
+        state: 'ACTIVE',
+        activatedAt: now,
+        version: Number(price.version) + (requiresBoundaryPhase ? 2 : 1),
+      };
+      await transaction.execute(sql`
+        update app.selling_prices
+        set state = 'ACTIVE', activated_at = ${now}::timestamptz, version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
+          and version = ${payload.expectedVersion + (requiresBoundaryPhase ? 1 : 0)}
+      `);
+      return {
+        result: { priceId: updated.id },
+        event: priceBoundaryActivatedEvent({
+          eventId: randomUUID(), tenantId: updated.tenantId, stationId: updated.stationId,
+          priceId: updated.id, productId: updated.productId, effectiveFrom: updated.effectiveFrom,
+          unitPrice: updated.unitPrice.toString(), currency: updated.currency,
+        }),
+        after: updated,
+      };
+    },
+  });
+}
+
+const reconciliationCommandPayload = z
+  .object({
+    commandType: z.union([
+      z.literal('ApproveReconciliation'),
+      z.literal('PostReconciliation'),
+      z.literal('LockReconciliation'),
+    ]).optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    revisionId: z.string().uuid(),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+type ReconciliationRow = {
+  id: string;
+  reconciliation_id: string;
+  revision: number;
+  tenant_id: string;
+  station_id: string;
+  business_day_id: string;
+  business_date: string;
+  state: ReconciliationRevision['state'];
+  expected_sales: string;
+  accounted_sales: string;
+  variance: string;
+  currency: 'USD';
+  variance_classification: ReconciliationRevision['varianceClassification'];
+  variance_explanation: string | null;
+  declarations: unknown;
+  source_segment_ids: unknown;
+  source_shift_ids: unknown;
+  source_revision_id: string | null;
+  correction_of_revision_id: string | null;
+  submitted_by: string | null;
+  approved_by: string | null;
+  approved_at: Date | string | null;
+  posted_by: string | null;
+  posted_at: Date | string | null;
+  locked_by: string | null;
+  locked_at: Date | string | null;
+};
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : [];
+}
+
+function declarations(value: unknown, currency: 'USD') {
+  if (!Array.isArray(value)) throw new AppError('VALIDATION_FAILED', 'Declarations must be an array');
+  return value.map((item) => {
+    if (!item || typeof item !== 'object') throw new AppError('VALIDATION_FAILED', 'Invalid declaration snapshot');
+    const row = item as Record<string, unknown>;
+    const category = row.category;
+    const declaredBy = row.declaredBy;
+    const amount = row.amount;
+    if (typeof category !== 'string' || typeof declaredBy !== 'string' || typeof amount !== 'string') {
+      throw new AppError('VALIDATION_FAILED', 'Invalid declaration snapshot');
+    }
+    return {
+      id: typeof row.id === 'string' ? row.id : `${category}:${declaredBy}`,
+      category: category as ReconciliationPaymentCategory,
+      amount: money(amount, currency),
+      declaredBy,
+      ...(typeof row.reason === 'string' ? { reason: row.reason } : {}),
+    };
+  });
+}
+
+function revisionFromRow(row: ReconciliationRow): ReconciliationRevision {
+  return {
+    id: row.id,
+    reconciliationId: row.reconciliation_id,
+    revision: Number(row.revision),
+    tenantId: row.tenant_id,
+    stationId: row.station_id,
+    businessDayId: row.business_day_id,
+    state: row.state,
+    expectedSales: money(row.expected_sales, row.currency),
+    declarations: declarations(row.declarations, row.currency),
+    accountedSales: money(row.accounted_sales, row.currency),
+    variance: money(row.variance, row.currency),
+    varianceClassification: row.variance_classification,
+    ...(row.variance_explanation ? { varianceExplanation: row.variance_explanation } : {}),
+    ...(row.submitted_by ? { submittedBy: row.submitted_by } : {}),
+    ...(row.approved_by ? { approvedBy: row.approved_by } : {}),
+    ...(timestamp(row.approved_at) ? { approvedAt: timestamp(row.approved_at) } : {}),
+    ...(row.posted_by ? { postedBy: row.posted_by } : {}),
+    ...(row.posted_at ? { postedAt: timestamp(row.posted_at) } : {}),
+    ...(row.locked_by ? { lockedBy: row.locked_by } : {}),
+    ...(row.locked_at ? { lockedAt: timestamp(row.locked_at) } : {}),
+    sourceSegmentIds: stringArray(row.source_segment_ids),
+    sourceShiftIds: stringArray(row.source_shift_ids),
+    ...(row.source_revision_id ? { sourceRevisionId: row.source_revision_id } : {}),
+    ...(row.correction_of_revision_id ? { correctionOfRevisionId: row.correction_of_revision_id } : {}),
+  };
+}
+
+async function loadRevision(transaction: Parameters<Parameters<import('../../platform/db').Database['transaction']>[0]>[0], context: Awaited<ReturnType<typeof priceContext>>, revisionId: string) {
+  const rows = await transaction.execute<ReconciliationRow>(sql`
+    select r.id, r.reconciliation_id, r.revision, r.tenant_id, r.station_id, r.business_day_id,
+           d.business_date, r.state, r.expected_sales, r.accounted_sales, r.variance, r.currency,
+           r.variance_classification, r.variance_explanation, r.declarations, r.source_segment_ids,
+           r.source_shift_ids, r.source_revision_id, r.correction_of_revision_id, r.submitted_by,
+           r.approved_by, r.approved_at, r.posted_by, r.posted_at, r.locked_by, r.locked_at
+    from app.reconciliation_revisions r
+    join app.reconciliations c on c.tenant_id = r.tenant_id and c.station_id = r.station_id and c.id = r.reconciliation_id
+    join app.station_business_days d on d.tenant_id = r.tenant_id and d.station_id = r.station_id and d.id = r.business_day_id
+    where r.tenant_id = ${context.tenantId} and r.station_id = ${context.stationId} and r.id = ${revisionId}
+    for update of r, c, d
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'Reconciliation revision was not found');
+  return row;
+}
+
+export async function approveReconciliationFromRequest(request: Request, input: unknown) {
+  const payload = reconciliationCommandPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context, commandType: 'ApproveReconciliation', idempotencyKey, requestHash: genericRequestHash(payload),
+    subjectType: 'ReconciliationRevision', subjectId: payload.revisionId, expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const row = await loadRevision(transaction, context, payload.revisionId);
+      const now = await serverNow(transaction);
+      const revision = approveReconciliation(revisionFromRow(row), context.actor, now);
+      await transaction.execute(sql`
+        update app.reconciliation_revisions
+        set state = 'APPROVED', approved_by = ${revision.approvedBy}, approved_at = ${revision.approvedAt}::timestamptz, version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.revisionId} and version = ${payload.expectedVersion}
+      `);
+      return {
+        result: { revisionId: revision.id },
+        event: reconciliationApprovedEvent(randomUUID(), revision, { legalEntityId: context.legalEntityId, businessDate: row.business_date, occurredAt: now }),
+        after: revision,
+      };
+    },
+  });
+}
+
+export async function postReconciliationFromRequest(request: Request, input: unknown) {
+  const payload = reconciliationCommandPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context, commandType: 'PostReconciliation', idempotencyKey, requestHash: genericRequestHash(payload),
+    subjectType: 'ReconciliationRevision', subjectId: payload.revisionId, expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const row = await loadRevision(transaction, context, payload.revisionId);
+      const now = await serverNow(transaction);
+      const revision = postReconciliation(revisionFromRow(row), context.actor, now);
+      await transaction.execute(sql`
+        update app.reconciliation_revisions
+        set state = 'POSTED', posted_by = ${revision.postedBy}, posted_at = ${revision.postedAt}::timestamptz, version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.revisionId} and version = ${payload.expectedVersion}
+      `);
+      return {
+        result: { revisionId: revision.id },
+        event: reconciliationPostedEvent(randomUUID(), revision, { legalEntityId: context.legalEntityId, businessDate: row.business_date, occurredAt: now }),
+        after: revision,
+      };
+    },
+  });
+}
+
+export async function lockReconciliationFromRequest(request: Request, input: unknown) {
+  const payload = reconciliationCommandPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context, commandType: 'LockReconciliation', idempotencyKey, requestHash: genericRequestHash(payload),
+    subjectType: 'ReconciliationRevision', subjectId: payload.revisionId, expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const row = await loadRevision(transaction, context, payload.revisionId);
+      const revision = lockReconciliation(revisionFromRow(row), context.actor, await serverNow(transaction));
+      await transaction.execute(sql`
+        update app.reconciliation_revisions
+        set state = 'LOCKED', locked_by = ${revision.lockedBy}, locked_at = ${revision.lockedAt}::timestamptz, version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.revisionId} and version = ${payload.expectedVersion}
+      `);
+      return { result: { revisionId: revision.id }, after: revision };
+    },
+  });
+}
+
+const businessDayLockPayload = z.object({
+  commandType: z.literal('LockBusinessDay').optional(),
+  tenantId: z.string().uuid(),
+  stationId: z.string().uuid(),
+  businessDayId: z.string().uuid(),
+  expectedVersion: z.number().int().nonnegative(),
+}).strict();
+
+export async function lockBusinessDayFromRequest(request: Request, input: unknown) {
+  const payload = businessDayLockPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'LockBusinessDay',
+    idempotencyKey,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'StationBusinessDay',
+    subjectId: payload.businessDayId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    auditMetadata: { businessDayId: payload.businessDayId },
+    execute: async (transaction) => {
+      const rows = await transaction.execute<{ id: string; business_date: string; state: string; version: number }>(sql`
+        select id, business_date, state, version
+        from app.station_business_days
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.businessDayId}
+        for update
+      `);
+      const row = rows[0];
+      if (!row) throw new AppError('NOT_FOUND', 'Business day was not found');
+      const day = lockBusinessDay({
+        id: row.id,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        date: row.business_date as never,
+        state: row.state as 'CLOSED',
+        version: Number(row.version),
+      });
+      const now = await serverNow(transaction);
+      await transaction.execute(sql`
+        update app.station_business_days set state = 'LOCKED', version = version + 1, updated_at = ${now}::timestamptz
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.businessDayId}
+          and version = ${payload.expectedVersion}
+      `);
+      return {
+        result: { businessDayId: day.id },
+        event: businessDayLockedEvent({
+          eventId: randomUUID(), tenantId: context.tenantId, stationId: context.stationId,
+          businessDayId: day.id, businessDate: row.business_date, lockedAt: now,
+          legalEntityId: context.legalEntityId, occurredAt: now,
+        }),
+        after: day,
+      };
+    },
+  });
 }
 
 function boundaryFromRow(row: BoundaryRow): MeterBoundary {
@@ -112,8 +569,14 @@ export async function sealMeterSegmentFromRequest(
     idempotencyKey,
     requestHash: requestHash(payload),
     subjectType: 'MeterSegment',
-    subjectId: payload.meterInstallationId,
+    subjectId: payload.segmentId,
     responsibleAttendantId: payload.responsibleAttendantId,
+    auditMetadata: {
+      meterInstallationId: payload.meterInstallationId,
+      nozzleId: payload.nozzleId,
+      businessDayId: payload.businessDayId,
+      shiftId: payload.shiftId,
+    },
     expectedVersion: payload.expectedVersion,
     ports,
     execute: async (transaction) => {
@@ -154,6 +617,10 @@ export async function sealMeterSegmentFromRequest(
           and d.id = ${payload.businessDayId}
           and s.id = ${payload.shiftId}
           and i.id = ${payload.meterInstallationId}
+          and n.status = 'ACTIVE'
+          and m.status = 'ACTIVE'
+          and i.effective_from <= ${payload.startAt}::timestamptz
+          and (i.effective_to is null or i.effective_to > ${payload.endAt}::timestamptz)
           and n.id = ${payload.nozzleId}
           and n.product_id = ${payload.productId}
           and ob.business_day_id = d.id and ob.shift_id = s.id
@@ -169,6 +636,11 @@ export async function sealMeterSegmentFromRequest(
       }
       if (row.business_date !== row.shift_business_date) {
         throw new AppError('INVARIANT_VIOLATION', 'Business day and shift dates must agree');
+      }
+      const startBusinessDate = new Date(payload.startAt).toISOString().slice(0, 10);
+      const endBusinessDate = new Date(payload.endAt).toISOString().slice(0, 10);
+      if (startBusinessDate !== row.business_date || endBusinessDate !== row.business_date) {
+        throw new AppError('INVARIANT_VIOLATION', 'Meter segment times must belong to the business day');
       }
 
       const boundaryRows = await transaction.execute<BoundaryRow>(sql`
@@ -202,6 +674,7 @@ export async function sealMeterSegmentFromRequest(
       if (!price)
         throw new AppError('CONFLICT', 'No active selling price covers the meter segment');
 
+      const sealTimestamp = await serverNow(transaction);
       const segment = sealMeterSegment({
         id: payload.segmentId,
         tenantId: context.tenantId,
@@ -220,7 +693,7 @@ export async function sealMeterSegmentFromRequest(
         currency: price.currency,
         startAt: payload.startAt,
         endAt: payload.endAt,
-        sealedAt: payload.sealedAt,
+        sealedAt: sealTimestamp,
         controlledQuantityLitres: payload.controlledQuantityLitres,
         correctionOfSegmentId: payload.correctionOfSegmentId,
         reversalOfSegmentId: payload.reversalOfSegmentId,
@@ -251,8 +724,23 @@ export async function sealMeterSegmentFromRequest(
         segmentStartAt: new Date(segment.startAt),
         segmentEndAt: new Date(segment.endAt),
         sealedAt: new Date(segment.sealedAt),
+        state: 'OPEN',
+        version: 0,
       };
       await transaction.insert(meterSegments).values(insertValues);
+      const sealed = await transaction.execute(sql`
+        update app.meter_segments
+        set state = 'SEALED', version = version + 1
+        where tenant_id = ${context.tenantId}
+          and station_id = ${context.stationId}
+          and id = ${payload.segmentId}
+          and state = 'OPEN'
+          and version = 0
+        returning id
+      `);
+      if (sealed.length !== 1) {
+        throw new AppError('CONFLICT', 'The meter segment could not be sealed exactly once');
+      }
       await transaction.execute(sql`
         update app.meter_installations
         set version = version + 1
@@ -266,9 +754,9 @@ export async function sealMeterSegmentFromRequest(
         event: meterSegmentSealedEvent(eventId, segment, {
           legalEntityId: context.legalEntityId,
           businessDate: row.business_date,
-          occurredAt: payload.sealedAt,
+          occurredAt: sealTimestamp,
         }),
-        after: segment,
+        after: { ...segment, version: 1 },
       };
     },
   });

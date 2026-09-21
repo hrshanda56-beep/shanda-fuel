@@ -376,6 +376,15 @@ export function replaceMeterInstallation(
 
 export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
   assertTrustedActor(input.actor);
+  const startAt = Date.parse(input.startAt);
+  const endAt = Date.parse(input.endAt);
+  const sealedAt = Date.parse(input.sealedAt);
+  if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || !Number.isFinite(sealedAt) || endAt <= startAt) {
+    throw new AppError('VALIDATION_FAILED', 'A meter segment requires a valid positive time interval');
+  }
+  if (sealedAt < endAt) {
+    throw new AppError('VALIDATION_FAILED', 'A meter segment cannot be sealed before its interval ends');
+  }
   if (input.actor.tenantId !== input.tenantId || input.actor.stationId !== input.stationId) {
     throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this station');
   }
@@ -398,6 +407,9 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
     closingBoundary.meterInstallationId !== input.meterInstallationId
   )
     throw new AppError('INVARIANT_VIOLATION', 'Meter boundaries must use one nozzle installation');
+  if (Date.parse(openingBoundary.effectiveAt) > Date.parse(closingBoundary.effectiveAt)) {
+    throw new AppError('INVARIANT_VIOLATION', 'Meter boundaries must be chronologically ordered');
+  }
   if (openingBoundary.reason === 'SHIFT_CLOSE')
     throw new AppError(
       'VALIDATION_FAILED',
@@ -489,55 +501,6 @@ export function assertNoOverlappingOperationalSegments(
     );
 }
 
-export type PersistedPriceBoundaryState = Readonly<{
-  affectedBoundaries: readonly Readonly<{ id: string; state: 'SEALED' | 'OPEN' }>[];
-  serverNow: string;
-}>;
-
-const trustedPriceBoundaryStates = new WeakSet<object>();
-
-/** Constructed only by the transaction-bound price/boundary repository. */
-export function createPersistedPriceBoundaryState(
-  input: PersistedPriceBoundaryState,
-): PersistedPriceBoundaryState {
-  const trusted = Object.freeze({
-    serverNow: input.serverNow,
-    affectedBoundaries: input.affectedBoundaries.map((boundary) => Object.freeze({ ...boundary })),
-  });
-  trustedPriceBoundaryStates.add(trusted);
-  return trusted;
-}
-
-export function activatePriceChange(
-  price: SellingPrice,
-  persistedState: PersistedPriceBoundaryState,
-): SellingPrice {
-  if (!persistedState || !trustedPriceBoundaryStates.has(persistedState)) {
-    throw new AppError(
-      'FORBIDDEN',
-      'Price activation requires a transaction-bound persisted boundary snapshot',
-    );
-  }
-  if (price.state !== 'PENDING_STATION_ACTIVATION' && price.state !== 'BOUNDARIES_IN_PROGRESS')
-    throw invalidTransition('ActivatePriceChange', price.state);
-  if (
-    persistedState.affectedBoundaries.length === 0 ||
-    persistedState.affectedBoundaries.some((boundary) => boundary.state !== 'SEALED')
-  )
-    throw new AppError(
-      'CONFLICT',
-      'All affected nozzle boundaries must be sealed before price activation',
-    );
-  if (!Number.isFinite(Date.parse(persistedState.serverNow))) {
-    throw new AppError('VALIDATION_FAILED', 'Price activation requires a server timestamp');
-  }
-  return {
-    ...price,
-    state: 'ACTIVE',
-    activatedAt: persistedState.serverNow,
-    version: price.version + 1,
-  };
-}
 export function requestPriceChange(price: SellingPrice): SellingPrice {
   if (price.state !== 'DRAFT') throw invalidTransition('RequestPriceChange', price.state);
   return { ...price, state: 'PENDING_APPROVAL' };
@@ -635,6 +598,7 @@ export type ReconciliationRevision = {
   varianceExplanation?: string;
   submittedBy?: string;
   approvedBy?: string;
+  approvedAt?: string;
   postedBy?: string;
   lockedBy?: string;
   postedAt?: string;
@@ -789,13 +753,20 @@ export function rejectReconciliation(
 export function approveReconciliation(
   revision: ReconciliationRevision,
   actor: TrustedActor,
+  serverNow: string,
 ): ReconciliationRevision {
   assertTrustedActor(actor);
   assertActorCoversRevision(actor, revision);
   assertState(revision.state, 'PENDING_APPROVAL', 'ApproveReconciliation');
   if (revision.submittedBy === actor.membershipId)
     throw new AppError('FORBIDDEN', 'A reconciliation cannot be approved by its submitting actor');
-  return { ...revision, state: 'APPROVED', approvedBy: actor.membershipId };
+  assertServerTimestamp(serverNow, 'ApproveReconciliation');
+  return {
+    ...revision,
+    state: 'APPROVED',
+    approvedBy: actor.membershipId,
+    approvedAt: serverNow,
+  };
 }
 export function postReconciliation(
   revision: ReconciliationRevision,

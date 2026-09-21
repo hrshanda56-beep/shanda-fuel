@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activatePriceChange,
   approveReconciliation,
   assertNoOverlappingOperationalSegments,
   calculateReconciliation,
   closeMeters,
-  createPersistedPriceBoundaryState,
   confirmBoundary,
   newBusinessDay,
   openBusinessDay,
@@ -17,6 +15,7 @@ import {
   type MeterBoundary,
   type Shift,
 } from './domain';
+import { activatePriceChangeFromRequest } from './commands';
 import { money, unitPrice } from '../../platform/domain/primitives';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { createTrustedActor } from './trusted-actor';
@@ -209,7 +208,9 @@ describe('A3 forecourt domain', () => {
     );
     expect(submitted.state).toBe('SUBMITTED');
     const pending = requestReconciliationApproval(submitted);
-    expect(() => approveReconciliation(pending, trustedActor)).toThrow(/submitting/);
+    expect(() => approveReconciliation(pending, trustedActor, '2026-09-20T15:00:00.000Z')).toThrow(
+      /submitting/,
+    );
     const otherActor = createTrustedActor({
       transaction: createTrustedTenantTransactionContext({
         tenantId: ids.tenant,
@@ -223,36 +224,25 @@ describe('A3 forecourt domain', () => {
       stationId: ids.station,
       legalEntityId: ids.legal,
     });
-    expect(approveReconciliation(pending, otherActor).state).toBe('APPROVED');
+    expect(approveReconciliation(pending, otherActor, '2026-09-20T15:00:00.000Z').state).toBe(
+      'APPROVED',
+    );
   });
 
-  it('requires a transaction-bound persisted snapshot for price activation', () => {
-    const price = {
-      id: '17171717-1717-4717-8717-171717171717',
-      tenantId: ids.tenant,
-      stationId: ids.station,
-      productId: '18181818-1818-4818-8818-181818181818',
-      effectiveFrom: '2026-09-20T15:00:00.000Z',
-      unitPrice: unitPrice('1.00'),
-      currency: 'USD' as const,
-      requestedBy: ids.actor,
-      version: 0,
-      state: 'PENDING_STATION_ACTIVATION' as const,
-    };
-    expect(() =>
-      activatePriceChange(price, {
-        affectedBoundaries: [{ id: '19191919-1919-4919-8919-191919191919', state: 'SEALED' }],
-        serverNow: '2026-09-20T15:00:00.000Z',
-      }),
-    ).toThrow(/transaction-bound/);
-    expect(
-      activatePriceChange(
-        price,
-        createPersistedPriceBoundaryState({
-          affectedBoundaries: [{ id: '19191919-1919-4919-8919-191919191919', state: 'SEALED' }],
-          serverNow: '2026-09-20T15:00:00.000Z',
+  it('price activation rejects caller-supplied authoritative timestamps', async () => {
+    await expect(
+      activatePriceChangeFromRequest(
+        new Request('http://localhost/api/forecourt/commands', {
+          headers: { 'idempotency-key': 'price-activation-test' },
         }),
-      ).state,
-    ).toBe('ACTIVE');
+        {
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          priceId: '17171717-1717-4717-8717-171717171717',
+          expectedVersion: 0,
+          activatedAt: '2026-09-20T15:00:00.000Z',
+        },
+      ),
+    ).rejects.toThrow();
   });
 });

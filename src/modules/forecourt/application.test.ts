@@ -3,6 +3,7 @@ import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-
 import {
   createForecourtCommandContext,
   executeForecourtCommand,
+  FORECOURT_COMMAND_POLICY,
   type ForecourtCommandPorts,
 } from './application';
 
@@ -130,6 +131,11 @@ function ports(
 }
 
 describe('A3 authoritative command seam', () => {
+  it('binds business-day locking to its dedicated permission', () => {
+    expect(FORECOURT_COMMAND_POLICY.LockBusinessDay.permissionCode).toBe('business_day.lock');
+    expect(FORECOURT_COMMAND_POLICY.LockBusinessDay.permissionCode).not.toBe('approval.act');
+  });
+
   it('authorizes and executes all side effects on one transaction', async () => {
     const calls: string[] = [];
     const result = await executeForecourtCommand({
