@@ -1866,6 +1866,358 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "app.meter_exceptions": {
+      "name": "meter_exceptions",
+      "schema": "app",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "station_id": {
+          "name": "station_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_day_id": {
+          "name": "business_day_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shift_id": {
+          "name": "shift_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nozzle_id": {
+          "name": "nozzle_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "meter_installation_id": {
+          "name": "meter_installation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "boundary_id": {
+          "name": "boundary_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exception_type": {
+          "name": "exception_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'METER_UNAVAILABLE'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'BLOCKING'"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_kind": {
+          "name": "resolution_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_boundary_id": {
+          "name": "resolution_boundary_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_provenance": {
+          "name": "resolution_provenance",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "meter_exceptions_operational_lookup_idx": {
+          "name": "meter_exceptions_operational_lookup_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "station_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "business_day_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "shift_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "meter_exceptions_tenant_id_tenants_id_fk": {
+          "name": "meter_exceptions_tenant_id_tenants_id_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "tenants",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_boundary_fk": {
+          "name": "meter_exceptions_boundary_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "meter_boundaries",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "boundary_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_business_day_fk": {
+          "name": "meter_exceptions_business_day_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "station_business_days",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "business_day_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_shift_fk": {
+          "name": "meter_exceptions_shift_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "shifts",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "shift_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_nozzle_fk": {
+          "name": "meter_exceptions_nozzle_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "nozzles",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "nozzle_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_installation_fk": {
+          "name": "meter_exceptions_installation_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "meter_installations",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "meter_installation_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_created_by_fk": {
+          "name": "meter_exceptions_created_by_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "memberships",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "created_by"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_resolved_by_fk": {
+          "name": "meter_exceptions_resolved_by_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "memberships",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "resolved_by"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "meter_exceptions_resolution_boundary_fk": {
+          "name": "meter_exceptions_resolution_boundary_fk",
+          "tableFrom": "meter_exceptions",
+          "tableTo": "meter_boundaries",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "tenant_id",
+            "station_id",
+            "resolution_boundary_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "meter_exceptions_tenant_id_id_uidx": {
+          "name": "meter_exceptions_tenant_id_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
+        },
+        "meter_exceptions_tenant_station_id_id_uidx": {
+          "name": "meter_exceptions_tenant_station_id_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ]
+        },
+        "meter_exceptions_boundary_uidx": {
+          "name": "meter_exceptions_boundary_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
+            "boundary_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "meter_exceptions_status_ck": {
+          "name": "meter_exceptions_status_ck",
+          "value": "\"app\".\"meter_exceptions\".\"status\" in ('BLOCKING', 'RESOLVED')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "app.meter_installations": {
       "name": "meter_installations",
       "schema": "app",

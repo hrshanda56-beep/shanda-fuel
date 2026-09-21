@@ -6,7 +6,11 @@ import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { meterSegments } from '../../platform/db/schema/a3';
 import { litres, money, unitPrice } from '../../platform/domain/primitives';
-import { executeForecourtCommand } from './application';
+import {
+  executeForecourtCommand,
+  type ForecourtCommandContext,
+  type ForecourtTransaction,
+} from './application';
 import {
   databaseForecourtPorts,
   loadForecourtStation,
@@ -50,6 +54,222 @@ import {
   type SellingPrice,
 } from './domain';
 import { resolveForecourtCommandContext } from './application';
+
+const exceptionResolutionPrefix = 'RESOLVES:';
+
+function exceptionResolutionMarker(exceptionBoundaryId: string, reason: string): string {
+  return `${exceptionResolutionPrefix}${exceptionBoundaryId}:${reason}`;
+}
+
+async function resolveMeterException(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  exceptionId: string,
+  resolutionBoundaryId: string,
+  resolutionKind: string,
+  resolutionProvenance: Record<string, string | null>,
+  resolvedAt: string,
+): Promise<void> {
+  const rows = await transaction.execute<{ id: string }>(sql`
+    update app.meter_exceptions
+       set status = 'RESOLVED',
+           resolved_at = ${resolvedAt}::timestamptz,
+           resolved_by = ${context.actor.membershipId},
+           resolution_kind = ${resolutionKind},
+           resolution_boundary_id = ${resolutionBoundaryId},
+           resolution_provenance = ${JSON.stringify(resolutionProvenance)}::jsonb
+     where tenant_id = ${context.tenantId}
+       and station_id = ${context.stationId}
+       and id = ${exceptionId}
+       and status = 'BLOCKING'
+    returning id
+  `);
+  if (rows.length !== 1)
+    throw new AppError(
+      'CONFLICT',
+      'The meter exception is missing, already resolved, or out of scope',
+    );
+}
+
+async function assertShiftMeterCloseCompleteness(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  businessDayId: string,
+  shiftId: string,
+): Promise<void> {
+  const rows = await transaction.execute<{
+    open_segments: number;
+    sealed_segments: number;
+    invalid_sealed_segments: number;
+    participating_nozzles: number;
+    terminal_nozzles: number;
+  }>(sql`
+    select
+      count(*) filter (where m.state <> 'SEALED')::int as open_segments,
+      count(*) filter (where m.state = 'SEALED')::int as sealed_segments,
+      count(*) filter (where m.state = 'SEALED' and (
+        cb.id is null
+        or cb.reading_status <> 'AVAILABLE'
+        or cb.reason <> 'SHIFT_CLOSE'
+        or cb.tenant_id <> ${context.tenantId}
+        or cb.station_id <> ${context.stationId}
+        or cb.business_day_id <> ${businessDayId}
+        or cb.shift_id <> ${shiftId}
+        or cb.nozzle_id <> m.nozzle_id
+        or cb.meter_installation_id <> m.meter_installation_id
+      ))::int as invalid_sealed_segments,
+      count(distinct m.nozzle_id)::int as participating_nozzles,
+      count(distinct case
+        when m.state = 'SEALED'
+          and cb.reading_status = 'AVAILABLE'
+          and cb.reason = 'SHIFT_CLOSE'
+          and cb.tenant_id = ${context.tenantId}
+          and cb.station_id = ${context.stationId}
+          and cb.business_day_id = ${businessDayId}
+          and cb.shift_id = ${shiftId}
+          and cb.nozzle_id = m.nozzle_id
+          and cb.meter_installation_id = m.meter_installation_id
+        then m.nozzle_id end)::int as terminal_nozzles
+    from app.meter_segments m
+    left join app.meter_boundaries cb
+      on cb.tenant_id = m.tenant_id
+      and cb.station_id = m.station_id
+      and cb.id = m.closing_boundary_id
+    where m.tenant_id = ${context.tenantId}
+      and m.station_id = ${context.stationId}
+      and m.business_day_id = ${businessDayId}
+      and m.shift_id = ${shiftId}
+  `);
+  const row = rows[0];
+  if (
+    !row ||
+    Number(row.open_segments) > 0 ||
+    Number(row.sealed_segments) === 0 ||
+    Number(row.invalid_sealed_segments) > 0 ||
+    Number(row.participating_nozzles) !== Number(row.terminal_nozzles)
+  ) {
+    throw new AppError(
+      'CONFLICT',
+      'Every operated shift requires sealed meter segments and an authoritative terminal meter-close boundary for each participating nozzle',
+    );
+  }
+  const unresolved = await transaction.execute<{ count: number }>(sql`
+    select count(*)::int as count
+    from app.meter_exceptions exception
+    where exception.tenant_id = ${context.tenantId}
+      and exception.station_id = ${context.stationId}
+      and exception.business_day_id = ${businessDayId}
+      and exception.shift_id = ${shiftId}
+      and exception.status = 'BLOCKING'
+  `);
+  if (Number(unresolved[0]?.count ?? 0) > 0)
+    throw new AppError('CONFLICT', 'An unresolved meter-unavailable exception blocks meter close');
+}
+
+async function assertBusinessDayOperationalCompleteness(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  businessDayId: string,
+): Promise<void> {
+  const invalid = await transaction.execute<{ count: number }>(sql`
+    select count(*)::int as count
+    from app.shifts s
+    where s.tenant_id = ${context.tenantId}
+      and s.station_id = ${context.stationId}
+      and s.business_day_id = ${businessDayId}
+      and (
+        s.state not in ('COMPLETED', 'NOT_OPERATED')
+        or (s.state = 'COMPLETED' and (
+          not exists (
+            select 1 from app.meter_segments m
+            where m.tenant_id = s.tenant_id and m.station_id = s.station_id
+              and m.business_day_id = s.business_day_id and m.shift_id = s.id
+              and m.state = 'SEALED'
+          )
+          or exists (
+            select 1 from app.meter_segments m
+            where m.tenant_id = s.tenant_id and m.station_id = s.station_id
+              and m.business_day_id = s.business_day_id and m.shift_id = s.id
+              and m.state <> 'SEALED'
+          )
+          or exists (
+            select 1 from app.meter_segments m
+            where m.tenant_id = s.tenant_id and m.station_id = s.station_id
+              and m.business_day_id = s.business_day_id and m.shift_id = s.id
+              and not exists (
+                select 1 from app.meter_boundaries cb
+                where cb.tenant_id = m.tenant_id and cb.station_id = m.station_id
+                  and cb.id = m.closing_boundary_id and cb.business_day_id = s.business_day_id
+                  and cb.shift_id = s.id and cb.nozzle_id = m.nozzle_id
+                  and cb.meter_installation_id = m.meter_installation_id
+                  and cb.reason = 'SHIFT_CLOSE' and cb.reading_status = 'AVAILABLE'
+              )
+          )
+        ))
+      )
+  `);
+  if (Number(invalid[0]?.count ?? 0) > 0)
+    throw new AppError(
+      'CONFLICT',
+      'Every operated shift must be completed with authoritative sealed meter-close evidence, or explicitly marked NOT_OPERATED',
+    );
+  const unresolved = await transaction.execute<{ count: number }>(sql`
+    select count(*)::int as count
+    from app.meter_exceptions e
+    where e.tenant_id = ${context.tenantId} and e.station_id = ${context.stationId}
+      and e.business_day_id = ${businessDayId} and e.status = 'BLOCKING'
+  `);
+  if (Number(unresolved[0]?.count ?? 0) > 0)
+    throw new AppError(
+      'CONFLICT',
+      'An unresolved meter-unavailable exception blocks day close or lock',
+    );
+}
+
+async function assertReconciliationSourceCompleteness(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  businessDayId: string,
+  sourceSegmentIds: unknown,
+  sourceShiftIds: unknown,
+): Promise<void> {
+  await assertBusinessDayOperationalCompleteness(transaction, context, businessDayId);
+  const actual = await transaction.execute<{ id: string; shift_id: string }>(sql`
+    select m.id, m.shift_id
+    from app.meter_segments m
+    where m.tenant_id = ${context.tenantId}
+      and m.station_id = ${context.stationId}
+      and m.business_day_id = ${businessDayId}
+      and m.state = 'SEALED'
+      and not exists (
+        select 1 from app.meter_segments successor
+        where successor.tenant_id = m.tenant_id and successor.station_id = m.station_id
+          and (successor.correction_of_segment_id = m.id or successor.reversal_of_segment_id = m.id)
+      )
+    order by m.id
+  `);
+  const declared = Array.isArray(sourceSegmentIds)
+    ? sourceSegmentIds.filter((value): value is string => typeof value === 'string').sort()
+    : [];
+  const observed = actual.map((row) => row.id).sort();
+  if (declared.length !== observed.length || declared.some((id, index) => id !== observed[index]))
+    throw new AppError(
+      'CONFLICT',
+      'The reconciliation source set must cover every authoritative sealed segment for the business day',
+    );
+  const declaredShifts = Array.isArray(sourceShiftIds)
+    ? sourceShiftIds.filter((value): value is string => typeof value === 'string').sort()
+    : [];
+  const observedShifts = [...new Set(actual.map((row) => row.shift_id))].sort();
+  if (
+    declaredShifts.length !== observedShifts.length ||
+    declaredShifts.some((id, index) => id !== observedShifts[index])
+  )
+    throw new AppError(
+      'CONFLICT',
+      'The reconciliation source shift set must cover every operated sealed shift for the business day',
+    );
+}
 
 const sealSegmentPayload = z.object({
   commandType: z.literal('SealSegment').optional(),
@@ -161,7 +381,8 @@ export async function handoverAttendantFromRequest(request: Request, input: unkn
         join app.station_business_days d
           on d.tenant_id = b.tenant_id and d.station_id = b.station_id and d.id = b.business_day_id
         join app.shifts s
-          on s.tenant_id = b.tenant_id and s.station_id = b.station_id and s.id = b.shift_id
+          on s.tenant_id = b.tenant_id and s.station_id = b.station_id
+         and s.id = b.shift_id and s.business_day_id = b.business_day_id
         where b.tenant_id = ${context.tenantId}
           and b.station_id = ${context.stationId}
           and b.id = ${payload.priorBoundaryId}
@@ -337,35 +558,7 @@ export async function closeBusinessDayFromRequest(request: Request, input: unkno
       `);
       const row = rows[0];
       if (!row) throw new AppError('NOT_FOUND', 'Business day was not found');
-      const incomplete = await transaction.execute<{ count: number }>(sql`
-        select count(*)::int as count from app.shifts
-        where tenant_id=${context.tenantId} and station_id=${context.stationId} and business_day_id=${payload.businessDayId}
-          and state not in ('COMPLETED','NOT_OPERATED','CANCELLED_BEFORE_START')
-      `);
-      const openSegments = await transaction.execute<{ count: number }>(sql`
-        select count(*)::int as count from app.meter_segments
-        where tenant_id=${context.tenantId} and station_id=${context.stationId} and business_day_id=${payload.businessDayId} and state <> 'SEALED'
-      `);
-      const unavailable = await transaction.execute<{ count: number }>(sql`
-        select count(*)::int as count from app.meter_boundaries unavailable_boundary
-        where unavailable_boundary.tenant_id=${context.tenantId} and unavailable_boundary.station_id=${context.stationId} and unavailable_boundary.business_day_id=${payload.businessDayId} and unavailable_boundary.reading_status='UNAVAILABLE'
-          and not exists (
-            select 1 from app.meter_boundaries resolved
-            where resolved.tenant_id=unavailable_boundary.tenant_id and resolved.station_id=unavailable_boundary.station_id
-              and resolved.nozzle_id=unavailable_boundary.nozzle_id
-              and resolved.effective_at > unavailable_boundary.effective_at
-              and resolved.reading_status='AVAILABLE'
-          )
-      `);
-      if (
-        Number(incomplete[0]?.count ?? 0) ||
-        Number(openSegments[0]?.count ?? 0) ||
-        Number(unavailable[0]?.count ?? 0)
-      )
-        throw new AppError(
-          'CONFLICT',
-          'Operational completion, sealed segments, and meter exceptions are required before close',
-        );
+      await assertBusinessDayOperationalCompleteness(transaction, context, payload.businessDayId);
       const day = {
         id: row.id,
         tenantId: context.tenantId,
@@ -425,14 +618,16 @@ async function runShiftLifecycleCommand(
     execute: async (transaction) => {
       const rows = await transaction.execute<{
         id: string;
-        business_date: string;
+        day_business_date: string;
+        shift_business_date: string;
         day_state: string;
         shift_state: string;
         planned_start_at: Date | string;
         planned_end_at: Date | string;
         version: number;
       }>(sql`
-        select s.id, s.business_date, d.state as day_state, s.state as shift_state,
+        select s.id, d.business_date as day_business_date, s.business_date as shift_business_date,
+          d.state as day_state, s.state as shift_state,
           s.planned_start_at, s.planned_end_at, s.version
         from app.shifts s join app.station_business_days d
           on d.tenant_id = s.tenant_id and d.station_id = s.station_id and d.id = s.business_day_id
@@ -450,17 +645,30 @@ async function runShiftLifecycleCommand(
         state: row.shift_state as ShiftLifecycleCommand extends never ? never : 'PLANNED',
         plannedStartAt: new Date(row.planned_start_at).toISOString(),
         plannedEndAt: new Date(row.planned_end_at).toISOString(),
-        businessDate: row.business_date as never,
+        businessDate: row.shift_business_date as never,
         version: Number(row.version),
       };
       const day = {
         id: payload.businessDayId,
         tenantId: context.tenantId,
         stationId: context.stationId,
-        date: row.business_date as never,
+        date: row.day_business_date as never,
         state: row.day_state as 'OPEN',
         version: 0,
       };
+      if (row.shift_business_date !== row.day_business_date)
+        throw new AppError(
+          'INVARIANT_VIOLATION',
+          'Shift business date must match its business day',
+        );
+      if (commandType === 'CloseMeters' || commandType === 'CompleteShift') {
+        await assertShiftMeterCloseCompleteness(
+          transaction,
+          context,
+          payload.businessDayId,
+          payload.shiftId,
+        );
+      }
       const updated =
         commandType === 'StartShift'
           ? startShift(shift, day)
@@ -530,6 +738,7 @@ const boundaryCommandPayload = z
     readingValue: z.string().optional(),
     unavailableReason: z.string().optional(),
     exceptionReason: z.string().optional(),
+    exceptionBoundaryId: z.string().uuid().optional(),
     priceChangeId: z.string().uuid().optional(),
     expectedVersion: z.number().int().nonnegative(),
   })
@@ -570,6 +779,16 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
       'VALIDATION_FAILED',
       'ResolveMeterException requires a confirmed available reading',
     );
+  if (commandType === 'ResolveMeterException' && !payload.exceptionBoundaryId)
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'ResolveMeterException requires the exact unavailable exception boundary id',
+    );
+  if (commandType !== 'ResolveMeterException' && payload.exceptionBoundaryId)
+    throw new AppError(
+      'FORBIDDEN',
+      'Only ResolveMeterException may supply an exception boundary id',
+    );
   const key = request.headers.get('idempotency-key')?.trim();
   if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
   const context = await priceContext(request, payload);
@@ -589,6 +808,7 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
       meterInstallationId: payload.meterInstallationId,
       businessDayId: payload.businessDayId,
       shiftId: payload.shiftId,
+      exceptionBoundaryId: payload.exceptionBoundaryId ?? null,
     },
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
@@ -607,6 +827,33 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
       const row = contextRows[0];
       if (!row || row.day_state !== 'OPEN' || row.shift_state !== 'OPEN')
         throw new AppError('CONFLICT', 'Boundary capture requires an open business day and shift');
+      const now = await serverNow(transaction);
+      if (commandType === 'ResolveMeterException') {
+        const exception = await transaction.execute<{
+          id: string;
+          effective_at: Date | string;
+        }>(sql`
+          select e.id, b.effective_at
+          from app.meter_exceptions e
+          join app.meter_boundaries b
+            on b.tenant_id = e.tenant_id and b.station_id = e.station_id and b.id = e.boundary_id
+          where e.tenant_id = ${context.tenantId}
+            and e.station_id = ${context.stationId}
+            and e.id = ${payload.exceptionBoundaryId}
+            and e.nozzle_id = ${payload.nozzleId}
+            and e.meter_installation_id = ${payload.meterInstallationId}
+            and e.business_day_id = ${payload.businessDayId}
+            and e.shift_id = ${payload.shiftId}
+            and e.status = 'BLOCKING'
+            and b.reading_status = 'UNAVAILABLE'
+          for update
+        `);
+        if (!exception[0] || new Date(exception[0].effective_at) >= new Date(now))
+          throw new AppError(
+            'CONFLICT',
+            'The requested meter exception is not part of this exact operational interval',
+          );
+      }
       const prior = await transaction.execute<BoundaryRow>(sql`
         select * from app.meter_boundaries
         where tenant_id=${context.tenantId} and station_id=${context.stationId}
@@ -700,7 +947,13 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
           throw new AppError('CONFLICT', 'This nozzle already has a boundary for the price cycle');
         }
       }
-      const now = await serverNow(transaction);
+      const storedExceptionReason =
+        commandType === 'ResolveMeterException'
+          ? exceptionResolutionMarker(
+              payload.exceptionBoundaryId!,
+              payload.exceptionReason ?? payload.reason,
+            )
+          : payload.exceptionReason;
       const boundary = confirmBoundary({
         id: payload.boundaryId,
         tenantId: context.tenantId,
@@ -719,7 +972,7 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
         confirmedAt: now,
         actor: context.actor,
         responsibleAttendantId: payload.responsibleAttendantId,
-        exceptionReason: payload.exceptionReason,
+        exceptionReason: storedExceptionReason,
         priceChangeId: payload.priceChangeId,
       });
       await transaction.execute(sql`
@@ -735,6 +988,21 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
           ${boundary.confirmedBy}, ${boundary.enteredBy}, ${boundary.attendantId}, ${boundary.onBehalfOf ?? null},
           ${boundary.exceptionReason ?? null}, ${boundary.priceChangeId ?? null}, 0)
       `);
+      if (commandType === 'ResolveMeterException') {
+        await resolveMeterException(
+          transaction,
+          context,
+          payload.exceptionBoundaryId!,
+          boundary.id,
+          'AVAILABLE_BOUNDARY',
+          {
+            commandType: 'ResolveMeterException',
+            exceptionBoundaryId: payload.exceptionBoundaryId!,
+            resolutionBoundaryId: boundary.id,
+          },
+          now,
+        );
+      }
       return {
         result: { boundaryId: boundary.id },
         after: boundary,
@@ -777,6 +1045,7 @@ const resetMeterPayload = z
     responsibleAttendantId: z.string().uuid(),
     readingValue: z.string(),
     reason: z.string().trim().min(1),
+    exceptionBoundaryId: z.string().uuid().optional(),
     expectedVersion: z.number().int().nonnegative(),
   })
   .strict();
@@ -796,7 +1065,11 @@ export async function resetMeterFromRequest(request: Request, input: unknown) {
     expectedVersion: payload.expectedVersion,
     responsibleAttendantId: payload.responsibleAttendantId,
     reason: payload.reason,
-    auditMetadata: { nozzleId: payload.nozzleId, boundaryId: payload.boundaryId },
+    auditMetadata: {
+      nozzleId: payload.nozzleId,
+      boundaryId: payload.boundaryId,
+      exceptionBoundaryId: payload.exceptionBoundaryId ?? null,
+    },
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
       const rows = await transaction.execute<{
@@ -812,10 +1085,18 @@ export async function resetMeterFromRequest(request: Request, input: unknown) {
           i.version as installation_version, d.state as day_state, s.state as shift_state
         from app.meter_installations i
         join app.nozzles n on n.tenant_id=i.tenant_id and n.station_id=i.station_id and n.id=i.nozzle_id
+        join app.meters m on m.tenant_id=i.tenant_id and m.id=i.meter_id and m.status='ACTIVE'
         join app.station_business_days d on d.tenant_id=i.tenant_id and d.station_id=i.station_id and d.id=${payload.businessDayId}
         join app.shifts s on s.tenant_id=d.tenant_id and s.station_id=d.station_id and s.business_day_id=d.id and s.id=${payload.shiftId}
         where i.tenant_id=${context.tenantId} and i.station_id=${context.stationId}
           and i.id=${payload.meterInstallationId} and i.nozzle_id=${payload.nozzleId}
+          and i.effective_to is null
+          and not exists (
+            select 1 from app.meter_installations current_i
+            where current_i.tenant_id=i.tenant_id and current_i.station_id=i.station_id
+              and current_i.nozzle_id=i.nozzle_id and current_i.effective_to is null
+              and current_i.id <> i.id
+          )
           and n.status='ACTIVE'
         for update of i, d, s
       `);
@@ -823,6 +1104,31 @@ export async function resetMeterFromRequest(request: Request, input: unknown) {
       if (!row) throw new AppError('NOT_FOUND', 'The meter installation context was not found');
       if (row.day_state !== 'OPEN' || row.shift_state !== 'OPEN')
         throw new AppError('CONFLICT', 'Meter reset requires an open business day and shift');
+      let storedExceptionReason = payload.reason;
+      if (payload.exceptionBoundaryId) {
+        const exception = await transaction.execute<{ id: string }>(sql`
+          select e.id
+          from app.meter_exceptions e
+          join app.meter_boundaries b
+            on b.tenant_id=e.tenant_id and b.station_id=e.station_id and b.id=e.boundary_id
+          where e.tenant_id = ${context.tenantId}
+            and e.station_id = ${context.stationId}
+            and e.id = ${payload.exceptionBoundaryId}
+            and e.nozzle_id = ${payload.nozzleId}
+            and e.meter_installation_id = ${payload.meterInstallationId}
+            and e.business_day_id = ${payload.businessDayId}
+            and e.shift_id = ${payload.shiftId}
+            and e.status = 'BLOCKING'
+            and b.reading_status = 'UNAVAILABLE'
+          for update
+        `);
+        if (!exception[0])
+          throw new AppError('CONFLICT', 'The reset is not linked to the exact meter exception');
+        storedExceptionReason = exceptionResolutionMarker(
+          payload.exceptionBoundaryId,
+          payload.reason,
+        );
+      }
       const prior = await transaction.execute<BoundaryRow>(sql`
         select * from app.meter_boundaries
         where tenant_id=${context.tenantId} and station_id=${context.stationId}
@@ -846,7 +1152,7 @@ export async function resetMeterFromRequest(request: Request, input: unknown) {
         confirmedAt: now,
         actor: context.actor,
         responsibleAttendantId: payload.responsibleAttendantId,
-        exceptionReason: payload.reason,
+        exceptionReason: storedExceptionReason,
       });
       await transaction.execute(sql`
         insert into app.meter_boundaries
@@ -857,8 +1163,35 @@ export async function resetMeterFromRequest(request: Request, input: unknown) {
           ${boundary.meterInstallationId}, ${boundary.businessDayId}, ${boundary.shiftId}, ${boundary.reason},
           'AVAILABLE', ${payload.readingValue}, ${now}::timestamptz, ${now}::timestamptz,
           ${context.actor.membershipId}, ${context.actor.membershipId}, ${boundary.attendantId},
-          ${boundary.onBehalfOf ?? null}, ${payload.reason}, 0)
+          ${boundary.onBehalfOf ?? null}, ${storedExceptionReason}, 0)
       `);
+      if (payload.exceptionBoundaryId) {
+        await resolveMeterException(
+          transaction,
+          context,
+          payload.exceptionBoundaryId,
+          boundary.id,
+          'RESET',
+          {
+            commandType: 'ResetMeter',
+            exceptionBoundaryId: payload.exceptionBoundaryId,
+            resolutionBoundaryId: boundary.id,
+          },
+          now,
+        );
+      }
+      const advancedInstallation = await transaction.execute<{ id: string }>(sql`
+        update app.meter_installations
+        set version = version + 1
+        where tenant_id = ${context.tenantId}
+          and station_id = ${context.stationId}
+          and id = ${payload.meterInstallationId}
+          and version = ${payload.expectedVersion}
+          and effective_to is null
+        returning id
+      `);
+      if (advancedInstallation.length !== 1)
+        throw new AppError('CONFLICT', 'The meter installation version became stale during reset');
       return {
         result: { boundaryId: boundary.id },
         after: boundary,
@@ -896,6 +1229,7 @@ const replaceMeterPayload = z
     responsibleAttendantId: z.string().uuid(),
     openingReading: z.string(),
     reason: z.string().trim().min(1),
+    exceptionBoundaryId: z.string().uuid().optional(),
     expectedVersion: z.number().int().nonnegative(),
   })
   .strict();
@@ -919,6 +1253,7 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
       nozzleId: payload.nozzleId,
       newMeterId: payload.newMeterId,
       boundaryId: payload.boundaryId,
+      exceptionBoundaryId: payload.exceptionBoundaryId ?? null,
     },
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
@@ -967,6 +1302,34 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
           'CONFLICT',
           'Replacement requires an active new meter and open operations',
         );
+      let storedExceptionReason = payload.reason;
+      if (payload.exceptionBoundaryId) {
+        const exception = await transaction.execute<{ id: string }>(sql`
+          select e.id
+          from app.meter_exceptions e
+          join app.meter_boundaries b
+            on b.tenant_id=e.tenant_id and b.station_id=e.station_id and b.id=e.boundary_id
+          where e.tenant_id = ${context.tenantId}
+            and e.station_id = ${context.stationId}
+            and e.id = ${payload.exceptionBoundaryId}
+            and e.nozzle_id = ${payload.nozzleId}
+            and e.meter_installation_id = ${payload.oldInstallationId}
+            and e.business_day_id = ${payload.businessDayId}
+            and e.shift_id = ${payload.shiftId}
+            and e.status = 'BLOCKING'
+            and b.reading_status = 'UNAVAILABLE'
+          for update
+        `);
+        if (!exception[0])
+          throw new AppError(
+            'CONFLICT',
+            'The replacement is not linked to the exact meter exception',
+          );
+        storedExceptionReason = exceptionResolutionMarker(
+          payload.exceptionBoundaryId,
+          payload.reason,
+        );
+      }
       const now = await serverNow(transaction);
       const oldInstallation = {
         id: row.old_id,
@@ -1006,7 +1369,7 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
         confirmedAt: now,
         actor: context.actor,
         responsibleAttendantId: payload.responsibleAttendantId,
-        exceptionReason: payload.reason,
+        exceptionReason: storedExceptionReason,
       });
       await transaction.execute(sql`
         insert into app.meter_boundaries
@@ -1016,8 +1379,25 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
         values (${boundary.id}, ${context.tenantId}, ${context.stationId}, ${payload.nozzleId}, ${newInstallationId},
           ${payload.businessDayId}, ${payload.shiftId}, 'REPLACEMENT', 'AVAILABLE', ${payload.openingReading},
           ${now}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId}, ${context.actor.membershipId},
-          ${boundary.attendantId}, ${boundary.onBehalfOf ?? null}, ${payload.reason}, 0)
+          ${boundary.attendantId}, ${boundary.onBehalfOf ?? null}, ${storedExceptionReason}, 0)
       `);
+      if (payload.exceptionBoundaryId) {
+        await resolveMeterException(
+          transaction,
+          context,
+          payload.exceptionBoundaryId,
+          boundary.id,
+          'REPLACEMENT',
+          {
+            commandType: 'ReplaceMeter',
+            exceptionBoundaryId: payload.exceptionBoundaryId,
+            resolutionBoundaryId: boundary.id,
+            replacedInstallationId: payload.oldInstallationId,
+            replacementInstallationId: newInstallationId,
+          },
+          now,
+        );
+      }
       return {
         result: {
           oldInstallationId: payload.oldInstallationId,
@@ -1058,6 +1438,7 @@ const correctMeterSegmentPayload = z
     responsibleAttendantId: z.string().uuid(),
     correctedClosingReading: z.string(),
     reason: z.string().trim().min(1),
+    exceptionBoundaryId: z.string().uuid().optional(),
     expectedVersion: z.number().int().nonnegative(),
   })
   .strict();
@@ -1078,7 +1459,10 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
     expectedVersion: payload.expectedVersion,
     responsibleAttendantId: payload.responsibleAttendantId,
     reason: payload.reason,
-    auditMetadata: { sourceSegmentId: payload.sourceSegmentId },
+    auditMetadata: {
+      sourceSegmentId: payload.sourceSegmentId,
+      exceptionBoundaryId: payload.exceptionBoundaryId ?? null,
+    },
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
       const rows = await transaction.execute<
@@ -1150,7 +1534,41 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
           'The sealed segment boundary lineage is inconsistent',
         );
       }
+      let linkedException: { id: string; effective_at: Date | string } | undefined;
+      if (payload.exceptionBoundaryId) {
+        const exceptions = await transaction.execute<{
+          id: string;
+          effective_at: Date | string;
+        }>(sql`
+          select e.id, b.effective_at
+          from app.meter_exceptions e
+          join app.meter_boundaries b
+            on b.tenant_id=e.tenant_id and b.station_id=e.station_id and b.id=e.boundary_id
+          where e.tenant_id=${context.tenantId}
+            and e.station_id=${context.stationId}
+            and e.id=${payload.exceptionBoundaryId}
+            and e.business_day_id=${source.business_day_id}
+            and e.shift_id=${source.shift_id}
+            and e.nozzle_id=${source.nozzle_id}
+            and e.meter_installation_id=${source.meter_installation_id}
+            and e.status='BLOCKING'
+            and b.reading_status='UNAVAILABLE'
+          for update
+        `);
+        linkedException = exceptions[0];
+        if (
+          !linkedException ||
+          new Date(linkedException.effective_at) >= new Date(source.closing_effective_at)
+        )
+          throw new AppError(
+            'CONFLICT',
+            'The correction does not resolve the exact earlier meter exception',
+          );
+      }
       const now = await serverNow(transaction);
+      const correctionExceptionReason = linkedException
+        ? exceptionResolutionMarker(payload.exceptionBoundaryId!, payload.reason)
+        : payload.reason;
       const openingBoundaryId = randomUUID();
       const closingBoundaryId = randomUUID();
       const openingBoundary = confirmBoundary({
@@ -1167,7 +1585,7 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
         confirmedAt: now,
         actor: context.actor,
         responsibleAttendantId: payload.responsibleAttendantId,
-        exceptionReason: payload.reason,
+        exceptionReason: correctionExceptionReason,
       });
       const closingBoundary = confirmBoundary({
         id: closingBoundaryId,
@@ -1183,7 +1601,7 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
         confirmedAt: now,
         actor: context.actor,
         responsibleAttendantId: payload.responsibleAttendantId,
-        exceptionReason: payload.reason,
+        exceptionReason: correctionExceptionReason,
       });
       await transaction.execute(sql`
         insert into app.meter_boundaries
@@ -1193,11 +1611,11 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
         values (${openingBoundary.id}, ${context.tenantId}, ${context.stationId}, ${source.nozzle_id},
           ${source.meter_installation_id}, ${source.business_day_id}, ${source.shift_id}, 'CORRECTION', 'AVAILABLE',
           ${source.opening_reading}, ${openingBoundary.effectiveAt}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
-          ${context.actor.membershipId}, ${openingBoundary.attendantId}, ${openingBoundary.onBehalfOf ?? null}, ${payload.reason}, 0),
+          ${context.actor.membershipId}, ${openingBoundary.attendantId}, ${openingBoundary.onBehalfOf ?? null}, ${correctionExceptionReason}, 0),
           (${closingBoundary.id}, ${context.tenantId}, ${context.stationId}, ${source.nozzle_id},
           ${source.meter_installation_id}, ${source.business_day_id}, ${source.shift_id}, 'CORRECTION', 'AVAILABLE',
           ${payload.correctedClosingReading}, ${closingBoundary.effectiveAt}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
-          ${context.actor.membershipId}, ${closingBoundary.attendantId}, ${closingBoundary.onBehalfOf ?? null}, ${payload.reason}, 0)
+          ${context.actor.membershipId}, ${closingBoundary.attendantId}, ${closingBoundary.onBehalfOf ?? null}, ${correctionExceptionReason}, 0)
       `);
       const segment = sealMeterSegment({
         id: payload.correctedSegmentId,
@@ -1243,6 +1661,22 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
       `);
       if (sealed.length !== 1 || !sealed[0]?.id)
         throw new AppError('CONFLICT', 'The correction could not be sealed');
+      if (linkedException) {
+        await resolveMeterException(
+          transaction,
+          context,
+          linkedException.id,
+          closingBoundary.id,
+          'CORRECTION',
+          {
+            commandType: 'CorrectMeterSegment',
+            exceptionBoundaryId: linkedException.id,
+            resolutionBoundaryId: closingBoundary.id,
+            correctedSegmentId: segment.id,
+          },
+          now,
+        );
+      }
       return {
         result: { segmentId: segment.id, correctionOfSegmentId: source.id },
         after: { ...segment, version: 1 },
@@ -1601,6 +2035,7 @@ export async function submitReconciliationFromRequest(request: Request, input: u
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
       const row = await loadRevision(transaction, context, payload.revisionId);
+      await assertBusinessDayOperationalCompleteness(transaction, context, row.business_day_id);
       const segments = await transaction.execute<SegmentDbRow>(sql`
         select m.*, d.business_date from app.meter_segments m
         join app.station_business_days d on d.tenant_id=m.tenant_id and d.station_id=m.station_id and d.id=m.business_day_id
@@ -1930,6 +2365,13 @@ export async function approveReconciliationFromRequest(request: Request, input: 
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
       const row = await loadRevision(transaction, context, payload.revisionId);
+      await assertReconciliationSourceCompleteness(
+        transaction,
+        context,
+        row.business_day_id,
+        row.source_segment_ids,
+        row.source_shift_ids,
+      );
       const now = await serverNow(transaction);
       const revision = approveReconciliation(revisionFromRow(row), context.actor, now);
       await transaction.execute(sql`
@@ -1966,6 +2408,13 @@ export async function postReconciliationFromRequest(request: Request, input: unk
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
       const row = await loadRevision(transaction, context, payload.revisionId);
+      await assertReconciliationSourceCompleteness(
+        transaction,
+        context,
+        row.business_day_id,
+        row.source_segment_ids,
+        row.source_shift_ids,
+      );
       const now = await serverNow(transaction);
       const revision = postReconciliation(revisionFromRow(row), context.actor, now);
       await transaction.execute(sql`
@@ -2056,49 +2505,15 @@ export async function lockBusinessDayFromRequest(request: Request, input: unknow
       `);
       const row = rows[0];
       if (!row) throw new AppError('NOT_FOUND', 'Business day was not found');
-      const unfinished = await transaction.execute<{ count: number }>(sql`
-        select count(*)::int as count from app.shifts
-        where tenant_id=${context.tenantId} and station_id=${context.stationId}
-          and business_day_id=${payload.businessDayId}
-          and state not in ('COMPLETED','NOT_OPERATED','CANCELLED_BEFORE_START')
-      `);
-      if (Number(unfinished[0]?.count ?? 0) > 0)
-        throw new AppError(
-          'CONFLICT',
-          'Every planned shift must be completed or explicitly NOT_OPERATED',
-        );
-      const openSegments = await transaction.execute<{ count: number }>(sql`
-        select count(*)::int as count from app.meter_segments
-        where tenant_id=${context.tenantId} and station_id=${context.stationId}
-          and business_day_id=${payload.businessDayId} and state <> 'SEALED'
-      `);
-      if (Number(openSegments[0]?.count ?? 0) > 0)
-        throw new AppError(
-          'CONFLICT',
-          'All operational meter segments must be sealed before locking',
-        );
-      const unavailable = await transaction.execute<{ count: number }>(sql`
-        select count(*)::int as count from app.meter_boundaries unavailable_boundary
-        where unavailable_boundary.tenant_id=${context.tenantId} and unavailable_boundary.station_id=${context.stationId}
-          and unavailable_boundary.business_day_id=${payload.businessDayId} and unavailable_boundary.reading_status='UNAVAILABLE'
-          and not exists (
-            select 1 from app.meter_boundaries resolved
-            where resolved.tenant_id=unavailable_boundary.tenant_id and resolved.station_id=unavailable_boundary.station_id
-              and resolved.nozzle_id=unavailable_boundary.nozzle_id
-              and resolved.effective_at > unavailable_boundary.effective_at
-              and resolved.reading_status='AVAILABLE'
-          )
-      `);
-      if (Number(unavailable[0]?.count ?? 0) > 0)
-        throw new AppError(
-          'CONFLICT',
-          'An unresolved unavailable meter blocks business-day locking',
-        );
+      await assertBusinessDayOperationalCompleteness(transaction, context, payload.businessDayId);
       const posted = await transaction.execute<{
+        id: string;
         state: string;
         variance_classification: string;
+        source_segment_ids: unknown;
+        source_shift_ids: unknown;
       }>(sql`
-        select r.state, r.variance_classification
+        select r.id, r.state, r.variance_classification, r.source_segment_ids, r.source_shift_ids
         from app.reconciliation_revisions r
         join app.reconciliations c on c.tenant_id=r.tenant_id and c.station_id=r.station_id and c.id=r.reconciliation_id
         where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId}
@@ -2110,6 +2525,13 @@ export async function lockBusinessDayFromRequest(request: Request, input: unknow
           'CONFLICT',
           'The exact authoritative reconciliation revision must be POSTED before locking',
         );
+      await assertReconciliationSourceCompleteness(
+        transaction,
+        context,
+        payload.businessDayId,
+        posted[0]!.source_segment_ids,
+        posted[0]!.source_shift_ids,
+      );
       if (posted[0]!.variance_classification === 'BLOCKING')
         throw new AppError(
           'CONFLICT',

@@ -383,6 +383,96 @@ export const meterBoundaries = appSchema.table(
   ],
 );
 
+/** Durable identity and scope for a meter-unavailable observation. */
+export const meterExceptions = appSchema.table(
+  'meter_exceptions',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    businessDayId: uuid('business_day_id').notNull(),
+    shiftId: uuid('shift_id').notNull(),
+    nozzleId: uuid('nozzle_id').notNull(),
+    meterInstallationId: uuid('meter_installation_id').notNull(),
+    boundaryId: uuid('boundary_id').notNull(),
+    exceptionType: text('exception_type').notNull().default('METER_UNAVAILABLE'),
+    status: text('status').notNull().default('BLOCKING'),
+    reason: text('reason').notNull(),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+    resolvedAt: utcTimestamp('resolved_at'),
+    resolvedBy: uuid('resolved_by'),
+    resolutionKind: text('resolution_kind'),
+    resolutionBoundaryId: uuid('resolution_boundary_id'),
+    resolutionProvenance: jsonb('resolution_provenance'),
+  },
+  (table) => [
+    unique('meter_exceptions_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('meter_exceptions_tenant_station_id_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.id,
+    ),
+    unique('meter_exceptions_boundary_uidx').on(table.tenantId, table.stationId, table.boundaryId),
+    index('meter_exceptions_operational_lookup_idx').on(
+      table.tenantId,
+      table.stationId,
+      table.businessDayId,
+      table.shiftId,
+      table.status,
+    ),
+    check('meter_exceptions_status_ck', sql`${table.status} in ('BLOCKING', 'RESOLVED')`),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.boundaryId],
+      foreignColumns: [meterBoundaries.tenantId, meterBoundaries.stationId, meterBoundaries.id],
+      name: 'meter_exceptions_boundary_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.businessDayId],
+      foreignColumns: [
+        stationBusinessDays.tenantId,
+        stationBusinessDays.stationId,
+        stationBusinessDays.id,
+      ],
+      name: 'meter_exceptions_business_day_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.shiftId],
+      foreignColumns: [shifts.tenantId, shifts.stationId, shifts.id],
+      name: 'meter_exceptions_shift_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.nozzleId],
+      foreignColumns: [nozzles.tenantId, nozzles.stationId, nozzles.id],
+      name: 'meter_exceptions_nozzle_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.meterInstallationId],
+      foreignColumns: [
+        meterInstallations.tenantId,
+        meterInstallations.stationId,
+        meterInstallations.id,
+      ],
+      name: 'meter_exceptions_installation_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.createdBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'meter_exceptions_created_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.resolvedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'meter_exceptions_resolved_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.resolutionBoundaryId],
+      foreignColumns: [meterBoundaries.tenantId, meterBoundaries.stationId, meterBoundaries.id],
+      name: 'meter_exceptions_resolution_boundary_fk',
+    }),
+  ],
+);
+
 export const meterSegments = appSchema.table(
   'meter_segments',
   {

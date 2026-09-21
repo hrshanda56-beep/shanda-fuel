@@ -22,6 +22,30 @@ CREATE TABLE "app"."meter_boundaries" (
 	CONSTRAINT "meter_boundaries_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id")
 );
 --> statement-breakpoint
+CREATE TABLE "app"."meter_exceptions" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "station_id" uuid NOT NULL,
+  "business_day_id" uuid NOT NULL,
+  "shift_id" uuid NOT NULL,
+  "nozzle_id" uuid NOT NULL,
+  "meter_installation_id" uuid NOT NULL,
+  "boundary_id" uuid NOT NULL,
+  "exception_type" text DEFAULT 'METER_UNAVAILABLE' NOT NULL,
+  "status" text DEFAULT 'BLOCKING' NOT NULL,
+  "reason" text NOT NULL,
+  "created_by" uuid NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "resolved_at" timestamp with time zone,
+  "resolved_by" uuid,
+  "resolution_kind" text,
+  "resolution_boundary_id" uuid,
+  "resolution_provenance" jsonb,
+  CONSTRAINT "meter_exceptions_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+  CONSTRAINT "meter_exceptions_tenant_station_id_id_uidx" UNIQUE("tenant_id","station_id","id"),
+  CONSTRAINT "meter_exceptions_boundary_uidx" UNIQUE("tenant_id","station_id","boundary_id")
+);
+--> statement-breakpoint
 CREATE TABLE "app"."meter_installations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -223,6 +247,15 @@ CREATE TABLE "app"."station_business_days" (
 );
 --> statement-breakpoint
 ALTER TABLE "app"."meter_boundaries" ADD CONSTRAINT "meter_boundaries_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_boundary_fk" FOREIGN KEY ("tenant_id","station_id","boundary_id") REFERENCES "app"."meter_boundaries"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_business_day_fk" FOREIGN KEY ("tenant_id","station_id","business_day_id") REFERENCES "app"."station_business_days"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_shift_fk" FOREIGN KEY ("tenant_id","station_id","shift_id") REFERENCES "app"."shifts"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_nozzle_fk" FOREIGN KEY ("tenant_id","station_id","nozzle_id") REFERENCES "app"."nozzles"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_installation_fk" FOREIGN KEY ("tenant_id","station_id","meter_installation_id") REFERENCES "app"."meter_installations"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_created_by_fk" FOREIGN KEY ("tenant_id","created_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_resolved_by_fk" FOREIGN KEY ("tenant_id","resolved_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."meter_exceptions" ADD CONSTRAINT "meter_exceptions_resolution_boundary_fk" FOREIGN KEY ("tenant_id","station_id","resolution_boundary_id") REFERENCES "app"."meter_boundaries"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."meter_boundaries" ADD CONSTRAINT "meter_boundaries_nozzle_fk" FOREIGN KEY ("tenant_id","station_id","nozzle_id") REFERENCES "app"."nozzles"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."meter_boundaries" ADD CONSTRAINT "meter_boundaries_installation_fk" FOREIGN KEY ("tenant_id","station_id","meter_installation_id") REFERENCES "app"."meter_installations"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."meter_boundaries" ADD CONSTRAINT "meter_boundaries_business_day_fk" FOREIGN KEY ("tenant_id","station_id","business_day_id") REFERENCES "app"."station_business_days"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -274,6 +307,7 @@ ALTER TABLE "app"."shifts" ADD CONSTRAINT "shifts_business_day_fk" FOREIGN KEY (
 ALTER TABLE "app"."station_business_days" ADD CONSTRAINT "station_business_days_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."station_business_days" ADD CONSTRAINT "station_business_days_station_fk" FOREIGN KEY ("tenant_id","station_id") REFERENCES "app"."stations"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "meter_boundaries_operational_lookup_idx" ON "app"."meter_boundaries" USING btree ("tenant_id","nozzle_id","effective_at");--> statement-breakpoint
+CREATE INDEX "meter_exceptions_operational_lookup_idx" ON "app"."meter_exceptions" USING btree ("tenant_id","station_id","business_day_id","shift_id","status");--> statement-breakpoint
 CREATE INDEX "meter_installations_tenant_nozzle_effective_idx" ON "app"."meter_installations" USING btree ("tenant_id","nozzle_id","effective_from");--> statement-breakpoint
 CREATE INDEX "meter_segments_reconciliation_lookup_idx" ON "app"."meter_segments" USING btree ("tenant_id","business_day_id","station_id");--> statement-breakpoint
 CREATE INDEX "nozzles_tenant_station_idx" ON "app"."nozzles" USING btree ("tenant_id","station_id");--> statement-breakpoint
@@ -306,6 +340,7 @@ ALTER TABLE app.station_business_days ADD CONSTRAINT station_business_days_state
 ALTER TABLE app.reconciliations ADD CONSTRAINT reconciliations_state_ck CHECK (state IN ('DRAFT', 'READY', 'SUBMITTED', 'PENDING_APPROVAL', 'RETURNED', 'REJECTED', 'APPROVED', 'POSTED', 'LOCKED'));
 ALTER TABLE app.reconciliation_revisions ADD CONSTRAINT reconciliation_revisions_state_ck CHECK (state IN ('READY', 'SUBMITTED', 'PENDING_APPROVAL', 'RETURNED', 'REJECTED', 'APPROVED', 'POSTED', 'LOCKED'));
 ALTER TABLE app.meter_boundaries ADD CONSTRAINT meter_boundaries_on_behalf_ck CHECK (on_behalf_of IS NULL OR on_behalf_of <> entered_by);
+ALTER TABLE app.meter_exceptions ADD CONSTRAINT meter_exceptions_status_ck CHECK (status IN ('BLOCKING', 'RESOLVED'));
 ALTER TABLE app.meter_segments ADD CONSTRAINT meter_segments_reading_ck CHECK (closing_reading >= opening_reading OR controlled_exception), ADD CONSTRAINT meter_segments_litres_ck CHECK (litres >= 0 AND (controlled_exception OR litres = closing_reading - opening_reading));
 ALTER TABLE app.meter_installations ADD CONSTRAINT meter_installations_no_overlap EXCLUDE USING gist (tenant_id WITH =, station_id WITH =, nozzle_id WITH =, tstzrange(effective_from, COALESCE(effective_to, 'infinity'::timestamptz), '[)') WITH &&);
 ALTER TABLE app.meter_segments ADD CONSTRAINT meter_segments_nozzle_no_overlap EXCLUDE USING gist (tenant_id WITH =, station_id WITH =, nozzle_id WITH =, tstzrange(segment_start_at, segment_end_at, '[)') WITH &&);
@@ -347,7 +382,7 @@ CREATE TRIGGER reconciliations_authoritative_guard BEFORE UPDATE OR DELETE ON ap
 DO $$
 DECLARE table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP
+  FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP
     EXECUTE format('ALTER TABLE app.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE app.%I FORCE ROW LEVEL SECURITY', table_name);
     EXECUTE format('CREATE POLICY tenant_context ON app.%I USING (tenant_id = app.current_tenant_id() AND app.has_active_membership()) WITH CHECK (tenant_id = app.current_tenant_id() AND app.has_active_membership())', table_name);
@@ -483,11 +518,11 @@ DECLARE table_name text;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') THEN
     ALTER SCHEMA app OWNER TO migration_owner;
-    FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name); END LOOP;
+    FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name); END LOOP;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN GRANT SELECT, INSERT, UPDATE, DELETE ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO app_runtime; END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO job_runtime; END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO diagnostics_readonly; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN GRANT SELECT, INSERT, UPDATE, DELETE ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO app_runtime; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO job_runtime; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO diagnostics_readonly; END IF;
 END
 $$;
 
@@ -548,6 +583,114 @@ CREATE TRIGGER reconciliation_revisions_initial_state_guard BEFORE INSERT ON app
 CREATE TRIGGER selling_prices_initial_state_guard BEFORE INSERT ON app.selling_prices FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
 CREATE TRIGGER meter_segments_initial_state_guard BEFORE INSERT ON app.meter_segments FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
 
+CREATE OR REPLACE FUNCTION app.guard_meter_exception_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE source_boundary record;
+DECLARE resolution_boundary record;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'BLOCKING' OR NEW.exception_type <> 'METER_UNAVAILABLE' THEN
+      RAISE EXCEPTION 'meter exceptions must be created as blocking meter-unavailable records';
+    END IF;
+    SELECT id, tenant_id, station_id, business_day_id, shift_id, nozzle_id,
+           meter_installation_id, reading_status
+      INTO source_boundary
+      FROM app.meter_boundaries
+     WHERE tenant_id = NEW.tenant_id
+       AND station_id = NEW.station_id
+       AND id = NEW.boundary_id;
+    IF source_boundary.id IS NULL
+       OR source_boundary.reading_status <> 'UNAVAILABLE'
+       OR source_boundary.business_day_id IS DISTINCT FROM NEW.business_day_id
+       OR source_boundary.shift_id IS DISTINCT FROM NEW.shift_id
+       OR source_boundary.nozzle_id IS DISTINCT FROM NEW.nozzle_id
+       OR source_boundary.meter_installation_id IS DISTINCT FROM NEW.meter_installation_id THEN
+      RAISE EXCEPTION 'meter exception scope must match its unavailable boundary';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.station_id IS DISTINCT FROM OLD.station_id
+     OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id
+     OR NEW.shift_id IS DISTINCT FROM OLD.shift_id
+     OR NEW.nozzle_id IS DISTINCT FROM OLD.nozzle_id
+     OR NEW.meter_installation_id IS DISTINCT FROM OLD.meter_installation_id
+     OR NEW.boundary_id IS DISTINCT FROM OLD.boundary_id
+     OR NEW.exception_type IS DISTINCT FROM OLD.exception_type
+     OR NEW.reason IS DISTINCT FROM OLD.reason
+     OR (OLD.status = 'RESOLVED' AND NEW IS DISTINCT FROM OLD) THEN
+    RAISE EXCEPTION 'meter exception identity and resolved history are immutable';
+  END IF;
+  IF OLD.status = 'BLOCKING' AND NEW.status = 'RESOLVED' THEN
+    IF NEW.resolved_at IS NULL OR NEW.resolved_by IS NULL
+       OR NEW.resolution_kind IS NULL OR btrim(NEW.resolution_kind) = ''
+       OR NEW.resolution_boundary_id IS NULL
+       OR jsonb_typeof(NEW.resolution_provenance) <> 'object' THEN
+      RAISE EXCEPTION 'resolved meter exceptions require complete resolution provenance';
+    END IF;
+    SELECT id, tenant_id, station_id, business_day_id, shift_id, nozzle_id,
+           meter_installation_id, reading_status, effective_at
+      INTO resolution_boundary
+      FROM app.meter_boundaries
+     WHERE tenant_id = NEW.tenant_id
+       AND station_id = NEW.station_id
+       AND id = NEW.resolution_boundary_id;
+    SELECT effective_at INTO source_boundary
+      FROM app.meter_boundaries
+     WHERE tenant_id = NEW.tenant_id
+       AND station_id = NEW.station_id
+       AND id = NEW.boundary_id;
+    IF resolution_boundary.id IS NULL
+       OR resolution_boundary.reading_status <> 'AVAILABLE'
+       OR resolution_boundary.business_day_id IS DISTINCT FROM NEW.business_day_id
+       OR resolution_boundary.shift_id IS DISTINCT FROM NEW.shift_id
+       OR resolution_boundary.nozzle_id IS DISTINCT FROM NEW.nozzle_id
+       OR (
+         resolution_boundary.meter_installation_id IS DISTINCT FROM NEW.meter_installation_id
+         AND NOT (
+           NEW.resolution_kind = 'REPLACEMENT'
+           AND NEW.resolution_provenance->>'replacedInstallationId' = NEW.meter_installation_id::text
+           AND NEW.resolution_provenance->>'replacementInstallationId' = resolution_boundary.meter_installation_id::text
+         )
+       )
+       OR source_boundary.effective_at IS NULL
+       OR resolution_boundary.effective_at <= source_boundary.effective_at THEN
+      RAISE EXCEPTION 'meter exception resolution must address the same later operational interval';
+    END IF;
+  ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'meter exception status may only transition from BLOCKING to RESOLVED';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.create_meter_exception_for_unavailable_boundary()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, app AS $$
+BEGIN
+  IF NEW.reading_status = 'UNAVAILABLE' THEN
+    INSERT INTO app.meter_exceptions
+      (id, tenant_id, station_id, business_day_id, shift_id, nozzle_id,
+       meter_installation_id, boundary_id, exception_type, status, reason, created_by)
+    VALUES
+      (NEW.id, NEW.tenant_id, NEW.station_id, NEW.business_day_id, NEW.shift_id, NEW.nozzle_id,
+       NEW.meter_installation_id, NEW.id, 'METER_UNAVAILABLE', 'BLOCKING',
+       COALESCE(NEW.unavailable_reason, 'Meter reading unavailable'), NEW.entered_by)
+    ON CONFLICT (tenant_id, station_id, boundary_id) DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS meter_exceptions_scope_guard ON app.meter_exceptions;
+CREATE TRIGGER meter_exceptions_scope_guard
+BEFORE INSERT OR UPDATE ON app.meter_exceptions
+FOR EACH ROW EXECUTE FUNCTION app.guard_meter_exception_mutation();
+DROP TRIGGER IF EXISTS meter_boundary_exception_identity ON app.meter_boundaries;
+CREATE TRIGGER meter_boundary_exception_identity
+AFTER INSERT ON app.meter_boundaries
+FOR EACH ROW EXECUTE FUNCTION app.create_meter_exception_for_unavailable_boundary();
+
 CREATE OR REPLACE FUNCTION app.validate_reconciliation_revision_payload()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE declaration jsonb;
@@ -584,6 +727,10 @@ RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE allowed boolean := false;
 BEGIN
   IF NEW.state = OLD.state THEN RETURN NEW; END IF;
+  IF TG_TABLE_NAME = 'shifts' AND NEW.state = 'NOT_OPERATED'
+     AND (NEW.not_operated_reason IS NULL OR btrim(NEW.not_operated_reason) = '') THEN
+    RAISE EXCEPTION 'NOT_OPERATED shifts require a reason';
+  END IF;
   IF TG_TABLE_NAME = 'reconciliation_revisions' THEN
     IF NEW.state IN ('APPROVED', 'POSTED') AND NEW.variance_classification = 'BLOCKING' THEN
       RAISE EXCEPTION 'blocking reconciliation variance requires a corrected or resolved revision';
@@ -799,3 +946,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS meter_boundaries_one_price_cycle_per_nozzle_ui
   WHERE reason = 'PRICE_CHANGE'
     AND reading_status = 'AVAILABLE'
     AND price_change_id IS NOT NULL;
+
+-- A shift's stored business date is part of its authoritative identity.  The
+-- composite foreign key proves tenant/station/day membership; this trigger
+-- also prevents a malformed cross-midnight date from being persisted.
+CREATE OR REPLACE FUNCTION app.validate_shift_business_day_identity()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE canonical_date text;
+BEGIN
+  SELECT business_date INTO canonical_date
+  FROM app.station_business_days
+  WHERE tenant_id = NEW.tenant_id
+    AND station_id = NEW.station_id
+    AND id = NEW.business_day_id;
+  IF canonical_date IS NULL OR NEW.business_date IS DISTINCT FROM canonical_date THEN
+    RAISE EXCEPTION 'shift business date must match its StationBusinessDay';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS shifts_business_day_identity_guard ON app.shifts;
+CREATE TRIGGER shifts_business_day_identity_guard
+BEFORE INSERT OR UPDATE OF tenant_id, station_id, business_day_id, business_date ON app.shifts
+FOR EACH ROW EXECUTE FUNCTION app.validate_shift_business_day_identity();
+
+CREATE OR REPLACE FUNCTION app.validate_forecourt_shift_business_day_link()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM app.shifts s
+     WHERE s.tenant_id = NEW.tenant_id
+       AND s.station_id = NEW.station_id
+       AND s.id = NEW.shift_id
+       AND s.business_day_id = NEW.business_day_id
+  ) THEN
+    RAISE EXCEPTION '% shift/business-day identity is inconsistent', TG_TABLE_NAME;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS meter_boundaries_shift_business_day_guard ON app.meter_boundaries;
+CREATE TRIGGER meter_boundaries_shift_business_day_guard
+BEFORE INSERT OR UPDATE OF tenant_id, station_id, business_day_id, shift_id ON app.meter_boundaries
+FOR EACH ROW EXECUTE FUNCTION app.validate_forecourt_shift_business_day_link();
+DROP TRIGGER IF EXISTS meter_segments_shift_business_day_guard ON app.meter_segments;
+CREATE TRIGGER meter_segments_shift_business_day_guard
+BEFORE INSERT OR UPDATE OF tenant_id, station_id, business_day_id, shift_id ON app.meter_segments
+FOR EACH ROW EXECUTE FUNCTION app.validate_forecourt_shift_business_day_link();
+DROP TRIGGER IF EXISTS meter_exceptions_shift_business_day_guard ON app.meter_exceptions;
+CREATE TRIGGER meter_exceptions_shift_business_day_guard
+BEFORE INSERT OR UPDATE OF tenant_id, station_id, business_day_id, shift_id ON app.meter_exceptions
+FOR EACH ROW EXECUTE FUNCTION app.validate_forecourt_shift_business_day_link();

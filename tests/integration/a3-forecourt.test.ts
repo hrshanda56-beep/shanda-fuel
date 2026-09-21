@@ -319,11 +319,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       where n.nspname = 'app' and c.relname in (
         'products', 'pumps', 'nozzles', 'meters', 'meter_installations',
         'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries',
-        'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations',
+        'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations',
         'forecourt_idempotency_records', 'forecourt_outbox'
       ) order by c.relname
     `;
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(16);
     expect(rows.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
   });
 
@@ -1977,6 +1977,10 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const replacementMeterB = id();
     const replacementBoundaryA = id();
     const replacementBoundaryB = id();
+    const resetRaceDay = id();
+    const resetRaceShift = id();
+    const resetRaceBoundaryA = id();
+    const resetRaceBoundaryB = id();
     const price = id();
     const priceBoundaryA = id();
     const priceBoundaryB = id();
@@ -2042,6 +2046,52 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       'a3-remediation-reset-1',
     );
     expect(reset.status).toBe(200);
+    await expect(client<{ version: number }[]>`
+      select version from app.meter_installations where id=${ids.installationA}
+    `).resolves.toEqual([{ version: installationVersion + 1 }]);
+
+    const resetRaceInstallation = await client<{ version: number }[]>`
+      select version from app.meter_installations
+      where tenant_id=${ids.tenantA} and station_id=${ids.stationA} and id=${ids.installationB}
+        and effective_to is null
+    `;
+    const resetRaceVersion = resetRaceInstallation[0]!.version;
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${resetRaceDay}', '${ids.tenantA}', '${ids.stationA}', '2026-10-02', 'NOT_STARTED');
+      update app.station_business_days set state='OPEN' where id='${resetRaceDay}';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values ('${resetRaceShift}', '${ids.tenantA}', '${ids.stationA}', '${resetRaceDay}', 'PLANNED',
+        '2026-10-02T06:00:00Z', '2026-10-02T14:00:00Z', '2026-10-02');
+      update app.shifts set state='OPEN' where id='${resetRaceShift}';
+    `);
+    const resetRaceInput = (boundaryId: string) => ({
+      commandType: 'ResetMeter',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      boundaryId,
+      nozzleId: ids.nozzleB,
+      meterInstallationId: ids.installationB,
+      businessDayId: resetRaceDay,
+      shiftId: resetRaceShift,
+      responsibleAttendantId: ids.membershipA,
+      readingValue: '4000.000',
+      reason: 'concurrent controlled reset',
+      expectedVersion: resetRaceVersion,
+    });
+    const [resetRaceA, resetRaceB] = await Promise.all([
+      postCommand(resetRaceInput(resetRaceBoundaryA), 'a3-remediation-reset-race-a'),
+      postCommand(resetRaceInput(resetRaceBoundaryB), 'a3-remediation-reset-race-b'),
+    ]);
+    expect([resetRaceA.status, resetRaceB.status].sort()).toEqual([200, 409]);
+    await expect(client<{ version: number }[]>`
+      select version from app.meter_installations where id=${ids.installationB}
+    `).resolves.toEqual([{ version: resetRaceVersion + 1 }]);
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.meter_boundaries
+      where business_day_id=${resetRaceDay} and shift_id=${resetRaceShift} and reason='METER_RESET'
+    `).resolves.toEqual([{ count: 1 }]);
 
     const replacementInput = (newMeterId: string, boundaryId: string) => ({
       commandType: 'ReplaceMeter',
@@ -2057,7 +2107,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       responsibleAttendantId: ids.membershipA,
       openingReading: '0.000',
       reason: 'meter failure',
-      expectedVersion: installationVersion,
+      expectedVersion: installationVersion + 1,
     });
     const [replacementA, replacementB] = await Promise.all([
       postCommand(
@@ -2199,6 +2249,80 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       select event_type, event_version from app.forecourt_outbox
       where aggregate_id=${reconciliation} and event_type='reconciliation.revision_corrected.v1'
     `).resolves.toEqual([{ event_type: 'reconciliation.revision_corrected.v1', event_version: 1 }]);
+  });
+
+  it('rejects zero-meter operated completion and permits only an explicit NOT_OPERATED path', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const day = randomUUID();
+    const shift = randomUUID();
+    const postCommand = (input: Record<string, unknown>, key: string) =>
+      forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${signedToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${day}', '${ids.tenantA}', '${ids.stationA}', '2026-10-04', 'NOT_STARTED');
+      update app.station_business_days set state='OPEN' where id='${day}';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values ('${shift}', '${ids.tenantA}', '${ids.stationA}', '${day}', 'PLANNED',
+        '2026-10-04T06:00:00Z', '2026-10-04T14:00:00Z', '2026-10-04');
+      update app.shifts set state='OPEN' where id='${shift}';
+    `);
+
+    const completion = await postCommand(
+      {
+        commandType: 'CompleteShift',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        businessDayId: day,
+        shiftId: shift,
+        expectedVersion: 0,
+      },
+      'a3-domain-zero-meter-complete',
+    );
+    expect(completion.status).toBe(409);
+    await expect(client<{ state: string; version: number }[]>`
+      select state, version from app.shifts where id=${shift}
+    `).resolves.toEqual([{ state: 'OPEN', version: 0 }]);
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.forecourt_idempotency_records
+      where tenant_id=${ids.tenantA} and idempotency_key='a3-domain-zero-meter-complete'
+    `).resolves.toEqual([{ count: 0 }]);
+
+    const notOperated = await postCommand(
+      {
+        commandType: 'MarkNotOperated',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        businessDayId: day,
+        shiftId: shift,
+        reason: 'Station was closed for the entire planned shift',
+        expectedVersion: 0,
+      },
+      'a3-domain-zero-meter-not-operated',
+    );
+    expect(notOperated.status).toBe(200);
+    await expect(client<{ state: string; not_operated_reason: string }[]>`
+      select state, not_operated_reason from app.shifts where id=${shift}
+    `).resolves.toEqual([
+      {
+        state: 'NOT_OPERATED',
+        not_operated_reason: 'Station was closed for the entire planned shift',
+      },
+    ]);
   });
 
   it('proves final A1 security denials through PostgreSQL production handlers', async () => {
