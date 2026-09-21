@@ -515,7 +515,7 @@ async function loadRevision(
   revisionId: string,
 ) {
   const rows = await transaction.execute<ReconciliationRow>(sql`
-    select r.id, r.reconciliation_id, r.revision, r.tenant_id, r.station_id, r.business_day_id,
+    select r.id, r.reconciliation_id, r.revision, r.tenant_id, r.station_id, c.business_day_id,
            d.business_date, r.state, r.expected_sales, r.accounted_sales, r.variance, r.currency,
            r.variance_classification, r.variance_explanation, r.declarations, r.source_segment_ids,
            r.source_shift_ids, r.source_revision_id, r.correction_of_revision_id, r.submitted_by,
