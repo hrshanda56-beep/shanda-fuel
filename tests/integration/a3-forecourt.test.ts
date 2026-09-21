@@ -2092,7 +2092,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     await client.unsafe(`
       insert into app.selling_prices
         (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
-      values ('${price}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-10-01T00:00:00Z', 2.000000, 'DRAFT', '${ids.membershipA}');
+      values ('${price}', '${ids.tenantA}', '${ids.stationA}', '${ids.productB}', '2026-10-01T00:00:00Z', 2.000000, 'DRAFT', '${ids.membershipA}');
       update app.selling_prices set state='PENDING_APPROVAL' where id='${price}';
       update app.selling_prices set state='APPROVED' where id='${price}';
       update app.selling_prices set state='PENDING_STATION_ACTIVATION' where id='${price}';
@@ -2102,8 +2102,8 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       tenantId: ids.tenantA,
       stationId: ids.stationA,
       boundaryId,
-      nozzleId: ids.nozzleA,
-      meterInstallationId: currentInstallation[0]!.id,
+      nozzleId: ids.nozzleB,
+      meterInstallationId: ids.installationB,
       businessDayId: day,
       shiftId: shift,
       responsibleAttendantId: ids.membershipA,
