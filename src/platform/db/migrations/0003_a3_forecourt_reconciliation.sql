@@ -503,6 +503,18 @@ ON CONFLICT DO NOTHING;
 INSERT INTO platform.role_permissions (role_code, permission_code)
 VALUES ('OWNER', 'business_day.lock'), ('ADMINISTRATOR', 'business_day.lock'), ('FINANCE', 'business_day.lock')
 ON CONFLICT DO NOTHING;
+INSERT INTO platform.permission_definitions (code, description)
+VALUES
+  ('meter.reset', 'Reset a meter under controlled workflow'),
+  ('meter.correction.execute', 'Create an authorized meter correction'),
+  ('price.change.boundary', 'Prepare a boundary for an approved price activation cycle')
+ON CONFLICT (code) DO NOTHING;
+INSERT INTO platform.role_permissions (role_code, permission_code)
+VALUES
+  ('OWNER', 'meter.reset'), ('ADMINISTRATOR', 'meter.reset'), ('SUPERVISOR', 'meter.reset'),
+  ('OWNER', 'meter.correction.execute'), ('ADMINISTRATOR', 'meter.correction.execute'), ('SUPERVISOR', 'meter.correction.execute'),
+  ('OWNER', 'price.change.boundary'), ('ADMINISTRATOR', 'price.change.boundary'), ('SUPERVISOR', 'price.change.boundary')
+ON CONFLICT DO NOTHING;
 
 CREATE OR REPLACE FUNCTION app.enforce_forecourt_initial_state()
 RETURNS trigger LANGUAGE plpgsql AS $$

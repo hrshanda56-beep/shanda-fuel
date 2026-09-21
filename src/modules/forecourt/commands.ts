@@ -18,6 +18,8 @@ import {
   priceBoundaryActivatedEvent,
   reconciliationApprovedEvent,
   reconciliationPostedEvent,
+  meterBoundaryCreatedEvent,
+  meterReplacedEvent,
 } from './contracts';
 import {
   approvePriceChange,
@@ -39,6 +41,7 @@ import {
   lockBusinessDay,
   postReconciliation,
   sealMeterSegment,
+  replaceMeterInstallation,
   type MeterBoundary,
   type MeterSegment,
   type ReconciliationPaymentCategory,
@@ -498,7 +501,12 @@ export const markNotOperatedFromRequest = (request: Request, input: unknown) =>
 const boundaryCommandPayload = z
   .object({
     commandType: z
-      .enum(['ConfirmBoundary', 'ReportMeterUnavailable', 'ResolveMeterException'])
+      .enum([
+        'ConfirmBoundary',
+        'ConfirmPriceChangeBoundary',
+        'ReportMeterUnavailable',
+        'ResolveMeterException',
+      ])
       .optional(),
     tenantId: z.string().uuid(),
     stationId: z.string().uuid(),
@@ -529,6 +537,23 @@ const boundaryCommandPayload = z
 export async function confirmBoundaryFromRequest(request: Request, input: unknown) {
   const payload = boundaryCommandPayload.parse(input);
   const commandType = payload.commandType ?? 'ConfirmBoundary';
+  const highImpactReasons = new Set(['PRICE_CHANGE', 'METER_RESET', 'REPLACEMENT', 'CORRECTION']);
+  if (commandType === 'ConfirmBoundary' && highImpactReasons.has(payload.reason)) {
+    throw new AppError('FORBIDDEN', 'High-impact meter boundaries require their named command');
+  }
+  if (commandType === 'ConfirmPriceChangeBoundary') {
+    if (payload.reason !== 'PRICE_CHANGE' || !payload.priceChangeId) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'Price-change boundary confirmation requires the PRICE_CHANGE reason and priceChangeId',
+      );
+    }
+  } else if (payload.priceChangeId) {
+    throw new AppError(
+      'FORBIDDEN',
+      'Only the named price-change boundary command may supply a price-change target',
+    );
+  }
   if (commandType === 'ReportMeterUnavailable' && payload.readingStatus !== 'UNAVAILABLE')
     throw new AppError(
       'VALIDATION_FAILED',
@@ -549,7 +574,8 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
     requestHash: genericRequestHash(payload),
     subjectType: 'MeterBoundary',
     subjectId: payload.boundaryId,
-    expectedVersionSubjectId: payload.shiftId,
+    expectedVersionSubjectId:
+      commandType === 'ConfirmPriceChangeBoundary' ? payload.priceChangeId : payload.shiftId,
     expectedVersion: payload.expectedVersion,
     responsibleAttendantId: payload.responsibleAttendantId,
     auditMetadata: {
@@ -582,6 +608,44 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
           and reading_status='AVAILABLE'
         order by effective_at desc, id desc limit 1 for update
       `);
+      if (commandType === 'ConfirmPriceChangeBoundary') {
+        const priceRows = await transaction.execute<{
+          id: string;
+          product_id: string;
+          state: string;
+          version: number;
+        }>(sql`
+          select p.id, p.product_id, p.state, p.version
+          from app.selling_prices p
+          join app.nozzles n
+            on n.tenant_id = p.tenant_id and n.station_id = p.station_id and n.product_id = p.product_id
+          where p.tenant_id = ${context.tenantId}
+            and p.station_id = ${context.stationId}
+            and p.id = ${payload.priceChangeId}
+            and n.id = ${payload.nozzleId}
+            and n.status = 'ACTIVE'
+          for update of p, n
+        `);
+        const price = priceRows[0];
+        if (!price || price.product_id === undefined) {
+          throw new AppError(
+            'FORBIDDEN',
+            'The price change does not belong to this station/nozzle product',
+          );
+        }
+        if (
+          price.state !== 'PENDING_STATION_ACTIVATION' &&
+          price.state !== 'BOUNDARIES_IN_PROGRESS'
+        ) {
+          throw new AppError(
+            'CONFLICT',
+            'Only the current approved price activation cycle can create boundaries',
+          );
+        }
+        if (Number(price.version) !== payload.expectedVersion) {
+          throw new AppError('CONFLICT', 'The price-change version is stale');
+        }
+      }
       const now = await serverNow(transaction);
       const boundary = confirmBoundary({
         id: payload.boundaryId,
@@ -618,6 +682,448 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
           ${boundary.exceptionReason ?? null}, ${boundary.priceChangeId ?? null}, 0)
       `);
       return { result: { boundaryId: boundary.id }, after: boundary };
+    },
+  });
+}
+
+const resetMeterPayload = z
+  .object({
+    commandType: z.literal('ResetMeter').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    boundaryId: z.string().uuid(),
+    nozzleId: z.string().uuid(),
+    meterInstallationId: z.string().uuid(),
+    businessDayId: z.string().uuid(),
+    shiftId: z.string().uuid(),
+    responsibleAttendantId: z.string().uuid(),
+    readingValue: z.string(),
+    reason: z.string().trim().min(1),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export async function resetMeterFromRequest(request: Request, input: unknown) {
+  const payload = resetMeterPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'ResetMeter',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'MeterInstallation',
+    subjectId: payload.meterInstallationId,
+    expectedVersion: payload.expectedVersion,
+    responsibleAttendantId: payload.responsibleAttendantId,
+    reason: payload.reason,
+    auditMetadata: { nozzleId: payload.nozzleId, boundaryId: payload.boundaryId },
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<{
+        installation_id: string;
+        meter_id: string;
+        nozzle_id: string;
+        product_id: string;
+        installation_version: number;
+        day_state: string;
+        shift_state: string;
+      }>(sql`
+        select i.id as installation_id, i.meter_id, i.nozzle_id, n.product_id,
+          i.version as installation_version, d.state as day_state, s.state as shift_state
+        from app.meter_installations i
+        join app.nozzles n on n.tenant_id=i.tenant_id and n.station_id=i.station_id and n.id=i.nozzle_id
+        join app.station_business_days d on d.tenant_id=i.tenant_id and d.station_id=i.station_id and d.id=${payload.businessDayId}
+        join app.shifts s on s.tenant_id=d.tenant_id and s.station_id=d.station_id and s.business_day_id=d.id and s.id=${payload.shiftId}
+        where i.tenant_id=${context.tenantId} and i.station_id=${context.stationId}
+          and i.id=${payload.meterInstallationId} and i.nozzle_id=${payload.nozzleId}
+          and n.status='ACTIVE'
+        for update of i, d, s
+      `);
+      const row = rows[0];
+      if (!row) throw new AppError('NOT_FOUND', 'The meter installation context was not found');
+      if (row.day_state !== 'OPEN' || row.shift_state !== 'OPEN')
+        throw new AppError('CONFLICT', 'Meter reset requires an open business day and shift');
+      const prior = await transaction.execute<BoundaryRow>(sql`
+        select * from app.meter_boundaries
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and nozzle_id=${payload.nozzleId} and meter_installation_id=${payload.meterInstallationId}
+          and reading_status='AVAILABLE'
+        order by effective_at desc, id desc limit 1 for update
+      `);
+      const now = await serverNow(transaction);
+      const boundary = confirmBoundary({
+        id: payload.boundaryId,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        nozzleId: payload.nozzleId,
+        meterInstallationId: payload.meterInstallationId,
+        businessDayId: payload.businessDayId,
+        shiftId: payload.shiftId,
+        reason: 'METER_RESET',
+        reading: { status: 'AVAILABLE', value: payload.readingValue },
+        priorSealedReading: prior[0] ? boundaryFromRow(prior[0]).reading : undefined,
+        effectiveAt: now,
+        confirmedAt: now,
+        actor: context.actor,
+        responsibleAttendantId: payload.responsibleAttendantId,
+        exceptionReason: payload.reason,
+      });
+      await transaction.execute(sql`
+        insert into app.meter_boundaries
+          (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+           reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by,
+           attendant_id, on_behalf_of, exception_reason, version)
+        values (${boundary.id}, ${boundary.tenantId}, ${boundary.stationId}, ${boundary.nozzleId},
+          ${boundary.meterInstallationId}, ${boundary.businessDayId}, ${boundary.shiftId}, ${boundary.reason},
+          'AVAILABLE', ${payload.readingValue}, ${now}::timestamptz, ${now}::timestamptz,
+          ${context.actor.membershipId}, ${context.actor.membershipId}, ${boundary.attendantId},
+          ${boundary.onBehalfOf ?? null}, ${payload.reason}, 0)
+      `);
+      return {
+        result: { boundaryId: boundary.id },
+        after: boundary,
+        event: meterBoundaryCreatedEvent({
+          eventId: randomUUID(),
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          businessDayId: payload.businessDayId,
+          shiftId: payload.shiftId,
+          boundaryId: boundary.id,
+          nozzleId: payload.nozzleId,
+          meterInstallationId: payload.meterInstallationId,
+          reason: 'METER_RESET',
+          readingStatus: 'AVAILABLE',
+          readingValue: payload.readingValue,
+          occurredAt: now,
+        }),
+      };
+    },
+  });
+}
+
+const replaceMeterPayload = z
+  .object({
+    commandType: z.literal('ReplaceMeter').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    oldInstallationId: z.string().uuid(),
+    newMeterId: z.string().uuid(),
+    nozzleId: z.string().uuid(),
+    businessDayId: z.string().uuid(),
+    shiftId: z.string().uuid(),
+    boundaryId: z.string().uuid(),
+    responsibleAttendantId: z.string().uuid(),
+    openingReading: z.string(),
+    reason: z.string().trim().min(1),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export async function replaceMeterFromRequest(request: Request, input: unknown) {
+  const payload = replaceMeterPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'ReplaceMeter',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'MeterInstallation',
+    subjectId: payload.oldInstallationId,
+    expectedVersion: payload.expectedVersion,
+    reason: payload.reason,
+    auditMetadata: {
+      nozzleId: payload.nozzleId,
+      newMeterId: payload.newMeterId,
+      boundaryId: payload.boundaryId,
+    },
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<{
+        old_id: string;
+        old_meter_id: string;
+        old_nozzle_id: string;
+        old_version: number;
+        effective_from: Date | string;
+        product_id: string;
+        day_state: string;
+        shift_state: string;
+        new_meter_status: string | null;
+      }>(sql`
+        select old_i.id as old_id, old_i.meter_id as old_meter_id, old_i.nozzle_id as old_nozzle_id,
+          old_i.version as old_version, old_i.effective_from, n.product_id,
+          d.state as day_state, s.state as shift_state, new_m.status as new_meter_status
+        from app.meter_installations old_i
+        join app.nozzles n on n.tenant_id=old_i.tenant_id and n.station_id=old_i.station_id and n.id=old_i.nozzle_id
+        join app.station_business_days d on d.tenant_id=old_i.tenant_id and d.station_id=old_i.station_id and d.id=${payload.businessDayId}
+        join app.shifts s on s.tenant_id=d.tenant_id and s.station_id=d.station_id and s.business_day_id=d.id and s.id=${payload.shiftId}
+        left join app.meters new_m on new_m.tenant_id=old_i.tenant_id and new_m.id=${payload.newMeterId}
+        where old_i.tenant_id=${context.tenantId} and old_i.station_id=${context.stationId}
+          and old_i.id=${payload.oldInstallationId} and old_i.nozzle_id=${payload.nozzleId}
+          and n.status='ACTIVE'
+        for update of old_i, d, s
+      `);
+      const row = rows[0];
+      if (!row || !row.new_meter_status)
+        throw new AppError('NOT_FOUND', 'The replacement meter context was not found');
+      if (row.old_meter_id === payload.newMeterId)
+        throw new AppError('VALIDATION_FAILED', 'Replacement requires a different meter');
+      if (
+        row.new_meter_status !== 'ACTIVE' ||
+        row.day_state !== 'OPEN' ||
+        row.shift_state !== 'OPEN'
+      )
+        throw new AppError(
+          'CONFLICT',
+          'Replacement requires an active new meter and open operations',
+        );
+      const now = await serverNow(transaction);
+      const oldInstallation = {
+        id: row.old_id,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        nozzleId: payload.nozzleId,
+        meterId: row.old_meter_id,
+        effectiveFrom: new Date(row.effective_from).toISOString(),
+        installedBy: context.actor.membershipId,
+        version: Number(row.old_version),
+      };
+      const ended = replaceMeterInstallation(oldInstallation, now, payload.reason);
+      const newInstallationId = randomUUID();
+      await transaction.execute(sql`
+        update app.meter_installations
+        set effective_to=${ended.effectiveTo}::timestamptz, replacement_reason=${payload.reason}, version=version+1
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and id=${payload.oldInstallationId} and version=${payload.expectedVersion}
+      `);
+      await transaction.execute(sql`
+        insert into app.meter_installations
+          (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by, replacement_reason, version)
+        values (${newInstallationId}, ${context.tenantId}, ${context.stationId}, ${payload.nozzleId},
+          ${payload.newMeterId}, ${now}::timestamptz, ${context.actor.membershipId}, ${payload.reason}, 0)
+      `);
+      const boundary = confirmBoundary({
+        id: payload.boundaryId,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        nozzleId: payload.nozzleId,
+        meterInstallationId: newInstallationId,
+        businessDayId: payload.businessDayId,
+        shiftId: payload.shiftId,
+        reason: 'REPLACEMENT',
+        reading: { status: 'AVAILABLE', value: payload.openingReading },
+        effectiveAt: now,
+        confirmedAt: now,
+        actor: context.actor,
+        responsibleAttendantId: payload.responsibleAttendantId,
+        exceptionReason: payload.reason,
+      });
+      await transaction.execute(sql`
+        insert into app.meter_boundaries
+          (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+           reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by,
+           attendant_id, on_behalf_of, exception_reason, version)
+        values (${boundary.id}, ${context.tenantId}, ${context.stationId}, ${payload.nozzleId}, ${newInstallationId},
+          ${payload.businessDayId}, ${payload.shiftId}, 'REPLACEMENT', 'AVAILABLE', ${payload.openingReading},
+          ${now}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId}, ${context.actor.membershipId},
+          ${boundary.attendantId}, ${boundary.onBehalfOf ?? null}, ${payload.reason}, 0)
+      `);
+      return {
+        result: {
+          oldInstallationId: payload.oldInstallationId,
+          newInstallationId,
+          boundaryId: boundary.id,
+        },
+        after: {
+          oldInstallationId: payload.oldInstallationId,
+          newInstallationId,
+          boundaryId: boundary.id,
+        },
+        event: meterReplacedEvent({
+          eventId: randomUUID(),
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          businessDayId: payload.businessDayId,
+          shiftId: payload.shiftId,
+          oldInstallationId: payload.oldInstallationId,
+          newInstallationId,
+          oldMeterId: row.old_meter_id,
+          newMeterId: payload.newMeterId,
+          nozzleId: payload.nozzleId,
+          boundaryId: boundary.id,
+          occurredAt: now,
+        }),
+      };
+    },
+  });
+}
+
+const correctMeterSegmentPayload = z
+  .object({
+    commandType: z.literal('CorrectMeterSegment').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    sourceSegmentId: z.string().uuid(),
+    correctedSegmentId: z.string().uuid(),
+    responsibleAttendantId: z.string().uuid(),
+    correctedClosingReading: z.string(),
+    reason: z.string().trim().min(1),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export async function correctMeterSegmentFromRequest(request: Request, input: unknown) {
+  const payload = correctMeterSegmentPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'CorrectMeterSegment',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'MeterSegment',
+    subjectId: payload.correctedSegmentId,
+    expectedVersionSubjectId: payload.sourceSegmentId,
+    expectedVersion: payload.expectedVersion,
+    responsibleAttendantId: payload.responsibleAttendantId,
+    reason: payload.reason,
+    auditMetadata: { sourceSegmentId: payload.sourceSegmentId },
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<
+        SegmentDbRow & {
+          business_date: string;
+          opening_reason: MeterBoundary['reason'];
+          closing_reason: MeterBoundary['reason'];
+          opening_boundary_id: string;
+          closing_boundary_id: string;
+        }
+      >(sql`
+        select m.*, d.business_date, ob.reason as opening_reason, cb.reason as closing_reason
+        from app.meter_segments m
+        join app.station_business_days d on d.tenant_id=m.tenant_id and d.station_id=m.station_id and d.id=m.business_day_id
+        join app.meter_boundaries ob on ob.tenant_id=m.tenant_id and ob.station_id=m.station_id and ob.id=m.opening_boundary_id
+        join app.meter_boundaries cb on cb.tenant_id=m.tenant_id and cb.station_id=m.station_id and cb.id=m.closing_boundary_id
+        where m.tenant_id=${context.tenantId} and m.station_id=${context.stationId}
+          and m.id=${payload.sourceSegmentId} and m.state='SEALED'
+          and not exists (
+            select 1 from app.meter_segments successor
+            where successor.tenant_id=m.tenant_id and successor.station_id=m.station_id
+              and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
+          )
+        for update of m
+      `);
+      const source = rows[0];
+      if (!source)
+        throw new AppError('CONFLICT', 'Only an unsuperseded sealed segment can be corrected');
+      if (source.correction_of_segment_id || source.reversal_of_segment_id)
+        throw new AppError('CONFLICT', 'A correction must target the original sealed segment');
+      const now = await serverNow(transaction);
+      const openingBoundaryId = randomUUID();
+      const closingBoundaryId = randomUUID();
+      const openingBoundary = confirmBoundary({
+        id: openingBoundaryId,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        nozzleId: source.nozzle_id,
+        meterInstallationId: source.meter_installation_id,
+        businessDayId: source.business_day_id,
+        shiftId: source.shift_id,
+        reason: 'CORRECTION',
+        reading: { status: 'AVAILABLE', value: source.opening_reading },
+        effectiveAt: now,
+        confirmedAt: now,
+        actor: context.actor,
+        responsibleAttendantId: payload.responsibleAttendantId,
+        exceptionReason: payload.reason,
+      });
+      const closingBoundary = confirmBoundary({
+        id: closingBoundaryId,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        nozzleId: source.nozzle_id,
+        meterInstallationId: source.meter_installation_id,
+        businessDayId: source.business_day_id,
+        shiftId: source.shift_id,
+        reason: 'CORRECTION',
+        reading: { status: 'AVAILABLE', value: payload.correctedClosingReading },
+        effectiveAt: now,
+        confirmedAt: now,
+        actor: context.actor,
+        responsibleAttendantId: payload.responsibleAttendantId,
+        exceptionReason: payload.reason,
+      });
+      await transaction.execute(sql`
+        insert into app.meter_boundaries
+          (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+           reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by,
+           attendant_id, on_behalf_of, exception_reason, version)
+        values (${openingBoundary.id}, ${context.tenantId}, ${context.stationId}, ${source.nozzle_id},
+          ${source.meter_installation_id}, ${source.business_day_id}, ${source.shift_id}, 'CORRECTION', 'AVAILABLE',
+          ${source.opening_reading}, ${now}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
+          ${context.actor.membershipId}, ${openingBoundary.attendantId}, ${openingBoundary.onBehalfOf ?? null}, ${payload.reason}, 0),
+          (${closingBoundary.id}, ${context.tenantId}, ${context.stationId}, ${source.nozzle_id},
+          ${source.meter_installation_id}, ${source.business_day_id}, ${source.shift_id}, 'CORRECTION', 'AVAILABLE',
+          ${payload.correctedClosingReading}, ${now}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
+          ${context.actor.membershipId}, ${closingBoundary.attendantId}, ${closingBoundary.onBehalfOf ?? null}, ${payload.reason}, 0)
+      `);
+      const segment = sealMeterSegment({
+        id: payload.correctedSegmentId,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        nozzleId: source.nozzle_id,
+        meterInstallationId: source.meter_installation_id,
+        meterId: source.meter_id,
+        businessDayId: source.business_day_id,
+        shiftId: source.shift_id,
+        openingBoundary: {
+          ...openingBoundary,
+          reading: { status: 'AVAILABLE', value: source.opening_reading },
+        },
+        closingBoundary,
+        productId: source.product_id,
+        attendantId: payload.responsibleAttendantId,
+        actor: context.actor,
+        unitPrice: source.unit_price,
+        sellingPriceId: source.selling_price_id ?? undefined,
+        currency: source.currency,
+        startAt: timestamp(source.segment_start_at)!,
+        endAt: timestamp(source.segment_end_at)!,
+        sealedAt: now,
+        correctionOfSegmentId: source.id,
+      });
+      await transaction.execute(sql`
+        insert into app.meter_segments
+          (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+           opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, on_behalf_of,
+           correction_of_segment_id, opening_reading, closing_reading, litres, unit_price, selling_price_id,
+           expected_sale_value, currency, boundary_reason, segment_start_at, segment_end_at, sealed_at, state, version, controlled_exception)
+        values (${segment.id}, ${segment.tenantId}, ${segment.stationId}, ${segment.nozzleId}, ${segment.meterInstallationId},
+          ${segment.businessDayId}, ${segment.shiftId}, ${segment.openingBoundaryId}, ${segment.closingBoundaryId}, ${segment.productId},
+          ${segment.attendantId}, ${segment.enteredBy}, ${segment.onBehalfOf ?? null}, ${segment.correctionOfSegmentId},
+          ${segment.openingReading}, ${segment.closingReading}, ${segment.litres.toString()}, ${segment.unitPrice.toString()},
+          ${segment.sellingPriceId ?? null}, ${segment.expectedSaleValue.amount.toString()}, ${segment.currency},
+          ${segment.boundaryReason}, ${segment.startAt}::timestamptz, ${segment.endAt}::timestamptz, ${segment.sealedAt}::timestamptz,
+          'OPEN', 0, ${segment.controlledException})
+      `);
+      const sealed = await transaction.execute(sql`
+        select app.seal_meter_segment(${context.tenantId}, ${context.stationId}, ${segment.id}, 0) as id
+      `);
+      if (sealed.length !== 1 || !sealed[0]?.id)
+        throw new AppError('CONFLICT', 'The correction could not be sealed');
+      return {
+        result: { segmentId: segment.id, correctionOfSegmentId: source.id },
+        after: { ...segment, version: 1 },
+        event: meterSegmentSealedEvent(randomUUID(), segment, {
+          legalEntityId: context.legalEntityId,
+          businessDate: source.business_date,
+          occurredAt: now,
+        }),
+      };
     },
   });
 }
@@ -864,7 +1370,6 @@ const declarationPayload = z.object({
     'OTHER',
   ]),
   amount: z.string(),
-  declaredBy: z.string().uuid(),
   reason: z.string().optional(),
 });
 
@@ -876,6 +1381,7 @@ const submitReconciliationPayload = z
     revisionId: z.string().uuid(),
     expectedVersion: z.number().int().nonnegative(),
     declarations: z.array(declarationPayload),
+    responsibleAttendantId: z.string().uuid().optional(),
     explanation: z.string().optional(),
   })
   .strict();
@@ -963,6 +1469,7 @@ export async function submitReconciliationFromRequest(request: Request, input: u
     subjectType: 'ReconciliationRevision',
     subjectId: payload.revisionId,
     expectedVersion: payload.expectedVersion,
+    responsibleAttendantId: payload.responsibleAttendantId,
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
       const row = await loadRevision(transaction, context, payload.revisionId);
@@ -991,7 +1498,10 @@ export async function submitReconciliationFromRequest(request: Request, input: u
           id: declaration.id ?? randomUUID(),
           category: declaration.category,
           amount: money(declaration.amount, 'USD'),
-          declaredBy: declaration.declaredBy,
+          declaredBy: context.actor.membershipId,
+          ...(payload.responsibleAttendantId
+            ? { declaredFor: payload.responsibleAttendantId }
+            : {}),
           ...(declaration.reason ? { reason: declaration.reason } : {}),
         })),
         policy: { warningThreshold: '1.00', blockingThreshold: '5.00' },
@@ -1088,10 +1598,30 @@ export async function createCorrectedReconciliationRevisionFromRequest(
       const source = await loadRevision(transaction, context, payload.sourceRevisionId);
       if (source.state !== 'RETURNED')
         throw new AppError('CONFLICT', 'Only a returned revision can be corrected');
-      const next = await transaction.execute<{ revision: number }>(sql`
-        select coalesce(max(revision),0)+1 as revision from app.reconciliation_revisions
-        where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${source.reconciliation_id}
+      const parent = await transaction.execute<{
+        id: string;
+        current_revision_id: string | null;
+      }>(sql`
+        select c.id,
+          (select r.id from app.reconciliation_revisions r
+           where r.tenant_id = c.tenant_id and r.station_id = c.station_id
+             and r.reconciliation_id = c.id
+           order by r.revision desc limit 1) as current_revision_id
+        from app.reconciliations c
+        where c.tenant_id = ${context.tenantId}
+          and c.station_id = ${context.stationId}
+          and c.id = ${source.reconciliation_id}
         for update
+      `);
+      if (!parent[0] || parent[0].current_revision_id !== source.id) {
+        throw new AppError('CONFLICT', 'The returned revision is no longer the current revision');
+      }
+      const next = await transaction.execute<{ revision: number }>(sql`
+        select coalesce(max(revision), 0) + 1 as revision
+        from app.reconciliation_revisions
+        where tenant_id = ${context.tenantId}
+          and station_id = ${context.stationId}
+          and reconciliation_id = ${source.reconciliation_id}
       `);
       await transaction.execute(sql`
         insert into app.reconciliation_revisions
@@ -1182,6 +1712,7 @@ function declarations(value: unknown, currency: 'USD') {
       category: category as ReconciliationPaymentCategory,
       amount: money(amount, currency),
       declaredBy,
+      ...(typeof row.declaredFor === 'string' ? { declaredFor: row.declaredFor } : {}),
       ...(typeof row.reason === 'string' ? { reason: row.reason } : {}),
     };
   });

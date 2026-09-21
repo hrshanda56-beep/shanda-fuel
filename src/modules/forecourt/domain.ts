@@ -584,6 +584,7 @@ export type PaymentDeclaration = {
   category: ReconciliationPaymentCategory;
   amount: Money;
   declaredBy: string;
+  declaredFor?: string;
   reason?: string;
 };
 export type ReconciliationState =

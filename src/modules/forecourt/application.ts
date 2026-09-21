@@ -140,6 +140,27 @@ export const FORECOURT_COMMAND_POLICY = {
     requiresExpectedVersion: true,
     requiresAttendantEligibility: true,
   },
+  ConfirmPriceChangeBoundary: {
+    permissionCode: 'price.change.boundary',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
+  ResetMeter: {
+    permissionCode: 'meter.reset',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
+  CorrectMeterSegment: {
+    permissionCode: 'meter.correction.execute',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
   ReportMeterUnavailable: {
     permissionCode: 'exception.manage',
     requiredScopeType: 'STATION',
@@ -171,8 +192,9 @@ export const FORECOURT_COMMAND_POLICY = {
   ReplaceMeter: {
     permissionCode: 'meter.replace',
     requiredScopeType: 'STATION',
-    assuranceRequirement: 'STANDARD',
+    assuranceRequirement: 'STEP_UP',
     requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
   },
   RequestPriceChange: {
     permissionCode: 'price.change.request',
@@ -343,6 +365,9 @@ export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVe
   CompleteShift: 'Shift',
   MarkNotOperated: 'Shift',
   ConfirmBoundary: 'Shift',
+  ConfirmPriceChangeBoundary: 'SellingPrice',
+  ResetMeter: 'MeterInstallation',
+  CorrectMeterSegment: 'MeterSegment',
   ReportMeterUnavailable: 'Shift',
   ResolveMeterException: 'Shift',
   HandoverAttendant: 'Shift',

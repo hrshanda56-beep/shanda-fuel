@@ -102,12 +102,61 @@ export type PriceBoundaryActivatedEvent = {
   currency: CurrencyCode;
 };
 
+export type MeterBoundaryCreatedEvent = {
+  eventType: 'forecourt.meter_boundary_created.v1';
+  eventVersion: 1;
+  eventId: string;
+  tenantId: string;
+  stationId: string;
+  businessDayId: string;
+  shiftId: string;
+  boundaryId: string;
+  nozzleId: string;
+  meterInstallationId: string;
+  reason: string;
+  readingStatus: string;
+  readingValue?: string;
+  priceChangeId?: string;
+  occurredAt: string;
+};
+
+export type MeterReplacedEvent = {
+  eventType: 'forecourt.meter_replaced.v1';
+  eventVersion: 1;
+  eventId: string;
+  tenantId: string;
+  stationId: string;
+  businessDayId: string;
+  shiftId: string;
+  oldInstallationId: string;
+  newInstallationId: string;
+  oldMeterId: string;
+  newMeterId: string;
+  nozzleId: string;
+  boundaryId: string;
+  occurredAt: string;
+};
+
 export type ForecourtEvent =
   | MeterSegmentSealedEvent
   | ReconciliationApprovedEvent
   | ReconciliationPostedEvent
   | BusinessDayLockedEvent
-  | PriceBoundaryActivatedEvent;
+  | PriceBoundaryActivatedEvent
+  | MeterBoundaryCreatedEvent
+  | MeterReplacedEvent;
+
+export function meterBoundaryCreatedEvent(
+  input: Omit<MeterBoundaryCreatedEvent, 'eventType' | 'eventVersion'>,
+): MeterBoundaryCreatedEvent {
+  return { eventType: 'forecourt.meter_boundary_created.v1', eventVersion: 1, ...input };
+}
+
+export function meterReplacedEvent(
+  input: Omit<MeterReplacedEvent, 'eventType' | 'eventVersion'>,
+): MeterReplacedEvent {
+  return { eventType: 'forecourt.meter_replaced.v1', eventVersion: 1, ...input };
+}
 
 export function meterSegmentSealedEvent(
   eventId: string,
