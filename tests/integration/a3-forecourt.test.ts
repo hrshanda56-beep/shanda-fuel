@@ -921,6 +921,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
       values
         ('${ids.closureShift}', '${ids.tenantA}', '${ids.stationA}', '${ids.closureDay}', 'PLANNED', '2026-09-22T06:00:00Z', '2026-09-22T14:00:00Z', '2026-09-22');
+      update app.shifts set state = 'NOT_OPERATED', not_operated_reason = 'No operation scheduled' where id = '${ids.closureShift}';
       insert into app.meter_boundaries
         (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason,
          reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
