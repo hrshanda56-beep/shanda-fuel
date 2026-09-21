@@ -522,7 +522,7 @@ async function loadRevision(
            r.approved_by, r.approved_at, r.posted_by, r.posted_at, r.locked_by, r.locked_at
     from app.reconciliation_revisions r
     join app.reconciliations c on c.tenant_id = r.tenant_id and c.station_id = r.station_id and c.id = r.reconciliation_id
-    join app.station_business_days d on d.tenant_id = r.tenant_id and d.station_id = r.station_id and d.id = r.business_day_id
+    join app.station_business_days d on d.tenant_id = c.tenant_id and d.station_id = c.station_id and d.id = c.business_day_id
     where r.tenant_id = ${context.tenantId} and r.station_id = ${context.stationId} and r.id = ${revisionId}
     for update of r, c, d
   `);
