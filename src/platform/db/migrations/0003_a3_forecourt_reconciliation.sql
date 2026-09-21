@@ -728,7 +728,7 @@ DECLARE allowed boolean := false;
 BEGIN
   IF NEW.state = OLD.state THEN RETURN NEW; END IF;
   IF TG_TABLE_NAME = 'shifts' AND NEW.state = 'NOT_OPERATED'
-     AND (NEW.not_operated_reason IS NULL OR btrim(NEW.not_operated_reason) = '') THEN
+     AND (to_jsonb(NEW)->>'not_operated_reason' IS NULL OR btrim(to_jsonb(NEW)->>'not_operated_reason') = '') THEN
     RAISE EXCEPTION 'NOT_OPERATED shifts require a reason';
   END IF;
   IF TG_TABLE_NAME = 'reconciliation_revisions' THEN

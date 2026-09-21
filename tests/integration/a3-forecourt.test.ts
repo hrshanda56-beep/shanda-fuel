@@ -361,7 +361,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       await expect(
         client.unsafe(`
           insert into app.shifts (tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-          values ('${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'OPEN', '2026-09-21T06:00:00Z', '2026-09-21T14:00:00Z', '2026-09-21')
+          values ('${ids.tenantA}', '${ids.stationA}', '${ids.dayA}', 'OPEN', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20')
         `),
       ).rejects.toThrow(/PLANNED/);
       await expect(
