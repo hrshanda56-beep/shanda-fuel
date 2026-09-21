@@ -2280,6 +2280,12 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       where tenant_id=${ids.tenantA} and station_id=${ids.stationA} and id=${ids.installationB}
     `;
     const installationBVersion = installationB[0]!.version;
+    const historicalInstallation = await client<{ version: number }[]>`
+      select version from app.meter_installations
+      where tenant_id=${ids.tenantA} and station_id=${ids.stationA} and id=${ids.installationA}
+        and effective_to is not null
+    `;
+    const historicalInstallationVersion = historicalInstallation[0]!.version;
 
     const resetInput = {
       commandType: 'ResetMeter',
@@ -2362,7 +2368,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       responsibleAttendantId: ids.membershipA,
       openingReading: '1012.125',
       reason: 'historical installation evidence',
-      expectedVersion: 1,
+      expectedVersion: historicalInstallationVersion,
     };
     await expectDenied({
       token: attendantToken,
