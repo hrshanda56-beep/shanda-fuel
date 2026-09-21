@@ -20,6 +20,7 @@ import {
   reconciliationPostedEvent,
   meterBoundaryCreatedEvent,
   meterReplacedEvent,
+  reconciliationRevisionCorrectedEvent,
 } from './contracts';
 import {
   approvePriceChange,
@@ -614,13 +615,32 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
         order by effective_at desc, id desc limit 1 for update
       `);
       if (commandType === 'ConfirmPriceChangeBoundary') {
+        const targetPrice = await transaction.execute<{
+          id: string;
+          product_id: string;
+          effective_from: Date | string;
+        }>(sql`
+          select id, product_id, effective_from
+          from app.selling_prices
+          where tenant_id=${context.tenantId}
+            and station_id=${context.stationId}
+            and id=${payload.priceChangeId}
+          for update
+        `);
+        if (!targetPrice[0]) throw new AppError('NOT_FOUND', 'The price change was not found');
+        await transaction.execute(sql`
+          select id from app.products
+          where tenant_id=${context.tenantId} and id=${targetPrice[0].product_id}
+          for update
+        `);
         const priceRows = await transaction.execute<{
           id: string;
           product_id: string;
           state: string;
           version: number;
+          effective_from: Date | string;
         }>(sql`
-          select p.id, p.product_id, p.state, p.version
+          select p.id, p.product_id, p.state, p.version, p.effective_from
           from app.selling_prices p
           join app.nozzles n
             on n.tenant_id = p.tenant_id and n.station_id = p.station_id and n.product_id = p.product_id
@@ -649,6 +669,35 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
         }
         if (Number(price.version) !== payload.expectedVersion) {
           throw new AppError('CONFLICT', 'The price-change version is stale');
+        }
+        const newerCycles = await transaction.execute<{ id: string }>(sql`
+          select id
+          from app.selling_prices
+          where tenant_id=${context.tenantId}
+            and station_id=${context.stationId}
+            and product_id=${price.product_id}
+            and state in ('APPROVED', 'SCHEDULED', 'PENDING_STATION_ACTIVATION', 'BOUNDARIES_IN_PROGRESS', 'ACTIVE')
+            and (effective_from, id) > (${price.effective_from}::timestamptz, ${price.id}::uuid)
+          order by effective_from asc, id asc
+          limit 1
+          for update
+        `);
+        if (newerCycles.length > 0) {
+          throw new AppError(
+            'CONFLICT',
+            'The price change is superseded by a newer activation cycle',
+          );
+        }
+        const existingBoundary = await transaction.execute<{ id: string }>(sql`
+          select id from app.meter_boundaries
+          where tenant_id=${context.tenantId} and station_id=${context.stationId}
+            and nozzle_id=${payload.nozzleId} and price_change_id=${price.id}
+            and reason='PRICE_CHANGE' and reading_status='AVAILABLE'
+          limit 1
+          for update
+        `);
+        if (existingBoundary.length > 0) {
+          throw new AppError('CONFLICT', 'This nozzle already has a boundary for the price cycle');
         }
       }
       const now = await serverNow(transaction);
@@ -686,7 +735,31 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
           ${boundary.confirmedBy}, ${boundary.enteredBy}, ${boundary.attendantId}, ${boundary.onBehalfOf ?? null},
           ${boundary.exceptionReason ?? null}, ${boundary.priceChangeId ?? null}, 0)
       `);
-      return { result: { boundaryId: boundary.id }, after: boundary };
+      return {
+        result: { boundaryId: boundary.id },
+        after: boundary,
+        ...(commandType === 'ConfirmPriceChangeBoundary'
+          ? {
+              event: meterBoundaryCreatedEvent({
+                eventId: randomUUID(),
+                tenantId: context.tenantId,
+                stationId: context.stationId,
+                businessDayId: payload.businessDayId,
+                shiftId: payload.shiftId,
+                boundaryId: boundary.id,
+                nozzleId: payload.nozzleId,
+                meterInstallationId: payload.meterInstallationId,
+                reason: boundary.reason,
+                readingStatus: boundary.reading.status,
+                ...(boundary.reading.status === 'AVAILABLE'
+                  ? { readingValue: boundary.reading.value }
+                  : {}),
+                priceChangeId: boundary.priceChangeId,
+                occurredAt: now,
+              }),
+            }
+          : {}),
+      };
     },
   });
 }
@@ -814,6 +887,7 @@ const replaceMeterPayload = z
     tenantId: z.string().uuid(),
     stationId: z.string().uuid(),
     oldInstallationId: z.string().uuid(),
+    oldMeterId: z.string().uuid(),
     newMeterId: z.string().uuid(),
     nozzleId: z.string().uuid(),
     businessDayId: z.string().uuid(),
@@ -868,6 +942,13 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
         left join app.meters new_m on new_m.tenant_id=old_i.tenant_id and new_m.id=${payload.newMeterId}
         where old_i.tenant_id=${context.tenantId} and old_i.station_id=${context.stationId}
           and old_i.id=${payload.oldInstallationId} and old_i.nozzle_id=${payload.nozzleId}
+          and old_i.meter_id=${payload.oldMeterId} and old_i.effective_to is null
+          and not exists (
+            select 1 from app.meter_installations current_i
+            where current_i.tenant_id=old_i.tenant_id and current_i.station_id=old_i.station_id
+              and current_i.nozzle_id=old_i.nozzle_id and current_i.effective_to is null
+              and current_i.id <> old_i.id
+          )
           and n.status='ACTIVE'
         for update of old_i, d, s
       `);
@@ -1004,11 +1085,25 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
           business_date: string;
           opening_reason: MeterBoundary['reason'];
           closing_reason: MeterBoundary['reason'];
-          opening_boundary_id: string;
-          closing_boundary_id: string;
+          opening_nozzle_id: string;
+          opening_installation_id: string;
+          opening_business_day_id: string;
+          opening_shift_id: string;
+          opening_effective_at: Date | string;
+          closing_nozzle_id: string;
+          closing_installation_id: string;
+          closing_business_day_id: string;
+          closing_shift_id: string;
+          closing_effective_at: Date | string;
         }
       >(sql`
-        select m.*, d.business_date, ob.reason as opening_reason, cb.reason as closing_reason
+        select m.*, d.business_date, ob.reason as opening_reason, cb.reason as closing_reason,
+          ob.nozzle_id as opening_nozzle_id, ob.meter_installation_id as opening_installation_id,
+          ob.business_day_id as opening_business_day_id, ob.shift_id as opening_shift_id,
+          ob.effective_at as opening_effective_at,
+          cb.nozzle_id as closing_nozzle_id, cb.meter_installation_id as closing_installation_id,
+          cb.business_day_id as closing_business_day_id, cb.shift_id as closing_shift_id,
+          cb.effective_at as closing_effective_at
         from app.meter_segments m
         join app.station_business_days d on d.tenant_id=m.tenant_id and d.station_id=m.station_id and d.id=m.business_day_id
         join app.meter_boundaries ob on ob.tenant_id=m.tenant_id and ob.station_id=m.station_id and ob.id=m.opening_boundary_id
@@ -1020,13 +1115,40 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
             where successor.tenant_id=m.tenant_id and successor.station_id=m.station_id
               and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
           )
-        for update of m
+        for update of m, ob, cb
       `);
       const source = rows[0];
       if (!source)
         throw new AppError('CONFLICT', 'Only an unsuperseded sealed segment can be corrected');
       if (source.correction_of_segment_id || source.reversal_of_segment_id)
         throw new AppError('CONFLICT', 'A correction must target the original sealed segment');
+      const openingAt = Date.parse(String(source.opening_effective_at));
+      const closingAt = Date.parse(String(source.closing_effective_at));
+      const segmentStartAt = Date.parse(String(source.segment_start_at));
+      const segmentEndAt = Date.parse(String(source.segment_end_at));
+      if (
+        source.opening_nozzle_id !== source.nozzle_id ||
+        source.closing_nozzle_id !== source.nozzle_id ||
+        source.opening_installation_id !== source.meter_installation_id ||
+        source.closing_installation_id !== source.meter_installation_id ||
+        source.opening_business_day_id !== source.business_day_id ||
+        source.closing_business_day_id !== source.business_day_id ||
+        source.opening_shift_id !== source.shift_id ||
+        source.closing_shift_id !== source.shift_id ||
+        !Number.isFinite(openingAt) ||
+        !Number.isFinite(closingAt) ||
+        !Number.isFinite(segmentStartAt) ||
+        !Number.isFinite(segmentEndAt) ||
+        openingAt > closingAt ||
+        segmentStartAt > segmentEndAt ||
+        openingAt > segmentStartAt ||
+        closingAt < segmentEndAt
+      ) {
+        throw new AppError(
+          'INVARIANT_VIOLATION',
+          'The sealed segment boundary lineage is inconsistent',
+        );
+      }
       const now = await serverNow(transaction);
       const openingBoundaryId = randomUUID();
       const closingBoundaryId = randomUUID();
@@ -1040,7 +1162,7 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
         shiftId: source.shift_id,
         reason: 'CORRECTION',
         reading: { status: 'AVAILABLE', value: source.opening_reading },
-        effectiveAt: now,
+        effectiveAt: new Date(openingAt).toISOString(),
         confirmedAt: now,
         actor: context.actor,
         responsibleAttendantId: payload.responsibleAttendantId,
@@ -1056,7 +1178,7 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
         shiftId: source.shift_id,
         reason: 'CORRECTION',
         reading: { status: 'AVAILABLE', value: payload.correctedClosingReading },
-        effectiveAt: now,
+        effectiveAt: new Date(closingAt).toISOString(),
         confirmedAt: now,
         actor: context.actor,
         responsibleAttendantId: payload.responsibleAttendantId,
@@ -1069,11 +1191,11 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
            attendant_id, on_behalf_of, exception_reason, version)
         values (${openingBoundary.id}, ${context.tenantId}, ${context.stationId}, ${source.nozzle_id},
           ${source.meter_installation_id}, ${source.business_day_id}, ${source.shift_id}, 'CORRECTION', 'AVAILABLE',
-          ${source.opening_reading}, ${now}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
+          ${source.opening_reading}, ${openingBoundary.effectiveAt}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
           ${context.actor.membershipId}, ${openingBoundary.attendantId}, ${openingBoundary.onBehalfOf ?? null}, ${payload.reason}, 0),
           (${closingBoundary.id}, ${context.tenantId}, ${context.stationId}, ${source.nozzle_id},
           ${source.meter_installation_id}, ${source.business_day_id}, ${source.shift_id}, 'CORRECTION', 'AVAILABLE',
-          ${payload.correctedClosingReading}, ${now}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
+          ${payload.correctedClosingReading}, ${closingBoundary.effectiveAt}::timestamptz, ${now}::timestamptz, ${context.actor.membershipId},
           ${context.actor.membershipId}, ${closingBoundary.attendantId}, ${closingBoundary.onBehalfOf ?? null}, ${payload.reason}, 0)
       `);
       const segment = sealMeterSegment({
@@ -1638,9 +1760,24 @@ export async function createCorrectedReconciliationRevisionFromRequest(
           ${payload.reason}, ${JSON.stringify(source.declarations)}::jsonb, ${JSON.stringify(source.source_segment_ids)}::jsonb,
           ${JSON.stringify(source.source_shift_ids)}::jsonb, ${source.id}, ${source.id}, 0)
       `);
+      const now = await serverNow(transaction);
       return {
         result: { revisionId: payload.revisionId, revision: Number(next[0]!.revision) },
         after: { revision: Number(next[0]!.revision), sourceRevisionId: source.id },
+        event: reconciliationRevisionCorrectedEvent({
+          eventId: randomUUID(),
+          tenantId: context.tenantId,
+          legalEntityId: context.legalEntityId,
+          stationId: context.stationId,
+          businessDate: source.business_date,
+          reconciliationId: source.reconciliation_id,
+          revisionId: payload.revisionId,
+          revision: Number(next[0]!.revision),
+          sourceRevisionId: source.id,
+          correctionOfRevisionId: source.id,
+          state: 'READY',
+          occurredAt: now,
+        }),
       };
     },
   });

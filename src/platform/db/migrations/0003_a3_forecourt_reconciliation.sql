@@ -790,3 +790,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS meter_segments_one_correction_per_source_uidx
 CREATE UNIQUE INDEX IF NOT EXISTS meter_segments_one_reversal_per_source_uidx
   ON app.meter_segments (tenant_id, station_id, reversal_of_segment_id)
   WHERE reversal_of_segment_id IS NOT NULL;
+
+-- A price activation cycle can establish only one qualifying boundary per
+-- nozzle.  The cycle identity is the persisted price-change id; timestamps
+-- are deliberately not used for this race-sensitive invariant.
+CREATE UNIQUE INDEX IF NOT EXISTS meter_boundaries_one_price_cycle_per_nozzle_uidx
+  ON app.meter_boundaries (tenant_id, station_id, nozzle_id, price_change_id)
+  WHERE reason = 'PRICE_CHANGE'
+    AND reading_status = 'AVAILABLE'
+    AND price_change_id IS NOT NULL;

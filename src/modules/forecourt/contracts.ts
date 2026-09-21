@@ -137,6 +137,23 @@ export type MeterReplacedEvent = {
   occurredAt: string;
 };
 
+export type ReconciliationRevisionCorrectedEvent = {
+  eventType: 'reconciliation.revision_corrected.v1';
+  eventVersion: 1;
+  eventId: string;
+  tenantId: string;
+  legalEntityId: string;
+  stationId: string;
+  businessDate: string;
+  reconciliationId: string;
+  revisionId: string;
+  revision: number;
+  sourceRevisionId: string;
+  correctionOfRevisionId: string;
+  state: 'READY';
+  occurredAt: string;
+};
+
 export type ForecourtEvent =
   | MeterSegmentSealedEvent
   | ReconciliationApprovedEvent
@@ -144,7 +161,8 @@ export type ForecourtEvent =
   | BusinessDayLockedEvent
   | PriceBoundaryActivatedEvent
   | MeterBoundaryCreatedEvent
-  | MeterReplacedEvent;
+  | MeterReplacedEvent
+  | ReconciliationRevisionCorrectedEvent;
 
 export function meterBoundaryCreatedEvent(
   input: Omit<MeterBoundaryCreatedEvent, 'eventType' | 'eventVersion'>,
@@ -156,6 +174,12 @@ export function meterReplacedEvent(
   input: Omit<MeterReplacedEvent, 'eventType' | 'eventVersion'>,
 ): MeterReplacedEvent {
   return { eventType: 'forecourt.meter_replaced.v1', eventVersion: 1, ...input };
+}
+
+export function reconciliationRevisionCorrectedEvent(
+  input: Omit<ReconciliationRevisionCorrectedEvent, 'eventType' | 'eventVersion'>,
+): ReconciliationRevisionCorrectedEvent {
+  return { eventType: 'reconciliation.revision_corrected.v1', eventVersion: 1, ...input };
 }
 
 export function meterSegmentSealedEvent(
