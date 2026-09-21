@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
@@ -1961,5 +1962,246 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       update app.meter_installations set version = ${expectedVersion}
       where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA} and id = ${ids.installationB}
     `;
+  });
+
+  it('executes remediation commands through production PostgreSQL handlers', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const id = () => randomUUID();
+    const day = id();
+    const shift = id();
+    const resetBoundary = id();
+    const replacementMeterA = id();
+    const replacementMeterB = id();
+    const replacementBoundaryA = id();
+    const replacementBoundaryB = id();
+    const price = id();
+    const priceBoundaryA = id();
+    const priceBoundaryB = id();
+    const correctionDay = id();
+    const correctionShift = id();
+    const correctionOpening = id();
+    const correctionClosing = id();
+    const correctionSegment = id();
+    const correctedSegment = id();
+    const revisionDay = id();
+    const reconciliation = id();
+    const returnedRevision = id();
+    const correctedRevisionA = id();
+    const correctedRevisionB = id();
+
+    const postCommand = (input: Record<string, unknown>, key: string) =>
+      forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${signedToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+
+    const installation = await client<{ version: number; meter_id: string }[]>`
+      select version, meter_id from app.meter_installations
+      where id = ${ids.installationA} and effective_to is null
+    `;
+    expect(installation).toHaveLength(1);
+    const installationVersion = installation[0]!.version;
+
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${day}', '${ids.tenantA}', '${ids.stationA}', '2026-10-01', 'NOT_STARTED');
+      update app.station_business_days set state = 'OPEN' where id = '${day}';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values ('${shift}', '${ids.tenantA}', '${ids.stationA}', '${day}', 'PLANNED', '2026-10-01T06:00:00Z', '2026-10-01T14:00:00Z', '2026-10-01');
+      update app.shifts set state = 'OPEN' where id = '${shift}';
+      insert into app.meters (id, tenant_id, serial_number) values
+        ('${replacementMeterA}', '${ids.tenantA}', 'A3-REPLACEMENT-${replacementMeterA}'),
+        ('${replacementMeterB}', '${ids.tenantA}', 'A3-REPLACEMENT-${replacementMeterB}');
+    `);
+
+    const reset = await postCommand(
+      {
+        commandType: 'ResetMeter',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        boundaryId: resetBoundary,
+        nozzleId: ids.nozzleA,
+        meterInstallationId: ids.installationA,
+        businessDayId: day,
+        shiftId: shift,
+        responsibleAttendantId: ids.membershipA,
+        readingValue: '1200.000',
+        reason: 'controlled reset',
+        expectedVersion: installationVersion,
+      },
+      'a3-remediation-reset-1',
+    );
+    expect(reset.status).toBe(200);
+
+    const replacementInput = (newMeterId: string, boundaryId: string) => ({
+      commandType: 'ReplaceMeter',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      oldInstallationId: ids.installationA,
+      oldMeterId: ids.meterA,
+      newMeterId,
+      nozzleId: ids.nozzleA,
+      businessDayId: day,
+      shiftId: shift,
+      boundaryId,
+      responsibleAttendantId: ids.membershipA,
+      openingReading: '0.000',
+      reason: 'meter failure',
+      expectedVersion: installationVersion,
+    });
+    const [replacementA, replacementB] = await Promise.all([
+      postCommand(
+        replacementInput(replacementMeterA, replacementBoundaryA),
+        'a3-remediation-replace-a',
+      ),
+      postCommand(
+        replacementInput(replacementMeterB, replacementBoundaryB),
+        'a3-remediation-replace-b',
+      ),
+    ]);
+    expect([replacementA.status, replacementB.status].sort()).toEqual([200, 409]);
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.meter_installations
+      where tenant_id=${ids.tenantA} and station_id=${ids.stationA}
+        and nozzle_id=${ids.nozzleA} and id <> ${ids.installationA} and effective_to is null
+    `).resolves.toEqual([{ count: 1 }]);
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.forecourt_outbox
+      where event_type='forecourt.meter_replaced.v1'
+        and payload->>'oldInstallationId'=${ids.installationA}
+    `).resolves.toEqual([{ count: 1 }]);
+
+    const currentInstallation = await client<{ id: string; meter_id: string }[]>`
+      select id, meter_id from app.meter_installations
+      where tenant_id=${ids.tenantA} and station_id=${ids.stationA}
+        and nozzle_id=${ids.nozzleA} and effective_to is null
+    `;
+    expect(currentInstallation).toHaveLength(1);
+
+    await client.unsafe(`
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+      values ('${price}', '${ids.tenantA}', '${ids.stationA}', '${ids.productA}', '2026-10-01T00:00:00Z', 2.000000, 'DRAFT', '${ids.membershipA}');
+      update app.selling_prices set state='PENDING_APPROVAL' where id='${price}';
+      update app.selling_prices set state='APPROVED' where id='${price}';
+      update app.selling_prices set state='PENDING_STATION_ACTIVATION' where id='${price}';
+    `);
+    const priceInput = (boundaryId: string) => ({
+      commandType: 'ConfirmPriceChangeBoundary',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      boundaryId,
+      nozzleId: ids.nozzleA,
+      meterInstallationId: currentInstallation[0]!.id,
+      businessDayId: day,
+      shiftId: shift,
+      responsibleAttendantId: ids.membershipA,
+      reason: 'PRICE_CHANGE',
+      readingStatus: 'AVAILABLE',
+      readingValue: '0.000',
+      priceChangeId: price,
+      expectedVersion: 0,
+    });
+    const [priceA, priceB] = await Promise.all([
+      postCommand(priceInput(priceBoundaryA), 'a3-remediation-price-a'),
+      postCommand(priceInput(priceBoundaryB), 'a3-remediation-price-b'),
+    ]);
+    expect([priceA.status, priceB.status].sort()).toEqual([200, 409]);
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.meter_boundaries
+      where price_change_id=${price} and nozzle_id=${ids.nozzleA} and reason='PRICE_CHANGE'
+    `).resolves.toEqual([{ count: 1 }]);
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.forecourt_outbox
+      where event_type='forecourt.meter_boundary_created.v1' and payload->>'priceChangeId'=${price}
+    `).resolves.toEqual([{ count: 1 }]);
+
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${correctionDay}', '${ids.tenantA}', '${ids.stationA}', '2026-10-02', 'NOT_STARTED');
+      update app.station_business_days set state='OPEN' where id='${correctionDay}';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values ('${correctionShift}', '${ids.tenantA}', '${ids.stationA}', '${correctionDay}', 'PLANNED', '2026-10-02T06:00:00Z', '2026-10-02T14:00:00Z', '2026-10-02');
+      update app.shifts set state='OPEN' where id='${correctionShift}';
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${correctionOpening}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${correctionDay}', '${correctionShift}', 'SHIFT_OPEN', 'AVAILABLE', 2000, '2026-10-02T06:00:00Z', '2026-10-02T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+        ('${correctionClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${correctionDay}', '${correctionShift}', 'SHIFT_CLOSE', 'AVAILABLE', 2010, '2026-10-02T14:00:00Z', '2026-10-02T14:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
+      insert into app.meter_segments
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, boundary_reason, segment_start_at, segment_end_at, sealed_at, state)
+      values ('${correctionSegment}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleB}', '${ids.installationB}', '${correctionDay}', '${correctionShift}', '${correctionOpening}', '${correctionClosing}', '${ids.productB}', '${ids.membershipA}', '${ids.membershipA}', 2000, 2010, 10, 1.5, 15, 'SHIFT_CLOSE', '2026-10-02T06:00:00Z', '2026-10-02T14:00:00Z', '2026-10-02T14:00:01Z', 'OPEN');
+      update app.meter_segments set state='SEALED', version=1 where id='${correctionSegment}';
+    `);
+    const correction = await postCommand(
+      {
+        commandType: 'CorrectMeterSegment',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        sourceSegmentId: correctionSegment,
+        correctedSegmentId: correctedSegment,
+        responsibleAttendantId: ids.membershipA,
+        correctedClosingReading: '2009.000',
+        reason: 'corrected reading',
+        expectedVersion: 1,
+      },
+      'a3-remediation-correction-1',
+    );
+    expect(correction.status).toBe(200);
+    await expect(client<{ state: string; correction_of_segment_id: string | null }[]>`
+      select state, correction_of_segment_id from app.meter_segments
+      where id in (${correctionSegment}, ${correctedSegment}) order by id
+    `).resolves.toHaveLength(2);
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.forecourt_outbox
+      where event_type='forecourt.meter_segment_sealed.v1' and payload->>'correctionOfSegmentId'=${correctionSegment}
+    `).resolves.toEqual([{ count: 1 }]);
+
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${revisionDay}', '${ids.tenantA}', '${ids.stationA}', '2026-10-03', 'NOT_STARTED');
+      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
+        values ('${reconciliation}', '${ids.tenantA}', '${ids.stationA}', '${revisionDay}', 'DRAFT');
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations, source_segment_ids, source_shift_ids)
+      values ('${returnedRevision}', '${ids.tenantA}', '${ids.stationA}', '${reconciliation}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb);
+      update app.reconciliation_revisions set state='SUBMITTED' where id='${returnedRevision}';
+      update app.reconciliation_revisions set state='PENDING_APPROVAL' where id='${returnedRevision}';
+      update app.reconciliation_revisions set state='RETURNED', variance_explanation='needs correction' where id='${returnedRevision}';
+    `);
+    const correctedRevisionInput = (revisionId: string) => ({
+      commandType: 'CreateCorrectedReconciliationRevision',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      sourceRevisionId: returnedRevision,
+      revisionId,
+      expectedVersion: 0,
+      reason: 'corrected declaration',
+    });
+    const [revisionA, revisionB] = await Promise.all([
+      postCommand(correctedRevisionInput(correctedRevisionA), 'a3-remediation-revision-a'),
+      postCommand(correctedRevisionInput(correctedRevisionB), 'a3-remediation-revision-b'),
+    ]);
+    expect([revisionA.status, revisionB.status].sort()).toEqual([200, 409]);
+    await expect(client<{ revision: number }[]>`
+      select revision from app.reconciliation_revisions
+      where reconciliation_id=${reconciliation} order by revision
+    `).resolves.toEqual([{ revision: 1 }, { revision: 2 }]);
+    await expect(client<{ event_type: string; event_version: number }[]>`
+      select event_type, event_version from app.forecourt_outbox
+      where aggregate_id=${reconciliation} and event_type='reconciliation.revision_corrected.v1'
+    `).resolves.toEqual([{ event_type: 'reconciliation.revision_corrected.v1', event_version: 1 }]);
   });
 });
