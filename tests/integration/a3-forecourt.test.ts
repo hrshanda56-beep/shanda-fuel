@@ -151,11 +151,6 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.membershipA}', '${ids.tenantA}', '${ids.actorA}', 'ACTIVE'),
         ('${ids.membershipB}', '${ids.tenantB}', '${ids.actorB}', 'ACTIVE') on conflict (id) do nothing;
-      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
-        values
-          ('${ids.tenantA}', '${ids.membershipA}', 'SUPERVISOR', 'STATION', '${ids.legalA}', '${ids.stationA}'),
-          ('${ids.tenantA}', '${ids.membershipA}', 'ATTENDANT', 'STATION', '${ids.legalA}', '${ids.stationA}')
-        on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
         ('${ids.legalA}', '${ids.tenantA}', 'A3 Legal A'),
         ('${ids.legalA2}', '${ids.tenantA}', 'A3 Legal A2'),
@@ -164,6 +159,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         ('${ids.stationA}', '${ids.tenantA}', '${ids.legalA}', 'A3A', 'A3 Station A', 'ACTIVE'),
         ('${ids.stationA2}', '${ids.tenantA}', '${ids.legalA2}', 'A3A2', 'A3 Station A2', 'ACTIVE'),
         ('${ids.stationB}', '${ids.tenantB}', '${ids.legalB}', 'A3B', 'A3 Station B', 'ACTIVE') on conflict (id) do nothing;
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+        values
+          ('${ids.tenantA}', '${ids.membershipA}', 'SUPERVISOR', 'STATION', '${ids.legalA}', '${ids.stationA}'),
+          ('${ids.tenantA}', '${ids.membershipA}', 'ATTENDANT', 'STATION', '${ids.legalA}', '${ids.stationA}')
+        on conflict (id) do nothing;
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
         values ('${ids.routeSession}', '2030-01-01T00:00:00Z', 'a3-route-session-token', '${ids.actorA}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
