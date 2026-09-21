@@ -2247,6 +2247,82 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         }),
       );
 
+    async function snapshotBusinessState(commandType: string): Promise<unknown> {
+      switch (commandType) {
+        case 'ResetMeter':
+        case 'ReplaceMeter':
+          return {
+            installations: await client`
+              select * from app.meter_installations
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            nozzles: await client`
+              select * from app.nozzles
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            meters: await client`
+              select * from app.meters
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            boundaries: await client`
+              select * from app.meter_boundaries
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            segments: await client`
+              select * from app.meter_segments
+              where tenant_id=${ids.tenantA} order by id
+            `,
+          };
+        case 'CorrectMeterSegment':
+          return {
+            boundaries: await client`
+              select * from app.meter_boundaries
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            segments: await client`
+              select * from app.meter_segments
+              where tenant_id=${ids.tenantA} order by id
+            `,
+          };
+        case 'ConfirmPriceChangeBoundary':
+          return {
+            prices: await client`
+              select * from app.selling_prices
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            nozzles: await client`
+              select * from app.nozzles
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            boundaries: await client`
+              select * from app.meter_boundaries
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            segments: await client`
+              select * from app.meter_segments
+              where tenant_id=${ids.tenantA} order by id
+            `,
+          };
+        case 'CreateCorrectedReconciliationRevision':
+          return {
+            reconciliations: await client`
+              select * from app.reconciliations
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            revisions: await client`
+              select * from app.reconciliation_revisions
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            declarations: await client`
+              select * from app.payment_declarations
+              where tenant_id=${ids.tenantA} order by id
+            `,
+          };
+        default:
+          throw new Error(`Missing business-state snapshot for ${commandType}`);
+      }
+    }
+
     async function expectDenied(input: {
       token?: string;
       commandType: string;
@@ -2259,11 +2335,14 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         select
           (select count(*)::int from app.forecourt_outbox where tenant_id=${ids.tenantA}) as outbox,
           (select count(*)::int from platform.security_events
-             where event_code=${`FORECOURT.${input.commandType}`}
-               and details->>'subjectId'=${input.subjectId}) as audit
+               where event_code=${`FORECOURT.${input.commandType}`}
+                 and details->>'subjectId'=${input.subjectId}) as audit
       `;
+      const businessBefore = await snapshotBusinessState(input.commandType);
       const response = await postWithToken(input.token ?? actorToken, input.body, input.key);
       expect(input.statuses).toContain(response.status);
+      const businessAfter = await snapshotBusinessState(input.commandType);
+      expect(businessAfter).toEqual(businessBefore);
       const after = await client<{ outbox: number; audit: number }[]>`
         select
           (select count(*)::int from app.forecourt_outbox where tenant_id=${ids.tenantA}) as outbox,
