@@ -75,7 +75,14 @@ function context(
   });
 }
 
-function ports(calls: string[], shouldFail = false): ForecourtCommandPorts {
+function ports(
+  calls: string[],
+  shouldFail = false,
+  hooks: {
+    attendantEligibility?: ForecourtCommandPorts['attendantEligibility'];
+    expectedVersion?: ForecourtCommandPorts['expectedVersion'];
+  } = {},
+): ForecourtCommandPorts {
   return {
     transaction: {
       run: async (_context, work) => {
@@ -98,6 +105,16 @@ function ports(calls: string[], shouldFail = false): ForecourtCommandPorts {
         return effect();
       },
     },
+    attendantEligibility:
+      hooks.attendantEligibility ??
+      (async () => {
+        calls.push('attendant-eligibility');
+      }),
+    expectedVersion:
+      hooks.expectedVersion ??
+      (async () => {
+        calls.push('version');
+      }),
     audit: {
       append: async () => {
         calls.push('audit');
@@ -117,13 +134,14 @@ describe('A3 authoritative command seam', () => {
     const calls: string[] = [];
     const result = await executeForecourtCommand({
       context: context(),
-      commandType: 'CaptureBoundary',
-      permissionCode: 'meter.boundary.capture',
+      commandType: 'ConfirmBoundary',
       idempotencyKey: 'retry-key-1',
       requestHash: 'hash-1',
       subjectType: 'MeterBoundary',
       subjectId: ids.station,
       ports: ports(calls),
+      responsibleAttendantId: ids.membership,
+      expectedVersion: 0,
       execute: async () => {
         calls.push('business');
         return { result: 'captured' as const };
@@ -132,7 +150,9 @@ describe('A3 authoritative command seam', () => {
     expect(result).toBe('captured');
     expect(calls).toEqual([
       'transaction.begin',
-      'idempotency:11111111-1111-4111-8111-111111111111:CaptureBoundary:retry-key-1',
+      'idempotency:11111111-1111-4111-8111-111111111111:ConfirmBoundary:retry-key-1',
+      'attendant-eligibility',
+      'version',
       'business',
       'audit',
       'transaction.commit',
@@ -144,13 +164,14 @@ describe('A3 authoritative command seam', () => {
     await expect(
       executeForecourtCommand({
         context: context(),
-        commandType: 'CaptureBoundary',
-        permissionCode: 'meter.boundary.capture',
+        commandType: 'ConfirmBoundary',
         idempotencyKey: 'retry-key-2',
         requestHash: 'hash-2',
         subjectType: 'MeterBoundary',
         subjectId: ids.station,
         ports: ports(calls, true),
+        responsibleAttendantId: ids.membership,
+        expectedVersion: 0,
         execute: async () => ({ result: 'captured' as const }),
       }),
     ).rejects.toThrow('audit failure');
@@ -164,8 +185,7 @@ describe('A3 authoritative command seam', () => {
     await expect(
       executeForecourtCommand({
         context: {} as never,
-        commandType: 'CaptureBoundary',
-        permissionCode: 'meter.boundary.capture',
+        commandType: 'ConfirmBoundary',
         idempotencyKey: 'retry-key-3',
         requestHash: 'hash-3',
         subjectType: 'MeterBoundary',
@@ -182,13 +202,14 @@ describe('A3 authoritative command seam', () => {
     await expect(
       executeForecourtCommand({
         context: context('SUPERVISOR', '88888888-8888-4888-8888-888888888888'),
-        commandType: 'CaptureBoundary',
-        permissionCode: 'meter.boundary.capture',
+        commandType: 'ConfirmBoundary',
         idempotencyKey: 'retry-key-4',
         requestHash: 'hash-4',
         subjectType: 'MeterBoundary',
         subjectId: ids.station,
         ports: ports(calls),
+        responsibleAttendantId: ids.membership,
+        expectedVersion: 0,
         execute: async () => ({ result: 'captured' as const }),
       }),
     ).rejects.toThrow(/not authorized/);
@@ -197,12 +218,12 @@ describe('A3 authoritative command seam', () => {
       executeForecourtCommand({
         context: context('FINANCE'),
         commandType: 'ApproveReconciliation',
-        permissionCode: 'reconciliation.approve',
         idempotencyKey: 'retry-key-5',
         requestHash: 'hash-5',
         subjectType: 'ReconciliationRevision',
         subjectId: ids.station,
         ports: ports(calls),
+        expectedVersion: 0,
         execute: async () => ({ result: 'approved' as const }),
       }),
     ).rejects.toThrow(/not authorized/);
@@ -214,22 +235,57 @@ describe('A3 authoritative command seam', () => {
       executeForecourtCommand({
         context: context(),
         commandType: 'CloseMeters',
-        permissionCode: 'shift.close',
         idempotencyKey: 'retry-key-6',
         requestHash: 'hash-6',
         subjectType: 'Shift',
         subjectId: ids.station,
         expectedVersion: 4,
-        assertExpectedVersion: async (_transaction, version) => {
-          calls.push(`version:${version}`);
-          throw new Error('stale version');
-        },
-        ports: ports(calls),
+        ports: ports(calls, false, {
+          expectedVersion: async (_transaction, _subjectType, _subjectId, version) => {
+            calls.push(`version:${version}`);
+            throw new Error('stale version');
+          },
+        }),
         execute: async () => ({ result: 'closed' as const }),
       }),
     ).rejects.toThrow('stale version');
     expect(calls).toContain('version:4');
     expect(calls).toContain('transaction.rollback');
     expect(calls).not.toContain('business');
+  });
+
+  it('ignores a forged caller permission and uses the command policy', async () => {
+    const calls: string[] = [];
+    const forged = {
+      context: context('FINANCE'),
+      commandType: 'StartShift',
+      permissionCode: 'business_day.view',
+      idempotencyKey: 'retry-key-7',
+      requestHash: 'hash-7',
+      subjectType: 'Shift',
+      subjectId: ids.station,
+      expectedVersion: 0,
+      ports: ports(calls),
+      execute: async () => ({ result: 'started' as const }),
+    } as never;
+    await expect(executeForecourtCommand(forged)).rejects.toThrow(/not authorized/);
+    expect(calls).toContain('transaction.rollback');
+  });
+
+  it('does not make an on-behalf-of operation optional', async () => {
+    const calls: string[] = [];
+    await expect(
+      executeForecourtCommand({
+        context: context(),
+        commandType: 'ConfirmBoundary',
+        idempotencyKey: 'retry-key-8',
+        requestHash: 'hash-8',
+        subjectType: 'MeterBoundary',
+        subjectId: ids.station,
+        expectedVersion: 0,
+        ports: ports(calls),
+        execute: async () => ({ result: 'captured' as const }),
+      }),
+    ).rejects.toThrow(/responsible attendant/);
   });
 });

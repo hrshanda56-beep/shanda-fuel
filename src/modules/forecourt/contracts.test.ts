@@ -53,6 +53,7 @@ const revision = {
   variance: money('0.00'),
   varianceClassification: 'INFORMATIONAL' as const,
   approvedBy: ids.approver,
+  sourceSegmentIds: ['31111111-1111-4111-8111-111111111111'],
 };
 
 describe('A3 event contracts', () => {

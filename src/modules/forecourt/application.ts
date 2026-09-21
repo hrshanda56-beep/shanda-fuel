@@ -86,6 +86,125 @@ export type IdempotencyRequest = Readonly<{
   requestHash: string;
 }>;
 
+export const FORECOURT_COMMAND_POLICY = {
+  OpenBusinessDay: {
+    permissionCode: 'business_day.open',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  StartShift: {
+    permissionCode: 'shift.start',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  CloseMeters: {
+    permissionCode: 'shift.close',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  CompleteShift: {
+    permissionCode: 'shift.close',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  ConfirmBoundary: {
+    permissionCode: 'meter.boundary.capture',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
+  HandoverAttendant: {
+    permissionCode: 'meter.boundary.capture',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
+  SealSegment: {
+    permissionCode: 'meter.boundary.capture',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+    requiresAttendantEligibility: true,
+  },
+  ReplaceMeter: {
+    permissionCode: 'meter.replace',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  RequestPriceChange: {
+    permissionCode: 'price.change.request',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  ApprovePriceChange: {
+    permissionCode: 'price.change.approve',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
+  ActivatePriceChange: {
+    permissionCode: 'price.change.activate',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
+  SubmitReconciliation: {
+    permissionCode: 'reconciliation.submit',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  ReturnReconciliation: {
+    permissionCode: 'reconciliation.return',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
+  ApproveReconciliation: {
+    permissionCode: 'reconciliation.approve',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
+  PostReconciliation: {
+    permissionCode: 'reconciliation.post',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
+  LockReconciliation: {
+    permissionCode: 'approval.act',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
+  LockBusinessDay: {
+    permissionCode: 'approval.act',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
+} as const satisfies Record<
+  string,
+  {
+    permissionCode: PermissionCode;
+    requiredScopeType: 'STATION';
+    assuranceRequirement: 'STANDARD' | 'STEP_UP';
+    requiresExpectedVersion: boolean;
+    requiresAttendantEligibility?: boolean;
+  }
+>;
+
+export type ForecourtCommandType = keyof typeof FORECOURT_COMMAND_POLICY;
+
 export type ForecourtTransaction = unknown;
 
 export type ForecourtTransactionPort = {
@@ -123,6 +242,14 @@ export type ForecourtAuditPort = {
     before?: unknown;
     after?: unknown;
     reason?: string;
+    provenance: {
+      actorId: string;
+      membershipId: string;
+      tenantId: string;
+      stationId: string;
+      requestId: string;
+      responsibleAttendantId?: string;
+    };
   }): Promise<void>;
 };
 
@@ -137,14 +264,27 @@ export type ForecourtOutboxPort = {
 export type ForecourtCommandPorts = {
   transaction: ForecourtTransactionPort;
   idempotency: IdempotencyPort;
+  attendantEligibility: (
+    transaction: ForecourtTransaction,
+    attendantId: string,
+    stationId: string,
+    tenantId: string,
+  ) => Promise<void>;
+  expectedVersion: (
+    transaction: ForecourtTransaction,
+    subjectType: string,
+    subjectId: string,
+    expectedVersion: number,
+    stationId: string,
+    tenantId: string,
+  ) => Promise<void>;
   audit: ForecourtAuditPort;
   outbox: ForecourtOutboxPort;
 };
 
 export type ForecourtCommandInput<T> = Readonly<{
   context: ForecourtCommandContext;
-  commandType: string;
-  permissionCode: PermissionCode;
+  commandType: ForecourtCommandType;
   idempotencyKey: string;
   requestHash: string;
   subjectType: string;
@@ -153,16 +293,7 @@ export type ForecourtCommandInput<T> = Readonly<{
   before?: unknown;
   reason?: string;
   responsibleAttendantId?: string;
-  assertAttendantEligible?: (
-    transaction: ForecourtTransaction,
-    attendantId: string,
-    stationId: string,
-  ) => Promise<void>;
   expectedVersion?: number;
-  assertExpectedVersion?: (
-    transaction: ForecourtTransaction,
-    expectedVersion: number,
-  ) => Promise<void>;
   execute: (
     transaction: ForecourtTransaction,
   ) => Promise<{ result: T; event?: ForecourtEvent; after?: unknown }>;
@@ -171,6 +302,7 @@ export type ForecourtCommandInput<T> = Readonly<{
 /** The complete authoritative command unit. */
 export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>): Promise<T> {
   assertTrustedContext(input.context);
+  const policy = FORECOURT_COMMAND_POLICY[input.commandType];
   if (!input.idempotencyKey.trim() || !input.requestHash.trim()) {
     throw new AppError(
       'VALIDATION_FAILED',
@@ -181,32 +313,31 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
   return input.ports.transaction.run(input.context, async (transaction) => {
     authorize({
       actor: input.context.authority.authorization,
-      permissionCode: input.permissionCode,
+      permissionCode: policy.permissionCode,
       requestedScope: input.context.scope,
     });
-    if (input.responsibleAttendantId !== undefined) {
-      if (!input.assertAttendantEligible) {
-        throw new AppError(
-          'VALIDATION_FAILED',
-          'On-behalf-of commands require a transaction-bound station eligibility check',
-        );
-      }
-      await input.assertAttendantEligible(
-        transaction,
-        input.responsibleAttendantId,
-        input.context.stationId,
+    if (input.context.scope.scopeType !== policy.requiredScopeType) {
+      throw new AppError('FORBIDDEN', 'The command policy requires station scope');
+    }
+    if (
+      policy.assuranceRequirement === 'STEP_UP' &&
+      input.context.authority.authorization.strongAuthenticationVerified !== true
+    ) {
+      throw new AppError('FORBIDDEN', 'The command requires step-up assurance');
+    }
+    if (
+      'requiresAttendantEligibility' in policy &&
+      policy.requiresAttendantEligibility === true &&
+      input.responsibleAttendantId === undefined
+    ) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `${input.commandType} requires a responsible attendant subject`,
       );
     }
-    if (input.expectedVersion !== undefined) {
-      if (!input.assertExpectedVersion) {
-        throw new AppError(
-          'VALIDATION_FAILED',
-          'Commands with an expected version require a transaction-bound version check',
-        );
-      }
-      await input.assertExpectedVersion(transaction, input.expectedVersion);
+    if (policy.requiresExpectedVersion && input.expectedVersion === undefined) {
+      throw new AppError('VALIDATION_FAILED', `${input.commandType} requires an expected version`);
     }
-
     return input.ports.idempotency.run(
       transaction,
       {
@@ -216,6 +347,24 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
         requestHash: input.requestHash,
       },
       async () => {
+        if (input.responsibleAttendantId !== undefined) {
+          await input.ports.attendantEligibility(
+            transaction,
+            input.responsibleAttendantId,
+            input.context.stationId,
+            input.context.tenantId,
+          );
+        }
+        if (input.expectedVersion !== undefined) {
+          await input.ports.expectedVersion(
+            transaction,
+            input.subjectType,
+            input.subjectId,
+            input.expectedVersion,
+            input.context.stationId,
+            input.context.tenantId,
+          );
+        }
         const outcome = await input.execute(transaction);
         await input.ports.audit.append({
           transaction,
@@ -226,6 +375,17 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
           before: input.before,
           after: outcome.after,
           reason: input.reason,
+          provenance: {
+            actorId: input.context.actor.actorId,
+            membershipId: input.context.actor.membershipId,
+            tenantId: input.context.tenantId,
+            stationId: input.context.stationId,
+            requestId: input.context.requestId,
+            ...(input.responsibleAttendantId &&
+            input.responsibleAttendantId !== input.context.actor.membershipId
+              ? { responsibleAttendantId: input.responsibleAttendantId }
+              : {}),
+          },
         });
         if (outcome.event) {
           await input.ports.outbox.publish({

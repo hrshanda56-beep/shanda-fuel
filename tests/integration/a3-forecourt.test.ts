@@ -34,6 +34,7 @@ const ids = {
   priceA: 'a3000000-0000-4000-8000-000000000141',
   reconciliationA: 'a3000000-0000-4000-8000-000000000151',
   revisionA: 'a3000000-0000-4000-8000-000000000161',
+  outboxA: 'a3000000-0000-4000-8000-000000000171',
 };
 
 let client: Sql;
@@ -120,10 +121,11 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       where n.nspname = 'app' and c.relname in (
         'products', 'pumps', 'nozzles', 'meters', 'meter_installations',
         'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries',
-        'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'
+        'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations',
+        'forecourt_idempotency_records', 'forecourt_audit_events', 'forecourt_outbox'
       ) order by c.relname
     `;
-    expect(rows).toHaveLength(13);
+    expect(rows).toHaveLength(16);
     expect(rows.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
   });
 
@@ -177,12 +179,21 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           `update app.reconciliation_revisions set expected_sales = 99 where id = '${ids.revisionA}'`,
         ),
       ).rejects.toThrow();
+      await client.unsafe(
+        `update app.reconciliations set state = 'POSTED' where id = '${ids.reconciliationA}'`,
+      );
+      await client.unsafe(
+        `update app.reconciliations set state = 'LOCKED' where id = '${ids.reconciliationA}'`,
+      );
       await expect(
         client.unsafe(
-          `update app.reconciliations set state = 'POSTED' where id = '${ids.reconciliationA}'`,
+          `update app.reconciliations set state = 'APPROVED' where id = '${ids.reconciliationA}'`,
         ),
       ).rejects.toThrow();
 
+      await client.unsafe(
+        `update app.station_business_days set state = 'OPERATIONS_COMPLETE' where id = '${ids.dayA}'`,
+      );
       await client.unsafe(
         `update app.station_business_days set state = 'CLOSED' where id = '${ids.dayA}'`,
       );
@@ -192,6 +203,54 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       await expect(
         client.unsafe(
           `update app.station_business_days set business_date = '2026-09-21' where id = '${ids.dayA}'`,
+        ),
+      ).rejects.toThrow();
+
+      await expect(
+        client.unsafe(`update app.shifts set state = 'COMPLETED' where id = '${ids.shiftA}'`),
+      ).rejects.toThrow();
+    } finally {
+      await client.unsafe('reset role');
+    }
+  });
+
+  it('persists idempotency, audit, and outbox records with database guards', async () => {
+    await client.unsafe('set role app_runtime');
+    try {
+      await setContext(ids.tenantA, ids.actorA, ids.membershipA);
+      await client.unsafe(`
+        insert into app.forecourt_idempotency_records
+          (tenant_id, command_type, idempotency_key, request_hash, status, result_payload)
+        values ('${ids.tenantA}', 'ConfirmBoundary', 'integration-key-1', 'hash-1', 'COMPLETED', '{"value":"ok"}'::jsonb);
+      `);
+      await expect(
+        client.unsafe(`
+          insert into app.forecourt_idempotency_records
+            (tenant_id, command_type, idempotency_key, request_hash, status, result_payload)
+          values ('${ids.tenantA}', 'ConfirmBoundary', 'integration-key-1', 'hash-2', 'COMPLETED', '{}'::jsonb)
+        `),
+      ).rejects.toThrow();
+
+      await client.unsafe(`
+        insert into app.forecourt_audit_events
+          (tenant_id, station_id, actor_id, membership_id, command_type, subject_type, subject_id, request_id, after_snapshot)
+        values ('${ids.tenantA}', '${ids.stationA}', '${ids.actorA}', '${ids.membershipA}', 'ConfirmBoundary', 'MeterSegment', '${ids.segmentA}', '${ids.actorA}', '{"state":"SEALED"}'::jsonb);
+      `);
+      await expect(
+        client.unsafe(
+          `update app.forecourt_audit_events set reason = 'rewrite' where tenant_id = '${ids.tenantA}'`,
+        ),
+      ).rejects.toThrow();
+
+      await client.unsafe(`
+        insert into app.forecourt_outbox
+          (event_id, tenant_id, station_id, event_type, event_version, aggregate_type, aggregate_id, payload)
+        values ('${ids.outboxA}', '${ids.tenantA}', '${ids.stationA}', 'forecourt.meter_segment_sealed.v1', 1, 'MeterSegment', '${ids.segmentA}', '{"segmentId":"${ids.segmentA}"}'::jsonb);
+        update app.forecourt_outbox set published_at = now() where event_id = '${ids.outboxA}';
+      `);
+      await expect(
+        client.unsafe(
+          `update app.forecourt_outbox set payload = '{}'::jsonb where event_id = '${ids.outboxA}'`,
         ),
       ).rejects.toThrow();
     } finally {

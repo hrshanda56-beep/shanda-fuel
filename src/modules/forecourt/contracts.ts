@@ -26,7 +26,10 @@ export type MeterSegmentSealedEvent = {
   currency: CurrencyCode;
   sealedAt: string;
   occurredAt: string;
+  openingBoundaryId: string;
+  closingBoundaryId: string;
   correctionOfSegmentId?: string;
+  reversalOfSegmentId?: string;
 };
 
 export type DeclarationTotalSnapshot = {
@@ -52,6 +55,9 @@ export type ReconciliationApprovedEvent = {
   varianceClassification: string;
   varianceExplanation?: string;
   declarationTotals: readonly DeclarationTotalSnapshot[];
+  sourceSegmentIds: readonly string[];
+  sourceRevisionId?: string;
+  correctionOfRevisionId?: string;
   approvedBy: string;
   occurredAt: string;
 };
@@ -124,6 +130,12 @@ export function meterSegmentSealedEvent(
     currency: segment.currency,
     sealedAt: segment.sealedAt,
     occurredAt: input.occurredAt ?? segment.sealedAt,
+    openingBoundaryId: segment.openingBoundaryId,
+    closingBoundaryId: segment.closingBoundaryId,
+    ...(segment.correctionOfSegmentId
+      ? { correctionOfSegmentId: segment.correctionOfSegmentId }
+      : {}),
+    ...(segment.reversalOfSegmentId ? { reversalOfSegmentId: segment.reversalOfSegmentId } : {}),
   };
 }
 
@@ -157,6 +169,11 @@ export function reconciliationApprovedEvent(
       category: declaration.category,
       amount: declaration.amount,
     })),
+    sourceSegmentIds: revision.sourceSegmentIds,
+    ...(revision.sourceRevisionId ? { sourceRevisionId: revision.sourceRevisionId } : {}),
+    ...(revision.correctionOfRevisionId
+      ? { correctionOfRevisionId: revision.correctionOfRevisionId }
+      : {}),
     approvedBy: revision.approvedBy,
     occurredAt: input.occurredAt ?? new Date().toISOString(),
   };

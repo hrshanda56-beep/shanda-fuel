@@ -114,6 +114,8 @@ export type MeterSegment = {
   endAt: string;
   sealedAt: string;
   controlledException: boolean;
+  correctionOfSegmentId?: string;
+  reversalOfSegmentId?: string;
 };
 export type SellingPrice = {
   id: string;
@@ -124,6 +126,8 @@ export type SellingPrice = {
   effectiveTo?: string;
   unitPrice: UnitPrice;
   currency: CurrencyCode;
+  requestedBy: string;
+  approvedBy?: string;
   state:
     | 'DRAFT'
     | 'PENDING_APPROVAL'
@@ -154,6 +158,8 @@ export type MeterSegmentInput = {
   endAt: string;
   sealedAt: string;
   controlledQuantityLitres?: string;
+  correctionOfSegmentId?: string;
+  reversalOfSegmentId?: string;
 };
 
 export function newBusinessDay(input: {
@@ -194,7 +200,12 @@ export function lockBusinessDay(day: StationBusinessDay): StationBusinessDay {
 export function startShift(shift: Shift, day: StationBusinessDay): Shift {
   assertState(day.state, 'OPEN', 'StartShift');
   assertState(shift.state, 'PLANNED', 'StartShift');
-  if (shift.businessDayId !== day.id || shift.businessDate !== day.date)
+  if (
+    shift.tenantId !== day.tenantId ||
+    shift.stationId !== day.stationId ||
+    shift.businessDayId !== day.id ||
+    shift.businessDate !== day.date
+  )
     throw new AppError('INVARIANT_VIOLATION', 'A shift must belong to its station business date');
   return { ...shift, state: 'OPEN', version: shift.version + 1 };
 }
@@ -361,7 +372,13 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
   const { openingBoundary, closingBoundary } = input;
   if (
     openingBoundary.tenantId !== closingBoundary.tenantId ||
-    openingBoundary.tenantId !== input.tenantId
+    openingBoundary.tenantId !== input.tenantId ||
+    openingBoundary.stationId !== closingBoundary.stationId ||
+    openingBoundary.stationId !== input.stationId ||
+    openingBoundary.businessDayId !== closingBoundary.businessDayId ||
+    openingBoundary.businessDayId !== input.businessDayId ||
+    openingBoundary.shiftId !== closingBoundary.shiftId ||
+    openingBoundary.shiftId !== input.shiftId
   )
     throw new AppError('FORBIDDEN', 'Meter boundaries must belong to the same tenant');
   if (
@@ -431,6 +448,8 @@ export function sealMeterSegment(input: MeterSegmentInput): MeterSegment {
     endAt: input.endAt,
     sealedAt: input.sealedAt,
     controlledException,
+    ...(input.correctionOfSegmentId ? { correctionOfSegmentId: input.correctionOfSegmentId } : {}),
+    ...(input.reversalOfSegmentId ? { reversalOfSegmentId: input.reversalOfSegmentId } : {}),
   };
 }
 
@@ -462,10 +481,30 @@ export type PersistedPriceBoundaryState = Readonly<{
   serverNow: string;
 }>;
 
+const trustedPriceBoundaryStates = new WeakSet<object>();
+
+/** Constructed only by the transaction-bound price/boundary repository. */
+export function createPersistedPriceBoundaryState(
+  input: PersistedPriceBoundaryState,
+): PersistedPriceBoundaryState {
+  const trusted = Object.freeze({
+    serverNow: input.serverNow,
+    affectedBoundaries: input.affectedBoundaries.map((boundary) => Object.freeze({ ...boundary })),
+  });
+  trustedPriceBoundaryStates.add(trusted);
+  return trusted;
+}
+
 export function activatePriceChange(
   price: SellingPrice,
   persistedState: PersistedPriceBoundaryState,
 ): SellingPrice {
+  if (!persistedState || !trustedPriceBoundaryStates.has(persistedState)) {
+    throw new AppError(
+      'FORBIDDEN',
+      'Price activation requires a transaction-bound persisted boundary snapshot',
+    );
+  }
   if (price.state !== 'PENDING_STATION_ACTIVATION' && price.state !== 'BOUNDARIES_IN_PROGRESS')
     throw invalidTransition('ActivatePriceChange', price.state);
   if (
@@ -485,16 +524,15 @@ export function requestPriceChange(price: SellingPrice): SellingPrice {
   if (price.state !== 'DRAFT') throw invalidTransition('RequestPriceChange', price.state);
   return { ...price, state: 'PENDING_APPROVAL' };
 }
-export function approvePriceChange(
-  price: SellingPrice,
-  approverId: string,
-  requestedBy: string,
-): SellingPrice {
+export function approvePriceChange(price: SellingPrice, actor: TrustedActor): SellingPrice {
+  assertTrustedActor(actor);
   if (price.state !== 'PENDING_APPROVAL')
     throw invalidTransition('ApprovePriceChange', price.state);
-  if (approverId === requestedBy)
+  if (actor.tenantId !== price.tenantId || actor.stationId !== price.stationId)
+    throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this price');
+  if (actor.membershipId === price.requestedBy)
     throw new AppError('FORBIDDEN', 'A price change cannot be approved by its requester');
-  return { ...price, state: 'APPROVED' };
+  return { ...price, state: 'APPROVED', approvedBy: actor.membershipId };
 }
 function assertState(actual: string, expected: string, command: string): void {
   if (actual !== expected) throw invalidTransition(command, actual, expected);
@@ -572,6 +610,9 @@ export type ReconciliationRevision = {
   lockedBy?: string;
   postedAt?: string;
   lockedAt?: string;
+  sourceSegmentIds: readonly string[];
+  sourceRevisionId?: string;
+  correctionOfRevisionId?: string;
 };
 
 export function calculateExpectedSales(
@@ -597,8 +638,33 @@ export function calculateReconciliation(input: {
   segments: readonly MeterSegment[];
   declarations: readonly PaymentDeclaration[];
   policy: ReconciliationPolicy;
+  sourceRevisionId?: string;
+  correctionOfRevisionId?: string;
 }): ReconciliationRevision {
   const currency = input.policy.currency ?? input.segments[0]?.currency ?? 'USD';
+  const normalizedBusinessDate = input.businessDate ? businessDate(input.businessDate) : undefined;
+  for (const segment of input.segments) {
+    if (
+      segment.tenantId !== input.tenantId ||
+      segment.stationId !== input.stationId ||
+      segment.businessDayId !== input.businessDayId
+    ) {
+      throw new AppError(
+        'INVARIANT_VIOLATION',
+        'Reconciliation segments must belong to the same tenant, station, and business day',
+      );
+    }
+    if (
+      normalizedBusinessDate &&
+      segment.businessDate &&
+      segment.businessDate !== normalizedBusinessDate
+    ) {
+      throw new AppError(
+        'INVARIANT_VIOLATION',
+        'Reconciliation segments must belong to the same business date',
+      );
+    }
+  }
   const expectedSales = calculateExpectedSales(input.segments, currency);
   let accounted = new ExactDecimal('0');
   for (const declaration of input.declarations) {
@@ -632,13 +698,18 @@ export function calculateReconciliation(input: {
     tenantId: input.tenantId,
     stationId: input.stationId,
     businessDayId: input.businessDayId,
-    ...(input.businessDate ? { businessDate: businessDate(input.businessDate) } : {}),
+    ...(normalizedBusinessDate ? { businessDate: normalizedBusinessDate } : {}),
     state: 'READY',
     expectedSales,
     declarations: input.declarations.map((declaration) => ({ ...declaration })),
     accountedSales,
     variance,
     varianceClassification,
+    sourceSegmentIds: input.segments.map((segment) => segment.id),
+    ...(input.sourceRevisionId ? { sourceRevisionId: input.sourceRevisionId } : {}),
+    ...(input.correctionOfRevisionId
+      ? { correctionOfRevisionId: input.correctionOfRevisionId }
+      : {}),
   };
 }
 export function submitReconciliation(

@@ -386,6 +386,8 @@ export const meterSegments = appSchema.table(
     attendantId: uuid('attendant_id').notNull(),
     enteredBy: uuid('entered_by').notNull(),
     onBehalfOf: uuid('on_behalf_of'),
+    correctionOfSegmentId: uuid('correction_of_segment_id'),
+    reversalOfSegmentId: uuid('reversal_of_segment_id'),
     openingReading: numeric('opening_reading', { precision: 18, scale: 3 }).notNull(),
     closingReading: numeric('closing_reading', { precision: 18, scale: 3 }).notNull(),
     litres: numeric('litres', { precision: 18, scale: 3 }).notNull(),
@@ -401,6 +403,7 @@ export const meterSegments = appSchema.table(
   },
   (table) => [
     unique('meter_segments_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('meter_segments_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     unique('meter_segments_opening_boundary_uidx').on(
       table.tenantId,
       table.stationId,
@@ -533,8 +536,15 @@ export const reconciliationRevisions = appSchema.table(
     declarations: jsonb('declarations')
       .notNull()
       .default(sql`'[]'::jsonb`),
+    sourceSegmentIds: jsonb('source_segment_ids')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    sourceRevisionId: uuid('source_revision_id'),
+    correctionOfRevisionId: uuid('correction_of_revision_id'),
     submittedBy: uuid('submitted_by'),
     approvedBy: uuid('approved_by'),
+    postedBy: uuid('posted_by'),
+    lockedBy: uuid('locked_by'),
     submittedAt: utcTimestamp('submitted_at'),
     approvedAt: utcTimestamp('approved_at'),
     postedAt: utcTimestamp('posted_at'),
@@ -569,6 +579,16 @@ export const reconciliationRevisions = appSchema.table(
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'reconciliation_revisions_approved_by_fk',
     }),
+    foreignKey({
+      columns: [table.tenantId, table.postedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'reconciliation_revisions_posted_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.lockedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'reconciliation_revisions_locked_by_fk',
+    }),
   ],
 );
 
@@ -597,6 +617,98 @@ export const paymentDeclarations = appSchema.table(
       columns: [table.tenantId, table.declaredBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'payment_declarations_declared_by_fk',
+    }),
+  ],
+);
+
+export const forecourtIdempotencyRecords = appSchema.table(
+  'forecourt_idempotency_records',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    commandType: text('command_type').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    status: text('status').notNull().default('COMPLETED'),
+    resultPayload: jsonb('result_payload').notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+    completedAt: utcTimestamp('completed_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('forecourt_idempotency_tenant_command_key_uidx').on(
+      table.tenantId,
+      table.commandType,
+      table.idempotencyKey,
+    ),
+    index('forecourt_idempotency_tenant_created_idx').on(table.tenantId, table.createdAt),
+  ],
+);
+
+export const forecourtAuditEvents = appSchema.table(
+  'forecourt_audit_events',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    actorId: uuid('actor_id').notNull(),
+    membershipId: uuid('membership_id').notNull(),
+    commandType: text('command_type').notNull(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: uuid('subject_id').notNull(),
+    requestId: uuid('request_id').notNull(),
+    responsibleAttendantId: uuid('responsible_attendant_id'),
+    beforeSnapshot: jsonb('before_snapshot'),
+    afterSnapshot: jsonb('after_snapshot'),
+    reason: text('reason'),
+    occurredAt: utcTimestamp('occurred_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('forecourt_audit_events_tenant_id_id_uidx').on(table.tenantId, table.id),
+    index('forecourt_audit_events_subject_idx').on(
+      table.tenantId,
+      table.subjectType,
+      table.subjectId,
+      table.occurredAt,
+    ),
+    foreignKey({
+      columns: [table.tenantId, table.stationId],
+      foreignColumns: [stations.tenantId, stations.id],
+      name: 'forecourt_audit_events_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.membershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'forecourt_audit_events_membership_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.responsibleAttendantId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'forecourt_audit_events_attendant_fk',
+    }),
+  ],
+);
+
+export const forecourtOutbox = appSchema.table(
+  'forecourt_outbox',
+  {
+    eventId: uuid('event_id').primaryKey(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    eventType: text('event_type').notNull(),
+    eventVersion: integer('event_version').notNull(),
+    aggregateType: text('aggregate_type').notNull(),
+    aggregateId: uuid('aggregate_id').notNull(),
+    payload: jsonb('payload').notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+    publishedAt: utcTimestamp('published_at'),
+  },
+  (table) => [
+    unique('forecourt_outbox_tenant_event_uidx').on(table.tenantId, table.eventId),
+    index('forecourt_outbox_unpublished_idx').on(table.tenantId, table.createdAt),
+    foreignKey({
+      columns: [table.tenantId, table.stationId],
+      foreignColumns: [stations.tenantId, stations.id],
+      name: 'forecourt_outbox_station_fk',
     }),
   ],
 );
