@@ -127,7 +127,7 @@ describe('forecourt command authorization preflight', () => {
     });
   });
 
-  it('preserves a generic not-found response when the station cannot be resolved', async () => {
+  it('collapses an unresolved station to the generic forbidden preflight response', async () => {
     const loadStation = vi.fn().mockResolvedValue(null);
 
     await expect(
@@ -138,7 +138,7 @@ describe('forecourt command authorization preflight', () => {
         loadStation,
       }),
     ).rejects.toMatchObject({
-      code: 'NOT_FOUND',
+      code: 'FORBIDDEN',
       message: 'Forecourt command authority could not be established',
       details: undefined,
     });

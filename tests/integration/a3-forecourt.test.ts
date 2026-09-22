@@ -1085,6 +1085,8 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
     const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const negativeRawToken = 'a3-negative-session-token';
+    const negativeSignedToken = `${negativeRawToken}.${await makeSignature(negativeRawToken, process.env.BETTER_AUTH_SECRET!)}`;
 
     async function postUnauthenticated(body: string) {
       return forecourtCommandPost(
@@ -1127,12 +1129,12 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     );
     await expectUnauthenticatedWithoutSchemaLeak(unauthenticatedIncompleteOpenBusinessDay);
 
-    async function postWithRouteSession(input: unknown, key: string) {
+    async function postWithRouteSession(input: unknown, key: string, token = signedToken) {
       return forecourtCommandPost(
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            cookie: `shanda-fuel.session_token=${token}`,
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -1178,6 +1180,66 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       expect(body).not.toHaveProperty('details');
       expect(unauthorized.headers.get('cache-control')).toBe('no-store');
     }
+
+    const genericStationDenial = {
+      error: 'FORBIDDEN',
+      message: 'Forecourt command authority could not be established',
+    };
+    async function expectSameStationDenial(
+      token: string,
+      existingStationId: string,
+      payload: Record<string, unknown>,
+      keyPrefix: string,
+    ) {
+      const nonexistentStationId = randomUUID();
+      const knownStation = await postWithRouteSession(
+        { ...payload, stationId: existingStationId },
+        `${keyPrefix}-existing`,
+        token,
+      );
+      const nonexistentStation = await postWithRouteSession(
+        { ...payload, stationId: nonexistentStationId },
+        `${keyPrefix}-nonexistent`,
+        token,
+      );
+      const knownBody = await knownStation.clone().json();
+      const nonexistentBody = await nonexistentStation.clone().json();
+
+      expect(knownStation.status).toBe(403);
+      expect(nonexistentStation.status).toBe(403);
+      expect(knownBody).toEqual(genericStationDenial);
+      expect(nonexistentBody).toEqual(knownBody);
+      expect(JSON.stringify(nonexistentBody)).not.toContain(nonexistentStationId);
+      expect(knownStation.headers.get('cache-control')).toBe('no-store');
+      expect(nonexistentStation.headers.get('cache-control')).toBe('no-store');
+    }
+
+    await expectSameStationDenial(
+      signedToken,
+      ids.stationA2,
+      { commandType: 'OpenBusinessDay', tenantId: ids.tenantA },
+      'a3-auth-order-incomplete-out-of-scope-station',
+    );
+    await expectSameStationDenial(
+      negativeSignedToken,
+      ids.stationA,
+      {
+        commandType: 'OpenBusinessDay',
+        tenantId: ids.tenantA,
+        businessDayId: 'not-a-uuid',
+        expectedVersion: -1,
+        unexpectedDetail: 'must-not-reach-validation',
+      },
+      'a3-auth-order-malformed-no-command-permission',
+    );
+
+    const missingStationSelectors = await postWithRouteSession(
+      { commandType: 'OpenBusinessDay' },
+      'a3-auth-order-missing-station-selectors',
+    );
+    expect(missingStationSelectors.status).toBe(403);
+    expect(await missingStationSelectors.clone().json()).toEqual(genericStationDenial);
+    expect(missingStationSelectors.headers.get('cache-control')).toBe('no-store');
   });
 
   it('executes price, reconciliation, and business-day commands through the authenticated route', async () => {
@@ -1608,6 +1670,15 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         }),
       );
     }
+    async function expectGenericStationForbidden(input: Record<string, unknown>, key: string) {
+      const response = await postWithToken(actorToken, input, key);
+      expect(response.status).toBe(403);
+      expect(await response.clone().json()).toEqual({
+        error: 'FORBIDDEN',
+        message: 'Forecourt command authority could not be established',
+      });
+      expect(response.headers.get('cache-control')).toBe('no-store');
+    }
     await client.unsafe(`
       insert into app.selling_prices
         (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
@@ -1642,15 +1713,10 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       );
     }
 
-    expect(
-      (
-        await postWithToken(
-          actorToken,
-          { ...priceInput, stationId: ids.stationB },
-          'a3-price-wrong-station',
-        )
-      ).status,
-    ).toBe(404);
+    await expectGenericStationForbidden(
+      { ...priceInput, stationId: ids.stationB },
+      'a3-price-wrong-station',
+    );
     expect(
       (await postWithToken(actorToken, { ...priceInput, expectedVersion: 99 }, 'a3-price-stale'))
         .status,
@@ -1702,15 +1768,10 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
       );
     }
-    expect(
-      (
-        await postWithToken(
-          actorToken,
-          { ...preparePriceInput, stationId: ids.stationB },
-          'a3-price-prepare-wrong-station',
-        )
-      ).status,
-    ).toBe(404);
+    await expectGenericStationForbidden(
+      { ...preparePriceInput, stationId: ids.stationB },
+      'a3-price-prepare-wrong-station',
+    );
     expect(
       (
         await postWithToken(
