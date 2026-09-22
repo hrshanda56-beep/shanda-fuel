@@ -263,23 +263,25 @@ async function assertReconciliationSourceCompleteness(
     );
 }
 
-const sealSegmentPayload = z.object({
-  commandType: z.literal('SealSegment').optional(),
-  tenantId: z.string().uuid(),
-  stationId: z.string().uuid(),
-  segmentId: z.string().uuid(),
-  nozzleId: z.string().uuid(),
-  meterInstallationId: z.string().uuid(),
-  businessDayId: z.string().uuid(),
-  shiftId: z.string().uuid(),
-  openingBoundaryId: z.string().uuid(),
-  closingBoundaryId: z.string().uuid(),
-  productId: z.string().uuid(),
-  responsibleAttendantId: z.string().uuid(),
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime(),
-  expectedVersion: z.number().int().nonnegative(),
-});
+const sealSegmentPayload = z
+  .object({
+    commandType: z.literal('SealSegment').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    segmentId: z.string().uuid(),
+    nozzleId: z.string().uuid(),
+    meterInstallationId: z.string().uuid(),
+    businessDayId: z.string().uuid(),
+    shiftId: z.string().uuid(),
+    openingBoundaryId: z.string().uuid(),
+    closingBoundaryId: z.string().uuid(),
+    productId: z.string().uuid(),
+    responsibleAttendantId: z.string().uuid(),
+    startAt: z.string().datetime(),
+    endAt: z.string().datetime(),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
 
 type SealSegmentPayload = z.infer<typeof sealSegmentPayload>;
 
@@ -740,7 +742,9 @@ export async function defineShiftTemplateFromRequest(request: Request, input: un
 
 const shiftLifecyclePayload = z
   .object({
-    commandType: z.string().optional(),
+    commandType: z
+      .enum(['StartShift', 'CloseMeters', 'CompleteShift', 'MarkNotOperated'])
+      .optional(),
     tenantId: z.string().uuid(),
     stationId: z.string().uuid(),
     businessDayId: z.string().uuid(),
@@ -2224,19 +2228,21 @@ export async function preparePriceActivationFromRequest(request: Request, input:
   });
 }
 
-const declarationPayload = z.object({
-  id: z.string().uuid().optional(),
-  category: z.enum([
-    'CASH',
-    'ELECTRONIC',
-    'CUSTOMER_ACCOUNT',
-    'PREPAID',
-    'BENEFIT_INTERNAL',
-    'OTHER',
-  ]),
-  amount: z.string(),
-  reason: z.string().optional(),
-});
+const declarationPayload = z
+  .object({
+    id: z.string().uuid().optional(),
+    category: z.enum([
+      'CASH',
+      'ELECTRONIC',
+      'CUSTOMER_ACCOUNT',
+      'PREPAID',
+      'BENEFIT_INTERNAL',
+      'OTHER',
+    ]),
+    amount: z.string(),
+    reason: z.string().optional(),
+  })
+  .strict();
 
 /**
  * The persisted JSONB shape the `validate_reconciliation_revision_payload`

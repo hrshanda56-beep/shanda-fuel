@@ -895,6 +895,187 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     expect(audit).toHaveLength(1);
   });
 
+  it('never falls through to SealSegment for an absent or unrecognized commandType, and still dispatches a valid one', async () => {
+    // A3 review finding: the route previously used a ternary/if-else chain
+    // whose final `else` silently defaulted to SealSegment -- an authoritative,
+    // state-mutating command -- whenever `commandType` was missing or did not
+    // match a known literal. The route now uses an exhaustive switch over a
+    // fixed set of command types with a `default` branch backed by a
+    // TypeScript `never` assertion, so an absent or unknown commandType is
+    // rejected as VALIDATION_FAILED (400) and never reaches any command
+    // handler. This test proves the fix end-to-end through the real route.
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    async function postCommand(input: unknown, key: string) {
+      return forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${signedToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+    }
+    async function snapshot() {
+      return {
+        segments: await client<{ count: number }[]>`
+          select count(*)::int as count from app.meter_segments
+          where tenant_id = ${ids.tenantA} and station_id = ${ids.stationA}
+        `,
+        outbox: await client<{ count: number }[]>`
+          select count(*)::int as count from app.forecourt_outbox where tenant_id = ${ids.tenantA}
+        `,
+      };
+    }
+    async function assertNoIdempotencyRecord(key: string) {
+      await expect(client<{ status: string }[]>`
+        select status from app.forecourt_idempotency_records
+        where tenant_id = ${ids.tenantA} and idempotency_key = ${key}
+      `).resolves.toEqual([]);
+    }
+
+    // A fully isolated pump/nozzle/meter/installation and business day/shift
+    // are used here (never ids.nozzleA/installationA/routeDay/routeShift):
+    // those are shared by later tests (e.g. the stale-winner and handover
+    // matrix) that assume no additional AVAILABLE boundary is ever inserted
+    // for that nozzle/installation/day/shift after their own setup runs.
+    // Reusing them here would silently change which boundary is "latest",
+    // breaking those unrelated tests.
+    // A dedicated product and long-open ACTIVE selling price are used (never
+    // productA's price) so the business day/shift here can use an
+    // unambiguously past date that cannot collide with any other station
+    // business day date used elsewhere in this file (the (station_id,
+    // business_date) constraint is unique), without depending on the real
+    // wall-clock "today" the suite happens to run on.
+    const dispatchPump = 'a3000000-0000-4000-8000-000000000233';
+    const dispatchNozzle = 'a3000000-0000-4000-8000-000000000234';
+    const dispatchMeter = 'a3000000-0000-4000-8000-000000000235';
+    const dispatchInstallation = 'a3000000-0000-4000-8000-000000000236';
+    const dispatchDay = 'a3000000-0000-4000-8000-000000000237';
+    const dispatchShift = 'a3000000-0000-4000-8000-000000000238';
+    const dispatchOpening = 'a3000000-0000-4000-8000-000000000231';
+    const dispatchClosing = 'a3000000-0000-4000-8000-000000000232';
+    const dispatchProduct = 'a3000000-0000-4000-8000-000000000239';
+    const dispatchPrice = 'a3000000-0000-4000-8000-000000000240';
+    await client.unsafe(`
+      insert into app.products (id, tenant_id, code, name)
+        values ('${dispatchProduct}', '${ids.tenantA}', 'A3-DISPATCH-PRODUCT', 'Dispatch Test Product');
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+        values ('${dispatchPrice}', '${ids.tenantA}', '${ids.stationA}', '${dispatchProduct}', '2000-01-01T00:00:00Z', 1.500000, 'DRAFT', '${ids.membershipA}');
+      update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${dispatchPrice}';
+      update app.selling_prices set state = 'APPROVED' where id = '${dispatchPrice}';
+      update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${dispatchPrice}';
+      update app.selling_prices set state = 'BOUNDARIES_IN_PROGRESS' where id = '${dispatchPrice}';
+      update app.selling_prices set state = 'ACTIVE' where id = '${dispatchPrice}';
+      insert into app.pumps (id, tenant_id, station_id, number)
+        values ('${dispatchPump}', '${ids.tenantA}', '${ids.stationA}', '9');
+      insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id)
+        values ('${dispatchNozzle}', '${ids.tenantA}', '${ids.stationA}', '${dispatchPump}', '1', '${dispatchProduct}');
+      insert into app.meters (id, tenant_id, serial_number)
+        values ('${dispatchMeter}', '${ids.tenantA}', 'A3-DISPATCH-METER');
+      insert into app.meter_installations (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
+        values ('${dispatchInstallation}', '${ids.tenantA}', '${ids.stationA}', '${dispatchNozzle}', '${dispatchMeter}', '2020-01-01T00:00:00Z', '${ids.membershipA}');
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${dispatchDay}', '${ids.tenantA}', '${ids.stationA}', '2020-01-02', 'NOT_STARTED');
+      update app.station_business_days set state = 'OPEN' where id = '${dispatchDay}';
+      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+        values ('${dispatchShift}', '${ids.tenantA}', '${ids.stationA}', '${dispatchDay}', 'PLANNED', '2020-01-02T06:00:00Z', '2020-01-02T14:00:00Z', '2020-01-02');
+      update app.shifts set state = 'OPEN' where id = '${dispatchShift}';
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason,
+         reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${dispatchOpening}', '${ids.tenantA}', '${ids.stationA}', '${dispatchNozzle}', '${dispatchInstallation}', '${dispatchDay}', '${dispatchShift}', 'PRICE_CHANGE',
+         'AVAILABLE', 1000.000, '2020-01-02T06:00:00Z', '2020-01-02T06:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}'),
+        ('${dispatchClosing}', '${ids.tenantA}', '${ids.stationA}', '${dispatchNozzle}', '${dispatchInstallation}', '${dispatchDay}', '${dispatchShift}', 'SHIFT_CLOSE',
+         'AVAILABLE', 1010.000, '2020-01-02T07:00:00Z', '2020-01-02T07:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}');
+    `);
+
+    // A payload that would be a valid SealSegment body but for the missing
+    // (or unknown) commandType -- the exact shape that used to fall through.
+    const wouldBeSealSegmentPayload = {
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      segmentId: 'a3000000-0000-4000-8000-000000000229',
+      nozzleId: dispatchNozzle,
+      meterInstallationId: dispatchInstallation,
+      businessDayId: dispatchDay,
+      shiftId: dispatchShift,
+      openingBoundaryId: dispatchOpening,
+      closingBoundaryId: dispatchClosing,
+      productId: dispatchProduct,
+      responsibleAttendantId: ids.membershipA,
+      startAt: '2020-01-02T06:00:00.000Z',
+      endAt: '2020-01-02T07:00:00.000Z',
+      expectedVersion: 0,
+    };
+
+    const beforeMissing = await snapshot();
+    const missing = await postCommand(
+      wouldBeSealSegmentPayload,
+      'a3-dispatch-missing-command-type',
+    );
+    expect(missing.status).toBe(400);
+    expect((await missing.clone().json()).error).toBe('VALIDATION_FAILED');
+    expect(await snapshot()).toEqual(beforeMissing);
+    await assertNoIdempotencyRecord('a3-dispatch-missing-command-type');
+    await expect(client`
+      select 1 from app.meter_segments where id = ${wouldBeSealSegmentPayload.segmentId}
+    `).resolves.toEqual([]);
+
+    const beforeUnknown = await snapshot();
+    const unknown = await postCommand(
+      { ...wouldBeSealSegmentPayload, commandType: 'NotARealForecourtCommand' },
+      'a3-dispatch-unknown-command-type',
+    );
+    expect(unknown.status).toBe(400);
+    expect((await unknown.clone().json()).error).toBe('VALIDATION_FAILED');
+    expect(await snapshot()).toEqual(beforeUnknown);
+    await assertNoIdempotencyRecord('a3-dispatch-unknown-command-type');
+    await expect(client`
+      select 1 from app.meter_segments where id = ${wouldBeSealSegmentPayload.segmentId}
+    `).resolves.toEqual([]);
+
+    const beforeExtraField = await snapshot();
+    const extraField = await postCommand(
+      {
+        ...wouldBeSealSegmentPayload,
+        commandType: 'SealSegment',
+        unexpectedField: 'should-be-rejected',
+      },
+      'a3-dispatch-extra-field',
+    );
+    expect(extraField.status).toBe(400);
+    expect(await snapshot()).toEqual(beforeExtraField);
+    await assertNoIdempotencyRecord('a3-dispatch-extra-field');
+    await expect(client`
+      select 1 from app.meter_segments where id = ${wouldBeSealSegmentPayload.segmentId}
+    `).resolves.toEqual([]);
+
+    // A genuinely valid SealSegment request must still dispatch correctly --
+    // the fix must not have broken the real command path.
+    const validSeal = await postCommand(
+      { ...wouldBeSealSegmentPayload, commandType: 'SealSegment' },
+      'a3-dispatch-valid-seal-segment',
+    );
+    if (validSeal.status !== 201) {
+      throw new Error(
+        `Expected valid SealSegment dispatch to succeed: ${await validSeal.clone().text()}`,
+      );
+    }
+    expect(validSeal.status).toBe(201);
+    const sealedSegment = await client<{ id: string; state: string }[]>`
+      select id, state from app.meter_segments where id = ${wouldBeSealSegmentPayload.segmentId}
+    `;
+    expect(sealedSegment).toEqual([{ id: wouldBeSealSegmentPayload.segmentId, state: 'SEALED' }]);
+  });
+
   it('executes price, reconciliation, and business-day commands through the authenticated route', async () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
@@ -2496,6 +2677,25 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       await client.unsafe('reset role');
     }
 
+    // A3 review finding: resolve_meter_exception is SECURITY DEFINER and must
+    // remain restricted to the intended runtime role. job_runtime never
+    // receives EXECUTE on it, so calling it under that role must be rejected
+    // by the database privilege grant itself (not merely the function's own
+    // internal session_user guard).
+    await client.unsafe('set role job_runtime');
+    try {
+      await expect(
+        client.unsafe(`
+          select app.resolve_meter_exception(
+            '${ids.tenantA}', '${ids.stationA}', '${unavailableBoundary}',
+            '${randomUUID()}', 'RESET', null, null
+          )
+        `),
+      ).rejects.toThrow(/permission denied/);
+    } finally {
+      await client.unsafe('reset role');
+    }
+
     const resolved = await postCommand(
       {
         commandType: 'ResolveMeterException',
@@ -2638,6 +2838,18 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           return {
             reconciliations: await client`
               select * from app.reconciliations
+              where tenant_id=${ids.tenantA} order by id
+            `,
+            revisions: await client`
+              select * from app.reconciliation_revisions
+              where tenant_id=${ids.tenantA} order by id
+            `,
+          };
+        case 'CloseBusinessDay':
+        case 'LockBusinessDay':
+          return {
+            days: await client`
+              select * from app.station_business_days
               where tenant_id=${ids.tenantA} order by id
             `,
             revisions: await client`
@@ -3142,5 +3354,65 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       body: { ...resetInput, responsibleAttendantId: ids.membershipC },
       statuses: [403],
     });
+
+    // A3 review finding: CloseBusinessDay and LockBusinessDay previously had no
+    // dedicated denial-side-effect evidence. authorize() runs before any
+    // business-day row is touched, so a denied attempt against a
+    // not-yet-existing businessDayId still proves the authoritative
+    // invariant: no state row is created, no idempotency record completes,
+    // no outbox event or reconciliation mutation occurs.
+    const closeDayTarget = id();
+    const lockDayTarget = id();
+    const closeBusinessDayInput = {
+      commandType: 'CloseBusinessDay',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      businessDayId: closeDayTarget,
+      expectedVersion: 0,
+    };
+    await expectDenied({
+      token: attendantToken,
+      commandType: 'CloseBusinessDay',
+      subjectId: closeDayTarget,
+      key: 'a3-evidence-close-day-no-permission',
+      body: closeBusinessDayInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'CloseBusinessDay',
+      subjectId: closeDayTarget,
+      key: 'a3-evidence-close-day-wrong-station',
+      body: { ...closeBusinessDayInput, stationId: ids.stationA2 },
+      statuses: [403],
+    });
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.station_business_days where id = ${closeDayTarget}
+    `).resolves.toEqual([{ count: 0 }]);
+
+    const lockBusinessDayInput = {
+      commandType: 'LockBusinessDay',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      businessDayId: lockDayTarget,
+      expectedVersion: 0,
+    };
+    await expectDenied({
+      token: attendantToken,
+      commandType: 'LockBusinessDay',
+      subjectId: lockDayTarget,
+      key: 'a3-evidence-lock-day-no-permission',
+      body: lockBusinessDayInput,
+      statuses: [403],
+    });
+    await expectDenied({
+      commandType: 'LockBusinessDay',
+      subjectId: lockDayTarget,
+      key: 'a3-evidence-lock-day-wrong-station',
+      body: { ...lockBusinessDayInput, stationId: ids.stationA2 },
+      statuses: [403],
+    });
+    await expect(client<{ count: number }[]>`
+      select count(*)::int as count from app.station_business_days where id = ${lockDayTarget}
+    `).resolves.toEqual([{ count: 0 }]);
   });
 });

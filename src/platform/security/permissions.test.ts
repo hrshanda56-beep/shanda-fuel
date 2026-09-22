@@ -213,4 +213,25 @@ describe('permission authorization', () => {
       }),
     ).toThrow('ownership transfer');
   });
+
+  it('never grants the A3 forecourt high-impact permissions to ATTENDANT', () => {
+    // A3 review finding: ATTENDANT must remain limited to routine boundary
+    // capture (station.view, shift.view, meter.view, meter.boundary.capture,
+    // tenant.context.select) and must never carry the named authoritative
+    // capabilities reserved for SUPERVISOR/ADMINISTRATOR/FINANCE/OWNER.
+    const highImpactA3Permissions = [
+      'shift.template.manage',
+      'price.change.prepare',
+      'reconciliation.submit',
+      'price.change.boundary',
+      'meter.reset',
+      'meter.replace',
+      'meter.correction.execute',
+      'exception.manage',
+    ] as const;
+    const attendantPermissions = DEFAULT_ROLE_PERMISSIONS.ATTENDANT;
+    for (const permissionCode of highImpactA3Permissions) {
+      expect(attendantPermissions).not.toContain(permissionCode);
+    }
+  });
 });
