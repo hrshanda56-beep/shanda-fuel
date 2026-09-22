@@ -32,6 +32,7 @@ import {
 } from './contracts';
 import {
   approvePriceChange,
+  preparePriceActivation,
   approveReconciliation,
   calculateReconciliation,
   confirmAttendantHandover,
@@ -54,6 +55,7 @@ import {
   replaceMeterInstallation,
   type MeterBoundary,
   type MeterSegment,
+  type PaymentDeclaration,
   type ReconciliationPaymentCategory,
   type ReconciliationRevision,
   type SellingPrice,
@@ -448,6 +450,31 @@ function isUniqueViolation(error: unknown): boolean {
   return code === '23505' || causeCode === '23505';
 }
 
+/**
+ * Server-trusted, station-scoped shift template lookup. StartShift uses this
+ * to derive the planned duration instead of trusting a client-supplied
+ * duration or hardcoding an 8-hour business rule in domain logic. A template
+ * belonging to a different station never matches (station scope is part of
+ * the lookup key, not a post-hoc filter), and an inactive template is
+ * rejected explicitly.
+ */
+async function loadShiftTemplate(
+  transaction: ForecourtTransaction,
+  tenantId: string,
+  stationId: string,
+  shiftTemplateId: string,
+): Promise<{ durationMinutes: number }> {
+  const rows = await transaction.execute<{ duration_minutes: number; active: boolean }>(sql`
+    select duration_minutes, active from app.shift_templates
+    where tenant_id = ${tenantId} and station_id = ${stationId} and id = ${shiftTemplateId}
+    limit 1
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'The shift template was not found for this station');
+  if (!row.active) throw new AppError('VALIDATION_FAILED', 'The shift template is not active');
+  return { durationMinutes: Number(row.duration_minutes) };
+}
+
 /** Server-trusted station timezone lookup -- never client-supplied. */
 async function loadStationTimezone(
   transaction: ForecourtTransaction,
@@ -629,6 +656,88 @@ export async function closeBusinessDayFromRequest(request: Request, input: unkno
   });
 }
 
+const defineShiftTemplatePayload = z
+  .object({
+    commandType: z.literal('DefineShiftTemplate').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    shiftTemplateId: z.string().uuid(),
+    expectedVersion: z.number().int().nonnegative(),
+    code: z.string().trim().min(1),
+    name: z.string().trim().min(1),
+    /** Configurable per station; never hardcoded in domain logic. */
+    durationMinutes: z.number().int().positive(),
+    active: z.boolean().optional(),
+  })
+  .strict();
+
+/**
+ * Create or update a station-scoped shift template. Duration is fully
+ * configurable per station (default 480 minutes is a seed convention, not a
+ * business rule); this command never encodes a fixed clock schedule -- only
+ * a duration.
+ */
+export async function defineShiftTemplateFromRequest(request: Request, input: unknown) {
+  const payload = defineShiftTemplatePayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  const active = payload.active ?? true;
+  return executeForecourtCommand({
+    context,
+    commandType: 'DefineShiftTemplate',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'ShiftTemplate',
+    subjectId: payload.shiftTemplateId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<{ id: string }>(sql`
+        select id from app.shift_templates
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.shiftTemplateId}
+        for update
+      `);
+      if (!rows[0]) {
+        if (payload.expectedVersion !== 0)
+          throw new AppError('NOT_FOUND', 'Shift template was not found in this station');
+        try {
+          await transaction.execute(sql`
+            insert into app.shift_templates
+              (id, tenant_id, station_id, code, name, duration_minutes, active, created_by, version)
+            values (
+              ${payload.shiftTemplateId}, ${context.tenantId}, ${context.stationId},
+              ${payload.code}, ${payload.name}, ${payload.durationMinutes}, ${active},
+              ${context.actor.membershipId}, 0
+            )
+          `);
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new AppError('CONFLICT', 'A shift template with this code already exists');
+          }
+          throw error;
+        }
+      } else {
+        await transaction.execute(sql`
+          update app.shift_templates
+          set code = ${payload.code}, name = ${payload.name}, duration_minutes = ${payload.durationMinutes},
+            active = ${active}, updated_at = now(), version = version + 1
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.shiftTemplateId} and version = ${payload.expectedVersion}
+        `);
+      }
+      return {
+        result: {
+          shiftTemplateId: payload.shiftTemplateId,
+          durationMinutes: payload.durationMinutes,
+          active,
+        },
+      };
+    },
+  });
+}
+
 const shiftLifecyclePayload = z
   .object({
     commandType: z.string().optional(),
@@ -642,7 +751,13 @@ const shiftLifecyclePayload = z
      * derives and validates the BusinessDate from this instant and the
      * station's persisted IANA timezone -- it is never trusted verbatim. */
     plannedStartAt: z.string().datetime().optional(),
+    /** Governed by `shiftTemplateId` when present; a caller must not supply
+     * both, so a persisted duration is never silently overridden. */
     plannedEndAt: z.string().datetime().optional(),
+    /** Station-scoped, active shift template that supplies the planned
+     * duration. See `loadShiftTemplate` -- the duration is never trusted
+     * from the request once a template governs the shift. */
+    shiftTemplateId: z.string().uuid().optional(),
   })
   .strict();
 type ShiftLifecycleCommand = 'StartShift' | 'CloseMeters' | 'CompleteShift' | 'MarkNotOperated';
@@ -705,12 +820,36 @@ async function runShiftLifecycleCommand(
 
       if (!row) {
         if (commandType !== 'StartShift') throw new AppError('NOT_FOUND', 'Shift was not found');
-        if (!payload.plannedStartAt || !payload.plannedEndAt)
+        if (!payload.plannedStartAt)
           throw new AppError(
             'VALIDATION_FAILED',
-            'StartShift requires plannedStartAt and plannedEndAt to create the shift',
+            'StartShift requires plannedStartAt to create the shift',
           );
-        if (new Date(payload.plannedEndAt).getTime() <= new Date(payload.plannedStartAt).getTime())
+        if (payload.shiftTemplateId && payload.plannedEndAt)
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'Provide either shiftTemplateId or an explicit plannedEndAt, not both',
+          );
+        let resolvedPlannedEndAt: string;
+        if (payload.shiftTemplateId) {
+          const template = await loadShiftTemplate(
+            transaction,
+            context.tenantId,
+            context.stationId,
+            payload.shiftTemplateId,
+          );
+          resolvedPlannedEndAt = new Date(
+            new Date(payload.plannedStartAt).getTime() + template.durationMinutes * 60_000,
+          ).toISOString();
+        } else if (payload.plannedEndAt) {
+          resolvedPlannedEndAt = payload.plannedEndAt;
+        } else {
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'StartShift requires either shiftTemplateId or an explicit plannedEndAt',
+          );
+        }
+        if (new Date(resolvedPlannedEndAt).getTime() <= new Date(payload.plannedStartAt).getTime())
           throw new AppError('VALIDATION_FAILED', 'plannedEndAt must be after plannedStartAt');
         const timezone = await loadStationTimezone(
           transaction,
@@ -726,11 +865,11 @@ async function runShiftLifecycleCommand(
         try {
           await transaction.execute(sql`
             insert into app.shifts
-              (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date, version)
+              (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, shift_template_id, business_date, version)
             values (
               ${payload.shiftId}, ${context.tenantId}, ${context.stationId}, ${payload.businessDayId},
-              'PLANNED', ${payload.plannedStartAt}::timestamptz, ${payload.plannedEndAt}::timestamptz,
-              ${derivedBusinessDate}, 0
+              'PLANNED', ${payload.plannedStartAt}::timestamptz, ${resolvedPlannedEndAt}::timestamptz,
+              ${payload.shiftTemplateId ?? null}, ${derivedBusinessDate}, 0
             )
           `);
         } catch (error) {
@@ -744,7 +883,7 @@ async function runShiftLifecycleCommand(
           business_date: derivedBusinessDate,
           state: 'PLANNED',
           planned_start_at: payload.plannedStartAt,
-          planned_end_at: payload.plannedEndAt,
+          planned_end_at: resolvedPlannedEndAt,
           version: 0,
         };
       }
@@ -1853,7 +1992,11 @@ function priceFromRow(row: PriceRow): SellingPrice {
 const priceCommandPayload = z
   .object({
     commandType: z
-      .union([z.literal('ApprovePriceChange'), z.literal('ActivatePriceChange')])
+      .union([
+        z.literal('ApprovePriceChange'),
+        z.literal('PreparePriceActivation'),
+        z.literal('ActivatePriceChange'),
+      ])
       .optional(),
     tenantId: z.string().uuid(),
     stationId: z.string().uuid(),
@@ -2040,6 +2183,47 @@ export async function activatePriceChangeFromRequest(request: Request, input: un
   });
 }
 
+export async function preparePriceActivationFromRequest(request: Request, input: unknown) {
+  const payload = priceCommandPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'PreparePriceActivation',
+    idempotencyKey,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'SellingPrice',
+    subjectId: payload.priceId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const rows = await transaction.execute<PriceRow>(sql`
+        select id, tenant_id, station_id, product_id, effective_from, effective_to,
+               unit_price, currency, state, requested_by, approved_by, approved_at,
+               activated_at, version
+        from app.selling_prices
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
+        for update
+      `);
+      const price = rows[0];
+      if (!price) throw new AppError('NOT_FOUND', 'Selling price was not found');
+      const updated = preparePriceActivation(
+        priceFromRow(price),
+        context.actor,
+        await serverNow(transaction),
+      );
+      await transaction.execute(sql`
+        update app.selling_prices
+        set state = 'PENDING_STATION_ACTIVATION', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
+          and version = ${payload.expectedVersion}
+      `);
+      return { result: { priceId: updated.id }, after: updated };
+    },
+  });
+}
+
 const declarationPayload = z.object({
   id: z.string().uuid().optional(),
   category: z.enum([
@@ -2053,6 +2237,24 @@ const declarationPayload = z.object({
   amount: z.string(),
   reason: z.string().optional(),
 });
+
+/**
+ * The persisted JSONB shape the `validate_reconciliation_revision_payload`
+ * trigger checks: a flat numeric `amount` string and a sibling `currency`
+ * field, not the nested `Money` value object the domain layer uses for exact
+ * decimal arithmetic.
+ */
+function serializeDeclarationsForStorage(declarations: readonly PaymentDeclaration[]) {
+  return declarations.map((declaration) => ({
+    id: declaration.id,
+    category: declaration.category,
+    amount: declaration.amount.amount.toString(),
+    currency: declaration.amount.currency,
+    declaredBy: declaration.declaredBy,
+    ...(declaration.declaredFor ? { declaredFor: declaration.declaredFor } : {}),
+    ...(declaration.reason ? { reason: declaration.reason } : {}),
+  }));
+}
 
 const submitReconciliationPayload = z
   .object({
@@ -2197,7 +2399,7 @@ export async function submitReconciliationFromRequest(request: Request, input: u
         update app.reconciliation_revisions set state='SUBMITTED', expected_sales=${submitted.expectedSales.amount.toString()},
           accounted_sales=${submitted.accountedSales.amount.toString()}, variance=${submitted.variance.amount.toString()},
           variance_classification=${submitted.varianceClassification}, variance_explanation=${submitted.varianceExplanation ?? null},
-          declarations=${JSON.stringify(submitted.declarations)}::jsonb, source_segment_ids=${JSON.stringify(submitted.sourceSegmentIds)}::jsonb,
+          declarations=${JSON.stringify(serializeDeclarationsForStorage(submitted.declarations))}::jsonb, source_segment_ids=${JSON.stringify(submitted.sourceSegmentIds)}::jsonb,
           source_shift_ids=${JSON.stringify(submitted.sourceShiftIds)}::jsonb, submitted_by=${submitted.submittedBy}, submitted_at=${now}::timestamptz,
           version=version+1
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.revisionId} and version=${payload.expectedVersion}

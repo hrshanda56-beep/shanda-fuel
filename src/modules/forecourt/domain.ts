@@ -547,6 +547,22 @@ export function approvePriceChange(
     version: price.version + 1,
   };
 }
+export function preparePriceActivation(
+  price: SellingPrice,
+  actor: TrustedActor,
+  serverNow: string,
+): SellingPrice {
+  assertTrustedActor(actor);
+  if (price.state !== 'APPROVED') throw invalidTransition('PreparePriceActivation', price.state);
+  if (actor.tenantId !== price.tenantId || actor.stationId !== price.stationId)
+    throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this price');
+  assertServerTimestamp(serverNow, 'PreparePriceActivation');
+  return {
+    ...price,
+    state: 'PENDING_STATION_ACTIVATION',
+    version: price.version + 1,
+  };
+}
 function assertState(actual: string, expected: string, command: string): void {
   if (actual !== expected) throw invalidTransition(command, actual, expected);
 }

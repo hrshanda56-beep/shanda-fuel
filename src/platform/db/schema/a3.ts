@@ -199,6 +199,47 @@ export const stationBusinessDays = appSchema.table(
   ],
 );
 
+export const shiftTemplates = appSchema.table(
+  'shift_templates',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    durationMinutes: integer('duration_minutes').notNull().default(480),
+    active: boolean('active').notNull().default(true),
+    version: integer('version').notNull().default(0),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+    updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('shift_templates_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('shift_templates_tenant_station_code_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.code,
+    ),
+    index('shift_templates_tenant_station_active_idx').on(
+      table.tenantId,
+      table.stationId,
+      table.active,
+    ),
+    check('shift_templates_duration_positive_chk', sql`${table.durationMinutes} > 0`),
+    foreignKey({
+      columns: [table.tenantId, table.stationId],
+      foreignColumns: [stations.tenantId, stations.id],
+      name: 'shift_templates_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.createdBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'shift_templates_created_by_fk',
+    }),
+  ],
+);
+
 export const shifts = appSchema.table(
   'shifts',
   {
@@ -209,6 +250,7 @@ export const shifts = appSchema.table(
     state: text('state').notNull().default('PLANNED'),
     plannedStartAt: utcTimestamp('planned_start_at').notNull(),
     plannedEndAt: utcTimestamp('planned_end_at').notNull(),
+    shiftTemplateId: uuid('shift_template_id'),
     businessDate: text('business_date').notNull(),
     version: integer('version').notNull().default(0),
     openedAt: utcTimestamp('opened_at'),
@@ -230,6 +272,11 @@ export const shifts = appSchema.table(
       columns: [table.tenantId, table.stationId],
       foreignColumns: [stations.tenantId, stations.id],
       name: 'shifts_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.shiftTemplateId],
+      foreignColumns: [shiftTemplates.tenantId, shiftTemplates.id],
+      name: 'shifts_shift_template_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.stationId, table.businessDayId],
@@ -777,40 +824,13 @@ export const reconciliationRevisions = appSchema.table(
   ],
 );
 
-export const paymentDeclarations = appSchema.table(
-  'payment_declarations',
-  {
-    id: id(),
-    tenantId: tenantId(),
-    reconciliationRevisionId: uuid('reconciliation_revision_id').notNull(),
-    category: text('category').notNull(),
-    amount: numeric('amount', { precision: 20, scale: 4 }).notNull(),
-    currency: text('currency').notNull().default('USD'),
-    declaredBy: uuid('declared_by').notNull(),
-    reason: text('reason'),
-    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
-  },
-  (table) => [
-    unique('payment_declarations_tenant_id_id_uidx').on(table.tenantId, table.id),
-    index('payment_declarations_revision_idx').on(table.tenantId, table.reconciliationRevisionId),
-    check(
-      'payment_declarations_category_ck',
-      sql`${table.category} in ('CASH', 'ELECTRONIC', 'CUSTOMER_ACCOUNT', 'PREPAID', 'BENEFIT_INTERNAL', 'OTHER')`,
-    ),
-    check('payment_declarations_amount_ck', sql`${table.amount} >= 0`),
-    check('payment_declarations_currency_ck', sql`${table.currency} = 'USD'`),
-    foreignKey({
-      columns: [table.tenantId, table.reconciliationRevisionId],
-      foreignColumns: [reconciliationRevisions.tenantId, reconciliationRevisions.id],
-      name: 'payment_declarations_revision_fk',
-    }),
-    foreignKey({
-      columns: [table.tenantId, table.declaredBy],
-      foreignColumns: [memberships.tenantId, memberships.id],
-      name: 'payment_declarations_declared_by_fk',
-    }),
-  ],
-);
+// Payment declarations are canonical as an immutable, typed JSONB snapshot on
+// `reconciliationRevisions.declarations` (validated by the `declarationPayload`
+// Zod schema at the command boundary and by the
+// `validate_reconciliation_revision_payload` / `reject_authoritative_forecourt_mutation`
+// triggers once submitted). A parallel `payment_declarations` table existed here
+// unused by any application code and has been removed; see
+// docs/decisions/ADR-005-payment-declaration-canonical-model.md.
 
 export const forecourtIdempotencyRecords = appSchema.table(
   'forecourt_idempotency_records',

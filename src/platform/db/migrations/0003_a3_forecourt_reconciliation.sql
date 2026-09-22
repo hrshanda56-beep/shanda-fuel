@@ -116,19 +116,6 @@ CREATE TABLE "app"."nozzles" (
 	CONSTRAINT "nozzles_tenant_pump_number_uidx" UNIQUE("tenant_id","pump_id","number")
 );
 --> statement-breakpoint
-CREATE TABLE "app"."payment_declarations" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"reconciliation_revision_id" uuid NOT NULL,
-	"category" text NOT NULL,
-	"amount" numeric(20, 4) NOT NULL,
-	"currency" text DEFAULT 'USD' NOT NULL,
-	"declared_by" uuid NOT NULL,
-	"reason" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "payment_declarations_tenant_id_id_uidx" UNIQUE("tenant_id","id")
-);
---> statement-breakpoint
 CREATE TABLE "app"."products" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -283,9 +270,6 @@ ALTER TABLE "app"."meters" ADD CONSTRAINT "meters_tenant_id_tenants_id_fk" FOREI
 ALTER TABLE "app"."nozzles" ADD CONSTRAINT "nozzles_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."nozzles" ADD CONSTRAINT "nozzles_tenant_station_pump_fk" FOREIGN KEY ("tenant_id","station_id","pump_id") REFERENCES "app"."pumps"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."nozzles" ADD CONSTRAINT "nozzles_tenant_product_fk" FOREIGN KEY ("tenant_id","product_id") REFERENCES "app"."products"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."payment_declarations" ADD CONSTRAINT "payment_declarations_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."payment_declarations" ADD CONSTRAINT "payment_declarations_revision_fk" FOREIGN KEY ("tenant_id","reconciliation_revision_id") REFERENCES "app"."reconciliation_revisions"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."payment_declarations" ADD CONSTRAINT "payment_declarations_declared_by_fk" FOREIGN KEY ("tenant_id","declared_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."products" ADD CONSTRAINT "products_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."pumps" ADD CONSTRAINT "pumps_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."pumps" ADD CONSTRAINT "pumps_tenant_station_fk" FOREIGN KEY ("tenant_id","station_id") REFERENCES "app"."stations"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -311,7 +295,6 @@ CREATE INDEX "meter_exceptions_operational_lookup_idx" ON "app"."meter_exception
 CREATE INDEX "meter_installations_tenant_nozzle_effective_idx" ON "app"."meter_installations" USING btree ("tenant_id","nozzle_id","effective_from");--> statement-breakpoint
 CREATE INDEX "meter_segments_reconciliation_lookup_idx" ON "app"."meter_segments" USING btree ("tenant_id","business_day_id","station_id");--> statement-breakpoint
 CREATE INDEX "nozzles_tenant_station_idx" ON "app"."nozzles" USING btree ("tenant_id","station_id");--> statement-breakpoint
-CREATE INDEX "payment_declarations_revision_idx" ON "app"."payment_declarations" USING btree ("tenant_id","reconciliation_revision_id");--> statement-breakpoint
 CREATE INDEX "products_tenant_status_idx" ON "app"."products" USING btree ("tenant_id","status");--> statement-breakpoint
 CREATE INDEX "pumps_tenant_station_idx" ON "app"."pumps" USING btree ("tenant_id","station_id");--> statement-breakpoint
 CREATE INDEX "reconciliation_revisions_state_idx" ON "app"."reconciliation_revisions" USING btree ("tenant_id","state");--> statement-breakpoint
@@ -421,7 +404,7 @@ CREATE TRIGGER reconciliations_authoritative_guard BEFORE UPDATE OR DELETE ON ap
 DO $$
 DECLARE table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP
+  FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions'] LOOP
     EXECUTE format('ALTER TABLE app.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE app.%I FORCE ROW LEVEL SECURITY', table_name);
     EXECUTE format('CREATE POLICY tenant_context ON app.%I USING (tenant_id = app.current_tenant_id() AND app.has_active_membership()) WITH CHECK (tenant_id = app.current_tenant_id() AND app.has_active_membership())', table_name);
@@ -545,9 +528,6 @@ ALTER TABLE "app"."reconciliation_revisions" ADD COLUMN "version" integer DEFAUL
 ALTER TABLE "app"."selling_prices" ADD COLUMN "approved_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "app"."selling_prices" ADD COLUMN "activated_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "app"."selling_prices" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
-ALTER TABLE app.payment_declarations ADD CONSTRAINT payment_declarations_category_ck CHECK (category IN ('CASH', 'ELECTRONIC', 'CUSTOMER_ACCOUNT', 'PREPAID', 'BENEFIT_INTERNAL', 'OTHER'));--> statement-breakpoint
-ALTER TABLE app.payment_declarations ADD CONSTRAINT payment_declarations_amount_ck CHECK (amount >= 0);--> statement-breakpoint
-ALTER TABLE app.payment_declarations ADD CONSTRAINT payment_declarations_currency_ck CHECK (currency = 'USD');--> statement-breakpoint
 ALTER TABLE app.reconciliation_revisions ADD CONSTRAINT reconciliation_revisions_variance_classification_ck CHECK (variance_classification IN ('INFORMATIONAL', 'REQUIRES_EXPLANATION', 'BLOCKING'));--> statement-breakpoint
 ALTER TABLE app.reconciliation_revisions ADD CONSTRAINT reconciliation_revisions_currency_ck CHECK (currency = 'USD');--> statement-breakpoint
 ALTER TABLE app.forecourt_idempotency_records ADD CONSTRAINT forecourt_idempotency_status_ck CHECK (status IN ('IN_PROGRESS', 'COMPLETED'));--> statement-breakpoint
@@ -557,11 +537,11 @@ DECLARE table_name text;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') THEN
     ALTER SCHEMA app OWNER TO migration_owner;
-    FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations'] LOOP EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name); END LOOP;
+    FOREACH table_name IN ARRAY ARRAY['products', 'pumps', 'nozzles', 'meters', 'meter_installations', 'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries', 'meter_exceptions', 'meter_segments', 'reconciliations', 'reconciliation_revisions'] LOOP EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name); END LOOP;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN GRANT SELECT, INSERT, UPDATE, DELETE ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO app_runtime; END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO job_runtime; END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions, app.payment_declarations TO diagnostics_readonly; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN GRANT SELECT, INSERT, UPDATE, DELETE ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions TO app_runtime; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions TO job_runtime; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN GRANT SELECT ON app.products, app.pumps, app.nozzles, app.meters, app.meter_installations, app.station_business_days, app.shifts, app.selling_prices, app.meter_boundaries, app.meter_exceptions, app.meter_segments, app.reconciliations, app.reconciliation_revisions TO diagnostics_readonly; END IF;
 END
 $$;
 
@@ -588,6 +568,14 @@ VALUES
   ('OWNER', 'meter.reset'), ('ADMINISTRATOR', 'meter.reset'), ('SUPERVISOR', 'meter.reset'),
   ('OWNER', 'meter.correction.execute'), ('ADMINISTRATOR', 'meter.correction.execute'), ('SUPERVISOR', 'meter.correction.execute'),
   ('OWNER', 'price.change.boundary'), ('ADMINISTRATOR', 'price.change.boundary'), ('SUPERVISOR', 'price.change.boundary')
+ON CONFLICT DO NOTHING;
+INSERT INTO platform.permission_definitions (code, description)
+VALUES
+  ('price.change.prepare', 'Prepare an approved selling price change for station activation')
+ON CONFLICT (code) DO NOTHING;
+INSERT INTO platform.role_permissions (role_code, permission_code)
+VALUES
+  ('OWNER', 'price.change.prepare'), ('ADMINISTRATOR', 'price.change.prepare'), ('SUPERVISOR', 'price.change.prepare')
 ON CONFLICT DO NOTHING;
 
 CREATE OR REPLACE FUNCTION app.enforce_forecourt_initial_state()
@@ -1129,3 +1117,64 @@ BEGIN
   END IF;
 END
 $$;
+
+-- A3 shift-template closure: persisted, station-scoped shift configuration
+-- (duration only; no fixed clock schedule) plus StartShift provenance.
+CREATE TABLE "app"."shift_templates" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"tenant_id" uuid NOT NULL,
+	"station_id" uuid NOT NULL,
+	"code" text NOT NULL,
+	"name" text NOT NULL,
+	"duration_minutes" integer DEFAULT 480 NOT NULL,
+	"active" boolean DEFAULT true NOT NULL,
+	"version" integer DEFAULT 0 NOT NULL,
+	"created_by" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "shift_templates_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "shift_templates_tenant_station_code_uidx" UNIQUE("tenant_id","station_id","code"),
+	CONSTRAINT "shift_templates_duration_positive_chk" CHECK ("app"."shift_templates"."duration_minutes" > 0)
+);
+--> statement-breakpoint
+ALTER TABLE "app"."shifts" ADD COLUMN "shift_template_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "app"."shift_templates" ADD CONSTRAINT "shift_templates_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "app"."tenants"("id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "app"."shift_templates" ADD CONSTRAINT "shift_templates_station_fk" FOREIGN KEY ("tenant_id","station_id") REFERENCES "app"."stations"("tenant_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "app"."shift_templates" ADD CONSTRAINT "shift_templates_created_by_fk" FOREIGN KEY ("tenant_id","created_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+CREATE INDEX "shift_templates_tenant_station_active_idx" ON "app"."shift_templates" USING btree ("tenant_id","station_id","active");
+--> statement-breakpoint
+ALTER TABLE "app"."shifts" ADD CONSTRAINT "shifts_shift_template_fk" FOREIGN KEY ("tenant_id","shift_template_id") REFERENCES "app"."shift_templates"("tenant_id","id") ON DELETE no action ON UPDATE no action;
+
+ALTER TABLE app.shift_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.shift_templates FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_context ON app.shift_templates
+  USING (tenant_id = app.current_tenant_id() AND app.has_active_membership())
+  WITH CHECK (tenant_id = app.current_tenant_id() AND app.has_active_membership());
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') THEN
+    ALTER TABLE app.shift_templates OWNER TO migration_owner;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    GRANT SELECT, INSERT, UPDATE ON app.shift_templates TO app_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'job_runtime') THEN
+    GRANT SELECT ON app.shift_templates TO job_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN
+    GRANT SELECT ON app.shift_templates TO diagnostics_readonly;
+  END IF;
+END
+$$;
+
+INSERT INTO platform.permission_definitions (code, description)
+VALUES ('shift.template.manage', 'Create or change a station-scoped shift template/duration configuration')
+ON CONFLICT (code) DO NOTHING;
+INSERT INTO platform.role_permissions (role_code, permission_code)
+VALUES ('OWNER', 'shift.template.manage'), ('ADMINISTRATOR', 'shift.template.manage')
+ON CONFLICT DO NOTHING;

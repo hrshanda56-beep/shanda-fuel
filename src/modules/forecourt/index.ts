@@ -74,10 +74,12 @@ export {
   activatePriceChangeFromRequest,
   approvePriceChangeFromRequest,
   approveReconciliationFromRequest,
+  defineShiftTemplateFromRequest,
   handoverAttendantFromRequest,
   lockBusinessDayFromRequest,
   lockReconciliationFromRequest,
   postReconciliationFromRequest,
+  preparePriceActivationFromRequest,
   sealMeterSegmentFromRequest,
 } from './commands';
 export type {

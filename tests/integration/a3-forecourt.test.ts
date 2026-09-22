@@ -319,8 +319,8 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       where n.nspname = 'app' and c.relname in (
         'products', 'pumps', 'nozzles', 'meters', 'meter_installations',
         'station_business_days', 'shifts', 'selling_prices', 'meter_boundaries',
-        'meter_exceptions', 'meter_exception_resolutions', 'meter_segments', 'reconciliations', 'reconciliation_revisions', 'payment_declarations',
-        'forecourt_idempotency_records', 'forecourt_outbox'
+        'meter_exceptions', 'meter_exception_resolutions', 'meter_segments', 'reconciliations', 'reconciliation_revisions',
+        'shift_templates', 'forecourt_idempotency_records', 'forecourt_outbox'
       ) order by c.relname
     `;
     expect(rows).toHaveLength(17);
@@ -976,9 +976,20 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       ).status,
     ).toBe(200);
 
-    await client.unsafe(
-      `update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.closurePrice}'`,
-    );
+    expect(
+      (
+        await postCommand(
+          {
+            commandType: 'PreparePriceActivation',
+            tenantId: ids.tenantA,
+            stationId: ids.stationA,
+            priceId: ids.closurePrice,
+            expectedVersion: 1,
+          },
+          'a3-route-price-prepare-1',
+        )
+      ).status,
+    ).toBe(200);
     expect(
       (
         await postCommand(
@@ -987,7 +998,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
             tenantId: ids.tenantA,
             stationId: ids.stationA,
             priceId: ids.closurePrice,
-            expectedVersion: 1,
+            expectedVersion: 2,
           },
           'a3-route-price-activate-1',
         )
@@ -1055,7 +1066,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       client<{ state: string; version: number }[]>`
         select state, version from app.selling_prices where id = ${ids.closurePrice}
       `,
-    ).resolves.toEqual([{ state: 'ACTIVE', version: 3 }]);
+    ).resolves.toEqual([{ state: 'ACTIVE', version: 4 }]);
     await expect(
       client<
         {
@@ -1192,9 +1203,20 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         )
       ).status,
     ).toBe(200);
-    await client.unsafe(
-      `update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.outboxFailurePrice}'`,
-    );
+    expect(
+      (
+        await postCommand(
+          {
+            commandType: 'PreparePriceActivation',
+            tenantId: ids.tenantA,
+            stationId: ids.stationA,
+            priceId: ids.outboxFailurePrice,
+            expectedVersion: 1,
+          },
+          'a3-route-outbox-prepare-activation',
+        )
+      ).status,
+    ).toBe(200);
     await client.unsafe(`
       create or replace function public.a3_fail_outbox() returns trigger
       language plpgsql as $$ begin raise exception 'forced A3 outbox failure'; end; $$;
@@ -1208,7 +1230,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           tenantId: ids.tenantA,
           stationId: ids.stationA,
           priceId: ids.outboxFailurePrice,
-          expectedVersion: 1,
+          expectedVersion: 2,
         },
         'a3-route-outbox-failure',
       );
@@ -1220,7 +1242,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       client<{ state: string; version: number }[]>`
         select state, version from app.selling_prices where id = ${ids.outboxFailurePrice}
       `,
-    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION', version: 1 }]);
+    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION', version: 2 }]);
     await expect(
       client<{ count: number }[]>`
         select count(*)::int as count from app.forecourt_idempotency_records
@@ -1249,7 +1271,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
             tenantId: ids.tenantA,
             stationId: ids.stationA,
             priceId: ids.outboxFailurePrice,
-            expectedVersion: 1,
+            expectedVersion: 2,
           },
           'a3-route-outbox-failure',
         )
@@ -1259,7 +1281,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       client<{ state: string; version: number }[]>`
         select state, version from app.selling_prices where id = ${ids.outboxFailurePrice}
       `,
-    ).resolves.toEqual([{ state: 'ACTIVE', version: 3 }]);
+    ).resolves.toEqual([{ state: 'ACTIVE', version: 4 }]);
     await expect(
       client<{ count: number }[]>`
         select count(*)::int as count from platform.security_events
@@ -1370,6 +1392,59 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     expect((await postWithToken(actorToken, priceInput, 'a3-price-negative-control')).status).toBe(
       200,
     );
+
+    const preparePriceInput = {
+      commandType: 'PreparePriceActivation',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      priceId: ids.negativePrice,
+      expectedVersion: 1,
+    };
+    expect(
+      (await postWithToken(attendantToken, preparePriceInput, 'a3-price-prepare-no-permission'))
+        .status,
+    ).toBe(403);
+    await client.unsafe(
+      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
+    );
+    try {
+      expect(
+        (await postWithToken(actorToken, preparePriceInput, 'a3-price-prepare-weak-assurance'))
+          .status,
+      ).toBe(403);
+    } finally {
+      await client.unsafe(
+        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
+      );
+    }
+    expect(
+      (
+        await postWithToken(
+          actorToken,
+          { ...preparePriceInput, stationId: ids.stationB },
+          'a3-price-prepare-wrong-station',
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await postWithToken(
+          actorToken,
+          { ...preparePriceInput, expectedVersion: 99 },
+          'a3-price-prepare-stale',
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (await postWithToken(actorToken, preparePriceInput, 'a3-price-prepare-negative-control'))
+        .status,
+    ).toBe(200);
+    await expect(
+      client<{ state: string; version: number }[]>`
+        select state, version from app.selling_prices where id = ${ids.negativePrice}
+      `,
+    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION', version: 2 }]);
+
     expect(
       (
         await postWithToken(
@@ -1379,9 +1454,18 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         )
       ).status,
     ).toBe(200);
-    await client.unsafe(
-      `update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.forgedBoundaryPrice}'`,
+    const preparedForgedBoundary = await postWithToken(
+      actorToken,
+      {
+        commandType: 'PreparePriceActivation',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        priceId: ids.forgedBoundaryPrice,
+        expectedVersion: 1,
+      },
+      'a3-price-forged-prepare',
     );
+    expect(preparedForgedBoundary.status).toBe(200);
     const forged = await postWithToken(
       actorToken,
       {
@@ -1389,7 +1473,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         tenantId: ids.tenantA,
         stationId: ids.stationA,
         priceId: ids.forgedBoundaryPrice,
-        expectedVersion: 1,
+        expectedVersion: 2,
       },
       'a3-price-forged-boundary',
     );
@@ -1398,7 +1482,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       client<{ state: string; version: number }[]>`
         select state, version from app.selling_prices where id = ${ids.forgedBoundaryPrice}
       `,
-    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION', version: 1 }]);
+    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION', version: 2 }]);
     await expect(
       client<{ count: number }[]>`
         select count(*)::int as count from app.forecourt_idempotency_records
@@ -1772,9 +1856,17 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       'a3-command-race-price-approve',
     );
     expect(priceApproval.status).toBe(200);
-    await client.unsafe(
-      `update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.routeRacePrice}'`,
+    const pricePrepare = await postCommand(
+      {
+        commandType: 'PreparePriceActivation',
+        tenantId: ids.tenantA,
+        stationId: ids.stationA,
+        priceId: ids.routeRacePrice,
+        expectedVersion: 1,
+      },
+      'a3-command-race-price-prepare',
     );
+    expect(pricePrepare.status).toBe(200);
     const activations = await Promise.all([
       postCommand(
         {
@@ -1782,7 +1874,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           tenantId: ids.tenantA,
           stationId: ids.stationA,
           priceId: ids.routeRacePrice,
-          expectedVersion: 1,
+          expectedVersion: 2,
         },
         'a3-command-race-price-a',
       ),
@@ -1792,7 +1884,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
           tenantId: ids.tenantA,
           stationId: ids.stationA,
           priceId: ids.routeRacePrice,
-          expectedVersion: 1,
+          expectedVersion: 2,
         },
         'a3-command-race-price-b',
       ),
@@ -1880,7 +1972,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       client<{ state: string; version: number }[]>`
         select state, version from app.selling_prices where id = ${ids.routeRacePrice}
       `,
-    ).resolves.toEqual([{ state: 'ACTIVE', version: 3 }]);
+    ).resolves.toEqual([{ state: 'ACTIVE', version: 4 }]);
     await expect(
       client<{ state: string; version: number }[]>`
         select state, version from app.reconciliation_revisions where id = ${ids.commandRaceRevision}
@@ -2550,10 +2642,6 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
             `,
             revisions: await client`
               select * from app.reconciliation_revisions
-              where tenant_id=${ids.tenantA} order by id
-            `,
-            declarations: await client`
-              select * from app.payment_declarations
               where tenant_id=${ids.tenantA} order by id
             `,
           };

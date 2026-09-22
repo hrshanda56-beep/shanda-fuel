@@ -97,6 +97,12 @@ export type IdempotencyRequest = Readonly<{
 }>;
 
 export const FORECOURT_COMMAND_POLICY = {
+  DefineShiftTemplate: {
+    permissionCode: 'shift.template.manage',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
   OpenBusinessDay: {
     permissionCode: 'business_day.open',
     requiredScopeType: 'STATION',
@@ -204,6 +210,12 @@ export const FORECOURT_COMMAND_POLICY = {
   },
   ApprovePriceChange: {
     permissionCode: 'price.change.approve',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: true,
+  },
+  PreparePriceActivation: {
+    permissionCode: 'price.change.prepare',
     requiredScopeType: 'STATION',
     assuranceRequirement: 'STEP_UP',
     requiresExpectedVersion: true,
@@ -361,9 +373,11 @@ export type ForecourtVersionSubject =
   | 'MeterInstallation'
   | 'SellingPrice'
   | 'Reconciliation'
-  | 'ReconciliationRevision';
+  | 'ReconciliationRevision'
+  | 'ShiftTemplate';
 
 export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVersionSubject> = {
+  DefineShiftTemplate: 'ShiftTemplate',
   OpenBusinessDay: 'StationBusinessDay',
   CloseBusinessDay: 'StationBusinessDay',
   StartShift: 'Shift',
@@ -381,6 +395,7 @@ export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVe
   ReplaceMeter: 'MeterInstallation',
   RequestPriceChange: 'SellingPrice',
   ApprovePriceChange: 'SellingPrice',
+  PreparePriceActivation: 'SellingPrice',
   ActivatePriceChange: 'SellingPrice',
   CreateReconciliation: 'Reconciliation',
   SubmitReconciliation: 'ReconciliationRevision',

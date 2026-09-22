@@ -228,6 +228,7 @@ const versionedSubjectTables: Record<string, string> = {
   MeterSegment: 'meter_segments',
   MeterInstallation: 'meter_installations',
   SellingPrice: 'selling_prices',
+  ShiftTemplate: 'shift_templates',
 };
 
 async function assertAttendantEligibility(
@@ -282,7 +283,8 @@ async function assertExpectedVersion(
       (subjectType === 'MeterSegment' ||
         subjectType === 'StationBusinessDay' ||
         subjectType === 'Shift' ||
-        subjectType === 'Reconciliation') &&
+        subjectType === 'Reconciliation' ||
+        subjectType === 'ShiftTemplate') &&
       expectedVersion === 0
     )
       return;
