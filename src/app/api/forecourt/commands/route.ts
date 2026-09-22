@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { AppError } from '../../../../platform/errors';
+import { requireAuthenticatedActor } from '../../../../modules/identity';
+import {
+  authorizeForecourtCommandPreflight,
+  type ForecourtCommandType,
+} from '../../../../modules/forecourt/application';
+import { loadForecourtStation } from '../../../../modules/forecourt/persistence';
 import {
   activatePriceChangeFromRequest,
   approvePriceChangeFromRequest,
@@ -81,8 +87,16 @@ function readCommandType(body: unknown): unknown {
     : undefined;
 }
 
+function jsonResponse(body: unknown, status: number): Response {
+  return NextResponse.json(body, {
+    status,
+    headers: { 'Cache-Control': 'no-store' },
+  });
+}
+
 export async function POST(request: Request): Promise<Response> {
   try {
+    await requireAuthenticatedActor(request);
     const body: unknown = await request.json();
     const rawCommandType = readCommandType(body);
     if (!isCommandType(rawCommandType)) {
@@ -93,6 +107,12 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     const commandType = rawCommandType;
+    await authorizeForecourtCommandPreflight({
+      request,
+      commandType: commandType as ForecourtCommandType,
+      body,
+      loadStation: loadForecourtStation,
+    });
     let result: unknown;
     switch (commandType) {
       case 'SealSegment':
@@ -187,21 +207,18 @@ export async function POST(request: Request): Promise<Response> {
         );
       }
     }
-    return NextResponse.json(result, { status: commandType === 'SealSegment' ? 201 : 200 });
+    return jsonResponse(result, commandType === 'SealSegment' ? 201 : 200);
   } catch (error) {
     if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: 'VALIDATION_FAILED', issues: error.issues },
-        { status: 400 },
-      );
+      return jsonResponse({ error: 'VALIDATION_FAILED', issues: error.issues }, 400);
     }
     if (error instanceof AppError) {
-      return NextResponse.json(
+      return jsonResponse(
         { error: error.code, message: error.message, details: error.details },
-        { status: error.httpStatus },
+        error.httpStatus,
       );
     }
     console.error('forecourt command failed', error);
-    return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
+    return jsonResponse({ error: 'INTERNAL_ERROR' }, 500);
   }
 }

@@ -1036,6 +1036,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     );
     expect(unknown.status).toBe(400);
     expect((await unknown.clone().json()).error).toBe('VALIDATION_FAILED');
+    expect(unknown.headers.get('cache-control')).toBe('no-store');
     expect(await snapshot()).toEqual(beforeUnknown);
     await assertNoIdempotencyRecord('a3-dispatch-unknown-command-type');
     await expect(client`
@@ -1052,6 +1053,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       'a3-dispatch-extra-field',
     );
     expect(extraField.status).toBe(400);
+    expect(extraField.headers.get('cache-control')).toBe('no-store');
     expect(await snapshot()).toEqual(beforeExtraField);
     await assertNoIdempotencyRecord('a3-dispatch-extra-field');
     await expect(client`
@@ -1070,10 +1072,91 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       );
     }
     expect(validSeal.status).toBe(201);
+    expect(validSeal.headers.get('cache-control')).toBe('no-store');
     const sealedSegment = await client<{ id: string; state: string }[]>`
       select id, state from app.meter_segments where id = ${wouldBeSealSegmentPayload.segmentId}
     `;
     expect(sealedSegment).toEqual([{ id: wouldBeSealSegmentPayload.segmentId, state: 'SEALED' }]);
+  });
+
+  it('authenticates before body parsing and authorizes before detailed command validation', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const rawToken = 'a3-route-session-token';
+    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+
+    const unauthenticatedMalformed = await forecourtCommandPost(
+      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{',
+      }),
+    );
+    expect(unauthenticatedMalformed.status).toBe(401);
+    expect((await unauthenticatedMalformed.clone().json()).error).toBe('UNAUTHENTICATED');
+    expect(unauthenticatedMalformed.headers.get('cache-control')).toBe('no-store');
+
+    const unauthenticatedUnknown = await forecourtCommandPost(
+      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ commandType: 'NotACommand' }),
+      }),
+    );
+    expect(unauthenticatedUnknown.status).toBe(401);
+    expect((await unauthenticatedUnknown.clone().json()).error).toBe('UNAUTHENTICATED');
+
+    async function postWithRouteSession(input: unknown, key: string) {
+      return forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            cookie: `shanda-fuel.session_token=${signedToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+    }
+
+    const malformedAuthorityPayload = {
+      commandType: 'OpenBusinessDay',
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+    };
+    const authorizedMalformed = await postWithRouteSession(
+      malformedAuthorityPayload,
+      'a3-auth-order-authorized-malformed',
+    );
+    expect(authorizedMalformed.status).toBe(400);
+    expect((await authorizedMalformed.clone().json()).issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: ['businessDayId'] }),
+        expect.objectContaining({ path: ['expectedVersion'] }),
+      ]),
+    );
+    expect(authorizedMalformed.headers.get('cache-control')).toBe('no-store');
+
+    for (const [tenantId, stationId, key] of [
+      [ids.tenantB, ids.stationB, 'a3-auth-order-unauthorized-tenant'],
+      [ids.tenantA, ids.stationA2, 'a3-auth-order-unauthorized-station'],
+    ] as const) {
+      const unauthorized = await postWithRouteSession(
+        { ...malformedAuthorityPayload, tenantId, stationId },
+        key,
+      );
+      const body = (await unauthorized.clone().json()) as {
+        error: string;
+        issues?: unknown;
+        details?: unknown;
+      };
+      expect(unauthorized.status).toBe(403);
+      expect(body.error).toBe('FORBIDDEN');
+      expect(body).not.toHaveProperty('issues');
+      expect(body).not.toHaveProperty('details');
+      expect(unauthorized.headers.get('cache-control')).toBe('no-store');
+    }
   });
 
   it('executes price, reconciliation, and business-day commands through the authenticated route', async () => {
