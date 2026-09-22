@@ -76,6 +76,35 @@ describe('permission authorization', () => {
     ).toBe(false);
   });
 
+  it('does not let generic approval authority lock a business day', () => {
+    const genericApprovalOnly: AuthorizationActor = {
+      ...actor,
+      strongAuthenticationExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      roleAssignments: [],
+      temporaryGrants: [
+        {
+          permissionCode: 'approval.act',
+          tenantId,
+          scopeType: 'STATION',
+          legalEntityId,
+          stationId,
+          expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+        },
+      ],
+    };
+    const requestedScope = { tenantId, scopeType: 'STATION' as const, legalEntityId, stationId };
+    expect(
+      isAuthorized({ actor: genericApprovalOnly, permissionCode: 'approval.act', requestedScope }),
+    ).toBe(true);
+    expect(
+      isAuthorized({
+        actor: genericApprovalOnly,
+        permissionCode: 'business_day.lock',
+        requestedScope,
+      }),
+    ).toBe(false);
+  });
+
   it('expires temporary grants and throws a safe forbidden error', () => {
     const now = new Date('2026-09-20T10:00:00.000Z');
     const temporaryActor = {
@@ -183,5 +212,26 @@ describe('permission authorization', () => {
         activeOwnerCount: 1,
       }),
     ).toThrow('ownership transfer');
+  });
+
+  it('never grants the A3 forecourt high-impact permissions to ATTENDANT', () => {
+    // A3 review finding: ATTENDANT must remain limited to routine boundary
+    // capture (station.view, shift.view, meter.view, meter.boundary.capture,
+    // tenant.context.select) and must never carry the named authoritative
+    // capabilities reserved for SUPERVISOR/ADMINISTRATOR/FINANCE/OWNER.
+    const highImpactA3Permissions = [
+      'shift.template.manage',
+      'price.change.prepare',
+      'reconciliation.submit',
+      'price.change.boundary',
+      'meter.reset',
+      'meter.replace',
+      'meter.correction.execute',
+      'exception.manage',
+    ] as const;
+    const attendantPermissions = DEFAULT_ROLE_PERMISSIONS.ATTENDANT;
+    for (const permissionCode of highImpactA3Permissions) {
+      expect(attendantPermissions).not.toContain(permissionCode);
+    }
   });
 });

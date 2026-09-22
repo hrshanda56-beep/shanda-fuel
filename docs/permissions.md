@@ -1,6 +1,6 @@
 # Permission catalogue
 
-The centralized A1 permission catalogue is implemented in `src/platform/security/permissions.ts` and exposed through the authorization module. It intentionally contains only the platform and basic permissions needed to prove tenant, membership, role, document, reporting, and audit authorization. Feature workstreams add reviewed business-domain permission codes when those domains are implemented; A1 does not pre-seed speculative forecourt or financial permissions.
+The centralized permission catalogue is implemented in `src/platform/security/permissions.ts` and exposed through the authorization module. A3 adds narrowly scoped forecourt and reconciliation codes for business-day/shift, meter, price-boundary, reconciliation, approval, and exception commands. Codes—not role-name checks—remain authoritative.
 
 Permission codes, not role-name checks, are authoritative. Role templates only expand to permission codes and every assignment carries an explicit tenant/legal-entity/station scope and optional expiry.
 

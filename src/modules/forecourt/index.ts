@@ -1,2 +1,105 @@
-/** Forecourt workflows are owned by later workstreams; this is the public module boundary. */
-export {};
+export {
+  approvePriceChange,
+  approveReconciliation,
+  assertNoOverlappingOperationalSegments,
+  calculateExpectedSales,
+  calculateReconciliation,
+  cancelBeforeStart,
+  closeMeters,
+  completeShift,
+  confirmAttendantHandover,
+  confirmBoundary,
+  exceptionallyCloseBusinessDay,
+  exceptionallyCloseShift,
+  finalizeBusinessDay,
+  lockReconciliation,
+  lockBusinessDay,
+  markNotOperated,
+  markOperationsComplete,
+  newBusinessDay,
+  openBusinessDay,
+  postReconciliation,
+  replaceMeterInstallation,
+  rejectReconciliation,
+  resolveOpeningReading,
+  requestPriceChange,
+  requestReconciliationApproval,
+  returnReconciliation,
+  sealMeterSegment,
+  startShift,
+  submitReconciliation,
+} from './domain';
+export type {
+  BoundaryReason,
+  MeterBoundary,
+  MeterInstallation,
+  MeterReading,
+  MeterSegment,
+  MeterSegmentInput,
+  PaymentDeclaration,
+  ReconciliationPaymentCategory,
+  ReconciliationPolicy,
+  ReconciliationRevision,
+  ReconciliationState,
+  SellingPrice,
+  Shift,
+  ShiftState,
+  StationBusinessDay,
+  StationBusinessDayState,
+  VarianceClassification,
+} from './domain';
+export type { TrustedActor } from './trusted-actor';
+export {
+  businessDayLockedEvent,
+  meterSegmentSealedEvent,
+  priceBoundaryActivatedEvent,
+  reconciliationApprovedEvent,
+  reconciliationPostedEvent,
+} from './contracts';
+export {
+  databaseAuditPort,
+  databaseForecourtPorts,
+  databaseIdempotencyPort,
+  databaseOutboxPort,
+} from './persistence';
+export { buildDailyForecourtReport } from './report';
+export {
+  createForecourtCommandContext,
+  databaseForecourtTransactionPort,
+  executeForecourtCommand,
+  resolveForecourtCommandContext,
+} from './application';
+export { FORECOURT_COMMAND_POLICY } from './application';
+export {
+  activatePriceChangeFromRequest,
+  approvePriceChangeFromRequest,
+  approveReconciliationFromRequest,
+  defineShiftTemplateFromRequest,
+  handoverAttendantFromRequest,
+  lockBusinessDayFromRequest,
+  lockReconciliationFromRequest,
+  postReconciliationFromRequest,
+  preparePriceActivationFromRequest,
+  sealMeterSegmentFromRequest,
+} from './commands';
+export type {
+  ForecourtAuditPort,
+  ForecourtCommandContext,
+  ForecourtCommandPorts,
+  ForecourtOutboxPort,
+  IdempotencyPort,
+  IdempotencyRequest,
+  ForecourtCommandInput,
+  ForecourtTransaction,
+  ForecourtTransactionPort,
+  ForecourtCommandType,
+  ForecourtVersionSubject,
+} from './application';
+export type {
+  BusinessDayLockedEvent,
+  ForecourtEvent,
+  MeterSegmentSealedEvent,
+  PriceBoundaryActivatedEvent,
+  ReconciliationApprovedEvent,
+  ReconciliationPostedEvent,
+} from './contracts';

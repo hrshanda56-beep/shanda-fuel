@@ -35,3 +35,13 @@ When sources conflict, preserve confirmed facts and explicit integrity/security 
 Every meaningful slice must address authorization, tenant isolation, exact arithmetic, concurrency/idempotency, audit, correction/reversal, loading/error/empty states, accessibility, tests, observability, and documentation as applicable. Report deviations, blockers, tests, and remaining onboarding data needs. A genuine blocker is an unresolved contradiction, missing external authority/credential for an external action, or unsafe irreversible production action—not missing client setup data.
 
 The next implementation owner is A0. Do not begin A0 work from this preparation task.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
