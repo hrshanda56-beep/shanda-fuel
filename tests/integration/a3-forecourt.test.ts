@@ -5,6 +5,7 @@ import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
 import {
+  FORECOURT_COMMAND_POLICY,
   createForecourtCommandContext,
   databaseForecourtTransactionPort,
   type ForecourtCommandContext,
@@ -1085,26 +1086,46 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     const rawToken = 'a3-route-session-token';
     const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
 
-    const unauthenticatedMalformed = await forecourtCommandPost(
-      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{',
-      }),
-    );
-    expect(unauthenticatedMalformed.status).toBe(401);
-    expect((await unauthenticatedMalformed.clone().json()).error).toBe('UNAUTHENTICATED');
-    expect(unauthenticatedMalformed.headers.get('cache-control')).toBe('no-store');
+    async function postUnauthenticated(body: string) {
+      return forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        }),
+      );
+    }
 
-    const unauthenticatedUnknown = await forecourtCommandPost(
-      new Request('http://127.0.0.1:3000/api/forecourt/commands', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ commandType: 'NotACommand' }),
-      }),
+    async function expectUnauthenticatedWithoutSchemaLeak(response: Response) {
+      expect(response.status).toBe(401);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      const text = await response.clone().text();
+      const body = JSON.parse(text) as Record<string, unknown>;
+      expect(body.error).toBe('UNAUTHENTICATED');
+      expect(body).not.toHaveProperty('issues');
+      expect(body).not.toHaveProperty('details');
+      expect(text).not.toMatch(/commandType|tenantId|stationId|VALIDATION_FAILED/i);
+      for (const commandType of Object.keys(FORECOURT_COMMAND_POLICY)) {
+        expect(text).not.toContain(commandType);
+      }
+      expect(text).not.toContain('DefinitelyNotACommand');
+    }
+
+    const unauthenticatedMalformed = await postUnauthenticated('{');
+    await expectUnauthenticatedWithoutSchemaLeak(unauthenticatedMalformed);
+
+    const unauthenticatedEmpty = await postUnauthenticated('{}');
+    await expectUnauthenticatedWithoutSchemaLeak(unauthenticatedEmpty);
+
+    const unauthenticatedUnknown = await postUnauthenticated(
+      JSON.stringify({ commandType: 'DefinitelyNotACommand' }),
     );
-    expect(unauthenticatedUnknown.status).toBe(401);
-    expect((await unauthenticatedUnknown.clone().json()).error).toBe('UNAUTHENTICATED');
+    await expectUnauthenticatedWithoutSchemaLeak(unauthenticatedUnknown);
+
+    const unauthenticatedIncompleteOpenBusinessDay = await postUnauthenticated(
+      JSON.stringify({ commandType: 'OpenBusinessDay' }),
+    );
+    await expectUnauthenticatedWithoutSchemaLeak(unauthenticatedIncompleteOpenBusinessDay);
 
     async function postWithRouteSession(input: unknown, key: string) {
       return forecourtCommandPost(
