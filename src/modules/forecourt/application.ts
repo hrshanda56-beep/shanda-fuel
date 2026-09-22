@@ -348,8 +348,11 @@ export async function authorizeForecourtCommandPreflight(input: {
     // Do not disclose membership, station existence, or permission details at
     // the preflight boundary. The full command path still maps its own
     // business errors after this trusted context has been established.
-    if (error instanceof AppError && (error.code === 'FORBIDDEN' || error.code === 'NOT_FOUND')) {
+    if (error instanceof AppError && error.code === 'FORBIDDEN') {
       throw new AppError('FORBIDDEN', FORECOURT_AUTHORITY_ERROR);
+    }
+    if (error instanceof AppError && error.code === 'NOT_FOUND') {
+      throw new AppError('NOT_FOUND', FORECOURT_AUTHORITY_ERROR);
     }
     throw error;
   }

@@ -126,4 +126,21 @@ describe('forecourt command authorization preflight', () => {
       details: undefined,
     });
   });
+
+  it('preserves a generic not-found response when the station cannot be resolved', async () => {
+    const loadStation = vi.fn().mockResolvedValue(null);
+
+    await expect(
+      authorizeForecourtCommandPreflight({
+        request,
+        commandType: 'OpenBusinessDay',
+        body: { tenantId: ids.tenant, stationId: ids.station },
+        loadStation,
+      }),
+    ).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Forecourt command authority could not be established',
+      details: undefined,
+    });
+  });
 });
