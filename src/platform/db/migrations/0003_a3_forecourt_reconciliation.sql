@@ -350,19 +350,58 @@ CREATE OR REPLACE FUNCTION app.reject_authoritative_forecourt_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    IF TG_TABLE_NAME = 'meter_segments' OR OLD.state IN ('APPROVED', 'POSTED', 'LOCKED', 'CLOSED', 'EXCEPTIONALLY_CLOSED') THEN RAISE EXCEPTION 'authoritative forecourt history is append-only'; END IF;
+    IF TG_TABLE_NAME = 'meter_segments' THEN
+      RAISE EXCEPTION 'sealed meter segments are immutable; use a correction or reversal';
+    ELSIF OLD.state IN ('APPROVED','POSTED','LOCKED','CLOSED','EXCEPTIONALLY_CLOSED') THEN
+      RAISE EXCEPTION 'authoritative forecourt history is append-only';
+    END IF;
     RETURN OLD;
   END IF;
   IF TG_TABLE_NAME = 'meter_segments' THEN
-    RAISE EXCEPTION 'sealed meter segments are immutable; use a correction or reversal';
-  ELSIF TG_TABLE_NAME = 'reconciliation_revisions' AND OLD.state IN ('SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'POSTED', 'LOCKED') THEN
-    IF OLD.state IN ('APPROVED', 'POSTED', 'LOCKED') OR NEW.reconciliation_id IS DISTINCT FROM OLD.reconciliation_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.revision IS DISTINCT FROM OLD.revision OR NEW.expected_sales IS DISTINCT FROM OLD.expected_sales OR NEW.accounted_sales IS DISTINCT FROM OLD.accounted_sales OR NEW.variance IS DISTINCT FROM OLD.variance OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.variance_classification IS DISTINCT FROM OLD.variance_classification OR NEW.declarations IS DISTINCT FROM OLD.declarations OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by OR (OLD.state <> 'PENDING_APPROVAL' AND NEW.variance_explanation IS DISTINCT FROM OLD.variance_explanation AND NEW.state <> 'RETURNED') THEN RAISE EXCEPTION 'submitted and posted reconciliation revision values are immutable'; END IF;
-  ELSIF TG_TABLE_NAME = 'station_business_days' AND OLD.state IN ('CLOSED', 'EXCEPTIONALLY_CLOSED', 'LOCKED') THEN
+    IF OLD.state <> 'OPEN' OR NEW.state <> 'SEALED' OR NEW.version <> OLD.version + 1
+      OR NEW.id IS DISTINCT FROM OLD.id OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id
+      OR NEW.nozzle_id IS DISTINCT FROM OLD.nozzle_id OR NEW.meter_installation_id IS DISTINCT FROM OLD.meter_installation_id
+      OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id OR NEW.shift_id IS DISTINCT FROM OLD.shift_id
+      OR NEW.opening_boundary_id IS DISTINCT FROM OLD.opening_boundary_id OR NEW.closing_boundary_id IS DISTINCT FROM OLD.closing_boundary_id
+      OR NEW.product_id IS DISTINCT FROM OLD.product_id OR NEW.attendant_id IS DISTINCT FROM OLD.attendant_id
+      OR NEW.entered_by IS DISTINCT FROM OLD.entered_by OR NEW.on_behalf_of IS DISTINCT FROM OLD.on_behalf_of
+      OR NEW.correction_of_segment_id IS DISTINCT FROM OLD.correction_of_segment_id OR NEW.reversal_of_segment_id IS DISTINCT FROM OLD.reversal_of_segment_id
+      OR NEW.opening_reading IS DISTINCT FROM OLD.opening_reading OR NEW.closing_reading IS DISTINCT FROM OLD.closing_reading
+      OR NEW.litres IS DISTINCT FROM OLD.litres OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+      OR NEW.selling_price_id IS DISTINCT FROM OLD.selling_price_id
+      OR NEW.expected_sale_value IS DISTINCT FROM OLD.expected_sale_value OR NEW.currency IS DISTINCT FROM OLD.currency
+      OR NEW.boundary_reason IS DISTINCT FROM OLD.boundary_reason OR NEW.segment_start_at IS DISTINCT FROM OLD.segment_start_at
+      OR NEW.segment_end_at IS DISTINCT FROM OLD.segment_end_at OR NEW.sealed_at IS DISTINCT FROM OLD.sealed_at
+      OR NEW.controlled_exception IS DISTINCT FROM OLD.controlled_exception OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+      RAISE EXCEPTION 'meter segments only permit OPEN to SEALED transition; use a correction or reversal';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'reconciliation_revisions' THEN
+    IF OLD.state = 'LOCKED' THEN RAISE EXCEPTION 'locked reconciliation revisions are immutable'; END IF;
+    IF OLD.state = 'RETURNED' THEN RAISE EXCEPTION 'returned reconciliation revisions are immutable; create a correction revision'; END IF;
+    IF OLD.state IN ('APPROVED','POSTED') AND NOT (
+      OLD.state = 'APPROVED' AND NEW.state = 'POSTED' AND NEW.posted_by IS NOT NULL AND NEW.posted_at IS NOT NULL
+      OR OLD.state = 'POSTED' AND NEW.state = 'LOCKED' AND NEW.locked_by IS NOT NULL AND NEW.locked_at IS NOT NULL
+    ) THEN RAISE EXCEPTION 'approved and posted reconciliation revisions only accept named provenance transitions'; END IF;
+    IF OLD.state IN ('SUBMITTED','PENDING_APPROVAL','APPROVED','POSTED') AND (
+      NEW.reconciliation_id IS DISTINCT FROM OLD.reconciliation_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.revision IS DISTINCT FROM OLD.revision
+      OR NEW.expected_sales IS DISTINCT FROM OLD.expected_sales OR NEW.accounted_sales IS DISTINCT FROM OLD.accounted_sales OR NEW.variance IS DISTINCT FROM OLD.variance
+      OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.variance_classification IS DISTINCT FROM OLD.variance_classification OR NEW.declarations IS DISTINCT FROM OLD.declarations
+      OR NEW.source_segment_ids IS DISTINCT FROM OLD.source_segment_ids OR NEW.source_shift_ids IS DISTINCT FROM OLD.source_shift_ids
+      OR NEW.source_revision_id IS DISTINCT FROM OLD.source_revision_id OR NEW.correction_of_revision_id IS DISTINCT FROM OLD.correction_of_revision_id
+      OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
+      OR (NEW.approved_by IS DISTINCT FROM OLD.approved_by AND NOT (OLD.state = 'PENDING_APPROVAL' AND NEW.state = 'APPROVED'))
+      OR (NEW.approved_at IS DISTINCT FROM OLD.approved_at AND NOT (OLD.state = 'PENDING_APPROVAL' AND NEW.state = 'APPROVED'))
+      OR (NEW.posted_by IS DISTINCT FROM OLD.posted_by AND NOT (OLD.state = 'APPROVED' AND NEW.state = 'POSTED'))
+      OR (NEW.posted_at IS DISTINCT FROM OLD.posted_at AND NOT (OLD.state = 'APPROVED' AND NEW.state = 'POSTED'))
+      OR (NEW.locked_by IS DISTINCT FROM OLD.locked_by AND NOT (OLD.state = 'POSTED' AND NEW.state = 'LOCKED'))
+      OR (NEW.locked_at IS DISTINCT FROM OLD.locked_at AND NOT (OLD.state = 'POSTED' AND NEW.state = 'LOCKED'))
+    ) THEN RAISE EXCEPTION 'authoritative reconciliation revision values are immutable'; END IF;
+  ELSIF TG_TABLE_NAME = 'station_business_days' AND OLD.state IN ('CLOSED','EXCEPTIONALLY_CLOSED','LOCKED') THEN
     IF OLD.state <> 'CLOSED' OR NEW.state <> 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_date IS DISTINCT FROM OLD.business_date THEN RAISE EXCEPTION 'closed and locked business days are immutable'; END IF;
-  ELSIF TG_TABLE_NAME = 'selling_prices' AND OLD.state IN ('ACTIVE', 'FAILED_ACTIVATION') THEN
+  ELSIF TG_TABLE_NAME = 'selling_prices' AND OLD.state IN ('ACTIVE','FAILED_ACTIVATION') THEN
     RAISE EXCEPTION 'historical activated prices are immutable';
-  ELSIF TG_TABLE_NAME = 'reconciliations' AND OLD.state IN ('APPROVED', 'POSTED', 'LOCKED') THEN
-    RAISE EXCEPTION 'approved, posted, and locked reconciliations are immutable';
+  ELSIF TG_TABLE_NAME = 'reconciliations' AND OLD.state IN ('APPROVED','POSTED','LOCKED') THEN
+    IF OLD.state = 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id THEN RAISE EXCEPTION 'approved, posted, and locked reconciliations are immutable'; END IF;
   END IF;
   RETURN NEW;
 END;
@@ -583,88 +622,6 @@ CREATE TRIGGER reconciliation_revisions_initial_state_guard BEFORE INSERT ON app
 CREATE TRIGGER selling_prices_initial_state_guard BEFORE INSERT ON app.selling_prices FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
 CREATE TRIGGER meter_segments_initial_state_guard BEFORE INSERT ON app.meter_segments FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_initial_state();
 
-CREATE OR REPLACE FUNCTION app.guard_meter_exception_mutation()
-RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE source_boundary record;
-DECLARE resolution_boundary record;
-BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF NEW.status <> 'BLOCKING' OR NEW.exception_type <> 'METER_UNAVAILABLE' THEN
-      RAISE EXCEPTION 'meter exceptions must be created as blocking meter-unavailable records';
-    END IF;
-    SELECT id, tenant_id, station_id, business_day_id, shift_id, nozzle_id,
-           meter_installation_id, reading_status
-      INTO source_boundary
-      FROM app.meter_boundaries
-     WHERE tenant_id = NEW.tenant_id
-       AND station_id = NEW.station_id
-       AND id = NEW.boundary_id;
-    IF source_boundary.id IS NULL
-       OR source_boundary.reading_status <> 'UNAVAILABLE'
-       OR source_boundary.business_day_id IS DISTINCT FROM NEW.business_day_id
-       OR source_boundary.shift_id IS DISTINCT FROM NEW.shift_id
-       OR source_boundary.nozzle_id IS DISTINCT FROM NEW.nozzle_id
-       OR source_boundary.meter_installation_id IS DISTINCT FROM NEW.meter_installation_id THEN
-      RAISE EXCEPTION 'meter exception scope must match its unavailable boundary';
-    END IF;
-    RETURN NEW;
-  END IF;
-
-  IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
-     OR NEW.station_id IS DISTINCT FROM OLD.station_id
-     OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id
-     OR NEW.shift_id IS DISTINCT FROM OLD.shift_id
-     OR NEW.nozzle_id IS DISTINCT FROM OLD.nozzle_id
-     OR NEW.meter_installation_id IS DISTINCT FROM OLD.meter_installation_id
-     OR NEW.boundary_id IS DISTINCT FROM OLD.boundary_id
-     OR NEW.exception_type IS DISTINCT FROM OLD.exception_type
-     OR NEW.reason IS DISTINCT FROM OLD.reason
-     OR (OLD.status = 'RESOLVED' AND NEW IS DISTINCT FROM OLD) THEN
-    RAISE EXCEPTION 'meter exception identity and resolved history are immutable';
-  END IF;
-  IF OLD.status = 'BLOCKING' AND NEW.status = 'RESOLVED' THEN
-    IF NEW.resolved_at IS NULL OR NEW.resolved_by IS NULL
-       OR NEW.resolution_kind IS NULL OR btrim(NEW.resolution_kind) = ''
-       OR NEW.resolution_boundary_id IS NULL
-       OR jsonb_typeof(NEW.resolution_provenance) <> 'object' THEN
-      RAISE EXCEPTION 'resolved meter exceptions require complete resolution provenance';
-    END IF;
-    SELECT id, tenant_id, station_id, business_day_id, shift_id, nozzle_id,
-           meter_installation_id, reading_status, effective_at
-      INTO resolution_boundary
-      FROM app.meter_boundaries
-     WHERE tenant_id = NEW.tenant_id
-       AND station_id = NEW.station_id
-       AND id = NEW.resolution_boundary_id;
-    SELECT effective_at INTO source_boundary
-      FROM app.meter_boundaries
-     WHERE tenant_id = NEW.tenant_id
-       AND station_id = NEW.station_id
-       AND id = NEW.boundary_id;
-    IF resolution_boundary.id IS NULL
-       OR resolution_boundary.reading_status <> 'AVAILABLE'
-       OR resolution_boundary.business_day_id IS DISTINCT FROM NEW.business_day_id
-       OR resolution_boundary.shift_id IS DISTINCT FROM NEW.shift_id
-       OR resolution_boundary.nozzle_id IS DISTINCT FROM NEW.nozzle_id
-       OR (
-         resolution_boundary.meter_installation_id IS DISTINCT FROM NEW.meter_installation_id
-         AND NOT (
-           NEW.resolution_kind = 'REPLACEMENT'
-           AND NEW.resolution_provenance->>'replacedInstallationId' = NEW.meter_installation_id::text
-           AND NEW.resolution_provenance->>'replacementInstallationId' = resolution_boundary.meter_installation_id::text
-         )
-       )
-       OR source_boundary.effective_at IS NULL
-       OR resolution_boundary.effective_at <= source_boundary.effective_at THEN
-      RAISE EXCEPTION 'meter exception resolution must address the same later operational interval';
-    END IF;
-  ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
-    RAISE EXCEPTION 'meter exception status may only transition from BLOCKING to RESOLVED';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
 CREATE OR REPLACE FUNCTION app.create_meter_exception_for_unavailable_boundary()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, app AS $$
 BEGIN
@@ -682,10 +639,6 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS meter_exceptions_scope_guard ON app.meter_exceptions;
-CREATE TRIGGER meter_exceptions_scope_guard
-BEFORE INSERT OR UPDATE ON app.meter_exceptions
-FOR EACH ROW EXECUTE FUNCTION app.guard_meter_exception_mutation();
 DROP TRIGGER IF EXISTS meter_boundary_exception_identity ON app.meter_boundaries;
 CREATE TRIGGER meter_boundary_exception_identity
 AFTER INSERT ON app.meter_boundaries
@@ -759,67 +712,6 @@ CREATE TRIGGER shifts_transition_guard BEFORE UPDATE OF state ON app.shifts FOR 
 CREATE TRIGGER reconciliations_transition_guard BEFORE UPDATE OF state ON app.reconciliations FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
 CREATE TRIGGER reconciliation_revisions_transition_guard BEFORE UPDATE OF state ON app.reconciliation_revisions FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
 CREATE TRIGGER selling_prices_transition_guard BEFORE UPDATE OF state ON app.selling_prices FOR EACH ROW EXECUTE FUNCTION app.enforce_forecourt_state_transition();
-
-CREATE OR REPLACE FUNCTION app.reject_authoritative_forecourt_mutation()
-RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF TG_OP = 'DELETE' THEN
-    IF TG_TABLE_NAME = 'meter_segments' THEN
-      RAISE EXCEPTION 'sealed meter segments are immutable; use a correction or reversal';
-    ELSIF OLD.state IN ('APPROVED','POSTED','LOCKED','CLOSED','EXCEPTIONALLY_CLOSED') THEN
-      RAISE EXCEPTION 'authoritative forecourt history is append-only';
-    END IF;
-    RETURN OLD;
-  END IF;
-  IF TG_TABLE_NAME = 'meter_segments' THEN
-    IF OLD.state <> 'OPEN' OR NEW.state <> 'SEALED' OR NEW.version <> OLD.version + 1
-      OR NEW.id IS DISTINCT FROM OLD.id OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id
-      OR NEW.nozzle_id IS DISTINCT FROM OLD.nozzle_id OR NEW.meter_installation_id IS DISTINCT FROM OLD.meter_installation_id
-      OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id OR NEW.shift_id IS DISTINCT FROM OLD.shift_id
-      OR NEW.opening_boundary_id IS DISTINCT FROM OLD.opening_boundary_id OR NEW.closing_boundary_id IS DISTINCT FROM OLD.closing_boundary_id
-      OR NEW.product_id IS DISTINCT FROM OLD.product_id OR NEW.attendant_id IS DISTINCT FROM OLD.attendant_id
-      OR NEW.entered_by IS DISTINCT FROM OLD.entered_by OR NEW.on_behalf_of IS DISTINCT FROM OLD.on_behalf_of
-      OR NEW.correction_of_segment_id IS DISTINCT FROM OLD.correction_of_segment_id OR NEW.reversal_of_segment_id IS DISTINCT FROM OLD.reversal_of_segment_id
-      OR NEW.opening_reading IS DISTINCT FROM OLD.opening_reading OR NEW.closing_reading IS DISTINCT FROM OLD.closing_reading
-      OR NEW.litres IS DISTINCT FROM OLD.litres OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
-      OR NEW.selling_price_id IS DISTINCT FROM OLD.selling_price_id
-      OR NEW.expected_sale_value IS DISTINCT FROM OLD.expected_sale_value OR NEW.currency IS DISTINCT FROM OLD.currency
-      OR NEW.boundary_reason IS DISTINCT FROM OLD.boundary_reason OR NEW.segment_start_at IS DISTINCT FROM OLD.segment_start_at
-      OR NEW.segment_end_at IS DISTINCT FROM OLD.segment_end_at OR NEW.sealed_at IS DISTINCT FROM OLD.sealed_at
-      OR NEW.controlled_exception IS DISTINCT FROM OLD.controlled_exception OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
-      RAISE EXCEPTION 'meter segments only permit OPEN to SEALED transition; use a correction or reversal';
-    END IF;
-  ELSIF TG_TABLE_NAME = 'reconciliation_revisions' THEN
-    IF OLD.state = 'LOCKED' THEN RAISE EXCEPTION 'locked reconciliation revisions are immutable'; END IF;
-    IF OLD.state = 'RETURNED' THEN RAISE EXCEPTION 'returned reconciliation revisions are immutable; create a correction revision'; END IF;
-    IF OLD.state IN ('APPROVED','POSTED') AND NOT (
-      OLD.state = 'APPROVED' AND NEW.state = 'POSTED' AND NEW.posted_by IS NOT NULL AND NEW.posted_at IS NOT NULL
-      OR OLD.state = 'POSTED' AND NEW.state = 'LOCKED' AND NEW.locked_by IS NOT NULL AND NEW.locked_at IS NOT NULL
-    ) THEN RAISE EXCEPTION 'approved and posted reconciliation revisions only accept named provenance transitions'; END IF;
-    IF OLD.state IN ('SUBMITTED','PENDING_APPROVAL','APPROVED','POSTED') AND (
-      NEW.reconciliation_id IS DISTINCT FROM OLD.reconciliation_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.revision IS DISTINCT FROM OLD.revision
-      OR NEW.expected_sales IS DISTINCT FROM OLD.expected_sales OR NEW.accounted_sales IS DISTINCT FROM OLD.accounted_sales OR NEW.variance IS DISTINCT FROM OLD.variance
-      OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.variance_classification IS DISTINCT FROM OLD.variance_classification OR NEW.declarations IS DISTINCT FROM OLD.declarations
-      OR NEW.source_segment_ids IS DISTINCT FROM OLD.source_segment_ids OR NEW.source_shift_ids IS DISTINCT FROM OLD.source_shift_ids
-      OR NEW.source_revision_id IS DISTINCT FROM OLD.source_revision_id OR NEW.correction_of_revision_id IS DISTINCT FROM OLD.correction_of_revision_id
-      OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
-      OR (NEW.approved_by IS DISTINCT FROM OLD.approved_by AND NOT (OLD.state = 'PENDING_APPROVAL' AND NEW.state = 'APPROVED'))
-      OR (NEW.approved_at IS DISTINCT FROM OLD.approved_at AND NOT (OLD.state = 'PENDING_APPROVAL' AND NEW.state = 'APPROVED'))
-      OR (NEW.posted_by IS DISTINCT FROM OLD.posted_by AND NOT (OLD.state = 'APPROVED' AND NEW.state = 'POSTED'))
-      OR (NEW.posted_at IS DISTINCT FROM OLD.posted_at AND NOT (OLD.state = 'APPROVED' AND NEW.state = 'POSTED'))
-      OR (NEW.locked_by IS DISTINCT FROM OLD.locked_by AND NOT (OLD.state = 'POSTED' AND NEW.state = 'LOCKED'))
-      OR (NEW.locked_at IS DISTINCT FROM OLD.locked_at AND NOT (OLD.state = 'POSTED' AND NEW.state = 'LOCKED'))
-    ) THEN RAISE EXCEPTION 'authoritative reconciliation revision values are immutable'; END IF;
-  ELSIF TG_TABLE_NAME = 'station_business_days' AND OLD.state IN ('CLOSED','EXCEPTIONALLY_CLOSED','LOCKED') THEN
-    IF OLD.state <> 'CLOSED' OR NEW.state <> 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_date IS DISTINCT FROM OLD.business_date THEN RAISE EXCEPTION 'closed and locked business days are immutable'; END IF;
-  ELSIF TG_TABLE_NAME = 'selling_prices' AND OLD.state IN ('ACTIVE','FAILED_ACTIVATION') THEN
-    RAISE EXCEPTION 'historical activated prices are immutable';
-ELSIF TG_TABLE_NAME = 'reconciliations' AND OLD.state IN ('APPROVED','POSTED','LOCKED') THEN
-    IF OLD.state = 'LOCKED' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id THEN RAISE EXCEPTION 'approved, posted, and locked reconciliations are immutable'; END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$;
 
 CREATE OR REPLACE FUNCTION app.guard_forecourt_idempotency_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -1211,6 +1103,7 @@ CREATE TRIGGER meter_exceptions_scope_guard
 BEFORE INSERT OR UPDATE OR DELETE ON app.meter_exceptions
 FOR EACH ROW EXECUTE FUNCTION app.guard_meter_exception_mutation();
 
+REVOKE ALL ON FUNCTION app.resolve_meter_exception(uuid,uuid,uuid,uuid,text,uuid,uuid) FROM PUBLIC;
 REVOKE ALL ON app.meter_exceptions, app.meter_exception_resolutions FROM PUBLIC;
 REVOKE INSERT, UPDATE, DELETE ON app.meter_exceptions FROM app_runtime;
 REVOKE INSERT, UPDATE, DELETE ON app.meter_exception_resolutions FROM app_runtime;

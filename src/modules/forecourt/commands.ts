@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { meterSegments } from '../../platform/db/schema/a3';
 import { litres, money, unitPrice } from '../../platform/domain/primitives';
+import { deriveBusinessDate } from '../../platform/domain/business-time';
 import {
   executeForecourtCommand,
   type ForecourtCommandContext,
@@ -18,6 +19,8 @@ import {
 } from './persistence';
 import {
   businessDayLockedEvent,
+  businessDayOpenedEvent,
+  shiftStartedEvent,
   meterSegmentSealedEvent,
   priceBoundaryActivatedEvent,
   reconciliationApprovedEvent,
@@ -438,6 +441,26 @@ export async function handoverAttendantFromRequest(request: Request, input: unkn
   });
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  const code = (error as { code?: string; cause?: { code?: string } })?.code;
+  const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+  return code === '23505' || causeCode === '23505';
+}
+
+/** Server-trusted station timezone lookup -- never client-supplied. */
+async function loadStationTimezone(
+  transaction: ForecourtTransaction,
+  tenantId: string,
+  stationId: string,
+): Promise<string> {
+  const rows = await transaction.execute<{ timezone: string }>(sql`
+    select timezone from app.stations where tenant_id = ${tenantId} and id = ${stationId} limit 1
+  `);
+  const timezone = rows[0]?.timezone;
+  if (!timezone) throw new AppError('NOT_FOUND', 'The station timezone could not be resolved');
+  return timezone;
+}
+
 async function serverNow(
   transaction: Parameters<Parameters<import('../../platform/db').Database['transaction']>[0]>[0],
 ): Promise<string> {
@@ -475,18 +498,43 @@ export async function openBusinessDayFromRequest(request: Request, input: unknow
     expectedVersion: payload.expectedVersion,
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
-      const rows = await transaction.execute<{
-        id: string;
-        business_date: string;
-        state: string;
-        version: number;
-      }>(sql`
-        select id, business_date, state, version from app.station_business_days
-        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.businessDayId}
-        for update
-      `);
-      const row = rows[0];
-      if (!row) throw new AppError('NOT_FOUND', 'Business day was not found');
+      const now = await serverNow(transaction);
+      const timezone = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+      const businessDate = deriveBusinessDate(now, timezone);
+      let row = (
+        await transaction.execute<{
+          id: string;
+          business_date: string;
+          state: string;
+          version: number;
+        }>(sql`
+          select id, business_date, state, version from app.station_business_days
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.businessDayId}
+          for update
+        `)
+      )[0];
+      if (!row) {
+        try {
+          await transaction.execute(sql`
+            insert into app.station_business_days (id, tenant_id, station_id, business_date, state, version)
+            values (${payload.businessDayId}, ${context.tenantId}, ${context.stationId}, ${businessDate}, 'NOT_STARTED', 0)
+          `);
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new AppError(
+              'CONFLICT',
+              'A business day already exists for this station and date',
+            );
+          }
+          throw error;
+        }
+        row = {
+          id: payload.businessDayId,
+          business_date: businessDate,
+          state: 'NOT_STARTED',
+          version: 0,
+        };
+      }
       const day = openBusinessDay({
         id: row.id,
         tenantId: context.tenantId,
@@ -495,14 +543,25 @@ export async function openBusinessDayFromRequest(request: Request, input: unknow
         state: row.state as 'NOT_STARTED',
         version: Number(row.version),
       });
-      const now = await serverNow(transaction);
       await transaction.execute(sql`
         update app.station_business_days set state = 'OPEN', opened_at = ${now}::timestamptz,
           version = version + 1, updated_at = ${now}::timestamptz
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
           and id = ${payload.businessDayId} and version = ${payload.expectedVersion}
       `);
-      return { result: { businessDayId: day.id }, after: day };
+      return {
+        result: { businessDayId: day.id, businessDate: day.date },
+        after: day,
+        event: businessDayOpenedEvent({
+          eventId: randomUUID(),
+          tenantId: context.tenantId,
+          legalEntityId: context.legalEntityId,
+          stationId: context.stationId,
+          businessDayId: day.id,
+          businessDate: day.date,
+          openedAt: now,
+        }),
+      };
     },
   });
 }
@@ -578,6 +637,11 @@ const shiftLifecyclePayload = z
     shiftId: z.string().uuid(),
     expectedVersion: z.number().int().nonnegative(),
     reason: z.string().trim().min(1).optional(),
+    /** Only used by StartShift when the shift does not yet exist; the server
+     * derives and validates the BusinessDate from this instant and the
+     * station's persisted IANA timezone -- it is never trusted verbatim. */
+    plannedStartAt: z.string().datetime().optional(),
+    plannedEndAt: z.string().datetime().optional(),
   })
   .strict();
 type ShiftLifecycleCommand = 'StartShift' | 'CloseMeters' | 'CompleteShift' | 'MarkNotOperated';
@@ -602,47 +666,100 @@ async function runShiftLifecycleCommand(
     reason: payload.reason,
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
-      const rows = await transaction.execute<{
+      const dayRows = await transaction.execute<{
+        business_date: string;
+        state: string;
+      }>(sql`
+        select business_date, state from app.station_business_days
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.businessDayId}
+        for update
+      `);
+      const dayRow = dayRows[0];
+      if (!dayRow) throw new AppError('NOT_FOUND', 'Business day was not found');
+      const day = {
+        id: payload.businessDayId,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        date: dayRow.business_date as never,
+        state: dayRow.state as 'OPEN',
+        version: 0,
+      };
+
+      const shiftRows = await transaction.execute<{
         id: string;
-        day_business_date: string;
-        shift_business_date: string;
-        day_state: string;
-        shift_state: string;
+        business_date: string;
+        state: string;
         planned_start_at: Date | string;
         planned_end_at: Date | string;
         version: number;
       }>(sql`
-        select s.id, d.business_date as day_business_date, s.business_date as shift_business_date,
-          d.state as day_state, s.state as shift_state,
-          s.planned_start_at, s.planned_end_at, s.version
-        from app.shifts s join app.station_business_days d
-          on d.tenant_id = s.tenant_id and d.station_id = s.station_id and d.id = s.business_day_id
-        where s.tenant_id = ${context.tenantId} and s.station_id = ${context.stationId}
-          and s.business_day_id = ${payload.businessDayId} and s.id = ${payload.shiftId}
-        for update of s, d
+        select id, business_date, state, planned_start_at, planned_end_at, version
+        from app.shifts
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and business_day_id = ${payload.businessDayId} and id = ${payload.shiftId}
+        for update
       `);
-      const row = rows[0];
-      if (!row) throw new AppError('NOT_FOUND', 'Shift was not found');
+      let row = shiftRows[0];
+
+      if (!row) {
+        if (commandType !== 'StartShift') throw new AppError('NOT_FOUND', 'Shift was not found');
+        if (!payload.plannedStartAt || !payload.plannedEndAt)
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'StartShift requires plannedStartAt and plannedEndAt to create the shift',
+          );
+        if (new Date(payload.plannedEndAt).getTime() <= new Date(payload.plannedStartAt).getTime())
+          throw new AppError('VALIDATION_FAILED', 'plannedEndAt must be after plannedStartAt');
+        const timezone = await loadStationTimezone(
+          transaction,
+          context.tenantId,
+          context.stationId,
+        );
+        const derivedBusinessDate = deriveBusinessDate(payload.plannedStartAt, timezone);
+        if (derivedBusinessDate !== dayRow.business_date)
+          throw new AppError(
+            'INVARIANT_VIOLATION',
+            'The shift start instant does not fall within this business day in the station timezone',
+          );
+        try {
+          await transaction.execute(sql`
+            insert into app.shifts
+              (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date, version)
+            values (
+              ${payload.shiftId}, ${context.tenantId}, ${context.stationId}, ${payload.businessDayId},
+              'PLANNED', ${payload.plannedStartAt}::timestamptz, ${payload.plannedEndAt}::timestamptz,
+              ${derivedBusinessDate}, 0
+            )
+          `);
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new AppError('CONFLICT', 'A shift already exists with this identifier');
+          }
+          throw error;
+        }
+        row = {
+          id: payload.shiftId,
+          business_date: derivedBusinessDate,
+          state: 'PLANNED',
+          planned_start_at: payload.plannedStartAt,
+          planned_end_at: payload.plannedEndAt,
+          version: 0,
+        };
+      }
+
       const shift = {
         id: row.id,
         tenantId: context.tenantId,
         stationId: context.stationId,
         businessDayId: payload.businessDayId,
-        state: row.shift_state as ShiftLifecycleCommand extends never ? never : 'PLANNED',
+        state: row.state as ShiftLifecycleCommand extends never ? never : 'PLANNED',
         plannedStartAt: new Date(row.planned_start_at).toISOString(),
         plannedEndAt: new Date(row.planned_end_at).toISOString(),
-        businessDate: row.shift_business_date as never,
+        businessDate: row.business_date as never,
         version: Number(row.version),
       };
-      const day = {
-        id: payload.businessDayId,
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        date: row.day_business_date as never,
-        state: row.day_state as 'OPEN',
-        version: 0,
-      };
-      if (row.shift_business_date !== row.day_business_date)
+      if (row.business_date !== dayRow.business_date)
         throw new AppError(
           'INVARIANT_VIOLATION',
           'Shift business date must match its business day',
@@ -679,7 +796,23 @@ async function runShiftLifecycleCommand(
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
           and id = ${payload.shiftId} and version = ${payload.expectedVersion}
       `);
-      return { result: { shiftId: shift.id, state }, after: updated };
+      return {
+        result: { shiftId: shift.id, state, businessDate: shift.businessDate },
+        after: updated,
+        event:
+          commandType === 'StartShift'
+            ? shiftStartedEvent({
+                eventId: randomUUID(),
+                tenantId: context.tenantId,
+                legalEntityId: context.legalEntityId,
+                stationId: context.stationId,
+                businessDayId: payload.businessDayId,
+                businessDate: shift.businessDate,
+                shiftId: shift.id,
+                startedAt: now,
+              })
+            : undefined,
+      };
     },
   });
 }

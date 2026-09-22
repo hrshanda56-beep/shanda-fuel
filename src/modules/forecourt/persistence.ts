@@ -278,7 +278,13 @@ async function assertExpectedVersion(
   `);
   const row = rows[0];
   if (!row) {
-    if (subjectType === 'MeterSegment' && expectedVersion === 0) return;
+    if (
+      (subjectType === 'MeterSegment' ||
+        subjectType === 'StationBusinessDay' ||
+        subjectType === 'Shift') &&
+      expectedVersion === 0
+    )
+      return;
     throw new AppError('NOT_FOUND', `${subjectType} was not found in this station`);
   }
   if (Number(row.version) !== expectedVersion) {

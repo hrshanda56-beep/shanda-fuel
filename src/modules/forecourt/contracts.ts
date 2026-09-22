@@ -90,6 +90,33 @@ export type BusinessDayLockedEvent = {
   occurredAt: string;
 };
 
+export type BusinessDayOpenedEvent = {
+  eventType: 'forecourt.business_day_opened.v1';
+  eventVersion: 1;
+  eventId: string;
+  tenantId: string;
+  legalEntityId: string;
+  stationId: string;
+  businessDayId: string;
+  businessDate: string;
+  openedAt: string;
+  occurredAt: string;
+};
+
+export type ShiftStartedEvent = {
+  eventType: 'forecourt.shift_started.v1';
+  eventVersion: 1;
+  eventId: string;
+  tenantId: string;
+  legalEntityId: string;
+  stationId: string;
+  businessDayId: string;
+  businessDate: string;
+  shiftId: string;
+  startedAt: string;
+  occurredAt: string;
+};
+
 export type PriceBoundaryActivatedEvent = {
   eventType: 'forecourt.price_boundary_activated.v1';
   eventId: string;
@@ -177,6 +204,8 @@ export type ForecourtEvent =
   | ReconciliationApprovedEvent
   | ReconciliationPostedEvent
   | BusinessDayLockedEvent
+  | BusinessDayOpenedEvent
+  | ShiftStartedEvent
   | PriceBoundaryActivatedEvent
   | MeterBoundaryCreatedEvent
   | MeterReplacedEvent
@@ -341,5 +370,42 @@ export function businessDayLockedEvent(input: {
     eventVersion: 1,
     ...input,
     occurredAt: input.occurredAt ?? input.lockedAt,
+  };
+}
+
+export function businessDayOpenedEvent(input: {
+  eventId: string;
+  tenantId: string;
+  stationId: string;
+  businessDayId: string;
+  businessDate: string;
+  openedAt: string;
+  legalEntityId: string;
+  occurredAt?: string;
+}): BusinessDayOpenedEvent {
+  return {
+    eventType: 'forecourt.business_day_opened.v1',
+    eventVersion: 1,
+    ...input,
+    occurredAt: input.occurredAt ?? input.openedAt,
+  };
+}
+
+export function shiftStartedEvent(input: {
+  eventId: string;
+  tenantId: string;
+  stationId: string;
+  businessDayId: string;
+  businessDate: string;
+  shiftId: string;
+  startedAt: string;
+  legalEntityId: string;
+  occurredAt?: string;
+}): ShiftStartedEvent {
+  return {
+    eventType: 'forecourt.shift_started.v1',
+    eventVersion: 1,
+    ...input,
+    occurredAt: input.occurredAt ?? input.startedAt,
   };
 }
