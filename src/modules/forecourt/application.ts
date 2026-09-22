@@ -214,6 +214,12 @@ export const FORECOURT_COMMAND_POLICY = {
     assuranceRequirement: 'STEP_UP',
     requiresExpectedVersion: true,
   },
+  CreateReconciliation: {
+    permissionCode: 'reconciliation.submit',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: true,
+  },
   SubmitReconciliation: {
     permissionCode: 'reconciliation.submit',
     requiredScopeType: 'STATION',
@@ -376,6 +382,7 @@ export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVe
   RequestPriceChange: 'SellingPrice',
   ApprovePriceChange: 'SellingPrice',
   ActivatePriceChange: 'SellingPrice',
+  CreateReconciliation: 'Reconciliation',
   SubmitReconciliation: 'ReconciliationRevision',
   CreateCorrectedReconciliationRevision: 'ReconciliationRevision',
   ReturnReconciliation: 'ReconciliationRevision',

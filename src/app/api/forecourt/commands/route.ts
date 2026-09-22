@@ -11,6 +11,7 @@ import {
   confirmBoundaryFromRequest,
   correctMeterSegmentFromRequest,
   createCorrectedReconciliationRevisionFromRequest,
+  createReconciliationFromRequest,
   handoverAttendantFromRequest,
   lockBusinessDayFromRequest,
   lockReconciliationFromRequest,
@@ -68,40 +69,42 @@ export async function POST(request: Request): Promise<Response> {
                                       ? await markNotOperatedFromRequest(request, body)
                                       : commandType === 'RequestPriceChange'
                                         ? await requestPriceChangeFromRequest(request, body)
-                                        : commandType === 'SubmitReconciliation'
-                                          ? await submitReconciliationFromRequest(request, body)
-                                          : commandType === 'ReturnReconciliation'
-                                            ? await returnReconciliationFromRequest(request, body)
-                                            : commandType ===
-                                                'CreateCorrectedReconciliationRevision'
-                                              ? await createCorrectedReconciliationRevisionFromRequest(
-                                                  request,
-                                                  body,
-                                                )
-                                              : commandType === 'ApproveReconciliation'
-                                                ? await approveReconciliationFromRequest(
+                                        : commandType === 'CreateReconciliation'
+                                          ? await createReconciliationFromRequest(request, body)
+                                          : commandType === 'SubmitReconciliation'
+                                            ? await submitReconciliationFromRequest(request, body)
+                                            : commandType === 'ReturnReconciliation'
+                                              ? await returnReconciliationFromRequest(request, body)
+                                              : commandType ===
+                                                  'CreateCorrectedReconciliationRevision'
+                                                ? await createCorrectedReconciliationRevisionFromRequest(
                                                     request,
                                                     body,
                                                   )
-                                                : commandType === 'PostReconciliation'
-                                                  ? await postReconciliationFromRequest(
+                                                : commandType === 'ApproveReconciliation'
+                                                  ? await approveReconciliationFromRequest(
                                                       request,
                                                       body,
                                                     )
-                                                  : commandType === 'LockReconciliation'
-                                                    ? await lockReconciliationFromRequest(
+                                                  : commandType === 'PostReconciliation'
+                                                    ? await postReconciliationFromRequest(
                                                         request,
                                                         body,
                                                       )
-                                                    : commandType === 'LockBusinessDay'
-                                                      ? await lockBusinessDayFromRequest(
+                                                    : commandType === 'LockReconciliation'
+                                                      ? await lockReconciliationFromRequest(
                                                           request,
                                                           body,
                                                         )
-                                                      : await sealMeterSegmentFromRequest(
-                                                          request,
-                                                          body,
-                                                        );
+                                                      : commandType === 'LockBusinessDay'
+                                                        ? await lockBusinessDayFromRequest(
+                                                            request,
+                                                            body,
+                                                          )
+                                                        : await sealMeterSegmentFromRequest(
+                                                            request,
+                                                            body,
+                                                          );
     return NextResponse.json(result, { status: commandType === 'SealSegment' ? 201 : 200 });
   } catch (error) {
     if (error instanceof ZodError) {

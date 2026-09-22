@@ -281,7 +281,8 @@ async function assertExpectedVersion(
     if (
       (subjectType === 'MeterSegment' ||
         subjectType === 'StationBusinessDay' ||
-        subjectType === 'Shift') &&
+        subjectType === 'Shift' ||
+        subjectType === 'Reconciliation') &&
       expectedVersion === 0
     )
       return;

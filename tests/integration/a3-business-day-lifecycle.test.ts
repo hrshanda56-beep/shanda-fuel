@@ -41,6 +41,28 @@ const ids = {
   approverActor: 'a3b00000-0000-4000-8000-000000000032',
   approverMembership: 'a3b00000-0000-4000-8000-000000000042',
   approverSession: 'a3b00000-0000-4000-8000-000000000112',
+
+  // ResolveMeterException security/concurrency matrix fixtures.
+  stationException: 'a3b00000-0000-4000-8000-000000000026',
+  pumpException: 'a3b00000-0000-4000-8000-000000000063',
+  nozzleExceptionA: 'a3b00000-0000-4000-8000-000000000074',
+  nozzleExceptionB: 'a3b00000-0000-4000-8000-000000000075',
+  meterExceptionA: 'a3b00000-0000-4000-8000-000000000083',
+  meterExceptionB: 'a3b00000-0000-4000-8000-000000000084',
+  installationExceptionA: 'a3b00000-0000-4000-8000-000000000094',
+  installationExceptionB: 'a3b00000-0000-4000-8000-000000000095',
+  dayException: 'a3b00000-0000-4000-8000-000000000201',
+  shiftException: 'a3b00000-0000-4000-8000-000000000202',
+  dayExceptionOther: 'a3b00000-0000-4000-8000-000000000203',
+  shiftExceptionOther: 'a3b00000-0000-4000-8000-000000000204',
+  // ATTENDANT-only at stationException: lacks exception.manage.
+  attendantOnlyActor: 'a3b00000-0000-4000-8000-000000000033',
+  attendantOnlyMembership: 'a3b00000-0000-4000-8000-000000000043',
+  attendantOnlySession: 'a3b00000-0000-4000-8000-000000000113',
+  // SUPERVISOR only at a different station (stationFullDay), no role at stationException.
+  outsiderActor: 'a3b00000-0000-4000-8000-000000000034',
+  outsiderMembership: 'a3b00000-0000-4000-8000-000000000044',
+  outsiderSession: 'a3b00000-0000-4000-8000-000000000114',
 };
 
 let client: Sql;
@@ -83,11 +105,15 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
         ('${ids.tenant}', 'A3 Lifecycle Tenant', 'a3-lifecycle-tenant') on conflict (id) do nothing;
       insert into auth."user" (id, name, email) values
         ('${ids.actor}', 'A3 Lifecycle Actor', 'a3-lifecycle-actor@example.test'),
-        ('${ids.approverActor}', 'A3 Lifecycle Approver', 'a3-lifecycle-approver@example.test')
+        ('${ids.approverActor}', 'A3 Lifecycle Approver', 'a3-lifecycle-approver@example.test'),
+        ('${ids.attendantOnlyActor}', 'A3 Lifecycle Attendant Only', 'a3-lifecycle-attendant-only@example.test'),
+        ('${ids.outsiderActor}', 'A3 Lifecycle Outsider', 'a3-lifecycle-outsider@example.test')
         on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE'),
-        ('${ids.approverMembership}', '${ids.tenant}', '${ids.approverActor}', 'ACTIVE')
+        ('${ids.approverMembership}', '${ids.tenant}', '${ids.approverActor}', 'ACTIVE'),
+        ('${ids.attendantOnlyMembership}', '${ids.tenant}', '${ids.attendantOnlyActor}', 'ACTIVE'),
+        ('${ids.outsiderMembership}', '${ids.tenant}', '${ids.outsiderActor}', 'ACTIVE')
         on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
         ('${ids.legal}', '${ids.tenant}', 'A3 Lifecycle Legal') on conflict (id) do nothing;
@@ -95,7 +121,8 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
         ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A3BL', 'A3 Lifecycle Station', 'ACTIVE', 'Africa/Harare'),
         ('${ids.stationMismatch}', '${ids.tenant}', '${ids.legal}', 'A3BLM', 'A3 Lifecycle Station Mismatch', 'ACTIVE', 'Africa/Harare'),
         ('${ids.stationIdempotent}', '${ids.tenant}', '${ids.legal}', 'A3BLI', 'A3 Lifecycle Station Idempotent', 'ACTIVE', 'Africa/Harare'),
-        ('${ids.stationFullDay}', '${ids.tenant}', '${ids.legal}', 'A3BLF', 'A3 Lifecycle Station Full Day', 'ACTIVE', 'Africa/Harare')
+        ('${ids.stationFullDay}', '${ids.tenant}', '${ids.legal}', 'A3BLF', 'A3 Lifecycle Station Full Day', 'ACTIVE', 'Africa/Harare'),
+        ('${ids.stationException}', '${ids.tenant}', '${ids.legal}', 'A3BLE', 'A3 Lifecycle Station Exception', 'ACTIVE', 'Africa/Harare')
         on conflict (id) do nothing;
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
         values
@@ -106,30 +133,52 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
           ('${ids.tenant}', '${ids.membership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.stationFullDay}'),
           ('${ids.tenant}', '${ids.membership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.stationFullDay}'),
           ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.stationFullDay}'),
-          ('${ids.tenant}', '${ids.approverMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.stationFullDay}')
+          ('${ids.tenant}', '${ids.membership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.stationException}'),
+          ('${ids.tenant}', '${ids.approverMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.stationFullDay}'),
+          ('${ids.tenant}', '${ids.attendantOnlyMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.stationException}'),
+          ('${ids.tenant}', '${ids.outsiderMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.stationFullDay}')
         on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name)
         values ('${ids.product}', '${ids.tenant}', 'A3BL-DIESEL', 'Diesel') on conflict (id) do nothing;
       insert into app.pumps (id, tenant_id, station_id, number)
         values
           ('${ids.pump}', '${ids.tenant}', '${ids.station}', '1'),
-          ('${ids.pumpFullDay}', '${ids.tenant}', '${ids.stationFullDay}', '1')
+          ('${ids.pumpFullDay}', '${ids.tenant}', '${ids.stationFullDay}', '1'),
+          ('${ids.pumpException}', '${ids.tenant}', '${ids.stationException}', '1')
         on conflict (id) do nothing;
       insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id)
         values
           ('${ids.nozzle}', '${ids.tenant}', '${ids.station}', '${ids.pump}', '1', '${ids.product}'),
-          ('${ids.nozzleFullDay}', '${ids.tenant}', '${ids.stationFullDay}', '${ids.pumpFullDay}', '1', '${ids.product}')
+          ('${ids.nozzleFullDay}', '${ids.tenant}', '${ids.stationFullDay}', '${ids.pumpFullDay}', '1', '${ids.product}'),
+          ('${ids.nozzleExceptionA}', '${ids.tenant}', '${ids.stationException}', '${ids.pumpException}', '1', '${ids.product}'),
+          ('${ids.nozzleExceptionB}', '${ids.tenant}', '${ids.stationException}', '${ids.pumpException}', '2', '${ids.product}')
         on conflict (id) do nothing;
       insert into app.meters (id, tenant_id, serial_number)
         values
           ('${ids.meter}', '${ids.tenant}', 'A3BL-METER-1'),
-          ('${ids.meterFullDay}', '${ids.tenant}', 'A3BL-METER-2')
+          ('${ids.meterFullDay}', '${ids.tenant}', 'A3BL-METER-2'),
+          ('${ids.meterExceptionA}', '${ids.tenant}', 'A3BL-METER-3'),
+          ('${ids.meterExceptionB}', '${ids.tenant}', 'A3BL-METER-4')
         on conflict (id) do nothing;
       insert into app.meter_installations (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
         values
           ('${ids.installation}', '${ids.tenant}', '${ids.station}', '${ids.nozzle}', '${ids.meter}', '2020-01-01T00:00:00Z', '${ids.membership}'),
-          ('${ids.installationFullDay}', '${ids.tenant}', '${ids.stationFullDay}', '${ids.nozzleFullDay}', '${ids.meterFullDay}', '2020-01-01T00:00:00Z', '${ids.membership}')
+          ('${ids.installationFullDay}', '${ids.tenant}', '${ids.stationFullDay}', '${ids.nozzleFullDay}', '${ids.meterFullDay}', '2020-01-01T00:00:00Z', '${ids.membership}'),
+          ('${ids.installationExceptionA}', '${ids.tenant}', '${ids.stationException}', '${ids.nozzleExceptionA}', '${ids.meterExceptionA}', '2020-01-01T00:00:00Z', '${ids.membership}'),
+          ('${ids.installationExceptionB}', '${ids.tenant}', '${ids.stationException}', '${ids.nozzleExceptionB}', '${ids.meterExceptionB}', '2020-01-01T00:00:00Z', '${ids.membership}')
         on conflict (id) do nothing;
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values
+          ('${ids.dayException}', '${ids.tenant}', '${ids.stationException}', '2026-10-10', 'NOT_STARTED'),
+          ('${ids.dayExceptionOther}', '${ids.tenant}', '${ids.stationException}', '2026-10-11', 'NOT_STARTED')
+        on conflict (id) do nothing;
+      update app.station_business_days set state = 'OPEN' where id in ('${ids.dayException}', '${ids.dayExceptionOther}') and state = 'NOT_STARTED';
+      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+        values
+          ('${ids.shiftException}', '${ids.tenant}', '${ids.stationException}', '${ids.dayException}', 'PLANNED', '2026-10-10T06:00:00Z', '2026-10-10T14:00:00Z', '2026-10-10'),
+          ('${ids.shiftExceptionOther}', '${ids.tenant}', '${ids.stationException}', '${ids.dayExceptionOther}', 'PLANNED', '2026-10-11T06:00:00Z', '2026-10-11T14:00:00Z', '2026-10-11')
+        on conflict (id) do nothing;
+      update app.shifts set state = 'OPEN' where id in ('${ids.shiftException}', '${ids.shiftExceptionOther}') and state = 'PLANNED';
       insert into app.selling_prices
         (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
         values
@@ -144,7 +193,9 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
         values
           ('${ids.session}', '2030-01-01T00:00:00Z', 'a3b-session-token', '${ids.actor}', true, now()),
-          ('${ids.approverSession}', '2030-01-01T00:00:00Z', 'a3b-approver-session-token', '${ids.approverActor}', true, now())
+          ('${ids.approverSession}', '2030-01-01T00:00:00Z', 'a3b-approver-session-token', '${ids.approverActor}', true, now()),
+          ('${ids.attendantOnlySession}', '2030-01-01T00:00:00Z', 'a3b-attendant-only-session-token', '${ids.attendantOnlyActor}', true, now()),
+          ('${ids.outsiderSession}', '2030-01-01T00:00:00Z', 'a3b-outsider-session-token', '${ids.outsiderActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
   });
@@ -423,23 +474,45 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
     );
     expect(completeShift.status).toBe(200);
 
-    // No production "create reconciliation draft" command exists yet in this
-    // codebase (confirmed: SubmitReconciliation only loads an existing READY
-    // revision) -- draft creation is static/config-shaped fixture data here,
-    // matching the same precedent already used by every approved test in
-    // tests/integration/a3-forecourt.test.ts.
     const reconciliationId = randomUUID();
     const revisionId = randomUUID();
-    await client.unsafe(`
-      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
-        values ('${reconciliationId}', '${ids.tenant}', '${ids.stationFullDay}', '${businessDayId}', 'DRAFT');
-      update app.reconciliations set state = 'READY' where id = '${reconciliationId}';
-      insert into app.reconciliation_revisions
-        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance,
-         variance_classification, declarations)
-      values ('${revisionId}', '${ids.tenant}', '${ids.stationFullDay}', '${reconciliationId}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb);
-    `);
+    const createReconciliation = await postCommand(
+      {
+        commandType: 'CreateReconciliation',
+        tenantId: ids.tenant,
+        stationId: ids.stationFullDay,
+        businessDayId,
+        reconciliationId,
+        revisionId,
+        expectedVersion: 0,
+      },
+      `a3bl-full-create-reconciliation-${reconciliationId}`,
+    );
+    expect(createReconciliation.status).toBe(200);
+    const createBody = (await createReconciliation.json()) as {
+      businessDate: string;
+      revisionId: string;
+    };
+    expect(createBody.businessDate).toBe(businessDate);
+    const draftRows = await client<
+      { reconciliation_state: string; revision_state: string; expected_sales: string }[]
+    >`
+      select c.state as reconciliation_state, r.state as revision_state, r.expected_sales
+      from app.reconciliations c
+      join app.reconciliation_revisions r on r.tenant_id = c.tenant_id and r.station_id = c.station_id and r.reconciliation_id = c.id
+      where c.id = ${reconciliationId}
+    `;
+    // Zero-sales segment: the reconciliation is server-derived from the sealed
+    // effective segment, not caller-supplied.
+    expect(draftRows).toEqual([
+      { reconciliation_state: 'READY', revision_state: 'READY', expected_sales: '0.0000' },
+    ]);
 
+    // SubmitReconciliation drives READY -> SUBMITTED -> PENDING_APPROVAL on both
+    // the revision and its parent reconciliation through one production command
+    // (see commands.ts: requesting management review is not a distinct human
+    // action in this domain -- domain.ts's requestReconciliationApproval takes
+    // no actor -- so it is folded into submission rather than a separate command).
     const submit = await postCommand(
       {
         commandType: 'SubmitReconciliation',
@@ -452,14 +525,15 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
       `a3bl-full-submit-${revisionId}`,
     );
     expect(submit.status).toBe(200);
-
-    // SubmitReconciliation persists 'SUBMITTED'; promotion to the
-    // approval-eligible 'PENDING_APPROVAL' state has no production command in
-    // this codebase yet either (same precedent used in the existing approved
-    // stale-winner/race tests).
-    await client.unsafe(
-      `update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${revisionId}'`,
-    );
+    const routedRows = await client<{ reconciliation_state: string; revision_state: string }[]>`
+      select c.state as reconciliation_state, r.state as revision_state
+      from app.reconciliations c
+      join app.reconciliation_revisions r on r.tenant_id = c.tenant_id and r.station_id = c.station_id and r.reconciliation_id = c.id
+      where c.id = ${reconciliationId}
+    `;
+    expect(routedRows).toEqual([
+      { reconciliation_state: 'PENDING_APPROVAL', revision_state: 'PENDING_APPROVAL' },
+    ]);
 
     const approve = await postCommand(
       {
@@ -467,7 +541,7 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
         tenantId: ids.tenant,
         stationId: ids.stationFullDay,
         revisionId,
-        expectedVersion: 1,
+        expectedVersion: 2,
       },
       `a3bl-full-approve-${revisionId}`,
       'a3b-approver-session-token',
@@ -480,12 +554,25 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
         tenantId: ids.tenant,
         stationId: ids.stationFullDay,
         revisionId,
-        expectedVersion: 2,
+        expectedVersion: 3,
       },
       `a3bl-full-post-${revisionId}`,
       'a3b-approver-session-token',
     );
     expect(post.status).toBe(200);
+
+    const lockRevision = await postCommand(
+      {
+        commandType: 'LockReconciliation',
+        tenantId: ids.tenant,
+        stationId: ids.stationFullDay,
+        revisionId,
+        expectedVersion: 4,
+      },
+      `a3bl-full-lock-revision-${revisionId}`,
+      'a3b-approver-session-token',
+    );
+    expect(lockRevision.status).toBe(200);
 
     const close = await postCommand(
       {
@@ -516,6 +603,13 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
     >`select state, business_date from app.station_business_days where id = ${businessDayId}`;
     expect(dayRows).toEqual([{ state: 'LOCKED', business_date: businessDate }]);
 
+    // The parent reconciliation was driven to LOCKED by production commands
+    // only -- no test in this file ever writes app.reconciliations.state directly.
+    const reconciliationRows = await client<{ state: string }[]>`
+      select state from app.reconciliations where id = ${reconciliationId}
+    `;
+    expect(reconciliationRows).toEqual([{ state: 'LOCKED' }]);
+
     const outboxEvents = await client<
       { event_type: string }[]
     >`select event_type from app.forecourt_outbox where tenant_id = ${ids.tenant} and station_id = ${ids.stationFullDay}
@@ -523,6 +617,281 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
     expect(outboxEvents.map((row) => row.event_type)).toEqual(
       expect.arrayContaining(['forecourt.business_day_opened.v1', 'forecourt.shift_started.v1']),
     );
+  });
+
+  it('denies ResolveMeterException for missing permission and for an actor with no role at the station', async () => {
+    const boundaryId = randomUUID();
+    const reported = await postCommand(
+      {
+        commandType: 'ReportMeterUnavailable',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId,
+        nozzleId: ids.nozzleExceptionA,
+        meterInstallationId: ids.installationExceptionA,
+        businessDayId: ids.dayException,
+        shiftId: ids.shiftException,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'UNAVAILABLE',
+        unavailableReason: 'Meter display unreadable',
+        expectedVersion: 0,
+      },
+      `a3bl-exception-denial-report-${boundaryId}`,
+    );
+    expect(reported.status).toBe(200);
+
+    const resolutionInput = (resolutionBoundaryId: string) => ({
+      commandType: 'ResolveMeterException',
+      tenantId: ids.tenant,
+      stationId: ids.stationException,
+      boundaryId: resolutionBoundaryId,
+      nozzleId: ids.nozzleExceptionA,
+      meterInstallationId: ids.installationExceptionA,
+      businessDayId: ids.dayException,
+      shiftId: ids.shiftException,
+      responsibleAttendantId: ids.attendantOnlyMembership,
+      reason: 'SHIFT_CLOSE',
+      readingStatus: 'AVAILABLE',
+      readingValue: '4500.000',
+      exceptionBoundaryId: boundaryId,
+      expectedVersion: 0,
+    });
+
+    const missingPermission = await postCommand(
+      resolutionInput(randomUUID()),
+      'a3bl-exception-denial-no-permission',
+      'a3b-attendant-only-session-token',
+    );
+    expect(missingPermission.status).toBe(403);
+
+    const wrongStation = await postCommand(
+      resolutionInput(randomUUID()),
+      'a3bl-exception-denial-wrong-station',
+      'a3b-outsider-session-token',
+    );
+    expect(wrongStation.status).toBe(403);
+
+    const stillBlocking = await client<{ status: string }[]>`
+      select status from app.meter_exceptions where id = ${boundaryId}
+    `;
+    expect(stillBlocking).toEqual([{ status: 'BLOCKING' }]);
+    const resolutionCount = await client<{ count: number }[]>`
+      select count(*)::int as count from app.meter_exception_resolutions where exception_id = ${boundaryId}
+    `;
+    expect(resolutionCount).toEqual([{ count: 0 }]);
+    const outboxCount = await client<{ count: number }[]>`
+      select count(*)::int as count from app.forecourt_outbox
+      where event_type = 'forecourt.meter_exception_resolved.v1' and payload->>'exceptionId' = ${boundaryId}
+    `;
+    expect(outboxCount).toEqual([{ count: 0 }]);
+  });
+
+  it('resolves a meter exception once and rejects a second resolution attempt as already resolved', async () => {
+    const boundaryId = randomUUID();
+    const reported = await postCommand(
+      {
+        commandType: 'ReportMeterUnavailable',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId,
+        nozzleId: ids.nozzleExceptionA,
+        meterInstallationId: ids.installationExceptionA,
+        businessDayId: ids.dayException,
+        shiftId: ids.shiftException,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'UNAVAILABLE',
+        unavailableReason: 'Meter display unreadable',
+        expectedVersion: 0,
+      },
+      `a3bl-exception-already-report-${boundaryId}`,
+    );
+    expect(reported.status).toBe(200);
+
+    const firstResolutionBoundary = randomUUID();
+    const firstResolve = await postCommand(
+      {
+        commandType: 'ResolveMeterException',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId: firstResolutionBoundary,
+        nozzleId: ids.nozzleExceptionA,
+        meterInstallationId: ids.installationExceptionA,
+        businessDayId: ids.dayException,
+        shiftId: ids.shiftException,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'AVAILABLE',
+        readingValue: '4500.000',
+        exceptionBoundaryId: boundaryId,
+        expectedVersion: 0,
+      },
+      `a3bl-exception-already-resolve-first-${boundaryId}`,
+    );
+    expect(firstResolve.status).toBe(200);
+
+    const secondResolutionBoundary = randomUUID();
+    const secondResolve = await postCommand(
+      {
+        commandType: 'ResolveMeterException',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId: secondResolutionBoundary,
+        nozzleId: ids.nozzleExceptionA,
+        meterInstallationId: ids.installationExceptionA,
+        businessDayId: ids.dayException,
+        shiftId: ids.shiftException,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'AVAILABLE',
+        readingValue: '4600.000',
+        exceptionBoundaryId: boundaryId,
+        expectedVersion: 0,
+      },
+      `a3bl-exception-already-resolve-second-${boundaryId}`,
+    );
+    // The exception is no longer BLOCKING, so this is denied as a conflict
+    // before any second mutation is attempted.
+    expect(secondResolve.status).toBe(409);
+
+    const resolutionRows = await client<{ resolution_boundary_id: string }[]>`
+      select resolution_boundary_id from app.meter_exception_resolutions where exception_id = ${boundaryId}
+    `;
+    expect(resolutionRows).toEqual([{ resolution_boundary_id: firstResolutionBoundary }]);
+  });
+
+  it('rejects ResolveMeterException resolutions whose business day, shift, or nozzle/installation lineage does not match the exception scope', async () => {
+    const boundaryId = randomUUID();
+    const reported = await postCommand(
+      {
+        commandType: 'ReportMeterUnavailable',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId,
+        nozzleId: ids.nozzleExceptionA,
+        meterInstallationId: ids.installationExceptionA,
+        businessDayId: ids.dayException,
+        shiftId: ids.shiftException,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'UNAVAILABLE',
+        unavailableReason: 'Meter display unreadable',
+        expectedVersion: 0,
+      },
+      `a3bl-exception-scope-report-${boundaryId}`,
+    );
+    expect(reported.status).toBe(200);
+
+    // Cross business-day and cross-shift: a legitimate boundary in a different,
+    // genuinely open business day/shift cannot resolve this exception.
+    const crossDayResolve = await postCommand(
+      {
+        commandType: 'ResolveMeterException',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId: randomUUID(),
+        nozzleId: ids.nozzleExceptionA,
+        meterInstallationId: ids.installationExceptionA,
+        businessDayId: ids.dayExceptionOther,
+        shiftId: ids.shiftExceptionOther,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'AVAILABLE',
+        readingValue: '4500.000',
+        exceptionBoundaryId: boundaryId,
+        expectedVersion: 0,
+      },
+      `a3bl-exception-scope-cross-day-${boundaryId}`,
+    );
+    expect(crossDayResolve.status).toBe(409);
+
+    // Cross nozzle/meter-installation: a legitimate boundary against a
+    // different nozzle on the same day/shift cannot resolve this exception.
+    const crossNozzleResolve = await postCommand(
+      {
+        commandType: 'ResolveMeterException',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId: randomUUID(),
+        nozzleId: ids.nozzleExceptionB,
+        meterInstallationId: ids.installationExceptionB,
+        businessDayId: ids.dayException,
+        shiftId: ids.shiftException,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'AVAILABLE',
+        readingValue: '100.000',
+        exceptionBoundaryId: boundaryId,
+        expectedVersion: 0,
+      },
+      `a3bl-exception-scope-cross-nozzle-${boundaryId}`,
+    );
+    expect(crossNozzleResolve.status).toBe(409);
+
+    const stillBlocking = await client<{ status: string }[]>`
+      select status from app.meter_exceptions where id = ${boundaryId}
+    `;
+    expect(stillBlocking).toEqual([{ status: 'BLOCKING' }]);
+  });
+
+  it('resolves exactly once under concurrent ResolveMeterException attempts with distinct idempotency keys', async () => {
+    const boundaryId = randomUUID();
+    const reported = await postCommand(
+      {
+        commandType: 'ReportMeterUnavailable',
+        tenantId: ids.tenant,
+        stationId: ids.stationException,
+        boundaryId,
+        nozzleId: ids.nozzleExceptionA,
+        meterInstallationId: ids.installationExceptionA,
+        businessDayId: ids.dayException,
+        shiftId: ids.shiftException,
+        responsibleAttendantId: ids.attendantOnlyMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'UNAVAILABLE',
+        unavailableReason: 'Meter display unreadable',
+        expectedVersion: 0,
+      },
+      `a3bl-exception-race-report-${boundaryId}`,
+    );
+    expect(reported.status).toBe(200);
+
+    const raceInput = (resolutionBoundaryId: string) => ({
+      commandType: 'ResolveMeterException',
+      tenantId: ids.tenant,
+      stationId: ids.stationException,
+      boundaryId: resolutionBoundaryId,
+      nozzleId: ids.nozzleExceptionA,
+      meterInstallationId: ids.installationExceptionA,
+      businessDayId: ids.dayException,
+      shiftId: ids.shiftException,
+      responsibleAttendantId: ids.attendantOnlyMembership,
+      reason: 'SHIFT_CLOSE',
+      readingStatus: 'AVAILABLE',
+      readingValue: '4500.000',
+      exceptionBoundaryId: boundaryId,
+      expectedVersion: 0,
+    });
+    const [first, second] = await Promise.all([
+      postCommand(raceInput(randomUUID()), `a3bl-exception-race-a-${boundaryId}`),
+      postCommand(raceInput(randomUUID()), `a3bl-exception-race-b-${boundaryId}`),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+
+    const resolutionRows = await client<{ count: number }[]>`
+      select count(*)::int as count from app.meter_exception_resolutions where exception_id = ${boundaryId}
+    `;
+    expect(resolutionRows).toEqual([{ count: 1 }]);
+    const resolvedState = await client<{ status: string }[]>`
+      select status from app.meter_exceptions where id = ${boundaryId}
+    `;
+    expect(resolvedState).toEqual([{ status: 'RESOLVED' }]);
+    const outboxRows = await client<{ count: number }[]>`
+      select count(*)::int as count from app.forecourt_outbox
+      where event_type = 'forecourt.meter_exception_resolved.v1' and payload->>'exceptionId' = ${boundaryId}
+    `;
+    expect(outboxRows).toEqual([{ count: 1 }]);
   });
 
   it('cannot execute app.resolve_meter_exception as PUBLIC but app_runtime can', async () => {

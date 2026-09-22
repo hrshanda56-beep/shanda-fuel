@@ -43,6 +43,7 @@ import {
   markNotOperated,
   openBusinessDay,
   requestPriceChange,
+  requestReconciliationApproval,
   returnReconciliation,
   submitReconciliation,
   startShift,
@@ -2201,7 +2202,150 @@ export async function submitReconciliationFromRequest(request: Request, input: u
           version=version+1
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.revisionId} and version=${payload.expectedVersion}
       `);
-      return { result: { revisionId: submitted.id }, after: submitted };
+      await transaction.execute(sql`
+        update app.reconciliations set state = 'SUBMITTED', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${row.reconciliation_id} and state = 'READY'
+      `);
+      // Routing a submitted revision into management review has no distinct human
+      // actor or permission in this domain (see domain.ts requestReconciliationApproval,
+      // which takes no actor) -- it is a system-derived advancement, so it is folded
+      // into SubmitReconciliation rather than exposed as a separate command.
+      const routed = requestReconciliationApproval(submitted);
+      await transaction.execute(sql`
+        update app.reconciliation_revisions set state = 'PENDING_APPROVAL', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.revisionId} and version = ${payload.expectedVersion + 1}
+      `);
+      await transaction.execute(sql`
+        update app.reconciliations set state = 'PENDING_APPROVAL', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${row.reconciliation_id} and state = 'SUBMITTED'
+      `);
+      return { result: { revisionId: routed.id }, after: routed };
+    },
+  });
+}
+
+const createReconciliationPayload = z
+  .object({
+    commandType: z.literal('CreateReconciliation').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    businessDayId: z.string().uuid(),
+    reconciliationId: z.string().uuid(),
+    revisionId: z.string().uuid(),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export async function createReconciliationFromRequest(request: Request, input: unknown) {
+  const payload = createReconciliationPayload.parse(input);
+  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
+  if (!idempotencyKey) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'CreateReconciliation',
+    idempotencyKey,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'Reconciliation',
+    subjectId: payload.reconciliationId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    auditMetadata: { businessDayId: payload.businessDayId },
+    execute: async (transaction) => {
+      const days = await transaction.execute<{ id: string; business_date: string; state: string }>(
+        sql`
+          select id, business_date, state from app.station_business_days
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.businessDayId}
+          for update
+        `,
+      );
+      const day = days[0];
+      if (!day) throw new AppError('NOT_FOUND', 'Business day was not found');
+      if (day.state === 'NOT_STARTED')
+        throw new AppError('CONFLICT', 'The business day has not been opened');
+      if (day.state === 'LOCKED')
+        throw new AppError(
+          'CONFLICT',
+          'The business day is already locked and cannot be reconciled',
+        );
+      await assertBusinessDayOperationalCompleteness(transaction, context, payload.businessDayId);
+      const existing = await transaction.execute<{ id: string }>(sql`
+        select id from app.reconciliations
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and business_day_id = ${payload.businessDayId}
+      `);
+      if (existing[0] && existing[0].id !== payload.reconciliationId) {
+        throw new AppError('CONFLICT', 'A reconciliation already exists for this business day');
+      }
+      try {
+        await transaction.execute(sql`
+          insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
+          values (${payload.reconciliationId}, ${context.tenantId}, ${context.stationId}, ${payload.businessDayId}, 'DRAFT')
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error))
+          throw new AppError('CONFLICT', 'A reconciliation already exists for this business day');
+        throw error;
+      }
+      await transaction.execute(sql`
+        update app.reconciliations set state = 'READY', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.reconciliationId} and version = 0
+      `);
+      const segments = await transaction.execute<SegmentDbRow>(sql`
+        select m.*, d.business_date
+        from app.shifts s
+        join app.station_business_days d
+          on d.tenant_id = s.tenant_id and d.station_id = s.station_id and d.id = s.business_day_id
+        cross join lateral app.effective_meter_segments_for_shift(
+          s.tenant_id, s.station_id, s.business_day_id, s.id
+        ) m
+        where s.tenant_id = ${context.tenantId} and s.station_id = ${context.stationId}
+          and s.business_day_id = ${payload.businessDayId} and s.state = 'COMPLETED'
+        order by m.id
+      `);
+      const computed = calculateReconciliation({
+        id: payload.revisionId,
+        reconciliationId: payload.reconciliationId,
+        revision: 1,
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: payload.businessDayId,
+        businessDate: day.business_date,
+        segments: segments.map(segmentFromRow),
+        declarations: [],
+        policy: { warningThreshold: '1.00', blockingThreshold: '5.00' },
+        sourceShiftIds: [...new Set(segments.map((segment) => segment.shift_id))],
+      });
+      try {
+        await transaction.execute(sql`
+          insert into app.reconciliation_revisions
+            (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance,
+             currency, variance_classification, declarations, source_segment_ids, source_shift_ids, version)
+          values (${payload.revisionId}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, 1, 'READY',
+            ${computed.expectedSales.amount.toString()}, ${computed.accountedSales.amount.toString()}, ${computed.variance.amount.toString()},
+            'USD', ${computed.varianceClassification}, ${JSON.stringify(computed.declarations)}::jsonb,
+            ${JSON.stringify(computed.sourceSegmentIds)}::jsonb, ${JSON.stringify(computed.sourceShiftIds)}::jsonb, 0)
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error))
+          throw new AppError(
+            'CONFLICT',
+            'A reconciliation revision already exists with this identifier',
+          );
+        throw error;
+      }
+      return {
+        result: {
+          reconciliationId: payload.reconciliationId,
+          revisionId: payload.revisionId,
+          businessDate: day.business_date,
+        },
+        after: computed,
+      };
     },
   });
 }
@@ -2497,6 +2641,11 @@ export async function approveReconciliationFromRequest(request: Request, input: 
         set state = 'APPROVED', approved_by = ${revision.approvedBy}, approved_at = ${revision.approvedAt}::timestamptz, version = version + 1
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.revisionId} and version = ${payload.expectedVersion}
       `);
+      await transaction.execute(sql`
+        update app.reconciliations set state = 'APPROVED', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${row.reconciliation_id} and state = 'PENDING_APPROVAL'
+      `);
       return {
         result: { revisionId: revision.id },
         event: reconciliationApprovedEvent(randomUUID(), revision, {
@@ -2540,6 +2689,11 @@ export async function postReconciliationFromRequest(request: Request, input: unk
         set state = 'POSTED', posted_by = ${revision.postedBy}, posted_at = ${revision.postedAt}::timestamptz, version = version + 1
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.revisionId} and version = ${payload.expectedVersion}
       `);
+      await transaction.execute(sql`
+        update app.reconciliations set state = 'POSTED', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${row.reconciliation_id} and state = 'APPROVED'
+      `);
       return {
         result: { revisionId: revision.id },
         event: reconciliationPostedEvent(randomUUID(), revision, {
@@ -2578,6 +2732,11 @@ export async function lockReconciliationFromRequest(request: Request, input: unk
         update app.reconciliation_revisions
         set state = 'LOCKED', locked_by = ${revision.lockedBy}, locked_at = ${revision.lockedAt}::timestamptz, version = version + 1
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.revisionId} and version = ${payload.expectedVersion}
+      `);
+      await transaction.execute(sql`
+        update app.reconciliations set state = 'LOCKED', version = version + 1
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${row.reconciliation_id} and state = 'POSTED'
       `);
       return { result: { revisionId: revision.id }, after: revision };
     },
