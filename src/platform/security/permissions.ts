@@ -50,6 +50,11 @@ export const PERMISSION_CODES = [
   'approval.act',
   'exception.view',
   'exception.manage',
+  'inventory.view',
+  'inventory.tank.manage',
+  'inventory.dip.record',
+  'inventory.delivery.manage',
+  'inventory.adjustment.post',
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
@@ -110,6 +115,9 @@ const highRiskPermissions = new Set<PermissionCode>([
   'meter.replace',
   'price.change.boundary',
   'shift.template.manage',
+  'inventory.tank.manage',
+  'inventory.delivery.manage',
+  'inventory.adjustment.post',
 ]);
 
 const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
@@ -164,6 +172,11 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'approval.act',
     'exception.view',
     'exception.manage',
+    'inventory.view',
+    'inventory.tank.manage',
+    'inventory.dip.record',
+    'inventory.delivery.manage',
+    'inventory.adjustment.post',
   ],
   FINANCE: [
     'tenant.context.select',
@@ -187,6 +200,7 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'business_day.lock',
     'exception.view',
     'exception.manage',
+    'inventory.view',
   ],
   SUPERVISOR: [
     'tenant.context.select',
@@ -217,6 +231,9 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'approval.view',
     'exception.view',
     'exception.manage',
+    'inventory.view',
+    'inventory.dip.record',
+    'inventory.delivery.manage',
   ],
   ATTENDANT: [
     'tenant.context.select',

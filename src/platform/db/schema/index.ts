@@ -1,10 +1,10 @@
 /**
  * Canonical Drizzle schema entry point.
  *
- * A0 intentionally defines no business tables. A1 and later module owners may
- * add schema files under their owned module/platform boundaries; A0 integrates
- * their reviewed migration sequence into this directory.
+ * Platform and module owners contribute reviewed schema files here; A0 owns
+ * integration of their single canonical migration sequence.
  */
 export * from './auth';
 export * from './a1';
 export * from './a3';
+export * from './a4';
