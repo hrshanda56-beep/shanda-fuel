@@ -13,11 +13,32 @@ const envSchema = z
     R2_ACCESS_KEY_ID: z.string().min(1).optional(),
     R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
     RESEND_API_KEY: z.string().min(1).optional(),
+    RESEND_FROM_EMAIL: z.string().email().optional(),
     CRON_SECRET: z.string().min(32).optional(),
     AUDIT_SIGNING_KEY_ID: z.string().min(1).optional(),
     AUDIT_SIGNING_KEY: z.string().min(1).optional(),
   })
   .superRefine((value, context) => {
+    const r2Values = [
+      value.R2_ACCOUNT_ID,
+      value.R2_BUCKET,
+      value.R2_ACCESS_KEY_ID,
+      value.R2_SECRET_ACCESS_KEY,
+    ];
+    if (r2Values.some(Boolean) && r2Values.some((item) => !item)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['R2_BUCKET'],
+        message: 'R2 storage configuration must be complete',
+      });
+    }
+    if (value.RESEND_API_KEY && !value.RESEND_FROM_EMAIL) {
+      context.addIssue({
+        code: 'custom',
+        path: ['RESEND_FROM_EMAIL'],
+        message: 'Required when Resend is configured',
+      });
+    }
     if (value.APP_ENV === 'production' && !value.DATABASE_URL) {
       context.addIssue({
         code: 'custom',

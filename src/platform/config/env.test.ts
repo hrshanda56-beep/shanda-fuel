@@ -19,6 +19,25 @@ describe('server environment validation', () => {
     expect(() => getServerEnv({ APP_ENV: 'local', APP_URL: 'not-a-url' })).toThrow();
   });
 
+  it('requires complete R2 configuration once any R2 setting is supplied', () => {
+    expect(() => getServerEnv({ APP_ENV: 'test', R2_ACCOUNT_ID: 'account' })).toThrow(
+      'R2 storage configuration must be complete',
+    );
+  });
+
+  it('requires a sender address when Resend is configured', () => {
+    expect(() => getServerEnv({ APP_ENV: 'test', RESEND_API_KEY: 'configured' })).toThrow(
+      'Required when Resend is configured',
+    );
+    expect(() =>
+      getServerEnv({
+        APP_ENV: 'test',
+        RESEND_API_KEY: 'configured',
+        RESEND_FROM_EMAIL: 'not-an-address',
+      }),
+    ).toThrow();
+  });
+
   it('rejects an insecure production origin', () => {
     expect(() =>
       getServerEnv({
