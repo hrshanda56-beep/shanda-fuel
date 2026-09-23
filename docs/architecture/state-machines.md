@@ -14,7 +14,7 @@ Implemented framework-free transitions are named commands, not arbitrary status 
 | Shift | `StartShift`: `PLANNED → OPEN`; `CloseMeters`: `OPEN → METER_CLOSED`; `CompleteShift`: `METER_CLOSED → COMPLETED`; `MarkNotOperated` and `ExceptionalClose` require reasons. |
 | Meter | `ConfirmBoundary`, `SealSegment`, `HandoverNozzle`, `ReplaceMeter`; lower readings require a reset/replacement/correction reason and explicit controlled quantity. |
 | Price | `RequestPriceChange`, `ApprovePriceChange`, `ActivatePriceChange`; activation derives persisted boundary state and server time inside the transaction and is blocked until every affected nozzle boundary is sealed. |
-| Reconciliation | `CalculateReconciliation`: `READY`; `SubmitReconciliation`: `SUBMITTED`; `CreateApprovalRequest`: `PENDING_APPROVAL`; `Return`/`Reject`/`Approve`/`Post`/`Lock` follow the canonical revision flow. |
+| Reconciliation | Production revisions follow `READY → SUBMITTED → PENDING_APPROVAL → APPROVED`; a management return moves the revision to `RETURNED`, and resubmission creates the next immutable revision. The public/header read model projects `READY` as `DRAFT`, exposes `SUBMITTED` while the revision is submitted or pending management approval, exposes `RETURNED` with its reason, and exposes `APPROVED` as locked. |
 
 The persistence adapter must lock the aggregate and check its optimistic version inside the tenant transaction before invoking these functions.
 

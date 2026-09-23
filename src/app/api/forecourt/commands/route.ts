@@ -34,6 +34,21 @@ import {
   startShiftFromRequest,
   submitReconciliationFromRequest,
 } from '../../../../modules/forecourt/commands';
+import {
+  approveProductionReconciliationFromRequest,
+  createProductionReconciliationFromRequest,
+  linkReconciliationDeliveriesFromRequest,
+  linkReconciliationDipsFromRequest,
+  returnProductionReconciliationFromRequest,
+  saveReconciliationCashFromRequest,
+  saveReconciliationDraftFromRequest,
+  saveReconciliationExplanationsFromRequest,
+  saveReconciliationExpensesFromRequest,
+  saveReconciliationMeterReadingsFromRequest,
+  saveReconciliationPaymentsFromRequest,
+  setReconciliationAttendantsFromRequest,
+  submitProductionReconciliationFromRequest,
+} from '../../../../modules/forecourt/production-reconciliation';
 
 /**
  * The exhaustive set of forecourt command types this route can dispatch.
@@ -71,6 +86,19 @@ const COMMAND_TYPES = [
   'PostReconciliation',
   'LockReconciliation',
   'LockBusinessDay',
+  'CreateProductionReconciliation',
+  'SaveReconciliationDraft',
+  'SetAttendants',
+  'SaveMeterReadings',
+  'SavePaymentAllocations',
+  'SaveExpenses',
+  'LinkDeliveries',
+  'LinkTankDips',
+  'SaveCashDeclaration',
+  'SaveVarianceExplanations',
+  'SubmitProductionReconciliation',
+  'ReturnProductionReconciliation',
+  'ApproveProductionReconciliation',
 ] as const;
 
 type CommandType = (typeof COMMAND_TYPES)[number];
@@ -198,6 +226,45 @@ export async function POST(request: Request): Promise<Response> {
         break;
       case 'LockBusinessDay':
         result = await lockBusinessDayFromRequest(request, body);
+        break;
+      case 'CreateProductionReconciliation':
+        result = await createProductionReconciliationFromRequest(request, body);
+        break;
+      case 'SaveReconciliationDraft':
+        result = await saveReconciliationDraftFromRequest(request, body);
+        break;
+      case 'SetAttendants':
+        result = await setReconciliationAttendantsFromRequest(request, body);
+        break;
+      case 'SaveMeterReadings':
+        result = await saveReconciliationMeterReadingsFromRequest(request, body);
+        break;
+      case 'SavePaymentAllocations':
+        result = await saveReconciliationPaymentsFromRequest(request, body);
+        break;
+      case 'SaveExpenses':
+        result = await saveReconciliationExpensesFromRequest(request, body);
+        break;
+      case 'LinkDeliveries':
+        result = await linkReconciliationDeliveriesFromRequest(request, body);
+        break;
+      case 'LinkTankDips':
+        result = await linkReconciliationDipsFromRequest(request, body);
+        break;
+      case 'SaveCashDeclaration':
+        result = await saveReconciliationCashFromRequest(request, body);
+        break;
+      case 'SaveVarianceExplanations':
+        result = await saveReconciliationExplanationsFromRequest(request, body);
+        break;
+      case 'SubmitProductionReconciliation':
+        result = await submitProductionReconciliationFromRequest(request, body);
+        break;
+      case 'ReturnProductionReconciliation':
+        result = await returnProductionReconciliationFromRequest(request, body);
+        break;
+      case 'ApproveProductionReconciliation':
+        result = await approveProductionReconciliationFromRequest(request, body);
         break;
       default: {
         const exhaustiveCheck: never = commandType;
