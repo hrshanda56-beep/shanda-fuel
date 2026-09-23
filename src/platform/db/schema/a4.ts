@@ -152,6 +152,7 @@ export const tankDips = appSchema.table(
   },
   (table) => [
     unique('tank_dips_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('tank_dips_tenant_station_id_id_uidx').on(table.tenantId, table.stationId, table.id),
     index('tank_dips_tank_measured_idx').on(
       table.tenantId,
       table.stationId,

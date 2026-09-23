@@ -1,6 +1,6 @@
 {
-  "id": "bb3757b1-4e01-4036-89ca-479842b8eb65",
-  "prevId": "68ac7b9d-76b8-4758-a1e4-f0cf08f47874",
+  "id": "657c710e-aff4-4f3b-97e5-1c4ed8a4f6de",
+  "prevId": "bb3757b1-4e01-4036-89ca-479842b8eb65",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6030,6 +6030,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "tank_dips_tenant_station_id_id_uidx": {
+          "name": "tank_dips_tenant_station_id_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         }

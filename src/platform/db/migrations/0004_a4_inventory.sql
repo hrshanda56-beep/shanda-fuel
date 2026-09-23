@@ -109,6 +109,7 @@ CREATE TABLE "app"."tank_dips" (
 	CONSTRAINT "tank_dips_raw_measurement_pair_chk" CHECK (("app"."tank_dips"."raw_measurement" is null and "app"."tank_dips"."measurement_unit" is null) or ("app"."tank_dips"."raw_measurement" is not null and "app"."tank_dips"."measurement_unit" is not null))
 );
 --> statement-breakpoint
+ALTER TABLE "app"."tank_dips" ADD CONSTRAINT "tank_dips_tenant_station_id_id_uidx" UNIQUE("tenant_id","station_id","id");--> statement-breakpoint
 CREATE TABLE "app"."tanks" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
