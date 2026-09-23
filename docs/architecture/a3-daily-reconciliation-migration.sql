@@ -1,11 +1,18 @@
--- A3 daily reconciliation migration-ready schema intent.
+-- SUPERSEDED HISTORICAL DESIGN NOTE — NOT A LIVE MIGRATION.
 --
--- This file is intentionally not in src/platform/db/migrations. A0 owns the
--- canonical migration sequence and must review/integrate this proposal after
--- reconciling it with the existing 0003 forecourt migration.
+-- The canonical production schema is now:
+--   0004_a4_inventory.sql (tanks, dips, deliveries, movements)
+--   0005_daily_reconciliation.sql (A3/A5 reconciliation evidence/workflow)
+--
+-- This pre-A4 proposal is retained only for historical context. Its duplicate
+-- reconciliation_deliveries, reconciliation_tank_dips, and cash/inventory
+-- ownership model must not be applied or treated as the current architecture.
+-- A5 references canonical A4 entities and posts A4 inventory movements.
+-- A0 owns the canonical migration sequence in src/platform/db/migrations/.
+-- All SQL below remains unexecuted historical proposal text.
 
--- A reconciliation is shift-scoped. NULL keeps compatibility with the
--- historical 0003 day-aggregate rows until A0 performs the cutover.
+-- Historical proposal: a reconciliation is shift-scoped. The live cutover is
+-- implemented by canonical migration 0005.
 ALTER TABLE app.reconciliations
   ADD COLUMN IF NOT EXISTS shift_id uuid,
   ADD COLUMN IF NOT EXISTS supervisor_id uuid;
@@ -140,9 +147,7 @@ CREATE TABLE IF NOT EXISTS app.reconciliation_cash_counts (
   CONSTRAINT reconciliation_cash_counts_handover_ck CHECK (handover_amount IS NULL OR handover_amount >= 0)
 );
 
--- Detail rows are draft evidence. The command layer must reject mutation when
--- the parent is SUBMITTED or APPROVED; A0/A1 should add the same guard as the
--- existing authoritative forecourt mutation trigger during integration.
+-- Historical proposal: detail rows are draft evidence and require state guards.
 ALTER TABLE app.reconciliation_attendants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.reconciliation_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.reconciliation_deliveries ENABLE ROW LEVEL SECURITY;

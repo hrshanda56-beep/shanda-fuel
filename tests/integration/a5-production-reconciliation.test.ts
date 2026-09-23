@@ -98,6 +98,81 @@ function expectDecimalEqual(actual: string, expected: string) {
   expect(new ExactDecimal(actual).equals(new ExactDecimal(expected))).toBe(true);
 }
 
+async function createPopulatedProductionReconciliation(reconciliationId: string) {
+  const common = {
+    tenantId: ids.tenant,
+    stationId: ids.station,
+    reconciliationId,
+  };
+  await expectOk(
+    await postCommand(
+      {
+        commandType: 'CreateProductionReconciliation',
+        ...common,
+        businessDayId: ids.day,
+        shiftId: ids.shift,
+        expectedVersion: 0,
+      },
+      `a5-return-create-${reconciliationId}`,
+    ),
+  );
+  await expectOk(
+    await postCommand(
+      {
+        commandType: 'SaveMeterReadings',
+        ...common,
+        expectedVersion: 0,
+        readings: [
+          {
+            nozzleId: ids.nozzle,
+            productId: ids.product,
+            shiftId: ids.shift,
+            openingReading: '100000.000',
+            closingReading: '100500.000',
+            sellingPriceId: ids.price,
+          },
+        ],
+      },
+      `a5-return-readings-${reconciliationId}`,
+    ),
+  );
+  await expectOk(
+    await postCommand(
+      {
+        commandType: 'SavePaymentAllocations',
+        ...common,
+        expectedVersion: 1,
+        payments: [{ method: 'CASH', amount: '750.0000' }],
+      },
+      `a5-return-payments-${reconciliationId}`,
+    ),
+  );
+  await expectOk(
+    await postCommand(
+      { commandType: 'SaveExpenses', ...common, expectedVersion: 2, expenses: [] },
+      `a5-return-expenses-${reconciliationId}`,
+    ),
+  );
+  await expectOk(
+    await postCommand(
+      {
+        commandType: 'SaveCashDeclaration',
+        ...common,
+        expectedVersion: 3,
+        countedCash: '750.0000',
+      },
+      `a5-return-cash-${reconciliationId}`,
+    ),
+  );
+  await expectOk(
+    await postCommand(
+      { commandType: 'SaveVarianceExplanations', ...common, expectedVersion: 4, explanations: {} },
+      `a5-return-explanations-${reconciliationId}`,
+    ),
+  );
+  return common;
+}
+
 describe('A5 production daily reconciliation persistence and approval', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
@@ -401,6 +476,257 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         )
     `);
     expect(rows[0]).toEqual({ count: '1', quantity: '-500.000' });
+
+    const auditRows = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count from platform.security_events
+      where tenant_id='${ids.tenant}' and event_code='FORECOURT.InventorySalePosted'
+        and details->'after'->>'reconciliationId'='${reconciliationId}'
+    `);
+    expect(auditRows[0]?.count).toBe('1');
+  });
+
+  it('preserves a returned revision and approves only its corrected replacement', async () => {
+    const reconciliationId = randomUUID();
+    const common = await createPopulatedProductionReconciliation(reconciliationId);
+
+    const submitted = await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-return-submit-${reconciliationId}`,
+      ),
+    );
+    expect(submitted.state).toBe('SUBMITTED');
+
+    const firstRevision = await client.unsafe<
+      {
+        id: string;
+        revision: number;
+        state: string;
+        expected_sales: string;
+        accounted_sales: string;
+        variance: string;
+        version: number;
+      }[]
+    >(`
+      select id, revision, state, expected_sales, accounted_sales, variance, version
+      from app.reconciliation_revisions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+      order by revision
+    `);
+    expect(firstRevision).toHaveLength(1);
+    expect(firstRevision[0]).toMatchObject({
+      revision: 1,
+      state: 'PENDING_APPROVAL',
+      expected_sales: '750.0000',
+      accounted_sales: '750.0000',
+      variance: '0.0000',
+      version: 2,
+    });
+
+    const returned = await expectOk(
+      await postCommand(
+        {
+          commandType: 'ReturnProductionReconciliation',
+          ...common,
+          expectedVersion: submitted.version,
+          reason: 'Correct the closing meter reading',
+        },
+        `a5-return-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    expect(returned.state).toBe('RETURNED');
+
+    const returnedHeader = await client.unsafe<{ state: string; return_reason: string | null }[]>(`
+      select state, return_reason from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(returnedHeader[0]).toEqual({
+      state: 'RETURNED',
+      return_reason: 'Correct the closing meter reading',
+    });
+    const returnedRevision = await client.unsafe<
+      {
+        id: string;
+        revision: number;
+        state: string;
+        expected_sales: string;
+        accounted_sales: string;
+        variance: string;
+        version: number;
+      }[]
+    >(`
+      select id, revision, state, expected_sales, accounted_sales, variance, version
+      from app.reconciliation_revisions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+      order by revision
+    `);
+    expect(returnedRevision[0]).toMatchObject({
+      id: firstRevision[0]!.id,
+      revision: 1,
+      state: 'RETURNED',
+      expected_sales: '750.0000',
+      accounted_sales: '750.0000',
+      variance: '0.0000',
+      version: 3,
+    });
+
+    const correctedMeter = await expectOk(
+      await postCommand(
+        {
+          commandType: 'SaveMeterReadings',
+          ...common,
+          expectedVersion: returned.version,
+          readings: [
+            {
+              nozzleId: ids.nozzle,
+              productId: ids.product,
+              shiftId: ids.shift,
+              openingReading: '100000.000',
+              closingReading: '100501.000',
+              sellingPriceId: ids.price,
+            },
+          ],
+        },
+        `a5-return-corrected-readings-${reconciliationId}`,
+      ),
+    );
+    const correctedPayments = await expectOk(
+      await postCommand(
+        {
+          commandType: 'SavePaymentAllocations',
+          ...common,
+          expectedVersion: correctedMeter.version,
+          payments: [{ method: 'CASH', amount: '751.5000' }],
+        },
+        `a5-return-corrected-payments-${reconciliationId}`,
+      ),
+    );
+    const correctedCash = await expectOk(
+      await postCommand(
+        {
+          commandType: 'SaveCashDeclaration',
+          ...common,
+          expectedVersion: correctedPayments.version,
+          countedCash: '751.5000',
+        },
+        `a5-return-corrected-cash-${reconciliationId}`,
+      ),
+    );
+    const resubmitted = await expectOk(
+      await postCommand(
+        {
+          commandType: 'SubmitProductionReconciliation',
+          ...common,
+          expectedVersion: correctedCash.version,
+        },
+        `a5-return-resubmit-${reconciliationId}`,
+      ),
+    );
+    expect(resubmitted.state).toBe('SUBMITTED');
+
+    const resubmittedRevisions = await client.unsafe<
+      {
+        id: string;
+        revision: number;
+        state: string;
+        expected_sales: string;
+        accounted_sales: string;
+        variance: string;
+        version: number;
+      }[]
+    >(`
+      select id, revision, state, expected_sales, accounted_sales, variance, version
+      from app.reconciliation_revisions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+      order by revision
+    `);
+    expect(resubmittedRevisions).toHaveLength(2);
+    expect(resubmittedRevisions[0]).toMatchObject({
+      id: firstRevision[0]!.id,
+      revision: 1,
+      state: 'RETURNED',
+      expected_sales: '750.0000',
+      accounted_sales: '750.0000',
+      variance: '0.0000',
+      version: 3,
+    });
+    expect(resubmittedRevisions[1]).toMatchObject({
+      revision: 2,
+      state: 'PENDING_APPROVAL',
+      expected_sales: '751.5000',
+      accounted_sales: '751.5000',
+      variance: '0.0000',
+      version: 2,
+    });
+
+    const approvalKey = `a5-return-approve-${reconciliationId}`;
+    const approved = await expectOk(
+      await postCommand(
+        {
+          commandType: 'ApproveProductionReconciliation',
+          ...common,
+          expectedVersion: resubmitted.version,
+        },
+        approvalKey,
+        'a5-manager-session-token',
+      ),
+    );
+    expect(approved.state).toBe('APPROVED');
+    await expectOk(
+      await postCommand(
+        {
+          commandType: 'ApproveProductionReconciliation',
+          ...common,
+          expectedVersion: resubmitted.version,
+        },
+        approvalKey,
+        'a5-manager-session-token',
+      ),
+    );
+
+    const finalRevisions = await client.unsafe<
+      {
+        id: string;
+        revision: number;
+        state: string;
+        expected_sales: string;
+        accounted_sales: string;
+        variance: string;
+        version: number;
+      }[]
+    >(`
+      select id, revision, state, expected_sales, accounted_sales, variance, version
+      from app.reconciliation_revisions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+      order by revision
+    `);
+    expect(finalRevisions[0]).toMatchObject({
+      id: firstRevision[0]!.id,
+      revision: 1,
+      state: 'RETURNED',
+      expected_sales: '750.0000',
+      accounted_sales: '750.0000',
+      variance: '0.0000',
+      version: 3,
+    });
+    expect(finalRevisions[1]).toMatchObject({
+      revision: 2,
+      state: 'APPROVED',
+      expected_sales: '751.5000',
+      accounted_sales: '751.5000',
+      variance: '0.0000',
+    });
+
+    const movements = await client.unsafe<{ count: string; quantity: string }[]>(`
+      select count(*)::text as count, coalesce(sum(quantity_litres), 0)::text as quantity
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='RECONCILIATION_SALE' and source_id in (
+          select id from app.reconciliation_meter_readings where reconciliation_id='${reconciliationId}'
+        )
+    `);
+    expect(movements[0]).toEqual({ count: '1', quantity: '-501.000' });
 
     const auditRows = await client.unsafe<{ count: string }[]>(`
       select count(*)::text as count from platform.security_events
