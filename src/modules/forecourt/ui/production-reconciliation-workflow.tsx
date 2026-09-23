@@ -298,7 +298,12 @@ export function ProductionReconciliationWorkflow({
         <Card as="section" className="panel" aria-labelledby="production-meter-title">
           <p className="eyebrow">Meter readings</p>
           <h2 id="production-meter-title">Server-derived sales</h2>
-          <div className="responsive-table-wrap">
+          <div
+            className="responsive-table-wrap"
+            role="region"
+            aria-label="Persisted meter readings table"
+            tabIndex={0}
+          >
             <table className="responsive-table">
               <caption className="visually-hidden">Persisted meter readings</caption>
               <thead>
