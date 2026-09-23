@@ -140,7 +140,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         values ('${ids.installation}', '${ids.tenant}', '${ids.station}', '${ids.nozzle}', '${ids.meter}', '2020-01-01T00:00:00Z', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into app.selling_prices
-        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by, approved_by, approved_at, activated_at)
+        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
         values ('${ids.price}', '${ids.tenant}', '${ids.station}', '${ids.product}', '2020-01-01T00:00:00Z', 1.500000, 'DRAFT', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state, opened_at)
