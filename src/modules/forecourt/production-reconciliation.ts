@@ -808,7 +808,7 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       if (!updated[0]) throw new AppError('CONFLICT', 'The reconciliation approval became stale');
       await transaction.execute(sql`
         update app.reconciliation_revisions set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, version=version+1
-        where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='SUBMITTED'
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='PENDING_APPROVAL'
       `);
       return {
         result: {
@@ -883,19 +883,19 @@ async function transitionProductionReconciliation(
         `);
         await transaction.execute(sql`
           update app.reconciliation_revisions
-          set state='SUBMITTED', submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
+          set state='PENDING_APPROVAL', submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
           where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${revisionId}
         `);
       } else {
         if (nextState === 'SUBMITTED') {
           await transaction.execute(sql`
-            update app.reconciliation_revisions set state='SUBMITTED', expected_sales=${metrics!.sales.toString()}, accounted_sales=${metrics!.payments.toString()}, variance=${metrics!.salesVariance.toString()}, variance_classification=${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
+            update app.reconciliation_revisions set state='PENDING_APPROVAL', expected_sales=${metrics!.sales.toString()}, accounted_sales=${metrics!.payments.toString()}, variance=${metrics!.salesVariance.toString()}, variance_classification=${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
             where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='READY'
           `);
         } else {
           await transaction.execute(sql`
             update app.reconciliation_revisions set state='RETURNED', version=version+1
-            where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='SUBMITTED'
+            where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state in ('SUBMITTED','PENDING_APPROVAL')
           `);
         }
       }
