@@ -268,7 +268,11 @@ BEGIN
   IF OLD.state IN ('APPROVED','POSTED','LOCKED') AND (
     NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.station_id IS DISTINCT FROM OLD.station_id
     OR NEW.business_day_id IS DISTINCT FROM OLD.business_day_id OR NEW.shift_id IS DISTINCT FROM OLD.shift_id
-    OR NEW.supervisor_id IS DISTINCT FROM OLD.supervisor_id OR NEW.state IS DISTINCT FROM OLD.state
+    OR NEW.supervisor_id IS DISTINCT FROM OLD.supervisor_id
+    OR (NEW.state IS DISTINCT FROM OLD.state AND NOT (
+      (OLD.state = 'APPROVED' AND NEW.state = 'POSTED')
+      OR (OLD.state = 'POSTED' AND NEW.state = 'LOCKED')
+    ))
     OR NEW.created_by IS DISTINCT FROM OLD.created_by OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
     OR NEW.submitted_at IS DISTINCT FROM OLD.submitted_at OR NEW.returned_by IS DISTINCT FROM OLD.returned_by
     OR NEW.returned_at IS DISTINCT FROM OLD.returned_at OR NEW.return_reason IS DISTINCT FROM OLD.return_reason
