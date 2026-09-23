@@ -31,3 +31,9 @@ Delivery variance, accepted allocation quantity, partial receipt, WAC chronology
 ## Handoff and completion
 
 Document inventory movement authority, cost assumptions, projection rebuild behavior, and contracts consumed by suppliers/reporting. Update status with test evidence.
+
+## A4 integration contract
+
+The canonical A4 persistence is in `src/platform/db/schema/a4.ts` and migration `0004_a4_inventory.sql`. Tanks, dips, deliveries, delivery allocations, and inventory movements are tenant/station scoped with composite product relationships; the movement ledger is append-only and stock is derived from signed exact-decimal movements. Tank calibration points are stored as observations only: conversion/interpolation rules remain pending confirmation of the actual station calibration charts, while direct litre dips are supported.
+
+The production server path is authenticated authority → station-scoped inventory command → `withTenantTransaction` → PostgreSQL. `POST /api/inventory/commands` supports tank lifecycle, dips, delivery creation/confirmation, opening balances, and controlled adjustments. `GET /api/inventory/stock` exposes persisted expected/physical/variance projections for later consumers. Delivery confirmation atomically posts one `DELIVERY` movement per allocation; future forecourt reconciliation can post `SALE` movements through `postInventoryMovementInTransaction` without importing PR #8.
