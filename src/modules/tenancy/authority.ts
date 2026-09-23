@@ -186,13 +186,13 @@ export async function resolveTenantExecutionContext(input: {
   loadMembership?: TenantMembershipLoader;
   now?: Date;
 }): Promise<TenantExecutionContext> {
+  const now = input.now ?? new Date();
+  const actor = await requireAuthenticatedActor(input.request, input.resolveActor, now);
   const tenantResult = z.string().uuid().safeParse(input.requestedTenantId);
   if (!tenantResult.success) {
     throw new AppError('FORBIDDEN', 'A valid requested tenant is required');
   }
   const tenantId = tenantResult.data;
-  const now = input.now ?? new Date();
-  const actor = await requireAuthenticatedActor(input.request, input.resolveActor, now);
   const membership = await (input.loadMembership ?? loadTenantMembership)(
     actor.identityId,
     tenantId,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AppError } from '../../platform/errors';
 import type { AuthenticatedActorContext } from '../identity';
 import { resolveTenantExecutionContext, type MembershipRecord } from './authority';
 
@@ -33,6 +34,27 @@ function membership(status: MembershipRecord['status']): MembershipRecord {
 }
 
 describe('tenant authority resolver', () => {
+  it('authenticates before validating the requested tenant identifier', async () => {
+    const calls: string[] = [];
+
+    await expect(
+      resolveTenantExecutionContext({
+        request: new Request('https://fuel.example.test'),
+        requestedTenantId: 'not-a-uuid',
+        resolveActor: async () => {
+          calls.push('authenticate');
+          throw new AppError('UNAUTHENTICATED', 'Authentication is required');
+        },
+        loadMembership: async () => {
+          calls.push('load-membership');
+          return null;
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+
+    expect(calls).toEqual(['authenticate']);
+  });
+
   it.each(['INVITED', 'SUSPENDED', 'LOCKED', 'DISABLED'] as const)(
     'denies a %s membership before creating transaction authority',
     async (status) => {

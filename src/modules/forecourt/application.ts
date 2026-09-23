@@ -2,6 +2,7 @@ import { AppError } from '../../platform/errors';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import type { Database } from '../../platform/db';
+import { z } from 'zod';
 import {
   authorize,
   type AccessScope,
@@ -287,6 +288,74 @@ export const FORECOURT_COMMAND_POLICY = {
 
 export type ForecourtCommandType = keyof typeof FORECOURT_COMMAND_POLICY;
 
+const FORECOURT_AUTHORITY_ERROR = 'Forecourt command authority could not be established';
+
+function assertForecourtCommandAuthorization(
+  context: ForecourtCommandContext,
+  commandType: ForecourtCommandType,
+): void {
+  const policy = FORECOURT_COMMAND_POLICY[commandType];
+  authorize({
+    actor: context.authority.authorization,
+    permissionCode: policy.permissionCode,
+    requestedScope: context.scope,
+  });
+  if (context.scope.scopeType !== policy.requiredScopeType) {
+    throw new AppError('FORBIDDEN', 'The command policy requires station scope');
+  }
+  if (
+    policy.assuranceRequirement === 'STEP_UP' &&
+    context.authority.authorization.strongAuthenticationVerified !== true
+  ) {
+    throw new AppError('FORBIDDEN', 'The command requires step-up assurance');
+  }
+}
+
+/**
+ * Establish station authority before a command-specific schema is parsed.
+ * Only the authority selectors are inspected here; the command handler still
+ * performs its complete payload validation and execution-time checks.
+ */
+export async function authorizeForecourtCommandPreflight(input: {
+  request: Request;
+  commandType: ForecourtCommandType;
+  body: unknown;
+  loadStation: (
+    authority: TenantExecutionContext,
+    stationId: string,
+  ) => Promise<Readonly<{ id: string; tenantId: string; legalEntityId: string }> | null>;
+}): Promise<ForecourtCommandContext> {
+  const authoritySelectors = z
+    .object({
+      tenantId: z.string().uuid(),
+      stationId: z.string().uuid(),
+    })
+    .safeParse(input.body);
+  if (!authoritySelectors.success) {
+    throw new AppError('FORBIDDEN', FORECOURT_AUTHORITY_ERROR);
+  }
+
+  let context: ForecourtCommandContext;
+  try {
+    context = await resolveForecourtCommandContext({
+      request: input.request,
+      requestedTenantId: authoritySelectors.data.tenantId,
+      stationId: authoritySelectors.data.stationId,
+      loadStation: input.loadStation,
+    });
+    assertForecourtCommandAuthorization(context, input.commandType);
+  } catch (error) {
+    // Do not disclose membership, station existence, or permission details at
+    // the preflight boundary. The full command path still maps its own
+    // business errors after this trusted context has been established.
+    if (error instanceof AppError && (error.code === 'FORBIDDEN' || error.code === 'NOT_FOUND')) {
+      throw new AppError('FORBIDDEN', FORECOURT_AUTHORITY_ERROR);
+    }
+    throw error;
+  }
+  return context;
+}
+
 export type ForecourtTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 export type ForecourtTransactionPort = {
@@ -439,20 +508,7 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
   }
 
   return input.ports.transaction.run(input.context, async (transaction) => {
-    authorize({
-      actor: input.context.authority.authorization,
-      permissionCode: policy.permissionCode,
-      requestedScope: input.context.scope,
-    });
-    if (input.context.scope.scopeType !== policy.requiredScopeType) {
-      throw new AppError('FORBIDDEN', 'The command policy requires station scope');
-    }
-    if (
-      policy.assuranceRequirement === 'STEP_UP' &&
-      input.context.authority.authorization.strongAuthenticationVerified !== true
-    ) {
-      throw new AppError('FORBIDDEN', 'The command requires step-up assurance');
-    }
+    assertForecourtCommandAuthorization(input.context, input.commandType);
     if (
       'requiresAttendantEligibility' in policy &&
       policy.requiresAttendantEligibility === true &&
