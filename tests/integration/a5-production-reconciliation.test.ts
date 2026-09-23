@@ -4,6 +4,7 @@ import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
+import { ExactDecimal } from '../../src/platform/domain/primitives';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -91,6 +92,10 @@ async function expectOk(response: Response) {
   const body = (await response.json()) as CommandResponse;
   expect(response.status, JSON.stringify(body)).toBe(200);
   return body;
+}
+
+function expectDecimalEqual(actual: string, expected: string) {
+  expect(new ExactDecimal(actual).equals(new ExactDecimal(expected))).toBe(true);
 }
 
 describe('A5 production daily reconciliation persistence and approval', () => {
@@ -340,14 +345,16 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     expect(draft.state).toBe('DRAFT');
     expect(draft.version).toBe(9);
     expect(draft.readings).toHaveLength(1);
-    expect(draft.readings![0]!.litresSold).toBe('500.000');
-    expect(draft.totals).toMatchObject({
-      expectedSales: '750.0000',
-      accountedSales: '750.0000',
-      salesVariance: '0.0000',
-      cashVariance: '0.0000',
-    });
-    expect(draft.totals!.stockVariance[ids.tank]).toBe('0.000');
+    // litresSold is selected directly from numeric(18,3), while monetary totals
+    // are normalized through ExactDecimal.toString(). Neither representation's
+    // trailing-zero scale is part of the API contract.
+    expectDecimalEqual(draft.readings![0]!.litresSold, '500.000');
+    expectDecimalEqual(draft.totals!.expectedSales, '750.0000');
+    expectDecimalEqual(draft.totals!.accountedSales, '750.0000');
+    expectDecimalEqual(draft.totals!.salesVariance, '0.0000');
+    expect(draft.totals!.cashVariance).not.toBeNull();
+    expectDecimalEqual(draft.totals!.cashVariance!, '0.0000');
+    expectDecimalEqual(draft.totals!.stockVariance[ids.tank]!, '0.000');
 
     await expectOk(
       await postCommand(
