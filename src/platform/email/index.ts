@@ -34,7 +34,8 @@ type Send = (input: {
 }) => Promise<{ data: { id: string } | null; error: unknown | null }>;
 
 export function createResendEmailSender(env: ServerEnv = getServerEnv(), send?: Send): EmailSender {
-  if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) throw new EmailError('configuration');
+  const configuredFrom = env.RESEND_FROM_EMAIL;
+  if (!env.RESEND_API_KEY || !configuredFrom) throw new EmailError('configuration');
   const resend = send ? undefined : new Resend(env.RESEND_API_KEY);
   const sendEmail =
     send ?? ((input: Parameters<Send>[0]) => resend!.emails.send(input as CreateEmailOptions));
@@ -43,7 +44,14 @@ export function createResendEmailSender(env: ServerEnv = getServerEnv(), send?: 
     async send(message) {
       if (!message.text && !message.html) throw new EmailError('provider');
       try {
-        const result = await sendEmail({ from: env.RESEND_FROM_EMAIL!, ...message });
+        const providerPayload = {
+          from: configuredFrom,
+          to: message.to,
+          subject: message.subject,
+          ...(message.text === undefined ? {} : { text: message.text }),
+          ...(message.html === undefined ? {} : { html: message.html }),
+        };
+        const result = await sendEmail(providerPayload);
         if (result.error || !result.data?.id) throw new EmailError('provider');
         return { messageId: result.data.id };
       } catch {

@@ -7,12 +7,20 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { getServerEnv, type ServerEnv } from '../config/env';
+import {
+  getServerEnv,
+  isValidR2AccountId,
+  isValidR2BucketName,
+  type ServerEnv,
+} from '../config/env';
 import { createLogger } from '../logging';
 
 const keyPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
 const identifierPattern = /^[a-zA-Z0-9_-]{1,100}$/;
 const namespacePattern = /^[a-zA-Z0-9_-]{1,100}(?:\/[a-zA-Z0-9_-]{1,100})*$/;
+const mimeTypePattern =
+  /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+(?:[ \t]*;[ \t]*[A-Za-z0-9!#$%&'*+.^_`|~-]+=(?:[A-Za-z0-9!#$%&'*+.^_`|~-]+|"(?:[\x20-\x21\x23-\x5B\x5D-\x7E]|\\[\x20-\x7E])*"))*$/;
+const maxContentTypeLength = 255;
 const maxSignedUrlSeconds = 15 * 60;
 const logger = createLogger({ component: 'platform.storage' });
 
@@ -36,7 +44,13 @@ export function createUniquePrivateObjectKey(namespace: string): PrivateObjectKe
 
 export class StorageError extends Error {
   constructor(
-    readonly code: 'configuration' | 'invalid_key' | 'invalid_expiry' | 'not_found' | 'provider',
+    readonly code:
+      | 'configuration'
+      | 'invalid_key'
+      | 'invalid_content_type'
+      | 'invalid_expiry'
+      | 'not_found'
+      | 'provider',
     message: string,
   ) {
     super(message);
@@ -75,6 +89,18 @@ function checkedKey(key: PrivateObjectKey): string {
   return key;
 }
 
+function checkedContentType(contentType: string): string {
+  if (
+    contentType.length === 0 ||
+    contentType.length > maxContentTypeLength ||
+    /[\x00-\x08\x0A-\x1F\x7F]/.test(contentType) ||
+    !mimeTypePattern.test(contentType)
+  ) {
+    throw new StorageError('invalid_content_type', 'The object content type is invalid');
+  }
+  return contentType;
+}
+
 export function createR2Storage(
   env: ServerEnv = getServerEnv(),
   dependencies: { client?: Client; signUrl?: SignUrl } = {},
@@ -85,12 +111,19 @@ export function createR2Storage(
     R2_ACCESS_KEY_ID: accessKeyId,
     R2_SECRET_ACCESS_KEY: secretAccessKey,
   } = env;
-  if (!accountId || !bucket || !accessKeyId || !secretAccessKey) {
+  if (
+    !accountId ||
+    !bucket ||
+    !accessKeyId ||
+    !secretAccessKey ||
+    !isValidR2AccountId(accountId) ||
+    !isValidR2BucketName(bucket)
+  ) {
     throw new StorageError('configuration', 'Private storage is not configured');
   }
   const awsClient = new S3Client({
     region: 'auto',
-    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    endpoint: `https://${accountId.toLowerCase()}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
   });
   const client = dependencies.client ?? (awsClient as unknown as Client);
@@ -98,13 +131,14 @@ export function createR2Storage(
 
   return {
     async put({ key, body, contentType }) {
+      const safeContentType = checkedContentType(contentType);
       try {
         await client.send(
           new PutObjectCommand({
             Bucket: bucket,
             Key: checkedKey(key),
             Body: body,
-            ContentType: contentType,
+            ContentType: safeContentType,
           }),
         );
       } catch {

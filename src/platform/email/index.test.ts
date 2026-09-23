@@ -30,6 +30,28 @@ describe('Resend email adapter', () => {
     expect(send).toHaveBeenCalledWith({ from: 'staging@example.invalid', ...message });
   });
 
+  it('always uses configured sender and ignores unexpected runtime properties', async () => {
+    const send = vi.fn().mockResolvedValue({ data: { id: 'provider-message-id' }, error: null });
+    const sender = createResendEmailSender(env(), send);
+    const hostileMessage = {
+      ...message,
+      from: 'attacker@example.invalid',
+      cc: ['other@example.invalid'],
+      headers: { 'x-untrusted': 'forward-me' },
+    } as Parameters<typeof sender.send>[0];
+
+    await sender.send(hostileMessage);
+
+    expect(send).toHaveBeenCalledWith({
+      from: 'staging@example.invalid',
+      to: message.to,
+      subject: message.subject,
+      text: message.text,
+    });
+    expect(send.mock.calls[0]?.[0]).not.toHaveProperty('cc');
+    expect(send.mock.calls[0]?.[0]).not.toHaveProperty('headers');
+  });
+
   it('maps provider errors without surfacing secrets or sensitive payloads', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const send = vi.fn().mockResolvedValue({
