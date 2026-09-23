@@ -131,12 +131,13 @@ export function createR2Storage(
 
   return {
     async put({ key, body, contentType }) {
+      const safeKey = checkedKey(key);
       const safeContentType = checkedContentType(contentType);
       try {
         await client.send(
           new PutObjectCommand({
             Bucket: bucket,
-            Key: checkedKey(key),
+            Key: safeKey,
             Body: body,
             ContentType: safeContentType,
           }),
@@ -158,9 +159,10 @@ export function createR2Storage(
         if (!result.Body?.transformToByteArray || !result.ContentType) {
           throw new StorageError('provider', 'Private storage returned an invalid object');
         }
+        const safeContentType = checkedContentType(result.ContentType);
         return {
           body: await result.Body.transformToByteArray(),
-          contentType: result.ContentType,
+          contentType: safeContentType,
           ...(result.ContentLength === undefined ? {} : { contentLength: result.ContentLength }),
         };
       } catch (error) {
@@ -183,20 +185,20 @@ export function createR2Storage(
           'Signed URL expiry must be between 1 and 900 seconds',
         );
       }
+      const safeKey = checkedKey(key);
       try {
-        return await signUrl(
-          awsClient,
-          new GetObjectCommand({ Bucket: bucket, Key: checkedKey(key) }),
-          { expiresIn: expiresInSeconds },
-        );
+        return await signUrl(awsClient, new GetObjectCommand({ Bucket: bucket, Key: safeKey }), {
+          expiresIn: expiresInSeconds,
+        });
       } catch {
         logProviderFailure();
         throw new StorageError('provider', 'Private storage operation failed');
       }
     },
     async delete(key) {
+      const safeKey = checkedKey(key);
       try {
-        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: checkedKey(key) }));
+        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: safeKey }));
       } catch {
         logProviderFailure();
         throw new StorageError('provider', 'Private storage operation failed');

@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getServerEnv } from '../config/env';
-import { createPrivateObjectKey, createR2Storage, StorageError } from './index';
+import {
+  createPrivateObjectKey,
+  createR2Storage,
+  StorageError,
+  type PrivateObjectKey,
+} from './index';
 
 function testEnv() {
   return getServerEnv({
@@ -61,6 +66,22 @@ describe('private R2 storage adapter', () => {
       StorageError,
     );
     expect(() => createPrivateObjectKey('evidence', '../secret')).toThrowError(StorageError);
+  });
+
+  it('preserves invalid_key errors for put, signed reads, and delete without SDK calls', async () => {
+    const send = vi.fn();
+    const signUrl = vi.fn();
+    const storage = createR2Storage(testEnv(), { client: { send }, signUrl });
+    const invalidKey = 'private/../evidence/record-123' as PrivateObjectKey;
+
+    await expect(
+      storage.put({ key: invalidKey, body: new Uint8Array([1]), contentType: 'application/pdf' }),
+    ).rejects.toMatchObject({ code: 'invalid_key' });
+    await expect(storage.createReadUrl(invalidKey)).rejects.toMatchObject({ code: 'invalid_key' });
+    await expect(storage.delete(invalidKey)).rejects.toMatchObject({ code: 'invalid_key' });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(signUrl).not.toHaveBeenCalled();
   });
 
   it('uses only the configured private bucket for put, get, and delete', async () => {
@@ -124,6 +145,69 @@ describe('private R2 storage adapter', () => {
       }),
     ).rejects.toMatchObject({ code: 'invalid_content_type' });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each(['application/pdf', 'text/plain; charset=utf-8'])(
+    'returns validated provider content type %s',
+    async (contentType) => {
+      const body = new Uint8Array([1, 2]);
+      const send = vi.fn().mockResolvedValue({
+        Body: { transformToByteArray: async () => body },
+        ContentType: contentType,
+        ContentLength: body.length,
+      });
+      const storage = createR2Storage(testEnv(), { client: { send } });
+
+      await expect(storage.get(createPrivateObjectKey('evidence', 'record-123'))).resolves.toEqual({
+        body,
+        contentType,
+        contentLength: 2,
+      });
+    },
+  );
+
+  it.each([
+    'text/plain\r\nX-Injected: yes',
+    'text/plain\u0000',
+    'not-a-mime-type',
+    `text/${'a'.repeat(260)}`,
+  ])('rejects unsafe provider content type without exposing it: %j', async (contentType) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const send = vi.fn().mockResolvedValue({
+      Body: { transformToByteArray: async () => new Uint8Array([1]) },
+      ContentType: contentType,
+    });
+    const storage = createR2Storage(testEnv(), { client: { send } });
+
+    let caught: unknown;
+    try {
+      await storage.get(createPrivateObjectKey('evidence', 'record-123'));
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      name: 'StorageError',
+      code: 'invalid_content_type',
+      message: 'The object content type is invalid',
+    });
+    expect(JSON.stringify(caught)).not.toContain(contentType);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(contentType);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('keeps missing provider content type behavior sanitized', async () => {
+    const send = vi.fn().mockResolvedValue({
+      Body: { transformToByteArray: async () => new Uint8Array([1]) },
+    });
+    const storage = createR2Storage(testEnv(), { client: { send } });
+
+    await expect(
+      storage.get(createPrivateObjectKey('evidence', 'record-123')),
+    ).rejects.toMatchObject({
+      code: 'provider',
+      message: 'Private storage returned an invalid object',
+    });
   });
 
   it('bounds signed URL expiry and uses the configured bucket', async () => {
