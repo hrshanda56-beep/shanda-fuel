@@ -29,6 +29,13 @@
       "when": 1789938559208,
       "tag": "0003_a3_forecourt_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790166220177,
+      "tag": "0004_a4_inventory",
+      "breakpoints": true
     }
   ]
 }
