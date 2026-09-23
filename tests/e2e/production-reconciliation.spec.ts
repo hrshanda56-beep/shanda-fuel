@@ -163,6 +163,11 @@ test.describe('production reconciliation persistence', () => {
     await authenticate(context, supervisorToken);
     await page.goto(supervisorUrl);
     await page.getByRole('button', { name: 'Create draft' }).click();
+    const persistedAfterCreate = await page.request.get(
+      `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
+    );
+    expect(persistedAfterCreate.ok(), await persistedAfterCreate.text()).toBe(true);
+    await page.reload();
     await expect(
       page.locator('[aria-label="Production daily reconciliation workflow"]'),
     ).toBeVisible();
