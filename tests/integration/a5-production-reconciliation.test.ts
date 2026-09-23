@@ -33,6 +33,7 @@ const ids = {
   price: 'a5b00000-0000-4000-8000-000000000111',
   day: 'a5b00000-0000-4000-8000-000000000121',
   shift: 'a5b00000-0000-4000-8000-000000000131',
+  returnShift: 'a5b00000-0000-4000-8000-000000000132',
   tank: 'a5b00000-0000-4000-8000-000000000141',
   openingSource: 'a5b00000-0000-4000-8000-000000000151',
   delivery: 'a5b00000-0000-4000-8000-000000000161',
@@ -110,7 +111,7 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
         commandType: 'CreateProductionReconciliation',
         ...common,
         businessDayId: ids.day,
-        shiftId: ids.shift,
+        shiftId: ids.returnShift,
         expectedVersion: 0,
       },
       `a5-return-create-${reconciliationId}`,
@@ -126,7 +127,7 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
           {
             nozzleId: ids.nozzle,
             productId: ids.product,
-            shiftId: ids.shift,
+            shiftId: ids.returnShift,
             openingReading: '100000.000',
             closingReading: '100500.000',
             sellingPriceId: ids.price,
@@ -232,6 +233,11 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         where id='${ids.day}' and state='NOT_STARTED';
       update app.shifts set state='OPEN', opened_at=now()
         where id='${ids.shift}' and state='PLANNED';
+      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+        values ('${ids.returnShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-22T14:00:00Z', '2026-09-22T22:00:00Z', '2026-09-22')
+        on conflict (id) do nothing;
+      update app.shifts set state='OPEN', opened_at=now()
+        where id='${ids.returnShift}' and state='PLANNED';
       update app.selling_prices set state='PENDING_APPROVAL'
         where id='${ids.price}' and state='DRAFT';
       update app.selling_prices set state='APPROVED', approved_by='${ids.managerMembership}', approved_at=now()
@@ -581,7 +587,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             {
               nozzleId: ids.nozzle,
               productId: ids.product,
-              shiftId: ids.shift,
+              shiftId: ids.returnShift,
               openingReading: '100000.000',
               closingReading: '100501.000',
               sellingPriceId: ids.price,
