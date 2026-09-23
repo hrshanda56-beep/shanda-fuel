@@ -6,6 +6,7 @@ import {
   validateMovementQuantity,
   type InventoryMovementType,
 } from './domain';
+import { litres } from '../../platform/domain/primitives';
 import type { InventoryCommandContext, InventoryTransaction } from './application';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { products } from '../../platform/db/schema/a3';
@@ -126,7 +127,7 @@ export async function getPhysicalTankStockInTransaction(
     )
     .orderBy(desc(tankDips.measuredAt), desc(tankDips.id))
     .limit(1);
-  return rows[0]?.physicalLitres ?? null;
+  return rows[0] ? litres(rows[0].physicalLitres).toString() : null;
 }
 
 export async function getTankStockPositionInTransaction(
