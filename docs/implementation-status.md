@@ -1,10 +1,10 @@
 # Implementation status
 
-Status: **A3 CORE FORECOURT SLICE IMPLEMENTED WITH SECURITY/INTEGRATION REMEDIATION — INTEGRATION REVIEW PENDING**
+Status: **A0 CANONICAL FOUNDATION CURRENT; A3 FORECOURT SLICE INTEGRATED; A4 NOT STARTED**
 
 ## Current integration base
 
-`7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb` (`origin/main`, approved A1 integration baseline)
+`60a7462a4455b9631ffd75a1d19cc543f587ecad` (`origin/main`, current approved integration baseline)
 
 A1 branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2), approved and merged into `main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`. Canonical migrations `0001` and `0002` are present and verified; the architecture SQL proposal remains reference-only. A0 integration verification and the fresh PostgreSQL CI path passed.
 
@@ -52,7 +52,7 @@ Remediation validation: the namespace migration was applied successfully to Post
 - [x] Real end-to-end PostgreSQL production-command coverage for a handover-segmented shift, a price-segmented shift, a correction-aware shift, and a real midnight-crossing segment, each driven `OpenBusinessDay` → `LockBusinessDay`/`PostReconciliation` with no direct-SQL authoritative-state seeding (`tests/integration/a3-segmented-shifts.test.ts`).
 - [x] New `PreparePriceActivation` command closes the previously-SQL-only `APPROVED` → `PENDING_STATION_ACTIVATION` selling-price transition: `price.change.prepare` permission (STEP_UP, granted to OWNER/ADMINISTRATOR/SUPERVISOR), `SellingPrice` version subject, routed through the same trusted `executeForecourtCommand` pipeline (idempotency, audit, expected-version locking) as every other price command. The price-segmented scenario and the route/security/remediation price tests in `a3-forecourt.test.ts` now drive this transition through the real command instead of raw SQL, with new permission/assurance/station/version negative-path coverage. Fixture-only prices that are already `ACTIVE` before the observable business day begins (`a3-business-day-lifecycle.test.ts`) remain seeded via SQL, since `ActivatePriceChange` requires real sealed `PRICE_CHANGE` boundaries that a pre-day baseline price never has.
 - [x] Payment declaration model resolved to a single canonical representation: the JSONB `reconciliation_revisions.declarations` snapshot (see `docs/decisions/ADR-005-payment-declaration-canonical-model.md`); the unused parallel `payment_declarations` table was removed from schema and `0003`. Fixed a latent bug where `SubmitReconciliation` persisted a nested `Money` value into that JSONB column instead of the flat `{amount, currency}` shape the `validate_reconciliation_revision_payload` trigger requires — this path had no prior test coverage with non-empty declarations.
-- [ ] A0 integration of canonical migration and production command adapters; PostgreSQL integration/E2E gates require the isolated branch to be reviewed and merged through `main`.
+- [x] A0 integration of the canonical `0000` → `0001` → `0002` → `0003` migration history, PostgreSQL CI/test path, server-only database boundary, and tenant transaction seam. Production command adapters remain module-owned; PostgreSQL integration/E2E gates run from the canonical integration base.
 
 ## Phase 3 — Inventory, Tanks, Deliveries & Costing
 

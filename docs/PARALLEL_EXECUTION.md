@@ -2,16 +2,16 @@
 
 ## Integration Base
 
-`origin/main at 7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb; A1 security foundation merged; A2 PR #3 is undergoing final integration`
+`origin/main at 60a7462a4455b9631ffd75a1d19cc543f587ecad; A1/A2/A3 foundations and staging platform bootstrap are integrated`
 
 ## A0 implementation candidate
 
 - Branch: `agent/a0-integration-foundation`
 - Worktree: isolated managed worktree `a0-integration-foundation`
-- Base: `origin/main` at `12a2fe42d1909a0e1b92ba66ec47d72afa7bab25`
-- Status: Phase 0 foundation remediation implemented and validated; A0 does not merge itself to `main`.
-- `main` remained untouched during implementation.
-- Remediation validation: PostgreSQL 16 migration application and 2-test integration suite passed against a dedicated ephemeral test database; missing `DATABASE_URL` fails the integration gate clearly.
+- Base before synchronization: `origin/main` at `12a2fe42d1909a0e1b92ba66ec47d72afa7bab25`; A0 was 93 commits behind the current integration base and had no unique commits.
+- Status: fast-forwarded to the current integration base `60a7462a4455b9631ffd75a1d19cc543f587ecad`; canonical migration ownership, PostgreSQL CI/test workflow, server-only DB access, and tenant transaction conventions are documented for subsequent modules. A0 does not merge itself to `main`.
+- The fast-forward was conflict-free and did not rewrite public history or modify PR #8.
+- Validation path: PostgreSQL 16 migration application and integration tests run in CI against an ephemeral database; missing `DATABASE_URL` fails the integration gate clearly.
 
 ## A1 platform/security implementation
 
