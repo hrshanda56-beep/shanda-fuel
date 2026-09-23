@@ -23,6 +23,7 @@ const ids = {
   price: 'a5e00000-0000-4000-8000-000000000111',
   day: 'a5e00000-0000-4000-8000-000000000121',
   shift: 'a5e00000-0000-4000-8000-000000000131',
+  retryShift: 'a5e00000-0000-4000-8000-000000000132',
   tank: 'a5e00000-0000-4000-8000-000000000141',
 };
 
@@ -99,8 +100,13 @@ test.describe('production reconciliation persistence', () => {
       values
         ('${ids.shift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T06:00:00Z', '2026-09-23T14:00:00Z', '2026-09-23')
         on conflict (id) do nothing;
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values
+        ('${ids.retryShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23')
+        on conflict (id) do nothing;
       update app.shifts set state='OPEN', opened_at=coalesce(opened_at, now())
-        where id='${ids.shift}';
+        where id in ('${ids.shift}', '${ids.retryShift}');
       insert into app.tanks
         (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
       values
@@ -149,12 +155,13 @@ test.describe('production reconciliation persistence', () => {
   test('persists through refresh, submits, approves, locks, and rejects edits', async ({
     context,
     page,
-  }) => {
+  }, testInfo) => {
+    const activeShiftId = testInfo.retry === 0 ? ids.shift : ids.retryShift;
     const reconciliationId = crypto.randomUUID();
     const query = new URLSearchParams({
       tenantId: ids.tenant,
       businessDayId: ids.day,
-      shiftId: ids.shift,
+      shiftId: activeShiftId,
       reconciliationId,
     });
     const supervisorUrl = `/stations/${ids.station}/reconciliations/new?${query}`;
@@ -201,7 +208,7 @@ test.describe('production reconciliation persistence', () => {
           {
             nozzleId: ids.nozzle,
             productId: ids.product,
-            shiftId: ids.shift,
+            shiftId: activeShiftId,
             openingReading: '100000.000',
             closingReading: '100500.000',
             sellingPriceId: ids.price,
@@ -228,7 +235,7 @@ test.describe('production reconciliation persistence', () => {
 
     await page.reload();
     await expect(page.getByText('500.000', { exact: true })).toBeVisible();
-    await expect(page.getByText('750', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/750(?:\.0+)? USD/).first()).toBeVisible();
     await page.getByLabel('Cash counted').fill('750.0000');
     await page.getByRole('button', { name: 'Save persisted draft' }).click();
     await expect(page.getByLabel('Cash counted')).toHaveValue(/750/);
