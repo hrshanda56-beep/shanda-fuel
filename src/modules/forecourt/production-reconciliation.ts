@@ -532,7 +532,19 @@ export async function saveReconciliationCashFromRequest(request: Request, input:
 }
 
 const explanationsPayload = basePayload.extend({
-  explanations: z.record(z.enum(['SALES', 'CASH', 'STOCK']), z.string().trim().min(1)),
+  explanations: z
+    .record(z.string().trim().min(1), z.string().trim().min(1))
+    .superRefine((value, refinementContext) => {
+      for (const category of Object.keys(value)) {
+        if (!['SALES', 'CASH', 'STOCK'].includes(category)) {
+          refinementContext.addIssue({
+            code: 'custom',
+            message: 'Explanation category must be SALES, CASH, or STOCK',
+            path: [category],
+          });
+        }
+      }
+    }),
 });
 export async function saveReconciliationExplanationsFromRequest(request: Request, input: unknown) {
   const payload = explanationsPayload.parse(input);
