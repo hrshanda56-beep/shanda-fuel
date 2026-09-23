@@ -13,7 +13,7 @@ Load staging secrets through the deployment secret manager. Do not commit a
 Use the exact synthetic Tenant A and Station A identifiers:
 
 ```sh
-APP_ENV=staging node --conditions=react-server --import tsx scripts/staging-auth-smoke-bootstrap.ts \
+APP_ENV=staging pnpm staging:auth-smoke-bootstrap \
   --check \
   --tenant-id a1000000-0000-4000-8000-000000000001 \
   --station-id a5000000-0000-4000-8000-000000000001
@@ -31,7 +31,7 @@ environment variable. The explicit confirmation flag is required.
 
 ```sh
 export STAGING_AUTH_SMOKE_PASSWORD='operator-supplied-secret'
-APP_ENV=staging node --conditions=react-server --import tsx scripts/staging-auth-smoke-bootstrap.ts \
+APP_ENV=staging pnpm staging:auth-smoke-bootstrap \
   --confirm-staging-auth-bootstrap \
   --tenant-id a1000000-0000-4000-8000-000000000001 \
   --station-id a5000000-0000-4000-8000-000000000001 \
