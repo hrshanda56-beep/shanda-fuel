@@ -277,9 +277,9 @@ describe('A4 PostgreSQL inventory persistence', () => {
       });
     });
     const position = await getTankVariance(trusted, ids.dieselTank);
-    expect(position.expectedLitres).toBe('14500');
-    expect(position.physicalLitres).toBe('14480');
-    expect(position.varianceLitres).toBe('-20');
+    expect(position.expectedLitres).toBe('14500.000');
+    expect(position.physicalLitres).toBe('14480.000');
+    expect(position.varianceLitres).toBe('-20.000');
     const persisted = await client<
       { count: number }[]
     >`select count(*)::int as count from app.inventory_movements where tenant_id = ${ids.tenant} and tank_id = ${ids.dieselTank}`;
