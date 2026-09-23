@@ -26,6 +26,7 @@ const ids = {
   retryShift: 'a5e00000-0000-4000-8000-000000000132',
   retryShiftTwo: 'a5e00000-0000-4000-8000-000000000133',
   tank: 'a5e00000-0000-4000-8000-000000000141',
+  openingSource: 'a5e00000-0000-4000-8000-000000000151',
 };
 
 const supervisorToken = 'a5e-supervisor-session-token';
@@ -117,6 +118,11 @@ test.describe('production reconciliation persistence', () => {
         (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
       values
         ('${ids.tank}', '${ids.tenant}', '${ids.station}', 'A5E2E-D1', '${ids.product}', 10000, 500, 10, 'ACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
+      values
+        ('${ids.openingSource}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', 1000, '2026-09-22T05:00:00Z', '2026-09-22', 'CUTOVER', '${ids.openingSource}', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into auth.session
         (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
