@@ -164,7 +164,7 @@ test.describe('production reconciliation persistence', () => {
     await page.goto(supervisorUrl);
     await page.getByRole('button', { name: 'Create draft' }).click();
     await expect(
-      page.getByRole('heading', { name: 'Shift reconciliation · 2026-09-23' }),
+      page.locator('[aria-label="Production daily reconciliation workflow"]'),
     ).toBeVisible();
 
     const common = {
