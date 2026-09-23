@@ -875,7 +875,18 @@ async function transitionProductionReconciliation(
                  'READY', ${metrics!.sales.toString()}, ${metrics!.payments.toString()},
                  ${metrics!.salesVariance.toString()}, 'USD',
                  ${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'},
-                 '[]'::jsonb, coalesce(max(source_shift_ids), '[]'::jsonb)
+                 '[]'::jsonb, coalesce(
+                   (
+                     select source_shift_ids
+                     from app.reconciliation_revisions latest
+                     where latest.tenant_id=${context.tenantId}
+                       and latest.station_id=${context.stationId}
+                       and latest.reconciliation_id=${payload.reconciliationId}
+                     order by latest.revision desc
+                     limit 1
+                   ),
+                   '[]'::jsonb
+                 )
           from app.reconciliation_revisions
           where tenant_id=${context.tenantId} and station_id=${context.stationId}
             and reconciliation_id=${payload.reconciliationId}
