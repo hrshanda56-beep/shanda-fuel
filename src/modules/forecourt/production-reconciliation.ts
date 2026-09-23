@@ -1,0 +1,966 @@
+import 'server-only';
+
+import { createHash, randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { AppError } from '../../platform/errors';
+import { ExactDecimal, money } from '../../platform/domain/primitives';
+import { withTenantTransaction } from '../../platform/db/transaction';
+import { postInventoryMovementInTransaction } from '../inventory/persistence';
+import {
+  executeForecourtCommand,
+  type ForecourtCommandContext,
+  type ForecourtTransaction,
+} from './application';
+import { databaseForecourtPorts, loadForecourtStation } from './persistence';
+import { resolveForecourtCommandContext } from './application';
+
+const uuid = z.string().uuid();
+const paymentMethod = z.enum([
+  'CASH',
+  'POS',
+  'ECOCASH',
+  'BANK_TRANSFER',
+  'CUSTOMER_CREDIT',
+  'PREPAID',
+  'STAFF_OR_MANAGEMENT_FUEL',
+  'OTHER_APPROVED',
+]);
+
+const basePayload = z.object({
+  tenantId: uuid,
+  stationId: uuid,
+  reconciliationId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+});
+
+type HeaderRow = {
+  id: string;
+  tenant_id: string;
+  station_id: string;
+  business_day_id: string;
+  shift_id: string | null;
+  business_date: string;
+  supervisor_id: string | null;
+  state: string;
+  version: number | string;
+};
+
+function requestHash(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+async function serverNow(transaction: ForecourtTransaction): Promise<string> {
+  const rows = await transaction.execute<{ now: Date | string }>(sql`select now() as now`);
+  return new Date(rows[0]?.now ?? Date.now()).toISOString();
+}
+
+async function contextFor(
+  request: Request,
+  payload: { tenantId: string; stationId: string },
+): Promise<ForecourtCommandContext> {
+  return resolveForecourtCommandContext({
+    request,
+    requestedTenantId: payload.tenantId,
+    stationId: payload.stationId,
+    loadStation: loadForecourtStation,
+  });
+}
+
+async function loadHeader(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  reconciliationId: string,
+): Promise<HeaderRow> {
+  const rows = await transaction.execute<HeaderRow>(sql`
+    select c.id, c.tenant_id, c.station_id, c.business_day_id, c.shift_id,
+           d.business_date, c.supervisor_id, c.state, c.version
+    from app.reconciliations c
+    join app.station_business_days d
+      on d.tenant_id = c.tenant_id and d.station_id = c.station_id and d.id = c.business_day_id
+    where c.tenant_id = ${context.tenantId}
+      and c.station_id = ${context.stationId}
+      and c.id = ${reconciliationId}
+    for update of c
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'Reconciliation was not found');
+  return row;
+}
+
+function assertEditable(header: HeaderRow): void {
+  if (header.state !== 'DRAFT' && header.state !== 'RETURNED') {
+    throw new AppError('CONFLICT', 'Only a draft or returned reconciliation can be edited');
+  }
+}
+
+async function touchDraft(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  reconciliationId: string,
+  expectedVersion: number,
+): Promise<number> {
+  const rows = await transaction.execute<{ version: number }>(sql`
+    update app.reconciliations
+    set version = version + 1, updated_at = now()
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+      and id = ${reconciliationId} and version = ${expectedVersion}
+    returning version
+  `);
+  if (!rows[0]) throw new AppError('CONFLICT', 'The reconciliation draft is stale');
+  return Number(rows[0].version);
+}
+
+async function replaceRows(
+  transaction: ForecourtTransaction,
+  table: string,
+  reconciliationId: string,
+  context: ForecourtCommandContext,
+): Promise<void> {
+  const allowed = new Set([
+    'reconciliation_attendants',
+    'reconciliation_meter_readings',
+    'reconciliation_payments',
+    'reconciliation_expenses',
+    'reconciliation_delivery_refs',
+    'reconciliation_dip_refs',
+    'reconciliation_variance_explanations',
+  ]);
+  if (!allowed.has(table))
+    throw new AppError('INTERNAL_ERROR', 'Invalid reconciliation detail table');
+  await transaction.execute(
+    sql.raw(
+      `delete from app."${table}" where tenant_id = '${context.tenantId}' and station_id = '${context.stationId}' and reconciliation_id = '${reconciliationId}'`,
+    ),
+  );
+}
+
+const createPayload = basePayload.extend({
+  businessDayId: uuid,
+  shiftId: uuid,
+});
+
+export async function createProductionReconciliationFromRequest(request: Request, input: unknown) {
+  const payload = createPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await contextFor(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'CreateProductionReconciliation',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    subjectType: 'Reconciliation',
+    subjectId: payload.reconciliationId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const shiftRows = await transaction.execute<{
+        id: string;
+        business_day_id: string;
+        business_date: string;
+        state: string;
+      }>(sql`
+        select s.id, s.business_day_id, s.business_date, s.state
+        from app.shifts s
+        where s.tenant_id = ${context.tenantId} and s.station_id = ${context.stationId} and s.id = ${payload.shiftId}
+        for update
+      `);
+      const shift = shiftRows[0];
+      if (!shift || shift.business_day_id !== payload.businessDayId) {
+        throw new AppError('FORBIDDEN', 'The shift is outside the requested station business date');
+      }
+      if (['NOT_OPERATED', 'CANCELLED_BEFORE_START'].includes(shift.state)) {
+        throw new AppError('CONFLICT', 'A non-operating shift cannot be reconciled');
+      }
+      try {
+        await transaction.execute(sql`
+          insert into app.reconciliations
+            (id, tenant_id, station_id, business_day_id, shift_id, supervisor_id, created_by, state)
+          values
+            (${payload.reconciliationId}, ${context.tenantId}, ${context.stationId}, ${payload.businessDayId},
+             ${payload.shiftId}, ${context.actor.membershipId}, ${context.actor.membershipId}, 'DRAFT')
+        `);
+        await transaction.execute(sql`
+          insert into app.reconciliation_revisions
+            (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales,
+             variance, currency, variance_classification, source_segment_ids, source_shift_ids)
+          values
+            (${randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, 1, 'READY',
+             0, 0, 0, 'USD', 'INFORMATIONAL', '[]'::jsonb, ${JSON.stringify([payload.shiftId])}::jsonb)
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError(
+            'CONFLICT',
+            'A reconciliation already exists for this station and shift',
+          );
+        }
+        throw error;
+      }
+      return {
+        result: {
+          reconciliationId: payload.reconciliationId,
+          state: 'DRAFT' as const,
+          version: 0,
+          businessDate: shift.business_date,
+        },
+        after: { reconciliationId: payload.reconciliationId, state: 'DRAFT' },
+      };
+    },
+  });
+}
+
+const attendantsPayload = basePayload.extend({ attendantIds: z.array(uuid).max(20) });
+
+export async function saveReconciliationDraftFromRequest(request: Request, input: unknown) {
+  const payload = basePayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'SaveReconciliationDraft',
+    'Reconciliation',
+    async () => ({ saved: true }),
+  );
+}
+
+export async function setReconciliationAttendantsFromRequest(request: Request, input: unknown) {
+  const payload = attendantsPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'SetAttendants',
+    'reconciliation_attendants',
+    async (transaction, context) => {
+      for (const attendantId of payload.attendantIds) {
+        const eligible = await transaction.execute<{ id: string }>(sql`
+        select m.id
+        from app.memberships m
+        join app.membership_role_assignments a
+          on a.tenant_id = m.tenant_id and a.membership_id = m.id
+        where m.tenant_id = ${context.tenantId} and m.id = ${attendantId} and m.status = 'ACTIVE'
+          and a.scope_type = 'STATION' and a.station_id = ${context.stationId}
+          and a.role_code = 'ATTENDANT'
+          and (a.expires_at is null or a.expires_at > now())
+        limit 1
+      `);
+        if (!eligible[0])
+          throw new AppError('FORBIDDEN', 'An attendant is not assigned to this station');
+      }
+      await replaceRows(
+        transaction,
+        'reconciliation_attendants',
+        payload.reconciliationId,
+        context,
+      );
+      for (const attendantId of payload.attendantIds) {
+        await transaction.execute(sql`
+        insert into app.reconciliation_attendants
+          (tenant_id, station_id, reconciliation_id, attendant_id, assigned_by)
+        values (${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${attendantId}, ${context.actor.membershipId})
+      `);
+      }
+      return { attendantCount: payload.attendantIds.length };
+    },
+  );
+}
+
+const meterReading = z.object({
+  id: uuid.optional(),
+  nozzleId: uuid,
+  productId: uuid,
+  shiftId: uuid,
+  openingReading: z.string(),
+  closingReading: z.string(),
+  sellingPriceId: uuid,
+});
+const meterPayload = basePayload.extend({ readings: z.array(meterReading).max(100) });
+export async function saveReconciliationMeterReadingsFromRequest(request: Request, input: unknown) {
+  const payload = meterPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'SaveMeterReadings',
+    'reconciliation_meter_readings',
+    async (transaction, context) => {
+      await replaceRows(
+        transaction,
+        'reconciliation_meter_readings',
+        payload.reconciliationId,
+        context,
+      );
+      for (const reading of payload.readings) {
+        const opening = new ExactDecimal(reading.openingReading);
+        const closing = new ExactDecimal(reading.closingReading);
+        if (closing.value.lt(opening.value))
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'Closing meter reading cannot be below opening reading',
+          );
+        const nozzle = await transaction.execute<{ product_id: string }>(sql`
+        select product_id from app.nozzles
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${reading.nozzleId} and status = 'ACTIVE'
+      `);
+        if (!nozzle[0] || nozzle[0].product_id !== reading.productId)
+          throw new AppError(
+            'FORBIDDEN',
+            'The nozzle/product relationship is outside this station',
+          );
+        const price = await transaction.execute<{ product_id: string; unit_price: string }>(sql`
+        select product_id, unit_price from app.selling_prices
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${reading.sellingPriceId} and state = 'ACTIVE'
+        for share
+      `);
+        if (!price[0] || price[0].product_id !== reading.productId)
+          throw new AppError('CONFLICT', 'The selling price is not active for this product');
+        const sold = closing
+          .subtract(opening)
+          .quantize({ name: 'Litres', precision: 18, scale: 3 });
+        const sales = sold
+          .multiply(new ExactDecimal(price[0].unit_price))
+          .quantize({ name: 'Money', precision: 20, scale: 4 });
+        await transaction.execute(sql`
+        insert into app.reconciliation_meter_readings
+          (id, tenant_id, station_id, reconciliation_id, shift_id, nozzle_id, product_id,
+           opening_reading, closing_reading, litres_sold, selling_price_id, unit_price, sales_value, entered_by)
+        values (${reading.id ?? randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId},
+          ${reading.shiftId}, ${reading.nozzleId}, ${reading.productId}, ${opening.toString()}, ${closing.toString()},
+          ${sold.toString()}, ${reading.sellingPriceId}, ${price[0].unit_price}, ${sales.toString()}, ${context.actor.membershipId})
+      `);
+      }
+      return { readingCount: payload.readings.length };
+    },
+  );
+}
+
+const payment = z.object({
+  id: uuid.optional(),
+  method: paymentMethod,
+  amount: z.string(),
+  reference: z.string().optional(),
+  note: z.string().optional(),
+});
+const paymentsPayload = basePayload.extend({ payments: z.array(payment).max(100) });
+export async function saveReconciliationPaymentsFromRequest(request: Request, input: unknown) {
+  const payload = paymentsPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'SavePaymentAllocations',
+    'reconciliation_payments',
+    async (transaction, context) => {
+      await replaceRows(transaction, 'reconciliation_payments', payload.reconciliationId, context);
+      for (const item of payload.payments) {
+        const amount = money(item.amount).amount;
+        if (amount.value.isNegative())
+          throw new AppError('VALIDATION_FAILED', 'Payment amounts cannot be negative');
+        await transaction.execute(sql`
+        insert into app.reconciliation_payments (id, tenant_id, station_id, reconciliation_id, method, amount, reference, note, entered_by)
+        values (${item.id ?? randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${item.method}, ${amount.toString()}, ${item.reference ?? null}, ${item.note ?? null}, ${context.actor.membershipId})
+      `);
+      }
+      return { paymentCount: payload.payments.length };
+    },
+  );
+}
+
+const expense = z.object({
+  id: uuid.optional(),
+  category: z.string().trim().min(1),
+  description: z.string().trim().min(1),
+  amount: z.string(),
+  paymentMethod,
+  personPaid: z.string().optional(),
+  reference: z.string().optional(),
+});
+const expensesPayload = basePayload.extend({ expenses: z.array(expense).max(100) });
+export async function saveReconciliationExpensesFromRequest(request: Request, input: unknown) {
+  const payload = expensesPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'SaveExpenses',
+    'reconciliation_expenses',
+    async (transaction, context) => {
+      await replaceRows(transaction, 'reconciliation_expenses', payload.reconciliationId, context);
+      for (const item of payload.expenses) {
+        const amount = money(item.amount).amount;
+        if (amount.value.isNegative())
+          throw new AppError('VALIDATION_FAILED', 'Expense amounts cannot be negative');
+        await transaction.execute(sql`
+        insert into app.reconciliation_expenses (id, tenant_id, station_id, reconciliation_id, category, description, amount, payment_method, person_paid, reference, entered_by)
+        values (${item.id ?? randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${item.category}, ${item.description}, ${amount.toString()}, ${item.paymentMethod}, ${item.personPaid ?? null}, ${item.reference ?? null}, ${context.actor.membershipId})
+      `);
+      }
+      return { expenseCount: payload.expenses.length };
+    },
+  );
+}
+
+const deliveryRef = z.object({
+  deliveryId: uuid,
+  allocationId: uuid,
+  productId: uuid,
+  tankId: uuid,
+});
+const deliveryPayload = basePayload.extend({ deliveries: z.array(deliveryRef).max(100) });
+export async function linkReconciliationDeliveriesFromRequest(request: Request, input: unknown) {
+  const payload = deliveryPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'LinkDeliveries',
+    'reconciliation_delivery_refs',
+    async (transaction, context) => {
+      await replaceRows(
+        transaction,
+        'reconciliation_delivery_refs',
+        payload.reconciliationId,
+        context,
+      );
+      for (const item of payload.deliveries) {
+        const rows = await transaction.execute<{
+          product_id: string;
+          tank_id: string;
+          status: string;
+          business_date: string;
+        }>(sql`
+        select d.product_id, a.tank_id, d.status, d.business_date
+        from app.fuel_deliveries d
+        join app.fuel_delivery_allocations a on a.tenant_id=d.tenant_id and a.station_id=d.station_id and a.delivery_id=d.id
+        where d.tenant_id=${context.tenantId} and d.station_id=${context.stationId} and d.id=${item.deliveryId} and a.id=${item.allocationId}
+      `);
+        const row = rows[0];
+        const header = await loadHeader(transaction, context, payload.reconciliationId);
+        if (
+          !row ||
+          row.product_id !== item.productId ||
+          row.tank_id !== item.tankId ||
+          row.status !== 'CONFIRMED' ||
+          row.business_date !== header.business_date
+        ) {
+          throw new AppError(
+            'FORBIDDEN',
+            'The delivery allocation is not valid for this reconciliation',
+          );
+        }
+        await transaction.execute(sql`
+        insert into app.reconciliation_delivery_refs
+          (tenant_id, station_id, reconciliation_id, delivery_id, allocation_id, product_id, tank_id, entered_by)
+        values (${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${item.deliveryId}, ${item.allocationId}, ${item.productId}, ${item.tankId}, ${context.actor.membershipId})
+      `);
+      }
+      return { deliveryCount: payload.deliveries.length };
+    },
+  );
+}
+
+const dipRef = z.object({ dipId: uuid, tankId: uuid, productId: uuid });
+const dipPayload = basePayload.extend({ dips: z.array(dipRef).max(100) });
+export async function linkReconciliationDipsFromRequest(request: Request, input: unknown) {
+  const payload = dipPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'LinkTankDips',
+    'reconciliation_dip_refs',
+    async (transaction, context) => {
+      await replaceRows(transaction, 'reconciliation_dip_refs', payload.reconciliationId, context);
+      const header = await loadHeader(transaction, context, payload.reconciliationId);
+      for (const item of payload.dips) {
+        const rows = await transaction.execute<{
+          tank_id: string;
+          product_id: string;
+          business_date: string;
+        }>(sql`
+        select d.tank_id, t.product_id, d.business_date
+        from app.tank_dips d join app.tanks t on t.tenant_id=d.tenant_id and t.station_id=d.station_id and t.id=d.tank_id
+        where d.tenant_id=${context.tenantId} and d.station_id=${context.stationId} and d.id=${item.dipId}
+      `);
+        const row = rows[0];
+        if (
+          !row ||
+          row.tank_id !== item.tankId ||
+          row.product_id !== item.productId ||
+          row.business_date !== header.business_date
+        )
+          throw new AppError('FORBIDDEN', 'The tank dip is not valid for this reconciliation');
+        await transaction.execute(sql`
+        insert into app.reconciliation_dip_refs (tenant_id, station_id, reconciliation_id, dip_id, tank_id, product_id, entered_by)
+        values (${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${item.dipId}, ${item.tankId}, ${item.productId}, ${context.actor.membershipId})
+      `);
+      }
+      return { dipCount: payload.dips.length };
+    },
+  );
+}
+
+const cashPayload = basePayload.extend({ countedCash: z.string() });
+export async function saveReconciliationCashFromRequest(request: Request, input: unknown) {
+  const payload = cashPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'SaveCashDeclaration',
+    'reconciliation_cash_declarations',
+    async (transaction, context) => {
+      const counted = money(payload.countedCash).amount;
+      if (counted.value.isNegative())
+        throw new AppError('VALIDATION_FAILED', 'Cash count cannot be negative');
+      const cash = await transaction.execute<{ payments: string; expenses: string }>(sql`
+      select
+        coalesce((select sum(amount) from app.reconciliation_payments where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and method='CASH'), 0) as payments,
+        coalesce((select sum(amount) from app.reconciliation_expenses where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and payment_method='CASH'), 0) as expenses
+    `);
+      const expected = money(cash[0]?.payments ?? '0').amount;
+      const expenses = money(cash[0]?.expenses ?? '0').amount;
+      const net = expected.subtract(expenses);
+      const variance = counted.subtract(net).quantize({ name: 'Money', precision: 20, scale: 4 });
+      await transaction.execute(sql`
+      insert into app.reconciliation_cash_declarations
+        (tenant_id, station_id, reconciliation_id, counted_cash, expected_physical_cash, cash_paid_expenses, net_expected_cash, cash_variance, entered_by)
+      values (${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${counted.toString()}, ${expected.toString()}, ${expenses.toString()}, ${net.toString()}, ${variance.toString()}, ${context.actor.membershipId})
+      on conflict (tenant_id, station_id, reconciliation_id) do update set
+        counted_cash=excluded.counted_cash, expected_physical_cash=excluded.expected_physical_cash,
+        cash_paid_expenses=excluded.cash_paid_expenses, net_expected_cash=excluded.net_expected_cash,
+        cash_variance=excluded.cash_variance, updated_at=now(), entered_by=excluded.entered_by
+    `);
+      return { cashVariance: variance.toString() };
+    },
+  );
+}
+
+const explanationsPayload = basePayload.extend({
+  explanations: z.record(z.enum(['SALES', 'CASH', 'STOCK']), z.string().trim().min(1)),
+});
+export async function saveReconciliationExplanationsFromRequest(request: Request, input: unknown) {
+  const payload = explanationsPayload.parse(input);
+  return runEditableDetailCommand(
+    request,
+    payload,
+    'SaveVarianceExplanations',
+    'reconciliation_variance_explanations',
+    async (transaction, context) => {
+      await replaceRows(
+        transaction,
+        'reconciliation_variance_explanations',
+        payload.reconciliationId,
+        context,
+      );
+      for (const [category, explanation] of Object.entries(payload.explanations)) {
+        await transaction.execute(sql`
+        insert into app.reconciliation_variance_explanations (tenant_id, station_id, reconciliation_id, category, explanation, entered_by)
+        values (${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${category}, ${explanation}, ${context.actor.membershipId})
+      `);
+      }
+      return { explanationCount: Object.keys(payload.explanations).length };
+    },
+  );
+}
+
+async function runEditableDetailCommand<T>(
+  request: Request,
+  payload: z.infer<typeof basePayload>,
+  commandType:
+    | 'SetAttendants'
+    | 'SaveReconciliationDraft'
+    | 'SaveMeterReadings'
+    | 'SavePaymentAllocations'
+    | 'SaveExpenses'
+    | 'LinkDeliveries'
+    | 'LinkTankDips'
+    | 'SaveCashDeclaration'
+    | 'SaveVarianceExplanations',
+  subjectType: string,
+  effect: (transaction: ForecourtTransaction, context: ForecourtCommandContext) => Promise<T>,
+): Promise<T & { version: number }> {
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await contextFor(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType,
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    subjectType,
+    subjectId: payload.reconciliationId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const header = await loadHeader(transaction, context, payload.reconciliationId);
+      assertEditable(header);
+      const result = await effect(transaction, context);
+      const version = await touchDraft(
+        transaction,
+        context,
+        payload.reconciliationId,
+        payload.expectedVersion,
+      );
+      return { result: { ...result, version }, after: result };
+    },
+  });
+}
+
+async function loadMetrics(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  reconciliationId: string,
+) {
+  const totals = await transaction.execute<{
+    sales: string;
+    payments: string;
+    cash: string;
+    expenses: string;
+  }>(sql`
+    select
+      coalesce((select sum(sales_value) from app.reconciliation_meter_readings where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId}), 0) as sales,
+      coalesce((select sum(amount) from app.reconciliation_payments where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId}), 0) as payments,
+      coalesce((select sum(amount) from app.reconciliation_payments where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId} and method='CASH'), 0) as cash,
+      coalesce((select sum(amount) from app.reconciliation_expenses where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId} and payment_method='CASH'), 0) as expenses
+  `);
+  const total = totals[0] ?? { sales: '0', payments: '0', cash: '0', expenses: '0' };
+  const sales = money(total.sales).amount;
+  const payments = money(total.payments).amount;
+  const cash = money(total.cash).amount;
+  const cashExpenses = money(total.expenses).amount;
+  const cashRow = await transaction.execute<{ counted_cash: string }>(sql`
+    select counted_cash from app.reconciliation_cash_declarations
+    where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId}
+  `);
+  const counted = cashRow[0] ? money(cashRow[0].counted_cash).amount : null;
+  const cashVariance = counted
+    ? counted
+        .subtract(cash.subtract(cashExpenses))
+        .quantize({ name: 'Money', precision: 20, scale: 4 })
+    : null;
+  const stock = await transaction.execute<{
+    tank_id: string;
+    product_id: string;
+    physical: string;
+    expected: string;
+    sold: string;
+  }>(sql`
+    select r.tank_id, r.product_id, d.physical_litres as physical,
+      coalesce((select sum(m.quantity_litres) from app.inventory_movements m where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id), 0) as expected,
+      coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.reconciliation_id=r.reconciliation_id and m.product_id=r.product_id), 0) as sold
+    from app.reconciliation_dip_refs r join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id
+    where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${reconciliationId}
+  `);
+  const stockVariance: Record<string, string> = {};
+  for (const row of stock) {
+    const tankCount = await transaction.execute<{ count: number }>(sql`
+      select count(*)::int as count from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${row.product_id} and status='ACTIVE'
+    `);
+    if (Number(tankCount[0]?.count) !== 1)
+      throw new AppError(
+        'CONFLICT',
+        'A reconciliation sale requires an explicit pump-to-tank mapping when a product has multiple active tanks',
+      );
+    stockVariance[row.tank_id] = new ExactDecimal(row.physical)
+      .subtract(new ExactDecimal(row.expected).subtract(new ExactDecimal(row.sold)))
+      .quantize({ name: 'Litres', precision: 18, scale: 3 })
+      .toString();
+  }
+  const salesVariance = payments
+    .subtract(sales)
+    .quantize({ name: 'Money', precision: 20, scale: 4 });
+  return { sales, payments, salesVariance, cash, cashExpenses, cashVariance, stockVariance };
+}
+
+async function requireExplanations(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  reconciliationId: string,
+  metrics: Awaited<ReturnType<typeof loadMetrics>>,
+): Promise<void> {
+  const required = new Set<string>();
+  if (!metrics.salesVariance.value.isZero()) required.add('SALES');
+  if (metrics.cashVariance && !metrics.cashVariance.value.isZero()) required.add('CASH');
+  if (Object.values(metrics.stockVariance).some((value) => !new ExactDecimal(value).value.isZero()))
+    required.add('STOCK');
+  if (required.size === 0) return;
+  const rows = await transaction.execute<{ category: string; explanation: string }>(sql`
+    select category, explanation from app.reconciliation_variance_explanations
+    where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId}
+  `);
+  const provided = new Set(rows.filter((row) => row.explanation.trim()).map((row) => row.category));
+  const missing = [...required].filter((category) => !provided.has(category));
+  if (missing.length)
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `Variance explanations are required for: ${missing.join(', ')}`,
+    );
+}
+
+const workflowPayload = basePayload;
+export async function submitProductionReconciliationFromRequest(request: Request, input: unknown) {
+  return transitionProductionReconciliation(
+    request,
+    workflowPayload.parse(input),
+    'SubmitProductionReconciliation',
+    'SUBMITTED',
+  );
+}
+
+export async function returnProductionReconciliationFromRequest(request: Request, input: unknown) {
+  const payload = basePayload.extend({ reason: z.string().trim().min(1) }).parse(input);
+  return transitionProductionReconciliation(
+    request,
+    payload,
+    'ReturnProductionReconciliation',
+    'RETURNED',
+    payload.reason,
+  );
+}
+
+export async function approveProductionReconciliationFromRequest(request: Request, input: unknown) {
+  const payload = workflowPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await contextFor(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'ApproveProductionReconciliation',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    subjectType: 'Reconciliation',
+    subjectId: payload.reconciliationId,
+    expectedVersion: payload.expectedVersion,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const header = await loadHeader(transaction, context, payload.reconciliationId);
+      if (header.state !== 'SUBMITTED')
+        throw new AppError('CONFLICT', 'Only a submitted reconciliation can be approved');
+      const metrics = await loadMetrics(transaction, context, payload.reconciliationId);
+      await requireExplanations(transaction, context, payload.reconciliationId, metrics);
+      const readings = await transaction.execute<{
+        id: string;
+        product_id: string;
+        litres_sold: string;
+        shift_id: string;
+      }>(sql`
+        select id, product_id, litres_sold, shift_id from app.reconciliation_meter_readings
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId}
+        order by id
+      `);
+      const saleMovementIds: string[] = [];
+      for (const reading of readings) {
+        if (new ExactDecimal(reading.litres_sold).value.isZero()) continue;
+        const tanksForProduct = await transaction.execute<{ id: string }>(sql`
+          select id from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${reading.product_id} and status='ACTIVE'
+          order by id
+        `);
+        if (tanksForProduct.length !== 1)
+          throw new AppError('CONFLICT', 'Cannot post a sale without an unambiguous source tank');
+        const movementId = await postInventoryMovementInTransaction(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: tanksForProduct[0]!.id,
+          productId: reading.product_id,
+          movementType: 'SALE',
+          quantityLitres: `-${reading.litres_sold}`,
+          effectiveAt: new Date(),
+          businessDate: header.business_date,
+          sourceType: 'RECONCILIATION_SALE',
+          sourceId: reading.id,
+          actorMembershipId: context.actor.membershipId,
+        });
+        saleMovementIds.push(movementId);
+        await databaseForecourtPorts().audit.append({
+          transaction,
+          context,
+          commandType: 'InventorySalePosted',
+          subjectType: 'InventoryMovement',
+          subjectId: movementId,
+          after: {
+            reconciliationId: payload.reconciliationId,
+            movementId,
+            litres: reading.litres_sold,
+          },
+          provenance: {
+            actorId: context.actor.actorId,
+            membershipId: context.actor.membershipId,
+            tenantId: context.tenantId,
+            stationId: context.stationId,
+            requestId: context.requestId,
+          },
+        });
+      }
+      const now = await serverNow(transaction);
+      const updated = await transaction.execute<{ version: number }>(sql`
+        update app.reconciliations set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, version=version+1, updated_at=${now}::timestamptz
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} and state='SUBMITTED'
+        returning version
+      `);
+      if (!updated[0]) throw new AppError('CONFLICT', 'The reconciliation approval became stale');
+      await transaction.execute(sql`
+        update app.reconciliation_revisions set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, expected_sales=${metrics.sales.toString()}, accounted_sales=${metrics.payments.toString()}, variance=${metrics.salesVariance.toString()}, variance_classification=${metrics.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'}, version=version+1
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='SUBMITTED'
+      `);
+      return {
+        result: {
+          reconciliationId: payload.reconciliationId,
+          state: 'APPROVED' as const,
+          version: Number(updated[0].version),
+          saleMovementIds,
+        },
+        after: { state: 'APPROVED', saleMovementIds },
+      };
+    },
+  });
+}
+
+async function transitionProductionReconciliation(
+  request: Request,
+  payload: z.infer<typeof basePayload> & { reason?: string },
+  commandType: 'SubmitProductionReconciliation' | 'ReturnProductionReconciliation',
+  nextState: 'SUBMITTED' | 'RETURNED',
+  reason?: string,
+) {
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await contextFor(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType,
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    subjectType: 'Reconciliation',
+    subjectId: payload.reconciliationId,
+    expectedVersion: payload.expectedVersion,
+    reason,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const header = await loadHeader(transaction, context, payload.reconciliationId);
+      let metrics: Awaited<ReturnType<typeof loadMetrics>> | undefined;
+      if (nextState === 'SUBMITTED') {
+        if (header.state !== 'DRAFT' && header.state !== 'RETURNED')
+          throw new AppError(
+            'CONFLICT',
+            'Only a draft or returned reconciliation can be submitted',
+          );
+        metrics = await loadMetrics(transaction, context, payload.reconciliationId);
+        await requireExplanations(transaction, context, payload.reconciliationId, metrics);
+      } else if (header.state !== 'SUBMITTED') {
+        throw new AppError('CONFLICT', 'Only a submitted reconciliation can be returned');
+      }
+      const now = await serverNow(transaction);
+      const update =
+        nextState === 'SUBMITTED'
+          ? sql`update app.reconciliations set state='SUBMITTED', submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, returned_by=null, returned_at=null, return_reason=null, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`
+          : sql`update app.reconciliations set state='RETURNED', returned_by=${context.actor.membershipId}, returned_at=${now}::timestamptz, return_reason=${reason}, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`;
+      const updated = await transaction.execute<{ version: number }>(update);
+      if (!updated[0]) throw new AppError('CONFLICT', 'The reconciliation state became stale');
+      if (nextState === 'SUBMITTED' && header.state === 'RETURNED') {
+        const revisionId = randomUUID();
+        await transaction.execute(sql`
+          insert into app.reconciliation_revisions
+            (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales,
+             accounted_sales, variance, currency, variance_classification, source_segment_ids,
+             source_shift_ids)
+          select ${revisionId}, tenant_id, station_id, reconciliation_id, coalesce(max(revision), 0) + 1,
+                 'READY', ${metrics!.sales.toString()}, ${metrics!.payments.toString()},
+                 ${metrics!.salesVariance.toString()}, 'USD',
+                 ${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'},
+                 '[]'::jsonb, coalesce(max(source_shift_ids), '[]'::jsonb)
+          from app.reconciliation_revisions
+          where tenant_id=${context.tenantId} and station_id=${context.stationId}
+            and reconciliation_id=${payload.reconciliationId}
+          group by tenant_id, station_id, reconciliation_id
+        `);
+        await transaction.execute(sql`
+          update app.reconciliation_revisions
+          set state='SUBMITTED', submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
+          where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${revisionId}
+        `);
+      } else {
+        await transaction.execute(sql`
+          update app.reconciliation_revisions set state=${nextState}, submitted_by=case when ${nextState}='SUBMITTED' then ${context.actor.membershipId} else submitted_by end, submitted_at=case when ${nextState}='SUBMITTED' then ${now}::timestamptz else submitted_at end, version=version+1
+          where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state in ('READY','SUBMITTED')
+        `);
+      }
+      return {
+        result: {
+          reconciliationId: payload.reconciliationId,
+          state: nextState,
+          version: Number(updated[0].version),
+        },
+        after: { state: nextState, reason: reason ?? null },
+      };
+    },
+  });
+}
+
+export async function getProductionReconciliationFromRequest(
+  request: Request,
+  input: { tenantId: string; stationId: string; reconciliationId: string },
+) {
+  const context = await contextFor(request, input);
+  return withQueryTransaction(context, async (transaction) => {
+    const header = await loadHeader(transaction, context, input.reconciliationId);
+    const [attendants, readings, payments, expenses, deliveries, dips, cash, explanations] =
+      await Promise.all([
+        transaction.execute(
+          sql`select attendant_id as "attendantId" from app.reconciliation_attendants where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by attendant_id`,
+        ),
+        transaction.execute(
+          sql`select id, nozzle_id as "nozzleId", product_id as "productId", shift_id as "shiftId", opening_reading as "openingReading", closing_reading as "closingReading", litres_sold as "litresSold", selling_price_id as "sellingPriceId", unit_price as "unitPrice", sales_value as "salesValue" from app.reconciliation_meter_readings where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
+        ),
+        transaction.execute(
+          sql`select id, method, amount, reference, note from app.reconciliation_payments where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
+        ),
+        transaction.execute(
+          sql`select id, category, description, amount, payment_method as "paymentMethod", person_paid as "personPaid", reference from app.reconciliation_expenses where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
+        ),
+        transaction.execute(
+          sql`select r.delivery_id as "deliveryId", r.allocation_id as "allocationId", r.product_id as "productId", r.tank_id as "tankId", d.delivery_note_number as "deliveryNoteNumber", d.actual_quantity_litres as "actualQuantityLitres" from app.reconciliation_delivery_refs r join app.fuel_deliveries d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.delivery_id where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${input.reconciliationId} order by r.id`,
+        ),
+        transaction.execute(
+          sql`select r.dip_id as "dipId", r.tank_id as "tankId", r.product_id as "productId", d.physical_litres as "physicalLitres", d.measured_at as "measuredAt" from app.reconciliation_dip_refs r join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${input.reconciliationId} order by r.id`,
+        ),
+        transaction.execute(
+          sql`select counted_cash as "countedCash", expected_physical_cash as "expectedPhysicalCash", cash_paid_expenses as "cashPaidExpenses", net_expected_cash as "netExpectedCash", cash_variance as "cashVariance" from app.reconciliation_cash_declarations where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId}`,
+        ),
+        transaction.execute(
+          sql`select category, explanation from app.reconciliation_variance_explanations where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by category`,
+        ),
+      ]);
+    const metrics = await loadMetrics(transaction, context, input.reconciliationId);
+    return {
+      ...header,
+      version: Number(header.version),
+      attendants,
+      readings,
+      payments,
+      expenses,
+      deliveries,
+      dips,
+      cash: cash[0] ?? null,
+      explanations,
+      totals: {
+        expectedSales: metrics.sales.toString(),
+        accountedSales: metrics.payments.toString(),
+        salesVariance: metrics.salesVariance.toString(),
+        cashVariance: metrics.cashVariance?.toString() ?? null,
+        stockVariance: metrics.stockVariance,
+      },
+    };
+  });
+}
+
+async function withQueryTransaction<T>(
+  context: ForecourtCommandContext,
+  work: (transaction: ForecourtTransaction) => Promise<T>,
+): Promise<T> {
+  return withTenantTransaction(context.authority.transaction, work);
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === '23505'
+  );
+}

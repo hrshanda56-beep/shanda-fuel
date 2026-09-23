@@ -710,6 +710,17 @@ export const reconciliations = appSchema.table(
     tenantId: tenantId(),
     stationId: uuid('station_id').notNull(),
     businessDayId: uuid('business_day_id').notNull(),
+    /** Nullable for historical day-scoped rows; new commands always bind a shift. */
+    shiftId: uuid('shift_id'),
+    supervisorId: uuid('supervisor_id'),
+    createdBy: uuid('created_by'),
+    submittedBy: uuid('submitted_by'),
+    submittedAt: utcTimestamp('submitted_at'),
+    returnedBy: uuid('returned_by'),
+    returnedAt: utcTimestamp('returned_at'),
+    returnReason: text('return_reason'),
+    approvedBy: uuid('approved_by'),
+    approvedAt: utcTimestamp('approved_at'),
     state: text('state').notNull().default('DRAFT'),
     version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
@@ -717,11 +728,7 @@ export const reconciliations = appSchema.table(
   },
   (table) => [
     unique('reconciliations_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('reconciliations_business_day_uidx').on(
-      table.tenantId,
-      table.stationId,
-      table.businessDayId,
-    ),
+    unique('reconciliations_shift_uidx').on(table.tenantId, table.stationId, table.shiftId),
     unique('reconciliations_tenant_station_id_uidx').on(table.tenantId, table.stationId, table.id),
     index('reconciliations_station_state_idx').on(table.tenantId, table.stationId, table.state),
     foreignKey({
@@ -737,6 +744,36 @@ export const reconciliations = appSchema.table(
         stationBusinessDays.id,
       ],
       name: 'reconciliations_business_day_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.shiftId],
+      foreignColumns: [shifts.tenantId, shifts.stationId, shifts.id],
+      name: 'reconciliations_shift_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.supervisorId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'reconciliations_supervisor_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.createdBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'reconciliations_created_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.submittedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'reconciliations_submitted_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.returnedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'reconciliations_returned_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.approvedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'reconciliations_approved_by_fk',
     }),
   ],
 );
