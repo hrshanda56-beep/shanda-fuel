@@ -1,4 +1,4 @@
-# Shanda Fuel
+# Shanda Fuel.
 
 Shanda Fuel is a commercial, multi-tenant SaaS for fuel-station operations and financial control: forecourt readings, shifts, reconciliation, inventory, cash custody, electronic settlements, suppliers, customers, expenses, profitability, approvals, evidence, audit, and reporting.
 
