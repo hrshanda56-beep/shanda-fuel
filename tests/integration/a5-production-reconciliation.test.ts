@@ -143,9 +143,9 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
         values ('${ids.price}', '${ids.tenant}', '${ids.station}', '${ids.product}', '2020-01-01T00:00:00Z', 1.500000, 'DRAFT', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
-      insert into app.station_business_days (id, tenant_id, station_id, business_date, state, opened_at)
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-22', 'NOT_STARTED') on conflict (id) do nothing;
-      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date, opened_at)
+      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
         values ('${ids.shift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-22T06:00:00Z', '2026-09-22T14:00:00Z', '2026-09-22')
         on conflict (id) do nothing;
       update app.station_business_days set state='OPEN', opened_at=now()
