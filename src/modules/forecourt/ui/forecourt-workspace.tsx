@@ -1,4 +1,5 @@
 import { Button, Card, ErrorState, StatusBadge } from '../../../design-system/primitives';
+import Link from 'next/link';
 
 export type ForecourtWorkspaceProps = {
   businessDate: string;
@@ -9,6 +10,7 @@ export type ForecourtWorkspaceProps = {
   reconciliationState:
     'DRAFT' | 'READY' | 'PENDING_APPROVAL' | 'RETURNED' | 'APPROVED' | 'POSTED' | 'LOCKED';
   connection: 'online' | 'draft-only';
+  reconciliationHref?: string;
 };
 
 /** Presentation-only operational surface. Authoritative actions must call named server commands. */
@@ -20,6 +22,7 @@ export function ForecourtWorkspace({
   sealedNozzles,
   reconciliationState,
   connection,
+  reconciliationHref,
 }: ForecourtWorkspaceProps) {
   const canAuthoritativelyAct = connection === 'online';
   return (
@@ -87,6 +90,11 @@ export function ForecourtWorkspace({
             <Button variant="secondary" disabled={!canAuthoritativelyAct}>
               Review reconciliation
             </Button>
+            {reconciliationHref ? (
+              <Link className="button button-quiet" href={reconciliationHref}>
+                Open guided workflow
+              </Link>
+            ) : null}
             <Button variant="quiet" disabled={!canAuthoritativelyAct}>
               View exceptions
             </Button>

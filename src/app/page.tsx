@@ -51,6 +51,7 @@ export default function HomePage() {
         sealedNozzles={0}
         reconciliationState="DRAFT"
         connection="online"
+        reconciliationHref="/stations/demo-station/reconciliations/new"
       />
       <div className="page-header">
         <div>
