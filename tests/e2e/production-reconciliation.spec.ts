@@ -24,6 +24,7 @@ const ids = {
   day: 'a5e00000-0000-4000-8000-000000000121',
   shift: 'a5e00000-0000-4000-8000-000000000131',
   retryShift: 'a5e00000-0000-4000-8000-000000000132',
+  retryShiftTwo: 'a5e00000-0000-4000-8000-000000000133',
   tank: 'a5e00000-0000-4000-8000-000000000141',
 };
 
@@ -105,8 +106,13 @@ test.describe('production reconciliation persistence', () => {
       values
         ('${ids.retryShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23')
         on conflict (id) do nothing;
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values
+        ('${ids.retryShiftTwo}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23')
+        on conflict (id) do nothing;
       update app.shifts set state='OPEN', opened_at=coalesce(opened_at, now())
-        where id in ('${ids.shift}', '${ids.retryShift}');
+        where id in ('${ids.shift}', '${ids.retryShift}', '${ids.retryShiftTwo}');
       insert into app.tanks
         (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
       values
@@ -156,7 +162,8 @@ test.describe('production reconciliation persistence', () => {
     context,
     page,
   }, testInfo) => {
-    const activeShiftId = testInfo.retry === 0 ? ids.shift : ids.retryShift;
+    const activeShiftId =
+      [ids.shift, ids.retryShift, ids.retryShiftTwo][testInfo.retry] ?? ids.shift;
     const reconciliationId = crypto.randomUUID();
     const query = new URLSearchParams({
       tenantId: ids.tenant,
@@ -246,7 +253,26 @@ test.describe('production reconciliation persistence', () => {
     await authenticate(context, managerToken);
     await page.goto(reviewUrl);
     await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
+    const approveResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/forecourt/commands') &&
+        response.request().method() === 'POST',
+    );
     await page.getByRole('button', { name: 'Approve and lock' }).click();
+    const approveResponse = await approveResponsePromise;
+    expect(approveResponse.ok(), await approveResponse.text()).toBe(true);
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(
+            `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
+          );
+          return ((await response.json()) as { state: string }).state;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe('APPROVED');
+    await page.reload();
     await expect(page.getByText('APPROVED', { exact: true })).toBeVisible();
 
     await page.reload();
