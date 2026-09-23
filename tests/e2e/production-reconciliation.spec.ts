@@ -162,7 +162,14 @@ test.describe('production reconciliation persistence', () => {
 
     await authenticate(context, supervisorToken);
     await page.goto(supervisorUrl);
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/forecourt/commands') &&
+        response.request().method() === 'POST',
+    );
     await page.getByRole('button', { name: 'Create draft' }).click();
+    const createResponse = await createResponsePromise;
+    expect(createResponse.ok(), await createResponse.text()).toBe(true);
     await expect
       .poll(
         async () =>
