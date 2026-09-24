@@ -6,12 +6,12 @@ import type {
   SupplierPaymentState,
 } from './domain';
 
-/** Proposed permission codes; central registration is deferred to productionization. */
 export const SUPPLIER_PERMISSION_CODES = [
   'supplier.view',
   'supplier.manage',
   'supplier.document.create',
   'supplier.document.post',
+  'supplier.document.reverse',
   'supplier.payment.create',
   'supplier.payment.post',
   'supplier.payment.allocate',
@@ -29,8 +29,10 @@ export type SupplierSourceReference = Readonly<{
 }>;
 
 export type SupplierCommandType =
+  | 'CreateSupplier'
   | 'SubmitSupplierDocument'
   | 'PostSupplierDocument'
+  | 'ReverseSupplierDocument'
   | 'SubmitSupplierPayment'
   | 'PostSupplierPayment'
   | 'AllocateSupplierPayment'
@@ -56,6 +58,11 @@ export type SupplierCommandPolicy = Readonly<{
 
 export const SUPPLIER_COMMAND_POLICY: Readonly<Record<SupplierCommandType, SupplierCommandPolicy>> =
   {
+    CreateSupplier: {
+      permissionCode: 'supplier.manage',
+      requiresApproval: false,
+      requiresExpectedVersion: false,
+    },
     SubmitSupplierDocument: {
       permissionCode: 'supplier.document.create',
       requiresApproval: false,
@@ -63,6 +70,11 @@ export const SUPPLIER_COMMAND_POLICY: Readonly<Record<SupplierCommandType, Suppl
     },
     PostSupplierDocument: {
       permissionCode: 'supplier.document.post',
+      requiresApproval: true,
+      requiresExpectedVersion: true,
+    },
+    ReverseSupplierDocument: {
+      permissionCode: 'supplier.document.reverse',
       requiresApproval: true,
       requiresExpectedVersion: true,
     },
