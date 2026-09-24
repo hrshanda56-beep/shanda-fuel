@@ -2,9 +2,9 @@ import { AppShell } from '@/design-system/app-shell';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
 import { DailyReconciliationWorkflow } from '@/modules/forecourt/ui/daily-reconciliation-workflow';
 import {
-  ProductionReconciliationWorkflow,
-  type ProductionReconciliationContext,
-} from '@/modules/forecourt/ui/production-reconciliation-workflow';
+  DailyOperationsWorkspace,
+  type DailyOperationsContext,
+} from '@/modules/forecourt/ui/daily-operations-workspace';
 
 export default async function ReconciliationPage({
   params,
@@ -19,7 +19,7 @@ export default async function ReconciliationPage({
 }) {
   const { stationId, id } = await params;
   const search = (await searchParams) ?? {};
-  const productionContext: ProductionReconciliationContext | undefined =
+  const operationsContext: DailyOperationsContext | undefined =
     search.tenantId && search.businessDayId && search.shiftId
       ? {
           tenantId: search.tenantId,
@@ -45,8 +45,8 @@ export default async function ReconciliationPage({
         { label: 'Morning shift' },
       ]}
     >
-      {productionContext ? (
-        <ProductionReconciliationWorkflow context={productionContext} role="SUPERVISOR" />
+      {operationsContext ? (
+        <DailyOperationsWorkspace context={operationsContext} role="SUPERVISOR" />
       ) : (
         <DailyReconciliationWorkflow role="SUPERVISOR" />
       )}

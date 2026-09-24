@@ -25,6 +25,10 @@ const ids = {
   shift: 'a5e00000-0000-4000-8000-000000000131',
   retryShift: 'a5e00000-0000-4000-8000-000000000132',
   retryShiftTwo: 'a5e00000-0000-4000-8000-000000000133',
+  retryShiftThree: 'a5e00000-0000-4000-8000-000000000134',
+  a11RetryShift: 'a5e00000-0000-4000-8000-000000000135',
+  a11RetryShiftTwo: 'a5e00000-0000-4000-8000-000000000136',
+  a11RetryShiftThree: 'a5e00000-0000-4000-8000-000000000137',
   tank: 'a5e00000-0000-4000-8000-000000000141',
   openingSource: 'a5e00000-0000-4000-8000-000000000151',
 };
@@ -112,8 +116,20 @@ test.describe('production reconciliation persistence', () => {
       values
         ('${ids.retryShiftTwo}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23')
         on conflict (id) do nothing;
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values
+        ('${ids.retryShiftThree}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23')
+        on conflict (id) do nothing;
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values
+        ('${ids.a11RetryShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T06:00:00Z', '2026-09-23T14:00:00Z', '2026-09-23'),
+        ('${ids.a11RetryShiftTwo}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23'),
+        ('${ids.a11RetryShiftThree}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23')
+        on conflict (id) do nothing;
       update app.shifts set state='OPEN', opened_at=coalesce(opened_at, now())
-        where id in ('${ids.shift}', '${ids.retryShift}', '${ids.retryShiftTwo}');
+        where id in ('${ids.shift}', '${ids.retryShift}', '${ids.retryShiftTwo}', '${ids.retryShiftThree}', '${ids.a11RetryShift}', '${ids.a11RetryShiftTwo}', '${ids.a11RetryShiftThree}');
       insert into app.tanks
         (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
       values
@@ -169,7 +185,8 @@ test.describe('production reconciliation persistence', () => {
     page,
   }, testInfo) => {
     const activeShiftId =
-      [ids.shift, ids.retryShift, ids.retryShiftTwo][testInfo.retry] ?? ids.shift;
+      [ids.shift, ids.retryShift, ids.retryShiftTwo, ids.retryShiftThree][testInfo.retry] ??
+      ids.retryShiftThree;
     const reconciliationId = crypto.randomUUID();
     const query = new URLSearchParams({
       tenantId: ids.tenant,
@@ -324,5 +341,79 @@ test.describe('production reconciliation persistence', () => {
         )
     `);
     expect(movements[0]).toEqual({ count: '1', quantity: '-500.000' });
+  });
+
+  test('A11 workspace captures representative evidence, requires a return reason, and locks after approval', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const activeShiftId =
+      [ids.a11RetryShift, ids.a11RetryShiftTwo, ids.a11RetryShiftThree][testInfo.retry] ??
+      ids.a11RetryShiftThree;
+    const reconciliationId = crypto.randomUUID();
+    const query = new URLSearchParams({
+      tenantId: ids.tenant,
+      stationId: ids.station,
+      businessDayId: ids.day,
+      shiftId: activeShiftId,
+    });
+    const common = {
+      tenantId: ids.tenant,
+      stationId: ids.station,
+      reconciliationId,
+    };
+
+    await authenticate(context, supervisorToken);
+    await page.goto(`/operations/daily?${query.toString()}`);
+    await page.getByRole('button', { name: 'Create daily draft' }).click();
+    await expect(page.getByRole('heading', { name: 'Daily operations workspace' })).toBeVisible();
+    await page.locator('input[id^="opening-"]').first().fill('100000.000');
+    await page.locator('input[id^="closing-"]').first().fill('100500.000');
+    await page.getByRole('button', { name: 'Add payment evidence' }).click();
+    await page.locator('input[id^="payment-amount-"]').first().fill('750.0000');
+    await page.getByLabel('Counted cash').fill('750.0000');
+    await page.getByRole('button', { name: 'Save persisted draft' }).click();
+    await expect(page.getByText('Draft saved to the server.')).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel('Counted cash')).toHaveValue(/750/);
+    await page.getByRole('button', { name: 'Submit for management review' }).click();
+    await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
+
+    await authenticate(context, managerToken);
+    await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
+    await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Return for correction' })).toBeDisabled();
+    await page.getByLabel('Return reason').fill('Meter evidence requires supervisor correction.');
+    await page.getByRole('button', { name: 'Return for correction' }).click();
+    await expect(page.getByText('RETURNED', { exact: true })).toBeVisible();
+
+    await authenticate(context, supervisorToken);
+    await page.goto(`/operations/reconciliations/${reconciliationId}?${query.toString()}`);
+    await expect(page.getByText('RETURNED', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Submit for management review' }).click();
+    await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
+    const submittedResponse = await page.request.get(
+      `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
+    );
+    const submittedBody = (await submittedResponse.json()) as { version: number };
+    const unauthorizedApproval = await page.request.post('/api/forecourt/commands', {
+      data: {
+        commandType: 'ApproveProductionReconciliation',
+        ...common,
+        expectedVersion: submittedBody.version,
+      },
+      headers: { 'idempotency-key': `a11-unauthorized-approve-${reconciliationId}` },
+    });
+    expect(unauthorizedApproval.status()).toBe(403);
+
+    await authenticate(context, managerToken);
+    await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
+    await page.getByRole('button', { name: 'Approve and lock' }).click();
+    await expect(page.getByText('APPROVED', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save persisted draft' })).toHaveCount(0);
+    const accessibility = await new AxeBuilder({ page })
+      .include('[aria-label="Daily station operations workspace"]')
+      .analyze();
+    expect(accessibility.violations).toEqual([]);
   });
 });

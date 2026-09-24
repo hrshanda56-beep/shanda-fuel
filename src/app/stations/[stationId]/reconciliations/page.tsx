@@ -5,10 +5,26 @@ import { syntheticNavigationProjection } from '@/design-system/navigation';
 
 export default async function ReconciliationListPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ stationId: string }>;
+  searchParams?: Promise<{
+    tenantId?: string;
+    businessDayId?: string;
+    shiftId?: string;
+  }>;
 }) {
   const { stationId } = await params;
+  const search = (await searchParams) ?? {};
+  const operationsHref =
+    search.tenantId && search.businessDayId && search.shiftId
+      ? `/operations/daily?${new URLSearchParams({
+          tenantId: search.tenantId,
+          stationId,
+          businessDayId: search.businessDayId,
+          shiftId: search.shiftId,
+        }).toString()}`
+      : '/operations/daily';
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
@@ -46,6 +62,9 @@ export default async function ReconciliationListPage({
         </p>
         <Link className="button button-primary" href={`/stations/${stationId}/reconciliations/new`}>
           Open reconciliation
+        </Link>
+        <Link className="text-link" href={operationsHref}>
+          Open daily operations workspace
         </Link>
       </Card>
     </AppShell>

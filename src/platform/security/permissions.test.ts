@@ -230,6 +230,9 @@ describe('permission authorization', () => {
       'exception.manage',
     ] as const;
     const attendantPermissions = DEFAULT_ROLE_PERMISSIONS.ATTENDANT;
+    expect(attendantPermissions).not.toContain('reconciliation.view');
+    expect(attendantPermissions).not.toContain('reconciliation.submit');
+    expect(attendantPermissions).toContain('meter.boundary.capture');
     for (const permissionCode of highImpactA3Permissions) {
       expect(attendantPermissions).not.toContain(permissionCode);
     }

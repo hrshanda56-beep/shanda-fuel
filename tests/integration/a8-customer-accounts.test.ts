@@ -16,6 +16,10 @@ const ids = {
   legal: 'a8b00000-0000-4000-8000-000000000011',
   station: 'a8b00000-0000-4000-8000-000000000021',
   product: 'a8b00000-0000-4000-8000-000000000301',
+  businessDay: 'a8b00000-0000-4000-8000-000000000401',
+  reconciliation: 'a8b00000-0000-4000-8000-000000000402',
+  revision: 'a8b00000-0000-4000-8000-000000000403',
+  creditPayment: 'a8b00000-0000-4000-8000-000000000404',
   actor: 'a8b00000-0000-4000-8000-000000000031',
   membership: 'a8b00000-0000-4000-8000-000000000041',
   session: 'a8b00000-0000-4000-8000-000000000051',
@@ -60,6 +64,8 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'A8 Customer Legal') on conflict (id) do nothing;
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A8CUSTOMER', 'A8 Customer Station', 'ACTIVE') on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name, status) values ('${ids.product}', '${ids.tenant}', 'A8-PETROL', 'A8 Petrol', 'ACTIVE') on conflict (id) do nothing;
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${ids.businessDay}', '${ids.tenant}', '${ids.station}', '2026-09-24', 'OPEN') on conflict (id) do nothing;
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
         values
           ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'TENANT', null, null),
@@ -68,6 +74,18 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
         values ('${ids.session}', '2030-01-01T00:00:00Z', 'a8-session-token', '${ids.actor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
+      insert into app.reconciliations
+        (id, tenant_id, station_id, business_day_id, state, version)
+        values ('${ids.reconciliation}', '${ids.tenant}', '${ids.station}', '${ids.businessDay}', 'APPROVED', 1)
+        on conflict (id) do nothing;
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, currency, variance_classification, posted_by, posted_at)
+        values ('${ids.revision}', '${ids.tenant}', '${ids.station}', '${ids.reconciliation}', 1, 'POSTED', 50.0000, 50.0000, 0.0000, 'USD', 'INFORMATIONAL', '${ids.membership}', '2026-09-24T08:00:00Z')
+        on conflict (id) do nothing;
+      insert into app.reconciliation_payments
+        (id, tenant_id, station_id, reconciliation_id, method, amount, entered_by)
+        values ('${ids.creditPayment}', '${ids.tenant}', '${ids.station}', '${ids.reconciliation}', 'CUSTOMER_CREDIT', 50.0000, '${ids.membership}')
+        on conflict (id) do nothing;
     `);
   });
 
@@ -193,5 +211,41 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
     );
     expect(reserved.status).toBe(200);
     expect((await body(reserved)).state).toBe('AUTHORIZED');
+
+    const completed = await command(
+      {
+        commandType: 'CompleteCustomerFuelTransaction',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        accountId: creditAccount.accountId,
+        authorizationId: 'a8b00000-0000-4000-8000-000000000201',
+        entryId: 'a8b00000-0000-4000-8000-000000000205',
+        fuelAllocationId: 'a8b00000-0000-4000-8000-000000000206',
+        used: {
+          productId: ids.product,
+          litres: '10.000',
+          amount: { amount: '50.0000', currency: 'USD' },
+        },
+        evidence: {
+          reconciliationId: ids.reconciliation,
+          reconciliationRevisionId: ids.revision,
+          paymentEvidenceId: ids.creditPayment,
+        },
+        occurredAt: '2026-09-24T08:20:00+02:00',
+        businessDate: '2026-09-24',
+      },
+      'a8-complete-credit-from-a5-evidence',
+    );
+    expect(completed.status).toBe(200);
+    expect((await body(completed)).state).toBe('COMPLETED');
+    const linkedLedger = await client.unsafe<{ source_id: string; source_revision_id: string }[]>(`
+      select source_id, source_revision_id
+      from app.customer_ledger_entries
+      where tenant_id='${ids.tenant}' and account_id='${creditAccount.accountId}'
+        and source_type='A5_RECONCILIATION_CUSTOMER_FUEL'
+    `);
+    expect(linkedLedger).toEqual([
+      { source_id: ids.creditPayment, source_revision_id: ids.revision },
+    ]);
   });
 });
