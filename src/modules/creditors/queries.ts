@@ -82,7 +82,6 @@ export async function getSupplierSummaryFromRequest(
       left join movement_totals m on m.supplier_id = s.id
       where s.tenant_id = ${context.tenantId}
         ${input.supplierId ? sql`and s.id = ${input.supplierId}` : sql``}
-      group by s.id, s.code, s.legal_name
       order by s.code
     `);
     return rows.map((row) => ({
