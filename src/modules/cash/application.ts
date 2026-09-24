@@ -78,7 +78,8 @@ export async function executeCashCommand<T>(input: {
         await databaseAuditPort.append({
           transaction,
           context: input.context,
-          commandType: `Cash.${input.commandType}`,
+          auditNamespace: 'CASH',
+          commandType: input.commandType,
           subjectType: input.subjectType,
           subjectId: input.subjectId,
           before: input.before,
