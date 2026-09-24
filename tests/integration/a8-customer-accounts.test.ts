@@ -4,6 +4,9 @@ import postgres, { type Sql } from 'postgres';
 import { POST as customerCommandPost } from '../../src/app/api/customers/commands/route';
 import { GET as customerStatementGet } from '../../src/app/api/customers/statement/route';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { postInventoryMovementInTransaction } from '../../src/modules/inventory/persistence';
+import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
+import { withTenantTransaction } from '../../src/platform/db/transaction';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -23,6 +26,7 @@ const ids = {
   installation: 'a8b00000-0000-4000-8000-000000000305',
   price: 'a8b00000-0000-4000-8000-000000000306',
   tank: 'a8b00000-0000-4000-8000-000000000307',
+  openingSource: 'a8b00000-0000-4000-8000-000000000312',
   shift: 'a8b00000-0000-4000-8000-000000000308',
   openingBoundary: 'a8b00000-0000-4000-8000-000000000309',
   closingBoundary: 'a8b00000-0000-4000-8000-000000000310',
@@ -293,6 +297,31 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         values ('${ids.session}', '2030-01-01T00:00:00Z', 'a8-session-token', '${ids.actor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await withTenantTransaction(
+      createTrustedTenantTransactionContext({
+        tenantId: ids.tenant,
+        actorId: ids.actor,
+        membershipId: ids.membership,
+        legalEntityId: ids.legal,
+        stationId: ids.station,
+        requestId: 'a8b00000-0000-4000-8000-000000000313',
+      }),
+      async (transaction) => {
+        await postInventoryMovementInTransaction(transaction, {
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          tankId: ids.tank,
+          productId: ids.product,
+          movementType: 'OPENING_BALANCE',
+          quantityLitres: '1000.000',
+          effectiveAt: new Date('2026-09-24T05:00:00Z'),
+          businessDate: '2026-09-24',
+          sourceType: 'OPENING_BALANCE',
+          sourceId: ids.openingSource,
+          actorMembershipId: ids.membership,
+        });
+      },
+    );
   });
 
   afterAll(async () => client?.end());
