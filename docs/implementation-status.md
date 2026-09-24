@@ -2,12 +2,12 @@
 
 ## A8 — Customer accounts (branch continuation)
 
-The A8 branch productionizes customer identity, credit accounts, optional
+The A8 branch implements customer identity, credit accounts, optional
 prepaid-value and prepaid-litre accounts, exact-decimal append-only ledger
 entries, station-scoped fuel authorization/reservation transitions, customer
 payments/top-ups, A5 posted-payment evidence linkage, tenant-safe statements,
 and signed/idempotent command APIs. The journal-confirmed next migration is
-`0008_acoustic_blob.sql`; it has not been merged or run against production.
+`0008_customer_accounts.sql`; it has not been merged or run against production.
 
 The unresolved prepaid funding policy remains open: `PREPAID_VALUE` remains a
 fully supported value account, while `PREPAID_LITRES` is an explicit optional
