@@ -103,16 +103,22 @@ describe('A6 cash collection and banking persistence', () => {
         ('${ids.tenant}', '${ids.managerMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}')
         on conflict (id) do nothing;
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
-        values ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-23', 'LOCKED')
+        values ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-23', 'NOT_STARTED')
         on conflict (id) do nothing;
       insert into app.reconciliations
         (id, tenant_id, station_id, business_day_id, state, version, approved_by, approved_at)
-        values ('${ids.reconciliation}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'APPROVED', 0, '${ids.managerMembership}', now())
+        values ('${ids.reconciliation}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'DRAFT', 0, null, null)
         on conflict (id) do nothing;
       insert into app.reconciliation_cash_declarations
         (id, tenant_id, station_id, reconciliation_id, counted_cash, expected_physical_cash, cash_paid_expenses, net_expected_cash, cash_variance, entered_by)
         values ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${ids.reconciliation}', 1000, 1000, 0, 1000, 0, '${ids.supervisorMembership}')
         on conflict (tenant_id, station_id, reconciliation_id) do update set counted_cash = 1000, expected_physical_cash = 1000, cash_paid_expenses = 0, net_expected_cash = 1000, cash_variance = 0;
+      update app.reconciliations
+        set state = 'SUBMITTED', submitted_by = '${ids.supervisorMembership}', submitted_at = now()
+        where id = '${ids.reconciliation}' and state = 'DRAFT';
+      update app.reconciliations
+        set state = 'APPROVED', approved_by = '${ids.managerMembership}', approved_at = now()
+        where id = '${ids.reconciliation}' and state = 'SUBMITTED';
       insert into app.cash_locations (id, tenant_id, station_id, code, name, location_type)
         values
           ('${ids.till}', '${ids.tenant}', '${ids.station}', 'A6-TILL', 'A6 station till', 'STATION_TILL'),
