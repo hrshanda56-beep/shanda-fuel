@@ -14,7 +14,7 @@ const ids = {
   membership: 'a10e0000-0000-4000-8000-000000000041',
   session: 'a10e0000-0000-4000-8000-000000000051',
 };
-const sessionToken = 'a10-management-session-token';
+const sessionToken = 'a10-e2e-management-session-token';
 
 test.describe('management reporting surface', () => {
   test('unauthenticated shell explains the required tenant context', async ({ page }) => {
@@ -38,10 +38,10 @@ test.describe('management reporting surface', () => {
       client = postgres(databaseUrl!, { max: 1, prepare: false });
       await client.unsafe(`
         insert into app.tenants (id, name, slug) values
-          ('${ids.tenant}', 'A10 Reporting Tenant', 'a10-reporting-tenant')
+          ('${ids.tenant}', 'A10 E2E Reporting Tenant', 'a10-e2e-reporting-tenant')
           on conflict (id) do nothing;
         insert into auth."user" (id, name, email) values
-          ('${ids.actor}', 'A10 Finance', 'a10-finance@example.test')
+          ('${ids.actor}', 'A10 E2E Finance', 'a10-e2e-finance@example.test')
           on conflict (id) do nothing;
         insert into app.memberships (id, tenant_id, identity_id, status) values
           ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE')
@@ -50,7 +50,7 @@ test.describe('management reporting surface', () => {
           ('${ids.legal}', '${ids.tenant}', 'A10 Legal')
           on conflict (id) do nothing;
         insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values
-          ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A10MAIN', 'A10 Main Station', 'ACTIVE')
+          ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A10E2E', 'A10 E2E Main Station', 'ACTIVE')
           on conflict (id) do nothing;
         insert into app.membership_role_assignments
           (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
