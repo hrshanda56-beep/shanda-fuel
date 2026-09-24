@@ -153,16 +153,6 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, currency, variance_classification, declarations, approved_by, approved_at)
         values ('${ids.factRevision}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 1, 'READY', 135.0000, 130.0000, -5.0000, 'USD', 'INFORMATIONAL', '[]'::jsonb, null, null)
         on conflict (id) do nothing;
-      update app.shifts set state = 'OPEN', opened_at = '2026-09-20T06:00:00Z' where id = '${ids.factShift}' and state = 'PLANNED';
-      update app.shifts set state = 'METER_CLOSED', meter_closed_at = '2026-09-20T14:00:00Z' where id = '${ids.factShift}' and state = 'OPEN';
-      update app.shifts set state = 'COMPLETED', completed_at = '2026-09-20T14:30:00Z' where id = '${ids.factShift}' and state = 'METER_CLOSED';
-      update app.reconciliations set state = 'READY' where id = '${ids.factRecon}' and state = 'DRAFT';
-      update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
-      update app.reconciliations set state = 'PENDING_APPROVAL' where id = '${ids.factRecon}' and state = 'SUBMITTED';
-      update app.reconciliations set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = '2026-09-20T23:00:00Z' where id = '${ids.factRecon}' and state = 'PENDING_APPROVAL';
-      update app.reconciliation_revisions set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRevision}' and state = 'READY';
-      update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${ids.factRevision}' and state = 'SUBMITTED';
-      update app.reconciliation_revisions set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = '2026-09-20T23:00:00Z' where id = '${ids.factRevision}' and state = 'PENDING_APPROVAL';
       insert into app.reconciliation_meter_readings
         (id, tenant_id, station_id, reconciliation_id, shift_id, nozzle_id, product_id, opening_reading, closing_reading, litres_sold, unit_price, sales_value, entered_by)
         values ('${ids.factReading}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', '${ids.factShift}', '${ids.factNozzle}', '${ids.factProduct}', 100.000, 110.500, 10.500, 10.000000, 105.0000, '${ids.membership}')
@@ -184,6 +174,16 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, station_id, reconciliation_id, counted_cash, expected_physical_cash, cash_paid_expenses, net_expected_cash, cash_variance, entered_by)
         values ('${ids.factCashDeclaration}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 69.0000, 70.0000, 2.0000, 68.0000, 1.0000, '${ids.membership}')
         on conflict (id) do nothing;
+      update app.shifts set state = 'OPEN', opened_at = '2026-09-20T06:00:00Z' where id = '${ids.factShift}' and state = 'PLANNED';
+      update app.shifts set state = 'METER_CLOSED', meter_closed_at = '2026-09-20T14:00:00Z' where id = '${ids.factShift}' and state = 'OPEN';
+      update app.shifts set state = 'COMPLETED', completed_at = '2026-09-20T14:30:00Z' where id = '${ids.factShift}' and state = 'METER_CLOSED';
+      update app.reconciliations set state = 'READY' where id = '${ids.factRecon}' and state = 'DRAFT';
+      update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
+      update app.reconciliations set state = 'PENDING_APPROVAL' where id = '${ids.factRecon}' and state = 'SUBMITTED';
+      update app.reconciliations set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = '2026-09-20T23:00:00Z' where id = '${ids.factRecon}' and state = 'PENDING_APPROVAL';
+      update app.reconciliation_revisions set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRevision}' and state = 'READY';
+      update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${ids.factRevision}' and state = 'SUBMITTED';
+      update app.reconciliation_revisions set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = '2026-09-20T23:00:00Z' where id = '${ids.factRevision}' and state = 'PENDING_APPROVAL';
       insert into app.cash_locations
         (id, tenant_id, station_id, code, name, location_type)
         values
