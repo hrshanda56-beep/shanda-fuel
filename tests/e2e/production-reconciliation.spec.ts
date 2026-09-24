@@ -376,7 +376,34 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText('Draft saved to the server.')).toBeVisible();
     await page.reload();
     await expect(page.getByLabel('Counted cash')).toHaveValue(/750/);
+    const submitResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/forecourt/commands') &&
+        response.request().method() === 'POST' &&
+        response.request().postData()?.includes('SubmitProductionReconciliation') === true,
+    );
     await page.getByRole('button', { name: 'Submit for management review' }).click();
+    const submitResponse = await submitResponsePromise;
+    const submitResponseText = await submitResponse.text();
+
+    expect(
+      submitResponse.ok(),
+      `SubmitProductionReconciliation failed: ${submitResponse.status()} ${submitResponseText}`,
+    ).toBe(true);
+
+    const submittedRecordResponse = await page.request.get(
+      `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
+    );
+    const submittedRecordText = await submittedRecordResponse.text();
+
+    expect(
+      submittedRecordResponse.ok(),
+      `submitted reconciliation read failed: ${submittedRecordResponse.status()} ${submittedRecordText}`,
+    ).toBe(true);
+
+    const submittedRecord = JSON.parse(submittedRecordText) as { state: string; version: number };
+
+    expect(submittedRecord.state).toBe('SUBMITTED');
     await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
 
     await authenticate(context, managerToken);
