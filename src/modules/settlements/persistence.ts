@@ -11,6 +11,7 @@ import {
   assertSettlementCanBeReconciled,
   assertSettlementCanReceiveAllocation,
   calculateSettlementSummary,
+  formatSettlementMoney,
 } from './domain';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from './contracts';
 
@@ -594,8 +595,8 @@ export async function listProviderSettlementSummariesInTransaction(
     return mapSettlementSummary({
       ...row,
       ...summary,
-      expectedEvidenceAmount: row.allocatedAmount,
-      unmatchedEvidenceAmount: '0',
+      expectedEvidenceAmount: formatSettlementMoney(row.allocatedAmount),
+      unmatchedEvidenceAmount: formatSettlementMoney('0'),
     });
   });
 }
@@ -648,6 +649,10 @@ export async function listUnmatchedProviderPaymentsInTransaction(
   `);
   return rows.map((row) => ({
     ...row,
-    unallocatedAmount: money(row.amount).subtract(money(row.allocatedAmount)).toString(),
+    amount: formatSettlementMoney(row.amount),
+    allocatedAmount: formatSettlementMoney(row.allocatedAmount),
+    unallocatedAmount: formatSettlementMoney(
+      money(row.amount).subtract(money(row.allocatedAmount)).toString(),
+    ),
   }));
 }

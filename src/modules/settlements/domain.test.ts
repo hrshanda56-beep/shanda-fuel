@@ -24,9 +24,9 @@ describe('provider settlement domain', () => {
         state: 'PARTIALLY_MATCHED',
       }),
     ).toMatchObject({
-      unallocatedProviderAmount: '39.875',
-      derivedNetAmount: '98.625',
-      varianceAmount: '39.875',
+      unallocatedProviderAmount: '39.8750',
+      derivedNetAmount: '98.6250',
+      varianceAmount: '39.8750',
     });
   });
 

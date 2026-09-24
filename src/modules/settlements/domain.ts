@@ -22,6 +22,13 @@ function decimal(value: string): ExactDecimal {
   return new ExactDecimal(value, DECIMAL_POLICIES.money);
 }
 
+/** Normalize authoritative monetary values at the settlement API boundary. */
+export function formatSettlementMoney(value: string): string {
+  return decimal(value)
+    .quantize(DECIMAL_POLICIES.money)
+    .value.toFixed(DECIMAL_POLICIES.money.scale);
+}
+
 export function isA5ProviderPaymentMethod(value: string): value is A5ProviderPaymentMethod {
   return (A5_PROVIDER_PAYMENT_METHODS as readonly string[]).includes(value);
 }
@@ -69,14 +76,19 @@ export function calculateSettlementSummary(input: {
             .subtract(decimal(input.providerDeductionAmount ?? '0'))
         : null;
   return {
-    grossAmount: gross.toString(),
-    allocatedAmount: allocated.toString(),
-    unallocatedProviderAmount: gross.subtract(allocated).toString(),
-    providerFeeAmount: input.providerFeeAmount,
-    providerDeductionAmount: input.providerDeductionAmount,
-    reportedNetAmount: input.reportedNetAmount,
-    derivedNetAmount: derivedNet?.toString() ?? null,
-    varianceAmount: gross.subtract(allocated).toString(),
+    grossAmount: formatSettlementMoney(gross.toString()),
+    allocatedAmount: formatSettlementMoney(allocated.toString()),
+    unallocatedProviderAmount: formatSettlementMoney(gross.subtract(allocated).toString()),
+    providerFeeAmount:
+      input.providerFeeAmount === null ? null : formatSettlementMoney(input.providerFeeAmount),
+    providerDeductionAmount:
+      input.providerDeductionAmount === null
+        ? null
+        : formatSettlementMoney(input.providerDeductionAmount),
+    reportedNetAmount:
+      input.reportedNetAmount === null ? null : formatSettlementMoney(input.reportedNetAmount),
+    derivedNetAmount: derivedNet ? formatSettlementMoney(derivedNet.toString()) : null,
+    varianceAmount: formatSettlementMoney(gross.subtract(allocated).toString()),
     state: input.state,
   };
 }
