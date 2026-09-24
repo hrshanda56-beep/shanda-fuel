@@ -174,7 +174,12 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
     expect(
       (
         await command(
-          { ...base, commandType: 'PostSupplierPayment', paymentId: secondPayment.paymentId, expectedVersion: 0 },
+          {
+            ...base,
+            commandType: 'PostSupplierPayment',
+            paymentId: secondPayment.paymentId,
+            expectedVersion: 0,
+          },
           'a7-post-payment-2',
         )
       ).status,
@@ -196,7 +201,11 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
     const paidSummary = await supplierSummaryGet(
       new Request(
         `http://127.0.0.1:3000/api/suppliers/summary?tenantId=${ids.tenant}&legalEntityId=${ids.legal}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie('a7-session-token')}` } },
+        {
+          headers: {
+            cookie: `shanda-fuel.session_token=${await signedCookie('a7-session-token')}`,
+          },
+        },
       ),
     );
     expect((await json(paidSummary))[0].total).toBe('0.0000');
