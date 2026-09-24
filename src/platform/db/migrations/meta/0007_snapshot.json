@@ -10112,14 +10112,10 @@
           "schemaTo": "app",
           "columnsFrom": [
             "tenant_id",
-            "station_id",
-            "delivery_id",
             "allocation_id"
           ],
           "columnsTo": [
             "tenant_id",
-            "station_id",
-            "delivery_id",
             "id"
           ],
           "onDelete": "no action",

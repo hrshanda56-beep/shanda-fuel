@@ -196,13 +196,8 @@ export const supplierDocumentDeliveryRefs = appSchema.table(
       name: 'supplier_document_delivery_refs_delivery_fk',
     }),
     foreignKey({
-      columns: [table.tenantId, table.stationId, table.deliveryId, table.allocationId],
-      foreignColumns: [
-        fuelDeliveryAllocations.tenantId,
-        fuelDeliveryAllocations.stationId,
-        fuelDeliveryAllocations.deliveryId,
-        fuelDeliveryAllocations.id,
-      ],
+      columns: [table.tenantId, table.allocationId],
+      foreignColumns: [fuelDeliveryAllocations.tenantId, fuelDeliveryAllocations.id],
       name: 'supplier_document_delivery_refs_allocation_fk',
     }),
     foreignKey({

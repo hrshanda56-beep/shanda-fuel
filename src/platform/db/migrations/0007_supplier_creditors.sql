@@ -147,7 +147,7 @@ ALTER TABLE "app"."supplier_account_movements" ADD CONSTRAINT "supplier_account_
 ALTER TABLE "app"."supplier_document_delivery_refs" ADD CONSTRAINT "supplier_document_delivery_refs_station_fk" FOREIGN KEY ("tenant_id","legal_entity_id","station_id") REFERENCES "app"."stations"("tenant_id","legal_entity_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."supplier_document_delivery_refs" ADD CONSTRAINT "supplier_document_delivery_refs_document_fk" FOREIGN KEY ("tenant_id","supplier_document_id") REFERENCES "app"."supplier_documents"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."supplier_document_delivery_refs" ADD CONSTRAINT "supplier_document_delivery_refs_delivery_fk" FOREIGN KEY ("tenant_id","station_id","delivery_id") REFERENCES "app"."fuel_deliveries"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."supplier_document_delivery_refs" ADD CONSTRAINT "supplier_document_delivery_refs_allocation_fk" FOREIGN KEY ("tenant_id","station_id","delivery_id","allocation_id") REFERENCES "app"."fuel_delivery_allocations"("tenant_id","station_id","delivery_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "app"."supplier_document_delivery_refs" ADD CONSTRAINT "supplier_document_delivery_refs_allocation_fk" FOREIGN KEY ("tenant_id","allocation_id") REFERENCES "app"."fuel_delivery_allocations"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."supplier_document_delivery_refs" ADD CONSTRAINT "supplier_document_delivery_refs_linked_by_fk" FOREIGN KEY ("tenant_id","linked_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."supplier_documents" ADD CONSTRAINT "supplier_documents_legal_entity_fk" FOREIGN KEY ("tenant_id","legal_entity_id") REFERENCES "app"."legal_entities"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."supplier_documents" ADD CONSTRAINT "supplier_documents_supplier_fk" FOREIGN KEY ("tenant_id","supplier_id") REFERENCES "app"."suppliers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -331,6 +331,16 @@ BEGIN
   WHERE tenant_id = NEW.tenant_id AND station_id = NEW.station_id AND id = NEW.delivery_id;
   IF delivery_status IS DISTINCT FROM 'CONFIRMED' THEN
     RAISE EXCEPTION 'supplier documents may reference only confirmed fuel deliveries';
+  END IF;
+  IF NEW.allocation_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM app.fuel_delivery_allocations allocation
+    WHERE allocation.tenant_id = NEW.tenant_id
+      AND allocation.id = NEW.allocation_id
+      AND allocation.station_id = NEW.station_id
+      AND allocation.delivery_id = NEW.delivery_id
+  ) THEN
+    RAISE EXCEPTION 'supplier delivery allocation reference must belong to the referenced delivery';
   END IF;
   RETURN NEW;
 END;
