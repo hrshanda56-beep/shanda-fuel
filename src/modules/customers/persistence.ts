@@ -196,14 +196,14 @@ export async function loadAccount(
   accountId: string,
   forUpdate = true,
 ): Promise<{ account: CustomerAccount; customer: Customer; entries: CustomerLedgerEntry[] }> {
-  const lock = forUpdate ? sql`for update of a` : sql``;
+  const accountLock = forUpdate ? sql`for update of a` : sql``;
   const rows = await transaction.execute<AccountRow>(sql`
     select a.id, a.tenant_id, a.customer_id, a.account_type, a.currency, a.credit_limit,
            a.status, a.version, c.account_reference, c.display_name, c.status as customer_status
     from app.customer_accounts a
     join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id
     where a.tenant_id = ${context.tenantId} and a.id = ${accountId}
-    ${lock}
+    ${accountLock}
   `);
   const row = rows[0];
   if (!row) throw new AppError('NOT_FOUND', 'The customer account was not found');
@@ -214,7 +214,6 @@ export async function loadAccount(
     from app.customer_ledger_entries
     where tenant_id = ${context.tenantId} and account_id = ${accountId}
     order by occurred_at, id
-    ${lock}
   `);
   return {
     account: accountFromRow(row),
