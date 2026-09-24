@@ -79,6 +79,8 @@ export type {
 } from './queries';
 export {
   completeCustomerFuelTransactionSchema,
+  authorizeCustomerFuelSchema,
+  cancelCustomerFuelAuthorizationSchema,
   createCustomerAccountSchema,
   createCustomerSchema,
   customerAccountTypeSchema,
@@ -87,4 +89,5 @@ export {
   recordCustomerPaymentSchema,
   recordPrepaidTopUpSchema,
   requestCustomerFuelAuthorizationSchema,
+  expireCustomerFuelAuthorizationSchema,
 } from './validation';

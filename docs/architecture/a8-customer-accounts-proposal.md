@@ -1,7 +1,8 @@
 # A8 Customer Credit and Prepaid Accounts — Parallel Preparation
 
-Status: domain/application preparation only. This document is not a canonical
-database migration and does not claim PostgreSQL production completion.
+Status: productionized on A8 branch; migration `0008_acoustic_blob.sql` is the
+next canonical migration after the journal-confirmed `0007_supplier_creditors`.
+The branch is not merged and no production migration has been run here.
 
 ## Scope
 
@@ -43,15 +44,13 @@ Implemented in `src/modules/customers/`:
 - customer payment and prepaid top-up entry factories;
 - A5 evidence and audit contracts;
 - repository/query ports and validation schemas;
-- proposed permission names without central permission wiring.
+- Drizzle schema, tenant-scoped PostgreSQL persistence, command API routes, and
+  statement query route;
+- central permission definitions and role-permission seeds.
 
-No database adapter, API route, migration, Drizzle schema, or canonical
-permission grant is included.
+## Implemented migration tables
 
-## Proposed future tables
-
-The following is migration intent only. A6/A0 must assign the migration number
-and integrate the reviewed schema after the preceding workstream is merged.
+The canonical `0008` migration creates:
 
 1. `app.customers`
    - tenant-scoped customer identity, account reference, display name,
@@ -61,7 +60,7 @@ and integrate the reviewed schema after the preceding workstream is merged.
    - tenant-scoped account identity, customer, account type, currency, status,
      optional credit limit, and optimistic version;
    - one or more accounts per customer must remain structurally possible.
-3. `app.customer_account_ledger_entries`
+3. `app.customer_ledger_entries`
    - immutable entries for credit charges, customer payments, prepaid top-ups,
      prepaid usage, adjustments, and reversals;
    - exact `NUMERIC(20,4)` monetary values and `NUMERIC(18,3)` litre values;
@@ -98,7 +97,7 @@ evidence identifier. It must not rely on a client idempotency key alone.
 
 ## A5 integration design
 
-A5 should publish immutable posted evidence equivalent to
+A8 consumes immutable posted A5 evidence equivalent to
 `a5.customer_fuel_allocation_posted.v1`, containing:
 
 - tenant and station;
@@ -108,16 +107,17 @@ A5 should publish immutable posted evidence equivalent to
 - product, litres, amount, currency, business date, and occurrence time;
 - an account reference resolved by trusted server-side workflow.
 
-The customer posting adapter consumes this evidence inside the existing
-tenant transaction and uses the source identity for idempotency. A retry with
-the same source returns the existing entry; a changed payload for the same
-source is an idempotency conflict. A8 does not implement fake persistence for
-this path during parallel preparation.
+The customer posting adapter validates the supplied payment evidence against
+an A5 `reconciliation_payments` row whose reconciliation revision is already
+`POSTED` or `LOCKED`; it never recalculates reconciliation totals or creates a
+second forecourt/inventory posting. The source identity is used for
+idempotency. A retry with the same command key returns the first result; a
+changed payload for that key is an idempotency conflict.
 
 ## Required permissions for later integration
 
-These names are proposed locally and are not added to the central permission
-catalogue in this branch:
+These permissions are registered centrally in migration `0008` and the shared
+runtime registry:
 
 - `customer.view`
 - `customer.manage`
@@ -129,9 +129,9 @@ catalogue in this branch:
 - `customer.account.adjust`
 - `customer.limit.override`
 
-Final role grants, scope, assurance, and approval semantics require A1/A0
-integration review. Credit-limit overrides remain explicit management approval;
-no threshold is invented here.
+Customer creation/account management are tenant-scoped; fuel authorization is
+station-scoped and step-up protected where applicable. Credit-limit overrides
+remain explicit management approval; no threshold is invented here.
 
 ## PostgreSQL integration-test plan
 

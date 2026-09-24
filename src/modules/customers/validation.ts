@@ -76,6 +76,31 @@ export const completeCustomerFuelTransactionSchema = z.object({
   businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
+export const authorizeCustomerFuelSchema = z.object({
+  commandType: z.literal('AuthorizeCustomerFuel'),
+  tenantId: uuid,
+  stationId: uuid,
+  authorizationId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+});
+
+export const cancelCustomerFuelAuthorizationSchema = z.object({
+  commandType: z.literal('CancelCustomerFuelAuthorization'),
+  tenantId: uuid,
+  stationId: uuid,
+  authorizationId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const expireCustomerFuelAuthorizationSchema = z.object({
+  commandType: z.literal('ExpireCustomerFuelAuthorization'),
+  tenantId: uuid,
+  stationId: uuid,
+  authorizationId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+});
+
 export const recordCustomerPaymentSchema = z.object({
   commandType: z.literal('RecordCustomerPayment'),
   tenantId: uuid,
@@ -133,9 +158,11 @@ export const customerStatementQuerySchema = z.object({
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type CreateCustomerAccountInput = z.infer<typeof createCustomerAccountSchema>;
-export type RequestCustomerFuelAuthorizationInput = z.infer<
-  typeof requestCustomerFuelAuthorizationSchema
->;
 export type CompleteCustomerFuelTransactionInput = z.infer<
   typeof completeCustomerFuelTransactionSchema
+>;
+export type RecordCustomerPaymentInput = z.infer<typeof recordCustomerPaymentSchema>;
+export type RecordPrepaidTopUpInput = z.infer<typeof recordPrepaidTopUpSchema>;
+export type RequestCustomerFuelAuthorizationInput = z.infer<
+  typeof requestCustomerFuelAuthorizationSchema
 >;
