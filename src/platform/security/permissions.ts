@@ -78,6 +78,15 @@ export const PERMISSION_CODES = [
   'supplier.payment.allocate',
   'supplier.payment.reverse',
   'supplier.creditor.review',
+  'customer.view',
+  'customer.manage',
+  'customer.account.manage',
+  'customer.credit.authorize',
+  'customer.prepaid.top_up',
+  'customer.payment.record',
+  'customer.statement.view',
+  'customer.account.adjust',
+  'customer.limit.override',
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
@@ -150,6 +159,11 @@ const highRiskPermissions = new Set<PermissionCode>([
   'supplier.document.reverse',
   'supplier.payment.post',
   'supplier.payment.reverse',
+  'customer.account.manage',
+  'customer.credit.authorize',
+  'customer.prepaid.top_up',
+  'customer.account.adjust',
+  'customer.limit.override',
 ]);
 
 const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
@@ -232,6 +246,15 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'supplier.payment.allocate',
     'supplier.payment.reverse',
     'supplier.creditor.review',
+    'customer.view',
+    'customer.manage',
+    'customer.account.manage',
+    'customer.credit.authorize',
+    'customer.prepaid.top_up',
+    'customer.payment.record',
+    'customer.statement.view',
+    'customer.account.adjust',
+    'customer.limit.override',
   ],
   FINANCE: [
     'tenant.context.select',
@@ -279,6 +302,15 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'supplier.payment.allocate',
     'supplier.payment.reverse',
     'supplier.creditor.review',
+    'customer.view',
+    'customer.manage',
+    'customer.account.manage',
+    'customer.credit.authorize',
+    'customer.prepaid.top_up',
+    'customer.payment.record',
+    'customer.statement.view',
+    'customer.account.adjust',
+    'customer.limit.override',
   ],
   SUPERVISOR: [
     'tenant.context.select',
@@ -317,6 +349,9 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'cash.count.record',
     'cash.handover.submit',
     'provider.batch.record',
+    'customer.view',
+    'customer.credit.authorize',
+    'customer.statement.view',
   ],
   ATTENDANT: [
     'tenant.context.select',

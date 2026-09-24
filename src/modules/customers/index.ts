@@ -1,2 +1,93 @@
-/** Customer workflows are owned by later workstreams; this is the public module boundary. */
-export {};
+export {
+  CUSTOMER_ACCOUNT_STATES,
+  CUSTOMER_ACCOUNT_TYPES,
+  CUSTOMER_FUEL_AUTHORIZATION_STATES,
+  CUSTOMER_LEDGER_DIRECTIONS,
+  CUSTOMER_LEDGER_ENTRY_TYPES,
+  CUSTOMER_SOURCE_TYPES,
+  assertSourceReferenceUnused,
+  cancelCustomerFuelAuthorization,
+  createCustomerPaymentEntry,
+  createPrepaidTopUpEntry,
+  customerLedgerSourceKey,
+  deriveAccountBalance,
+  expireCustomerFuelAuthorization,
+  newCustomer,
+  newCustomerAccount,
+  recordCustomerFuelUse,
+  requestCustomerFuelAuthorization,
+  reserveCustomerFuelAuthorization,
+} from './domain';
+export type {
+  ActiveReservation,
+  CreditLedgerEntry,
+  Customer,
+  CustomerAccount,
+  CustomerAccountBalance,
+  CustomerAccountState,
+  CustomerAccountType,
+  CustomerFuelAuthorization,
+  CustomerFuelAuthorizationState,
+  CustomerFuelValue,
+  CustomerLedgerEntry,
+  CustomerLedgerEntryType,
+  CustomerLifecycleState,
+  CustomerSourceReference,
+  CustomerSourceType,
+  PrepaidLitresLedgerEntry,
+  PrepaidValueLedgerEntry,
+} from './domain';
+export type {
+  A5CustomerFuelCategory,
+  A5CustomerFuelEvidence,
+  CustomerAccountAuditActionCode,
+  CustomerAccountAuditEvent,
+  CustomerFuelAuthorizationCommand,
+  CustomerFuelPostingRequest,
+  CustomerFuelUsageCommand,
+  CustomerPaymentCommand,
+  PrepaidTopUpCommand,
+} from './contracts';
+export { A5_CUSTOMER_FUEL_CATEGORIES, assertA5EvidenceCompatibleWithAccount } from './contracts';
+export {
+  CUSTOMER_COMMAND_POLICY,
+  CUSTOMER_COMMAND_TYPES,
+  CUSTOMER_PERMISSION_CODES,
+} from './application';
+export type {
+  CustomerApplicationCommand,
+  CustomerAuditRequest,
+  CustomerCommandEnvelope,
+  CustomerCommandPolicy,
+  CustomerCommandType,
+  CustomerExecutionContext,
+  CustomerIdempotencyRequest,
+  CustomerPostingIntegrationRequirement,
+  CustomerPermissionCode,
+} from './application';
+export type {
+  CustomerAggregate,
+  CustomerAccountQueryRepository,
+  CustomerAccountRepository,
+  CustomerRepository,
+} from './repository';
+export type {
+  CustomerAccountQueries,
+  CustomerAccountQuery,
+  CustomerAccountStatement,
+  CustomerStatementLine,
+} from './queries';
+export {
+  completeCustomerFuelTransactionSchema,
+  authorizeCustomerFuelSchema,
+  cancelCustomerFuelAuthorizationSchema,
+  createCustomerAccountSchema,
+  createCustomerSchema,
+  customerAccountTypeSchema,
+  customerSourceSchema,
+  customerStatementQuerySchema,
+  recordCustomerPaymentSchema,
+  recordPrepaidTopUpSchema,
+  requestCustomerFuelAuthorizationSchema,
+  expireCustomerFuelAuthorizationSchema,
+} from './validation';

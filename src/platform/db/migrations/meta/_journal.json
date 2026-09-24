@@ -57,6 +57,13 @@
       "when": 1790219277351,
       "tag": "0007_supplier_creditors",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790227934891,
+      "tag": "0008_customer_accounts",
+      "breakpoints": true
     }
   ]
 }
