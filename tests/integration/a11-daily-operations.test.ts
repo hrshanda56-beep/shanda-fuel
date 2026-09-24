@@ -129,10 +129,14 @@ describe('A11 daily operations composition read', () => {
       update app.selling_prices set state='ACTIVE', activated_at=now()
         where id in ('${ids.oldPrice}', '${ids.futurePrice}') and state='BOUNDARIES_IN_PROGRESS';
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
-        values ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-23', 'OPEN') on conflict (id) do nothing;
+        values ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-23', 'NOT_STARTED') on conflict (id) do nothing;
+      update app.station_business_days set state = 'OPEN', opened_at = now()
+        where id = '${ids.day}' and state = 'NOT_STARTED';
       insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-        values ('${ids.shift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'OPEN', '2026-09-23T06:00:00Z', '2026-09-23T14:00:00Z', '2026-09-23')
+        values ('${ids.shift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T06:00:00Z', '2026-09-23T14:00:00Z', '2026-09-23')
         on conflict (id) do nothing;
+      update app.shifts set state = 'OPEN', opened_at = now()
+        where id = '${ids.shift}' and state = 'PLANNED';
       insert into app.meter_boundaries
         (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
         values
