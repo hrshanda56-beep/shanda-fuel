@@ -54,6 +54,7 @@ CREATE TABLE "app"."bank_deposits" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "bank_deposits_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "bank_deposits_tenant_station_id_id_uidx" UNIQUE("tenant_id","station_id","id"),
 	CONSTRAINT "bank_deposits_tenant_station_reference_uidx" UNIQUE("tenant_id","station_id","deposit_reference"),
 	CONSTRAINT "bank_deposits_amount_ck" CHECK ("app"."bank_deposits"."amount" > 0 and ("app"."bank_deposits"."confirmed_amount" is null or "app"."bank_deposits"."confirmed_amount" >= 0)),
 	CONSTRAINT "bank_deposits_variance_ck" CHECK ("app"."bank_deposits"."confirmation_variance" is null or "app"."bank_deposits"."confirmation_variance" = "app"."bank_deposits"."confirmed_amount" - "app"."bank_deposits"."amount"),
@@ -96,6 +97,7 @@ CREATE TABLE "app"."cash_collections" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "cash_collections_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "cash_collections_tenant_station_id_id_uidx" UNIQUE("tenant_id","station_id","id"),
 	CONSTRAINT "cash_collections_tenant_station_reference_uidx" UNIQUE("tenant_id","station_id","collection_reference"),
 	CONSTRAINT "cash_collections_amount_ck" CHECK ("app"."cash_collections"."amount" > 0),
 	CONSTRAINT "cash_collections_currency_ck" CHECK ("app"."cash_collections"."currency" = 'USD'),
@@ -162,6 +164,7 @@ CREATE TABLE "app"."cash_locations" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "cash_locations_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
+	CONSTRAINT "cash_locations_tenant_station_id_id_uidx" UNIQUE("tenant_id","station_id","id"),
 	CONSTRAINT "cash_locations_tenant_station_code_uidx" UNIQUE("tenant_id","station_id","code"),
 	CONSTRAINT "cash_locations_type_ck" CHECK ("app"."cash_locations"."location_type" in ('STATION_TILL','STATION_SAFE','TRANSIT','COLLECTOR')),
 	CONSTRAINT "cash_locations_currency_ck" CHECK ("app"."cash_locations"."currency" = 'USD'),
@@ -199,45 +202,6 @@ CREATE TABLE "app"."cash_movements" (
       ))
 );
 --> statement-breakpoint
-CREATE TABLE "app"."provider_batches" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"station_id" uuid NOT NULL,
-	"provider_code" text NOT NULL,
-	"business_date" text NOT NULL,
-	"external_reference" text NOT NULL,
-	"declared_gross" numeric(20, 4) NOT NULL,
-	"declared_fees" numeric(20, 4) DEFAULT '0' NOT NULL,
-	"declared_refunds" numeric(20, 4) DEFAULT '0' NOT NULL,
-	"expected_net" numeric(20, 4) NOT NULL,
-	"state" text DEFAULT 'DECLARED' NOT NULL,
-	"declared_by" uuid NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "provider_batches_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
-	CONSTRAINT "provider_batches_tenant_provider_reference_uidx" UNIQUE("tenant_id","provider_code","external_reference"),
-	CONSTRAINT "provider_batches_amounts_ck" CHECK ("app"."provider_batches"."declared_gross" > 0 and "app"."provider_batches"."declared_fees" >= 0 and "app"."provider_batches"."declared_refunds" >= 0 and "app"."provider_batches"."expected_net" = "app"."provider_batches"."declared_gross" - "app"."provider_batches"."declared_fees" - "app"."provider_batches"."declared_refunds"),
-	CONSTRAINT "provider_batches_state_ck" CHECK ("app"."provider_batches"."state" in ('DECLARED','MATCHED','SETTLED','DISPUTED','REVERSED'))
-);
---> statement-breakpoint
-CREATE TABLE "app"."provider_settlements" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"station_id" uuid NOT NULL,
-	"provider_batch_id" uuid NOT NULL,
-	"settled_net" numeric(20, 4) NOT NULL,
-	"variance" numeric(20, 4) NOT NULL,
-	"settlement_reference" text NOT NULL,
-	"settled_at" timestamp with time zone NOT NULL,
-	"state" text DEFAULT 'POSTED' NOT NULL,
-	"recorded_by" uuid NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "provider_settlements_tenant_id_id_uidx" UNIQUE("tenant_id","id"),
-	CONSTRAINT "provider_settlements_batch_uidx" UNIQUE("tenant_id","provider_batch_id"),
-	CONSTRAINT "provider_settlements_amount_ck" CHECK ("app"."provider_settlements"."settled_net" >= 0),
-	CONSTRAINT "provider_settlements_state_ck" CHECK ("app"."provider_settlements"."state" in ('POSTED','REVERSED'))
-);
---> statement-breakpoint
 ALTER TABLE "app"."bank_accounts" ADD CONSTRAINT "bank_accounts_tenant_legal_entity_fk" FOREIGN KEY ("tenant_id","legal_entity_id") REFERENCES "app"."legal_entities"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."bank_deposit_allocations" ADD CONSTRAINT "bank_deposit_allocations_deposit_fk" FOREIGN KEY ("tenant_id","station_id","deposit_id") REFERENCES "app"."bank_deposits"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."bank_deposit_allocations" ADD CONSTRAINT "bank_deposit_allocations_collection_fk" FOREIGN KEY ("tenant_id","station_id","collection_id") REFERENCES "app"."cash_collections"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -268,10 +232,6 @@ ALTER TABLE "app"."cash_movements" ADD CONSTRAINT "cash_movements_tenant_station
 ALTER TABLE "app"."cash_movements" ADD CONSTRAINT "cash_movements_from_location_fk" FOREIGN KEY ("tenant_id","station_id","from_location_id") REFERENCES "app"."cash_locations"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."cash_movements" ADD CONSTRAINT "cash_movements_to_location_fk" FOREIGN KEY ("tenant_id","station_id","to_location_id") REFERENCES "app"."cash_locations"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."cash_movements" ADD CONSTRAINT "cash_movements_actor_membership_fk" FOREIGN KEY ("tenant_id","actor_membership_id") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."provider_batches" ADD CONSTRAINT "provider_batches_tenant_station_fk" FOREIGN KEY ("tenant_id","station_id") REFERENCES "app"."stations"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."provider_batches" ADD CONSTRAINT "provider_batches_declared_by_fk" FOREIGN KEY ("tenant_id","declared_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."provider_settlements" ADD CONSTRAINT "provider_settlements_batch_fk" FOREIGN KEY ("tenant_id","station_id","provider_batch_id") REFERENCES "app"."provider_batches"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "app"."provider_settlements" ADD CONSTRAINT "provider_settlements_recorded_by_fk" FOREIGN KEY ("tenant_id","recorded_by") REFERENCES "app"."memberships"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "bank_deposit_allocations_collection_idx" ON "app"."bank_deposit_allocations" USING btree ("tenant_id","station_id","collection_id");--> statement-breakpoint
 CREATE INDEX "bank_deposits_tenant_state_idx" ON "app"."bank_deposits" USING btree ("tenant_id","state");--> statement-breakpoint
 CREATE INDEX "cash_collection_allocations_reconciliation_idx" ON "app"."cash_collection_allocations" USING btree ("tenant_id","station_id","reconciliation_id");--> statement-breakpoint
@@ -280,8 +240,6 @@ CREATE INDEX "cash_counts_tenant_station_date_idx" ON "app"."cash_counts" USING 
 CREATE INDEX "cash_handovers_tenant_station_state_idx" ON "app"."cash_handovers" USING btree ("tenant_id","station_id","state");--> statement-breakpoint
 CREATE INDEX "cash_locations_tenant_station_status_idx" ON "app"."cash_locations" USING btree ("tenant_id","station_id","status");--> statement-breakpoint
 CREATE INDEX "cash_movements_tenant_station_effective_idx" ON "app"."cash_movements" USING btree ("tenant_id","station_id","effective_at");--> statement-breakpoint
-CREATE INDEX "provider_batches_tenant_station_date_idx" ON "app"."provider_batches" USING btree ("tenant_id","station_id","business_date");
-
 INSERT INTO platform.permission_definitions (code, description) VALUES
   ('cash.collection.view', 'View station cash collections and custody balances'),
   ('cash.collection.record', 'Record a station cash collection'),
@@ -293,9 +251,7 @@ INSERT INTO platform.permission_definitions (code, description) VALUES
   ('cash.handover.accept', 'Accept a cash handover'),
   ('cash.handover.resolve', 'Resolve a disputed cash handover'),
   ('cash.deposit.record', 'Record a bank deposit'),
-  ('cash.deposit.confirm', 'Confirm a bank deposit'),
-  ('provider.batch.record', 'Record a provider declaration batch'),
-  ('provider.settlement.post', 'Post a provider settlement')
+  ('cash.deposit.confirm', 'Confirm a bank deposit')
 ON CONFLICT (code) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION app.enforce_cash_collection_allocation_total()
@@ -413,8 +369,7 @@ BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'cash_locations', 'cash_movements', 'cash_counts', 'cash_handovers',
     'cash_collections', 'cash_collection_allocations',
-    'bank_accounts', 'bank_deposits', 'bank_deposit_allocations',
-    'provider_batches', 'provider_settlements'
+    'bank_accounts', 'bank_deposits', 'bank_deposit_allocations'
   ] LOOP
     EXECUTE format('ALTER TABLE app.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE app.%I FORCE ROW LEVEL SECURITY', table_name);
@@ -427,21 +382,20 @@ BEGIN
     FOREACH table_name IN ARRAY ARRAY[
       'cash_locations', 'cash_movements', 'cash_counts', 'cash_handovers',
       'cash_collections', 'cash_collection_allocations',
-      'bank_accounts', 'bank_deposits', 'bank_deposit_allocations',
-      'provider_batches', 'provider_settlements'
+      'bank_accounts', 'bank_deposits', 'bank_deposit_allocations'
     ] LOOP
       EXECUTE format('ALTER TABLE app.%I OWNER TO migration_owner', table_name);
     END LOOP;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
-    GRANT SELECT, INSERT, UPDATE ON app.cash_locations, app.cash_handovers, app.cash_collections, app.bank_deposits, app.provider_batches, app.provider_settlements TO app_runtime;
+    GRANT SELECT, INSERT, UPDATE ON app.cash_locations, app.cash_handovers, app.cash_collections, app.bank_deposits TO app_runtime;
     GRANT SELECT, INSERT ON app.cash_movements, app.cash_counts, app.cash_collection_allocations, app.bank_accounts, app.bank_deposit_allocations TO app_runtime;
     REVOKE UPDATE ON app.cash_collections, app.bank_deposits FROM app_runtime;
     GRANT UPDATE (current_location_id, state, received_by, received_at, version, updated_at) ON app.cash_collections TO app_runtime;
     GRANT UPDATE (state, confirmed_amount, confirmation_variance, bank_reference, confirmed_by, confirmed_at, version, updated_at) ON app.bank_deposits TO app_runtime;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'diagnostics_readonly') THEN
-    GRANT SELECT ON app.cash_locations, app.cash_movements, app.cash_counts, app.cash_handovers, app.cash_collections, app.cash_collection_allocations, app.bank_accounts, app.bank_deposits, app.bank_deposit_allocations, app.provider_batches, app.provider_settlements TO diagnostics_readonly;
+    GRANT SELECT ON app.cash_locations, app.cash_movements, app.cash_counts, app.cash_handovers, app.cash_collections, app.cash_collection_allocations, app.bank_accounts, app.bank_deposits, app.bank_deposit_allocations TO diagnostics_readonly;
   END IF;
 END
 $$;

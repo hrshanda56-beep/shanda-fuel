@@ -8342,6 +8342,15 @@
             "id"
           ]
         },
+        "bank_deposits_tenant_station_id_id_uidx": {
+          "name": "bank_deposits_tenant_station_id_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ]
+        },
         "bank_deposits_tenant_station_reference_uidx": {
           "name": "bank_deposits_tenant_station_reference_uidx",
           "nullsNotDistinct": false,
@@ -8788,6 +8797,15 @@
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "id"
+          ]
+        },
+        "cash_collections_tenant_station_id_id_uidx": {
+          "name": "cash_collections_tenant_station_id_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
             "id"
           ]
         },
@@ -9417,6 +9435,15 @@
             "id"
           ]
         },
+        "cash_locations_tenant_station_id_id_uidx": {
+          "name": "cash_locations_tenant_station_id_id_uidx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "station_id",
+            "id"
+          ]
+        },
         "cash_locations_tenant_station_code_uidx": {
           "name": "cash_locations_tenant_station_code_uidx",
           "nullsNotDistinct": false,
@@ -9685,340 +9712,6 @@
         "cash_movements_direction_ck": {
           "name": "cash_movements_direction_ck",
           "value": "(\n        (\"app\".\"cash_movements\".\"movement_type\" = 'RECEIPT' and \"app\".\"cash_movements\".\"from_location_id\" is null and \"app\".\"cash_movements\".\"to_location_id\" is not null)\n        or (\"app\".\"cash_movements\".\"movement_type\" = 'DISBURSEMENT' and \"app\".\"cash_movements\".\"from_location_id\" is not null and \"app\".\"cash_movements\".\"to_location_id\" is null)\n        or (\"app\".\"cash_movements\".\"movement_type\" = 'TRANSFER' and \"app\".\"cash_movements\".\"from_location_id\" is not null and \"app\".\"cash_movements\".\"to_location_id\" is not null and \"app\".\"cash_movements\".\"from_location_id\" <> \"app\".\"cash_movements\".\"to_location_id\")\n        or (\"app\".\"cash_movements\".\"movement_type\" = 'ADJUSTMENT_IN' and \"app\".\"cash_movements\".\"from_location_id\" is null and \"app\".\"cash_movements\".\"to_location_id\" is not null)\n        or (\"app\".\"cash_movements\".\"movement_type\" = 'ADJUSTMENT_OUT' and \"app\".\"cash_movements\".\"from_location_id\" is not null and \"app\".\"cash_movements\".\"to_location_id\" is null)\n      )"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "app.provider_batches": {
-      "name": "provider_batches",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "station_id": {
-          "name": "station_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_code": {
-          "name": "provider_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "external_reference": {
-          "name": "external_reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "declared_gross": {
-          "name": "declared_gross",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "declared_fees": {
-          "name": "declared_fees",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "declared_refunds": {
-          "name": "declared_refunds",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "expected_net": {
-          "name": "expected_net",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'DECLARED'"
-        },
-        "declared_by": {
-          "name": "declared_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "provider_batches_tenant_station_date_idx": {
-          "name": "provider_batches_tenant_station_date_idx",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "station_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "business_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "provider_batches_tenant_station_fk": {
-          "name": "provider_batches_tenant_station_fk",
-          "tableFrom": "provider_batches",
-          "tableTo": "stations",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "tenant_id",
-            "station_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "provider_batches_declared_by_fk": {
-          "name": "provider_batches_declared_by_fk",
-          "tableFrom": "provider_batches",
-          "tableTo": "memberships",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "tenant_id",
-            "declared_by"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "provider_batches_tenant_id_id_uidx": {
-          "name": "provider_batches_tenant_id_id_uidx",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
-        },
-        "provider_batches_tenant_provider_reference_uidx": {
-          "name": "provider_batches_tenant_provider_reference_uidx",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tenant_id",
-            "provider_code",
-            "external_reference"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "provider_batches_amounts_ck": {
-          "name": "provider_batches_amounts_ck",
-          "value": "\"app\".\"provider_batches\".\"declared_gross\" > 0 and \"app\".\"provider_batches\".\"declared_fees\" >= 0 and \"app\".\"provider_batches\".\"declared_refunds\" >= 0 and \"app\".\"provider_batches\".\"expected_net\" = \"app\".\"provider_batches\".\"declared_gross\" - \"app\".\"provider_batches\".\"declared_fees\" - \"app\".\"provider_batches\".\"declared_refunds\""
-        },
-        "provider_batches_state_ck": {
-          "name": "provider_batches_state_ck",
-          "value": "\"app\".\"provider_batches\".\"state\" in ('DECLARED','MATCHED','SETTLED','DISPUTED','REVERSED')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "app.provider_settlements": {
-      "name": "provider_settlements",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "station_id": {
-          "name": "station_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_batch_id": {
-          "name": "provider_batch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settled_net": {
-          "name": "settled_net",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "variance": {
-          "name": "variance",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settlement_reference": {
-          "name": "settlement_reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settled_at": {
-          "name": "settled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'POSTED'"
-        },
-        "recorded_by": {
-          "name": "recorded_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "provider_settlements_batch_fk": {
-          "name": "provider_settlements_batch_fk",
-          "tableFrom": "provider_settlements",
-          "tableTo": "provider_batches",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "tenant_id",
-            "station_id",
-            "provider_batch_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "station_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "provider_settlements_recorded_by_fk": {
-          "name": "provider_settlements_recorded_by_fk",
-          "tableFrom": "provider_settlements",
-          "tableTo": "memberships",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "tenant_id",
-            "recorded_by"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "provider_settlements_tenant_id_id_uidx": {
-          "name": "provider_settlements_tenant_id_id_uidx",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
-        },
-        "provider_settlements_batch_uidx": {
-          "name": "provider_settlements_batch_uidx",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tenant_id",
-            "provider_batch_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "provider_settlements_amount_ck": {
-          "name": "provider_settlements_amount_ck",
-          "value": "\"app\".\"provider_settlements\".\"settled_net\" >= 0"
-        },
-        "provider_settlements_state_ck": {
-          "name": "provider_settlements_state_ck",
-          "value": "\"app\".\"provider_settlements\".\"state\" in ('POSTED','REVERSED')"
         }
       },
       "isRLSEnabled": false

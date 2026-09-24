@@ -39,6 +39,11 @@ export const cashLocations = appSchema.table(
   },
   (table) => [
     unique('cash_locations_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('cash_locations_tenant_station_id_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.id,
+    ),
     unique('cash_locations_tenant_station_code_uidx').on(
       table.tenantId,
       table.stationId,
@@ -116,6 +121,11 @@ export const cashCollections = appSchema.table(
   },
   (table) => [
     unique('cash_collections_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('cash_collections_tenant_station_id_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.id,
+    ),
     unique('cash_collections_tenant_station_reference_uidx').on(
       table.tenantId,
       table.stationId,
@@ -440,6 +450,7 @@ export const bankDeposits = appSchema.table(
   },
   (table) => [
     unique('bank_deposits_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('bank_deposits_tenant_station_id_id_uidx').on(table.tenantId, table.stationId, table.id),
     unique('bank_deposits_tenant_station_reference_uidx').on(
       table.tenantId,
       table.stationId,
@@ -524,92 +535,6 @@ export const bankDepositAllocations = appSchema.table(
       columns: [table.tenantId, table.allocatedBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'bank_deposit_allocations_allocated_by_fk',
-    }),
-  ],
-);
-
-export const providerBatches = appSchema.table(
-  'provider_batches',
-  {
-    id: id(),
-    tenantId: tenantId(),
-    stationId: uuid('station_id').notNull(),
-    providerCode: text('provider_code').notNull(),
-    businessDate: text('business_date').notNull(),
-    externalReference: text('external_reference').notNull(),
-    declaredGross: numeric('declared_gross', { precision: 20, scale: 4 }).notNull(),
-    declaredFees: numeric('declared_fees', { precision: 20, scale: 4 }).notNull().default('0'),
-    declaredRefunds: numeric('declared_refunds', { precision: 20, scale: 4 })
-      .notNull()
-      .default('0'),
-    expectedNet: numeric('expected_net', { precision: 20, scale: 4 }).notNull(),
-    state: text('state').notNull().default('DECLARED'),
-    declaredBy: uuid('declared_by').notNull(),
-    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
-    updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => [
-    unique('provider_batches_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('provider_batches_tenant_provider_reference_uidx').on(
-      table.tenantId,
-      table.providerCode,
-      table.externalReference,
-    ),
-    index('provider_batches_tenant_station_date_idx').on(
-      table.tenantId,
-      table.stationId,
-      table.businessDate,
-    ),
-    check(
-      'provider_batches_amounts_ck',
-      sql`${table.declaredGross} > 0 and ${table.declaredFees} >= 0 and ${table.declaredRefunds} >= 0 and ${table.expectedNet} = ${table.declaredGross} - ${table.declaredFees} - ${table.declaredRefunds}`,
-    ),
-    check(
-      'provider_batches_state_ck',
-      sql`${table.state} in ('DECLARED','MATCHED','SETTLED','DISPUTED','REVERSED')`,
-    ),
-    foreignKey({
-      columns: [table.tenantId, table.stationId],
-      foreignColumns: [stations.tenantId, stations.id],
-      name: 'provider_batches_tenant_station_fk',
-    }),
-    foreignKey({
-      columns: [table.tenantId, table.declaredBy],
-      foreignColumns: [memberships.tenantId, memberships.id],
-      name: 'provider_batches_declared_by_fk',
-    }),
-  ],
-);
-
-export const providerSettlements = appSchema.table(
-  'provider_settlements',
-  {
-    id: id(),
-    tenantId: tenantId(),
-    stationId: uuid('station_id').notNull(),
-    providerBatchId: uuid('provider_batch_id').notNull(),
-    settledNet: numeric('settled_net', { precision: 20, scale: 4 }).notNull(),
-    variance: numeric('variance', { precision: 20, scale: 4 }).notNull(),
-    settlementReference: text('settlement_reference').notNull(),
-    settledAt: utcTimestamp('settled_at').notNull(),
-    state: text('state').notNull().default('POSTED'),
-    recordedBy: uuid('recorded_by').notNull(),
-    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
-  },
-  (table) => [
-    unique('provider_settlements_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('provider_settlements_batch_uidx').on(table.tenantId, table.providerBatchId),
-    check('provider_settlements_amount_ck', sql`${table.settledNet} >= 0`),
-    check('provider_settlements_state_ck', sql`${table.state} in ('POSTED','REVERSED')`),
-    foreignKey({
-      columns: [table.tenantId, table.stationId, table.providerBatchId],
-      foreignColumns: [providerBatches.tenantId, providerBatches.stationId, providerBatches.id],
-      name: 'provider_settlements_batch_fk',
-    }),
-    foreignKey({
-      columns: [table.tenantId, table.recordedBy],
-      foreignColumns: [memberships.tenantId, memberships.id],
-      name: 'provider_settlements_recorded_by_fk',
     }),
   ],
 );
