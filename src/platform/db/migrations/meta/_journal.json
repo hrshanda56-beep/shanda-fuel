@@ -64,6 +64,13 @@
       "when": 1790227934891,
       "tag": "0008_customer_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790249824675,
+      "tag": "0009_provider_settlements",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,23 @@
 # Implementation status
 
+## A9 — Provider settlement reconciliation (implementation candidate)
+
+The dedicated `agent/a9-provider-settlements` branch adds canonical migration
+`0009_provider_settlements.sql` for tenant-scoped electronic payment providers,
+merchant/provider accounts, provider settlement evidence, and append-only
+settlement allocations. A9 consumes only approved/posted/locked A5 `POS` and
+`ECOCASH` payment evidence; cash, bank-transfer, customer/prepaid, staff, and
+other approved methods remain outside the provider-settlement boundary.
+
+The implementation includes exact-decimal capacity checks, station-safe
+tenant-aware references, RLS/grants, idempotent commands, signed audit events,
+deterministic allocation locks, named allocation reversal, variance/reconcile
+states, read APIs, and a minimal finance workspace. PostgreSQL integration
+coverage is present in `tests/integration/a9-provider-settlements.test.ts` but
+has not run in this environment because `DATABASE_URL` is not configured.
+
+Status: **IMPLEMENTATION CANDIDATE — A0/integration review and PostgreSQL gate pending**
+
 ## A8 — Customer accounts (branch continuation)
 
 The A8 branch implements customer identity, credit accounts, optional
