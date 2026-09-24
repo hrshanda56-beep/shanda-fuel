@@ -1,0 +1,223 @@
+import { z } from 'zod';
+
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must use YYYY-MM-DD');
+
+export const managementReportQuerySchema = z
+  .object({
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid().optional(),
+    fromDate: dateOnly.optional(),
+    toDate: dateOnly.optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.fromDate && value.toDate && value.fromDate > value.toDate) {
+      context.addIssue({
+        code: 'custom',
+        path: ['fromDate'],
+        message: 'fromDate must not be after toDate',
+      });
+    }
+  });
+
+export type ManagementReportQuery = z.infer<typeof managementReportQuerySchema> & {
+  fromDate: string;
+  toDate: string;
+};
+
+export type ReportDateBasis = {
+  sales: 'A5 business date';
+  cashEvidence: 'A5 business date';
+  cashCollections: 'A6 cash_collections.business_date';
+  bankedCash: 'A6 bank_deposits.deposited_at UTC calendar date';
+  providerEvidence: 'A5 business date';
+  providerSettlements: 'A9 settlement date';
+  suppliers: 'A7 effective_date <= toDate; balance as of toDate';
+  customers: 'A8 balance as of toDate using ledger business_date and authorization requested_at';
+  inventory: 'A4 movement business date and latest dip measured_at as of toDate';
+  expenses: 'A5 business date';
+};
+
+export type ReportMoney = string;
+export type ReportLitres = string;
+
+export type ReportStation = Readonly<{
+  stationId: string;
+  code: string;
+  name: string;
+}>;
+
+export type SalesPaymentRow = Readonly<{
+  method: string;
+  amount: ReportMoney;
+  evidenceIds: readonly string[];
+}>;
+
+export type SalesBreakdownRow = Readonly<{
+  businessDate: string;
+  stationId: string;
+  stationCode: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  litres: ReportLitres;
+  salesValue: ReportMoney;
+  averageRealizedPrice: ReportMoney | null;
+  variance: ReportMoney;
+  reconciliationIds: readonly string[];
+}>;
+
+export type CashPosition = Readonly<{
+  cashEvidence: ReportMoney;
+  collected: ReportMoney;
+  awaitingCollection: ReportMoney;
+  banked: ReportMoney;
+  collectedButNotBanked: ReportMoney;
+  cashVariance: ReportMoney;
+  collectionIds: readonly string[];
+  depositIds: readonly string[];
+}>;
+
+export type ProviderPosition = Readonly<{
+  paymentEvidence: ReportMoney;
+  settlementGross: ReportMoney;
+  allocatedAmount: ReportMoney;
+  unallocatedProviderAmount: ReportMoney;
+  unmatchedEvidenceAmount: ReportMoney;
+  settlementVariance: ReportMoney;
+  feesAndDeductions: ReportMoney;
+  rows: readonly {
+    settlementId: string;
+    providerId: string;
+    providerName: string;
+    stationId: string;
+    transactionDate: string;
+    settlementDate: string;
+    settlementReference: string;
+    grossAmount: ReportMoney;
+    allocatedAmount: ReportMoney;
+    unallocatedAmount: ReportMoney;
+    feesAndDeductions: ReportMoney;
+    variance: ReportMoney;
+  }[];
+}>;
+
+export type SupplierExposure = Readonly<{
+  invoiceValue: ReportMoney;
+  creditNoteValue: ReportMoney;
+  payments: ReportMoney;
+  outstandingBalance: ReportMoney;
+  rows: readonly {
+    supplierId: string;
+    supplierCode: string;
+    supplierName: string;
+    invoiceValue: ReportMoney;
+    creditNoteValue: ReportMoney;
+    payments: ReportMoney;
+    outstandingBalance: ReportMoney;
+  }[];
+}>;
+
+export type CustomerExposure = Readonly<{
+  availability: 'AVAILABLE' | 'UNAVAILABLE_STATION_DIMENSION';
+  receivableBalance: ReportMoney | null;
+  prepaidValueBalance: ReportMoney | null;
+  reservedAmount: ReportMoney | null;
+  reservedLitres: ReportLitres | null;
+  rows: readonly {
+    customerId: string;
+    accountReference: string;
+    displayName: string;
+    receivableBalance: ReportMoney;
+    prepaidValueBalance: ReportMoney;
+    reservedAmount: ReportMoney;
+    reservedLitres: ReportLitres;
+  }[];
+}>;
+
+export type InventoryPosition = Readonly<{
+  expectedLitres: ReportLitres;
+  physicalLitres: ReportLitres;
+  varianceLitres: ReportLitres;
+  deliveryLitres: ReportLitres;
+  deliveryValue: ReportMoney;
+  rows: readonly {
+    stationId: string;
+    tankId: string;
+    tankCode: string;
+    productId: string;
+    productCode: string;
+    productName: string;
+    expectedLitres: ReportLitres;
+    physicalLitres: ReportLitres | null;
+    varianceLitres: ReportLitres | null;
+    deliveryLitres: ReportLitres;
+    deliveryValue: ReportMoney;
+    movementIds: readonly string[];
+    deliveryIds: readonly string[];
+  }[];
+}>;
+
+export type ManagementReport = Readonly<{
+  report: 'MANAGEMENT_OVERVIEW';
+  state: 'POSTED';
+  currency: 'USD';
+  filters: Readonly<{
+    tenantId: string;
+    stationId?: string;
+    fromDate: string;
+    toDate: string;
+  }>;
+  dateBasis: ReportDateBasis;
+  stations: readonly ReportStation[];
+  sales: Readonly<{
+    litresSold: ReportLitres;
+    salesValue: ReportMoney;
+    approvedReconciliationCount: number;
+    salesVariance: ReportMoney;
+    payments: readonly SalesPaymentRow[];
+    rows: readonly SalesBreakdownRow[];
+    reconciliationIds: readonly string[];
+  }>;
+  cash: CashPosition;
+  providers: ProviderPosition;
+  suppliers: SupplierExposure;
+  customers: CustomerExposure;
+  inventory: InventoryPosition;
+  expenses: Readonly<{
+    total: ReportMoney;
+    rows: readonly {
+      businessDate: string;
+      stationId: string;
+      category: string;
+      amount: ReportMoney;
+      expenseIds: readonly string[];
+    }[];
+  }>;
+  grossMargin: null;
+}>;
+
+export type DailyOperationsRow = Readonly<{
+  reportDate: string;
+  stationId: string;
+  stationCode: string;
+  litresSold: ReportLitres;
+  salesValue: ReportMoney;
+  paymentBreakdown: readonly SalesPaymentRow[];
+  cashDeclared: ReportMoney;
+  cashVariance: ReportMoney;
+  collectedCash: ReportMoney;
+  bankedCash: ReportMoney;
+  providerEvidence: ReportMoney;
+  providerSettledAmount: ReportMoney;
+  providerOutstandingAmount: ReportMoney;
+  recordedExpenses: ReportMoney;
+  inventoryVariance: ReportLitres;
+  deliveryLitres: ReportLitres;
+  customerCreditEvidence: ReportMoney;
+  prepaidEvidence: ReportMoney;
+  reconciliationIds: readonly string[];
+  collectionIds: readonly string[];
+  depositIds: readonly string[];
+  settlementIds: readonly string[];
+  deliveryIds: readonly string[];
+}>;

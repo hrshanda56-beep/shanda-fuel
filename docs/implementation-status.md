@@ -1,5 +1,13 @@
 # Implementation status
 
+## A10 — Management reporting (implementation candidate)
+
+The A10 branch adds a tenant-safe, exact-decimal management reporting read model over the canonical A4–A9 schemas. `GET /api/reports/management`, `GET /api/reports/daily`, and `/reports` expose posted sales, cash custody, provider settlement, supplier, customer, inventory, expense, and daily operational views with source IDs and explicit metric-specific date-basis metadata. Daily rows use neutral `reportDate`; station-scoped A8 customer exposure is explicitly unavailable rather than reported as zero.
+
+A10 requires no schema migration `0010`. Gross margin is intentionally unavailable because the current canonical branch has no posted sale-recognition plus attributable chronological COGS model. See `docs/architecture/a10-management-reporting.md` for the source mapping, security model, and limitations.
+
+Status: **IMPLEMENTATION CANDIDATE — A0/integration review and PostgreSQL/E2E gates pending**
+
 ## A9 — Provider settlement reconciliation (implementation candidate)
 
 The dedicated `agent/a9-provider-settlements` branch adds canonical migration
