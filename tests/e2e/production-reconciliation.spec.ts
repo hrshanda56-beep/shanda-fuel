@@ -350,23 +350,29 @@ test.describe('production reconciliation persistence', () => {
     const activeShiftId =
       [ids.a11RetryShift, ids.a11RetryShiftTwo, ids.a11RetryShiftThree][testInfo.retry] ??
       ids.a11RetryShiftThree;
-    const reconciliationId = crypto.randomUUID();
     const query = new URLSearchParams({
       tenantId: ids.tenant,
       stationId: ids.station,
       businessDayId: ids.day,
       shiftId: activeShiftId,
     });
+
+    await authenticate(context, supervisorToken);
+    await page.goto(`/operations/daily?${query.toString()}`);
+    await page.getByRole('button', { name: 'Create daily draft' }).click();
+    await expect(page.getByRole('heading', { name: 'Daily operations workspace' })).toBeVisible();
+    const reconciliationId = new URL(page.url()).searchParams.get('reconciliationId');
+
+    if (!reconciliationId) {
+      throw new Error('Daily operations workspace did not persist reconciliationId in the URL');
+    }
+
     const common = {
       tenantId: ids.tenant,
       stationId: ids.station,
       reconciliationId,
     };
 
-    await authenticate(context, supervisorToken);
-    await page.goto(`/operations/daily?${query.toString()}`);
-    await page.getByRole('button', { name: 'Create daily draft' }).click();
-    await expect(page.getByRole('heading', { name: 'Daily operations workspace' })).toBeVisible();
     await page.locator('input[id^="opening-"]').first().fill('100000.000');
     await page.locator('input[id^="closing-"]').first().fill('100500.000');
     await page.getByRole('button', { name: 'Add payment evidence' }).click();
@@ -385,6 +391,15 @@ test.describe('production reconciliation persistence', () => {
     await page.getByRole('button', { name: 'Submit for management review' }).click();
     const submitResponse = await submitResponsePromise;
     const submitResponseText = await submitResponse.text();
+    const submitRequestText = submitResponse.request().postData();
+
+    if (!submitRequestText) {
+      throw new Error('SubmitProductionReconciliation request body was unavailable');
+    }
+
+    const submitRequest = JSON.parse(submitRequestText) as { reconciliationId?: string };
+
+    expect(submitRequest.reconciliationId).toBe(reconciliationId);
 
     expect(
       submitResponse.ok(),
