@@ -334,11 +334,22 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
       ),
     ).rejects.toThrow(/immutable|append-only/);
 
-    const auditRows = await client<{ count: string }[]>`
-      select count(*)::text as count from platform.security_events
+    const auditRows = await client<{ event_code: string; count: string }[]>`
+      select event_code, count(*)::text as count
+        from platform.security_events
        where tenant_id = ${ids.tenant} and event_code like 'SETTLEMENT.%'
+       group by event_code
     `;
-    expect(Number(auditRows[0]?.count)).toBeGreaterThanOrEqual(8);
+    const auditCounts = Object.fromEntries(
+      auditRows.map((row) => [row.event_code, Number(row.count)]),
+    );
+    expect(auditCounts).toMatchObject({
+      'SETTLEMENT.CreatePaymentProvider': 1,
+      'SETTLEMENT.ConfigureProviderAccount': 1,
+      'SETTLEMENT.RecordProviderSettlement': 1,
+      'SETTLEMENT.AllocateProviderSettlement': 3,
+      'SETTLEMENT.ReconcileProviderSettlement': 1,
+    });
   });
 
   it('rejects cash, cross-tenant evidence, currency mismatch, and over-allocation', async () => {
