@@ -261,8 +261,8 @@ BEGIN
   IF OLD.state IN ('POSTED', 'PARTIALLY_PAID') AND NEW.state NOT IN ('POSTED', 'PARTIALLY_PAID', 'PAID', 'REVERSED') THEN
     RAISE EXCEPTION 'posted supplier documents have an invalid transition';
   END IF;
-  IF OLD.state = 'PAID' AND NEW.state NOT IN ('PAID', 'REVERSED') THEN
-    RAISE EXCEPTION 'paid supplier documents may only be reversed';
+  IF OLD.state = 'PAID' AND NEW.state NOT IN ('PAID', 'PARTIALLY_PAID', 'POSTED', 'REVERSED') THEN
+    RAISE EXCEPTION 'paid supplier documents have an invalid transition';
   END IF;
   IF OLD.state = 'REVERSED' AND NEW.state <> 'REVERSED' THEN
     RAISE EXCEPTION 'reversed supplier documents are terminal';
