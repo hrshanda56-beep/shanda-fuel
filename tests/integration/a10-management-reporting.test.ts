@@ -270,7 +270,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
   it('returns a deterministic empty report at money and litre scales', async () => {
     const response = await managementReportGet(
       new Request(
-        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-20`,
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-18&toDate=2026-09-18`,
         { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
       ),
     );

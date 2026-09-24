@@ -689,15 +689,15 @@ async function readDaily(
       where s.tenant_id = ${filters.tenantId} and s.settlement_date between ${filters.fromDate} and ${filters.toDate}
       group by s.settlement_date, s.station_id
     ), expenses as (
-      select business_date as report_date, station_id, sum(e.amount)::text as expenses
+      select a.business_date as report_date, a.station_id, sum(e.amount)::text as expenses
       from approved a join app.reconciliation_expenses e on e.tenant_id = ${filters.tenantId}
         and e.station_id = a.station_id and e.reconciliation_id = a.reconciliation_id
-      group by business_date, station_id
+      group by a.business_date, a.station_id
     ), deliveries as (
-      select station_id, business_date as report_date, sum(actual_quantity_litres)::text as deliveries, array_agg(id) as delivery_ids
-      from app.fuel_deliveries where tenant_id = ${filters.tenantId} and status = 'CONFIRMED'
-        and business_date between ${filters.fromDate} and ${filters.toDate}
-      group by station_id, business_date
+      select d.station_id, d.business_date as report_date, sum(d.actual_quantity_litres)::text as deliveries, array_agg(d.id) as delivery_ids
+      from app.fuel_deliveries d where d.tenant_id = ${filters.tenantId} and d.status = 'CONFIRMED'
+        and d.business_date between ${filters.fromDate} and ${filters.toDate}
+      group by d.station_id, d.business_date
     ), inventory_variance as (
       select d.station_id, d.business_date as report_date,
         sum(d.physical_litres - coalesce((select sum(m.quantity_litres) from app.inventory_movements m
@@ -728,15 +728,15 @@ async function readDaily(
       coalesce(se.settlement_ids, ARRAY[]::uuid[]) as settlement_ids,
       coalesce(d.delivery_ids, ARRAY[]::uuid[]) as delivery_ids
     from keys k join app.stations st on st.tenant_id = ${filters.tenantId} and st.id = k.station_id
-    left join sales s using (report_date, station_id)
-    left join payments p using (report_date, station_id)
-    left join cash_variances cv using (report_date, station_id)
-    left join collections c using (report_date, station_id)
-    left join banked b using (report_date, station_id)
-    left join settlements se using (report_date, station_id)
-    left join expenses e using (report_date, station_id)
-    left join deliveries d using (report_date, station_id)
-    left join inventory_variance iv using (report_date, station_id)
+    left join sales s on s.report_date = k.report_date and s.station_id = k.station_id
+    left join payments p on p.report_date = k.report_date and p.station_id = k.station_id
+    left join cash_variances cv on cv.report_date = k.report_date and cv.station_id = k.station_id
+    left join collections c on c.report_date = k.report_date and c.station_id = k.station_id
+    left join banked b on b.report_date = k.report_date and b.station_id = k.station_id
+    left join settlements se on se.report_date = k.report_date and se.station_id = k.station_id
+    left join expenses e on e.report_date = k.report_date and e.station_id = k.station_id
+    left join deliveries d on d.report_date = k.report_date and d.station_id = k.station_id
+    left join inventory_variance iv on iv.report_date = k.report_date and iv.station_id = k.station_id
     ${filters.stationId ? sql`where k.station_id = ${filters.stationId}` : sql``}
     order by k.report_date, st.code
   `);
