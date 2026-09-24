@@ -312,7 +312,7 @@ describe('A6 cash collection and banking persistence', () => {
       from platform.security_events
       where tenant_id='${ids.tenant}'
         and event_code='CASH.RecordCashCollection'
-        and details->'subjectId' ? 'subjectId'
+        and details ? 'subjectId'
     `);
     expect(Number(auditRows[0]?.count ?? 0)).toBeGreaterThanOrEqual(2);
   });
