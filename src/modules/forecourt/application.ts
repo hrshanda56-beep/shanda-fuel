@@ -466,6 +466,7 @@ export type ForecourtAuditPort = {
     transaction: ForecourtTransaction;
     context: ForecourtCommandContext;
     commandType: string;
+    auditNamespace?: string;
     subjectType: string;
     subjectId: string;
     before?: unknown;

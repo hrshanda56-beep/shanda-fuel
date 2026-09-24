@@ -43,6 +43,13 @@
       "when": 1790174123722,
       "tag": "0005_daily_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790195381301,
+      "tag": "0006_cash_banking",
+      "breakpoints": true
     }
   ]
 }

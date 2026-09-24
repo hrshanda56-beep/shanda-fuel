@@ -234,4 +234,34 @@ describe('permission authorization', () => {
       expect(attendantPermissions).not.toContain(permissionCode);
     }
   });
+
+  it('keeps cash collection recording separate from receipt and bank confirmation authority', () => {
+    const requestedScope = { tenantId, scopeType: 'STATION' as const, legalEntityId, stationId };
+    expect(isAuthorized({ actor, permissionCode: 'cash.collection.record', requestedScope })).toBe(
+      true,
+    );
+    expect(isAuthorized({ actor, permissionCode: 'cash.collection.receive', requestedScope })).toBe(
+      false,
+    );
+    expect(isAuthorized({ actor, permissionCode: 'cash.deposit.confirm', requestedScope })).toBe(
+      false,
+    );
+    expect(
+      isAuthorized({
+        actor: {
+          ...actor,
+          strongAuthenticationAt: new Date('2030-01-01T08:00:00.000Z'),
+          strongAuthenticationExpiresAt: new Date('2030-01-01T18:00:00.000Z'),
+          roleAssignments: [
+            {
+              ...actor.roleAssignments[0]!,
+              roleCode: 'ADMINISTRATOR',
+            },
+          ],
+        },
+        permissionCode: 'cash.deposit.confirm',
+        requestedScope,
+      }),
+    ).toBe(true);
+  });
 });

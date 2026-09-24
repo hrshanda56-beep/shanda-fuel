@@ -152,7 +152,7 @@ export const databaseAuditPort: ForecourtAuditPort = {
         membershipId: input.provenance.membershipId,
         actorId: input.provenance.actorId,
         actorType: 'HUMAN',
-        actionCode: `FORECOURT.${input.commandType}`,
+        actionCode: `${input.auditNamespace ?? 'FORECOURT'}.${input.commandType}`,
         subjectType: input.subjectType,
         subjectId: input.subjectId,
         requestId: input.provenance.requestId || randomUUID(),
