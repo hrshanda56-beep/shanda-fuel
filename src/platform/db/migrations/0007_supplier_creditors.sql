@@ -386,15 +386,15 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  SELECT amount, state, supplier_id, legal_entity_id
+  SELECT p.amount, p.state, p.supplier_id, p.legal_entity_id
   INTO payment_amount, payment_state, payment_supplier_id, payment_legal_entity_id
-  FROM app.supplier_payments
-  WHERE tenant_id = NEW.tenant_id AND id = NEW.payment_id
+  FROM app.supplier_payments p
+  WHERE p.tenant_id = NEW.tenant_id AND p.id = NEW.payment_id
   FOR UPDATE;
-  SELECT amount, state, document_type, supplier_id, legal_entity_id
+  SELECT d.amount, d.state, d.document_type, d.supplier_id, d.legal_entity_id
   INTO document_amount, document_state, document_type, document_supplier_id, document_legal_entity_id
-  FROM app.supplier_documents
-  WHERE tenant_id = NEW.tenant_id AND id = NEW.document_id
+  FROM app.supplier_documents d
+  WHERE d.tenant_id = NEW.tenant_id AND d.id = NEW.document_id
   FOR UPDATE;
 
   IF payment_amount IS NULL OR document_amount IS NULL
