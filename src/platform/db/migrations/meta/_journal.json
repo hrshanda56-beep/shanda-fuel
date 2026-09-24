@@ -50,6 +50,13 @@
       "when": 1790195381301,
       "tag": "0006_cash_banking",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790219277351,
+      "tag": "0007_supplier_creditors",
+      "breakpoints": true
     }
   ]
 }

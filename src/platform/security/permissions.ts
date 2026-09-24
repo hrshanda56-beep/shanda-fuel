@@ -68,6 +68,16 @@ export const PERMISSION_CODES = [
   'cash.deposit.view',
   'provider.batch.record',
   'provider.settlement.post',
+  'supplier.view',
+  'supplier.manage',
+  'supplier.document.create',
+  'supplier.document.post',
+  'supplier.document.reverse',
+  'supplier.payment.create',
+  'supplier.payment.post',
+  'supplier.payment.allocate',
+  'supplier.payment.reverse',
+  'supplier.creditor.review',
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
@@ -136,6 +146,10 @@ const highRiskPermissions = new Set<PermissionCode>([
   'cash.handover.resolve',
   'cash.deposit.confirm',
   'provider.settlement.post',
+  'supplier.document.post',
+  'supplier.document.reverse',
+  'supplier.payment.post',
+  'supplier.payment.reverse',
 ]);
 
 const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
@@ -208,6 +222,16 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'cash.deposit.view',
     'provider.batch.record',
     'provider.settlement.post',
+    'supplier.view',
+    'supplier.manage',
+    'supplier.document.create',
+    'supplier.document.post',
+    'supplier.document.reverse',
+    'supplier.payment.create',
+    'supplier.payment.post',
+    'supplier.payment.allocate',
+    'supplier.payment.reverse',
+    'supplier.creditor.review',
   ],
   FINANCE: [
     'tenant.context.select',
@@ -245,6 +269,16 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'cash.deposit.view',
     'provider.batch.record',
     'provider.settlement.post',
+    'supplier.view',
+    'supplier.manage',
+    'supplier.document.create',
+    'supplier.document.post',
+    'supplier.document.reverse',
+    'supplier.payment.create',
+    'supplier.payment.post',
+    'supplier.payment.allocate',
+    'supplier.payment.reverse',
+    'supplier.creditor.review',
   ],
   SUPERVISOR: [
     'tenant.context.select',

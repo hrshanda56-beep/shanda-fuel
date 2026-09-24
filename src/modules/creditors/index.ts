@@ -1,2 +1,50 @@
-/** Creditor workflows are owned by later workstreams; this is the public module boundary. */
-export {};
+export {
+  assertAllocationWithinCapacity,
+  assertSupplierDocumentTransition,
+  assertSupplierPaymentTransition,
+  assertSupplierReferenceIsUnique,
+  calculateSupplierPayableBalance,
+  outstandingPayable,
+  validatePaymentAllocations,
+  validateSupplier,
+  validateSupplierDocument,
+  validateSupplierPayment,
+} from './domain';
+export type {
+  PaymentAllocation,
+  Supplier,
+  SupplierDeliveryReference,
+  SupplierDocument,
+  SupplierDocumentInput,
+  SupplierDocumentState,
+  SupplierDocumentType,
+  SupplierLedgerMovement,
+  SupplierLedgerMovementType,
+  SupplierPayment,
+  SupplierPaymentInput,
+  SupplierPaymentState,
+  SupplierStatus,
+} from './domain';
+export { SUPPLIER_COMMAND_POLICY, SUPPLIER_PERMISSION_CODES } from './contracts';
+export type {
+  SupplierAgingRow,
+  SupplierCommandEnvelope,
+  SupplierCommandPolicy,
+  SupplierCommandType,
+  SupplierDocumentPostedEvent,
+  SupplierLedgerMovementSnapshot,
+  SupplierPaymentAllocatedEvent,
+  SupplierPaymentPostedEvent,
+  SupplierPermissionCode,
+  SupplierReadModelPort,
+  SupplierReadModelQuery,
+  SupplierSourceReference,
+  SupplierStatementRow,
+} from './contracts';
+export {
+  assertSupplierSourceReferencesSameTenant,
+  requiredSupplierCommandPermission,
+  supplierRequestHash,
+  validateSupplierCommandEnvelope,
+  validateSupplierSourceReference,
+} from './application';
