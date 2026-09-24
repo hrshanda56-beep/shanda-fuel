@@ -4,6 +4,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST as commandPost } from '../../src/app/api/settlements/commands/route';
 import { GET as summaryGet } from '../../src/app/api/settlements/summary/route';
 import { GET as unmatchedGet } from '../../src/app/api/settlements/unmatched/route';
+import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -59,6 +60,34 @@ async function command(input: Record<string, unknown>, key: string, token = 'a9-
   );
 }
 
+async function openBusinessDay(
+  tenantId: string,
+  stationId: string,
+  businessDayId: string,
+  token: string,
+) {
+  const response = await forecourtCommandPost(
+    new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+      method: 'POST',
+      headers: {
+        cookie: `shanda-fuel.session_token=${await signedCookie(token)}`,
+        'content-type': 'application/json',
+        'idempotency-key': `a9-open-business-day-${businessDayId}`,
+      },
+      body: JSON.stringify({
+        commandType: 'OpenBusinessDay',
+        tenantId,
+        stationId,
+        businessDayId,
+        expectedVersion: 0,
+      }),
+    }),
+  );
+  if (response.status !== 200) {
+    throw new Error(`A9 fixture could not open business day ${businessDayId}: ${response.status}`);
+  }
+}
+
 async function responseBody(response: Response): Promise<Record<string, any>> {
   return (await response.json()) as Record<string, any>;
 }
@@ -110,13 +139,13 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
       on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
       values
-        ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-20', 'LOCKED'),
-        ('${ids.otherDay}', '${ids.otherTenant}', '${ids.otherStation}', '2026-09-20', 'LOCKED')
+        ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-20', 'NOT_STARTED'),
+        ('${ids.otherDay}', '${ids.otherTenant}', '${ids.otherStation}', '2026-09-20', 'NOT_STARTED')
       on conflict (id) do nothing;
       insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
       values
-        ('${ids.reconciliation}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'POSTED'),
-        ('${ids.otherReconciliation}', '${ids.otherTenant}', '${ids.otherStation}', '${ids.otherDay}', 'POSTED')
+        ('${ids.reconciliation}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'DRAFT'),
+        ('${ids.otherReconciliation}', '${ids.otherTenant}', '${ids.otherStation}', '${ids.otherDay}', 'DRAFT')
       on conflict (id) do nothing;
       insert into app.reconciliation_payments
         (id, tenant_id, station_id, reconciliation_id, method, amount, reference, entered_by)
@@ -127,7 +156,26 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
         ('${ids.paymentThree}', '${ids.tenant}', '${ids.station}', '${ids.reconciliation}', 'POS', 10.0000, 'A9-POS-2', '${ids.membership}'),
         ('${ids.otherPayment}', '${ids.otherTenant}', '${ids.otherStation}', '${ids.otherReconciliation}', 'POS', 10.0000, 'A9-OTHER-1', '${ids.otherMembership}')
       on conflict (id) do nothing;
+      update app.reconciliations
+         set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = now(), version = version + 1
+       where id = '${ids.reconciliation}' and state = 'DRAFT';
+      update app.reconciliations
+         set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = now(), version = version + 1
+       where id = '${ids.reconciliation}' and state = 'SUBMITTED';
+      update app.reconciliations
+         set state = 'SUBMITTED', submitted_by = '${ids.otherMembership}', submitted_at = now(), version = version + 1
+       where id = '${ids.otherReconciliation}' and state = 'DRAFT';
+      update app.reconciliations
+         set state = 'APPROVED', approved_by = '${ids.otherMembership}', approved_at = now(), version = version + 1
+       where id = '${ids.otherReconciliation}' and state = 'SUBMITTED';
     `);
+    await openBusinessDay(ids.tenant, ids.station, ids.day, 'a9-session-token');
+    await openBusinessDay(
+      ids.otherTenant,
+      ids.otherStation,
+      ids.otherDay,
+      'a9-other-session-token',
+    );
   });
 
   afterAll(async () => client?.end());
