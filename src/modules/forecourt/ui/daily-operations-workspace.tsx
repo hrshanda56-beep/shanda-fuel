@@ -10,7 +10,6 @@ import {
   LoadingState,
   NumericInput,
   StatusBadge,
-  SuccessState,
 } from '../../../design-system/primitives';
 import {
   formatBusinessDate,
@@ -738,7 +737,11 @@ export function DailyOperationsWorkspace({
           action={<Button onClick={() => void load()}>Refresh workspace</Button>}
         />
       ) : null}
-      {notice ? <SuccessState message={notice} /> : null}
+      {notice ? (
+        <div className="state state-success" role="status" aria-live="polite">
+          {notice}
+        </div>
+      ) : null}
 
       <nav className="operations-steps" aria-label="Daily workflow sections">
         {['Shift', 'Meters', 'Evidence', 'Cash', 'Review'].map((label, index) => (
