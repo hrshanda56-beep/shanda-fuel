@@ -1,5 +1,8 @@
 # A11 — Daily Operations Workspace
 
+Status: merged in `main` at `79321d895d45835058702439ced0191b4e205d15` (PR #17).
+The workspace requires no migration and composes the merged A3–A10 contracts.
+
 ## Purpose
 
 A11 provides one mobile-first station workspace for moving a business day from shift context through meter evidence, payment evidence, approved expenses, cash declaration, variance explanation, and review. It composes A3–A10 behavior; it does not create a second reconciliation engine or accounting model.

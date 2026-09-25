@@ -1,8 +1,12 @@
-# A8 Customer Credit and Prepaid Accounts — Parallel Preparation
+# A8 Customer Credit and Prepaid Accounts
 
-Status: productionized on A8 branch; migration `0008_acoustic_blob.sql` is the
-next canonical migration after the journal-confirmed `0007_supplier_creditors`.
-The branch is not merged and no production migration has been run here.
+Status: merged and present in `main` at the current reconciliation baseline
+`79321d895d45835058702439ced0191b4e205d15`.
+Canonical migration `0008_customer_accounts.sql` follows
+`0007_supplier_creditors.sql` in the merged migration journal. This document
+records the implemented customer-account boundary and remaining policy
+decisions; it does not claim that customer invoices, benefits, or all customer
+commercial workflows are implemented.
 
 ## Scope
 
@@ -29,7 +33,7 @@ Customer fuel must classify an authoritative A5/forecourt allocation. It must
 not recalculate meter litres, recreate reconciliation payments, or post a
 second sale/inventory movement.
 
-## Domain prepared in this branch
+## Implemented domain in the merged slice
 
 Implemented in `src/modules/customers/`:
 
@@ -74,26 +78,23 @@ The canonical `0008` migration creates:
 Statements and current balances are derived read models, not authoritative
 `balance` columns.
 
-## Deferred constraints and database behavior
+## Integrated constraints and database behavior
 
-The production migration must include reviewed tenant-aware foreign keys for
-tenant, customer, account, station, product, actor membership, and source
-relationships. It must also include:
+The canonical migration and persistence path include tenant-aware foreign keys
+for tenant, customer, account, station, product, and actor relationships. The
+merged implementation also includes:
 
-- a unique source key that prevents one posted A5 allocation from creating two
-  customer ledger entries;
-- append-only update/delete guards on posted ledger entries;
+- source-key checks that prevent duplicate customer ledger postings;
+- append-only update/delete protection for ledger entries;
 - state guards for authorization transitions;
-- account/product consistency for prepaid-litre entries;
-- currency consistency for credit and prepaid-value entries;
-- a transaction-scoped posting function or equivalent deterministic lock path
-  that derives balances and active reservations before allowing a prepaid
-  usage or credit-limit reservation;
+- account/product and currency consistency checks;
+- deterministic account/reservation loading before prepaid usage or credit
+  authorization;
 - RLS policies that fail closed without tenant context.
 
-The unique source key should use the tenant plus the immutable A5 evidence
+The unique source key is derived from the tenant-scoped immutable A5 evidence
 identity, including the reconciliation revision and payment/allocation
-evidence identifier. It must not rely on a client idempotency key alone.
+evidence identifier; it does not rely on a client idempotency key alone.
 
 ## A5 integration design
 
@@ -114,7 +115,7 @@ second forecourt/inventory posting. The source identity is used for
 idempotency. A retry with the same command key returns the first result; a
 changed payload for that key is an idempotency conflict.
 
-## Required permissions for later integration
+## Implemented permissions
 
 These permissions are registered centrally in migration `0008` and the shared
 runtime registry:
@@ -133,9 +134,10 @@ Customer creation/account management are tenant-scoped; fuel authorization is
 station-scoped and step-up protected where applicable. Credit-limit overrides
 remain explicit management approval; no threshold is invented here.
 
-## PostgreSQL integration-test plan
+## PostgreSQL integration evidence
 
-After canonical migration integration, add real PostgreSQL tests for:
+`tests/integration/a8-customer-accounts.test.ts` provides the merged
+PostgreSQL coverage for the implemented slice, including:
 
 1. tenant A cannot read, link, post, or query tenant B customer data;
 2. absent tenant context fails closed under RLS;
@@ -151,10 +153,9 @@ After canonical migration integration, add real PostgreSQL tests for:
     original entry;
 12. authorization and audit records contain trusted actor and tenant context.
 
-Playwright/axe coverage should follow only after the server routes and A2
-presentation surfaces are integrated. It should cover permission denial,
-loading/empty/error/conflict states, statement rendering, and truthful pending
-authoritative confirmation.
+Dedicated customer Playwright/axe coverage and a customer-specific UI surface
+remain future work; A11 preserves the customer-account semantics without
+inventing account selection or prepaid conversion.
 
 ## Business questions intentionally left open
 

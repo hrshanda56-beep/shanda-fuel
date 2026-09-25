@@ -1,10 +1,44 @@
 # Requirements traceability
 
-This file is the planned traceability index for implementation work. Requirements are sourced from, in precedence order:
+This compact matrix reconciles the roadmap requirements with evidence present
+on integration base `79321d895d45835058702439ced0191b4e205d15`. Statuses use
+the vocabulary defined in `docs/implementation-status.md`.
 
-1. `AGENTS.md` — execution contract and non-negotiable invariants.
-2. [`MASTER_BLUEPRINT.md`](MASTER_BLUEPRINT.md) — product, domain, architecture, and acceptance requirements.
-3. [`WIREFRAMES.md`](WIREFRAMES.md) — V1 information architecture, labels, routes, and screen-to-command mapping.
-4. [`../onboarding/Shanda_Fuel_Discovery_Setup_Forms_Pack.xlsx`](../onboarding/Shanda_Fuel_Discovery_Setup_Forms_Pack.xlsx) — onboarding and cutover data capture.
+| Requirement | Implementation | Migration | Test evidence | Status | Limitation / next decision |
+| --- | --- | --- | --- | --- | --- |
+| Tenant hierarchy, identity, authorization, RLS | `src/modules/identity/`, `tenancy/`, `authorization/`, `src/platform/db/tenant-context.ts` | `0001_a1_auth_identity.sql`, `0002_a1_tenant_authorization_security.sql` | `tests/integration/a1-isolation.test.ts` | COMPLETE | Final integrated release review still belongs to Phase 7. |
+| Forecourt day/shift/meter/pricing workflow | `src/modules/forecourt/` | `0003_a3_forecourt_reconciliation.sql` | `tests/integration/a3-forecourt.test.ts`, `a3-business-day-lifecycle.test.ts`, `a3-segmented-shifts.test.ts` | COMPLETE | A3 remains the source for meter-derived quantity and sales evidence. |
+| Daily reconciliation evidence and approval workflow | `src/modules/forecourt/daily-reconciliation.ts`, `production-reconciliation.ts` | `0005_daily_reconciliation.sql` | `tests/integration/a5-production-reconciliation.test.ts`, `tests/e2e/production-reconciliation.spec.ts` | COMPLETE | A5 payment evidence is distinct from downstream cash/provider settlement. |
+| Tank, dip, delivery, movement, adjustment foundation | `src/modules/inventory/` | `0004_a4_inventory.sql` | `tests/integration/a4-inventory.test.ts` | PARTIAL | No complete inventory-pool/transfer/calibration-execution/partial-delivery workflow. |
+| WAC, COGS, late-cost revaluation | No merged costing/revaluation module | None | No WAC/revaluation integration test | OPEN | Required before defensible gross margin. |
+| Cash collections, deposits, bank confirmation | `src/modules/cash/`, `src/app/api/cash/` | `0006_cash_banking.sql` | `tests/integration/a6-cash-banking.test.ts` | COMPLETE | V1 uses manual bank confirmation; no direct bank API is required. |
+| Cash counts, handovers, disputes | Cash schema/domain scaffolding only | `0006_cash_banking.sql` | No complete command/E2E evidence | PARTIAL | `src/modules/cash/commands.ts` exposes collection/deposit commands, not the full custody workflow. |
+| Supplier creditors | `src/modules/creditors/`, `src/app/api/suppliers/` | `0007_supplier_creditors.sql` | `tests/integration/a7-supplier-creditors.test.ts` | COMPLETE | Tax/VAT and final commercial terms remain client/accounting inputs. |
+| Customer credit/prepaid/authorization/payment subset | `src/modules/customers/`, `src/app/api/customers/` | `0008_customer_accounts.sql` | `tests/integration/a8-customer-accounts.test.ts` | COMPLETE | Customer invoices, benefits, vehicle/driver rules, and policy thresholds remain unresolved. |
+| Expenses and recurring-cost recognition | `src/modules/expenses/index.ts` is a boundary placeholder | None | No expense-domain integration test | OPEN | A5 reconciliation expense evidence is not the expense ledger. |
+| Provider settlement reconciliation | `src/modules/settlements/`, `src/app/api/settlements/` | `0009_provider_settlements.sql` | `tests/integration/a9-provider-settlements.test.ts` | COMPLETE | No separate provider-batch aggregate; clarify only if contractually required. |
+| Management reporting read model | `src/modules/reporting/`, `/api/reports/*`, `/reports` | None (`A10` intentionally adds no migration) | `tests/integration/a10-management-reporting.test.ts`, `tests/e2e/management-reporting.spec.ts` | PARTIAL | Management/operational view only; not GL, statutory P&L, or gross-margin reporting. |
+| Profitability, COGS, gross margin | No merged authoritative COGS calculation | None | A10 test asserts `grossMargin` is `null` | OPEN | Depends on WAC/revaluation and sale-recognition foundations. |
+| Report lineage and date-basis metadata | A10 reporting contracts/queries return source IDs and `dateBasis` | None | A10 integration assertions cover IDs/date basis | PARTIAL | No persisted report run, artifact, checksum, or calculation-version record. |
+| PDF/XLSX exports | No export implementation | None | No export E2E/integration test | OPEN | Export authorization and artifact lifecycle remain to be designed. |
+| Full timestamp-based `as_of` behavior | Date-based A10 positions; customer/supplier/inventory queries have limited as-of inputs | None | No report-artifact as-of test | PARTIAL | Blueprint requires posted-time cutoff and prior-artifact stability. |
+| Explain This Number and owner Action Center | Minimal `/reports` dashboard | None | Management reporting E2E covers filters/readability only | OPEN | Requires report drill-down, explanation lineage, and action projections. |
+| A11 daily operations composition | `src/app/operations/`, `daily-operations-workspace.tsx` | None | `tests/integration/a11-daily-operations.test.ts`, `tests/e2e/a11-daily-operations.spec.ts` | COMPLETE | No full offline synchronization or conflict merging. |
+| Phase 7 hardening | A1 security baseline, design-system/a11 states, health/readiness and staging smoke scripts | Existing migrations only | Representative E2E/axe tests | PARTIAL | No performance, restore drill, complete observability, offline sync, or incident runbooks. |
+| Phase 8 onboarding/opening/cutover | `docs/onboarding/README.md`, setup workbook, A4 `RecordOpeningBalance` | Existing A4 migration only | Synthetic fixtures and smoke flows | PARTIAL | No atomic cross-domain opening batch or real client setup. |
+| Training, shadow operation, UAT, pilot exit | No repository implementation/evidence | None | No client UAT or pilot evidence | OPEN | Requires client participation and approved exit criteria. |
 
-Traceability entries will be added alongside each vertical slice and will reference the authoritative source section, implementation location, and test evidence.
+## Requirements intentionally outside repository-only determination
+
+The repository does not contain a signed SOW or contract. The following must
+be confirmed before they can be classified as engineering requirements:
+
+- customer benefits, invoices, billing cadence, credit limits, and approval
+  thresholds;
+- Zimbabwe tax/VAT and invoice treatment;
+- bank/provider integration obligations and settlement-file formats;
+- export formats, report catalogue, support/SLA, and offline scope;
+- station master data, calibration charts, payment-provider identifiers,
+  supplier/customer masters, thresholds, and opening positions;
+- pilot station, training audience, shadow-operation period, UAT evidence, and
+  pilot exit gates.
