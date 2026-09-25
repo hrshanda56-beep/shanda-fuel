@@ -359,13 +359,48 @@ test.describe('production reconciliation persistence', () => {
 
     await authenticate(context, supervisorToken);
     await page.goto(`/operations/daily?${query.toString()}`);
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/forecourt/commands') &&
+        response.request().method() === 'POST' &&
+        response.request().postData()?.includes('CreateProductionReconciliation') === true,
+    );
     await page.getByRole('button', { name: 'Create daily draft' }).click();
-    await expect(page.getByRole('heading', { name: 'Daily operations workspace' })).toBeVisible();
-    const reconciliationId = new URL(page.url()).searchParams.get('reconciliationId');
+    const createResponse = await createResponsePromise;
+    const createResponseText = await createResponse.text();
 
-    if (!reconciliationId) {
-      throw new Error('Daily operations workspace did not persist reconciliationId in the URL');
+    expect(
+      createResponse.ok(),
+      `CreateProductionReconciliation failed: ${createResponse.status()} ${createResponseText}`,
+    ).toBe(true);
+
+    const createRequestText = createResponse.request().postData();
+
+    if (!createRequestText) {
+      throw new Error('CreateProductionReconciliation request body was unavailable');
     }
+
+    const createRequest = JSON.parse(createRequestText) as {
+      commandType?: string;
+      reconciliationId?: string;
+    };
+
+    expect(createRequest.commandType).toBe('CreateProductionReconciliation');
+
+    if (!createRequest.reconciliationId) {
+      throw new Error('CreateProductionReconciliation request did not contain reconciliationId');
+    }
+
+    const reconciliationId = createRequest.reconciliationId;
+
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('reconciliationId'), {
+        message: 'Daily operations workspace did not persist created reconciliationId in the URL',
+        timeout: 5000,
+      })
+      .toBe(reconciliationId);
+
+    await expect(page.getByRole('heading', { name: 'Daily operations workspace' })).toBeVisible();
 
     const common = {
       tenantId: ids.tenant,
