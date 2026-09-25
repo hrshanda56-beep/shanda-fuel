@@ -228,6 +228,10 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, station_id, reconciliation_id, category, explanation, entered_by)
         values ('a10b0000-0000-4000-8000-0000000000c5', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'SALES', 'A10 canonical reporting fixture variance', '${ids.membership}')
         on conflict (id) do nothing;
+      insert into app.reconciliation_variance_explanations
+        (id, tenant_id, station_id, reconciliation_id, category, explanation, entered_by)
+        values ('a10b0000-0000-4000-8000-0000000000c6', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'CASH', 'A10 canonical cash variance explanation', '${ids.membership}')
+        on conflict (id) do nothing;
       update app.shifts set state = 'OPEN', opened_at = '2026-09-20T06:00:00Z' where id = '${ids.factShift}' and state = 'PLANNED';
       update app.reconciliations set state = 'READY' where id = '${ids.factRecon}' and state = 'DRAFT';
       update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
@@ -341,7 +345,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
       },
       'a10-approve-canonical-reconciliation',
     );
-    expect(approval.status).toBe(200);
+    const approvalBody = (await approval.json()) as Record<string, unknown>;
+    expect(approval.status, JSON.stringify(approvalBody)).toBe(200);
 
     await client.unsafe(`
       insert into app.provider_settlement_allocations

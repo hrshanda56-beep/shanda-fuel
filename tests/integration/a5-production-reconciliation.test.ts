@@ -665,7 +665,10 @@ describe('A5 production daily reconciliation persistence and approval', () => {
            '${canonicalMovement[0]!.effective_at.toISOString()}', '${canonicalMovement[0]!.business_date}',
            'METER_SEGMENT_SALE', '${sealed.segmentIds[1]}', '${ids.managerMembership}')
       `),
-    ).rejects.toMatchObject({ code: '23505', constraint: 'inventory_movements_source_uidx' });
+    ).rejects.toMatchObject({
+      code: '23505',
+      constraint_name: 'inventory_movements_source_uidx',
+    });
 
     await client.unsafe(`
       insert into app.inventory_movements
@@ -945,6 +948,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         group by revision.source_segment_ids
       `);
       expect(preApprovalLineage).toEqual([{ source_segment_ids: [], bridge_count: '2' }]);
+      await client.unsafe('savepoint a5_unchanged_lineage_approval');
       await expect(
         client.unsafe(`
           update app.reconciliation_revisions
@@ -953,6 +957,8 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             and state='PENDING_APPROVAL'
         `),
       ).rejects.toThrow('authoritative reconciliation revision values are immutable');
+      await client.unsafe('rollback to savepoint a5_unchanged_lineage_approval');
+      await client.unsafe('savepoint a5_bogus_lineage_approval');
       await expect(
         client.unsafe(`
           update app.reconciliation_revisions
@@ -962,6 +968,8 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             and state='PENDING_APPROVAL'
         `),
       ).rejects.toThrow('authoritative reconciliation revision values are immutable');
+      await client.unsafe('rollback to savepoint a5_bogus_lineage_approval');
+      await client.unsafe('savepoint a5_same_state_lineage_mutation');
       await expect(
         client.unsafe(`
           update app.reconciliation_revisions
@@ -970,6 +978,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             and state='PENDING_APPROVAL'
         `),
       ).rejects.toThrow('authoritative reconciliation revision values are immutable');
+      await client.unsafe('rollback to savepoint a5_same_state_lineage_mutation');
     } finally {
       await client.unsafe('rollback');
     }
