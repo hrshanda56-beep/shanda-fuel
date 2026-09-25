@@ -102,8 +102,10 @@ async function createSealedSegments(
   keyPrefix: string,
   shiftVersion?: number,
 ) {
-  const currentShift = await client.unsafe<{ version: number }[]>(`
-    select version
+  const currentShift = await client.unsafe<
+    { version: number; opened_at: Date; planned_end_at: Date }[]
+  >(`
+    select version, opened_at, planned_end_at
     from app.shifts
     where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${shiftId}'
   `);
@@ -147,6 +149,13 @@ async function createSealedSegments(
     order by effective_at, id
   `);
   expect(boundaries).toHaveLength(boundaryIds.length);
+  expect(
+    boundaries.every(
+      (boundary) =>
+        boundary.effective_at.getTime() >= currentShift[0]!.opened_at.getTime() &&
+        boundary.effective_at.getTime() <= currentShift[0]!.planned_end_at.getTime(),
+    ),
+  ).toBe(true);
 
   const segmentIds: string[] = [];
   for (let index = 0; index < readings.length - 1; index += 1) {
@@ -231,6 +240,9 @@ async function createPopulatedProductionReconciliation(
   saleLitres = '500',
 ) {
   const reconciliationShiftId = randomUUID();
+  const shiftClock = await client.unsafe<{ now: Date }[]>(`select clock_timestamp() as now`);
+  expect(shiftClock).toHaveLength(1);
+  const plannedEndAt = new Date(shiftClock[0]!.now.getTime() + 24 * 60 * 60 * 1000).toISOString();
   await expectOk(
     await postCommand(
       {
@@ -241,7 +253,7 @@ async function createPopulatedProductionReconciliation(
         shiftId: reconciliationShiftId,
         expectedVersion: 0,
         plannedStartAt: '2026-09-22T06:00:00.000Z',
-        plannedEndAt: '2026-09-22T14:00:00.000Z',
+        plannedEndAt,
       },
       `a5-start-reconciliation-shift-${reconciliationId}`,
     ),
