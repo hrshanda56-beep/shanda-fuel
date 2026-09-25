@@ -1,5 +1,15 @@
 # Implementation status
 
+## A11 — Daily operations workspace (implementation candidate)
+
+The A11 branch composes the existing A3–A10 capabilities into a supervisor daily-operations workspace at `/operations`, `/operations/daily`, `/operations/reconciliations/[id]`, and `/operations/reconciliations/[id]/review`. It does not introduce a new accounting subsystem or schema migration. A5 remains the authoritative reconciliation workflow; A4 remains the inventory source; A6/A9 remain the downstream cash/provider settlement paths; A8 customer/prepaid semantics are preserved; and A10 remains the management-reporting surface.
+
+The workspace supports station and business-date/shift context, persisted draft continuation, meter and reconciliation evidence, server-derived litres/sales/variances, payments, expenses, cash evidence, inventory context, submit/return/approve workflow, approved-record locking, and downstream status visibility. Authoritative calculations remain server-owned and exact-decimal; browser code does not independently compute financial or volumetric truth.
+
+Verification on PR #17 head `de5319052d1cc75c87fc85191e1224ae0662e564`: unit tests 196/196; PostgreSQL integration 67/67 across 13 files including A11 2/2 and A8; build passed; DB-backed Playwright 20/20 passed including the A11 submit/return/resubmit/approve/locked workflow and axe accessibility assertion. Vercel and Vercel Preview checks are green. A11 requires no migration.
+
+Status: **IMPLEMENTATION CANDIDATE — PR #17 final integration review and merge pending**
+
 ## A10 — Management reporting (implementation candidate)
 
 The A10 branch adds a tenant-safe, exact-decimal management reporting read model over the canonical A4–A9 schemas. `GET /api/reports/management`, `GET /api/reports/daily`, and `/reports` expose posted sales, cash custody, provider settlement, supplier, customer, inventory, expense, and daily operational views with source IDs and explicit metric-specific date-basis metadata. Daily rows use neutral `reportDate`; station-scoped A8 customer exposure is explicitly unavailable rather than reported as zero.
