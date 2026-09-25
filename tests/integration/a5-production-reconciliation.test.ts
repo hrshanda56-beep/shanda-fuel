@@ -35,13 +35,15 @@ const ids = {
   day: 'a5b00000-0000-4000-8000-000000000121',
   shift: 'a5b00000-0000-4000-8000-000000000131',
   tank: 'a5b00000-0000-4000-8000-000000000141',
+  unvaluedTank: 'a5b00000-0000-4000-8000-000000000142',
   openingSource: 'a5b00000-0000-4000-8000-000000000151',
+  unvaluedOpeningSource: 'a5b00000-0000-4000-8000-000000000152',
   delivery: 'a5b00000-0000-4000-8000-000000000161',
   allocation: 'a5b00000-0000-4000-8000-000000000171',
   transitionDelivery: 'a5b00000-0000-4000-8000-000000000162',
   transitionAllocation: 'a5b00000-0000-4000-8000-000000000172',
-  uncostedDelivery: 'a5b00000-0000-4000-8000-000000000163',
-  uncostedAllocation: 'a5b00000-0000-4000-8000-000000000173',
+  unvaluedDelivery: 'a5b00000-0000-4000-8000-000000000164',
+  unvaluedAllocation: 'a5b00000-0000-4000-8000-000000000174',
   dip: 'a5b00000-0000-4000-8000-000000000191',
 };
 
@@ -432,9 +434,21 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
         values ('${ids.tank}', '${ids.tenant}', '${ids.station}', 'A5-D1', '${ids.product}', 10000, 500, 10, 'ACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
+      insert into app.tanks
+        (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
+        values ('${ids.unvaluedTank}', '${ids.tenant}', '${ids.station}', 'A5-D2', '${ids.product}', 10000, 500, 10, 'INACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      update app.tanks set status='ACTIVE'
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.tank}';
+      update app.tanks set status='INACTIVE'
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.unvaluedTank}';
       insert into app.inventory_movements
         (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
         values ('${ids.openingSource}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', 1000, '2026-09-22T05:00:00Z', '2026-09-22', 'CUTOVER', '${ids.openingSource}', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
+        values ('${ids.unvaluedOpeningSource}', '${ids.tenant}', '${ids.station}', '${ids.unvaluedTank}', '${ids.product}', 'OPENING_BALANCE', 1000, '2026-09-22T05:00:00Z', '2026-09-22', 'CUTOVER', '${ids.unvaluedOpeningSource}', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into app.fuel_deliveries
         (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, unit_landed_cost, total_landed_cost, currency, recorded_by, confirmed_by, confirmed_at)
@@ -454,11 +468,11 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         on conflict (id) do nothing;
       insert into app.fuel_deliveries
         (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
-        values ('${ids.uncostedDelivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-UNCOSTED', '2026-09-22T06:30:00Z', '2026-09-22', 100, 100, 0, 'DRAFT', '${ids.supervisorMembership}', null, null)
+        values ('${ids.unvaluedDelivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-UNVALUED', '2026-09-22T06:30:00Z', '2026-09-22', 100, 100, 0, 'DRAFT', '${ids.supervisorMembership}', null, null)
         on conflict (id) do nothing;
       insert into app.fuel_delivery_allocations
         (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
-        values ('${ids.uncostedAllocation}', '${ids.tenant}', '${ids.station}', '${ids.uncostedDelivery}', '${ids.tank}', '${ids.product}', 100)
+        values ('${ids.unvaluedAllocation}', '${ids.tenant}', '${ids.station}', '${ids.unvaluedDelivery}', '${ids.unvaluedTank}', '${ids.product}', 100)
         on conflict (id) do nothing;
       insert into app.tank_dips
         (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
@@ -1156,36 +1170,56 @@ describe('A5 production daily reconciliation persistence and approval', () => {
   });
 
   it('rejects unvalued approval atomically and leaves no sale evidence', async () => {
-    await expectOk(
-      await postInventoryCommand(
-        {
-          commandType: 'ConfirmDelivery',
-          tenantId: ids.tenant,
-          stationId: ids.station,
-          deliveryId: ids.uncostedDelivery,
-        },
-        'a5-confirm-uncosted-delivery',
-      ),
-    );
-    const uncostedMovement = await client.unsafe<{ count: string; quantity_litres: string }[]>(`
+    try {
+      await client.unsafe(`
+      update app.tanks set status='INACTIVE'
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.tank}';
+      update app.tanks set status='ACTIVE'
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.unvaluedTank}';
+      `);
+      await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'RecordOpeningInventoryCost',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            tankId: ids.unvaluedTank,
+            amount: '1000.0000',
+            currency: 'USD',
+          },
+          'a5-unvalued-opening-cost',
+          'a5-manager-session-token',
+        ),
+      );
+      await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'ConfirmDelivery',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            deliveryId: ids.unvaluedDelivery,
+          },
+          'a5-confirm-unvalued-delivery',
+        ),
+      );
+      const uncostedMovement = await client.unsafe<{ count: string; quantity_litres: string }[]>(`
       select count(*)::text as count, coalesce(sum(quantity_litres), 0)::text as quantity_litres
       from app.inventory_movements
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
         and source_type='FUEL_DELIVERY_ALLOCATION'
-        and source_id='${ids.uncostedAllocation}'
+        and source_id='${ids.unvaluedAllocation}'
     `);
-    expect(uncostedMovement).toEqual([{ count: '1', quantity_litres: '100.000' }]);
-    const authoritativeRows = await client.unsafe<
-      { source_type: string; source_id: string; quantity_litres: string }[]
-    >(`
+      expect(uncostedMovement).toEqual([{ count: '1', quantity_litres: '100.000' }]);
+      const authoritativeRows = await client.unsafe<
+        { source_type: string; source_id: string; quantity_litres: string }[]
+      >(`
       select source_type, source_id, quantity_litres
       from app.inventory_movements
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and tank_id='${ids.tank}' and product_id='${ids.product}'
+        and tank_id='${ids.unvaluedTank}' and product_id='${ids.product}'
         and (
           source_id in (
-            '${ids.openingSource}', '${ids.allocation}', '${ids.transitionAllocation}',
-            '${ids.uncostedAllocation}', '${ids.delivery}', '${ids.uncostedDelivery}'
+            '${ids.unvaluedOpeningSource}', '${ids.unvaluedAllocation}', '${ids.unvaluedDelivery}'
           )
           or (
             source_type='METER_SEGMENT_SALE'
@@ -1193,106 +1227,96 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         )
       order by effective_at, id
     `);
-    expect(authoritativeRows).toHaveLength(6);
-    expect(
-      authoritativeRows.filter((row) => row.source_type === 'METER_SEGMENT_SALE'),
-    ).toHaveLength(2);
-    /*
-     * This is deliberately derived from the posted A4 movements. It protects
-     * the test from asserting a quantity that is not actually authoritative.
-     */
-    expect(
-      authoritativeRows.every(
-        (row) =>
-          row.source_type === 'METER_SEGMENT_SALE' ||
-          [
-            ids.openingSource,
-            ids.allocation,
-            ids.transitionAllocation,
-            ids.uncostedAllocation,
-          ].includes(row.source_id),
-      ),
-    ).toBe(true);
-    expect(authoritativeRows).toEqual(
-      expect.arrayContaining([
-        { source_type: 'CUTOVER', source_id: ids.openingSource, quantity_litres: '1000.000' },
+      expect(authoritativeRows).toHaveLength(2);
+      expect(
+        authoritativeRows.filter((row) => row.source_type === 'METER_SEGMENT_SALE'),
+      ).toHaveLength(0);
+      /*
+       * This is deliberately derived from the posted A4 movements. It protects
+       * the test from asserting a quantity that is not actually authoritative.
+       */
+      expect(
+        authoritativeRows.every(
+          (row) =>
+            row.source_type === 'METER_SEGMENT_SALE' ||
+            [ids.unvaluedOpeningSource, ids.unvaluedAllocation].includes(row.source_id),
+        ),
+      ).toBe(true);
+      expect(authoritativeRows).toEqual(
+        expect.arrayContaining([
+          {
+            source_type: 'CUTOVER',
+            source_id: ids.unvaluedOpeningSource,
+            quantity_litres: '1000.000',
+          },
+          {
+            source_type: 'FUEL_DELIVERY_ALLOCATION',
+            source_id: ids.unvaluedAllocation,
+            quantity_litres: '100.000',
+          },
+        ]),
+      );
+      const authoritativeQuantity = authoritativeRows.reduce(
+        (total, row) => total.add(new ExactDecimal(row.quantity_litres)),
+        new ExactDecimal('0'),
+      );
+      const unvalued = await client.unsafe<
         {
-          source_type: 'FUEL_DELIVERY_ALLOCATION',
-          source_id: ids.allocation,
-          quantity_litres: '500.000',
-        },
-        {
-          source_type: 'FUEL_DELIVERY_ALLOCATION',
-          source_id: ids.transitionAllocation,
-          quantity_litres: '100.000',
-        },
-        {
-          source_type: 'FUEL_DELIVERY_ALLOCATION',
-          source_id: ids.uncostedAllocation,
-          quantity_litres: '100.000',
-        },
-      ]),
-    );
-    const authoritativeQuantity = authoritativeRows.reduce(
-      (total, row) => total.add(new ExactDecimal(row.quantity_litres)),
-      new ExactDecimal('0'),
-    );
-    const unvalued = await client.unsafe<
-      {
-        quantity_litres: string;
-        inventory_value: string | null;
-        weighted_average_cost: string | null;
-        currency: string | null;
-        valuation_status: string;
-      }[]
-    >(`
+          quantity_litres: string;
+          inventory_value: string | null;
+          weighted_average_cost: string | null;
+          currency: string | null;
+          valuation_status: string;
+        }[]
+      >(`
       select quantity_litres, inventory_value, weighted_average_cost, currency, valuation_status
       from app.inventory_cost_stream_state
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and tank_id='${ids.tank}' and product_id='${ids.product}'
+        and tank_id='${ids.unvaluedTank}' and product_id='${ids.product}'
     `);
-    expect(unvalued).toEqual([
-      {
-        quantity_litres: authoritativeQuantity
-          .quantize(DECIMAL_POLICIES.litres)
-          .value.toFixed(DECIMAL_POLICIES.litres.scale),
-        inventory_value: null,
-        weighted_average_cost: null,
-        currency: null,
-        valuation_status: 'UNVALUED',
-      },
-    ]);
+      expect(unvalued).toEqual([
+        {
+          quantity_litres: authoritativeQuantity
+            .quantize(DECIMAL_POLICIES.litres)
+            .value.toFixed(DECIMAL_POLICIES.litres.scale),
+          inventory_value: null,
+          weighted_average_cost: null,
+          currency: null,
+          valuation_status: 'UNVALUED',
+        },
+      ]);
 
-    const reconciliationId = randomUUID();
-    const { common, segmentIds } = await createPopulatedProductionReconciliation(reconciliationId);
-    await expectOk(
-      await postCommand(
-        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
-        `a5-unvalued-submit-${reconciliationId}`,
-      ),
-    );
-    const before = await client.unsafe<
-      { projection_version: number; quantity_litres: string; valuation_status: string }[]
-    >(`
+      const reconciliationId = randomUUID();
+      const { common, segmentIds } =
+        await createPopulatedProductionReconciliation(reconciliationId);
+      await expectOk(
+        await postCommand(
+          { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+          `a5-unvalued-submit-${reconciliationId}`,
+        ),
+      );
+      const before = await client.unsafe<
+        { projection_version: number; quantity_litres: string; valuation_status: string }[]
+      >(`
       select projection_version, quantity_litres, valuation_status
       from app.inventory_cost_stream_state
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and tank_id='${ids.tank}' and product_id='${ids.product}'
+        and tank_id='${ids.unvaluedTank}' and product_id='${ids.product}'
     `);
-    const failed = await postCommand(
-      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
-      `a5-unvalued-approve-${reconciliationId}`,
-      'a5-manager-session-token',
-    );
-    expect(failed.status).toBe(409);
-    const state = await client.unsafe<{ state: string }[]>(`
+      const failed = await postCommand(
+        { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+        `a5-unvalued-approve-${reconciliationId}`,
+        'a5-manager-session-token',
+      );
+      expect(failed.status).toBe(409);
+      const state = await client.unsafe<{ state: string }[]>(`
       select state from app.reconciliations
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
     `);
-    expect(state).toEqual([{ state: 'SUBMITTED' }]);
-    const failedEvidence = await client.unsafe<
-      { movements: string; cogs: string; attributions: string; bridges: string }[]
-    >(`
+      expect(state).toEqual([{ state: 'SUBMITTED' }]);
+      const failedEvidence = await client.unsafe<
+        { movements: string; cogs: string; attributions: string; bridges: string }[]
+      >(`
       select
         (select count(*)::text from app.inventory_movements
          where tenant_id='${ids.tenant}' and station_id='${ids.station}'
@@ -1307,32 +1331,26 @@ describe('A5 production daily reconciliation persistence and approval', () => {
          where tenant_id='${ids.tenant}' and station_id='${ids.station}'
            and reconciliation_id='${reconciliationId}') as bridges
     `);
-    expect(failedEvidence).toEqual([
-      { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
-    ]);
-    const after = await client.unsafe<
-      { projection_version: number; quantity_litres: string; valuation_status: string }[]
-    >(`
+      expect(failedEvidence).toEqual([
+        { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
+      ]);
+      const after = await client.unsafe<
+        { projection_version: number; quantity_litres: string; valuation_status: string }[]
+      >(`
       select projection_version, quantity_litres, valuation_status
       from app.inventory_cost_stream_state
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and tank_id='${ids.tank}' and product_id='${ids.product}'
+        and tank_id='${ids.unvaluedTank}' and product_id='${ids.product}'
     `);
-    expect(after).toEqual(before);
-
-    await expectOk(
-      await postInventoryCommand(
-        {
-          commandType: 'RecordReceiptCost',
-          tenantId: ids.tenant,
-          stationId: ids.station,
-          allocationId: ids.uncostedAllocation,
-          amount: '100.0000',
-          currency: 'USD',
-        },
-        'a5-cost-uncosted-delivery',
-      ),
-    );
+      expect(after).toEqual(before);
+    } finally {
+      await client.unsafe(`
+      update app.tanks set status='INACTIVE'
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.unvaluedTank}';
+      update app.tanks set status='ACTIVE'
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.tank}';
+      `);
+    }
   });
 
   it('rejects insufficient-stock approval atomically', async () => {
