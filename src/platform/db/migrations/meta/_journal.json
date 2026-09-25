@@ -78,6 +78,13 @@
       "when": 1790329375337,
       "tag": "0010_a12_sale_chronology",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790344286760,
+      "tag": "0011_a12_inventory_costing_wac",
+      "breakpoints": true
     }
   ]
 }

@@ -13,3 +13,4 @@ export * from './a6';
 export * from './a7';
 export * from './a8';
 export * from './a9';
+export * from './a12';
