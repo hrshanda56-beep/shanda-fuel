@@ -267,10 +267,6 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, provider_account_id, station_id, settlement_reference, transaction_date, settlement_date, currency, gross_amount, provider_fee_amount, provider_deduction_amount, source_type, source_key, state, recorded_by)
         values ('${ids.factSettlement}', '${ids.tenant}', '${ids.factProviderAccount}', '${ids.station}', 'A10-SETTLEMENT', '2026-09-20', '2026-09-22', 'USD', 45.0000, 1.0000, 0.0000, 'MANUAL', 'A10-SETTLEMENT-SOURCE', 'PARTIALLY_MATCHED', '${ids.membership}')
         on conflict (id) do nothing;
-      insert into app.provider_settlement_allocations
-        (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, allocated_by)
-        values ('${ids.factSettlementAllocation}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION', 'POSTED', '${ids.membership}')
-        on conflict (id) do nothing;
       insert into app.suppliers
         (id, tenant_id, code, legal_name, created_by, updated_by)
         values ('${ids.factSupplier}', '${ids.tenant}', 'A10-SUPPLIER', 'A10 Supplier', '${ids.membership}', '${ids.membership}')
@@ -346,6 +342,13 @@ describe('A10 management reporting PostgreSQL read model', () => {
       'a10-approve-canonical-reconciliation',
     );
     expect(approval.status).toBe(200);
+
+    await client.unsafe(`
+      insert into app.provider_settlement_allocations
+        (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, allocated_by)
+      values ('${ids.factSettlementAllocation}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION', 'POSTED', '${ids.membership}')
+      on conflict (id) do nothing;
+    `);
 
     const segmentSaleMovements = await client.unsafe<
       { source_type: string; source_id: string; movement_type: string; quantity_litres: string }[]

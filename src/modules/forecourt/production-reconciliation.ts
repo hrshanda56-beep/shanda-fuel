@@ -940,24 +940,25 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         }
       }
       const now = await serverNow(transaction);
-      await transaction.execute(sql`
-        update app.reconciliation_revisions
-        set source_segment_ids=${JSON.stringify(sourceSegmentIds)}::jsonb
-        where tenant_id=${context.tenantId}
-          and station_id=${context.stationId}
-          and id=${revision.id}
-          and state='PENDING_APPROVAL'
-      `);
       const updated = await transaction.execute<{ version: number }>(sql`
         update app.reconciliations set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, version=version+1, updated_at=${now}::timestamptz
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} and state='SUBMITTED'
         returning version
       `);
       if (!updated[0]) throw new AppError('CONFLICT', 'The reconciliation approval became stale');
-      await transaction.execute(sql`
-        update app.reconciliation_revisions set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, version=version+1
-        where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='PENDING_APPROVAL'
+      const approvedRevision = await transaction.execute<{ id: string }>(sql`
+        update app.reconciliation_revisions
+        set source_segment_ids=${JSON.stringify(sourceSegmentIds)}::jsonb,
+            state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz,
+            version=version+1
+        where tenant_id=${context.tenantId}
+          and station_id=${context.stationId}
+          and id=${revision.id}
+          and state='PENDING_APPROVAL'
+        returning id
       `);
+      if (!approvedRevision[0])
+        throw new AppError('CONFLICT', 'The reconciliation revision became stale');
       return {
         result: {
           reconciliationId: payload.reconciliationId,

@@ -280,7 +280,12 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
       `a5-return-explanations-${reconciliationId}`,
     ),
   );
-  return common;
+  return {
+    common,
+    openingReading: sealed.openingReading,
+    correctedClosingReading,
+    segmentIds: sealed.segmentIds,
+  };
 }
 
 describe('A5 production daily reconciliation persistence and approval', () => {
@@ -690,7 +695,8 @@ describe('A5 production daily reconciliation persistence and approval', () => {
 
   it('preserves a returned revision and approves only its corrected replacement', async () => {
     const reconciliationId = randomUUID();
-    const common = await createPopulatedProductionReconciliation(reconciliationId);
+    const { common, openingReading, correctedClosingReading, segmentIds } =
+      await createPopulatedProductionReconciliation(reconciliationId);
 
     const submitted = await expectOk(
       await postCommand(
@@ -829,8 +835,8 @@ describe('A5 production daily reconciliation persistence and approval', () => {
               nozzleId: ids.nozzle,
               productId: ids.product,
               shiftId: ids.returnShift,
-              openingReading: '100000.000',
-              closingReading: '100501.000',
+              openingReading,
+              closingReading: correctedClosingReading,
               sellingPriceId: ids.price,
             },
           ],
@@ -907,6 +913,67 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       version: 2,
     });
 
+    const correctedReading = await client.unsafe<{ id: string }[]>(`
+      select id from app.reconciliation_meter_readings
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+    `);
+    await client.unsafe('begin');
+    try {
+      await client.unsafe(`
+        insert into app.reconciliation_meter_reading_segments
+          (id, tenant_id, station_id, reconciliation_id, revision_id,
+           reconciliation_meter_reading_id, meter_segment_id, allocated_litres)
+        select gen_random_uuid(), '${ids.tenant}', '${ids.station}', '${reconciliationId}', '${resubmittedRevisions[1]!.id}',
+               '${correctedReading[0]!.id}', segment.id, segment.litres
+        from app.meter_segments segment
+        where segment.tenant_id='${ids.tenant}' and segment.station_id='${ids.station}'
+          and segment.id in ('${segmentIds.join("','")}')
+      `);
+      const preApprovalLineage = await client.unsafe<
+        { source_segment_ids: string[]; bridge_count: string }[]
+      >(`
+        select revision.source_segment_ids, count(bridge.id)::text as bridge_count
+        from app.reconciliation_revisions revision
+        left join app.reconciliation_meter_reading_segments bridge
+          on bridge.tenant_id=revision.tenant_id
+         and bridge.station_id=revision.station_id
+         and bridge.reconciliation_id=revision.reconciliation_id
+         and bridge.revision_id=revision.id
+        where revision.tenant_id='${ids.tenant}' and revision.station_id='${ids.station}'
+          and revision.reconciliation_id='${reconciliationId}'
+          and revision.id='${resubmittedRevisions[1]!.id}'
+        group by revision.source_segment_ids
+      `);
+      expect(preApprovalLineage).toEqual([{ source_segment_ids: [], bridge_count: '2' }]);
+      await expect(
+        client.unsafe(`
+          update app.reconciliation_revisions
+          set state='APPROVED', approved_by='${ids.managerMembership}', approved_at=now(), version=version+1
+          where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${resubmittedRevisions[1]!.id}'
+            and state='PENDING_APPROVAL'
+        `),
+      ).rejects.toThrow('authoritative reconciliation revision values are immutable');
+      await expect(
+        client.unsafe(`
+          update app.reconciliation_revisions
+          set source_segment_ids='["${randomUUID()}"]'::jsonb,
+              state='APPROVED', approved_by='${ids.managerMembership}', approved_at=now(), version=version+1
+          where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${resubmittedRevisions[1]!.id}'
+            and state='PENDING_APPROVAL'
+        `),
+      ).rejects.toThrow('authoritative reconciliation revision values are immutable');
+      await expect(
+        client.unsafe(`
+          update app.reconciliation_revisions
+          set source_segment_ids='["${randomUUID()}"]'::jsonb
+          where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${resubmittedRevisions[1]!.id}'
+            and state='PENDING_APPROVAL'
+        `),
+      ).rejects.toThrow('authoritative reconciliation revision values are immutable');
+    } finally {
+      await client.unsafe('rollback');
+    }
+
     const approvalKey = `a5-return-approve-${reconciliationId}`;
     const approved = await expectOk(
       await postCommand(
@@ -965,6 +1032,29 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       variance: '0.0000',
     });
 
+    const persistedLineage = await client.unsafe<
+      { source_segment_ids: string[]; meter_segment_id: string }[]
+    >(`
+      select revision.source_segment_ids, bridge.meter_segment_id
+      from app.reconciliation_revisions revision
+      join app.reconciliation_meter_reading_segments bridge
+        on bridge.tenant_id=revision.tenant_id
+       and bridge.station_id=revision.station_id
+       and bridge.reconciliation_id=revision.reconciliation_id
+       and bridge.revision_id=revision.id
+      where revision.tenant_id='${ids.tenant}' and revision.station_id='${ids.station}'
+        and revision.id='${finalRevisions[1]!.id}'
+      order by bridge.meter_segment_id
+    `);
+    expect(persistedLineage).toHaveLength(segmentIds.length);
+    expect(persistedLineage[0]?.source_segment_ids).toHaveLength(segmentIds.length);
+    expect([...new Set(persistedLineage[0]?.source_segment_ids ?? [])].sort()).toEqual(
+      [...segmentIds].sort(),
+    );
+    expect(persistedLineage.map((row) => row.meter_segment_id).sort()).toEqual(
+      [...segmentIds].sort(),
+    );
+
     const movements = await client.unsafe<{ count: string; quantity: string }[]>(`
       select count(*)::text as count, coalesce(sum(quantity_litres), 0)::text as quantity
       from app.inventory_movements
@@ -976,7 +1066,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
           where reconciliation_id='${reconciliationId}'
         )
     `);
-    expect(movements[0]).toEqual({ count: '1', quantity: '-501.000' });
+    expect(movements[0]).toEqual({ count: '2', quantity: '-501.000' });
 
     const auditRows = await client.unsafe<{ count: string }[]>(`
       select count(*)::text as count from platform.security_events
