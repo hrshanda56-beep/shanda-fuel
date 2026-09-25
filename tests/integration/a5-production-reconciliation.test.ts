@@ -223,14 +223,21 @@ async function createPopulatedProductionReconciliation(
   saleLitres = '500',
 ) {
   const reconciliationShiftId = randomUUID();
-  await client.unsafe(`
-    insert into app.shifts
-      (id, tenant_id, station_id, business_day_id, state, planned_start_at,
-       planned_end_at, business_date, opened_at)
-    values
-      ('${reconciliationShiftId}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'OPEN',
-       '2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z', '2026-09-22', now())
-  `);
+  await expectOk(
+    await postCommand(
+      {
+        commandType: 'StartShift',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        businessDayId: ids.day,
+        shiftId: reconciliationShiftId,
+        expectedVersion: 0,
+        plannedStartAt: '2026-09-22T06:00:00.000Z',
+        plannedEndAt: '2026-09-22T14:00:00.000Z',
+      },
+      `a5-start-reconciliation-shift-${reconciliationId}`,
+    ),
+  );
   const common = {
     tenantId: ids.tenant,
     stationId: ids.station,
@@ -720,17 +727,8 @@ describe('A5 production daily reconciliation persistence and approval', () => {
               nozzleId: ids.nozzle,
               productId: ids.product,
               shiftId: ids.shift,
-              openingReading: midpointReading,
-              closingReading: sealed.closingReading,
-              sellingPriceId: ids.price,
-            },
-            {
-              id: 'a5b00000-0000-4000-8000-000000000182',
-              nozzleId: ids.nozzle,
-              productId: ids.product,
-              shiftId: ids.shift,
               openingReading: zeroReading,
-              closingReading: midpointReading,
+              closingReading: sealed.closingReading,
               sellingPriceId: ids.price,
             },
           ],
@@ -822,12 +820,11 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const draft = await expectOk(await readReconciliation(reconciliationId));
     expect(draft.state).toBe('DRAFT');
     expect(draft.version).toBe(9);
-    expect(draft.readings).toHaveLength(2);
+    expect(draft.readings).toHaveLength(1);
     // litresSold is selected directly from numeric(18,3), while monetary totals
     // are normalized through ExactDecimal.toString(). Neither representation's
     // trailing-zero scale is part of the API contract.
-    expectDecimalEqual(draft.readings![0]!.litresSold, '250.000');
-    expectDecimalEqual(draft.readings![1]!.litresSold, '250.000');
+    expectDecimalEqual(draft.readings![0]!.litresSold, '500.000');
     expectDecimalEqual(draft.totals!.expectedSales, '750.0000');
     expectDecimalEqual(draft.totals!.accountedSales, '750.0000');
     expectDecimalEqual(draft.totals!.salesVariance, '0.0000');
@@ -1753,6 +1750,23 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
         and tank_id='${ids.tank}' and product_id='${ids.product}'
     `);
+    const historicalSale = await client.unsafe<{ effective_at: Date; business_date: string }[]>(`
+      select m.effective_at, m.business_date
+      from app.inventory_movements m
+      join app.inventory_sale_cost_attributions a
+        on a.tenant_id=m.tenant_id and a.station_id=m.station_id
+       and a.inventory_movement_id=m.id
+      where m.tenant_id='${ids.tenant}' and m.station_id='${ids.station}'
+        and m.tank_id='${ids.tank}' and m.product_id='${ids.product}'
+        and m.movement_type='SALE' and m.source_type='METER_SEGMENT_SALE'
+      order by m.effective_at, m.id
+      limit 1
+    `);
+    expect(historicalSale).toHaveLength(1);
+    const lateCostEffectiveAt = new Date(
+      historicalSale[0]!.effective_at.getTime() - 1,
+    ).toISOString();
+    const lateCostBusinessDate = historicalSale[0]!.business_date;
     const deliveryId = randomUUID();
     const allocationId = randomUUID();
     await client.unsafe(`
@@ -1762,7 +1776,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
          recorded_by, confirmed_by, confirmed_at)
       values
         ('${deliveryId}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-LATE',
-         '2026-09-25T07:30:00Z', '2026-09-25', 50, 50, 0, 'CONFIRMED',
+         '${lateCostEffectiveAt}', '${lateCostBusinessDate}', 50, 50, 0, 'CONFIRMED',
          '${ids.supervisorMembership}', '${ids.managerMembership}', now());
       insert into app.fuel_delivery_allocations
         (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
@@ -1774,7 +1788,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
          effective_at, business_date, source_type, source_id, actor_membership_id)
       values
         ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}',
-         'DELIVERY', 50, '2026-09-25T07:30:00Z', '2026-09-25',
+         'DELIVERY', 50, '${lateCostEffectiveAt}', '${lateCostBusinessDate}',
          'FUEL_DELIVERY_ALLOCATION', '${allocationId}', '${ids.managerMembership}');
     `);
     const rejected = await postInventoryCommand(
