@@ -38,7 +38,7 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(11);
+    expect(migrations).toHaveLength(12);
 
     const objects = await client<{ schema_name: string; table_name: string }[]>`
       select table_schema as schema_name, table_name

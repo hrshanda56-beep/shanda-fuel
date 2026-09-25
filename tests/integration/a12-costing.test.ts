@@ -15,6 +15,7 @@ const ids = {
   productTwo: 'a1220000-0000-4000-8000-000000000052',
   tank: 'a1220000-0000-4000-8000-000000000061',
   tankTwo: 'a1220000-0000-4000-8000-000000000062',
+  openingMovement: 'a1220000-0000-4000-8000-000000000070',
   costEvent: 'a1220000-0000-4000-8000-000000000071',
   costEventSource: 'a1220000-0000-4000-8000-000000000081',
   positiveSaleCostSource: 'a1220000-0000-4000-8000-000000000080',
@@ -111,7 +112,9 @@ describe('A12.2 PostgreSQL costing foundation', () => {
       select app.seal_meter_segment('${ids.tenant}', '${ids.station}', '${ids.saleSegment}', 0);
       insert into app.inventory_movements
         (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
-      values ('${ids.saleMovement}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE', '-10.000', '2026-09-25T08:00:00Z', '2026-09-25', 'METER_SEGMENT_SALE', '${ids.saleSegment}', '${ids.membership}')
+      values
+        ('${ids.openingMovement}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', '100.000', '2026-09-25T05:00:00Z', '2026-09-25', 'OPENING_BALANCE', '${ids.costEventSource}', '${ids.membership}'),
+        ('${ids.saleMovement}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE', '-10.000', '2026-09-25T08:00:00Z', '2026-09-25', 'METER_SEGMENT_SALE', '${ids.saleSegment}', '${ids.membership}')
       on conflict (id) do nothing;
       insert into app.inventory_cost_events
         (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at, business_date, amount, currency, actor_membership_id)
