@@ -126,7 +126,7 @@ async function createSealedSegments(
     const closing = boundaries.find((boundary) => boundary.id === boundaryIds[index + 1]);
     expect(opening).toBeDefined();
     expect(closing).toBeDefined();
-    await expectOk(
+    await expectCreated(
       await postCommand(
         {
           commandType: 'SealSegment',
@@ -170,6 +170,12 @@ type CommandResponse = {
 async function expectOk(response: Response) {
   const body = (await response.json()) as CommandResponse;
   expect(response.status, JSON.stringify(body)).toBe(200);
+  return body;
+}
+
+async function expectCreated(response: Response) {
+  const body = (await response.json()) as CommandResponse;
+  expect(response.status, JSON.stringify(body)).toBe(201);
   return body;
 }
 

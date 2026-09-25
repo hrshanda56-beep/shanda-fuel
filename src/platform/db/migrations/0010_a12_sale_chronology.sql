@@ -133,6 +133,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   approval_revision_id uuid;
+  approval_reconciliation_id uuid;
 BEGIN
   IF NEW.state <> 'APPROVED' OR OLD.state NOT IN ('SUBMITTED', 'PENDING_APPROVAL') THEN
     RETURN NEW;
@@ -140,13 +141,15 @@ BEGIN
 
   IF TG_TABLE_NAME = 'reconciliation_revisions' THEN
     approval_revision_id := NEW.id;
+    approval_reconciliation_id := NEW.reconciliation_id;
   ELSE
+    approval_reconciliation_id := NEW.id;
     SELECT id
       INTO approval_revision_id
       FROM app.reconciliation_revisions
-     WHERE tenant_id = NEW.tenant_id
-       AND station_id = NEW.station_id
-       AND reconciliation_id = NEW.id
+      WHERE tenant_id = NEW.tenant_id
+         AND station_id = NEW.station_id
+         AND reconciliation_id = approval_reconciliation_id
        AND state IN ('PENDING_APPROVAL', 'APPROVED')
      ORDER BY revision DESC, id DESC
      LIMIT 1
@@ -158,13 +161,10 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-      FROM app.reconciliation_meter_readings reading
+     FROM app.reconciliation_meter_readings reading
      WHERE reading.tenant_id = NEW.tenant_id
        AND reading.station_id = NEW.station_id
-       AND reading.reconciliation_id = CASE
-         WHEN TG_TABLE_NAME = 'reconciliation_revisions' THEN NEW.reconciliation_id
-         ELSE NEW.id
-       END
+       AND reading.reconciliation_id = approval_reconciliation_id
        AND NOT EXISTS (
          SELECT 1
            FROM app.reconciliation_meter_reading_segments bridge
@@ -180,13 +180,10 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-      FROM app.reconciliation_meter_readings reading
+     FROM app.reconciliation_meter_readings reading
      WHERE reading.tenant_id = NEW.tenant_id
        AND reading.station_id = NEW.station_id
-       AND reading.reconciliation_id = CASE
-         WHEN TG_TABLE_NAME = 'reconciliation_revisions' THEN NEW.reconciliation_id
-         ELSE NEW.id
-       END
+       AND reading.reconciliation_id = approval_reconciliation_id
        AND (
          SELECT COALESCE(SUM(bridge.allocated_litres), 0)
            FROM app.reconciliation_meter_reading_segments bridge
@@ -202,13 +199,10 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-      FROM app.reconciliation_meter_reading_segments bridge
+     FROM app.reconciliation_meter_reading_segments bridge
      WHERE bridge.tenant_id = NEW.tenant_id
        AND bridge.station_id = NEW.station_id
-       AND bridge.reconciliation_id = CASE
-         WHEN TG_TABLE_NAME = 'reconciliation_revisions' THEN NEW.reconciliation_id
-         ELSE NEW.id
-       END
+       AND bridge.reconciliation_id = approval_reconciliation_id
        AND bridge.revision_id = approval_revision_id
        AND EXISTS (
          SELECT 1
@@ -233,10 +227,7 @@ BEGIN
        AND segment.id = bridge.meter_segment_id
      WHERE bridge.tenant_id = NEW.tenant_id
        AND bridge.station_id = NEW.station_id
-       AND bridge.reconciliation_id = CASE
-         WHEN TG_TABLE_NAME = 'reconciliation_revisions' THEN NEW.reconciliation_id
-         ELSE NEW.id
-       END
+       AND bridge.reconciliation_id = approval_reconciliation_id
        AND bridge.revision_id = approval_revision_id
        AND (
          segment.state <> 'SEALED'

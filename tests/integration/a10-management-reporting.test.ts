@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
+import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { GET as dailyReportGet } from '../../src/app/api/reports/daily/route';
 import { GET as managementReportGet } from '../../src/app/api/reports/management/route';
 
@@ -34,6 +35,7 @@ const ids = {
   factNozzle: 'a10b0000-0000-4000-8000-000000000097',
   factMeter: 'a10b0000-0000-4000-8000-000000000098',
   factInstallation: 'a10b0000-0000-4000-8000-000000000099',
+  factPrice: 'a10b0000-0000-4000-8000-0000000000a0',
   factReading: 'a10b0000-0000-4000-8000-0000000000a1',
   factCashPayment: 'a10b0000-0000-4000-8000-0000000000a2',
   factPosPayment: 'a10b0000-0000-4000-8000-0000000000a3',
@@ -65,12 +67,29 @@ const ids = {
   factTank: 'a10b0000-0000-4000-8000-0000000000be',
   factInventoryMovement: 'a10b0000-0000-4000-8000-0000000000bf',
   factDelivery: 'a10b0000-0000-4000-8000-0000000000c1',
+  factOpeningBoundary: 'a10b0000-0000-4000-8000-0000000000c2',
+  factClosingBoundary: 'a10b0000-0000-4000-8000-0000000000c3',
+  factSegment: 'a10b0000-0000-4000-8000-0000000000c4',
 };
 const sessionToken = 'a10-management-session-token';
 const scopedSessionToken = 'a10-management-scoped-session-token';
 
 async function signedCookie(token = sessionToken): Promise<string> {
   return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+}
+
+async function forecourtCommand(input: Record<string, unknown>, key: string) {
+  return forecourtCommandPost(
+    new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+      method: 'POST',
+      headers: {
+        cookie: `shanda-fuel.session_token=${await signedCookie()}`,
+        'content-type': 'application/json',
+        'idempotency-key': key,
+      },
+      body: JSON.stringify(input),
+    }),
+  );
 }
 
 describe('A10 management reporting PostgreSQL read model', () => {
@@ -110,6 +129,12 @@ describe('A10 management reporting PostgreSQL read model', () => {
       on conflict do nothing;
       insert into app.membership_role_assignments
         (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+      values
+        ('${ids.tenant}', '${ids.membership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
+        ('${ids.tenant}', '${ids.membership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
+      on conflict do nothing;
+      insert into app.membership_role_assignments
+        (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
       values ('${ids.tenant}', '${ids.scopedMembership}', 'FINANCE', 'STATION', '${ids.legal}', '${ids.scopedStation}')
       on conflict do nothing;
       insert into auth.session
@@ -125,6 +150,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.factDay}', '${ids.tenant}', '${ids.station}', '2026-09-20', 'NOT_STARTED')
         on conflict (id) do nothing;
+      update app.station_business_days set state = 'OPEN', opened_at = now()
+        where id = '${ids.factDay}' and state = 'NOT_STARTED';
       insert into app.products (id, tenant_id, code, name, status)
         values ('${ids.factProduct}', '${ids.tenant}', 'A10-PMS', 'A10 Petrol', 'ACTIVE')
         on conflict (id) do nothing;
@@ -141,13 +168,36 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
         values ('${ids.factInstallation}', '${ids.tenant}', '${ids.station}', '${ids.factNozzle}', '${ids.factMeter}', '2026-09-19T00:00:00Z', '${ids.membership}')
         on conflict (id) do nothing;
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+        values ('${ids.factPrice}', '${ids.tenant}', '${ids.station}', '${ids.factProduct}', '2026-09-20T00:00:00Z', 10.000000, 'DRAFT', '${ids.membership}')
+        on conflict (id) do nothing;
+      update app.selling_prices set state='PENDING_APPROVAL'
+        where id='${ids.factPrice}' and state='DRAFT';
+      update app.selling_prices set state='APPROVED', approved_by='${ids.membership}', approved_at=now()
+        where id='${ids.factPrice}' and state='PENDING_APPROVAL';
+      update app.selling_prices set state='PENDING_STATION_ACTIVATION'
+        where id='${ids.factPrice}' and state='APPROVED';
+      update app.selling_prices set state='BOUNDARIES_IN_PROGRESS'
+        where id='${ids.factPrice}' and state='PENDING_STATION_ACTIVATION';
+      update app.selling_prices set state='ACTIVE', activated_at=now()
+        where id='${ids.factPrice}' and state='BOUNDARIES_IN_PROGRESS';
       insert into app.shifts
         (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
         values ('${ids.factShift}', '${ids.tenant}', '${ids.station}', '${ids.factDay}', 'PLANNED', '2026-09-20T06:00:00Z', '2026-09-20T14:00:00Z', '2026-09-20')
         on conflict (id) do nothing;
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason,
+         reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${ids.factOpeningBoundary}', '${ids.tenant}', '${ids.station}', '${ids.factNozzle}', '${ids.factInstallation}', '${ids.factDay}', '${ids.factShift}', 'SHIFT_OPEN',
+         'AVAILABLE', 100.000, '2026-09-20T06:00:00Z', '2026-09-20T06:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}'),
+        ('${ids.factClosingBoundary}', '${ids.tenant}', '${ids.station}', '${ids.factNozzle}', '${ids.factInstallation}', '${ids.factDay}', '${ids.factShift}', 'SHIFT_CLOSE',
+         'AVAILABLE', 110.500, '2026-09-20T07:00:00Z', '2026-09-20T07:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}')
+      on conflict (id) do nothing;
       insert into app.reconciliations
-        (id, tenant_id, station_id, business_day_id, state)
-        values ('${ids.factRecon}', '${ids.tenant}', '${ids.station}', '${ids.factDay}', 'DRAFT')
+        (id, tenant_id, station_id, business_day_id, shift_id, supervisor_id, created_by, state)
+        values ('${ids.factRecon}', '${ids.tenant}', '${ids.station}', '${ids.factDay}', '${ids.factShift}', '${ids.membership}', '${ids.membership}', 'DRAFT')
         on conflict (id) do nothing;
       insert into app.reconciliation_revisions
         (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, currency, variance_classification, declarations, approved_by, approved_at)
@@ -174,16 +224,15 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, station_id, reconciliation_id, counted_cash, expected_physical_cash, cash_paid_expenses, net_expected_cash, cash_variance, entered_by)
         values ('${ids.factCashDeclaration}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 69.0000, 70.0000, 2.0000, 68.0000, 1.0000, '${ids.membership}')
         on conflict (id) do nothing;
+      insert into app.reconciliation_variance_explanations
+        (id, tenant_id, station_id, reconciliation_id, category, explanation, entered_by)
+        values ('a10b0000-0000-4000-8000-0000000000c5', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'SALES', 'A10 canonical reporting fixture variance', '${ids.membership}')
+        on conflict (id) do nothing;
       update app.shifts set state = 'OPEN', opened_at = '2026-09-20T06:00:00Z' where id = '${ids.factShift}' and state = 'PLANNED';
-      update app.shifts set state = 'METER_CLOSED', meter_closed_at = '2026-09-20T14:00:00Z' where id = '${ids.factShift}' and state = 'OPEN';
-      update app.shifts set state = 'COMPLETED', completed_at = '2026-09-20T14:30:00Z' where id = '${ids.factShift}' and state = 'METER_CLOSED';
       update app.reconciliations set state = 'READY' where id = '${ids.factRecon}' and state = 'DRAFT';
       update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
-      update app.reconciliations set state = 'PENDING_APPROVAL' where id = '${ids.factRecon}' and state = 'SUBMITTED';
-      update app.reconciliations set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = '2026-09-20T23:00:00Z' where id = '${ids.factRecon}' and state = 'PENDING_APPROVAL';
       update app.reconciliation_revisions set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRevision}' and state = 'READY';
       update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${ids.factRevision}' and state = 'SUBMITTED';
-      update app.reconciliation_revisions set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = '2026-09-20T23:00:00Z' where id = '${ids.factRevision}' and state = 'PENDING_APPROVAL';
       insert into app.cash_locations
         (id, tenant_id, station_id, code, name, location_type)
         values
@@ -263,6 +312,60 @@ describe('A10 management reporting PostgreSQL read model', () => {
         values ('${ids.factDelivery}', '${ids.tenant}', '${ids.station}', '${ids.factProduct}', 'A10-DELIVERY', '2026-09-20T10:00:00Z', '2026-09-20', 20.000, 20.000, 0.000, 'CONFIRMED', 2.00000000, 40.0000, 'USD', '${ids.membership}', '${ids.membership}', '2026-09-20T11:00:00Z')
         on conflict (id) do nothing;
     `);
+
+    const seal = await forecourtCommand(
+      {
+        commandType: 'SealSegment',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        segmentId: ids.factSegment,
+        nozzleId: ids.factNozzle,
+        meterInstallationId: ids.factInstallation,
+        businessDayId: ids.factDay,
+        shiftId: ids.factShift,
+        openingBoundaryId: ids.factOpeningBoundary,
+        closingBoundaryId: ids.factClosingBoundary,
+        productId: ids.factProduct,
+        responsibleAttendantId: ids.membership,
+        startAt: '2026-09-20T06:00:00.000Z',
+        endAt: '2026-09-20T07:00:00.000Z',
+        expectedVersion: 0,
+      },
+      'a10-seal-canonical-segment',
+    );
+    expect(seal.status).toBe(201);
+
+    const approval = await forecourtCommand(
+      {
+        commandType: 'ApproveProductionReconciliation',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        reconciliationId: ids.factRecon,
+        expectedVersion: 0,
+      },
+      'a10-approve-canonical-reconciliation',
+    );
+    expect(approval.status).toBe(200);
+
+    const segmentSaleMovements = await client.unsafe<
+      { source_type: string; source_id: string; movement_type: string; quantity_litres: string }[]
+    >(`
+      select source_type, source_id, movement_type, quantity_litres::text as quantity_litres
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}'
+        and station_id='${ids.station}'
+        and source_type='METER_SEGMENT_SALE'
+        and source_id='${ids.factSegment}'
+        and movement_type='SALE'
+    `);
+    expect(segmentSaleMovements).toEqual([
+      {
+        source_type: 'METER_SEGMENT_SALE',
+        source_id: ids.factSegment,
+        movement_type: 'SALE',
+        quantity_litres: '-10.500',
+      },
+    ]);
   });
 
   afterAll(async () => client?.end());
@@ -339,7 +442,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       prepaidValueBalance: '12.0000',
     });
     expect(body.inventory).toMatchObject({
-      expectedLitres: '95.000',
+      expectedLitres: '84.500',
       deliveryLitres: '20.000',
       deliveryValue: '40.0000',
     });

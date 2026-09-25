@@ -38,7 +38,7 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(10);
+    expect(migrations).toHaveLength(11);
 
     const objects = await client<{ schema_name: string; table_name: string }[]>`
       select table_schema as schema_name, table_name
@@ -55,6 +55,44 @@ describe('PostgreSQL integration harness', () => {
       order by table_schema, table_name
     `;
     expect(objects).toHaveLength(17);
+
+    const a12Table = await client<{ relrowsecurity: boolean; relforcerowsecurity: boolean }[]>`
+      select c.relrowsecurity, c.relforcerowsecurity
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'app' and c.relname = 'reconciliation_meter_reading_segments'
+    `;
+    expect(a12Table).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }]);
+
+    const a12Constraints = await client<{ conname: string }[]>`
+      select c.conname
+      from pg_constraint c
+      join pg_namespace n on n.oid = c.connamespace
+      where n.nspname = 'app'
+        and c.conname in (
+          'reconciliation_meter_reading_segments_reconciliation_fk',
+          'reconciliation_meter_reading_segments_revision_fk',
+          'reconciliation_meter_reading_segments_reading_fk',
+          'reconciliation_meter_reading_segments_meter_segment_fk',
+          'reconciliation_meter_reading_segments_nonnegative_litres_ck'
+        )
+      order by c.conname
+    `;
+    expect(a12Constraints.map((row) => row.conname)).toEqual([
+      'reconciliation_meter_reading_segments_meter_segment_fk',
+      'reconciliation_meter_reading_segments_nonnegative_litres_ck',
+      'reconciliation_meter_reading_segments_reading_fk',
+      'reconciliation_meter_reading_segments_reconciliation_fk',
+      'reconciliation_meter_reading_segments_revision_fk',
+    ]);
+
+    const a12Policies = await client<{ policyname: string }[]>`
+      select policyname
+      from pg_policies
+      where schemaname = 'app' and tablename = 'reconciliation_meter_reading_segments'
+      order by policyname
+    `;
+    expect(a12Policies.map((row) => row.policyname)).toEqual(['tenant_context']);
 
     const policies = await client<{ policyname: string }[]>`
       select policyname
