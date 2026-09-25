@@ -487,7 +487,8 @@ test.describe('production reconciliation persistence', () => {
     await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
     await page.getByRole('button', { name: 'Approve and lock' }).click();
     await expect(page.getByText('Approved', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save persisted draft' })).toHaveCount(0);
+    await expect(page.getByText(/Approved records cannot be edited/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save persisted draft' })).toBeDisabled();
     const accessibility = await new AxeBuilder({ page })
       .include('[aria-label="Daily station operations workspace"]')
       .analyze();
