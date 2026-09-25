@@ -1,3 +1,7 @@
+ALTER TABLE "app"."reconciliation_revisions" ADD CONSTRAINT "reconciliation_revisions_reconciliation_id_uidx" UNIQUE("tenant_id","station_id","reconciliation_id","id");--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_meter_readings" ADD CONSTRAINT "reconciliation_meter_readings_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id");--> statement-breakpoint
+ALTER TABLE "app"."reconciliation_meter_readings" ADD CONSTRAINT "reconciliation_meter_readings_reconciliation_id_uidx" UNIQUE("tenant_id","station_id","reconciliation_id","id");--> statement-breakpoint
+
 CREATE TABLE "app"."reconciliation_meter_reading_segments" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -19,10 +23,6 @@ ALTER TABLE "app"."reconciliation_meter_reading_segments" ADD CONSTRAINT "reconc
 ALTER TABLE "app"."reconciliation_meter_reading_segments" ADD CONSTRAINT "reconciliation_meter_reading_segments_reading_fk" FOREIGN KEY ("tenant_id","station_id","reconciliation_id","reconciliation_meter_reading_id") REFERENCES "app"."reconciliation_meter_readings"("tenant_id","station_id","reconciliation_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app"."reconciliation_meter_reading_segments" ADD CONSTRAINT "reconciliation_meter_reading_segments_meter_segment_fk" FOREIGN KEY ("tenant_id","station_id","meter_segment_id") REFERENCES "app"."meter_segments"("tenant_id","station_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "reconciliation_meter_reading_segments_reading_idx" ON "app"."reconciliation_meter_reading_segments" USING btree ("tenant_id","station_id","reconciliation_id","revision_id","reconciliation_meter_reading_id");--> statement-breakpoint
-ALTER TABLE "app"."reconciliation_revisions" ADD CONSTRAINT "reconciliation_revisions_reconciliation_id_uidx" UNIQUE("tenant_id","station_id","reconciliation_id","id");--> statement-breakpoint
-ALTER TABLE "app"."reconciliation_meter_readings" ADD CONSTRAINT "reconciliation_meter_readings_tenant_station_id_uidx" UNIQUE("tenant_id","station_id","id");--> statement-breakpoint
-ALTER TABLE "app"."reconciliation_meter_readings" ADD CONSTRAINT "reconciliation_meter_readings_reconciliation_id_uidx" UNIQUE("tenant_id","station_id","reconciliation_id","id");
---> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION app.a12_validate_reconciliation_meter_reading_segment()
 RETURNS trigger
