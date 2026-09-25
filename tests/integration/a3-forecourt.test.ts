@@ -2584,6 +2584,20 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       update app.selling_prices set state='APPROVED' where id='${price}';
       update app.selling_prices set state='PENDING_STATION_ACTIVATION' where id='${price}';
     `);
+    const pricePriorBoundary = await client<{ reading_value: string }[]>`
+      select reading_value::text as reading_value
+      from app.meter_boundaries
+      where tenant_id=${ids.tenantA}
+        and station_id=${ids.stationA}
+        and nozzle_id=${ids.nozzleB}
+        and meter_installation_id=${ids.installationB}
+        and reading_status='AVAILABLE'
+      order by effective_at desc, id desc
+      limit 1
+    `;
+    expect(pricePriorBoundary).toHaveLength(1);
+    const priceOpeningReading = pricePriorBoundary[0]!.reading_value;
+
     const priceInput = (boundaryId: string) => ({
       commandType: 'ConfirmPriceChangeBoundary',
       tenantId: ids.tenantA,
@@ -2596,7 +2610,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       responsibleAttendantId: ids.membershipA,
       reason: 'PRICE_CHANGE',
       readingStatus: 'AVAILABLE',
-      readingValue: '3000.000',
+      readingValue: priceOpeningReading,
       priceChangeId: price,
       expectedVersion: 0,
     });
@@ -2604,15 +2618,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       postCommand(priceInput(priceBoundaryA), 'a3-remediation-price-a'),
       postCommand(priceInput(priceBoundaryB), 'a3-remediation-price-b'),
     ]);
-    const [priceABody, priceBBody] = await Promise.all([
-      priceA.clone().text(),
-      priceB.clone().text(),
-    ]);
-
-    expect(
-      [priceA.status, priceB.status].sort(),
-      `price boundary race responses: A=${priceA.status} ${priceABody}; B=${priceB.status} ${priceBBody}`,
-    ).toEqual([200, 409]);
+    expect([priceA.status, priceB.status].sort()).toEqual([200, 409]);
     await expect(client<{ count: number }[]>`
       select count(*)::int as count from app.meter_boundaries
       where price_change_id=${price} and nozzle_id=${ids.nozzleB} and reason='PRICE_CHANGE'
