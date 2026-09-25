@@ -74,6 +74,84 @@ async function readReconciliation(reconciliationId: string) {
   );
 }
 
+async function createSealedSegments(
+  shiftId: string,
+  readings: readonly string[],
+  keyPrefix: string,
+) {
+  const boundaryIds: string[] = [];
+  for (const [index, readingValue] of readings.entries()) {
+    const boundaryId = randomUUID();
+    boundaryIds.push(boundaryId);
+    await expectOk(
+      await postCommand(
+        {
+          commandType: 'ConfirmBoundary',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          boundaryId,
+          nozzleId: ids.nozzle,
+          meterInstallationId: ids.installation,
+          businessDayId: ids.day,
+          shiftId,
+          responsibleAttendantId: ids.attendantMembership,
+          reason:
+            index === 0 ? 'SHIFT_OPEN' : index === readings.length - 1 ? 'SHIFT_CLOSE' : 'DELIVERY',
+          readingStatus: 'AVAILABLE',
+          readingValue,
+          ...(index === 0
+            ? { exceptionReason: 'A5 canonical sale chronology integration fixture' }
+            : {}),
+          expectedVersion: 0,
+        },
+        `${keyPrefix}-boundary-${index}-${boundaryId}`,
+      ),
+    );
+    await client.unsafe('select pg_sleep(0.01)');
+  }
+
+  const boundaries = await client.unsafe<{ id: string; effective_at: Date }[]>(`
+    select id, effective_at from app.meter_boundaries
+    where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+      and id in (${boundaryIds.map((id) => `'${id}'`).join(',')})
+    order by effective_at, id
+  `);
+  expect(boundaries).toHaveLength(boundaryIds.length);
+
+  const segmentIds: string[] = [];
+  for (let index = 0; index < readings.length - 1; index += 1) {
+    const segmentId = randomUUID();
+    segmentIds.push(segmentId);
+    const opening = boundaries.find((boundary) => boundary.id === boundaryIds[index]);
+    const closing = boundaries.find((boundary) => boundary.id === boundaryIds[index + 1]);
+    expect(opening).toBeDefined();
+    expect(closing).toBeDefined();
+    await expectOk(
+      await postCommand(
+        {
+          commandType: 'SealSegment',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          segmentId,
+          nozzleId: ids.nozzle,
+          meterInstallationId: ids.installation,
+          businessDayId: ids.day,
+          shiftId,
+          openingBoundaryId: opening!.id,
+          closingBoundaryId: closing!.id,
+          productId: ids.product,
+          responsibleAttendantId: ids.attendantMembership,
+          startAt: opening!.effective_at.toISOString(),
+          endAt: closing!.effective_at.toISOString(),
+          expectedVersion: 0,
+        },
+        `${keyPrefix}-segment-${index}-${segmentId}`,
+      ),
+    );
+  }
+  return { openingReading: readings[0]!, closingReading: readings.at(-1)!, segmentIds };
+}
+
 type CommandResponse = {
   state?: string;
   version?: number;
@@ -99,6 +177,19 @@ function expectDecimalEqual(actual: string, expected: string) {
   expect(new ExactDecimal(actual).equals(new ExactDecimal(expected))).toBe(true);
 }
 
+async function nextMeterReading(): Promise<string> {
+  const rows = await client.unsafe<{ reading_value: string }[]>(`
+    select reading_value
+    from app.meter_boundaries
+    where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+      and nozzle_id='${ids.nozzle}' and meter_installation_id='${ids.installation}'
+      and reading_status='AVAILABLE'
+    order by effective_at desc, id desc
+    limit 1
+  `);
+  return rows[0]?.reading_value ?? '100000.000';
+}
+
 async function createPopulatedProductionReconciliation(reconciliationId: string) {
   const common = {
     tenantId: ids.tenant,
@@ -117,6 +208,18 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
       `a5-return-create-${reconciliationId}`,
     ),
   );
+  const openingReading = await nextMeterReading();
+  const originalClosingReading = new ExactDecimal(openingReading)
+    .add(new ExactDecimal('500'))
+    .toString();
+  const correctedClosingReading = new ExactDecimal(openingReading)
+    .add(new ExactDecimal('501'))
+    .toString();
+  const sealed = await createSealedSegments(
+    ids.returnShift,
+    [openingReading, originalClosingReading, correctedClosingReading],
+    `a5-return-${reconciliationId}`,
+  );
   await expectOk(
     await postCommand(
       {
@@ -128,8 +231,8 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
             nozzleId: ids.nozzle,
             productId: ids.product,
             shiftId: ids.returnShift,
-            openingReading: '100000.000',
-            closingReading: '100500.000',
+            openingReading: sealed.openingReading,
+            closingReading: originalClosingReading,
             sellingPriceId: ids.price,
           },
         ],
@@ -227,14 +330,14 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-22', 'NOT_STARTED') on conflict (id) do nothing;
       insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-        values ('${ids.shift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-22T06:00:00Z', '2026-09-22T14:00:00Z', '2026-09-22')
+        values ('${ids.shift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z', '2026-09-22')
         on conflict (id) do nothing;
       update app.station_business_days set state='OPEN', opened_at=now()
         where id='${ids.day}' and state='NOT_STARTED';
       update app.shifts set state='OPEN', opened_at=now()
         where id='${ids.shift}' and state='PLANNED';
       insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-        values ('${ids.returnShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-22T14:00:00Z', '2026-09-22T22:00:00Z', '2026-09-22')
+        values ('${ids.returnShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z', '2026-09-22')
         on conflict (id) do nothing;
       update app.shifts set state='OPEN', opened_at=now()
         where id='${ids.returnShift}' and state='PLANNED';
@@ -284,13 +387,24 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     await client?.end();
   });
 
-  it('creates, reloads, submits, approves, locks, and idempotently posts one A4 sale', async () => {
+  it('creates, reloads, submits, concurrently approves, retries, and chronologically posts A4 sales', async () => {
     const reconciliationId = randomUUID();
     const common = {
       tenantId: ids.tenant,
       stationId: ids.station,
       reconciliationId,
     };
+    const openingReading = await nextMeterReading();
+    const zeroReading = openingReading;
+    const midpointReading = new ExactDecimal(openingReading)
+      .add(new ExactDecimal('250'))
+      .toString();
+    const closingReading = new ExactDecimal(openingReading).add(new ExactDecimal('500')).toString();
+    const sealed = await createSealedSegments(
+      ids.shift,
+      [openingReading, zeroReading, midpointReading, closingReading],
+      `a5-${reconciliationId}`,
+    );
 
     await expectOk(
       await postCommand(
@@ -332,8 +446,8 @@ describe('A5 production daily reconciliation persistence and approval', () => {
               nozzleId: ids.nozzle,
               productId: ids.product,
               shiftId: ids.shift,
-              openingReading: '100000.000',
-              closingReading: '100500.000',
+              openingReading: sealed.openingReading,
+              closingReading: sealed.closingReading,
               sellingPriceId: ids.price,
             },
           ],
@@ -448,20 +562,30 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     expect(submitted.version).toBe(10);
 
     const approvalKey = `a5-approve-${reconciliationId}`;
-    const approval = await postCommand(
-      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 10 },
-      approvalKey,
-      'a5-manager-session-token',
+    const raceKey = `${approvalKey}-race`;
+    const approvalPayload = {
+      commandType: 'ApproveProductionReconciliation',
+      ...common,
+      expectedVersion: 10,
+    };
+    const concurrentApprovals = await Promise.all([
+      postCommand(approvalPayload, approvalKey, 'a5-manager-session-token'),
+      postCommand(approvalPayload, raceKey, 'a5-manager-session-token'),
+    ]);
+    const concurrentResults = await Promise.all(
+      concurrentApprovals.map(async (response, index) => ({
+        key: index === 0 ? approvalKey : raceKey,
+        status: response.status,
+        body: (await response.json()) as CommandResponse,
+      })),
     );
-    const approvalBody = await expectOk(approval);
-    expect(approvalBody.state).toBe('APPROVED');
-    expect(approvalBody.saleMovementIds).toHaveLength(1);
+    expect(concurrentResults.filter((result) => result.status === 200)).toHaveLength(1);
+    expect(concurrentResults.filter((result) => result.status === 409)).toHaveLength(1);
+    const successfulApproval = concurrentResults.find((result) => result.status === 200)!;
+    expect(successfulApproval.body.state).toBe('APPROVED');
+    expect(successfulApproval.body.saleMovementIds).toHaveLength(2);
     await expectOk(
-      await postCommand(
-        { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 10 },
-        approvalKey,
-        'a5-manager-session-token',
-      ),
+      await postCommand(approvalPayload, successfulApproval.key, 'a5-manager-session-token'),
     );
 
     const approved = await expectOk(await readReconciliation(reconciliationId));
@@ -477,18 +601,85 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       select count(*)::text as count, coalesce(sum(quantity_litres), 0)::text as quantity
       from app.inventory_movements
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and source_type='RECONCILIATION_SALE' and source_id in (
-          select id from app.reconciliation_meter_readings where reconciliation_id='${reconciliationId}'
-        )
+        and source_type='METER_SEGMENT_SALE'
+        and source_id in ('${sealed.segmentIds.join("','")}')
     `);
-    expect(rows[0]).toEqual({ count: '1', quantity: '-500.000' });
+    expect(rows[0]).toEqual({ count: '2', quantity: '-500.000' });
+
+    const bridgeRows = await client.unsafe<{ count: string; litres: string }[]>(`
+      select count(*)::text as count, coalesce(sum(allocated_litres), 0)::text as litres
+      from app.reconciliation_meter_reading_segments
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and reconciliation_id='${reconciliationId}'
+    `);
+    expect(bridgeRows[0]).toEqual({ count: '3', litres: '500.000' });
+
+    const chronologicalMovements = await client.unsafe<
+      { source_type: string; source_id: string }[]
+    >(`
+      select source_type, source_id
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type in ('DELIVERY', 'METER_SEGMENT_SALE')
+      order by effective_at, id
+    `);
+    expect(chronologicalMovements).toEqual([
+      { source_type: 'DELIVERY', source_id: ids.delivery },
+      { source_type: 'METER_SEGMENT_SALE', source_id: sealed.segmentIds[1] },
+      { source_type: 'METER_SEGMENT_SALE', source_id: sealed.segmentIds[2] },
+    ]);
+
+    const canonicalMovement = await client.unsafe<
+      {
+        tank_id: string;
+        product_id: string;
+        quantity_litres: string;
+        effective_at: Date;
+        business_date: string;
+      }[]
+    >(`
+      select tank_id, product_id, quantity_litres, effective_at, business_date
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='METER_SEGMENT_SALE' and source_id='${sealed.segmentIds[1]}'
+    `);
+    await expect(
+      client.unsafe(`
+        insert into app.inventory_movements
+          (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres,
+           effective_at, business_date, source_type, source_id, actor_membership_id)
+        values
+          ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${canonicalMovement[0]!.tank_id}',
+           '${canonicalMovement[0]!.product_id}', 'SALE', '${canonicalMovement[0]!.quantity_litres}',
+           '${canonicalMovement[0]!.effective_at.toISOString()}', '${canonicalMovement[0]!.business_date}',
+           'METER_SEGMENT_SALE', '${sealed.segmentIds[1]}', '${ids.managerMembership}')
+      `),
+    ).rejects.toMatchObject({ code: '23505', constraint: 'inventory_movements_source_uidx' });
+
+    await client.unsafe(`
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres,
+         effective_at, business_date, source_type, source_id, actor_membership_id)
+      values
+        ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${canonicalMovement[0]!.tank_id}',
+         '${canonicalMovement[0]!.product_id}', 'SALE', -1,
+         '${canonicalMovement[0]!.effective_at.toISOString()}', '${canonicalMovement[0]!.business_date}',
+         'RECONCILIATION_SALE', '${randomUUID()}', '${ids.managerMembership}')
+    `);
+    const legacyMovement = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='RECONCILIATION_SALE'
+    `);
+    expect(legacyMovement[0]?.count).toBe('1');
 
     const auditRows = await client.unsafe<{ count: string }[]>(`
       select count(*)::text as count from platform.security_events
       where tenant_id='${ids.tenant}' and event_code='FORECOURT.InventorySalePosted'
         and details->'after'->>'reconciliationId'='${reconciliationId}'
     `);
-    expect(auditRows[0]?.count).toBe('1');
+    expect(auditRows[0]?.count).toBe('2');
   });
 
   it('preserves a returned revision and approves only its corrected replacement', async () => {
@@ -502,6 +693,50 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       ),
     );
     expect(submitted.state).toBe('SUBMITTED');
+
+    await expect(
+      client.unsafe(`
+        update app.reconciliations
+        set state='APPROVED', approved_by='${ids.managerMembership}', approved_at=now()
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+      `),
+    ).rejects.toThrow('lineage for every meter reading');
+    const afterRejectedApproval = await client.unsafe<{ state: string }[]>(`
+      select state from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(afterRejectedApproval[0]?.state).toBe('SUBMITTED');
+
+    const returnRevision = await client.unsafe<{ id: string }[]>(`
+      select id from app.reconciliation_revisions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+        and state='PENDING_APPROVAL'
+    `);
+    const returnReading = await client.unsafe<{ id: string }[]>(`
+      select id from app.reconciliation_meter_readings
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+    `);
+    const otherShiftSegment = await client.unsafe<{ id: string; litres: string }[]>(`
+      select id, litres from app.meter_segments
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and shift_id='${ids.shift}' and state='SEALED'
+      order by segment_start_at, id limit 1
+    `);
+    await expect(
+      client.unsafe(`
+        insert into app.reconciliation_meter_reading_segments
+          (id, tenant_id, station_id, reconciliation_id, revision_id,
+           reconciliation_meter_reading_id, meter_segment_id, allocated_litres)
+        values
+          ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${reconciliationId}', '${returnRevision[0]!.id}',
+           '${returnReading[0]!.id}', '${otherShiftSegment[0]!.id}', '${otherShiftSegment[0]!.litres}')
+      `),
+    ).rejects.toThrow('must match shift, nozzle, and product');
+    const afterRejectedBridge = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.reconciliation_meter_reading_segments
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and reconciliation_id='${reconciliationId}'
+    `);
+    expect(afterRejectedBridge[0]?.count).toBe('0');
 
     const firstRevision = await client.unsafe<
       {
@@ -728,8 +963,11 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       select count(*)::text as count, coalesce(sum(quantity_litres), 0)::text as quantity
       from app.inventory_movements
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and source_type='RECONCILIATION_SALE' and source_id in (
-          select id from app.reconciliation_meter_readings where reconciliation_id='${reconciliationId}'
+        and source_type='METER_SEGMENT_SALE'
+        and source_id in (
+          select meter_segment_id
+          from app.reconciliation_meter_reading_segments
+          where reconciliation_id='${reconciliationId}'
         )
     `);
     expect(movements[0]).toEqual({ count: '1', quantity: '-501.000' });
@@ -739,6 +977,6 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       where tenant_id='${ids.tenant}' and event_code='FORECOURT.InventorySalePosted'
         and details->'after'->>'reconciliationId'='${reconciliationId}'
     `);
-    expect(auditRows[0]?.count).toBe('1');
+    expect(auditRows[0]?.count).toBe('2');
   });
 });

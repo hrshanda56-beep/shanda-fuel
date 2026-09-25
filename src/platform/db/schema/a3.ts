@@ -822,6 +822,12 @@ export const reconciliationRevisions = appSchema.table(
       table.stationId,
       table.id,
     ),
+    unique('reconciliation_revisions_reconciliation_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.reconciliationId,
+      table.id,
+    ),
     unique('reconciliation_revisions_number_uidx').on(
       table.tenantId,
       table.reconciliationId,
