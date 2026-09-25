@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { stationBusinessDayBounds } from './station-business-time';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -71,6 +72,14 @@ function parseBusinessDate(businessDate: string): { year: number; month: number;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(businessDate);
   if (!match) throw new Error(`Invalid business date: ${businessDate}`);
   return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+async function businessDayBoundsForStation(stationId: string, businessDate: string) {
+  const rows = await client<{ timezone: string }[]>`
+    select timezone from app.stations where id = ${stationId}
+  `;
+  if (rows.length !== 1) throw new Error(`Station ${stationId} was not found`);
+  return stationBusinessDayBounds(businessDate, rows[0]!.timezone);
 }
 
 async function postCommand(
@@ -352,8 +361,10 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
     expect(open.status).toBe(200);
     const { businessDate } = (await open.json()) as { businessDate: string };
 
-    const plannedStartAt = new Date(Date.now() - 5 * 60_000).toISOString();
-    const plannedEndAt = new Date(Date.now() + 6 * 60 * 60_000).toISOString();
+    const { plannedStartAt, plannedEndAt } = await businessDayBoundsForStation(
+      ids.stationFullDay,
+      businessDate,
+    );
     const start = await postCommand(
       {
         commandType: 'StartShift',
