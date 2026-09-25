@@ -100,7 +100,15 @@ async function createSealedSegments(
   shiftId: string,
   readings: readonly string[],
   keyPrefix: string,
+  shiftVersion?: number,
 ) {
+  const currentShift = await client.unsafe<{ version: number }[]>(`
+    select version
+    from app.shifts
+    where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${shiftId}'
+  `);
+  expect(currentShift).toHaveLength(1);
+  const expectedShiftVersion = shiftVersion ?? currentShift[0]!.version;
   const boundaryIds: string[] = [];
   for (const [index, readingValue] of readings.entries()) {
     const boundaryId = randomUUID();
@@ -124,7 +132,7 @@ async function createSealedSegments(
           ...(index === 0
             ? { exceptionReason: 'A5 canonical sale chronology integration fixture' }
             : {}),
-          expectedVersion: 0,
+          expectedVersion: expectedShiftVersion,
         },
         `${keyPrefix}-boundary-${index}-${boundaryId}`,
       ),
@@ -238,6 +246,12 @@ async function createPopulatedProductionReconciliation(
       `a5-start-reconciliation-shift-${reconciliationId}`,
     ),
   );
+  const startedShift = await client.unsafe<{ version: number }[]>(`
+    select version
+    from app.shifts
+    where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationShiftId}'
+  `);
+  expect(startedShift).toHaveLength(1);
   const common = {
     tenantId: ids.tenant,
     stationId: ids.station,
@@ -268,6 +282,7 @@ async function createPopulatedProductionReconciliation(
     reconciliationShiftId,
     [openingReading, originalClosingReading, correctedClosingReading],
     `a5-return-${reconciliationId}`,
+    startedShift[0]!.version,
   );
   await expectOk(
     await postCommand(
@@ -574,16 +589,30 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     );
     const receiptCostBody = await expectOk(receiptCost);
     const explicitReceipt = await client.unsafe<
-      { count: string; amount: string; currency: string }[]
+      {
+        id: string;
+        source_type: string;
+        source_id: string;
+        amount: string;
+        currency: string;
+        effective_at: string;
+      }[]
     >(`
-      select count(*)::text as count, sum(amount)::text as amount, min(currency) as currency
+      select id, source_type, source_id, amount::text as amount, currency,
+             effective_at::text as effective_at
       from app.inventory_cost_events
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
         and event_type='RECEIPT_COST'
         and source_type='FUEL_DELIVERY_ALLOCATION'
         and source_id='${ids.allocation}'
     `);
-    expect(explicitReceipt[0]).toEqual({ count: '1', amount: '500.0000', currency: 'USD' });
+    expect(explicitReceipt).toHaveLength(1);
+    expect(explicitReceipt[0]).toMatchObject({
+      source_type: 'FUEL_DELIVERY_ALLOCATION',
+      source_id: ids.allocation,
+      amount: '500.0000',
+      currency: 'USD',
+    });
     expect(
       await postInventoryCommand(
         {
@@ -958,23 +987,38 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const approved = await expectOk(await readReconciliation(reconciliationId));
     expect(approved.state).toBe('APPROVED');
     expect(approved.version).toBe(11);
-    expect(
-      await postInventoryCommand(
-        {
-          commandType: 'RecordReceiptCost',
-          tenantId: ids.tenant,
-          stationId: ids.station,
-          allocationId: ids.allocation,
-          amount: '500.0000',
-          currency: 'USD',
-        },
-        'a5-receipt-cost-after-sale',
-      ).then(async (response) => {
-        const body = await response.json();
-        expect(response.status).toBe(200);
-        return body;
-      }),
-    ).toEqual(receiptCostBody);
+    const receiptRetryAfterSales = await postInventoryCommand(
+      {
+        commandType: 'RecordReceiptCost',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        allocationId: ids.allocation,
+        amount: '500.0000',
+        currency: 'USD',
+      },
+      'a5-receipt-cost-after-sale',
+    );
+    const receiptRetryAfterSalesBody = await expectOk(receiptRetryAfterSales);
+    expect(receiptRetryAfterSalesBody.costEventId).toBe(explicitReceipt[0]!.id);
+    const receiptAfterSales = await client.unsafe<
+      {
+        id: string;
+        source_type: string;
+        source_id: string;
+        amount: string;
+        currency: string;
+        effective_at: string;
+      }[]
+    >(`
+      select id, source_type, source_id, amount::text as amount, currency,
+             effective_at::text as effective_at
+      from app.inventory_cost_events
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and event_type='RECEIPT_COST'
+        and source_type='FUEL_DELIVERY_ALLOCATION'
+        and source_id='${ids.allocation}'
+    `);
+    expect(receiptAfterSales).toEqual(explicitReceipt);
     const lockedWrite = await postCommand(
       { commandType: 'SaveReconciliationDraft', ...common, expectedVersion: 11 },
       `a5-locked-write-${reconciliationId}`,
@@ -1197,7 +1241,9 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     `);
     expect(unvalued).toEqual([
       {
-        quantity_litres: authoritativeQuantity.quantize(DECIMAL_POLICIES.litres).toString(),
+        quantity_litres: authoritativeQuantity
+          .quantize(DECIMAL_POLICIES.litres)
+          .value.toFixed(DECIMAL_POLICIES.litres.scale),
         inventory_value: null,
         weighted_average_cost: null,
         currency: null,
