@@ -14,9 +14,10 @@ import {
 } from './application';
 import { databaseForecourtPorts, loadForecourtStation } from './persistence';
 import { resolveForecourtCommandContext } from './application';
+import { authorize } from '../../platform/security/permissions';
 
 const uuid = z.string().uuid();
-const paymentMethod = z.enum([
+export const productionReconciliationPaymentMethods = [
   'CASH',
   'POS',
   'ECOCASH',
@@ -25,7 +26,8 @@ const paymentMethod = z.enum([
   'PREPAID',
   'STAFF_OR_MANAGEMENT_FUEL',
   'OTHER_APPROVED',
-]);
+] as const;
+const paymentMethod = z.enum(productionReconciliationPaymentMethods);
 
 const basePayload = z.object({
   tenantId: uuid,
@@ -334,14 +336,16 @@ export async function saveReconciliationMeterReadingsFromRequest(request: Reques
   );
 }
 
-const payment = z.object({
+export const productionReconciliationPaymentSchema = z.object({
   id: uuid.optional(),
   method: paymentMethod,
   amount: z.string(),
   reference: z.string().optional(),
   note: z.string().optional(),
 });
-const paymentsPayload = basePayload.extend({ payments: z.array(payment).max(100) });
+const paymentsPayload = basePayload.extend({
+  payments: z.array(productionReconciliationPaymentSchema).max(100),
+});
 export async function saveReconciliationPaymentsFromRequest(request: Request, input: unknown) {
   const payload = paymentsPayload.parse(input);
   return runEditableDetailCommand(
@@ -936,6 +940,11 @@ export async function getProductionReconciliationFromRequest(
   input: { tenantId: string; stationId: string; reconciliationId: string },
 ) {
   const context = await contextFor(request, input);
+  authorize({
+    actor: context.authority.authorization,
+    permissionCode: 'reconciliation.view',
+    requestedScope: context.scope,
+  });
   return withQueryTransaction(context, async (transaction) => {
     const header = await loadHeader(transaction, context, input.reconciliationId);
     const [attendants, readings, payments, expenses, deliveries, dips, cash, explanations] =
