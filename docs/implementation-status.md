@@ -161,6 +161,19 @@ approve/lock flow, and downstream status links are integrated. A11 does not
 implement costing, its own reporting engine, GL, tax, bank/provider APIs, or
 full offline synchronization; it links to the existing A10 reporting surface.
 
+### A12.2 — Inventory costing schema and WAC foundation — PARTIAL
+
+Evidence: `src/platform/db/schema/a12.ts`; migration
+`0011_a12_inventory_costing_wac.sql`; `src/modules/costing/domain.ts`; unit
+tests in `src/modules/costing/domain.test.ts`; PostgreSQL coverage in
+`tests/integration/a12-costing.test.ts`.
+
+The four costing authorities, tenant/station RLS, append-only guards, explicit
+revaluation workflow metadata, deterministic chronological replay, exact
+decimal WAC arithmetic, UNVALUED semantics, sale attribution basis, and replay
+fingerprints are present. A12.2 does not implement A12.3 valuation commands or
+the later A12.4 revaluation posting workflow.
+
 ## Roadmap phase reconciliation
 
 | Phase | Status | Reconciled scope |
@@ -169,7 +182,7 @@ full offline synchronization; it links to the existing A10 reporting surface.
 | Phase 1 — Tenancy, identity, authorization, and security | **COMPLETE** | Tenant hierarchy, identity, authorization, RLS, runtime roles, security events, and isolation proof. |
 | Phase 2 — Core forecourt vertical slice | **COMPLETE** | Business day → shift → meters → declarations → reconciliation → approval/post/lock, with representative mobile workflow. |
 | Phase 3 — Inventory, tanks, deliveries, and costing | **PARTIAL** | Tank/dip/delivery/movement/adjustment foundation is implemented; inventory pools, transfers, calibration execution, full delivery interruption flow, WAC, and revaluation remain. |
-| Phase 3 — WAC and late-cost revaluation | **OPEN** | No chronological WAC/COGS/revaluation implementation exists. |
+| Phase 3 — WAC and late-cost revaluation | **PARTIAL** | A12.2 provides the costing authorities and deterministic WAC/COGS replay foundation; valuation commands and late-cost revaluation workflow remain. |
 | Phase 4 — Cash, banking, and electronic settlements | **PARTIAL** | Collections, deposits, manual bank confirmation, and A9 provider settlement reconciliation are implemented; cash counts, handovers, disputes, and any separate provider-batch scope remain. |
 | Phase 5 — Suppliers, customers, and expenses | **PARTIAL** | Supplier creditors are complete; the implemented customer subset is complete; customer invoices/benefits/policy items and expenses/recurring costs remain. |
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
