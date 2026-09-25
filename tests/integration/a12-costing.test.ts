@@ -280,7 +280,7 @@ describe('A12.2 PostgreSQL costing foundation', () => {
       client.unsafe(`
         insert into app.inventory_sale_cost_attributions
           (id, tenant_id, station_id, tank_id, product_id, inventory_movement_id, meter_segment_id, sale_quantity_litres, pre_sale_wac, original_cogs, valuation_status, valuation_basis, replay_fingerprint, sale_cost_event_id, effective_at, business_date)
-        values ('${ids.wrongAttribution}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', '${ids.saleMovement}', '${ids.saleSegment}', '10.000', null, null, 'UNVALUED', 'UNVALUED', 'a122-unvalued-fingerprint', null, '2026-09-25T08:00:00Z', '2026-09-25')
+        values ('${ids.wrongAttribution}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', '${ids.saleMovement}', '${ids.saleSegment}', '10.000', '1.23456000', '12.3456', 'UNVALUED', 'PRE_SALE_WAC', 'a122-unvalued-fingerprint', '${ids.saleCostEvent}', '2026-09-25T08:00:00Z', '2026-09-25')
       `),
     ).rejects.toMatchObject({ constraint_name: 'inventory_sale_cost_attributions_status_ck' });
     await client.unsafe(`
