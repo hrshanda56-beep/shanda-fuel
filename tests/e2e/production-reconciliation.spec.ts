@@ -183,10 +183,29 @@ test.describe('production reconciliation persistence', () => {
     return response.json() as Promise<{ version?: number; state?: string }>;
   }
 
+  async function prepareFixtureShift(shiftId: string) {
+    const rows = await client.unsafe<{ planned_start_at: Date; planned_end_at: Date }[]>(`
+      update app.shifts as fixture_shift
+      set planned_start_at = database_clock.current_time - interval '5 minutes',
+          planned_end_at = database_clock.current_time + interval '15 minutes'
+      from (select clock_timestamp() as current_time) as database_clock
+      where fixture_shift.tenant_id='${ids.tenant}'
+        and fixture_shift.station_id='${ids.station}'
+        and fixture_shift.id='${shiftId}'
+        and fixture_shift.state='OPEN'
+      returning fixture_shift.planned_start_at, fixture_shift.planned_end_at
+    `);
+    expect(rows).toHaveLength(1);
+    const shift = rows[0];
+    if (!shift) throw new Error(`Fixture shift ${shiftId} was not updated`);
+    return shift;
+  }
+
   async function createSealedSegmentEvidence(
     request: APIRequestContext,
     shiftId: string,
     keyPrefix: string,
+    shiftInterval: { planned_start_at: Date; planned_end_at: Date },
   ) {
     const priorReadingRows = await client.unsafe<{ reading_value: string }[]>(`
       select reading_value
@@ -261,6 +280,12 @@ test.describe('production reconciliation persistence', () => {
     expect(openingBoundary.effective_at.getTime()).toBeLessThan(
       closingBoundary.effective_at.getTime(),
     );
+    expect(openingBoundary.effective_at.getTime()).toBeGreaterThanOrEqual(
+      shiftInterval.planned_start_at.getTime(),
+    );
+    expect(closingBoundary.effective_at.getTime()).toBeLessThanOrEqual(
+      shiftInterval.planned_end_at.getTime(),
+    );
     await command(
       request,
       {
@@ -304,6 +329,13 @@ test.describe('production reconciliation persistence', () => {
     const reviewUrl = `/stations/${ids.station}/reconciliations/${reconciliationId}/review?${query.toString().replace(`reconciliationId=${reconciliationId}&`, '')}`;
 
     await authenticate(context, supervisorToken);
+    const shiftInterval = await prepareFixtureShift(activeShiftId);
+    const sealedEvidence = await createSealedSegmentEvidence(
+      page.request,
+      activeShiftId,
+      `a5e-${reconciliationId}`,
+      shiftInterval,
+    );
     await page.goto(supervisorUrl);
     const createResponsePromise = page.waitForResponse(
       (response) =>
@@ -328,11 +360,6 @@ test.describe('production reconciliation persistence', () => {
     await expect(
       page.locator('[aria-label="Production daily reconciliation workflow"]'),
     ).toBeVisible();
-    const sealedEvidence = await createSealedSegmentEvidence(
-      page.request,
-      activeShiftId,
-      `a5e-${reconciliationId}`,
-    );
 
     const common = {
       tenantId: ids.tenant,
@@ -476,6 +503,13 @@ test.describe('production reconciliation persistence', () => {
     });
 
     await authenticate(context, supervisorToken);
+    const shiftInterval = await prepareFixtureShift(activeShiftId);
+    const sealedEvidence = await createSealedSegmentEvidence(
+      page.request,
+      activeShiftId,
+      `a11-${randomUUID()}`,
+      shiftInterval,
+    );
     await page.goto(`/operations/daily?${query.toString()}`);
     const createResponsePromise = page.waitForResponse(
       (response) =>
@@ -510,11 +544,6 @@ test.describe('production reconciliation persistence', () => {
     }
 
     const reconciliationId = createRequest.reconciliationId;
-    const sealedEvidence = await createSealedSegmentEvidence(
-      page.request,
-      activeShiftId,
-      `a11-${reconciliationId}`,
-    );
 
     await expect
       .poll(() => new URL(page.url()).searchParams.get('reconciliationId'), {
