@@ -66,6 +66,7 @@ const ids = {
   factPrepaidTopup: 'a10b0000-0000-4000-8000-0000000000bd',
   factTank: 'a10b0000-0000-4000-8000-0000000000be',
   factInventoryMovement: 'a10b0000-0000-4000-8000-0000000000bf',
+  factCostEvent: 'a10b0000-0000-4000-8000-0000000000c0',
   factDelivery: 'a10b0000-0000-4000-8000-0000000000c1',
   factOpeningBoundary: 'a10b0000-0000-4000-8000-0000000000c2',
   factClosingBoundary: 'a10b0000-0000-4000-8000-0000000000c3',
@@ -306,6 +307,13 @@ describe('A10 management reporting PostgreSQL read model', () => {
       insert into app.inventory_movements
         (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id, unit_landed_cost, total_landed_cost, currency)
         values ('${ids.factInventoryMovement}', '${ids.tenant}', '${ids.station}', '${ids.factTank}', '${ids.factProduct}', 'OPENING_BALANCE', 95.000, '2026-09-19T00:00:00Z', '2026-09-19', 'A10_TEST', '${ids.factInventoryMovement}', '${ids.membership}', 2.00000000, 190.0000, 'USD')
+        on conflict (id) do nothing;
+      insert into app.inventory_cost_events
+        (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id,
+         effective_at, business_date, amount, currency, actor_membership_id)
+        values ('${ids.factCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.factTank}', '${ids.factProduct}',
+          'OPENING_COST', 'A10_TEST', '${ids.factInventoryMovement}',
+          '2026-09-19T00:00:00Z', '2026-09-19', 190.0000, 'USD', '${ids.membership}')
         on conflict (id) do nothing;
       insert into app.fuel_deliveries
         (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, unit_landed_cost, total_landed_cost, currency, recorded_by, confirmed_by, confirmed_at)

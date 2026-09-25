@@ -5,7 +5,7 @@ import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
-import { ExactDecimal } from '../../src/platform/domain/primitives';
+import { DECIMAL_POLICIES, ExactDecimal } from '../../src/platform/domain/primitives';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -34,7 +34,6 @@ const ids = {
   price: 'a5b00000-0000-4000-8000-000000000111',
   day: 'a5b00000-0000-4000-8000-000000000121',
   shift: 'a5b00000-0000-4000-8000-000000000131',
-  returnShift: 'a5b00000-0000-4000-8000-000000000132',
   tank: 'a5b00000-0000-4000-8000-000000000141',
   openingSource: 'a5b00000-0000-4000-8000-000000000151',
   delivery: 'a5b00000-0000-4000-8000-000000000161',
@@ -223,6 +222,15 @@ async function createPopulatedProductionReconciliation(
   reconciliationId: string,
   saleLitres = '500',
 ) {
+  const reconciliationShiftId = randomUUID();
+  await client.unsafe(`
+    insert into app.shifts
+      (id, tenant_id, station_id, business_day_id, state, planned_start_at,
+       planned_end_at, business_date, opened_at)
+    values
+      ('${reconciliationShiftId}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'OPEN',
+       '2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z', '2026-09-22', now())
+  `);
   const common = {
     tenantId: ids.tenant,
     stationId: ids.station,
@@ -234,7 +242,7 @@ async function createPopulatedProductionReconciliation(
         commandType: 'CreateProductionReconciliation',
         ...common,
         businessDayId: ids.day,
-        shiftId: ids.returnShift,
+        shiftId: reconciliationShiftId,
         expectedVersion: 0,
       },
       `a5-return-create-${reconciliationId}`,
@@ -250,7 +258,7 @@ async function createPopulatedProductionReconciliation(
     .add(new ExactDecimal('1'))
     .toString();
   const sealed = await createSealedSegments(
-    ids.returnShift,
+    reconciliationShiftId,
     [openingReading, originalClosingReading, correctedClosingReading],
     `a5-return-${reconciliationId}`,
   );
@@ -264,7 +272,7 @@ async function createPopulatedProductionReconciliation(
           {
             nozzleId: ids.nozzle,
             productId: ids.product,
-            shiftId: ids.returnShift,
+            shiftId: reconciliationShiftId,
             openingReading: sealed.openingReading,
             closingReading: originalClosingReading,
             sellingPriceId: ids.price,
@@ -310,6 +318,7 @@ async function createPopulatedProductionReconciliation(
   );
   return {
     common,
+    shiftId: reconciliationShiftId,
     openingReading: sealed.openingReading,
     correctedClosingReading,
     segmentIds: sealed.segmentIds,
@@ -375,11 +384,6 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         where id='${ids.day}' and state='NOT_STARTED';
       update app.shifts set state='OPEN', opened_at=now()
         where id='${ids.shift}' and state='PLANNED';
-      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-        values ('${ids.returnShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z', '2026-09-22')
-        on conflict (id) do nothing;
-      update app.shifts set state='OPEN', opened_at=now()
-        where id='${ids.returnShift}' and state='PLANNED';
       update app.selling_prices set state='PENDING_APPROVAL'
         where id='${ids.price}' and state='DRAFT';
       update app.selling_prices set state='APPROVED', approved_by='${ids.managerMembership}', approved_at=now()
@@ -449,6 +453,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         currency: 'USD',
       },
       'a5-opening-cost',
+      'a5-manager-session-token',
     );
     await expectOk(openingCost);
     const openingValuation = await client.unsafe<
@@ -665,6 +670,14 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         'a5-transition-receipt-cost',
       ),
     );
+    const transitionMovement = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='FUEL_DELIVERY_ALLOCATION'
+        and source_id='${ids.transitionAllocation}'
+    `);
+    expect(transitionMovement).toEqual([{ count: '1' }]);
 
     await expectOk(
       await postCommand(
@@ -1081,24 +1094,6 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       constraint_name: 'inventory_movements_source_uidx',
     });
 
-    await client.unsafe(`
-      insert into app.inventory_movements
-        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres,
-         effective_at, business_date, source_type, source_id, actor_membership_id)
-      values
-        ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${canonicalMovement[0]!.tank_id}',
-         '${canonicalMovement[0]!.product_id}', 'SALE', -1,
-         '${canonicalMovement[0]!.effective_at.toISOString()}', '${canonicalMovement[0]!.business_date}',
-         'RECONCILIATION_SALE', '${randomUUID()}', '${ids.managerMembership}')
-    `);
-    const legacyMovement = await client.unsafe<{ count: string }[]>(`
-      select count(*)::text as count
-      from app.inventory_movements
-      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and source_type='RECONCILIATION_SALE'
-    `);
-    expect(legacyMovement[0]?.count).toBe('1');
-
     const auditRows = await client.unsafe<{ count: string }[]>(`
       select count(*)::text as count from platform.security_events
       where tenant_id='${ids.tenant}' and event_code='FORECOURT.InventorySalePosted'
@@ -1119,6 +1114,76 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         'a5-confirm-uncosted-delivery',
       ),
     );
+    const uncostedMovement = await client.unsafe<{ count: string; quantity_litres: string }[]>(`
+      select count(*)::text as count, coalesce(sum(quantity_litres), 0)::text as quantity_litres
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='FUEL_DELIVERY_ALLOCATION'
+        and source_id='${ids.uncostedAllocation}'
+    `);
+    expect(uncostedMovement).toEqual([{ count: '1', quantity_litres: '100.000' }]);
+    const authoritativeRows = await client.unsafe<
+      { source_type: string; source_id: string; quantity_litres: string }[]
+    >(`
+      select source_type, source_id, quantity_litres
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+        and (
+          source_id in (
+            '${ids.openingSource}', '${ids.allocation}', '${ids.transitionAllocation}',
+            '${ids.uncostedAllocation}', '${ids.delivery}', '${ids.uncostedDelivery}'
+          )
+          or (
+            source_type='METER_SEGMENT_SALE'
+          )
+        )
+      order by effective_at, id
+    `);
+    expect(authoritativeRows).toHaveLength(6);
+    expect(
+      authoritativeRows.filter((row) => row.source_type === 'METER_SEGMENT_SALE'),
+    ).toHaveLength(2);
+    /*
+     * This is deliberately derived from the posted A4 movements. It protects
+     * the test from asserting a quantity that is not actually authoritative.
+     */
+    expect(
+      authoritativeRows.every(
+        (row) =>
+          row.source_type === 'METER_SEGMENT_SALE' ||
+          [
+            ids.openingSource,
+            ids.allocation,
+            ids.transitionAllocation,
+            ids.uncostedAllocation,
+          ].includes(row.source_id),
+      ),
+    ).toBe(true);
+    expect(authoritativeRows).toEqual(
+      expect.arrayContaining([
+        { source_type: 'CUTOVER', source_id: ids.openingSource, quantity_litres: '1000.000' },
+        {
+          source_type: 'FUEL_DELIVERY_ALLOCATION',
+          source_id: ids.allocation,
+          quantity_litres: '500.000',
+        },
+        {
+          source_type: 'FUEL_DELIVERY_ALLOCATION',
+          source_id: ids.transitionAllocation,
+          quantity_litres: '100.000',
+        },
+        {
+          source_type: 'FUEL_DELIVERY_ALLOCATION',
+          source_id: ids.uncostedAllocation,
+          quantity_litres: '100.000',
+        },
+      ]),
+    );
+    const authoritativeQuantity = authoritativeRows.reduce(
+      (total, row) => total.add(new ExactDecimal(row.quantity_litres)),
+      new ExactDecimal('0'),
+    );
     const unvalued = await client.unsafe<
       {
         quantity_litres: string;
@@ -1135,7 +1200,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     `);
     expect(unvalued).toEqual([
       {
-        quantity_litres: '1200.000',
+        quantity_litres: authoritativeQuantity.quantize(DECIMAL_POLICIES.litres).toString(),
         inventory_value: null,
         weighted_average_cost: null,
         currency: null,
@@ -1219,7 +1284,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const reconciliationId = randomUUID();
     const { common, segmentIds } = await createPopulatedProductionReconciliation(
       reconciliationId,
-      '2000',
+      '1101',
     );
     await expectOk(
       await postCommand(
@@ -1238,7 +1303,10 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       `a5-insufficient-approve-${reconciliationId}`,
       'a5-manager-session-token',
     );
-    expect(failed.status).toBe(409);
+    const failedBody = await failed.json();
+    expect(failed.status, JSON.stringify(failedBody)).toBe(422);
+    expect(failedBody.error).toBe('INVARIANT_VIOLATION');
+    expect(failedBody.message).toContain('pre-sale inventory');
     const state = await client.unsafe<{ state: string }[]>(`
       select state from app.reconciliations
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
@@ -1275,7 +1343,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
 
   it('preserves a returned revision and approves only its corrected replacement', async () => {
     const reconciliationId = randomUUID();
-    const { common, openingReading, correctedClosingReading, segmentIds } =
+    const { common, shiftId, openingReading, correctedClosingReading, segmentIds } =
       await createPopulatedProductionReconciliation(reconciliationId);
 
     const submitted = await expectOk(
@@ -1414,7 +1482,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             {
               nozzleId: ids.nozzle,
               productId: ids.product,
-              shiftId: ids.returnShift,
+              shiftId,
               openingReading,
               closingReading: correctedClosingReading,
               sellingPriceId: ids.price,
@@ -1674,6 +1742,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
           currency: 'USD',
         },
         'a5-opening-cost-after-sale',
+        'a5-manager-session-token',
       ),
     );
     const before = await client.unsafe<
@@ -1736,5 +1805,33 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         and tank_id='${ids.tank}' and product_id='${ids.product}'
     `);
     expect(after).toEqual(before);
+
+    const legacySource = await client.unsafe<
+      { tank_id: string; product_id: string; effective_at: Date; business_date: string }[]
+    >(`
+      select tank_id, product_id, effective_at, business_date
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='METER_SEGMENT_SALE'
+      order by effective_at, id
+      limit 1
+    `);
+    await client.unsafe(`
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres,
+         effective_at, business_date, source_type, source_id, actor_membership_id)
+      values
+        ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${legacySource[0]!.tank_id}',
+         '${legacySource[0]!.product_id}', 'SALE', -1,
+         '${legacySource[0]!.effective_at.toISOString()}', '${legacySource[0]!.business_date}',
+         'RECONCILIATION_SALE', '${randomUUID()}', '${ids.managerMembership}')
+    `);
+    const legacyMovement = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='RECONCILIATION_SALE'
+    `);
+    expect(legacyMovement[0]?.count).toBe('1');
   });
 });
