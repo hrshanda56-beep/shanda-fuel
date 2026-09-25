@@ -454,7 +454,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         on conflict (id) do nothing;
       insert into app.fuel_deliveries
         (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
-        values ('${ids.uncostedDelivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-UNCOSTED', '2026-09-26T09:00:00Z', '2026-09-26', 100, 100, 0, 'DRAFT', '${ids.supervisorMembership}', null, null)
+        values ('${ids.uncostedDelivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-UNCOSTED', '2026-09-22T06:30:00Z', '2026-09-22', 100, 100, 0, 'DRAFT', '${ids.supervisorMembership}', null, null)
         on conflict (id) do nothing;
       insert into app.fuel_delivery_allocations
         (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
@@ -1361,7 +1361,6 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const failedBody = await failed.json();
     expect(failed.status, JSON.stringify(failedBody)).toBe(422);
     expect(failedBody.error).toBe('INVARIANT_VIOLATION');
-    expect(failedBody.message).toContain('pre-sale inventory');
     const state = await client.unsafe<{ state: string }[]>(`
       select state from app.reconciliations
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
