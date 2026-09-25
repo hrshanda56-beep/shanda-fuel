@@ -1,7 +1,9 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
+import { ExactDecimal } from '../../src/platform/domain/primitives';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -65,6 +67,7 @@ test.describe('production reconciliation persistence', () => {
         (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
       values
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
+        ('${ids.tenant}', '${ids.supervisorMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.tenant}', '${ids.managerMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}')
         on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name)
@@ -180,6 +183,109 @@ test.describe('production reconciliation persistence', () => {
     return response.json() as Promise<{ version?: number; state?: string }>;
   }
 
+  async function createSealedSegmentEvidence(
+    request: APIRequestContext,
+    shiftId: string,
+    keyPrefix: string,
+  ) {
+    const priorReadingRows = await client.unsafe<{ reading_value: string }[]>(`
+      select reading_value
+      from app.meter_boundaries
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and nozzle_id='${ids.nozzle}' and meter_installation_id='${ids.installation}'
+        and reading_status='AVAILABLE'
+      order by effective_at desc, id desc
+      limit 1
+    `);
+    const openingReading = priorReadingRows[0]?.reading_value ?? '100000.000';
+    const closingReading = new ExactDecimal(openingReading)
+      .add(new ExactDecimal('500.000'))
+      .toString();
+    const openingBoundaryId = randomUUID();
+    const closingBoundaryId = randomUUID();
+    const segmentId = randomUUID();
+
+    await command(
+      request,
+      {
+        commandType: 'ConfirmBoundary',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        boundaryId: openingBoundaryId,
+        nozzleId: ids.nozzle,
+        meterInstallationId: ids.installation,
+        businessDayId: ids.day,
+        shiftId,
+        responsibleAttendantId: ids.supervisorMembership,
+        reason: 'SHIFT_OPEN',
+        readingStatus: 'AVAILABLE',
+        readingValue: openingReading,
+        exceptionReason: 'A12.1 Playwright canonical opening evidence',
+        expectedVersion: 0,
+      },
+      `${keyPrefix}-opening-${openingBoundaryId}`,
+    );
+    await client.unsafe('select pg_sleep(0.01)');
+    await command(
+      request,
+      {
+        commandType: 'ConfirmBoundary',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        boundaryId: closingBoundaryId,
+        nozzleId: ids.nozzle,
+        meterInstallationId: ids.installation,
+        businessDayId: ids.day,
+        shiftId,
+        responsibleAttendantId: ids.supervisorMembership,
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'AVAILABLE',
+        readingValue: closingReading,
+        expectedVersion: 0,
+      },
+      `${keyPrefix}-closing-${closingBoundaryId}`,
+    );
+    const boundaryRows = await client.unsafe<{ id: string; effective_at: Date }[]>(`
+      select id, effective_at
+      from app.meter_boundaries
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and id in ('${openingBoundaryId}', '${closingBoundaryId}')
+      order by effective_at, id
+    `);
+    expect(boundaryRows).toHaveLength(2);
+    const openingBoundary = boundaryRows.find((boundary) => boundary.id === openingBoundaryId);
+    const closingBoundary = boundaryRows.find((boundary) => boundary.id === closingBoundaryId);
+    if (!openingBoundary || !closingBoundary) {
+      throw new Error('The canonical boundary evidence could not be reloaded');
+    }
+    expect(openingBoundary.effective_at.getTime()).toBeLessThan(
+      closingBoundary.effective_at.getTime(),
+    );
+    await command(
+      request,
+      {
+        commandType: 'SealSegment',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        segmentId,
+        nozzleId: ids.nozzle,
+        meterInstallationId: ids.installation,
+        businessDayId: ids.day,
+        shiftId,
+        openingBoundaryId,
+        closingBoundaryId,
+        productId: ids.product,
+        responsibleAttendantId: ids.supervisorMembership,
+        startAt: openingBoundary.effective_at.toISOString(),
+        endAt: closingBoundary.effective_at.toISOString(),
+        expectedVersion: 0,
+      },
+      `${keyPrefix}-segment-${segmentId}`,
+    );
+
+    return { openingReading, closingReading, segmentId };
+  }
+
   test('persists through refresh, submits, approves, locks, and rejects edits', async ({
     context,
     page,
@@ -222,6 +328,11 @@ test.describe('production reconciliation persistence', () => {
     await expect(
       page.locator('[aria-label="Production daily reconciliation workflow"]'),
     ).toBeVisible();
+    const sealedEvidence = await createSealedSegmentEvidence(
+      page.request,
+      activeShiftId,
+      `a5e-${reconciliationId}`,
+    );
 
     const common = {
       tenantId: ids.tenant,
@@ -239,8 +350,8 @@ test.describe('production reconciliation persistence', () => {
             nozzleId: ids.nozzle,
             productId: ids.product,
             shiftId: activeShiftId,
-            openingReading: '100000.000',
-            closingReading: '100500.000',
+            openingReading: sealedEvidence.openingReading,
+            closingReading: sealedEvidence.closingReading,
             sellingPriceId: ids.price,
           },
         ],
@@ -332,15 +443,22 @@ test.describe('production reconciliation persistence', () => {
     expect(lockedWrite.status()).toBe(409);
     expect((await lockedWrite.json()).error).toBe('CONFLICT');
 
-    const movements = await client.unsafe<{ count: string; quantity: string }[]>(`
-      select count(*)::text as count, coalesce(sum(quantity_litres), 0)::text as quantity
+    const movements = await client.unsafe<
+      { source_type: string; source_id: string; movement_type: string; quantity_litres: string }[]
+    >(`
+      select source_type, source_id, movement_type, quantity_litres::text as quantity_litres
       from app.inventory_movements
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and source_type='RECONCILIATION_SALE' and source_id in (
-          select id from app.reconciliation_meter_readings where reconciliation_id='${reconciliationId}'
-        )
+        and source_type='METER_SEGMENT_SALE' and source_id='${sealedEvidence.segmentId}'
     `);
-    expect(movements[0]).toEqual({ count: '1', quantity: '-500.000' });
+    expect(movements).toEqual([
+      {
+        source_type: 'METER_SEGMENT_SALE',
+        source_id: sealedEvidence.segmentId,
+        movement_type: 'SALE',
+        quantity_litres: '-500.000',
+      },
+    ]);
   });
 
   test('A11 workspace captures representative evidence, requires a return reason, and locks after approval', async ({
@@ -392,6 +510,11 @@ test.describe('production reconciliation persistence', () => {
     }
 
     const reconciliationId = createRequest.reconciliationId;
+    const sealedEvidence = await createSealedSegmentEvidence(
+      page.request,
+      activeShiftId,
+      `a11-${reconciliationId}`,
+    );
 
     await expect
       .poll(() => new URL(page.url()).searchParams.get('reconciliationId'), {
@@ -408,8 +531,8 @@ test.describe('production reconciliation persistence', () => {
       reconciliationId,
     };
 
-    await page.locator('input[id^="opening-"]').first().fill('100000.000');
-    await page.locator('input[id^="closing-"]').first().fill('100500.000');
+    await page.locator('input[id^="opening-"]').first().fill(sealedEvidence.openingReading);
+    await page.locator('input[id^="closing-"]').first().fill(sealedEvidence.closingReading);
     await page.getByRole('button', { name: 'Add payment evidence' }).click();
     await page.locator('input[id^="payment-amount-"]').first().fill('750.0000');
     await page.getByLabel('Counted cash').fill('750.0000');
