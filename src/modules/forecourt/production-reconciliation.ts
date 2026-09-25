@@ -7,6 +7,7 @@ import { AppError } from '../../platform/errors';
 import { ExactDecimal, money } from '../../platform/domain/primitives';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { postInventoryMovementInTransaction } from '../inventory/persistence';
+import { reconciliationMeterReadingSegments } from '../../platform/db/schema/a5';
 import {
   executeForecourtCommand,
   type ForecourtCommandContext,
@@ -15,6 +16,7 @@ import {
 import { databaseForecourtPorts, loadForecourtStation } from './persistence';
 import { resolveForecourtCommandContext } from './application';
 import { authorize } from '../../platform/security/permissions';
+import { deriveSegmentSaleAllocations } from './segment-sale-chronology';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -735,6 +737,7 @@ export async function approveProductionReconciliationFromRequest(request: Reques
   const key = request.headers.get('idempotency-key')?.trim();
   if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
   const context = await contextFor(request, payload);
+  const ports = databaseForecourtPorts();
   return executeForecourtCommand({
     context,
     commandType: 'ApproveProductionReconciliation',
@@ -743,65 +746,198 @@ export async function approveProductionReconciliationFromRequest(request: Reques
     subjectType: 'Reconciliation',
     subjectId: payload.reconciliationId,
     expectedVersion: payload.expectedVersion,
-    ports: databaseForecourtPorts(),
+    ports,
     execute: async (transaction) => {
       const header = await loadHeader(transaction, context, payload.reconciliationId);
       if (header.state !== 'SUBMITTED')
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be approved');
       const metrics = await loadMetrics(transaction, context, payload.reconciliationId);
       await requireExplanations(transaction, context, payload.reconciliationId, metrics);
+      const bridgeTable = await transaction.execute<{ installed: boolean }>(sql`
+        select to_regclass('app.reconciliation_meter_reading_segments') is not null as installed
+      `);
+      if (!bridgeTable[0]?.installed) {
+        throw new AppError(
+          'DEPENDENCY_UNAVAILABLE',
+          'The A12.1 reconciliation meter-segment bridge is not installed',
+        );
+      }
+      const revisions = await transaction.execute<{ id: string }>(sql`
+        select id
+        from app.reconciliation_revisions
+        where tenant_id=${context.tenantId}
+          and station_id=${context.stationId}
+          and reconciliation_id=${payload.reconciliationId}
+          and state='PENDING_APPROVAL'
+        order by revision desc, id desc
+        limit 1
+        for update
+      `);
+      const revision = revisions[0];
+      if (!revision) {
+        throw new AppError(
+          'CONFLICT',
+          'The submitted reconciliation has no pending approval revision',
+        );
+      }
       const readings = await transaction.execute<{
         id: string;
+        nozzle_id: string;
         product_id: string;
         litres_sold: string;
         shift_id: string;
+        opening_reading: string;
+        closing_reading: string;
       }>(sql`
-        select id, product_id, litres_sold, shift_id from app.reconciliation_meter_readings
+        select id, nozzle_id, product_id, litres_sold, shift_id, opening_reading, closing_reading
+        from app.reconciliation_meter_readings
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId}
         order by id
       `);
       const saleMovementIds: string[] = [];
+      const sourceSegmentIds: string[] = [];
       for (const reading of readings) {
-        if (new ExactDecimal(reading.litres_sold).value.isZero()) continue;
-        const tanksForProduct = await transaction.execute<{ id: string }>(sql`
-          select id from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${reading.product_id} and status='ACTIVE'
-          order by id
+        if (!header.shift_id || header.shift_id !== reading.shift_id) {
+          throw new AppError(
+            'CONFLICT',
+            'A reconciliation reading must belong to the reconciliation shift',
+          );
+        }
+        const segmentRows = await transaction.execute<{
+          id: string;
+          state: string;
+          opening_reading: string;
+          closing_reading: string;
+          litres: string;
+          meter_installation_id: string;
+          business_date: string;
+          segment_start_at: Date | string;
+          segment_end_at: Date | string;
+        }>(sql`
+          select m.id, m.state, m.opening_reading, m.closing_reading, m.litres,
+                 m.meter_installation_id,
+                 d.business_date, m.segment_start_at, m.segment_end_at
+          from app.meter_segments m
+          join app.station_business_days d
+            on d.tenant_id=m.tenant_id and d.station_id=m.station_id and d.id=m.business_day_id
+          where m.tenant_id=${context.tenantId}
+            and m.station_id=${context.stationId}
+            and m.business_day_id=${header.business_day_id}
+            and m.shift_id=${reading.shift_id}
+            and m.nozzle_id=${reading.nozzle_id}
+            and m.product_id=${reading.product_id}
+            and m.opening_reading >= ${reading.opening_reading}
+            and m.closing_reading <= ${reading.closing_reading}
+            and not exists (
+              select 1
+              from app.meter_segments successor
+              where successor.tenant_id=m.tenant_id
+                and successor.station_id=m.station_id
+                and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
+            )
+          order by m.segment_start_at, m.id
+          for update of m
         `);
-        if (tanksForProduct.length !== 1)
-          throw new AppError('CONFLICT', 'Cannot post a sale without an unambiguous source tank');
-        const movementId = await postInventoryMovementInTransaction(transaction, {
-          tenantId: context.tenantId,
-          stationId: context.stationId,
-          tankId: tanksForProduct[0]!.id,
-          productId: reading.product_id,
-          movementType: 'SALE',
-          quantityLitres: `-${reading.litres_sold}`,
-          effectiveAt: new Date(),
-          businessDate: header.business_date,
-          sourceType: 'RECONCILIATION_SALE',
-          sourceId: reading.id,
-          actorMembershipId: context.actor.membershipId,
-        });
-        saleMovementIds.push(movementId);
-        await databaseForecourtPorts().audit.append({
-          transaction,
-          context,
-          commandType: 'InventorySalePosted',
-          subjectType: 'InventoryMovement',
-          subjectId: movementId,
-          after: {
-            reconciliationId: payload.reconciliationId,
-            movementId,
-            litres: reading.litres_sold,
+        const allocations = deriveSegmentSaleAllocations(
+          {
+            openingReading: reading.opening_reading,
+            closingReading: reading.closing_reading,
+            litresSold: reading.litres_sold,
           },
-          provenance: {
-            actorId: context.actor.actorId,
-            membershipId: context.actor.membershipId,
+          segmentRows.map((segment) => ({
+            id: segment.id,
+            state: segment.state,
+            openingReading: segment.opening_reading,
+            closingReading: segment.closing_reading,
+            litres: segment.litres,
+            meterInstallationId: segment.meter_installation_id,
+            businessDate: segment.business_date,
+            segmentStartAt: segment.segment_start_at,
+            segmentEndAt: segment.segment_end_at,
+          })),
+        );
+        const positiveAllocations = allocations.filter(
+          (allocation) => !new ExactDecimal(allocation.litres).value.isZero(),
+        );
+        let tankId: string | undefined;
+        if (positiveAllocations.length > 0) {
+          const tanksForProduct = await transaction.execute<{ id: string }>(sql`
+            select id from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${reading.product_id} and status='ACTIVE'
+            order by id
+          `);
+          if (tanksForProduct.length !== 1)
+            throw new AppError('CONFLICT', 'Cannot post a sale without an unambiguous source tank');
+          tankId = tanksForProduct[0]!.id;
+        }
+        for (const allocation of allocations) {
+          let movementId: string | undefined;
+          if (!new ExactDecimal(allocation.litres).value.isZero()) {
+            const existingMovement = await transaction.execute<{ id: string }>(sql`
+              select id
+              from app.inventory_movements
+              where tenant_id=${context.tenantId}
+                and station_id=${context.stationId}
+                and movement_type='SALE'
+                and source_type='METER_SEGMENT_SALE'
+                and source_id=${allocation.segmentId}
+              for update
+            `);
+            if (existingMovement.length > 0) {
+              throw new AppError(
+                'CONFLICT',
+                'Canonical sale movement already exists for a sealed meter segment',
+              );
+            }
+            movementId = await postInventoryMovementInTransaction(transaction, {
+              tenantId: context.tenantId,
+              stationId: context.stationId,
+              tankId: tankId!,
+              productId: reading.product_id,
+              movementType: 'SALE',
+              quantityLitres: `-${allocation.litres}`,
+              effectiveAt: new Date(allocation.segmentEndAt),
+              businessDate: allocation.businessDate,
+              sourceType: 'METER_SEGMENT_SALE',
+              sourceId: allocation.segmentId,
+              actorMembershipId: context.actor.membershipId,
+            });
+          }
+          await transaction.insert(reconciliationMeterReadingSegments).values({
             tenantId: context.tenantId,
             stationId: context.stationId,
-            requestId: context.requestId,
-          },
-        });
+            reconciliationId: payload.reconciliationId,
+            revisionId: revision.id,
+            reconciliationMeterReadingId: reading.id,
+            meterSegmentId: allocation.segmentId,
+            allocatedLitres: allocation.litres,
+          });
+          if (movementId) saleMovementIds.push(movementId);
+          sourceSegmentIds.push(allocation.segmentId);
+          if (movementId)
+            await ports.audit.append({
+              transaction,
+              context,
+              commandType: 'InventorySalePosted',
+              subjectType: 'InventoryMovement',
+              subjectId: movementId,
+              after: {
+                reconciliationId: payload.reconciliationId,
+                reconciliationRevisionId: revision.id,
+                reconciliationMeterReadingId: reading.id,
+                meterSegmentId: allocation.segmentId,
+                movementId,
+                litres: allocation.litres,
+                effectiveAt: new Date(allocation.segmentEndAt).toISOString(),
+              },
+              provenance: {
+                actorId: context.actor.actorId,
+                membershipId: context.actor.membershipId,
+                tenantId: context.tenantId,
+                stationId: context.stationId,
+                requestId: context.requestId,
+              },
+            });
+        }
       }
       const now = await serverNow(transaction);
       const updated = await transaction.execute<{ version: number }>(sql`
@@ -810,10 +946,19 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         returning version
       `);
       if (!updated[0]) throw new AppError('CONFLICT', 'The reconciliation approval became stale');
-      await transaction.execute(sql`
-        update app.reconciliation_revisions set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, version=version+1
-        where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='PENDING_APPROVAL'
+      const approvedRevision = await transaction.execute<{ id: string }>(sql`
+        update app.reconciliation_revisions
+        set source_segment_ids=${JSON.stringify(sourceSegmentIds)}::jsonb,
+            state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz,
+            version=version+1
+        where tenant_id=${context.tenantId}
+          and station_id=${context.stationId}
+          and id=${revision.id}
+          and state='PENDING_APPROVAL'
+        returning id
       `);
+      if (!approvedRevision[0])
+        throw new AppError('CONFLICT', 'The reconciliation revision became stale');
       return {
         result: {
           reconciliationId: payload.reconciliationId,

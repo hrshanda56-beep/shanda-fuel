@@ -3,6 +3,7 @@ import {
   AnyPgColumn,
   check,
   foreignKey,
+  index,
   numeric,
   text,
   timestamp,
@@ -11,7 +12,15 @@ import {
 } from 'drizzle-orm/pg-core';
 import { appSchema } from './namespaces';
 import { memberships } from './a1';
-import { nozzles, products, reconciliations, sellingPrices, shifts } from './a3';
+import {
+  meterSegments,
+  nozzles,
+  products,
+  reconciliationRevisions,
+  reconciliations,
+  sellingPrices,
+  shifts,
+} from './a3';
 import { fuelDeliveries, tankDips, tanks } from './a4';
 
 const id = () =>
@@ -87,6 +96,17 @@ export const reconciliationMeterReadings = appSchema.table(
   },
   (table) => [
     unique('reconciliation_meter_readings_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('reconciliation_meter_readings_tenant_station_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.id,
+    ),
+    unique('reconciliation_meter_readings_reconciliation_id_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.reconciliationId,
+      table.id,
+    ),
     unique('reconciliation_meter_readings_nozzle_uidx').on(
       table.tenantId,
       table.stationId,
@@ -128,6 +148,89 @@ export const reconciliationMeterReadings = appSchema.table(
       columns: [table.tenantId, table.enteredBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'reconciliation_meter_readings_entered_by_fk',
+    }),
+  ],
+);
+
+/**
+ * Immutable A5-to-A3 lineage for canonical segment-level sale posting.
+ *
+ * The production migration adds a dedicated context/lifecycle guard because
+ * rows are inserted while the parent reconciliation is SUBMITTED or
+ * PENDING_APPROVAL and the linked revision is PENDING_APPROVAL. The bridge is
+ * append-only and is never rewritten after approval, posting, or locking.
+ */
+export const reconciliationMeterReadingSegments = appSchema.table(
+  'reconciliation_meter_reading_segments',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    reconciliationId: uuid('reconciliation_id').notNull(),
+    revisionId: uuid('revision_id').notNull(),
+    reconciliationMeterReadingId: uuid('reconciliation_meter_reading_id').notNull(),
+    meterSegmentId: uuid('meter_segment_id').notNull(),
+    allocatedLitres: numeric('allocated_litres', { precision: 18, scale: 3 }).notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('reconciliation_meter_reading_segments_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('reconciliation_meter_reading_segments_reading_segment_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.reconciliationMeterReadingId,
+      table.meterSegmentId,
+    ),
+    unique('reconciliation_meter_reading_segments_segment_uidx').on(
+      table.tenantId,
+      table.stationId,
+      table.meterSegmentId,
+    ),
+    index('reconciliation_meter_reading_segments_reading_idx').on(
+      table.tenantId,
+      table.stationId,
+      table.reconciliationId,
+      table.revisionId,
+      table.reconciliationMeterReadingId,
+    ),
+    check(
+      'reconciliation_meter_reading_segments_nonnegative_litres_ck',
+      sql`${table.allocatedLitres} >= 0`,
+    ),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.reconciliationId],
+      foreignColumns: [reconciliations.tenantId, reconciliations.stationId, reconciliations.id],
+      name: 'reconciliation_meter_reading_segments_reconciliation_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.reconciliationId, table.revisionId],
+      foreignColumns: [
+        reconciliationRevisions.tenantId,
+        reconciliationRevisions.stationId,
+        reconciliationRevisions.reconciliationId,
+        reconciliationRevisions.id,
+      ],
+      name: 'reconciliation_meter_reading_segments_revision_fk',
+    }),
+    foreignKey({
+      columns: [
+        table.tenantId,
+        table.stationId,
+        table.reconciliationId,
+        table.reconciliationMeterReadingId,
+      ],
+      foreignColumns: [
+        reconciliationMeterReadings.tenantId,
+        reconciliationMeterReadings.stationId,
+        reconciliationMeterReadings.reconciliationId,
+        reconciliationMeterReadings.id,
+      ],
+      name: 'reconciliation_meter_reading_segments_reading_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.meterSegmentId],
+      foreignColumns: [meterSegments.tenantId, meterSegments.stationId, meterSegments.id],
+      name: 'reconciliation_meter_reading_segments_meter_segment_fk',
     }),
   ],
 );
