@@ -454,21 +454,21 @@ test.describe('production reconciliation persistence', () => {
     const submittedRecord = JSON.parse(submittedRecordText) as { state: string; version: number };
 
     expect(submittedRecord.state).toBe('SUBMITTED');
-    await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
 
     await authenticate(context, managerToken);
     await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
-    await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Return for correction' })).toBeDisabled();
     await page.getByLabel('Return reason').fill('Meter evidence requires supervisor correction.');
     await page.getByRole('button', { name: 'Return for correction' }).click();
-    await expect(page.getByText('RETURNED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Returned', { exact: true })).toBeVisible();
 
     await authenticate(context, supervisorToken);
     await page.goto(`/operations/reconciliations/${reconciliationId}?${query.toString()}`);
-    await expect(page.getByText('RETURNED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Returned', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Submit for management review' }).click();
-    await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
     const submittedResponse = await page.request.get(
       `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
     );
@@ -486,7 +486,7 @@ test.describe('production reconciliation persistence', () => {
     await authenticate(context, managerToken);
     await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
     await page.getByRole('button', { name: 'Approve and lock' }).click();
-    await expect(page.getByText('APPROVED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Approved', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save persisted draft' })).toHaveCount(0);
     const accessibility = await new AxeBuilder({ page })
       .include('[aria-label="Daily station operations workspace"]')
