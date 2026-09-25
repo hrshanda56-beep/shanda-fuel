@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
 import { ExactDecimal } from '../../src/platform/domain/primitives';
 
@@ -38,7 +39,10 @@ const ids = {
   openingSource: 'a5b00000-0000-4000-8000-000000000151',
   delivery: 'a5b00000-0000-4000-8000-000000000161',
   allocation: 'a5b00000-0000-4000-8000-000000000171',
-  deliverySource: 'a5b00000-0000-4000-8000-000000000181',
+  transitionDelivery: 'a5b00000-0000-4000-8000-000000000162',
+  transitionAllocation: 'a5b00000-0000-4000-8000-000000000172',
+  uncostedDelivery: 'a5b00000-0000-4000-8000-000000000163',
+  uncostedAllocation: 'a5b00000-0000-4000-8000-000000000173',
   dip: 'a5b00000-0000-4000-8000-000000000191',
 };
 
@@ -52,6 +56,25 @@ async function postCommand(
   const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+      method: 'POST',
+      headers: {
+        cookie: `shanda-fuel.session_token=${signedToken}`,
+        'content-type': 'application/json',
+        'idempotency-key': key,
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+async function postInventoryCommand(
+  input: Record<string, unknown>,
+  key: string,
+  token = 'a5-supervisor-session-token',
+) {
+  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return inventoryCommandPost(
+    new Request('http://127.0.0.1:3000/api/inventory/commands', {
       method: 'POST',
       headers: {
         cookie: `shanda-fuel.session_token=${signedToken}`,
@@ -196,7 +219,10 @@ async function nextMeterReading(): Promise<string> {
   return rows[0]?.reading_value ?? '100000.000';
 }
 
-async function createPopulatedProductionReconciliation(reconciliationId: string) {
+async function createPopulatedProductionReconciliation(
+  reconciliationId: string,
+  saleLitres = '500',
+) {
   const common = {
     tenantId: ids.tenant,
     stationId: ids.station,
@@ -215,11 +241,13 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
     ),
   );
   const openingReading = await nextMeterReading();
+  const saleValue = new ExactDecimal(saleLitres).multiply(new ExactDecimal('1.5')).toString();
   const originalClosingReading = new ExactDecimal(openingReading)
-    .add(new ExactDecimal('500'))
+    .add(new ExactDecimal(saleLitres))
     .toString();
   const correctedClosingReading = new ExactDecimal(openingReading)
-    .add(new ExactDecimal('501'))
+    .add(new ExactDecimal(saleLitres))
+    .add(new ExactDecimal('1'))
     .toString();
   const sealed = await createSealedSegments(
     ids.returnShift,
@@ -252,7 +280,7 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
         commandType: 'SavePaymentAllocations',
         ...common,
         expectedVersion: 1,
-        payments: [{ method: 'CASH', amount: '750.0000' }],
+        payments: [{ method: 'CASH', amount: saleValue }],
       },
       `a5-return-payments-${reconciliationId}`,
     ),
@@ -269,7 +297,7 @@ async function createPopulatedProductionReconciliation(reconciliationId: string)
         commandType: 'SaveCashDeclaration',
         ...common,
         expectedVersion: 3,
-        countedCash: '750.0000',
+        countedCash: saleValue,
       },
       `a5-return-cash-${reconciliationId}`,
     ),
@@ -371,20 +399,32 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         values ('${ids.openingSource}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', 1000, '2026-09-22T05:00:00Z', '2026-09-22', 'CUTOVER', '${ids.openingSource}', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into app.fuel_deliveries
-        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
-        values ('${ids.delivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-1', '2026-09-22T07:00:00Z', '2026-09-22', 500, 500, 0, 'CONFIRMED', '${ids.supervisorMembership}', '${ids.managerMembership}', now())
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, unit_landed_cost, total_landed_cost, currency, recorded_by, confirmed_by, confirmed_at)
+        values ('${ids.delivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-1', '2026-09-22T07:00:00Z', '2026-09-22', 500, 500, 0, 'DRAFT', 9.999, 123.4500, 'USD', '${ids.supervisorMembership}', null, null)
         on conflict (id) do nothing;
       insert into app.fuel_delivery_allocations
         (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
         values ('${ids.allocation}', '${ids.tenant}', '${ids.station}', '${ids.delivery}', '${ids.tank}', '${ids.product}', 500)
         on conflict (id) do nothing;
-      insert into app.inventory_movements
-        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
-        values ('${ids.deliverySource}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'DELIVERY', 500, '2026-09-22T07:05:00Z', '2026-09-22', 'DELIVERY', '${ids.delivery}', '${ids.managerMembership}')
+      insert into app.fuel_deliveries
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
+        values ('${ids.transitionDelivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-TRANSITION', '2026-09-25T09:00:00Z', '2026-09-22', 100, 100, 0, 'DRAFT', '${ids.supervisorMembership}', null, null)
+        on conflict (id) do nothing;
+      insert into app.fuel_delivery_allocations
+        (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
+        values ('${ids.transitionAllocation}', '${ids.tenant}', '${ids.station}', '${ids.transitionDelivery}', '${ids.tank}', '${ids.product}', 100)
+        on conflict (id) do nothing;
+      insert into app.fuel_deliveries
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
+        values ('${ids.uncostedDelivery}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-UNCOSTED', '2026-09-26T09:00:00Z', '2026-09-26', 100, 100, 0, 'DRAFT', '${ids.supervisorMembership}', null, null)
+        on conflict (id) do nothing;
+      insert into app.fuel_delivery_allocations
+        (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
+        values ('${ids.uncostedAllocation}', '${ids.tenant}', '${ids.station}', '${ids.uncostedDelivery}', '${ids.tank}', '${ids.product}', 100)
         on conflict (id) do nothing;
       insert into app.tank_dips
         (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
-        values ('${ids.dip}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '2026-09-22T23:00:00Z', '2026-09-22', 1000, '${ids.supervisorMembership}')
+        values ('${ids.dip}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '2026-09-22T23:00:00Z', '2026-09-22', 1100, '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
         values
@@ -399,6 +439,174 @@ describe('A5 production daily reconciliation persistence and approval', () => {
   });
 
   it('creates, reloads, submits, concurrently approves, retries, and chronologically posts A4 sales', async () => {
+    const openingCost = await postInventoryCommand(
+      {
+        commandType: 'RecordOpeningInventoryCost',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        tankId: ids.tank,
+        amount: '1000.0000',
+        currency: 'USD',
+      },
+      'a5-opening-cost',
+    );
+    await expectOk(openingCost);
+    const openingValuation = await client.unsafe<
+      {
+        count: string;
+        quantity_litres: string;
+        inventory_value: string;
+        valuation_status: string;
+      }[]
+    >(`
+      select
+        (select count(*)::text from app.inventory_cost_events
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and event_type='OPENING_COST' and source_id='${ids.openingSource}') as count,
+        quantity_litres, inventory_value, valuation_status
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    expect(openingValuation).toEqual([
+      {
+        count: '1',
+        quantity_litres: '1000.000',
+        inventory_value: '1000.0000',
+        valuation_status: 'VALUED',
+      },
+    ]);
+
+    const confirmed = await postInventoryCommand(
+      {
+        commandType: 'ConfirmDelivery',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        deliveryId: ids.delivery,
+      },
+      'a5-confirm-delivery',
+    );
+    await expectOk(confirmed);
+    const unvaluedReceipt = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.inventory_cost_events
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and event_type='RECEIPT_COST'
+        and source_type='FUEL_DELIVERY_ALLOCATION'
+        and source_id='${ids.allocation}'
+    `);
+    expect(unvaluedReceipt[0]).toEqual({ count: '0' });
+    const unvaluedProjection = await client.unsafe<
+      {
+        quantity_litres: string;
+        inventory_value: string | null;
+        weighted_average_cost: string | null;
+        currency: string | null;
+        valuation_status: string;
+      }[]
+    >(`
+      select quantity_litres, inventory_value, weighted_average_cost, currency, valuation_status
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    expect(unvaluedProjection).toEqual([
+      {
+        quantity_litres: '1500.000',
+        inventory_value: null,
+        weighted_average_cost: null,
+        currency: null,
+        valuation_status: 'UNVALUED',
+      },
+    ]);
+
+    expect(
+      (
+        await postInventoryCommand(
+          {
+            commandType: 'RecordReceiptCost',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            allocationId: ids.allocation,
+            currency: 'USD',
+          },
+          'a5-receipt-cost-missing-amount',
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await postInventoryCommand(
+          {
+            commandType: 'RecordReceiptCost',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            allocationId: ids.allocation,
+            amount: '500.0000',
+          },
+          'a5-receipt-cost-missing-currency',
+        )
+      ).status,
+    ).toBe(400);
+
+    const receiptCost = await postInventoryCommand(
+      {
+        commandType: 'RecordReceiptCost',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        allocationId: ids.allocation,
+        amount: '500.0000',
+        currency: 'USD',
+      },
+      'a5-receipt-cost',
+    );
+    const receiptCostBody = await expectOk(receiptCost);
+    const explicitReceipt = await client.unsafe<
+      { count: string; amount: string; currency: string }[]
+    >(`
+      select count(*)::text as count, sum(amount)::text as amount, min(currency) as currency
+      from app.inventory_cost_events
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and event_type='RECEIPT_COST'
+        and source_type='FUEL_DELIVERY_ALLOCATION'
+        and source_id='${ids.allocation}'
+    `);
+    expect(explicitReceipt[0]).toEqual({ count: '1', amount: '500.0000', currency: 'USD' });
+    expect(
+      await postInventoryCommand(
+        {
+          commandType: 'RecordReceiptCost',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          allocationId: ids.allocation,
+          amount: '500.0000',
+          currency: 'USD',
+        },
+        'a5-receipt-cost',
+      ).then(async (response) => {
+        const body = await response.json();
+        expect(response.status).toBe(200);
+        return body;
+      }),
+    ).toEqual(receiptCostBody);
+    expect(
+      await postInventoryCommand(
+        {
+          commandType: 'RecordReceiptCost',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          allocationId: ids.allocation,
+          amount: '500.0000',
+          currency: 'USD',
+        },
+        'a5-receipt-cost-source-retry',
+      ).then(async (response) => {
+        const body = await response.json();
+        expect(response.status).toBe(200);
+        return body;
+      }),
+    ).toEqual(receiptCostBody);
+
     const reconciliationId = randomUUID();
     const common = {
       tenantId: ids.tenant,
@@ -415,6 +623,47 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       ids.shift,
       [openingReading, zeroReading, midpointReading, closingReading],
       `a5-${reconciliationId}`,
+    );
+    const segmentTimes = await client.unsafe<{ id: string; segment_end_at: Date }[]>(`
+      select id, segment_end_at
+      from app.meter_segments
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
+    `);
+    const earlySaleEnd = segmentTimes.find(
+      (row) => row.id === sealed.segmentIds[1],
+    )!.segment_end_at;
+    const lateSaleEnd = segmentTimes.find((row) => row.id === sealed.segmentIds[2])!.segment_end_at;
+    const transitionAt = new Date((earlySaleEnd.getTime() + lateSaleEnd.getTime()) / 2);
+    await client.unsafe(`
+      update app.fuel_deliveries
+      set delivered_at='${transitionAt.toISOString()}'
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and id='${ids.transitionDelivery}'
+    `);
+    await expectOk(
+      await postInventoryCommand(
+        {
+          commandType: 'ConfirmDelivery',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          deliveryId: ids.transitionDelivery,
+        },
+        'a5-confirm-transition-delivery',
+      ),
+    );
+    await expectOk(
+      await postInventoryCommand(
+        {
+          commandType: 'RecordReceiptCost',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          allocationId: ids.transitionAllocation,
+          amount: '300.0000',
+          currency: 'USD',
+        },
+        'a5-transition-receipt-cost',
+      ),
     );
 
     await expectOk(
@@ -454,11 +703,21 @@ describe('A5 production daily reconciliation persistence and approval', () => {
           expectedVersion: 2,
           readings: [
             {
+              id: 'a5b00000-0000-4000-8000-000000000181',
               nozzleId: ids.nozzle,
               productId: ids.product,
               shiftId: ids.shift,
-              openingReading: sealed.openingReading,
+              openingReading: midpointReading,
               closingReading: sealed.closingReading,
+              sellingPriceId: ids.price,
+            },
+            {
+              id: 'a5b00000-0000-4000-8000-000000000182',
+              nozzleId: ids.nozzle,
+              productId: ids.product,
+              shiftId: ids.shift,
+              openingReading: zeroReading,
+              closingReading: midpointReading,
               sellingPriceId: ids.price,
             },
           ],
@@ -550,11 +809,12 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const draft = await expectOk(await readReconciliation(reconciliationId));
     expect(draft.state).toBe('DRAFT');
     expect(draft.version).toBe(9);
-    expect(draft.readings).toHaveLength(1);
+    expect(draft.readings).toHaveLength(2);
     // litresSold is selected directly from numeric(18,3), while monetary totals
     // are normalized through ExactDecimal.toString(). Neither representation's
     // trailing-zero scale is part of the API contract.
-    expectDecimalEqual(draft.readings![0]!.litresSold, '500.000');
+    expectDecimalEqual(draft.readings![0]!.litresSold, '250.000');
+    expectDecimalEqual(draft.readings![1]!.litresSold, '250.000');
     expectDecimalEqual(draft.totals!.expectedSales, '750.0000');
     expectDecimalEqual(draft.totals!.accountedSales, '750.0000');
     expectDecimalEqual(draft.totals!.salesVariance, '0.0000');
@@ -595,13 +855,116 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const successfulApproval = concurrentResults.find((result) => result.status === 200)!;
     expect(successfulApproval.body.state).toBe('APPROVED');
     expect(successfulApproval.body.saleMovementIds).toHaveLength(2);
+    const saleMovements = await client.unsafe<
+      { id: string; source_id: string; quantity_litres: string }[]
+    >(`
+      select id, source_id, quantity_litres
+      from app.inventory_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='METER_SEGMENT_SALE'
+        and source_id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
+      order by effective_at, id
+    `);
+    expect(saleMovements).toHaveLength(2);
+    expect(saleMovements.map((row) => row.source_id)).toEqual([
+      sealed.segmentIds[1],
+      sealed.segmentIds[2],
+    ]);
+    const saleCostRows = await client.unsafe<
+      { id: string; source_id: string; amount: string; currency: string }[]
+    >(`
+      select id, source_id, amount, currency
+      from app.inventory_cost_events
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and event_type='SALE_COGS'
+        and source_type='METER_SEGMENT_SALE'
+        and source_id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
+      order by effective_at, id
+    `);
+    expect(saleCostRows).toHaveLength(2);
+    expect(saleCostRows.map((row) => row.source_id)).toEqual([
+      sealed.segmentIds[1],
+      sealed.segmentIds[2],
+    ]);
+    expectDecimalEqual(saleCostRows[0]!.amount, '-250.0000');
+    expectDecimalEqual(saleCostRows[1]!.amount, '-287.0370');
+    expect(saleCostRows.every((row) => row.currency === 'USD')).toBe(true);
+    const saleAttributionRows = await client.unsafe<
+      {
+        inventory_movement_id: string;
+        meter_segment_id: string;
+        sale_cost_event_id: string;
+        sale_quantity_litres: string;
+        pre_sale_wac: string;
+        original_cogs: string;
+        valuation_status: string;
+        valuation_basis: string;
+        replay_fingerprint: string;
+      }[]
+    >(`
+      select inventory_movement_id, meter_segment_id, sale_cost_event_id,
+             sale_quantity_litres, pre_sale_wac, original_cogs,
+             valuation_status, valuation_basis, replay_fingerprint
+      from app.inventory_sale_cost_attributions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and meter_segment_id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
+      order by effective_at, inventory_movement_id
+    `);
+    expect(saleAttributionRows).toHaveLength(2);
+    expect(saleAttributionRows.map((row) => row.meter_segment_id)).toEqual([
+      sealed.segmentIds[1],
+      sealed.segmentIds[2],
+    ]);
+    expect(saleAttributionRows.map((row) => row.inventory_movement_id)).toEqual(
+      saleMovements.map((row) => row.id),
+    );
+    expect(saleAttributionRows.map((row) => row.sale_cost_event_id)).toEqual(
+      saleCostRows.map((row) => row.id),
+    );
+    expectDecimalEqual(saleAttributionRows[0]!.sale_quantity_litres, '250.000');
+    expectDecimalEqual(saleAttributionRows[0]!.pre_sale_wac, '1.00000000');
+    expectDecimalEqual(saleAttributionRows[0]!.original_cogs, '250.0000');
+    expectDecimalEqual(saleAttributionRows[1]!.sale_quantity_litres, '250.000');
+    expectDecimalEqual(saleAttributionRows[1]!.pre_sale_wac, '1.14814815');
+    expectDecimalEqual(saleAttributionRows[1]!.original_cogs, '287.0370');
+    expect(saleAttributionRows.every((row) => row.valuation_status === 'VALUED')).toBe(true);
+    expect(saleAttributionRows.every((row) => row.valuation_basis === 'PRE_SALE_WAC')).toBe(true);
+    expect(saleAttributionRows.every((row) => row.replay_fingerprint.length > 0)).toBe(true);
+    const fingerprintsBeforeRetry = saleAttributionRows.map((row) => row.replay_fingerprint);
     await expectOk(
       await postCommand(approvalPayload, successfulApproval.key, 'a5-manager-session-token'),
+    );
+    const fingerprintsAfterRetry = await client.unsafe<{ replay_fingerprint: string }[]>(`
+      select replay_fingerprint
+      from app.inventory_sale_cost_attributions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and meter_segment_id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
+      order by effective_at, inventory_movement_id
+    `);
+    expect(fingerprintsAfterRetry.map((row) => row.replay_fingerprint)).toEqual(
+      fingerprintsBeforeRetry,
     );
 
     const approved = await expectOk(await readReconciliation(reconciliationId));
     expect(approved.state).toBe('APPROVED');
     expect(approved.version).toBe(11);
+    expect(
+      await postInventoryCommand(
+        {
+          commandType: 'RecordReceiptCost',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          allocationId: ids.allocation,
+          amount: '500.0000',
+          currency: 'USD',
+        },
+        'a5-receipt-cost-after-sale',
+      ).then(async (response) => {
+        const body = await response.json();
+        expect(response.status).toBe(200);
+        return body;
+      }),
+    ).toEqual(receiptCostBody);
     const lockedWrite = await postCommand(
       { commandType: 'SaveReconciliationDraft', ...common, expectedVersion: 11 },
       `a5-locked-write-${reconciliationId}`,
@@ -617,6 +980,53 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     `);
     expect(rows[0]).toEqual({ count: '2', quantity: '-500.000' });
 
+    const costRows = await client.unsafe<{ count: string; amount: string }[]>(`
+      select count(*)::text as count, coalesce(sum(amount), 0)::text as amount
+      from app.inventory_cost_events
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and event_type='SALE_COGS'
+        and source_type='METER_SEGMENT_SALE'
+        and source_id in ('${sealed.segmentIds.join("','")}')
+    `);
+    expect(costRows[0]).toEqual({ count: '2', amount: '-537.0370' });
+
+    const attributionRows = await client.unsafe<
+      { count: string; cogs: string; valuation_basis: string }[]
+    >(`
+      select count(*)::text as count, coalesce(sum(original_cogs), 0)::text as cogs,
+             min(valuation_basis) as valuation_basis
+      from app.inventory_sale_cost_attributions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and meter_segment_id in ('${sealed.segmentIds.join("','")}')
+    `);
+    expect(attributionRows[0]).toEqual({
+      count: '2',
+      cogs: '537.0370',
+      valuation_basis: 'PRE_SALE_WAC',
+    });
+
+    const projectionRows = await client.unsafe<
+      {
+        quantity_litres: string;
+        inventory_value: string;
+        weighted_average_cost: string;
+        valuation_status: string;
+      }[]
+    >(`
+      select quantity_litres, inventory_value, weighted_average_cost, valuation_status
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    expect(projectionRows).toEqual([
+      {
+        quantity_litres: '1100.000',
+        inventory_value: '1262.9630',
+        weighted_average_cost: '1.14814818',
+        valuation_status: 'VALUED',
+      },
+    ]);
+
     const bridgeRows = await client.unsafe<{ count: string; litres: string }[]>(`
       select count(*)::text as count, coalesce(sum(allocated_litres), 0)::text as litres
       from app.reconciliation_meter_reading_segments
@@ -631,12 +1041,13 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       select source_type, source_id
       from app.inventory_movements
       where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and source_type in ('DELIVERY', 'METER_SEGMENT_SALE')
+        and source_type in ('FUEL_DELIVERY_ALLOCATION', 'METER_SEGMENT_SALE')
       order by effective_at, id
     `);
     expect(chronologicalMovements).toEqual([
-      { source_type: 'DELIVERY', source_id: ids.delivery },
+      { source_type: 'FUEL_DELIVERY_ALLOCATION', source_id: ids.allocation },
       { source_type: 'METER_SEGMENT_SALE', source_id: sealed.segmentIds[1] },
+      { source_type: 'FUEL_DELIVERY_ALLOCATION', source_id: ids.transitionAllocation },
       { source_type: 'METER_SEGMENT_SALE', source_id: sealed.segmentIds[2] },
     ]);
 
@@ -694,6 +1105,172 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         and details->'after'->>'reconciliationId'='${reconciliationId}'
     `);
     expect(auditRows[0]?.count).toBe('2');
+  });
+
+  it('rejects unvalued approval atomically and leaves no sale evidence', async () => {
+    await expectOk(
+      await postInventoryCommand(
+        {
+          commandType: 'ConfirmDelivery',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          deliveryId: ids.uncostedDelivery,
+        },
+        'a5-confirm-uncosted-delivery',
+      ),
+    );
+    const unvalued = await client.unsafe<
+      {
+        quantity_litres: string;
+        inventory_value: string | null;
+        weighted_average_cost: string | null;
+        currency: string | null;
+        valuation_status: string;
+      }[]
+    >(`
+      select quantity_litres, inventory_value, weighted_average_cost, currency, valuation_status
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    expect(unvalued).toEqual([
+      {
+        quantity_litres: '1200.000',
+        inventory_value: null,
+        weighted_average_cost: null,
+        currency: null,
+        valuation_status: 'UNVALUED',
+      },
+    ]);
+
+    const reconciliationId = randomUUID();
+    const { common, segmentIds } = await createPopulatedProductionReconciliation(reconciliationId);
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-unvalued-submit-${reconciliationId}`,
+      ),
+    );
+    const before = await client.unsafe<
+      { projection_version: number; quantity_litres: string; valuation_status: string }[]
+    >(`
+      select projection_version, quantity_litres, valuation_status
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    const failed = await postCommand(
+      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+      `a5-unvalued-approve-${reconciliationId}`,
+      'a5-manager-session-token',
+    );
+    expect(failed.status).toBe(409);
+    const state = await client.unsafe<{ state: string }[]>(`
+      select state from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(state).toEqual([{ state: 'SUBMITTED' }]);
+    const failedEvidence = await client.unsafe<
+      { movements: string; cogs: string; attributions: string; bridges: string }[]
+    >(`
+      select
+        (select count(*)::text from app.inventory_movements
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and source_type='METER_SEGMENT_SALE' and source_id in ('${segmentIds.join("','")}')) as movements,
+        (select count(*)::text from app.inventory_cost_events
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and event_type='SALE_COGS' and source_id in ('${segmentIds.join("','")}')) as cogs,
+        (select count(*)::text from app.inventory_sale_cost_attributions
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and meter_segment_id in ('${segmentIds.join("','")}')) as attributions,
+        (select count(*)::text from app.reconciliation_meter_reading_segments
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and reconciliation_id='${reconciliationId}') as bridges
+    `);
+    expect(failedEvidence).toEqual([
+      { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
+    ]);
+    const after = await client.unsafe<
+      { projection_version: number; quantity_litres: string; valuation_status: string }[]
+    >(`
+      select projection_version, quantity_litres, valuation_status
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    expect(after).toEqual(before);
+
+    await expectOk(
+      await postInventoryCommand(
+        {
+          commandType: 'RecordReceiptCost',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          allocationId: ids.uncostedAllocation,
+          amount: '100.0000',
+          currency: 'USD',
+        },
+        'a5-cost-uncosted-delivery',
+      ),
+    );
+  });
+
+  it('rejects insufficient-stock approval atomically', async () => {
+    const reconciliationId = randomUUID();
+    const { common, segmentIds } = await createPopulatedProductionReconciliation(
+      reconciliationId,
+      '2000',
+    );
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-insufficient-submit-${reconciliationId}`,
+      ),
+    );
+    const before = await client.unsafe<{ projection_version: number; quantity_litres: string }[]>(`
+      select projection_version, quantity_litres
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    const failed = await postCommand(
+      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+      `a5-insufficient-approve-${reconciliationId}`,
+      'a5-manager-session-token',
+    );
+    expect(failed.status).toBe(409);
+    const state = await client.unsafe<{ state: string }[]>(`
+      select state from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(state).toEqual([{ state: 'SUBMITTED' }]);
+    const failedEvidence = await client.unsafe<
+      { movements: string; cogs: string; attributions: string; bridges: string }[]
+    >(`
+      select
+        (select count(*)::text from app.inventory_movements
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and source_type='METER_SEGMENT_SALE' and source_id in ('${segmentIds.join("','")}')) as movements,
+        (select count(*)::text from app.inventory_cost_events
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and event_type='SALE_COGS' and source_id in ('${segmentIds.join("','")}')) as cogs,
+        (select count(*)::text from app.inventory_sale_cost_attributions
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and meter_segment_id in ('${segmentIds.join("','")}')) as attributions,
+        (select count(*)::text from app.reconciliation_meter_reading_segments
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and reconciliation_id='${reconciliationId}') as bridges
+    `);
+    expect(failedEvidence).toEqual([
+      { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
+    ]);
+    const after = await client.unsafe<{ projection_version: number; quantity_litres: string }[]>(`
+      select projection_version, quantity_litres
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    expect(after).toEqual(before);
   });
 
   it('preserves a returned revision and approves only its corrected replacement', async () => {
@@ -1083,5 +1660,81 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         and details->'after'->>'reconciliationId'='${reconciliationId}'
     `);
     expect(auditRows[0]?.count).toBe('2');
+  });
+
+  it('keeps identical cost retries idempotent after sales and rejects new late receipt cost atomically', async () => {
+    await expectOk(
+      await postInventoryCommand(
+        {
+          commandType: 'RecordOpeningInventoryCost',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          tankId: ids.tank,
+          amount: '1000.0000',
+          currency: 'USD',
+        },
+        'a5-opening-cost-after-sale',
+      ),
+    );
+    const before = await client.unsafe<
+      { projection_version: number; quantity_litres: string; inventory_value: string | null }[]
+    >(`
+      select projection_version, quantity_litres, inventory_value
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    const deliveryId = randomUUID();
+    const allocationId = randomUUID();
+    await client.unsafe(`
+      insert into app.fuel_deliveries
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date,
+         note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status,
+         recorded_by, confirmed_by, confirmed_at)
+      values
+        ('${deliveryId}', '${ids.tenant}', '${ids.station}', '${ids.product}', 'A5-DN-LATE',
+         '2026-09-25T07:30:00Z', '2026-09-25', 50, 50, 0, 'CONFIRMED',
+         '${ids.supervisorMembership}', '${ids.managerMembership}', now());
+      insert into app.fuel_delivery_allocations
+        (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
+      values
+        ('${allocationId}', '${ids.tenant}', '${ids.station}', '${deliveryId}', '${ids.tank}',
+         '${ids.product}', 50);
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres,
+         effective_at, business_date, source_type, source_id, actor_membership_id)
+      values
+        ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}',
+         'DELIVERY', 50, '2026-09-25T07:30:00Z', '2026-09-25',
+         'FUEL_DELIVERY_ALLOCATION', '${allocationId}', '${ids.managerMembership}');
+    `);
+    const rejected = await postInventoryCommand(
+      {
+        commandType: 'RecordReceiptCost',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        allocationId,
+        amount: '50.0000',
+        currency: 'USD',
+      },
+      'a5-late-receipt-cost',
+    );
+    expect(rejected.status).toBe(409);
+    const authority = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.inventory_cost_events
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and event_type='RECEIPT_COST' and source_id='${allocationId}'
+    `);
+    expect(authority).toEqual([{ count: '0' }]);
+    const after = await client.unsafe<
+      { projection_version: number; quantity_litres: string; inventory_value: string | null }[]
+    >(`
+      select projection_version, quantity_litres, inventory_value
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and tank_id='${ids.tank}' and product_id='${ids.product}'
+    `);
+    expect(after).toEqual(before);
   });
 });

@@ -174,6 +174,24 @@ decimal WAC arithmetic, UNVALUED semantics, sale attribution basis, and replay
 fingerprints are present. A12.2 does not implement A12.3 valuation commands or
 the later A12.4 revaluation posting workflow.
 
+### A12.3 — Opening, receipt, and canonical sale costing — COMPLETE
+
+Evidence: migration `0012_a12_cost_projection_writer`; costing persistence in
+`src/modules/costing/persistence.ts`; inventory commands in
+`src/modules/inventory/commands.ts`; atomic A5 approval integration in
+`src/modules/forecourt/production-reconciliation.ts`; focused unit and
+PostgreSQL coverage in `src/modules/costing/domain.test.ts` and
+`tests/integration/a12-costing.test.ts`.
+
+Opening and explicit per-allocation receipt valuation append authoritative cost
+events and persist deterministic WAC projection state through a narrow
+security-definer writer. Approved canonical meter-segment sales append exactly
+one negative `SALE_COGS` event and one immutable pre-sale-WAC attribution in the
+same transaction as the A5 sale movement and approval. Mixed currencies,
+insufficient stock, unvalued sales, and late historical cost arrival are
+rejected; late-cost revaluation is explicitly deferred to A12.4. No FX,
+adjustment/transfer costing, or A10 profitability changes are included.
+
 ## Roadmap phase reconciliation
 
 | Phase | Status | Reconciled scope |
@@ -181,13 +199,13 @@ the later A12.4 revaluation posting workflow.
 | Phase 0 — Repository and engineering foundation | **COMPLETE** | Toolchain, CI/test harness, Drizzle/PostgreSQL workflow, environment validation, and modular monolith foundation. |
 | Phase 1 — Tenancy, identity, authorization, and security | **COMPLETE** | Tenant hierarchy, identity, authorization, RLS, runtime roles, security events, and isolation proof. |
 | Phase 2 — Core forecourt vertical slice | **COMPLETE** | Business day → shift → meters → declarations → reconciliation → approval/post/lock, with representative mobile workflow. |
-| Phase 3 — Inventory, tanks, deliveries, and costing | **PARTIAL** | Tank/dip/delivery/movement/adjustment foundation is implemented; inventory pools, transfers, calibration execution, full delivery interruption flow, WAC, and revaluation remain. |
-| Phase 3 — WAC and late-cost revaluation | **PARTIAL** | A12.2 provides the costing authorities and deterministic WAC/COGS replay foundation; valuation commands and late-cost revaluation workflow remain. |
+| Phase 3 — Inventory, tanks, deliveries, and costing | **PARTIAL** | Tank/dip/delivery/movement/adjustment foundation is implemented; A12.3 now provides opening/receipt valuation, canonical sale COGS, and persisted WAC projections; inventory pools, transfers, calibration execution, full delivery interruption flow, and revaluation remain. |
+| Phase 3 — WAC and late-cost revaluation | **PARTIAL** | A12.3 provides opening/receipt valuation, canonical pre-sale-WAC COGS, immutable attribution, and projection persistence; historical late-cost revaluation remains deferred to A12.4. |
 | Phase 4 — Cash, banking, and electronic settlements | **PARTIAL** | Collections, deposits, manual bank confirmation, and A9 provider settlement reconciliation are implemented; cash counts, handovers, disputes, and any separate provider-batch scope remain. |
 | Phase 5 — Suppliers, customers, and expenses | **PARTIAL** | Supplier creditors are complete; the implemented customer subset is complete; customer invoices/benefits/policy items and expenses/recurring costs remain. |
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
 | Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10 management/daily reporting is present, but profitability/COGS/gross margin, exports/artifacts, full as-of, Action Center, and Explain This Number are incomplete. |
-| Phase 6 — Profitability and gross margin | **OPEN** | Requires WAC/revaluation and posted sale-recognition/COGS foundations. |
+| Phase 6 — Profitability and gross margin | **OPEN** | Requires remaining revaluation and posted sale-recognition/profitability integration on top of the A12.3 WAC and canonical COGS foundations. |
 | Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations and representative accessibility/weak-network behavior exist; full cross-module review, performance, offline sync, observability, backup/restore, and incident readiness remain. |
 | Phase 8 — Pilot and cutover | **PARTIAL** | Onboarding workbook and per-tank opening balance support exist; approved cross-domain opening batch, training, shadow operation, UAT, discrepancy classification, and pilot exit evidence remain. |
 | Phase 8 — Client/accounting/signed-scope inputs | **REQUIRES_CLIENT_DECISION** | Real station master data, opening positions, accounting/tax policy, external identifiers, and signed SOW/contract scope are outside repository-only determination. |

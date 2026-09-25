@@ -7,6 +7,12 @@ import { AppError } from '../../platform/errors';
 import { ExactDecimal, money } from '../../platform/domain/primitives';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { postInventoryMovementInTransaction } from '../inventory/persistence';
+import {
+  orderInventoryCostReplay,
+  persistInventoryCostProjectionInTransaction,
+  postCanonicalSaleCostInTransaction,
+  type CostingMovement,
+} from '../costing';
 import { reconciliationMeterReadingSegments } from '../../platform/db/schema/a5';
 import {
   executeForecourtCommand,
@@ -796,6 +802,8 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       `);
       const saleMovementIds: string[] = [];
       const sourceSegmentIds: string[] = [];
+      const saleCostCandidates: CostingMovement[] = [];
+      const saleCostStreams = new Map<string, CostingMovement>();
       for (const reading of readings) {
         if (!header.shift_id || header.shift_id !== reading.shift_id) {
           throw new AppError(
@@ -901,6 +909,23 @@ export async function approveProductionReconciliationFromRequest(request: Reques
               sourceId: allocation.segmentId,
               actorMembershipId: context.actor.membershipId,
             });
+            saleCostCandidates.push({
+              tenantId: context.tenantId,
+              stationId: context.stationId,
+              tankId: tankId!,
+              productId: reading.product_id,
+              id: movementId,
+              movementType: 'SALE',
+              quantityLitres: `-${allocation.litres}`,
+              effectiveAt: new Date(allocation.segmentEndAt),
+              businessDate: allocation.businessDate,
+              sourceType: 'METER_SEGMENT_SALE',
+              sourceId: allocation.segmentId,
+            });
+            saleCostStreams.set(
+              [context.tenantId, context.stationId, tankId!, reading.product_id].join('|'),
+              saleCostCandidates.at(-1)!,
+            );
           }
           await transaction.insert(reconciliationMeterReadingSegments).values({
             tenantId: context.tenantId,
@@ -938,6 +963,27 @@ export async function approveProductionReconciliationFromRequest(request: Reques
               },
             });
         }
+      }
+      const orderedSaleCostCandidates = orderInventoryCostReplay(saleCostCandidates, []).filter(
+        (item): item is CostingMovement & { kind: 'MOVEMENT' } => item.kind === 'MOVEMENT',
+      );
+      for (const sale of orderedSaleCostCandidates) {
+        await postCanonicalSaleCostInTransaction(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          movementId: sale.id,
+          meterSegmentId: sale.sourceId,
+          actorMembershipId: context.actor.membershipId,
+          persistProjection: false,
+        });
+      }
+      for (const stream of saleCostStreams.values()) {
+        await persistInventoryCostProjectionInTransaction(transaction, {
+          tenantId: stream.tenantId,
+          stationId: stream.stationId,
+          tankId: stream.tankId,
+          productId: stream.productId,
+        });
       }
       const now = await serverNow(transaction);
       const updated = await transaction.execute<{ version: number }>(sql`

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error('DATABASE_URL is required for A12.2 costing integration tests.');
+if (!databaseUrl) throw new Error('DATABASE_URL is required for A12.3 costing integration tests.');
 
 const ids = {
   tenant: 'a1220000-0000-4000-8000-000000000001',
@@ -62,7 +62,7 @@ async function setContext(tenantId: string, stationId: string): Promise<void> {
   `);
 }
 
-describe('A12.2 PostgreSQL costing foundation', () => {
+describe('A12.3 PostgreSQL costing and projection persistence', () => {
   beforeAll(async () => {
     client = postgres(databaseUrl, { max: 1, prepare: false });
     await setContext(ids.tenant, ids.station);
@@ -195,13 +195,85 @@ describe('A12.2 PostgreSQL costing foundation', () => {
     ).rejects.toMatchObject({ constraint_name: 'inventory_cost_events_sale_cogs_negative_ck' });
   });
 
+  it('allows only the controlled projection writer to mutate stream state', async () => {
+    await client.unsafe('set role app_runtime');
+    try {
+      await setContext(ids.tenant, ids.station);
+      await expect(
+        client.unsafe(`
+          insert into app.inventory_cost_stream_state
+            (tenant_id, station_id, tank_id, product_id, quantity_litres, valuation_status)
+          values ('${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', '1.000', 'UNVALUED')
+        `),
+      ).rejects.toThrow(/permission denied/);
+      await client.unsafe(`
+        select app.upsert_inventory_cost_stream_state(
+          '${ids.tenant}'::uuid, '${ids.station}'::uuid, '${ids.tank}'::uuid, '${ids.product}'::uuid,
+          '100.000'::numeric, '123.4567'::numeric, 'USD'::text, '1.23456700'::numeric,
+          'VALUED'::text, '2026-09-25T06:00:00Z'::timestamptz, '${ids.openingMovement}'::uuid,
+          '2026-09-25T06:00:00Z'::timestamptz, '${ids.costEvent}'::uuid, 1::integer
+        )
+      `);
+      await expect(
+        client.unsafe(`
+          update app.inventory_cost_stream_state
+             set quantity_litres='101.000'
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and tank_id='${ids.tank}' and product_id='${ids.product}'
+        `),
+      ).rejects.toThrow(/permission denied/);
+      const persisted = await client.unsafe<
+        { quantity_litres: string; projection_version: number }[]
+      >(`
+        select quantity_litres, projection_version
+        from app.inventory_cost_stream_state
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and tank_id='${ids.tank}' and product_id='${ids.product}'
+      `);
+      expect(persisted).toEqual([{ quantity_litres: '100.000', projection_version: 1 }]);
+
+      await setContext(ids.tenant, ids.stationTwo);
+      await expect(
+        client.unsafe(`
+          select app.upsert_inventory_cost_stream_state(
+            '${ids.tenant}'::uuid, '${ids.station}'::uuid, '${ids.tank}'::uuid, '${ids.product}'::uuid,
+            '100.000'::numeric, '123.4567'::numeric, 'USD'::text, '1.23456700'::numeric,
+            'VALUED'::text, null, null, null, null, 2::integer
+          )
+        `),
+      ).rejects.toThrow(/station context mismatch/);
+      await setContext('a1230000-0000-4000-8000-000000000001', ids.station);
+      await expect(
+        client.unsafe(`
+          select app.upsert_inventory_cost_stream_state(
+            '${ids.tenant}'::uuid, '${ids.station}'::uuid, '${ids.tank}'::uuid, '${ids.product}'::uuid,
+            '100.000'::numeric, '123.4567'::numeric, 'USD'::text, '1.23456700'::numeric,
+            'VALUED'::text, null, null, null, null, 2::integer
+          )
+        `),
+      ).rejects.toThrow(/tenant context mismatch/);
+      await setContext(ids.tenant, ids.station);
+      await expect(
+        client.unsafe(`
+          select app.upsert_inventory_cost_stream_state(
+            '${ids.tenant}'::uuid, '${ids.station}'::uuid, '${ids.tank}'::uuid, '${ids.product}'::uuid,
+            '-1.000'::numeric, null, null, null, 'UNVALUED'::text,
+            null, null, null, null, 2::integer
+          )
+        `),
+      ).rejects.toThrow(/inventory_cost_stream_state_quantity_nonnegative_ck/);
+    } finally {
+      await client.unsafe('reset role');
+    }
+  });
+
   it('represents an unvalued stream without fake zero cost and isolates station keys through RLS', async () => {
     await setContext(ids.tenant, ids.station);
     await client.unsafe(`
       insert into app.inventory_cost_stream_state
         (tenant_id, station_id, tank_id, product_id, quantity_litres, valuation_status)
       values ('${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', '100.125', 'UNVALUED')
-      on conflict (tenant_id, station_id, tank_id, product_id) do update set quantity_litres='100.125', valuation_status='UNVALUED', inventory_value=null, weighted_average_cost=null;
+      on conflict (tenant_id, station_id, tank_id, product_id) do update set quantity_litres='100.125', valuation_status='UNVALUED', inventory_value=null, weighted_average_cost=null, currency=null;
       insert into app.inventory_cost_stream_state
         (tenant_id, station_id, tank_id, product_id, quantity_litres, valuation_status)
       values ('${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', '50.000', 'UNVALUED')
