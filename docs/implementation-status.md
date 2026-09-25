@@ -1,145 +1,189 @@
 # Implementation status
 
-## A11 — Daily operations workspace (implementation candidate)
+This document reconciles the original Phase 0–8 roadmap with the code,
+canonical migrations, tests, and architecture present on the integration base.
+It is an implementation-status record, not a replacement for the Blueprint,
+Wireframes, contracts, or workstream ownership rules.
 
-The A11 branch composes the existing A3–A10 capabilities into a supervisor daily-operations workspace at `/operations`, `/operations/daily`, `/operations/reconciliations/[id]`, and `/operations/reconciliations/[id]/review`. It does not introduce a new accounting subsystem or schema migration. A5 remains the authoritative reconciliation workflow; A4 remains the inventory source; A6/A9 remain the downstream cash/provider settlement paths; A8 customer/prepaid semantics are preserved; and A10 remains the management-reporting surface.
+Status vocabulary:
 
-The workspace supports station and business-date/shift context, persisted draft continuation, meter and reconciliation evidence, server-derived litres/sales/variances, payments, expenses, cash evidence, inventory context, submit/return/approve workflow, approved-record locking, and downstream status visibility. Authoritative calculations remain server-owned and exact-decimal; browser code does not independently compute financial or volumetric truth.
+- **COMPLETE** — the scoped capability is implemented in the merged repository
+  and has concrete repository evidence.
+- **PARTIAL** — a meaningful subset is implemented, but the roadmap capability
+  is broader than the merged slice.
+- **OPEN** — the repository does not yet implement the capability.
+- **REQUIRES_CLIENT_DECISION** — implementation is intentionally blocked by an
+  unresolved client, accounting, legal, or signed-scope decision.
 
-Verification on PR #17 head `de5319052d1cc75c87fc85191e1224ae0662e564`: unit tests 196/196; PostgreSQL integration 67/67 across 13 files including A11 2/2 and A8; build passed; DB-backed Playwright 20/20 passed including the A11 submit/return/resubmit/approve/locked workflow and axe accessibility assertion. Vercel and Vercel Preview checks are green. A11 requires no migration.
+## Integration base
 
-Status: **IMPLEMENTATION CANDIDATE — PR #17 final integration review and merge pending**
+Current merged base: `79321d895d45835058702439ced0191b4e205d15` (`main`).
 
-## A10 — Management reporting (implementation candidate)
+First-parent merged work includes A4 inventory (`afed2eb`), A5 daily
+reconciliation (`bca2ea0`), A6 cash/banking (`fba3cfb`), A7 supplier creditors
+(`e2e2d81`), A8 customer accounts (`e457098`), A9 provider settlements
+(`555f4a5`), A10 management reporting (`84c77e2`), and A11 daily operations
+(`79321d8`, PR #17).
 
-The A10 branch adds a tenant-safe, exact-decimal management reporting read model over the canonical A4–A9 schemas. `GET /api/reports/management`, `GET /api/reports/daily`, and `/reports` expose posted sales, cash custody, provider settlement, supplier, customer, inventory, expense, and daily operational views with source IDs and explicit metric-specific date-basis metadata. Daily rows use neutral `reportDate`; station-scoped A8 customer exposure is explicitly unavailable rather than reported as zero.
+The repository contains PostgreSQL integration and Playwright tests for the
+implemented slices. A fresh test run is environment-dependent: PostgreSQL
+tests require `DATABASE_URL`, and the current workspace did not have a usable
+package-manager install path during this audit.
 
-A10 requires no schema migration `0010`. Gross margin is intentionally unavailable because the current canonical branch has no posted sale-recognition plus attributable chronological COGS model. See `docs/architecture/a10-management-reporting.md` for the source mapping, security model, and limitations.
+## Merged workstreams
 
-Status: **IMPLEMENTATION CANDIDATE — A0/integration review and PostgreSQL/E2E gates pending**
+### A0 — Integration foundation — COMPLETE
 
-## A9 — Provider settlement reconciliation (implementation candidate)
+Evidence: `package.json`; `src/platform/db/`; migration
+`src/platform/db/migrations/0000_platform_namespaces.sql`;
+`tests/integration/db.smoke.test.ts`; `docs/architecture/database.md`.
 
-The dedicated `agent/a9-provider-settlements` branch adds canonical migration
-`0009_provider_settlements.sql` for tenant-scoped electronic payment providers,
-merchant/provider accounts, provider settlement evidence, and append-only
-settlement allocations. A9 consumes only approved/posted/locked A5 `POS` and
-`ECOCASH` payment evidence; cash, bank-transfer, customer/prepaid, staff, and
-other approved methods remain outside the provider-settlement boundary.
+The toolchain, modular-monolith structure, Drizzle/PostgreSQL boundary,
+environment validation, migration journal, and test harness are present.
 
-The implementation includes exact-decimal capacity checks, station-safe
-tenant-aware references, RLS/grants, idempotent commands, signed audit events,
-deterministic allocation locks, named allocation reversal, variance/reconcile
-states, read APIs, and a minimal finance workspace. PostgreSQL integration
-coverage is present in `tests/integration/a9-provider-settlements.test.ts` but
-has not run in this environment because `DATABASE_URL` is not configured.
+### A1 — Platform security — COMPLETE
 
-Status: **IMPLEMENTATION CANDIDATE — A0/integration review and PostgreSQL gate pending**
+Evidence: `src/modules/identity/`, `src/modules/tenancy/`,
+`src/modules/authorization/`, `src/platform/auth/`,
+`src/platform/db/tenant-context.ts`; migrations
+`0001_a1_auth_identity.sql` and `0002_a1_tenant_authorization_security.sql`;
+`tests/integration/a1-isolation.test.ts`; `docs/database-security.md`.
 
-## A8 — Customer accounts (branch continuation)
+Tenant hierarchy, authenticated actor resolution, authorization, fail-closed
+tenant context, RLS, runtime-role separation, append-only security events, and
+tenant-isolation tests are integrated.
 
-The A8 branch implements customer identity, credit accounts, optional
-prepaid-value and prepaid-litre accounts, exact-decimal append-only ledger
-entries, station-scoped fuel authorization/reservation transitions, customer
-payments/top-ups, A5 posted-payment evidence linkage, tenant-safe statements,
-and signed/idempotent command APIs. The journal-confirmed next migration is
-`0008_customer_accounts.sql`; it has not been merged or run against production.
+### A2 — UI foundation — COMPLETE
 
-The unresolved prepaid funding policy remains open: `PREPAID_VALUE` remains a
-fully supported value account, while `PREPAID_LITRES` is an explicit optional
-account capability. A8 does not convert dollars to litres, choose a default
-funding policy, alter A5 reconciliation, or add shared navigation/UI.
+Evidence: `src/design-system/`; `src/app/page.tsx`;
+`tests/e2e/accessibility.spec.ts`; `tests/e2e/smoke.spec.ts`.
 
-Verification on this branch: unit tests, typecheck, lint, formatting, and
-`db:check` pass. The real PostgreSQL integration gate is present at
-`tests/integration/a8-customer-accounts.test.ts` but could not run in this
-environment because `DATABASE_URL` is not configured.
+Responsive shell, semantic primitives, permission-aware navigation projection,
+truthful state components, focus behavior, and representative accessibility
+coverage are integrated. A2 remains presentation-only.
 
-Status: **A5 PRODUCTION DAILY RECONCILIATION SLICE IMPLEMENTED — PR #8 CLOSURE COVERAGE**
+### A3 — Forecourt and reconciliation — COMPLETE
 
-The canonical persistence sequence for the implemented forecourt slice is
-`0003` A3 forecourt foundations, `0004` A4 inventory, and `0005` A3/A5
-daily reconciliation evidence and workflow. Production reconciliation uses
-the A4 tank, delivery, dip, and inventory-movement entities; it does not own
-duplicate inventory tables.
+Evidence: `src/modules/forecourt/`; migrations
+`0003_a3_forecourt_reconciliation.sql` and
+`0005_daily_reconciliation.sql`; integration tests
+`a3-forecourt.test.ts`, `a3-business-day-lifecycle.test.ts`,
+`a3-segmented-shifts.test.ts`, and `a5-production-reconciliation.test.ts`;
+E2E tests `production-reconciliation.spec.ts` and
+`daily-reconciliation.spec.ts`; ADR-003 through ADR-006.
 
-## Current integration base
+Business days, shifts, meter installations and segments, effective pricing,
+payment declarations, immutable reconciliation revisions, return/approval/
+posting/locking, server-derived exact-decimal totals, audit/idempotency/outbox,
+and the production reconciliation workflow are integrated.
 
-`7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb` (`origin/main`, approved A1 integration baseline)
+### A4 — Inventory and deliveries — PARTIAL
 
-A1 branch: `agent/a1-platform-security` in the isolated worktree `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a1`, PR [#2](https://github.com/hrshanda56-beep/shanda-fuel/pull/2), approved and merged into `main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`. Canonical migrations `0001` and `0002` are present and verified; the architecture SQL proposal remains reference-only. A0 integration verification and the fresh PostgreSQL CI path passed.
+Evidence: `src/modules/inventory/`; migration
+`0004_a4_inventory.sql`; `tests/integration/a4-inventory.test.ts`.
 
-The approved A1 foundation adds the trusted tenant-authority path, server-side Better Auth actor resolution, fail-closed strong-auth and origin validation, tenant-scoped append-only security events, canonical migrations `0001`/`0002`, executable role bootstrap, and real PostgreSQL negative tests. A0's approved dependency compatibility decision is applied with Better Auth 1.7.5, Drizzle ORM ^0.45.2, and Drizzle Kit ^0.31.7. The merged foundation retains the fresh PostgreSQL migration, role bootstrap, Better Auth, RLS, and privilege validation path.
+Tanks, direct-litre dips, calibration-point storage, delivery records and
+allocations, append-only inventory movements, opening balances, stock
+projections, negative-stock prevention, and controlled adjustments are present.
+Inventory pools, a transfer command/workflow, calibration execution/interpolation,
+full interrupted/partial delivery workflow, WAC, and late-cost revaluation are
+not present.
 
-## A2 — UI foundation
+### A6 — Cash and banking — PARTIAL
 
-Workstream branch: `agent/a2-ui-foundation` in `/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-a2`, based on required integration baseline `cd63d48b7a142905722d7c9ec76da053c29fbbb4`, now integrating approved `origin/main` at `7260fa2cc8aa63f11728fd1cb37b8b15fd7b52bb`.
+Evidence: `src/modules/cash/`; migration `0006_cash_banking.sql`;
+`tests/integration/a6-cash-banking.test.ts`.
 
-- [x] Semantic light/dark/system tokens, typography, spacing, focus, reduced-motion, and tabular-number conventions.
-- [x] Responsive AppShell with context surface, breadcrumbs, desktop sidebar, and Home / Tasks / Work / More mobile navigation seam.
-- [x] Permission-projection navigation filter that does not authorize commands in the browser.
-- [x] Reusable controls, forms, numeric/date presentation formatters, status badges, responsive table/card patterns, evidence, risk-confirmation, and truthful loading/empty/error/conflict/offline/permission/not-found states.
-- [x] Synthetic representative dashboard/form/state surfaces with unit, Playwright, and axe coverage.
+Collections, partial collection allocation, deposits, deposit allocation,
+manual bank confirmation, exact-decimal capacity checks, idempotency, audit,
+and tenant/permission checks are implemented. Cash count, handover, dispute,
+and complete custody state-machine commands remain incomplete.
 
-A2 remains presentation-only. A1 supplies live actor/permission contracts; A0/integration owns shared tooling and platform wiring. No database, persistence, financial calculation, business command, authentication, or RLS work is included here.
+### A7 — Supplier creditors — COMPLETE
 
-Remediation for PR #3: mobile operating context now includes an accessible optional shift slot; dialog/bottom-sheet primitives manage focus, Escape, inert background, and restoration; mobile navigation uses valid list semantics; required controls use native/ARIA required state; AppShell consumes typed `NavigationProjection` keys rather than raw permission identifiers; BusinessDate formatting is timezone-invariant; theme-sensitive values use semantic tokens; and shared Buttons default safely to `type="button"`.
+Evidence: `src/modules/creditors/`; migration `0007_supplier_creditors.sql`;
+`src/app/api/suppliers/`; `tests/integration/a7-supplier-creditors.test.ts`.
 
-## Phase 0 — Repository & Engineering Foundation
+Supplier master records, invoices/credit notes, creditor movements, supplier
+payments, bounded allocations, reversals, derived summaries/statements, exact
+arithmetic, idempotency, audit, and tenant-safe persistence are integrated.
 
-- [x] A0 establishes the technical baseline and pinned compatible toolchain.
-- [x] Shared lint, format, typecheck, unit, integration, E2E, accessibility, and CI gates exist.
-- [x] Drizzle/PostgreSQL development and migration workflow is established.
-- [x] Environment validation and secret-safe configuration exist.
-- [x] Modular monolith boundaries are implemented.
+### A8 — Customer accounts — PARTIAL
 
-Remediation validation: the namespace migration was applied successfully to PostgreSQL 16 in a dedicated ephemeral test database; `pnpm test:integration` executed 2 real PostgreSQL assertions against it. Unit discovery is separate and does not include integration tests.
+Evidence: `src/modules/customers/`; migration
+`0008_customer_accounts.sql`; `tests/integration/a8-customer-accounts.test.ts`;
+`docs/architecture/a8-customer-accounts-proposal.md`.
 
-## Phase 1 — Tenancy, Identity, Authorization & Security
+Customer identity, credit accounts, prepaid value/litres, product-specific
+balances, authorizations/reservations, fuel usage, payments/top-ups, append-only
+ledger behavior, statements, and A5 evidence linkage are implemented. Customer
+invoices, benefits, vehicle/driver controls, and several commercial policies
+remain unresolved.
 
-- [x] Authentication integration (canonical Better Auth schema, adapter persistence, session expiration, and actor-resolution path verified in CI).
-- [x] Tenant, legal entity, station, membership, role, permission, and scope foundation (canonical `0002` migration and UUID membership identity compatibility verified in CI).
-- [x] Tenant context, RLS, runtime role separation, audit/security foundation (canonical RLS/grants, append-only event privileges, and bootstrap verified in CI).
-- [x] Automated tenant-isolation tests (real PostgreSQL CRUD, missing-context, composite-FK, role ownership, and privilege-negative coverage verified in CI).
+### A9 — Provider settlement reconciliation — COMPLETE
 
-## Phase 2 — Core Forecourt Vertical Slice
+Evidence: `src/modules/settlements/`; migration
+`0009_provider_settlements.sql`; routes under
+`src/app/api/settlements/`; `tests/integration/a9-provider-settlements.test.ts`;
+`docs/architecture/a9-provider-settlements.md`.
 
-- [x] Framework-free business-day and shift state machines with explicit not-operated/exceptional exits.
-- [x] Meter installation, effective boundaries/segments, attendant handover metadata, exact server-derived sales, and nozzle overlap constraints.
-- [x] Payment declarations, signed variance calculation, immutable revision flow, return/approve/post/lock transitions, and typed downstream events.
-- [x] Rebuildable basic daily report source contract and representative mobile-first operational surface.
-- [x] A1-derived trusted command context, explicit station-scoped permissions, on-behalf-of provenance, transaction-bound idempotency/audit/outbox, station-aware composite FKs, immutable-state database guards, versioned reconciliation events, and event-contract tests.
-- [x] Persisted, station-scoped shift templates (`shift_templates`, folded into `0003`) with a configurable `duration_minutes` (480 default, no fixed clock schedule); `StartShift` derives `plannedEndAt` from an active template when one is supplied, rejecting inactive or wrong-station templates. New `DefineShiftTemplate` command (`shift.template.manage` permission, STEP_UP assurance, station-scoped, versioned) creates/updates templates.
-- [x] Real end-to-end PostgreSQL production-command coverage for a handover-segmented shift, a price-segmented shift, a correction-aware shift, and a real midnight-crossing segment, each driven `OpenBusinessDay` → `LockBusinessDay`/`PostReconciliation` with no direct-SQL authoritative-state seeding (`tests/integration/a3-segmented-shifts.test.ts`).
-- [x] New `PreparePriceActivation` command closes the previously-SQL-only `APPROVED` → `PENDING_STATION_ACTIVATION` selling-price transition: `price.change.prepare` permission (STEP_UP, granted to OWNER/ADMINISTRATOR/SUPERVISOR), `SellingPrice` version subject, routed through the same trusted `executeForecourtCommand` pipeline (idempotency, audit, expected-version locking) as every other price command. The price-segmented scenario and the route/security/remediation price tests in `a3-forecourt.test.ts` now drive this transition through the real command instead of raw SQL, with new permission/assurance/station/version negative-path coverage. Fixture-only prices that are already `ACTIVE` before the observable business day begins (`a3-business-day-lifecycle.test.ts`) remain seeded via SQL, since `ActivatePriceChange` requires real sealed `PRICE_CHANGE` boundaries that a pre-day baseline price never has.
-- [x] Payment declaration model resolved to a single canonical representation: the JSONB `reconciliation_revisions.declarations` snapshot (see `docs/decisions/ADR-005-payment-declaration-canonical-model.md`); the unused parallel `payment_declarations` table was removed from schema and `0003`. Fixed a latent bug where `SubmitReconciliation` persisted a nested `Money` value into that JSONB column instead of the flat `{amount, currency}` shape the `validate_reconciliation_revision_payload` trigger requires — this path had no prior test coverage with non-empty declarations.
-- [x] Daily reconciliation production slice on `agent/daily-reconciliation`: shift/team context, exact-decimal server-derived totals, persisted meter/payment/expense/cash evidence, canonical A4 delivery/dip references, supervisor submit, management return/approval, immutable correction revisions, locked-state messaging, production command adapters, and PostgreSQL integration coverage.
-- [x] Canonical `0005_daily_reconciliation.sql` is integrated after A4 `0004_a4_inventory.sql`; CI validates migrations, schema ownership, PostgreSQL integration, build, production persistence E2E, and accessibility coverage.
+Provider/account setup, settlement recording/import, exact-decimal allocation,
+unmatched evidence, named allocation reversal, variance states, reconciliation,
+idempotency, audit, RLS, and the minimal finance workspace are integrated.
+There is no separate provider-batch aggregate; any such requirement requires
+scope clarification.
 
-## Phase 3 — Inventory, Tanks, Deliveries & Costing
+### A10 — Management reporting — PARTIAL
 
-- [ ] Tanks, calibration, dips, inventory pools, movements, deliveries, transfers, adjustments.
-- [ ] Perpetual weighted-average costing and late-cost revaluation.
+Evidence: `src/modules/reporting/`; routes
+`src/app/api/reports/management/` and `src/app/api/reports/daily/`;
+`src/app/reports/page.tsx`; `tests/integration/a10-management-reporting.test.ts`;
+`tests/e2e/management-reporting.spec.ts`;
+`docs/architecture/a10-management-reporting.md`.
 
-## Phase 4 — Cash, Banking & Electronic Settlements
+Tenant-safe management and daily read models combine finalized A4–A9 facts,
+return source IDs, preserve metric-specific date bases, and expose an initial
+responsive dashboard. Gross margin, canonical COGS, report artifacts, export
+generation, full timestamp-based `as_of`, Action Center behavior, and Explain
+This Number are not complete.
 
-- [ ] Cash custody, counts, handovers, disputes, collections, deposits, provider batches, settlements, and bank confirmation.
+### A11 — Daily operations workspace — COMPLETE
 
-## Phase 5 — Suppliers, Customers & Expenses
+Evidence: `src/app/operations/`; `src/modules/forecourt/ui/daily-operations-workspace.tsx`;
+`tests/integration/a11-daily-operations.test.ts`;
+`tests/e2e/a11-daily-operations.spec.ts` and
+`tests/e2e/production-reconciliation.spec.ts`;
+`docs/architecture/a11-daily-operations-workspace.md`.
 
-- [ ] Supplier invoices, creditor movements, payments, allocations, and reversals.
-- [ ] Customer credit, prepaid value/litres, benefits, authorizations, payments, and invoices.
-- [ ] Expenses and recurring-cost recognition/payment allocation.
+The mobile-first station/day/shift composition, server-backed draft
+continuation, evidence entry, exact server-owned calculations, submit/return/
+approve/lock flow, and downstream status links are integrated. A11 does not
+implement costing, its own reporting engine, GL, tax, bank/provider APIs, or
+full offline synchronization; it links to the existing A10 reporting surface.
 
-## Phase 6 — Profitability, Reporting & Owner Dashboard
+## Roadmap phase reconciliation
 
-- [ ] Canonical profitability and operational financial position.
-- [ ] Reports, PDF/XLSX exports, lineage, as-of behavior, dashboards, and Explain This Number.
+| Phase | Status | Reconciled scope |
+| --- | --- | --- |
+| Phase 0 — Repository and engineering foundation | **COMPLETE** | Toolchain, CI/test harness, Drizzle/PostgreSQL workflow, environment validation, and modular monolith foundation. |
+| Phase 1 — Tenancy, identity, authorization, and security | **COMPLETE** | Tenant hierarchy, identity, authorization, RLS, runtime roles, security events, and isolation proof. |
+| Phase 2 — Core forecourt vertical slice | **COMPLETE** | Business day → shift → meters → declarations → reconciliation → approval/post/lock, with representative mobile workflow. |
+| Phase 3 — Inventory, tanks, deliveries, and costing | **PARTIAL** | Tank/dip/delivery/movement/adjustment foundation is implemented; inventory pools, transfers, calibration execution, full delivery interruption flow, WAC, and revaluation remain. |
+| Phase 3 — WAC and late-cost revaluation | **OPEN** | No chronological WAC/COGS/revaluation implementation exists. |
+| Phase 4 — Cash, banking, and electronic settlements | **PARTIAL** | Collections, deposits, manual bank confirmation, and A9 provider settlement reconciliation are implemented; cash counts, handovers, disputes, and any separate provider-batch scope remain. |
+| Phase 5 — Suppliers, customers, and expenses | **PARTIAL** | Supplier creditors are complete; the implemented customer subset is complete; customer invoices/benefits/policy items and expenses/recurring costs remain. |
+| Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
+| Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10 management/daily reporting is present, but profitability/COGS/gross margin, exports/artifacts, full as-of, Action Center, and Explain This Number are incomplete. |
+| Phase 6 — Profitability and gross margin | **OPEN** | Requires WAC/revaluation and posted sale-recognition/COGS foundations. |
+| Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations and representative accessibility/weak-network behavior exist; full cross-module review, performance, offline sync, observability, backup/restore, and incident readiness remain. |
+| Phase 8 — Pilot and cutover | **PARTIAL** | Onboarding workbook and per-tank opening balance support exist; approved cross-domain opening batch, training, shadow operation, UAT, discrepancy classification, and pilot exit evidence remain. |
+| Phase 8 — Client/accounting/signed-scope inputs | **REQUIRES_CLIENT_DECISION** | Real station master data, opening positions, accounting/tax policy, external identifiers, and signed SOW/contract scope are outside repository-only determination. |
 
-## Phase 7 — Production Hardening
+## Explicit non-goals and limitations
 
-- [ ] Security/RLS review, performance, accessibility, weak-network/offline drafts, observability, backup/restore, incident readiness.
-
-## Phase 8 — Pilot & Cutover
-
-- [ ] Onboarding readiness, controlled opening positions, training, shadow operation, discrepancy classification, and pilot exit gates.
+The Blueprint and architecture documents explicitly exclude or defer a full
+general ledger/statutory suite, tax engine before accountant confirmation,
+direct bank/provider APIs, unrestricted offline financial posting, OCR/AI
+posting, microservices/event-bus/warehouse infrastructure, and several A11
+capabilities. These are not implementation defects unless the signed scope
+later requires them.
