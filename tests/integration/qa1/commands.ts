@@ -158,8 +158,8 @@ export async function openBusinessDayAndShift(
   ctx: Qa1ScenarioContext,
   keyPrefix: string,
   businessDayId = ctx.businessDayId,
-  plannedStartAt = QA1_TIMES.opening,
-  plannedEndAt = '2026-09-27T05:00:00.000Z',
+  plannedStartAt: string = QA1_TIMES.opening,
+  plannedEndAt: string = '2026-09-27T05:00:00.000Z',
 ): Promise<{ shiftId: string }> {
   const opened = await forecourt(
     ctx,
@@ -181,8 +181,8 @@ export async function startShift(
   ctx: Qa1ScenarioContext,
   keyPrefix: string,
   businessDayId = ctx.businessDayId,
-  plannedStartAt = QA1_TIMES.opening,
-  plannedEndAt = '2026-09-27T05:00:00.000Z',
+  plannedStartAt: string = QA1_TIMES.opening,
+  plannedEndAt: string = '2026-09-27T05:00:00.000Z',
 ): Promise<{ shiftId: string }> {
   const shiftId = randomUUID();
   const started = await forecourt(
