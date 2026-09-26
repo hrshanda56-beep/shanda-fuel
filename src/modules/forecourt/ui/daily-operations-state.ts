@@ -1,4 +1,5 @@
 import type { StatusTone } from '../../../design-system/primitives';
+import { mapA12OperatorError } from '../../costing/operator-errors';
 
 export type DailyOperationsState =
   'DRAFT' | 'RETURNED' | 'SUBMITTED' | 'PENDING_APPROVAL' | 'APPROVED' | 'LOCKED' | string;
@@ -26,6 +27,8 @@ export function mapDailyOperationsError(
   code: string | undefined,
   message: string | undefined,
 ): string {
+  const a12Message = mapA12OperatorError(code, message);
+  if (a12Message) return a12Message;
   if (status === 401) return 'Your session has expired. Sign in again to continue.';
   if (status === 403) return 'You do not have permission for this station action.';
   if (status === 404) return 'This station-day workspace is no longer available.';
