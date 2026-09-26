@@ -434,16 +434,12 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             lockBusinessDay.permissionGranted &&
             lockBusinessDay.requiresStepUp ? (
               <>
-                <Button
-                  variant="danger"
-                  disabled
-                  aria-describedby="lock-business-day-step-up-help"
-                >
+                <Button variant="danger" disabled aria-describedby="lock-business-day-step-up-help">
                   Lock business day
                 </Button>
                 <p className="semantic-note" id="lock-business-day-step-up-help" role="status">
-                Locking this business day requires a current step-up authentication. No step-up
-                prompt is available in this workspace.
+                  Locking this business day requires a current step-up authentication. No step-up
+                  prompt is available in this workspace.
                 </p>
               </>
             ) : null}
