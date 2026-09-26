@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { seedActiveStepUp } from './auth-session-fixtures';
 import { stationBusinessDayBounds } from './station-business-time';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -207,6 +208,8 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
           ('${ids.outsiderSession}', '2030-01-01T00:00:00Z', 'a3b-outsider-session-token', '${ids.outsiderActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedActiveStepUp(client, ids.session);
+    await seedActiveStepUp(client, ids.approverSession);
   });
 
   afterAll(async () => {

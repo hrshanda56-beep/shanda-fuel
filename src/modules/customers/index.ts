@@ -50,6 +50,7 @@ export type {
 } from './contracts';
 export { A5_CUSTOMER_FUEL_CATEGORIES, assertA5EvidenceCompatibleWithAccount } from './contracts';
 export {
+  assertCustomerCommandAuthorization,
   CUSTOMER_COMMAND_POLICY,
   CUSTOMER_COMMAND_TYPES,
   CUSTOMER_PERMISSION_CODES,

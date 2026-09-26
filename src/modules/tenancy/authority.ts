@@ -2,7 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { getDatabase, type TenantTransactionContext } from '../../platform/db';
+import { getDatabase, type Database, type TenantTransactionContext } from '../../platform/db';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { AppError } from '../../platform/errors';
 import {
@@ -118,8 +118,11 @@ function temporaryGrantFromRow(row: TemporaryGrantRow): TemporaryPermissionGrant
  * query is constrained by the authenticated identity; only after an ACTIVE
  * membership is found does the transaction set tenant context and load scopes.
  */
-export const loadTenantMembership: TenantMembershipLoader = async (identityId, tenantId) => {
-  const database = getDatabase();
+export async function loadTenantMembershipWithDatabase(
+  identityId: string,
+  tenantId: string,
+  database: Pick<Database, 'transaction'>,
+): Promise<MembershipRecord | null> {
   return database.transaction(async (transaction) => {
     await transaction.execute(sql`select set_config('app.actor_id', ${identityId}, true)`);
     const membershipRows = (await transaction.execute(sql`
@@ -149,7 +152,10 @@ export const loadTenantMembership: TenantMembershipLoader = async (identityId, t
       };
     }
 
-    await transaction.execute(sql`select set_config('app.tenant_id', ${tenantId}, true)`);
+    await transaction.execute(sql`select set_config('app.tenant_id', ${row.tenant_id}, true)`);
+    await transaction.execute(
+      sql`select set_config('app.membership_id', ${row.membership_id}, true)`,
+    );
     const roleRows = (await transaction.execute(sql`
       select tenant_id, role_code, scope_type, legal_entity_id, station_id, expires_at
       from app.membership_role_assignments
@@ -177,7 +183,10 @@ export const loadTenantMembership: TenantMembershipLoader = async (identityId, t
       temporaryGrants: grantRows.map(temporaryGrantFromRow),
     };
   });
-};
+}
+
+export const loadTenantMembership: TenantMembershipLoader = (identityId, tenantId) =>
+  loadTenantMembershipWithDatabase(identityId, tenantId, getDatabase());
 
 export async function resolveTenantExecutionContext(input: {
   request: Request;

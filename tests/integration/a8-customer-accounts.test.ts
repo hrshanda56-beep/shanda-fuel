@@ -8,6 +8,7 @@ import { POST as inventoryCommandPost } from '../../src/app/api/inventory/comman
 import { postInventoryMovementInTransaction } from '../../src/modules/inventory/persistence';
 import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
 import { withTenantTransaction } from '../../src/platform/db/transaction';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -312,6 +313,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         values ('${ids.session}', '2030-01-01T00:00:00Z', 'a8-session-token', '${ids.actor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedActiveStepUp(client, ids.session);
     await withTenantTransaction(
       createTrustedTenantTransactionContext({
         tenantId: ids.tenant,

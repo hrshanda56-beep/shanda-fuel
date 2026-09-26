@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
+import type { SessionRecord } from '../../platform/security';
 import {
   createForecourtCommandContext,
   executeForecourtCommand,
@@ -19,7 +20,14 @@ const ids = {
 function context(
   roleCode: 'SUPERVISOR' | 'FINANCE' = 'SUPERVISOR',
   authorizedStationId = ids.station,
+  sessionOverrides: Partial<SessionRecord> = {},
 ) {
+  const session: SessionRecord = {
+    sessionId: '77777777-7777-4777-8777-777777777777',
+    userId: ids.actor,
+    expiresAt: new Date('2030-01-01T00:00:00Z'),
+    ...sessionOverrides,
+  };
   const transaction = createTrustedTenantTransactionContext({
     tenantId: ids.tenant,
     actorId: ids.actor,
@@ -29,11 +37,7 @@ function context(
   const authority = {
     actor: {
       identityId: ids.actor,
-      session: {
-        sessionId: '77777777-7777-4777-8777-777777777777',
-        userId: ids.actor,
-        expiresAt: new Date('2030-01-01T00:00:00Z'),
-      },
+      session,
     },
     membership: {
       tenantId: ids.tenant,
@@ -57,6 +61,10 @@ function context(
       membershipId: ids.membership,
       tenantId: ids.tenant,
       membershipActive: true,
+      strongAuthenticationAt: session.strongAuthenticatedAt,
+      strongAuthenticationExpiresAt: session.strongAuthenticationExpiresAt,
+      strongAuthenticationVerified: session.strongAuthenticationVerified,
+      stepUpLevel: session.stepUpLevel,
       roleAssignments: [
         {
           tenantId: ids.tenant,
@@ -233,6 +241,71 @@ describe('A3 authoritative command seam', () => {
         execute: async () => ({ result: 'approved' as const }),
       }),
     ).rejects.toThrow(/not authorized/);
+  });
+
+  it('requires an active step-up for forecourt STEP_UP commands', async () => {
+    const now = Date.now();
+    const strongAuthenticatedAt = new Date(now - 60_000);
+    const strongAuthenticationExpiresAt = new Date(now + 30 * 60_000);
+    const stepUpExpiresAt = new Date(now + 10 * 60_000);
+    const stepUpCommand = {
+      context: context('FINANCE', ids.station, {
+        strongAuthenticatedAt,
+        strongAuthenticationExpiresAt,
+        strongAuthenticationVerified: true,
+      }),
+      commandType: 'ApproveReconciliation' as const,
+      idempotencyKey: 'retry-step-up-none',
+      requestHash: 'hash-step-up-none',
+      subjectType: 'ReconciliationRevision',
+      subjectId: ids.station,
+      expectedVersion: 0,
+      ports: ports([]),
+      execute: async () => ({ result: 'approved' as const }),
+    };
+    await expect(executeForecourtCommand(stepUpCommand)).rejects.toThrow(/step-up/);
+
+    await expect(
+      executeForecourtCommand({
+        ...stepUpCommand,
+        context: context('FINANCE', ids.station, {
+          strongAuthenticatedAt,
+          strongAuthenticationExpiresAt,
+          strongAuthenticationVerified: true,
+          stepUpLevel: 1,
+          stepUpExpiresAt: new Date(now - 60_000),
+        }),
+        idempotencyKey: 'retry-step-up-expired',
+      }),
+    ).rejects.toThrow(/step-up/);
+
+    await expect(
+      executeForecourtCommand({
+        ...stepUpCommand,
+        context: context('FINANCE', ids.station, {
+          strongAuthenticatedAt,
+          strongAuthenticationExpiresAt,
+          strongAuthenticationVerified: true,
+          stepUpLevel: 1,
+          stepUpExpiresAt,
+        }),
+        idempotencyKey: 'retry-step-up-valid',
+      }),
+    ).resolves.toBe('approved');
+
+    await expect(
+      executeForecourtCommand({
+        ...stepUpCommand,
+        context: context('FINANCE', ids.station, {
+          strongAuthenticatedAt,
+          strongAuthenticationExpiresAt: new Date(now - 60_000),
+          strongAuthenticationVerified: true,
+          stepUpLevel: 2,
+          stepUpExpiresAt,
+        }),
+        idempotencyKey: 'retry-step-up-strong-expired',
+      }),
+    ).rejects.toThrow(/not authorized|Strong authentication/);
   });
 
   it('requires and invokes the transaction-bound optimistic version check', async () => {
