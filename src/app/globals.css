@@ -1344,6 +1344,113 @@ textarea::placeholder {
 }
 
 /* A11 daily operations workspace */
+.operations-control-room {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.operations-control-grid {
+  align-items: start;
+}
+
+.operations-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.operations-list-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-subtle);
+  text-decoration: none;
+}
+
+.operations-list-row:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-muted);
+}
+
+.operations-list-row > span:first-child,
+.operations-list-row > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.operations-list-row strong,
+.operations-list-row small {
+  overflow-wrap: anywhere;
+}
+
+.operations-list-row small {
+  color: var(--color-ink-muted);
+}
+
+.operations-shift-row {
+  flex-wrap: wrap;
+}
+
+.operations-timeline {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 0 0 1rem;
+  list-style: none;
+  border-left: 2px solid var(--color-border);
+}
+
+.operations-timeline li {
+  position: relative;
+  padding-left: var(--space-3);
+}
+
+.operations-timeline li::before {
+  position: absolute;
+  top: 0.3rem;
+  left: -1.42rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 2px solid var(--color-surface);
+  border-radius: 999px;
+  background: var(--color-brand);
+  box-shadow: 0 0 0 1px var(--color-brand);
+  content: '';
+}
+
+.operations-timeline li > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.operations-timeline small,
+.operations-timeline p {
+  color: var(--color-ink-muted);
+  font-size: 0.82rem;
+}
+
+.operations-timeline p {
+  margin: 0.2rem 0 0;
+}
+
+@media (min-width: 64rem) {
+  .operations-control-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .operations-list-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .daily-operations-workspace {
   display: grid;
   gap: var(--space-5);

@@ -88,6 +88,7 @@ export function ProductionReconciliationWorkflow({
   const [returnReason, setReturnReason] = useState('');
   const [cashCounted, setCashCounted] = useState('');
   const [explanations, setExplanations] = useState<Record<string, string>>({});
+  const [dirty, setDirty] = useState(false);
 
   const endpoint = useMemo(
     () =>
@@ -110,6 +111,7 @@ export function ProductionReconciliationWorkflow({
       setExplanations(
         Object.fromEntries(body.explanations.map((item) => [item.category, item.explanation])),
       );
+      setDirty(false);
       setError(undefined);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The reconciliation could not be loaded');
@@ -122,6 +124,16 @@ export function ProductionReconciliationWorkflow({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [dirty]);
 
   async function command(commandType: string, values: Record<string, unknown>) {
     const response = await fetch('/api/forecourt/commands', {
@@ -205,6 +217,7 @@ export function ProductionReconciliationWorkflow({
           Object.entries(explanations).filter(([, value]) => value.trim()),
         ),
       });
+      setDirty(false);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The draft could not be saved');
@@ -215,6 +228,18 @@ export function ProductionReconciliationWorkflow({
 
   async function transition(commandType: string, extra: Record<string, unknown> = {}) {
     if (!record) return;
+    if (dirty) {
+      setError('Save the current draft before changing its workflow state.');
+      return;
+    }
+    if (
+      commandType === 'ApproveProductionReconciliation' &&
+      !window.confirm(
+        'Approve this production reconciliation? The server will post canonical sale evidence and the record cannot be edited afterwards.',
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     try {
       await command(commandType, {
@@ -363,7 +388,10 @@ export function ProductionReconciliationWorkflow({
               id="production-cash-counted"
               inputMode="decimal"
               value={cashCounted}
-              onChange={(event) => setCashCounted(event.target.value)}
+              onChange={(event) => {
+                setDirty(true);
+                setCashCounted(event.target.value);
+              }}
               disabled={!editable}
             />
           </Field>
@@ -376,9 +404,10 @@ export function ProductionReconciliationWorkflow({
               id="production-explanation"
               rows={3}
               value={explanations.SALES ?? ''}
-              onChange={(event) =>
-                setExplanations((current) => ({ ...current, SALES: event.target.value }))
-              }
+              onChange={(event) => {
+                setDirty(true);
+                setExplanations((current) => ({ ...current, SALES: event.target.value }));
+              }}
               disabled={!editable}
             />
           </Field>
@@ -418,7 +447,7 @@ export function ProductionReconciliationWorkflow({
                 onClick={() => void transition('ApproveProductionReconciliation')}
                 disabled={busy}
               >
-                Approve and lock
+                Approve production reconciliation
               </Button>
             </>
           ) : null}
@@ -433,9 +462,15 @@ export function ProductionReconciliationWorkflow({
             />
           </Field>
         ) : null}
-        {record.state === 'APPROVED' || record.state === 'LOCKED' ? (
+        {record.state === 'APPROVED' ? (
           <p className="state state-success" role="status">
-            Approved records are locked. Further changes require a named correction workflow.
+            Approved records have posted canonical sale evidence. Further changes require a named
+            correction workflow.
+          </p>
+        ) : null}
+        {record.state === 'LOCKED' ? (
+          <p className="state state-success" role="status">
+            Locked records cannot be edited. Corrections require a named correction workflow.
           </p>
         ) : null}
       </Card>

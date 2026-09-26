@@ -170,5 +170,6 @@ function NavigationLink({
 
 function isActive(item: ProjectedNavigationItem, pathname: string | null) {
   if (item.href === '/') return pathname === '/';
+  if (item.href === '/operations/daily') return pathname?.startsWith('/operations') ?? false;
   return pathname === item.href;
 }

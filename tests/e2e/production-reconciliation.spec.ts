@@ -317,7 +317,7 @@ test.describe('production reconciliation persistence', () => {
     return { openingReading, closingReading, segmentId };
   }
 
-  test('persists through refresh, submits, approves, locks, and rejects edits', async ({
+  test('persists through refresh, submits, approves, and rejects edits after production approval', async ({
     context,
     page,
   }, testInfo) => {
@@ -425,7 +425,8 @@ test.describe('production reconciliation persistence', () => {
         response.url().includes('/api/forecourt/commands') &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Approve and lock' }).click();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
     const approveResponse = await approveResponsePromise;
     expect(approveResponse.ok(), await approveResponse.text()).toBe(true);
     await expect
@@ -446,7 +447,7 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText('APPROVED', { exact: true })).toBeVisible();
     await expect(
       page.getByText(
-        'Approved records are locked. Further changes require a named correction workflow.',
+        'Approved records have posted canonical sale evidence. Further changes require a named correction workflow.',
       ),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save persisted draft' })).toHaveCount(0);
@@ -494,7 +495,7 @@ test.describe('production reconciliation persistence', () => {
     ]);
   });
 
-  test('A11 workspace captures representative evidence, requires a return reason, and locks after approval', async ({
+  test('A11 workspace captures representative evidence, requires a return reason, and approves production evidence', async ({
     context,
     page,
   }, testInfo) => {
@@ -643,9 +644,10 @@ test.describe('production reconciliation persistence', () => {
 
     await authenticate(context, managerToken);
     await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
-    await page.getByRole('button', { name: 'Approve and lock' }).click();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
     await expect(page.getByText('Approved', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Approved records cannot be edited/)).toBeVisible();
+    await expect(page.getByText(/Canonical sale evidence has been posted/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save persisted draft' })).toBeDisabled();
     const accessibility = await new AxeBuilder({ page })
       .include('[aria-label="Daily station operations workspace"]')

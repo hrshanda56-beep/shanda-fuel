@@ -1,6 +1,6 @@
 import { AppShell } from '@/design-system/app-shell';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
-import { DailyReconciliationWorkflow } from '@/modules/forecourt/ui/daily-reconciliation-workflow';
+import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
 import {
   ProductionReconciliationWorkflow,
   type ProductionReconciliationContext,
@@ -33,13 +33,13 @@ export default async function ReconciliationPage({
     <AppShell
       navigationProjection={syntheticNavigationProjection}
       context={{
-        organisation: 'TEI Oils',
-        station: 'Main service station',
-        businessDate: '20 Sep 2026',
-        shift: 'Morning shift',
+        organisation: 'Authorised organisation',
+        station: 'Station context',
+        businessDate: 'Business date',
+        shift: 'Active shift',
       }}
-      role="Supervisor"
-      userName="Demo supervisor"
+      role="Station operations"
+      userName="Current user"
       breadcrumbs={[
         { label: 'Reconciliations', href: '/stations/demo/reconciliations' },
         { label: 'Morning shift' },
@@ -48,7 +48,7 @@ export default async function ReconciliationPage({
       {productionContext ? (
         <ProductionReconciliationWorkflow context={productionContext} role="SUPERVISOR" />
       ) : (
-        <DailyReconciliationWorkflow role="SUPERVISOR" />
+        <DailyOperationsContextRequired />
       )}
     </AppShell>
   );

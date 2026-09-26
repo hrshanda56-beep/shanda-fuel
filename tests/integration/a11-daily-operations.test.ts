@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { GET as dailyOperationsGet } from '../../src/app/api/forecourt/operations/daily/route';
+import { GET as operationsOverviewGet } from '../../src/app/api/forecourt/operations/overview/route';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -34,7 +35,19 @@ const ids = {
   shift: 'a11b0000-0000-4000-8000-000000000131',
   oldBoundary: 'a11b0000-0000-4000-8000-000000000141',
   futureBoundary: 'a11b0000-0000-4000-8000-000000000142',
+  historicalDay: 'a11b0000-0000-4000-8000-000000000151',
+  overviewRecon: 'a11b0000-0000-4000-8000-000000000152',
+  overviewRevision: 'a11b0000-0000-4000-8000-000000000153',
+  overviewEvent: 'a11b0000-0000-4000-8000-000000000154',
+  overviewPermissionGrant: 'a11b0000-0000-4000-8000-000000000155',
+  overviewAuditPermissionGrant: 'a11b0000-0000-4000-8000-000000000158',
+  outsideStationDay: 'a11b0000-0000-4000-8000-000000000157',
 };
+
+const overviewNavigationDays = Array.from({ length: 30 }, (_, index) => ({
+  id: `a11b0000-0000-4000-8000-${String(160 + index).padStart(12, '0')}`,
+  date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+}));
 
 let client: Sql;
 
@@ -66,6 +79,24 @@ async function signedRequest(
   const request = requestFor(tenantId, stationId, actor);
   request.headers.set('cookie', `shanda-fuel.session_token=${signedToken}`);
   return request;
+}
+
+async function signedOverviewRequest(
+  tenantId: string,
+  stationId: string,
+  actor: 'supervisor' | 'attendant' = 'supervisor',
+  businessDayId?: string,
+) {
+  const token =
+    actor === 'supervisor' ? 'a11-supervisor-session-token' : 'a11-attendant-session-token';
+  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const params = new URLSearchParams({ tenantId, stationId });
+  if (businessDayId) params.set('businessDayId', businessDayId);
+  return new Request(`http://127.0.0.1:3000/api/forecourt/operations/overview?${params}`, {
+    headers: {
+      cookie: `shanda-fuel.session_token=${signedToken}`,
+    },
+  });
 }
 
 describe('A11 daily operations composition read', () => {
@@ -149,6 +180,37 @@ describe('A11 daily operations composition read', () => {
           ('${ids.attendantSession}', '2030-01-01T00:00:00Z', 'a11-attendant-session-token', '${ids.attendantActor}', false, null)
         on conflict (id) do update set expires_at = excluded.expires_at;
     `);
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+      values
+        ('${ids.historicalDay}', '${ids.tenant}', '${ids.station}', '2020-01-01', 'CLOSED'),
+        ${overviewNavigationDays.map(({ id, date }) => `('${id}', '${ids.tenant}', '${ids.station}', '${date}', 'CLOSED')`).join(',\n        ')}
+      on conflict (id) do nothing;
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${ids.outsideStationDay}', '${ids.tenant}', '${ids.outsideStation}', '2026-09-22', 'OPEN')
+      on conflict (id) do nothing;
+      insert into app.reconciliations
+        (id, tenant_id, station_id, business_day_id, shift_id, supervisor_id, created_by, state)
+      values ('${ids.overviewRecon}', '${ids.tenant}', '${ids.station}', '${ids.day}', '${ids.shift}', '${ids.supervisorMembership}', '${ids.supervisorMembership}', 'DRAFT')
+      on conflict (id) do nothing;
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, currency, variance_classification)
+      values ('${ids.overviewRevision}', '${ids.tenant}', '${ids.station}', '${ids.overviewRecon}', 1, 'READY', 100.0000, 100.0000, 0.0000, 'USD', 'INFORMATIONAL')
+      on conflict (id) do nothing;
+      insert into app.temporary_permission_grants
+        (id, tenant_id, membership_id, permission_code, scope_type, legal_entity_id, station_id, expires_at, reason)
+      values ('${ids.overviewPermissionGrant}', '${ids.tenant}', '${ids.attendantMembership}', 'business_day.view', 'STATION', '${ids.legal}', '${ids.station}', '2030-01-01T00:00:00Z', 'A11 overview authorization test')
+      on conflict (id) do nothing;
+      insert into app.temporary_permission_grants
+        (id, tenant_id, membership_id, permission_code, scope_type, legal_entity_id, station_id, expires_at, reason)
+      values ('${ids.overviewAuditPermissionGrant}', '${ids.tenant}', '${ids.supervisorMembership}', 'audit.view', 'STATION', '${ids.legal}', '${ids.station}', '2030-01-01T00:00:00Z', 'A11 overview audit authorization test')
+      on conflict (id) do nothing;
+      insert into platform.security_events
+        (id, tenant_id, membership_id, actor_id, event_code, request_id, occurred_at, details, key_id, algorithm, signature)
+      values
+        ('${ids.overviewEvent}', '${ids.tenant}', '${ids.supervisorMembership}', '${ids.supervisorActor}', 'BUSINESS_DAY_OPENED', 'a11b0000-0000-4000-8000-000000000156', '2026-09-23T05:00:00Z', '{"subjectType":"BUSINESS_DAY","subjectId":"${ids.day}"}'::jsonb, 'a11-test-key', 'hmac-sha256', 'a11-test-signature')
+      on conflict (id) do nothing;
+    `);
   });
 
   afterAll(async () => {
@@ -185,5 +247,79 @@ describe('A11 daily operations composition read', () => {
     expect(crossTenant.status).toBe(403);
     expect(outsideStation.status).toBe(403);
     expect(noViewPermission.status).toBe(403);
+  });
+
+  it('resolves an explicit historical day outside the 30-day navigation list', async () => {
+    const response = await operationsOverviewGet(
+      await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.historicalDay),
+    );
+    const body = (await response.json()) as {
+      selectedBusinessDay: { id: string; date: string };
+      businessDays: Array<{ id: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.selectedBusinessDay).toEqual({ id: ids.historicalDay, date: '2020-01-01' });
+    expect(body.businessDays).toHaveLength(30);
+    expect(body.businessDays.some((day) => day.id === ids.historicalDay)).toBe(false);
+  });
+
+  it('does not substitute another day for an explicit nonexistent or out-of-scope day', async () => {
+    const nonexistent = await operationsOverviewGet(
+      await signedOverviewRequest(
+        ids.tenant,
+        ids.station,
+        'supervisor',
+        'a11b0000-0000-4000-8000-000000000999',
+      ),
+    );
+    const outsideStation = await operationsOverviewGet(
+      await signedOverviewRequest(ids.tenant, ids.outsideStation, 'supervisor', ids.day),
+    );
+    const wrongStationDay = await operationsOverviewGet(
+      await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.outsideStationDay),
+    );
+    const crossTenant = await operationsOverviewGet(
+      await signedOverviewRequest(ids.otherTenant, ids.station, 'supervisor', ids.day),
+    );
+
+    expect(nonexistent.status).toBe(404);
+    expect((await nonexistent.json()).error).toBe('NOT_FOUND');
+    expect(wrongStationDay.status).toBe(404);
+    expect([403, 404]).toContain(outsideStation.status);
+    expect([403, 404]).toContain(crossTenant.status);
+  });
+
+  it('enforces reconciliation and audit visibility for the operations overview', async () => {
+    const supervisorResponse = await operationsOverviewGet(
+      await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.day),
+    );
+    const attendantResponse = await operationsOverviewGet(
+      await signedOverviewRequest(ids.tenant, ids.station, 'attendant', ids.day),
+    );
+    const supervisorBody = (await supervisorResponse.json()) as {
+      reconciliations: Array<{ id: string }>;
+      timeline: Array<{ eventCode: string; subjectId: string | null }>;
+    };
+    const attendantBody = (await attendantResponse.json()) as {
+      shifts: Array<{ id: string }>;
+      reconciliations: Array<{ id: string }>;
+      timeline: Array<{ eventCode: string }>;
+    };
+
+    expect(supervisorResponse.status).toBe(200);
+    expect(supervisorBody.reconciliations.map((item) => item.id)).toContain(ids.overviewRecon);
+    expect(supervisorBody.timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventCode: 'BUSINESS_DAY_OPENED',
+          subjectId: ids.day,
+        }),
+      ]),
+    );
+    expect(attendantResponse.status).toBe(200);
+    expect(attendantBody.shifts.map((shift) => shift.id)).toContain(ids.shift);
+    expect(attendantBody.reconciliations).toHaveLength(0);
+    expect(attendantBody.timeline).toHaveLength(0);
   });
 });

@@ -380,6 +380,16 @@ export function DailyOperationsWorkspace({
   }, [load]);
 
   useEffect(() => {
+    if (!dirty) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [dirty]);
+
+  useEffect(() => {
     if (!operation) return;
     const controller = new AbortController();
     void Promise.all([
@@ -590,6 +600,14 @@ export function DailyOperationsWorkspace({
   async function transition(commandType: string, values: Record<string, unknown> = {}) {
     if (!record || dirty) {
       setError('Save the current draft before changing its workflow state.');
+      return;
+    }
+    if (
+      commandType === 'ApproveProductionReconciliation' &&
+      !window.confirm(
+        'Approve this production reconciliation? The server will post canonical sale evidence and the record cannot be edited afterwards.',
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -1368,10 +1386,16 @@ export function DailyOperationsWorkspace({
                 );
               })}
             </div>
-            {state === 'APPROVED' || state === 'LOCKED' ? (
+            {state === 'APPROVED' ? (
               <p className="state state-success" role="status">
-                <strong>Locked:</strong> Approved records cannot be edited. Corrections use a named
-                new revision workflow.
+                <strong>Approved:</strong> Canonical sale evidence has been posted by the production
+                approval command. Corrections use a named new revision workflow.
+              </p>
+            ) : null}
+            {state === 'LOCKED' ? (
+              <p className="state state-success" role="status">
+                <strong>Locked:</strong> This record is locked. Corrections use a named new revision
+                workflow.
               </p>
             ) : null}
             {state === 'RETURNED' ? (
@@ -1434,7 +1458,7 @@ export function DailyOperationsWorkspace({
                     onClick={() => void transition('ApproveProductionReconciliation')}
                     disabled={busy}
                   >
-                    Approve and lock
+                    Approve production reconciliation
                   </Button>
                 </>
               ) : null}
