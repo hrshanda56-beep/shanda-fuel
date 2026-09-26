@@ -154,6 +154,24 @@ describe('deriveSegmentSaleAllocations', () => {
     ).toThrow('must be sealed');
   });
 
+  it('rejects negative-litre segments instead of treating them as sale quantity', () => {
+    expect(() =>
+      deriveSegmentSaleAllocations(
+        { openingReading: '150.000', closingReading: '100.000', litresSold: '-50.000' },
+        [
+          candidate(
+            'segment-negative',
+            '150.000',
+            '100.000',
+            '-50.000',
+            '2026-09-22T14:00:00Z',
+            '2026-09-22T15:00:00Z',
+          ),
+        ],
+      ),
+    ).toThrow('negative-litre');
+  });
+
   it('rejects an exact-litre total mismatch', () => {
     expect(() =>
       deriveSegmentSaleAllocations(

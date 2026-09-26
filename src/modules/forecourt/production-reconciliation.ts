@@ -23,6 +23,7 @@ import { databaseForecourtPorts, loadForecourtStation } from './persistence';
 import { resolveForecourtCommandContext } from './application';
 import { authorize } from '../../platform/security/permissions';
 import { deriveSegmentSaleAllocations } from './segment-sale-chronology';
+import { postCanonicalSaleRevenueInTransaction } from '../revenue';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -58,6 +59,11 @@ type HeaderRow = {
 
 function requestHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function hasPositiveLitres(value: string): boolean {
+  const decimalValue = new ExactDecimal(value).value;
+  return decimalValue.isPositive() && !decimalValue.isZero();
 }
 
 async function serverNow(transaction: ForecourtTransaction): Promise<string> {
@@ -804,6 +810,19 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       const sourceSegmentIds: string[] = [];
       const saleCostCandidates: CostingMovement[] = [];
       const saleCostStreams = new Map<string, CostingMovement>();
+      const revenueCandidates: Array<{
+        readingId: string;
+        segmentId: string;
+        movementId: string;
+        productId: string;
+        nozzleId: string;
+        shiftId: string;
+        tankId: string;
+        quantityLitres: string;
+        unitPrice: string;
+        businessDate: string;
+        effectiveAt: Date;
+      }> = [];
       for (const reading of readings) {
         if (!header.shift_id || header.shift_id !== reading.shift_id) {
           throw new AppError(
@@ -817,12 +836,17 @@ export async function approveProductionReconciliationFromRequest(request: Reques
           opening_reading: string;
           closing_reading: string;
           litres: string;
+          nozzle_id: string;
+          product_id: string;
+          shift_id: string;
+          unit_price: string;
           meter_installation_id: string;
           business_date: string;
           segment_start_at: Date | string;
           segment_end_at: Date | string;
         }>(sql`
           select m.id, m.state, m.opening_reading, m.closing_reading, m.litres,
+                 m.nozzle_id, m.product_id, m.shift_id, m.unit_price,
                  m.meter_installation_id,
                  d.business_date, m.segment_start_at, m.segment_end_at
           from app.meter_segments m
@@ -864,8 +888,8 @@ export async function approveProductionReconciliationFromRequest(request: Reques
             segmentEndAt: segment.segment_end_at,
           })),
         );
-        const positiveAllocations = allocations.filter(
-          (allocation) => !new ExactDecimal(allocation.litres).value.isZero(),
+        const positiveAllocations = allocations.filter((allocation) =>
+          hasPositiveLitres(allocation.litres),
         );
         let tankId: string | undefined;
         if (positiveAllocations.length > 0) {
@@ -879,7 +903,7 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         }
         for (const allocation of allocations) {
           let movementId: string | undefined;
-          if (!new ExactDecimal(allocation.litres).value.isZero()) {
+          if (hasPositiveLitres(allocation.litres)) {
             const existingMovement = await transaction.execute<{ id: string }>(sql`
               select id
               from app.inventory_movements
@@ -908,6 +932,23 @@ export async function approveProductionReconciliationFromRequest(request: Reques
               sourceType: 'METER_SEGMENT_SALE',
               sourceId: allocation.segmentId,
               actorMembershipId: context.actor.membershipId,
+            });
+            const segment = segmentRows.find((candidate) => candidate.id === allocation.segmentId);
+            if (!segment) {
+              throw new AppError('INTERNAL_ERROR', 'The allocated meter segment disappeared');
+            }
+            revenueCandidates.push({
+              readingId: reading.id,
+              segmentId: allocation.segmentId,
+              movementId,
+              productId: reading.product_id,
+              nozzleId: reading.nozzle_id,
+              shiftId: reading.shift_id,
+              tankId: tankId!,
+              quantityLitres: allocation.litres,
+              unitPrice: segment.unit_price,
+              businessDate: allocation.businessDate,
+              effectiveAt: new Date(allocation.segmentEndAt),
             });
             saleCostCandidates.push({
               tenantId: context.tenantId,
@@ -983,6 +1024,59 @@ export async function approveProductionReconciliationFromRequest(request: Reques
           stationId: stream.stationId,
           tankId: stream.tankId,
           productId: stream.productId,
+        });
+      }
+      const revenueRequestId = uuid.safeParse(context.requestId).success
+        ? context.requestId
+        : randomUUID();
+      for (const candidate of revenueCandidates) {
+        const revenue = await postCanonicalSaleRevenueInTransaction(transaction, {
+          tenantId: context.tenantId,
+          legalEntityId: context.legalEntityId,
+          stationId: context.stationId,
+          businessDate: candidate.businessDate,
+          productId: candidate.productId,
+          tankId: candidate.tankId,
+          nozzleId: candidate.nozzleId,
+          shiftId: candidate.shiftId,
+          meterSegmentId: candidate.segmentId,
+          inventorySaleMovementId: candidate.movementId,
+          reconciliationId: payload.reconciliationId,
+          reconciliationRevisionId: revision.id,
+          reconciliationMeterReadingId: candidate.readingId,
+          quantityLitres: candidate.quantityLitres,
+          unitPrice: candidate.unitPrice,
+          currency: 'USD',
+          effectiveAt: candidate.effectiveAt,
+          actorMembershipId: context.actor.membershipId,
+          requestId: revenueRequestId,
+          classification: 'ORDINARY_FUEL_SALE',
+          sourceType: 'METER_SEGMENT_SALE',
+        });
+        await ports.audit.append({
+          transaction,
+          context,
+          commandType: 'SaleRevenuePosted',
+          subjectType: 'SaleRecognitionMovement',
+          subjectId: revenue.id,
+          after: {
+            reconciliationId: payload.reconciliationId,
+            reconciliationRevisionId: revision.id,
+            reconciliationMeterReadingId: candidate.readingId,
+            meterSegmentId: candidate.segmentId,
+            inventorySaleMovementId: candidate.movementId,
+            quantityLitres: revenue.quantityLitres,
+            recognizedRevenueAmount: revenue.recognizedRevenueAmount,
+            currency: revenue.currency,
+            effectiveAt: new Date(revenue.effectiveAt).toISOString(),
+          },
+          provenance: {
+            actorId: context.actor.actorId,
+            membershipId: context.actor.membershipId,
+            tenantId: context.tenantId,
+            stationId: context.stationId,
+            requestId: context.requestId,
+          },
         });
       }
       const now = await serverNow(transaction);

@@ -15,3 +15,12 @@ The A3 module keeps the physical and financial boundaries distinct:
 - `ReconciliationRevision` is immutable per submission. Declarations classify meter-derived sales for later cash/provider/customer modules; they do not create those ledgers.
 
 The public A3 contract publishes `forecourt.meter_segment_sealed.v1` for A4 inventory consumption and reconciliation approval/posting events for A5/A7 consumers. No A3 table is a universal financial transaction table.
+
+## REV1 revenue model
+
+The Revenue module owns `sale_recognition_movements`, one append-only ordinary
+fuel-sale row per positive unsuperseded sealed meter segment. It consumes the
+segment price snapshot, A5 approved reconciliation/segment bridge, the A4 SALE
+movement, and A12 COGS lineage. `accounted_sales`, payment declarations, and
+reading-level `sales_value` remain reconciliation evidence rather than revenue
+authority.

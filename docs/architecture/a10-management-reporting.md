@@ -49,7 +49,13 @@ The reporting service resolves the tenant from the authenticated server context,
 
 The dashboard is intentionally labeled a management/operational view. It does not claim to be a general ledger, trial balance, statutory P&L, balance sheet, cash-flow statement, tax report, or bank statement.
 
-Gross margin is not exposed. This branch has A4 landed-cost evidence on deliveries and inventory movements, but it does not have a canonical posted sale-recognition movement plus chronological attributable COGS/revaluation calculation that would support a defensible sold-fuel cost basis. Revenue and cost evidence remain separate.
+Gross margin is not exposed in this wave. REV1 now provides the canonical posted
+ordinary fuel-sale movement in `app.sale_recognition_movements`, while A12
+provides chronological attributable COGS/revaluation evidence. A10 still does
+not consume either authority for gross-margin reporting until the dedicated
+profitability contract is reviewed and enabled. Existing management totals
+remain historical/read-model behavior and must not be interpreted as the
+canonical revenue ledger.
 
 A8 customer ledger balances do not contain a station dimension. A tenant-wide report returns `availability: AVAILABLE` and balances as of `toDate`; a station-filtered report returns `availability: UNAVAILABLE_STATION_DIMENSION`, nullable customer totals, and no customer balance rows rather than leaking or inventing a station allocation. PREPAID_LITRES remains quantity evidence and is never converted to money.
 
