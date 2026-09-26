@@ -183,11 +183,11 @@ describe('A11 daily operations composition read', () => {
     await client.unsafe(`
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
       values
-        ('${ids.historicalDay}', '${ids.tenant}', '${ids.station}', '2020-01-01', 'CLOSED'),
-        ${overviewNavigationDays.map(({ id, date }) => `('${id}', '${ids.tenant}', '${ids.station}', '${date}', 'CLOSED')`).join(',\n        ')}
+        ('${ids.historicalDay}', '${ids.tenant}', '${ids.station}', '2020-01-01', 'NOT_STARTED'),
+        ${overviewNavigationDays.map(({ id, date }) => `('${id}', '${ids.tenant}', '${ids.station}', '${date}', 'NOT_STARTED')`).join(',\n        ')}
       on conflict (id) do nothing;
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
-        values ('${ids.outsideStationDay}', '${ids.tenant}', '${ids.outsideStation}', '2026-09-22', 'OPEN')
+        values ('${ids.outsideStationDay}', '${ids.tenant}', '${ids.outsideStation}', '2026-09-22', 'NOT_STARTED')
       on conflict (id) do nothing;
       insert into app.reconciliations
         (id, tenant_id, station_id, business_day_id, shift_id, supervisor_id, created_by, state)
