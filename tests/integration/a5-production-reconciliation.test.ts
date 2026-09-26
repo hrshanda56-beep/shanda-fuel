@@ -1169,6 +1169,532 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     expect(auditRows[0]?.count).toBe('2');
   });
 
+  it('blocks A5 while a production-created late source is unvalued and resumes after A12.4 revaluation', async () => {
+    const phase3TankId = randomUUID();
+    const historicalReconciliationId = randomUUID();
+    const blockedReconciliationId = randomUUID();
+
+    await client.unsafe(`
+      insert into app.tanks
+        (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres,
+         acceptable_variance_litres, status, created_by, updated_by)
+      values
+        ('${phase3TankId}', '${ids.tenant}', '${ids.station}', 'A5-P3-${phase3TankId.slice(0, 8)}',
+         '${ids.product}', 10000, 500, 10, 'ACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}');
+      update app.tanks
+      set status='INACTIVE'
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.tank}';
+    `);
+
+    try {
+      const clock = await client.unsafe<{ now: Date }[]>('select clock_timestamp() as now');
+      expect(clock).toHaveLength(1);
+      const openingEffectiveAt = new Date(clock[0]!.now.getTime() - 60 * 60 * 1000);
+      await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'RecordOpeningBalance',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            tankId: phase3TankId,
+            quantityLitres: '1000.000',
+            effectiveAt: openingEffectiveAt.toISOString(),
+          },
+          `a5-phase3-opening-${phase3TankId}`,
+        ),
+      );
+      await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'RecordOpeningInventoryCost',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            tankId: phase3TankId,
+            amount: '1000.0000',
+            currency: 'USD',
+          },
+          `a5-phase3-opening-cost-${phase3TankId}`,
+          'a5-manager-session-token',
+        ),
+      );
+
+      const historical = await createPopulatedProductionReconciliation(
+        historicalReconciliationId,
+        '500',
+      );
+      await expectOk(
+        await postCommand(
+          {
+            commandType: 'SubmitProductionReconciliation',
+            ...historical.common,
+            expectedVersion: 5,
+          },
+          `a5-phase3-historical-submit-${historicalReconciliationId}`,
+        ),
+      );
+      await expectOk(
+        await postCommand(
+          {
+            commandType: 'ApproveProductionReconciliation',
+            ...historical.common,
+            expectedVersion: 6,
+          },
+          `a5-phase3-historical-approve-${historicalReconciliationId}`,
+          'a5-manager-session-token',
+        ),
+      );
+
+      const historicalSale = await client.unsafe<
+        {
+          movement_id: string;
+          quantity_litres: string;
+          effective_at: Date;
+          cost_event_id: string;
+          cogs_amount: string;
+          attribution_id: string;
+          sale_quantity_litres: string;
+          pre_sale_wac: string;
+          original_cogs: string;
+          replay_fingerprint: string;
+        }[]
+      >(`
+        select movement.id as movement_id,
+               movement.quantity_litres,
+               movement.effective_at,
+               cost.id as cost_event_id,
+               cost.amount::text as cogs_amount,
+               attribution.id as attribution_id,
+               attribution.sale_quantity_litres,
+               attribution.pre_sale_wac,
+               attribution.original_cogs,
+               attribution.replay_fingerprint
+        from app.inventory_movements movement
+        join app.inventory_cost_events cost
+          on cost.tenant_id=movement.tenant_id
+         and cost.station_id=movement.station_id
+         and cost.source_type='METER_SEGMENT_SALE'
+         and cost.source_id=movement.source_id
+         and cost.event_type='SALE_COGS'
+        join app.inventory_sale_cost_attributions attribution
+          on attribution.tenant_id=movement.tenant_id
+         and attribution.station_id=movement.station_id
+         and attribution.inventory_movement_id=movement.id
+        where movement.tenant_id='${ids.tenant}'
+          and movement.station_id='${ids.station}'
+          and movement.tank_id='${phase3TankId}'
+          and movement.product_id='${ids.product}'
+          and movement.source_type='METER_SEGMENT_SALE'
+          and movement.source_id='${historical.segmentIds[0]}'
+      `);
+      expect(historicalSale).toHaveLength(1);
+      expect(historicalSale[0]).toMatchObject({
+        quantity_litres: '-500.000',
+        cogs_amount: '-500.0000',
+        sale_quantity_litres: '500.000',
+        pre_sale_wac: '1.00000000',
+        original_cogs: '500.0000',
+      });
+      const historicalSaleBeforeRevaluation = { ...historicalSale[0]! };
+      const lateEffectiveAt = new Date(historicalSale[0]!.effective_at.getTime() - 1);
+
+      const createdDelivery = await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'CreateDelivery',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            productId: ids.product,
+            deliveryNoteNumber: `A5-P3-LATE-${phase3TankId.slice(0, 8)}`,
+            deliveredAt: lateEffectiveAt.toISOString(),
+            noteQuantityLitres: '100.000',
+            actualQuantityLitres: '100.000',
+            allocations: [{ tankId: phase3TankId, quantityLitres: '100.000' }],
+          },
+          `a5-phase3-late-delivery-${phase3TankId}`,
+        ),
+      );
+      const lateDeliveryId = createdDelivery.deliveryId as string;
+      const lateAllocationId = (createdDelivery.allocationIds as string[])[0]!;
+      await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'ConfirmDelivery',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            deliveryId: lateDeliveryId,
+          },
+          `a5-phase3-confirm-late-delivery-${phase3TankId}`,
+        ),
+      );
+
+      const lateSource = await client.unsafe<
+        { id: string; quantity_litres: string; effective_at: Date; source_id: string }[]
+      >(`
+        select id, quantity_litres, effective_at, source_id
+        from app.inventory_movements
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and tank_id='${phase3TankId}' and product_id='${ids.product}'
+          and source_type='FUEL_DELIVERY_ALLOCATION' and source_id='${lateAllocationId}'
+      `);
+      expect(lateSource).toHaveLength(1);
+      expect(lateSource[0]).toMatchObject({
+        quantity_litres: '100.000',
+        source_id: lateAllocationId,
+      });
+      expect(lateSource[0]!.effective_at.getTime()).toBe(lateEffectiveAt.getTime());
+      const lateSourceBeforeRevaluation = { ...lateSource[0]! };
+
+      const unvaluedProjection = await client.unsafe<
+        {
+          quantity_litres: string;
+          inventory_value: string | null;
+          weighted_average_cost: string | null;
+          currency: string | null;
+          valuation_status: string;
+        }[]
+      >(`
+        select quantity_litres, inventory_value, weighted_average_cost, currency, valuation_status
+        from app.inventory_cost_stream_state
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and tank_id='${phase3TankId}' and product_id='${ids.product}'
+      `);
+      expect(unvaluedProjection).toEqual([
+        {
+          quantity_litres: '600.000',
+          inventory_value: null,
+          weighted_average_cost: null,
+          currency: null,
+          valuation_status: 'UNVALUED',
+        },
+      ]);
+      await expect(
+        client.unsafe(`
+          select id from app.inventory_cost_events
+          where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+            and source_type='FUEL_DELIVERY_ALLOCATION' and source_id='${lateAllocationId}'
+        `),
+      ).resolves.toHaveLength(0);
+
+      const blocked = await createPopulatedProductionReconciliation(blockedReconciliationId, '500');
+      await expectOk(
+        await postCommand(
+          {
+            commandType: 'SubmitProductionReconciliation',
+            ...blocked.common,
+            expectedVersion: 5,
+          },
+          `a5-phase3-blocked-submit-${blockedReconciliationId}`,
+        ),
+      );
+      const failedApproval = await postCommand(
+        {
+          commandType: 'ApproveProductionReconciliation',
+          ...blocked.common,
+          expectedVersion: 6,
+        },
+        `a5-phase3-blocked-approve-${blockedReconciliationId}`,
+        'a5-manager-session-token',
+      );
+      const failedApprovalBody = (await failedApproval.json()) as {
+        error?: string;
+        message?: string;
+      };
+      expect(failedApproval.status, JSON.stringify(failedApprovalBody)).toBe(409);
+      expect(failedApprovalBody).toMatchObject({
+        error: 'CONFLICT',
+        message: 'A sale cannot be costed while the inventory stream is UNVALUED',
+      });
+      const blockedState = await client.unsafe<{ state: string; version: number }[]>(`
+        select state, version
+        from app.reconciliations
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and id='${blockedReconciliationId}'
+      `);
+      expect(blockedState).toEqual([{ state: 'SUBMITTED', version: 6 }]);
+      const failedSaleEvidence = await client.unsafe<
+        { movements: string; cogs: string; attributions: string; bridges: string }[]
+      >(`
+        select
+          (select count(*)::text from app.inventory_movements
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and source_type='METER_SEGMENT_SALE'
+             and source_id in ('${blocked.segmentIds.join("','")}')) as movements,
+          (select count(*)::text from app.inventory_cost_events
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and event_type='SALE_COGS'
+             and source_id in ('${blocked.segmentIds.join("','")}')) as cogs,
+          (select count(*)::text from app.inventory_sale_cost_attributions
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and meter_segment_id in ('${blocked.segmentIds.join("','")}')) as attributions,
+          (select count(*)::text from app.reconciliation_meter_reading_segments
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and reconciliation_id='${blockedReconciliationId}') as bridges
+      `);
+      expect(failedSaleEvidence).toEqual([
+        { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
+      ]);
+
+      const requested = await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'RequestInventoryCostRevaluation',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            tankId: phase3TankId,
+            productId: ids.product,
+            sourceType: 'FUEL_DELIVERY_ALLOCATION',
+            sourceId: lateAllocationId,
+            amount: '200.0000',
+            currency: 'USD',
+            reason: 'A5 Phase 3 late historical receipt cost',
+          },
+          `a5-phase3-request-revaluation-${phase3TankId}`,
+        ),
+      );
+      const revaluationId = requested.revaluationId as string;
+      await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'ApproveInventoryCostRevaluation',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            revaluationId,
+          },
+          `a5-phase3-approve-revaluation-${phase3TankId}`,
+          'a5-manager-session-token',
+        ),
+      );
+      await expectOk(
+        await postInventoryCommand(
+          {
+            commandType: 'PostInventoryCostRevaluation',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            revaluationId,
+          },
+          `a5-phase3-post-revaluation-${phase3TankId}`,
+        ),
+      );
+
+      const valuedProjection = await client.unsafe<
+        {
+          quantity_litres: string;
+          inventory_value: string;
+          weighted_average_cost: string;
+          currency: string;
+          valuation_status: string;
+        }[]
+      >(`
+        select quantity_litres, inventory_value, weighted_average_cost, currency, valuation_status
+        from app.inventory_cost_stream_state
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and tank_id='${phase3TankId}' and product_id='${ids.product}'
+      `);
+      expect(valuedProjection).toEqual([
+        {
+          quantity_litres: '600.000',
+          inventory_value: '654.5455',
+          weighted_average_cost: '1.09090909',
+          currency: 'USD',
+          valuation_status: 'VALUED',
+        },
+      ]);
+
+      const revaluationEvidence = await client.unsafe<
+        {
+          status: string;
+          ordinary_cost_count: string;
+          ordinary_cost_amount: string;
+          line_count: string;
+          cogs_delta: string;
+          revaluation_event_count: string;
+          inventory_revaluation_event_count: string;
+        }[]
+      >(`
+        select revaluation.status,
+               (select count(*)::text from app.inventory_cost_events event
+                where event.tenant_id=revaluation.tenant_id and event.station_id=revaluation.station_id
+                  and event.event_type='RECEIPT_COST' and event.source_id='${lateAllocationId}') as ordinary_cost_count,
+               (select event.amount::text from app.inventory_cost_events event
+                where event.tenant_id=revaluation.tenant_id and event.station_id=revaluation.station_id
+                  and event.event_type='RECEIPT_COST' and event.source_id='${lateAllocationId}') as ordinary_cost_amount,
+               (select count(*)::text from app.inventory_cost_revaluation_lines line
+                where line.tenant_id=revaluation.tenant_id and line.station_id=revaluation.station_id
+                  and line.revaluation_id=revaluation.id) as line_count,
+               (select line.cogs_delta::text from app.inventory_cost_revaluation_lines line
+                where line.tenant_id=revaluation.tenant_id and line.station_id=revaluation.station_id
+                  and line.revaluation_id=revaluation.id) as cogs_delta,
+               (select count(*)::text from app.inventory_cost_events event
+                where event.tenant_id=revaluation.tenant_id and event.station_id=revaluation.station_id
+                  and event.event_type='COGS_REVALUATION'
+                  and event.source_type='INVENTORY_COST_REVALUATION_LINE'
+                  and event.source_id in (
+                    select line.id from app.inventory_cost_revaluation_lines line
+                    where line.tenant_id=revaluation.tenant_id and line.station_id=revaluation.station_id
+                      and line.revaluation_id=revaluation.id
+                  )) as revaluation_event_count,
+               (select count(*)::text from app.inventory_cost_events event
+                where event.tenant_id=revaluation.tenant_id and event.station_id=revaluation.station_id
+                  and event.event_type='INVENTORY_REVALUATION'
+                  and event.source_id='${lateAllocationId}') as inventory_revaluation_event_count
+        from app.inventory_cost_revaluations revaluation
+        where revaluation.tenant_id='${ids.tenant}' and revaluation.station_id='${ids.station}'
+          and revaluation.id='${revaluationId}'
+      `);
+      expect(revaluationEvidence).toEqual([
+        {
+          status: 'POSTED',
+          ordinary_cost_count: '1',
+          ordinary_cost_amount: '200.0000',
+          line_count: '1',
+          cogs_delta: '45.4545',
+          revaluation_event_count: '1',
+          inventory_revaluation_event_count: '0',
+        },
+      ]);
+
+      const historicalSaleAfterRevaluation = await client.unsafe<
+        {
+          movement_id: string;
+          quantity_litres: string;
+          cost_event_id: string;
+          cogs_amount: string;
+          attribution_id: string;
+          sale_quantity_litres: string;
+          pre_sale_wac: string;
+          original_cogs: string;
+          replay_fingerprint: string;
+        }[]
+      >(`
+        select movement.id as movement_id,
+               movement.quantity_litres,
+               cost.id as cost_event_id,
+               cost.amount::text as cogs_amount,
+               attribution.id as attribution_id,
+               attribution.sale_quantity_litres,
+               attribution.pre_sale_wac,
+               attribution.original_cogs,
+               attribution.replay_fingerprint
+        from app.inventory_movements movement
+        join app.inventory_cost_events cost
+          on cost.tenant_id=movement.tenant_id and cost.station_id=movement.station_id
+         and cost.event_type='SALE_COGS' and cost.source_type='METER_SEGMENT_SALE'
+         and cost.source_id=movement.source_id
+        join app.inventory_sale_cost_attributions attribution
+          on attribution.tenant_id=movement.tenant_id and attribution.station_id=movement.station_id
+         and attribution.inventory_movement_id=movement.id
+        where movement.tenant_id='${ids.tenant}' and movement.station_id='${ids.station}'
+          and movement.tank_id='${phase3TankId}' and movement.product_id='${ids.product}'
+          and movement.source_id='${historical.segmentIds[0]}'
+      `);
+      expect(historicalSaleAfterRevaluation).toEqual([
+        {
+          movement_id: historicalSaleBeforeRevaluation.movement_id,
+          quantity_litres: historicalSaleBeforeRevaluation.quantity_litres,
+          cost_event_id: historicalSaleBeforeRevaluation.cost_event_id,
+          cogs_amount: historicalSaleBeforeRevaluation.cogs_amount,
+          attribution_id: historicalSaleBeforeRevaluation.attribution_id,
+          sale_quantity_litres: historicalSaleBeforeRevaluation.sale_quantity_litres,
+          pre_sale_wac: historicalSaleBeforeRevaluation.pre_sale_wac,
+          original_cogs: historicalSaleBeforeRevaluation.original_cogs,
+          replay_fingerprint: historicalSaleBeforeRevaluation.replay_fingerprint,
+        },
+      ]);
+      const historicalAttributionCount = await client.unsafe<{ count: string }[]>(`
+        select count(*)::text as count
+        from app.inventory_sale_cost_attributions
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and inventory_movement_id='${historicalSaleBeforeRevaluation.movement_id}'
+      `);
+      expect(historicalAttributionCount).toEqual([{ count: '1' }]);
+
+      const lateSourceAfterRevaluation = await client.unsafe<
+        { id: string; quantity_litres: string; effective_at: Date; source_id: string }[]
+      >(`
+        select id, quantity_litres, effective_at, source_id
+        from app.inventory_movements
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and id='${lateSourceBeforeRevaluation.id}'
+      `);
+      expect(lateSourceAfterRevaluation).toHaveLength(1);
+      expect(lateSourceAfterRevaluation[0]!.id).toBe(lateSourceBeforeRevaluation.id);
+      expect(lateSourceAfterRevaluation[0]!.quantity_litres).toBe(
+        lateSourceBeforeRevaluation.quantity_litres,
+      );
+      expect(lateSourceAfterRevaluation[0]!.source_id).toBe(lateSourceBeforeRevaluation.source_id);
+      expect(lateSourceAfterRevaluation[0]!.effective_at.getTime()).toBe(
+        lateSourceBeforeRevaluation.effective_at.getTime(),
+      );
+
+      const approvedAfterRevaluation = await expectOk(
+        await postCommand(
+          {
+            commandType: 'ApproveProductionReconciliation',
+            ...blocked.common,
+            expectedVersion: 6,
+          },
+          `a5-phase3-approved-after-revaluation-${blockedReconciliationId}`,
+          'a5-manager-session-token',
+        ),
+      );
+      expect(approvedAfterRevaluation.state).toBe('APPROVED');
+      const futureSale = await client.unsafe<
+        {
+          movement_id: string;
+          quantity_litres: string;
+          cogs_amount: string;
+          sale_quantity_litres: string;
+          pre_sale_wac: string;
+          original_cogs: string;
+        }[]
+      >(`
+        select movement.id as movement_id,
+               movement.quantity_litres,
+               cost.amount::text as cogs_amount,
+               attribution.sale_quantity_litres,
+               attribution.pre_sale_wac,
+               attribution.original_cogs
+        from app.inventory_movements movement
+        join app.inventory_cost_events cost
+          on cost.tenant_id=movement.tenant_id and cost.station_id=movement.station_id
+         and cost.event_type='SALE_COGS' and cost.source_type='METER_SEGMENT_SALE'
+         and cost.source_id=movement.source_id
+        join app.inventory_sale_cost_attributions attribution
+          on attribution.tenant_id=movement.tenant_id and attribution.station_id=movement.station_id
+         and attribution.inventory_movement_id=movement.id
+        where movement.tenant_id='${ids.tenant}' and movement.station_id='${ids.station}'
+          and movement.tank_id='${phase3TankId}' and movement.product_id='${ids.product}'
+          and movement.source_id='${blocked.segmentIds[0]}'
+      `);
+      expect(futureSale).toEqual([
+        {
+          movement_id: expect.any(String),
+          quantity_litres: '-500.000',
+          cogs_amount: '-545.4545',
+          sale_quantity_litres: '500.000',
+          pre_sale_wac: '1.09090909',
+          original_cogs: '545.4545',
+        },
+      ]);
+      const totalAttributionCount = await client.unsafe<{ count: string }[]>(`
+        select count(*)::text as count
+        from app.inventory_sale_cost_attributions
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and tank_id='${phase3TankId}' and product_id='${ids.product}'
+      `);
+      expect(totalAttributionCount).toEqual([{ count: '2' }]);
+    } finally {
+      await client.unsafe(`
+        update app.tanks
+        set status='INACTIVE'
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${phase3TankId}';
+        update app.tanks
+        set status='ACTIVE'
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.tank}';
+      `);
+    }
+  });
+
   it('rejects unvalued approval atomically and leaves no sale evidence', async () => {
     try {
       await client.unsafe(`
