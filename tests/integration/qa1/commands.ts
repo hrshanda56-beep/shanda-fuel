@@ -443,7 +443,14 @@ export async function createApprovedSale(
 ): Promise<PostedSale> {
   const businessDayId = input.businessDayId ?? ctx.businessDayId;
   if (!input.existingShiftId) {
-    await postOpeningPosition(client, ctx, keyPrefix, '1000.000', '1000.0000', input.openingEffectiveAt);
+    await postOpeningPosition(
+      client,
+      ctx,
+      keyPrefix,
+      '1000.000',
+      '1000.0000',
+      input.openingEffectiveAt,
+    );
   }
   const { shiftId } = input.existingShiftId
     ? { shiftId: input.existingShiftId }
