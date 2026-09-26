@@ -259,12 +259,26 @@ describe('A11 daily operations composition read', () => {
       await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.historicalDay),
     );
     const body = (await response.json()) as {
-      selectedBusinessDay: { id: string; date: string };
+      selectedBusinessDay: {
+        id: string;
+        date: string;
+        state: string;
+        version: number;
+        openedAt: string | null;
+        closedAt: string | null;
+      };
       businessDays: Array<{ id: string }>;
     };
 
     expect(response.status).toBe(200);
-    expect(body.selectedBusinessDay).toEqual({ id: ids.historicalDay, date: '2020-01-01' });
+    expect(body.selectedBusinessDay).toMatchObject({
+      id: ids.historicalDay,
+      date: '2020-01-01',
+      state: 'NOT_STARTED',
+      version: 0,
+      openedAt: null,
+      closedAt: null,
+    });
     expect(body.businessDays).toHaveLength(30);
     expect(body.businessDays.some((day) => day.id === ids.historicalDay)).toBe(false);
   });
