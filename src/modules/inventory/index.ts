@@ -14,11 +14,14 @@ export {
   createTankFromRequest,
   confirmDeliveryFromRequest,
   deactivateTankFromRequest,
+  approveInventoryCostRevaluationFromRequest,
   postInventoryAdjustmentFromRequest,
+  postInventoryCostRevaluationFromRequest,
   recordOpeningInventoryCostFromRequest,
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  requestInventoryCostRevaluationFromRequest,
 } from './commands';
 export { queryInventoryStock } from './queries';
 export {

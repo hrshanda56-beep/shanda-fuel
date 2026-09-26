@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   orderInventoryCostEvents,
   orderInventoryMovements,
+  orderInventoryCostReplay,
   calculateLateCostRevaluation,
   deriveSaleCogsFromPreSaleState,
   projectInventoryCost,
+  projectInventoryCostWithRevaluations,
   projectInventoryCostBeforeSale,
   replayFingerprint,
   restateSaleCogs,
@@ -890,6 +892,196 @@ describe('inventory costing domain', () => {
         }),
       ).toThrow('deferred beyond A12.2');
     }
+  });
+
+  it('uses a dedicated revaluation-aware projection without weakening the ordinary projector', () => {
+    const opening = movement({
+      id: '00000000-0000-4000-8000-000000000121',
+      quantityLitres: '100.000',
+    });
+    const receipt = movement({
+      id: '00000000-0000-4000-8000-000000000122',
+      movementType: 'DELIVERY',
+      quantityLitres: '100.000',
+      effectiveAt: '2026-09-25T07:00:00.000Z',
+      sourceType: 'FUEL_DELIVERY_ALLOCATION',
+      sourceId: '00000000-0000-4000-8000-000000000221',
+    });
+    const sale = movement({
+      id: '00000000-0000-4000-8000-000000000123',
+      movementType: 'SALE',
+      quantityLitres: '-25.000',
+      effectiveAt: '2026-09-25T08:00:00.000Z',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000223',
+    });
+    const events = [
+      event({ id: '00000000-0000-4000-8000-000000000321', amount: '100.0000' }),
+      event({
+        id: '00000000-0000-4000-8000-000000000322',
+        eventType: 'RECEIPT_COST',
+        sourceType: receipt.sourceType,
+        sourceId: receipt.sourceId,
+        effectiveAt: receipt.effectiveAt,
+        amount: '300.0000',
+      }),
+      event({
+        id: '00000000-0000-4000-8000-000000000323',
+        eventType: 'SALE_COGS',
+        sourceType: 'METER_SEGMENT_SALE',
+        sourceId: sale.sourceId,
+        effectiveAt: sale.effectiveAt,
+        amount: '-25.0000',
+      }),
+      event({
+        id: '00000000-0000-4000-8000-000000000324',
+        eventType: 'COGS_REVALUATION',
+        sourceType: 'INVENTORY_COST_REVALUATION_LINE',
+        sourceId: '00000000-0000-4000-8000-000000000521',
+        effectiveAt: sale.effectiveAt,
+        amount: '25.0000',
+      }),
+    ];
+    const input = { key, movements: [opening, receipt, sale], costEvents: events };
+    expect(() => projectInventoryCost(input)).toThrow('deferred beyond A12.2');
+    expect(projectInventoryCostWithRevaluations(input)).toMatchObject({
+      quantityLitres: '175.000',
+      inventoryValue: '350.0000',
+      weightedAverageCost: '2.00000000',
+      valuationStatus: 'VALUED',
+    });
+  });
+
+  it('applies a same-timestamp COGS revaluation only after its historical sale', () => {
+    const opening = movement({
+      id: '00000000-0000-4000-8000-000000000131',
+      effectiveAt: '2026-09-25T06:00:00.000Z',
+    });
+    const sale = movement({
+      id: '00000000-0000-4000-8000-000000000132',
+      movementType: 'SALE',
+      quantityLitres: '-10.000',
+      effectiveAt: '2026-09-25T08:00:00.000Z',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000232',
+    });
+    const saleCost = event({
+      id: 'ffffffff-ffff-4fff-8fff-ffffffff0332',
+      eventType: 'SALE_COGS',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: sale.sourceId,
+      effectiveAt: sale.effectiveAt,
+      amount: '-10.0000',
+    });
+    const revaluation = event({
+      id: '00000000-0000-4000-8000-000000000332',
+      eventType: 'COGS_REVALUATION',
+      sourceType: 'INVENTORY_COST_REVALUATION_LINE',
+      sourceId: '00000000-0000-4000-8000-000000000532',
+      effectiveAt: sale.effectiveAt,
+      amount: '5.0000',
+    });
+    const replay = orderInventoryCostReplay(
+      [opening, sale],
+      [
+        event({ id: '00000000-0000-4000-8000-000000000331', amount: '100.0000' }),
+        saleCost,
+        revaluation,
+      ],
+    );
+    expect(replay.slice(-2).map((item) => item.id)).toEqual([sale.id, revaluation.id]);
+
+    const projection = projectInventoryCostWithRevaluations({
+      key,
+      movements: [opening, sale],
+      costEvents: [
+        event({ id: '00000000-0000-4000-8000-000000000331', amount: '100.0000' }),
+        saleCost,
+        revaluation,
+      ],
+    });
+    expect(projection.saleAttributions).toMatchObject([
+      { preSaleWac: '1.00000000', originalCogs: '10.0000' },
+    ]);
+    expect(projection).toMatchObject({
+      quantityLitres: '90.000',
+      inventoryValue: '85.0000',
+      weightedAverageCost: '0.94444444',
+    });
+  });
+
+  it('keeps same-timestamp canonical sales uncontaminated and ranks revaluation after both', () => {
+    const opening = movement({
+      id: '00000000-0000-4000-8000-000000000141',
+      effectiveAt: '2026-09-25T06:00:00.000Z',
+    });
+    const firstSale = movement({
+      id: '00000000-0000-4000-8000-000000000142',
+      movementType: 'SALE',
+      quantityLitres: '-10.000',
+      effectiveAt: '2026-09-25T08:00:00.000Z',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000242',
+    });
+    const secondSale = movement({
+      id: '00000000-0000-4000-8000-000000000143',
+      movementType: 'SALE',
+      quantityLitres: '-10.000',
+      effectiveAt: firstSale.effectiveAt,
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000243',
+    });
+    const openingCost = event({
+      id: '00000000-0000-4000-8000-000000000341',
+      amount: '100.0000',
+    });
+    const firstSaleCost = event({
+      id: 'ffffffff-ffff-4fff-8fff-ffffffff0342',
+      eventType: 'SALE_COGS',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: firstSale.sourceId,
+      effectiveAt: firstSale.effectiveAt,
+      amount: '-10.0000',
+    });
+    const secondSaleCost = event({
+      id: '00000000-0000-4000-8000-000000000343',
+      eventType: 'SALE_COGS',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: secondSale.sourceId,
+      effectiveAt: secondSale.effectiveAt,
+      amount: '-10.0000',
+    });
+    const revaluation = event({
+      id: '00000000-0000-4000-8000-000000000342',
+      eventType: 'COGS_REVALUATION',
+      sourceType: 'INVENTORY_COST_REVALUATION_LINE',
+      sourceId: '00000000-0000-4000-8000-000000000542',
+      effectiveAt: firstSale.effectiveAt,
+      amount: '5.0000',
+    });
+    const input = {
+      key,
+      movements: [opening, firstSale, secondSale],
+      costEvents: [openingCost, firstSaleCost, secondSaleCost, revaluation],
+    };
+    const projection = projectInventoryCostWithRevaluations(input);
+    const reorderedProjection = projectInventoryCostWithRevaluations({
+      ...input,
+      movements: [...input.movements].reverse(),
+      costEvents: [...input.costEvents].reverse(),
+    });
+    expect(projection.saleAttributions.map((sale) => sale.preSaleWac)).toEqual([
+      '1.00000000',
+      '1.00000000',
+    ]);
+    expect(projection).toMatchObject({
+      quantityLitres: '80.000',
+      inventoryValue: '75.0000',
+      weightedAverageCost: '0.93750000',
+    });
+    expect(reorderedProjection.saleAttributions).toEqual(projection.saleAttributions);
+    expect(reorderedProjection.inventoryValue).toBe(projection.inventoryValue);
+    expect(reorderedProjection.weightedAverageCost).toBe(projection.weightedAverageCost);
   });
 
   it('derives sale COGS from a valued pre-sale state with exact scales', () => {

@@ -282,6 +282,9 @@ function compareReplayItems(
     if (item.kind === 'MOVEMENT') {
       return isCanonicalSale(item) ? [1, item.id, 1] : [0, item.id, 0];
     }
+    if (item.eventType === 'COGS_REVALUATION') {
+      return [3, '', 0];
+    }
     const saleId =
       item.eventType === 'SALE_COGS' && item.sourceType === 'METER_SEGMENT_SALE'
         ? canonicalSaleIdsBySource.get(sourceKey(item.sourceType, item.sourceId))
@@ -1007,7 +1010,7 @@ export function calculateLateCostRevaluation(input: {
   };
 }
 
-function assertCostEventType(event: CostingEvent): void {
+function assertCostEventType(event: CostingEvent, allowRevaluations = false): void {
   if (!COST_EVENT_TYPES.includes(event.eventType)) {
     throw new AppError(
       'VALIDATION_FAILED',
@@ -1017,7 +1020,10 @@ function assertCostEventType(event: CostingEvent): void {
   if (event.eventType === 'SALE_COGS' && !new ExactDecimal(event.amount).value.isNegative()) {
     throw new AppError('INVARIANT_VIOLATION', 'SALE_COGS cost events must reduce inventory value');
   }
-  if (deferredCostEventTypes.has(event.eventType)) {
+  if (
+    deferredCostEventTypes.has(event.eventType) &&
+    !(allowRevaluations && event.eventType === 'COGS_REVALUATION')
+  ) {
     throw new AppError(
       'INVARIANT_VIOLATION',
       `${event.eventType} replay semantics are deferred beyond A12.2`,
@@ -1033,19 +1039,22 @@ function assertCostEventType(event: CostingEvent): void {
  * negative movements are excluded from this chronology; callers resume from a
  * trusted canonicalStartingPoint instead of inventing historical COGS.
  */
-export function projectInventoryCost(input: {
-  key: InventoryStreamKey;
-  movements: readonly CostingMovement[];
-  costEvents: readonly CostingEvent[];
-  canonicalStartingPoint?: CanonicalCostingStartingPoint;
-}): CostStreamProjection {
+function projectInventoryCostInternal(
+  input: {
+    key: InventoryStreamKey;
+    movements: readonly CostingMovement[];
+    costEvents: readonly CostingEvent[];
+    canonicalStartingPoint?: CanonicalCostingStartingPoint;
+  },
+  allowRevaluations: boolean,
+): CostStreamProjection {
   const movements = orderInventoryMovements(input.movements);
   const costEvents = orderInventoryCostEvents(input.costEvents);
   let streamCurrency: CurrencyCode | null = null;
   for (const movement of movements) assertSameStream(input.key, movement);
   for (const event of costEvents) {
     assertSameStream(input.key, event);
-    assertCostEventType(event);
+    assertCostEventType(event, allowRevaluations);
     assertCurrency(event.currency, `Cost event ${event.id}`);
   }
   const costEventIds = new Set<string>();
@@ -1173,7 +1182,8 @@ export function projectInventoryCost(input: {
           canonicalEffectiveAt(saleCostEvent.effectiveAt) !==
             canonicalEffectiveAt(movement.effectiveAt) ||
           (saleCostEvent.businessDate ?? null) !== (movement.businessDate ?? null) ||
-          !new ExactDecimal(saleCostEvent.amount).equals(new ExactDecimal(`-${originalCogs}`))
+          (!allowRevaluations &&
+            !new ExactDecimal(saleCostEvent.amount).equals(new ExactDecimal(`-${originalCogs}`)))
         ) {
           throw new AppError(
             'INVARIANT_VIOLATION',
@@ -1254,6 +1264,11 @@ export function projectInventoryCost(input: {
           pendingUnvaluedSources.delete(movementId);
         }
       }
+    } else if (event.eventType === 'COGS_REVALUATION' && allowRevaluations) {
+      if (!ledgerValue) {
+        throw new AppError('CONFLICT', 'A COGS revaluation requires a valued inventory stream');
+      }
+      ledgerValue = quantizedMoney(ledgerValue.subtract(amount));
     } else {
       throw new AppError(
         'INVARIANT_VIOLATION',
@@ -1295,12 +1310,33 @@ export function projectInventoryCost(input: {
   };
 }
 
-export function projectInventoryCostBeforeSale(input: {
+export function projectInventoryCost(input: {
   key: InventoryStreamKey;
   movements: readonly CostingMovement[];
   costEvents: readonly CostingEvent[];
-  saleMovementId: string;
+  canonicalStartingPoint?: CanonicalCostingStartingPoint;
 }): CostStreamProjection {
+  return projectInventoryCostInternal(input, false);
+}
+
+export function projectInventoryCostWithRevaluations(input: {
+  key: InventoryStreamKey;
+  movements: readonly CostingMovement[];
+  costEvents: readonly CostingEvent[];
+  canonicalStartingPoint?: CanonicalCostingStartingPoint;
+}): CostStreamProjection {
+  return projectInventoryCostInternal(input, true);
+}
+
+function projectInventoryCostBeforeSaleInternal(
+  input: {
+    key: InventoryStreamKey;
+    movements: readonly CostingMovement[];
+    costEvents: readonly CostingEvent[];
+    saleMovementId: string;
+  },
+  allowRevaluations: boolean,
+): CostStreamProjection {
   const ordered = orderInventoryCostReplay(input.movements, input.costEvents);
   const saleIndex = ordered.findIndex(
     (item) => item.kind === 'MOVEMENT' && item.id === input.saleMovementId,
@@ -1314,19 +1350,43 @@ export function projectInventoryCostBeforeSale(input: {
     .filter(
       (item) => !(item.kind === 'COST_EVENT' && isMatchingCanonicalSaleCostEvent(sale, item)),
     );
-  return projectInventoryCost({
+  const projectionInput = {
     key: input.key,
     movements: beforeSale.filter((item) => item.kind === 'MOVEMENT'),
     costEvents: beforeSale.filter((item) => item.kind === 'COST_EVENT'),
-  });
+  };
+  return allowRevaluations
+    ? projectInventoryCostWithRevaluations(projectionInput)
+    : projectInventoryCost(projectionInput);
 }
 
-export function projectInventoryCostThroughSale(input: {
+export function projectInventoryCostBeforeSale(input: {
   key: InventoryStreamKey;
   movements: readonly CostingMovement[];
   costEvents: readonly CostingEvent[];
   saleMovementId: string;
 }): CostStreamProjection {
+  return projectInventoryCostBeforeSaleInternal(input, false);
+}
+
+export function projectInventoryCostBeforeSaleWithRevaluations(input: {
+  key: InventoryStreamKey;
+  movements: readonly CostingMovement[];
+  costEvents: readonly CostingEvent[];
+  saleMovementId: string;
+}): CostStreamProjection {
+  return projectInventoryCostBeforeSaleInternal(input, true);
+}
+
+function projectInventoryCostThroughSaleInternal(
+  input: {
+    key: InventoryStreamKey;
+    movements: readonly CostingMovement[];
+    costEvents: readonly CostingEvent[];
+    saleMovementId: string;
+  },
+  allowRevaluations: boolean,
+): CostStreamProjection {
   const ordered = orderInventoryCostReplay(input.movements, input.costEvents);
   const saleIndex = ordered.findIndex(
     (item) => item.kind === 'MOVEMENT' && item.id === input.saleMovementId,
@@ -1336,9 +1396,30 @@ export function projectInventoryCostThroughSale(input: {
     throw new AppError('INTERNAL_ERROR', 'The canonical sale movement disappeared');
   }
   const throughSale = ordered.slice(0, saleIndex + 1);
-  return projectInventoryCost({
+  const projectionInput = {
     key: input.key,
     movements: throughSale.filter((item) => item.kind === 'MOVEMENT'),
     costEvents: throughSale.filter((item) => item.kind === 'COST_EVENT'),
-  });
+  };
+  return allowRevaluations
+    ? projectInventoryCostWithRevaluations(projectionInput)
+    : projectInventoryCost(projectionInput);
+}
+
+export function projectInventoryCostThroughSale(input: {
+  key: InventoryStreamKey;
+  movements: readonly CostingMovement[];
+  costEvents: readonly CostingEvent[];
+  saleMovementId: string;
+}): CostStreamProjection {
+  return projectInventoryCostThroughSaleInternal(input, false);
+}
+
+export function projectInventoryCostThroughSaleWithRevaluations(input: {
+  key: InventoryStreamKey;
+  movements: readonly CostingMovement[];
+  costEvents: readonly CostingEvent[];
+  saleMovementId: string;
+}): CostStreamProjection {
+  return projectInventoryCostThroughSaleInternal(input, true);
 }
