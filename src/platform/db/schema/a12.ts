@@ -262,6 +262,7 @@ export const inventoryCostRevaluations = appSchema.table(
     currency: text('currency'),
     effectiveAt: utcTimestamp('effective_at').notNull(),
     businessDate: text('business_date').notNull(),
+    // Reserved migration-compatible metadata; v1 posting is whole-history only.
     restatementFromAt: utcTimestamp('restatement_from_at'),
     restatementThroughAt: utcTimestamp('restatement_through_at'),
     requestedBy: uuid('requested_by').notNull(),

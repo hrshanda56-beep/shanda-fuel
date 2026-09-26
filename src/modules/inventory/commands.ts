@@ -137,6 +137,7 @@ const requestInventoryCostRevaluationPayload = authorityPayload.extend({
   amount: costAmount,
   currency: currencyCode,
   reason: z.string().trim().min(1).max(1000),
+  // Reserved metadata only; v1 supports whole-history posting and rejects bounds below.
   restatementFromAt: instant.nullish(),
   restatementThroughAt: instant.nullish(),
 });
@@ -710,7 +711,7 @@ export async function requestInventoryCostRevaluationFromRequest(request: Reques
   if (payload.restatementFromAt || payload.restatementThroughAt) {
     throw new AppError(
       'VALIDATION_FAILED',
-      'Bounded restatement semantics are not supported by A12.4 yet',
+      'Bounded restatement is deferred from v1; non-null boundary values are not supported',
     );
   }
   const context = await contextFor(request, payload);

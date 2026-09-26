@@ -7,6 +7,7 @@ import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { getServerEnv } from '../../platform/config/env';
 import { AppError } from '../../platform/errors';
+import { assertStepUp } from '../../platform/security';
 import {
   authorize,
   type AccessScope,
@@ -239,6 +240,27 @@ export function authorizeCustomerCommand(
   });
 }
 
+export function assertCustomerCommandAuthorization(input: {
+  context: CustomerCommandContext;
+  commandType: CustomerCommandType;
+  permissionCode: CustomerPermissionCode;
+}): void {
+  const policy = CUSTOMER_COMMAND_POLICY[input.commandType];
+  if (!policy) {
+    throw new AppError('INVARIANT_VIOLATION', 'The customer command has no authorization policy');
+  }
+  if (policy.permissionCode !== input.permissionCode) {
+    throw new AppError(
+      'INVARIANT_VIOLATION',
+      'The customer command permission does not match its authorization policy',
+    );
+  }
+  authorizeCustomerCommand(input.context, input.permissionCode);
+  if (policy.requiresStepUp) {
+    assertStepUp(input.context.authority.actor.session, 1);
+  }
+}
+
 export function customerRequestHash(payload: unknown): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
@@ -262,7 +284,7 @@ export async function executeCustomerCommand<T>(input: {
 }): Promise<T> {
   if (!input.idempotencyKey.trim())
     throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
-  authorizeCustomerCommand(input.context, input.permissionCode);
+  assertCustomerCommandAuthorization(input);
   return withTenantTransaction(input.context.authority.transaction, async (transaction) => {
     const commandType = `Customer.${input.commandType}`;
     const inserted = await transaction

@@ -7,6 +7,7 @@ import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-
 import { authorize } from '../../platform/security/permissions';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
+import { readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
   customerScopeAvailability,
@@ -837,7 +838,7 @@ export async function getManagementReportFromRequest(
       })
     : authority.transaction;
   return withTenantTransaction(reportTransactionContext, async (transaction) => {
-    const [stations, sales, cash, providers, suppliers, customers, inventory, expenses] =
+    const [stations, sales, cash, providers, suppliers, customers, inventory, expenses, costing] =
       await Promise.all([
         listStations(transaction, filters),
         readSales(transaction, filters),
@@ -847,6 +848,7 @@ export async function getManagementReportFromRequest(
         readCustomers(transaction, filters),
         readInventory(transaction, filters),
         readExpenses(transaction, filters),
+        readRestatedCogs(transaction, filters),
       ]);
     return {
       report: 'MANAGEMENT_OVERVIEW',
@@ -867,6 +869,7 @@ export async function getManagementReportFromRequest(
       customers,
       inventory,
       expenses,
+      costing,
       grossMargin: null,
     };
   });
