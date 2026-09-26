@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { RestatedCogsReport } from '../profitability/contracts';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must use YYYY-MM-DD');
 
@@ -193,6 +194,7 @@ export type ManagementReport = Readonly<{
       expenseIds: readonly string[];
     }[];
   }>;
+  costing: RestatedCogsReport;
   grossMargin: null;
 }>;
 
