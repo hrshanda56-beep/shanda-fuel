@@ -193,7 +193,7 @@ are rejected. A12.4 provides the separate approved late-cost revaluation
 workflow. No FX, adjustment/transfer costing, or A10 profitability changes are
 included.
 
-### A12.4 — Late-cost historical revaluation — PARTIAL
+### A12.4 — Late-cost historical revaluation — COMPLETE
 
 Evidence: migration `0013_a12_late_cost_revaluation.sql`; costing persistence
 and inventory commands in `src/modules/costing/`; PostgreSQL coverage in
@@ -207,8 +207,25 @@ preserves A4 movements, original `SALE_COGS`, and original sale attributions.
 Production `ConfirmDelivery` and the applicable opening-balance path can leave a
 historical late source explicitly `UNVALUED`; A5 approval remains atomic and
 blocked until revaluation succeeds, after which later sales use the corrected
-WAC. Bounded restatement semantics remain rejected in this slice. The A5
-production bridge is covered by focused PostgreSQL integration evidence.
+WAC. Whole-history revaluation is the only supported v1 posting semantics.
+Bounded restatement is intentionally deferred from v1 by the A12.5 closure;
+that is a product/accounting scope decision, not an implementation defect.
+The nullable `restatementFromAt` / `restatementThroughAt` fields remain
+reserved metadata for migration compatibility, and non-null public request
+values remain rejected without creating an envelope. The A5 production bridge
+is covered by focused PostgreSQL integration evidence.
+
+### A12.5 — Bounded-restatement closure — COMPLETE
+
+Evidence: `docs/decisions/ADR-013-a12-late-cost-revaluation.md`;
+`docs/spec/REQUIREMENTS_TRACEABILITY.md`; and the bounds-rejection coverage in
+`tests/integration/a12-costing.test.ts`.
+
+A12.5 confirms that v1 uses complete causally affected historical-stream
+revaluation through the current projection. No bounded accounting, boundary
+carry entries, A4/A5 changes, costing-calculation changes, or persistence
+behavior changes are included. Reporting period filtering and future `as_of`
+reporting remain separate reporting concerns.
 
 ## Roadmap phase reconciliation
 
@@ -218,7 +235,7 @@ production bridge is covered by focused PostgreSQL integration evidence.
 | Phase 1 — Tenancy, identity, authorization, and security | **COMPLETE** | Tenant hierarchy, identity, authorization, RLS, runtime roles, security events, and isolation proof. |
 | Phase 2 — Core forecourt vertical slice | **COMPLETE** | Business day → shift → meters → declarations → reconciliation → approval/post/lock, with representative mobile workflow. |
 | Phase 3 — Inventory, tanks, deliveries, and costing | **PARTIAL** | Tank/dip/delivery/movement/adjustment foundation is implemented; A12.3 and A12.4 provide opening/receipt valuation, canonical sale COGS, persisted WAC projections, and late-cost revaluation; inventory pools, transfers, calibration execution, and full delivery interruption flow remain. |
-| Phase 3 — WAC and late-cost revaluation | **PARTIAL** | A12.3 provides opening/receipt valuation and canonical pre-sale-WAC COGS; A12.4 provides append-only historical revaluation and the production A5 bridge. Bounded restatement semantics remain intentionally unsupported. |
+| Phase 3 — WAC and late-cost revaluation | **COMPLETE** | A12.3 provides opening/receipt valuation and canonical pre-sale-WAC COGS; A12.4 provides append-only whole-history revaluation and the production A5 bridge; A12.5 closes bounded posting as intentionally deferred from v1 by design. |
 | Phase 4 — Cash, banking, and electronic settlements | **PARTIAL** | Collections, deposits, manual bank confirmation, and A9 provider settlement reconciliation are implemented; cash counts, handovers, disputes, and any separate provider-batch scope remain. |
 | Phase 5 — Suppliers, customers, and expenses | **PARTIAL** | Supplier creditors are complete; the implemented customer subset is complete; customer invoices/benefits/policy items and expenses/recurring costs remain. |
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |

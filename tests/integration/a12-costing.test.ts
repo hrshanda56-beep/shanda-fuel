@@ -750,7 +750,8 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       expect(bounded.status).toBe(400);
       await expect(bounded.json()).resolves.toMatchObject({
         error: 'VALIDATION_FAILED',
-        message: 'Bounded restatement semantics are not supported by A12.4 yet',
+        message:
+          'Bounded restatement is deferred from v1; non-null boundary values are not supported',
       });
     }
     const boundedEnvelopeCount = await client.unsafe<{ count: string }[]>(`
