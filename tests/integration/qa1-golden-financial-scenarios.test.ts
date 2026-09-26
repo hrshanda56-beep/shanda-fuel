@@ -413,7 +413,13 @@ describe('QA1 cross-module golden financial scenarios', () => {
       ),
     ).toEqual(originalCogs);
 
-    const futureShift = await startShift(ctx, 'g2-future');
+    const futureShift = await openBusinessDayAndShift(
+      ctx,
+      'g2-future',
+      ctx.futureBusinessDayId,
+      QA1_TIMES.futureBusinessDayShiftStart,
+      QA1_TIMES.futureBusinessDayShiftEnd,
+    );
     const future = await createApprovedSale(client, ctx, 'g2-future', {
       saleLitres: '100.000',
       payments: [{ method: 'CASH', amount: '250.0000' }],
@@ -421,7 +427,11 @@ describe('QA1 cross-module golden financial scenarios', () => {
       completeShiftAfter: true,
       existingShiftId: futureShift.shiftId,
       openingReading: '100200.000',
-      segmentBoundaryTimes: [QA1_TIMES.futureSegmentOpen, QA1_TIMES.futureSegmentClose],
+      segmentBoundaryTimes: [
+        QA1_TIMES.futureBusinessDaySegmentOpen,
+        QA1_TIMES.futureBusinessDaySegmentClose,
+      ],
+      businessDayId: ctx.futureBusinessDayId,
     });
     const futureCogs = expectOne(
       await rows<{ amount: string }>(

@@ -157,6 +157,9 @@ export async function postOpeningPosition(
 export async function openBusinessDayAndShift(
   ctx: Qa1ScenarioContext,
   keyPrefix: string,
+  businessDayId = ctx.businessDayId,
+  plannedStartAt = QA1_TIMES.opening,
+  plannedEndAt = '2026-09-27T05:00:00.000Z',
 ): Promise<{ shiftId: string }> {
   const opened = await forecourt(
     ctx,
@@ -164,19 +167,22 @@ export async function openBusinessDayAndShift(
       commandType: 'OpenBusinessDay',
       tenantId: ctx.tenantId,
       stationId: ctx.stationId,
-      businessDayId: ctx.businessDayId,
+      businessDayId,
       expectedVersion: 0,
     },
     `${keyPrefix}-open-day`,
   );
   if (opened.response.status !== 200) throw new Error(JSON.stringify(opened.body));
 
-  return startShift(ctx, keyPrefix);
+  return startShift(ctx, keyPrefix, businessDayId, plannedStartAt, plannedEndAt);
 }
 
 export async function startShift(
   ctx: Qa1ScenarioContext,
   keyPrefix: string,
+  businessDayId = ctx.businessDayId,
+  plannedStartAt = QA1_TIMES.opening,
+  plannedEndAt = '2026-09-27T05:00:00.000Z',
 ): Promise<{ shiftId: string }> {
   const shiftId = randomUUID();
   const started = await forecourt(
@@ -185,11 +191,11 @@ export async function startShift(
       commandType: 'StartShift',
       tenantId: ctx.tenantId,
       stationId: ctx.stationId,
-      businessDayId: ctx.businessDayId,
+      businessDayId,
       shiftId,
       expectedVersion: 0,
-      plannedStartAt: '2026-09-26T05:00:00.000Z',
-      plannedEndAt: '2026-09-27T05:00:00.000Z',
+      plannedStartAt,
+      plannedEndAt,
     },
     `${keyPrefix}-start-shift`,
     'supervisor',
@@ -216,6 +222,7 @@ export async function sealMeterSegments(
   boundaryTimes: readonly string[] = readings.length === 3
     ? [QA1_TIMES.segmentOpen, QA1_TIMES.deliveryBoundary, QA1_TIMES.segmentClose]
     : [QA1_TIMES.segmentOpen, QA1_TIMES.segmentClose],
+  businessDayId = ctx.businessDayId,
 ): Promise<{ segmentIds: string[] }> {
   if (boundaryTimes.length !== readings.length) {
     throw new Error('QA1 boundary time count must match meter reading count');
@@ -234,7 +241,7 @@ export async function sealMeterSegments(
         boundaryId,
         nozzleId: ctx.nozzleId,
         meterInstallationId: ctx.meterInstallationId,
-        businessDayId: ctx.businessDayId,
+        businessDayId,
         shiftId,
         responsibleAttendantId: ctx.actors.attendant.membershipId,
         reason:
@@ -280,7 +287,7 @@ export async function sealMeterSegments(
         segmentId,
         nozzleId: ctx.nozzleId,
         meterInstallationId: ctx.meterInstallationId,
-        businessDayId: ctx.businessDayId,
+        businessDayId,
         shiftId,
         openingBoundaryId: boundaryIds[index],
         closingBoundaryId: boundaryIds[index + 1],
@@ -303,6 +310,7 @@ export async function completeShift(
   ctx: Qa1ScenarioContext,
   shiftId: string,
   keyPrefix: string,
+  businessDayId = ctx.businessDayId,
 ): Promise<void> {
   const beforeClose = await currentShiftVersion(client, ctx, shiftId);
   const closed = await forecourt(
@@ -311,7 +319,7 @@ export async function completeShift(
       commandType: 'CloseMeters',
       tenantId: ctx.tenantId,
       stationId: ctx.stationId,
-      businessDayId: ctx.businessDayId,
+      businessDayId,
       shiftId,
       expectedVersion: beforeClose.version,
     },
@@ -326,7 +334,7 @@ export async function completeShift(
       commandType: 'CompleteShift',
       tenantId: ctx.tenantId,
       stationId: ctx.stationId,
-      businessDayId: ctx.businessDayId,
+      businessDayId,
       shiftId,
       expectedVersion: beforeComplete.version,
     },
@@ -426,14 +434,24 @@ export async function createApprovedSale(
     openingReading?: string;
     approve?: boolean;
     segmentBoundaryTimes?: readonly string[];
+    businessDayId?: string;
+    plannedStartAt?: string;
+    plannedEndAt?: string;
   },
 ): Promise<PostedSale> {
+  const businessDayId = input.businessDayId ?? ctx.businessDayId;
   if (!input.existingShiftId) {
     await postOpeningPosition(client, ctx, keyPrefix);
   }
   const { shiftId } = input.existingShiftId
     ? { shiftId: input.existingShiftId }
-    : await openBusinessDayAndShift(ctx, keyPrefix);
+    : await openBusinessDayAndShift(
+        ctx,
+        keyPrefix,
+        businessDayId,
+        input.plannedStartAt ?? QA1_TIMES.opening,
+        input.plannedEndAt ?? '2026-09-27T05:00:00.000Z',
+      );
   const openingReading = input.openingReading ?? '100000.000';
   const closingReading = new ExactDecimal(openingReading)
     .add(new ExactDecimal(input.saleLitres))
@@ -445,8 +463,9 @@ export async function createApprovedSale(
     [openingReading, closingReading],
     keyPrefix,
     input.segmentBoundaryTimes,
+    businessDayId,
   );
-  if (input.completeShiftAfter) await completeShift(client, ctx, shiftId, keyPrefix);
+  if (input.completeShiftAfter) await completeShift(client, ctx, shiftId, keyPrefix, businessDayId);
 
   const reconciliationId = randomUUID();
   const common = { tenantId: ctx.tenantId, stationId: ctx.stationId, reconciliationId };
@@ -455,7 +474,7 @@ export async function createApprovedSale(
     {
       commandType: 'CreateProductionReconciliation',
       ...common,
-      businessDayId: ctx.businessDayId,
+      businessDayId,
       shiftId,
       expectedVersion: 0,
     },
