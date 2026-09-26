@@ -15,7 +15,9 @@ export {
   confirmDeliveryFromRequest,
   deactivateTankFromRequest,
   postInventoryAdjustmentFromRequest,
+  recordOpeningInventoryCostFromRequest,
   recordOpeningBalanceFromRequest,
+  recordReceiptCostFromRequest,
   recordTankDipFromRequest,
 } from './commands';
 export { queryInventoryStock } from './queries';

@@ -85,6 +85,13 @@
       "when": 1790344286760,
       "tag": "0011_a12_inventory_costing_wac",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790360000000,
+      "tag": "0012_a12_cost_projection_writer",
+      "breakpoints": true
     }
   ]
 }

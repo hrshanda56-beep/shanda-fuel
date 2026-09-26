@@ -4,6 +4,7 @@ import {
   orderInventoryMovements,
   deriveSaleCogsFromPreSaleState,
   projectInventoryCost,
+  projectInventoryCostBeforeSale,
   replayFingerprint,
   type CostingEvent,
   type CostingMovement,
@@ -72,6 +73,36 @@ describe('inventory costing domain', () => {
     expect(result.weightedAverageCost).toBe('1.49180150');
     expect(result.valuationStatus).toBe('VALUED');
     expect(result.currency).toBe('USD');
+  });
+
+  it('values the canonical A4 delivery-allocation source as a receipt cost', () => {
+    const receipt = movement({
+      id: '00000000-0000-4000-8000-000000000105',
+      movementType: 'DELIVERY',
+      quantityLitres: '25.000',
+      effectiveAt: '2026-09-25T07:00:00.000Z',
+      sourceType: 'FUEL_DELIVERY_ALLOCATION',
+      sourceId: '00000000-0000-4000-8000-000000000205',
+    });
+    const receiptCost = event({
+      id: '00000000-0000-4000-8000-000000000305',
+      eventType: 'RECEIPT_COST',
+      sourceType: 'FUEL_DELIVERY_ALLOCATION',
+      sourceId: receipt.sourceId,
+      effectiveAt: receipt.effectiveAt,
+      amount: '50.0000',
+    });
+    expect(
+      projectInventoryCost({
+        key,
+        movements: [movement(), receipt],
+        costEvents: [event(), receiptCost],
+      }),
+    ).toMatchObject({
+      quantityLitres: '125.000',
+      inventoryValue: '173.4567',
+      valuationStatus: 'VALUED',
+    });
   });
 
   it('rejects mixed opening and receipt currencies', () => {
@@ -269,6 +300,213 @@ describe('inventory costing domain', () => {
         ],
       }),
     ).toThrow('UNVALUED');
+  });
+
+  it('does not use a same-timestamp receipt cost as pre-sale WAC', () => {
+    const receipt = movement({
+      id: '00000000-0000-4000-8000-000000000102',
+      movementType: 'DELIVERY',
+      quantityLitres: '50.000',
+      effectiveAt: '2026-09-25T08:00:00.000Z',
+      sourceType: 'DELIVERY',
+      sourceId: '00000000-0000-4000-8000-000000000202',
+    });
+    const sale = movement({
+      id: '00000000-0000-4000-8000-000000000103',
+      movementType: 'SALE',
+      quantityLitres: '-10.000',
+      effectiveAt: '2026-09-25T08:00:00.000Z',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000203',
+    });
+    const beforeSale = projectInventoryCostBeforeSale({
+      key,
+      movements: [movement(), receipt, sale],
+      costEvents: [
+        event(),
+        event({
+          id: '00000000-0000-4000-8000-000000000302',
+          eventType: 'RECEIPT_COST',
+          sourceType: 'DELIVERY',
+          sourceId: receipt.sourceId,
+          effectiveAt: receipt.effectiveAt,
+          amount: '50.0000',
+        }),
+        event({
+          id: '00000000-0000-4000-8000-000000000303',
+          eventType: 'SALE_COGS',
+          sourceType: 'METER_SEGMENT_SALE',
+          sourceId: sale.sourceId,
+          effectiveAt: sale.effectiveAt,
+          amount: '-12.3457',
+        }),
+      ],
+      saleMovementId: sale.id,
+    });
+    expect(beforeSale).toMatchObject({
+      quantityLitres: '150.000',
+      inventoryValue: null,
+      weightedAverageCost: null,
+      currency: null,
+      valuationStatus: 'UNVALUED',
+    });
+    expect(() =>
+      projectInventoryCost({
+        key,
+        movements: [movement(), receipt, sale],
+        costEvents: [
+          event(),
+          event({
+            id: '00000000-0000-4000-8000-000000000302',
+            eventType: 'RECEIPT_COST',
+            sourceType: 'DELIVERY',
+            sourceId: receipt.sourceId,
+            effectiveAt: receipt.effectiveAt,
+            amount: '50.0000',
+          }),
+          event({
+            id: '00000000-0000-4000-8000-000000000303',
+            eventType: 'SALE_COGS',
+            sourceType: 'METER_SEGMENT_SALE',
+            sourceId: sale.sourceId,
+            effectiveAt: sale.effectiveAt,
+            amount: '-12.3457',
+          }),
+        ],
+      }),
+    ).toThrow('UNVALUED');
+  });
+
+  it('orders same-timestamp canonical sales as deterministic sale-cost pairs', () => {
+    const firstSale = movement({
+      id: '00000000-0000-4000-8000-000000000103',
+      movementType: 'SALE',
+      quantityLitres: '-10.000',
+      effectiveAt: '2026-09-25T08:00:00.000Z',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000203',
+    });
+    const secondSale = movement({
+      id: '00000000-0000-4000-8000-000000000104',
+      movementType: 'SALE',
+      quantityLitres: '-20.000',
+      effectiveAt: firstSale.effectiveAt,
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000204',
+    });
+    const firstSaleCost = event({
+      id: '00000000-0000-4000-8000-000000000303',
+      eventType: 'SALE_COGS',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: firstSale.sourceId,
+      effectiveAt: firstSale.effectiveAt,
+      amount: '-12.3457',
+    });
+    const secondSaleCost = event({
+      id: '00000000-0000-4000-8000-000000000304',
+      eventType: 'SALE_COGS',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: secondSale.sourceId,
+      effectiveAt: secondSale.effectiveAt,
+      amount: '-24.6913',
+    });
+    const input = {
+      key,
+      movements: [secondSale, firstSale, movement()],
+      costEvents: [secondSaleCost, event(), firstSaleCost],
+    };
+    const result = projectInventoryCost(input);
+    const replay = projectInventoryCost({
+      ...input,
+      movements: [...input.movements].reverse(),
+      costEvents: [...input.costEvents].reverse(),
+    });
+    expect(result).toMatchObject({
+      quantityLitres: '70.000',
+      inventoryValue: '86.4197',
+      weightedAverageCost: '1.23456714',
+      currency: 'USD',
+      valuationStatus: 'VALUED',
+    });
+    expect(result.saleAttributions).toHaveLength(2);
+    expect(result.saleAttributions.map((item) => item.saleCostEventId)).toEqual([
+      firstSaleCost.id,
+      secondSaleCost.id,
+    ]);
+    expect(replay).toEqual(result);
+  });
+
+  it('keeps reverse-input canonical sales on the correct side of a valued receipt transition', () => {
+    const earlySale = movement({
+      id: '00000000-0000-4000-8000-000000000103',
+      movementType: 'SALE',
+      quantityLitres: '-10.000',
+      effectiveAt: '2026-09-25T08:00:00.000Z',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000203',
+    });
+    const receipt = movement({
+      id: '00000000-0000-4000-8000-000000000104',
+      movementType: 'DELIVERY',
+      quantityLitres: '100.000',
+      effectiveAt: '2026-09-25T09:00:00.000Z',
+      sourceType: 'DELIVERY',
+      sourceId: '00000000-0000-4000-8000-000000000204',
+    });
+    const lateSale = movement({
+      id: '00000000-0000-4000-8000-000000000105',
+      movementType: 'SALE',
+      quantityLitres: '-10.000',
+      effectiveAt: '2026-09-25T10:00:00.000Z',
+      sourceType: 'METER_SEGMENT_SALE',
+      sourceId: '00000000-0000-4000-8000-000000000205',
+    });
+    const input = {
+      key,
+      movements: [lateSale, receipt, earlySale, movement()],
+      costEvents: [
+        event({ amount: '100.0000' }),
+        event({
+          id: '00000000-0000-4000-8000-000000000302',
+          eventType: 'RECEIPT_COST',
+          sourceType: 'DELIVERY',
+          sourceId: receipt.sourceId,
+          effectiveAt: receipt.effectiveAt,
+          amount: '300.0000',
+        }),
+        event({
+          id: '00000000-0000-4000-8000-000000000303',
+          eventType: 'SALE_COGS',
+          sourceType: 'METER_SEGMENT_SALE',
+          sourceId: earlySale.sourceId,
+          effectiveAt: earlySale.effectiveAt,
+          amount: '-10.0000',
+        }),
+        event({
+          id: '00000000-0000-4000-8000-000000000304',
+          eventType: 'SALE_COGS',
+          sourceType: 'METER_SEGMENT_SALE',
+          sourceId: lateSale.sourceId,
+          effectiveAt: lateSale.effectiveAt,
+          amount: '-20.5263',
+        }),
+      ],
+    };
+    const result = projectInventoryCost(input);
+    const replay = projectInventoryCost({
+      ...input,
+      movements: [...input.movements].reverse(),
+      costEvents: [...input.costEvents].reverse(),
+    });
+    expect(result.saleAttributions.map((item) => item.originalCogs)).toEqual([
+      '10.0000',
+      '20.5263',
+    ]);
+    expect(result.saleAttributions.map((item) => item.preSaleWac)).toEqual([
+      '1.00000000',
+      '2.05263158',
+    ]);
+    expect(replay).toEqual(result);
   });
 
   it('requires exactly one causally available and correct SALE_COGS authority', () => {
@@ -513,6 +751,7 @@ describe('inventory costing domain', () => {
       quantityLitres: '100.000',
       inventoryValue: null,
       weightedAverageCost: null,
+      currency: null,
       valuationStatus: 'UNVALUED',
     });
     expect(() =>

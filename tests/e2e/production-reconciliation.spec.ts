@@ -33,6 +33,7 @@ const ids = {
   a11RetryShiftThree: 'a5e00000-0000-4000-8000-000000000137',
   tank: 'a5e00000-0000-4000-8000-000000000141',
   openingSource: 'a5e00000-0000-4000-8000-000000000151',
+  openingCostEvent: 'a5e00000-0000-4000-8000-000000000152',
 };
 
 const supervisorToken = 'a5e-supervisor-session-token';
@@ -142,6 +143,11 @@ test.describe('production reconciliation persistence', () => {
         (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
       values
         ('${ids.openingSource}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', 3000, '2026-09-22T05:00:00Z', '2026-09-22', 'CUTOVER', '${ids.openingSource}', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      insert into app.inventory_cost_events
+        (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at, business_date, amount, currency, actor_membership_id)
+      values
+        ('${ids.openingCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_COST', 'CUTOVER', '${ids.openingSource}', '2026-09-22T05:00:00Z', '2026-09-22', 3000.0000, 'USD', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into auth.session
         (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { stationBusinessDayBounds } from './station-business-time';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -93,6 +94,14 @@ async function postCommand(
 
 async function json<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
+}
+
+async function businessDayBoundsForStation(stationId: string, businessDate: string) {
+  const rows = await client<{ timezone: string }[]>`
+    select timezone from app.stations where id = ${stationId}
+  `;
+  if (rows.length !== 1) throw new Error(`Station ${stationId} was not found`);
+  return stationBusinessDayBounds(businessDate, rows[0]!.timezone);
 }
 
 describe('A3 shift templates and multi-segment shifts through production commands', () => {
@@ -335,10 +344,14 @@ describe('A3 shift templates and multi-segment shifts through production command
       `a3c-template-open-${businessDayId}`,
     );
     expect(open.status).toBe(200);
+    const { businessDate } = await json<{ businessDate: string }>(open);
+    const { plannedStartAt } = await businessDayBoundsForStation(
+      ids.stationTemplates,
+      businessDate,
+    );
 
     // Non-default duration: the shift's plannedEndAt is derived from the
     // template's 600-minute duration, not an 8-hour hardcoded rule.
-    const plannedStartAt = new Date(Date.now() - 5 * 60_000).toISOString();
     const shiftId = randomUUID();
     const start = await postCommand(
       {
@@ -373,7 +386,7 @@ describe('A3 shift templates and multi-segment shifts through production command
         businessDayId,
         shiftId: inactiveShiftId,
         expectedVersion: 0,
-        plannedStartAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+        plannedStartAt,
         shiftTemplateId: ids.templateInactive,
       },
       `a3c-template-inactive-attempt-${inactiveShiftId}`,
@@ -390,7 +403,7 @@ describe('A3 shift templates and multi-segment shifts through production command
         businessDayId,
         shiftId: wrongStationShiftId,
         expectedVersion: 0,
-        plannedStartAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+        plannedStartAt,
         shiftTemplateId: ids.templateOtherStation,
       },
       `a3c-template-wrong-station-attempt-${wrongStationShiftId}`,
@@ -483,8 +496,10 @@ describe('A3 shift templates and multi-segment shifts through production command
     expect(open.status).toBe(200);
     const { businessDate } = await json<{ businessDate: string }>(open);
 
-    const plannedStartAt = new Date(Date.now() - 60 * 60_000).toISOString();
-    const plannedEndAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const { plannedStartAt, plannedEndAt } = await businessDayBoundsForStation(
+      ids.stationHandover,
+      businessDate,
+    );
     const start = await postCommand(
       {
         commandType: 'StartShift',
@@ -842,9 +857,12 @@ describe('A3 shift templates and multi-segment shifts through production command
       `a3c-price-open-${businessDayId}`,
     );
     expect(open.status).toBe(200);
+    const { businessDate } = await json<{ businessDate: string }>(open);
 
-    const plannedStartAt = new Date(Date.now() - 60 * 60_000).toISOString();
-    const plannedEndAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const { plannedStartAt, plannedEndAt } = await businessDayBoundsForStation(
+      ids.stationPrice,
+      businessDate,
+    );
     const start = await postCommand(
       {
         commandType: 'StartShift',
@@ -1211,9 +1229,12 @@ describe('A3 shift templates and multi-segment shifts through production command
       `a3c-correction-open-${businessDayId}`,
     );
     expect(open.status).toBe(200);
+    const { businessDate } = await json<{ businessDate: string }>(open);
 
-    const plannedStartAt = new Date(Date.now() - 60 * 60_000).toISOString();
-    const plannedEndAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const { plannedStartAt, plannedEndAt } = await businessDayBoundsForStation(
+      ids.stationCorrection,
+      businessDate,
+    );
     const start = await postCommand(
       {
         commandType: 'StartShift',

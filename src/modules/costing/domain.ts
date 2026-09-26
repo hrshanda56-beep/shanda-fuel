@@ -94,6 +94,7 @@ type OrderedItem = Readonly<{
 }>;
 type OrderedMovement = CostingMovement & Readonly<{ kind: 'MOVEMENT' }>;
 type OrderedCostEvent = CostingEvent & Readonly<{ kind: 'COST_EVENT' }>;
+export type CostingReplayItem = OrderedMovement | OrderedCostEvent;
 
 function epoch(value: Date | string): number {
   const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
@@ -203,20 +204,50 @@ const deferredCostEventTypes = new Set<CostEventType>([
 ]);
 
 function compareReplayItems(
-  left: OrderedMovement | OrderedCostEvent,
-  right: OrderedMovement | OrderedCostEvent,
+  left: CostingReplayItem,
+  right: CostingReplayItem,
+  canonicalSaleIdsBySource: ReadonlyMap<string, string>,
 ): number {
   const timeOrder = epoch(left.effectiveAt) - epoch(right.effectiveAt);
   if (timeOrder !== 0) return timeOrder;
 
-  if (left.kind === 'COST_EVENT' && right.kind === 'MOVEMENT') {
-    if (isMatchingCanonicalSaleCostEvent(right, left)) return -1;
+  const replayGroup = (item: CostingReplayItem): readonly [number, string, number] => {
+    if (item.kind === 'MOVEMENT') {
+      return isCanonicalSale(item) ? [1, item.id, 1] : [0, item.id, 0];
+    }
+    const saleId =
+      item.eventType === 'SALE_COGS' && item.sourceType === 'METER_SEGMENT_SALE'
+        ? canonicalSaleIdsBySource.get(sourceKey(item.sourceType, item.sourceId))
+        : undefined;
+    return saleId ? [1, saleId, 0] : [2, item.id, 0];
+  };
+  const leftGroup = replayGroup(left);
+  const rightGroup = replayGroup(right);
+  return (
+    leftGroup[0] - rightGroup[0] ||
+    leftGroup[1].localeCompare(rightGroup[1]) ||
+    leftGroup[2] - rightGroup[2] ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+export function orderInventoryCostReplay(
+  movements: readonly CostingMovement[],
+  costEvents: readonly CostingEvent[],
+): readonly CostingReplayItem[] {
+  const canonicalSaleIdsBySource = new Map<string, string>();
+  for (const movement of movements) {
+    if (isCanonicalSale(movement)) {
+      const source = sourceKey(movement.sourceType, movement.sourceId);
+      if (!canonicalSaleIdsBySource.has(source)) {
+        canonicalSaleIdsBySource.set(source, movement.id);
+      }
+    }
   }
-  if (left.kind === 'MOVEMENT' && right.kind === 'COST_EVENT') {
-    if (isMatchingCanonicalSaleCostEvent(left, right)) return 1;
-  }
-  const kindOrder = left.kind === right.kind ? 0 : left.kind === 'MOVEMENT' ? -1 : 1;
-  return kindOrder || left.id.localeCompare(right.id);
+  return [
+    ...movements.map((movement) => ({ ...movement, kind: 'MOVEMENT' as const })),
+    ...costEvents.map((event) => ({ ...event, kind: 'COST_EVENT' as const })),
+  ].sort((left, right) => compareReplayItems(left, right, canonicalSaleIdsBySource));
 }
 
 function canonicalQuantity(value: string): string {
@@ -261,10 +292,7 @@ function canonicalReplayPayload(input: {
   const movementById = new Map(
     [...input.orderedMovements, input.movement].map((movement) => [movement.id, movement]),
   );
-  const replayItems: readonly (OrderedMovement | OrderedCostEvent)[] = [
-    ...[...movementById.values()].map((movement) => ({ ...movement, kind: 'MOVEMENT' as const })),
-    ...input.orderedCostEvents.map((event) => ({ ...event, kind: 'COST_EVENT' as const })),
-  ].sort(compareReplayItems);
+  const replayItems = orderInventoryCostReplay([...movementById.values()], input.orderedCostEvents);
   const saleIndex = replayItems.findIndex(
     (item) => item.kind === 'MOVEMENT' && item.id === input.movement.id,
   );
@@ -461,10 +489,7 @@ export function projectInventoryCost(input: {
   let lastCostEvent: CostStreamProjection['lastCostEvent'] = null;
   const saleAttributions: SaleCostAttribution[] = [];
 
-  const ordered: readonly (OrderedMovement | OrderedCostEvent)[] = [
-    ...movements.map((movement) => ({ ...movement, kind: 'MOVEMENT' as const })),
-    ...costEvents.map((event) => ({ ...event, kind: 'COST_EVENT' as const })),
-  ].sort(compareReplayItems);
+  const ordered = orderInventoryCostReplay(movements, costEvents);
 
   for (const item of ordered) {
     if (item.kind === 'MOVEMENT') {
@@ -640,10 +665,58 @@ export function projectInventoryCost(input: {
     quantityLitres: fixedQuantity(quantizedQuantity(quantity)),
     inventoryValue,
     weightedAverageCost: weightedAverage,
-    currency: streamCurrency,
+    currency: status === 'VALUED' ? streamCurrency : null,
     valuationStatus: status,
     lastMovement,
     lastCostEvent,
     saleAttributions,
   };
+}
+
+export function projectInventoryCostBeforeSale(input: {
+  key: InventoryStreamKey;
+  movements: readonly CostingMovement[];
+  costEvents: readonly CostingEvent[];
+  saleMovementId: string;
+}): CostStreamProjection {
+  const ordered = orderInventoryCostReplay(input.movements, input.costEvents);
+  const saleIndex = ordered.findIndex(
+    (item) => item.kind === 'MOVEMENT' && item.id === input.saleMovementId,
+  );
+  const sale = ordered[saleIndex];
+  if (!sale || sale.kind !== 'MOVEMENT') {
+    throw new AppError('INTERNAL_ERROR', 'The canonical sale movement disappeared');
+  }
+  const beforeSale = ordered
+    .slice(0, saleIndex)
+    .filter(
+      (item) => !(item.kind === 'COST_EVENT' && isMatchingCanonicalSaleCostEvent(sale, item)),
+    );
+  return projectInventoryCost({
+    key: input.key,
+    movements: beforeSale.filter((item) => item.kind === 'MOVEMENT'),
+    costEvents: beforeSale.filter((item) => item.kind === 'COST_EVENT'),
+  });
+}
+
+export function projectInventoryCostThroughSale(input: {
+  key: InventoryStreamKey;
+  movements: readonly CostingMovement[];
+  costEvents: readonly CostingEvent[];
+  saleMovementId: string;
+}): CostStreamProjection {
+  const ordered = orderInventoryCostReplay(input.movements, input.costEvents);
+  const saleIndex = ordered.findIndex(
+    (item) => item.kind === 'MOVEMENT' && item.id === input.saleMovementId,
+  );
+  const sale = ordered[saleIndex];
+  if (!sale || sale.kind !== 'MOVEMENT') {
+    throw new AppError('INTERNAL_ERROR', 'The canonical sale movement disappeared');
+  }
+  const throughSale = ordered.slice(0, saleIndex + 1);
+  return projectInventoryCost({
+    key: input.key,
+    movements: throughSale.filter((item) => item.kind === 'MOVEMENT'),
+    costEvents: throughSale.filter((item) => item.kind === 'COST_EVENT'),
+  });
 }

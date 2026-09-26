@@ -31,6 +31,11 @@ import {
   loadTankForUpdate,
   postInventoryMovementInTransaction,
 } from './persistence';
+import {
+  persistInventoryCostProjectionInTransaction,
+  postOpeningInventoryCostInTransaction,
+  postReceiptCostInTransaction,
+} from '../costing';
 
 const uuid = z.string().uuid();
 const decimalText = z
@@ -102,6 +107,22 @@ const openingBalancePayload = authorityPayload.extend({
   tankId: uuid,
   quantityLitres: decimalText,
   effectiveAt: instant,
+});
+const currencyCode = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z]{3}$/);
+const costAmount = z.string().regex(/^\d+(?:\.\d{1,4})?$/);
+const openingInventoryCostPayload = authorityPayload.extend({
+  tankId: uuid,
+  amount: costAmount.optional(),
+  inventoryValue: costAmount.optional(),
+  currency: currencyCode,
+});
+const receiptCostPayload = authorityPayload.extend({
+  allocationId: uuid,
+  amount: costAmount,
+  currency: currencyCode,
 });
 
 function contextFor(request: Request, payload: { tenantId: string; stationId: string }) {
@@ -416,7 +437,12 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
           'CONFLICT',
           'All received delivery litres must be allocated before confirmation',
         );
+      const affectedStreams = new Map<string, { tankId: string; productId: string }>();
       for (const allocation of allocations) {
+        affectedStreams.set(`${allocation.tankId}:${delivery.productId}`, {
+          tankId: allocation.tankId,
+          productId: delivery.productId,
+        });
         await postInventoryMovementInTransaction(transaction, {
           tenantId: context.tenantId,
           stationId: context.stationId,
@@ -432,6 +458,14 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
           unitLandedCost: delivery.unitLandedCost ?? undefined,
           totalLandedCost: delivery.totalLandedCost ?? undefined,
           currency: delivery.currency ?? undefined,
+        });
+      }
+      for (const stream of affectedStreams.values()) {
+        await persistInventoryCostProjectionInTransaction(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: stream.tankId,
+          productId: stream.productId,
         });
       }
       await transaction
@@ -529,21 +563,89 @@ export async function recordOpeningBalanceFromRequest(request: Request, input: u
         .limit(1);
       if (existing.length)
         throw new AppError('CONFLICT', 'An opening balance already exists for this tank');
-      return {
-        movementId: await postInventoryMovementInTransaction(transaction, {
-          tenantId: context.tenantId,
-          stationId: context.stationId,
-          tankId: tank.id,
-          productId: tank.productId,
-          movementType: 'OPENING_BALANCE',
-          quantityLitres: payload.quantityLitres,
-          effectiveAt: new Date(payload.effectiveAt),
-          businessDate: deriveBusinessDate(payload.effectiveAt, context.stationTimezone),
-          sourceType: 'OPENING_BALANCE',
-          sourceId: randomUUID(),
-          actorMembershipId: context.authority.membership.membershipId,
-        }),
-      };
+      const movementId = await postInventoryMovementInTransaction(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: tank.id,
+        productId: tank.productId,
+        movementType: 'OPENING_BALANCE',
+        quantityLitres: payload.quantityLitres,
+        effectiveAt: new Date(payload.effectiveAt),
+        businessDate: deriveBusinessDate(payload.effectiveAt, context.stationTimezone),
+        sourceType: 'OPENING_BALANCE',
+        sourceId: randomUUID(),
+        actorMembershipId: context.authority.membership.membershipId,
+      });
+      await persistInventoryCostProjectionInTransaction(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: tank.id,
+        productId: tank.productId,
+      });
+      return { movementId };
     },
+  });
+}
+
+export async function recordOpeningInventoryCostFromRequest(request: Request, input: unknown) {
+  const payload = openingInventoryCostPayload
+    .superRefine((value, ctx) => {
+      if (!value.amount && !value.inventoryValue) {
+        ctx.addIssue({ code: 'custom', message: 'An opening inventory value is required' });
+      }
+      if (value.amount && value.inventoryValue && value.amount !== value.inventoryValue) {
+        ctx.addIssue({ code: 'custom', message: 'amount and inventoryValue must agree' });
+      }
+    })
+    .parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'RecordOpeningInventoryCost',
+    permissionCode: 'inventory.adjustment.post',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.OPENING_COST_POSTED',
+      subjectType: 'InventoryCostEvent',
+      subjectId: (result) => (result as { costEventId: string }).costEventId,
+    },
+    execute: (transaction) =>
+      postOpeningInventoryCostInTransaction(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+        amount: payload.amount ?? payload.inventoryValue!,
+        currency: payload.currency,
+        actorMembershipId: context.authority.membership.membershipId,
+      }),
+  });
+}
+
+export async function recordReceiptCostFromRequest(request: Request, input: unknown) {
+  const payload = receiptCostPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'RecordReceiptCost',
+    permissionCode: 'inventory.delivery.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.RECEIPT_COST_POSTED',
+      subjectType: 'InventoryCostEvent',
+      subjectId: (result) => (result as { costEventId: string }).costEventId,
+    },
+    execute: (transaction) =>
+      postReceiptCostInTransaction(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        allocationId: payload.allocationId,
+        amount: payload.amount,
+        currency: payload.currency,
+        actorMembershipId: context.authority.membership.membershipId,
+      }),
   });
 }

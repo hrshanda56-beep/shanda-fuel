@@ -4,6 +4,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST as customerCommandPost } from '../../src/app/api/customers/commands/route';
 import { GET as customerStatementGet } from '../../src/app/api/customers/statement/route';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { postInventoryMovementInTransaction } from '../../src/modules/inventory/persistence';
 import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
 import { withTenantTransaction } from '../../src/platform/db/transaction';
@@ -63,6 +64,20 @@ async function command(input: Record<string, unknown>, key: string) {
 async function forecourtCommand(input: Record<string, unknown>, key: string) {
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+      method: 'POST',
+      headers: {
+        cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
+        'content-type': 'application/json',
+        'idempotency-key': key,
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+async function inventoryCommand(input: Record<string, unknown>, key: string) {
+  return inventoryCommandPost(
+    new Request('http://127.0.0.1:3000/api/inventory/commands', {
       method: 'POST',
       headers: {
         cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
@@ -322,6 +337,20 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         });
       },
     );
+
+    const openingCost = await inventoryCommand(
+      {
+        commandType: 'RecordOpeningInventoryCost',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        tankId: ids.tank,
+        amount: '1000.0000',
+        currency: 'USD',
+      },
+      'a8-a12-opening-cost',
+    );
+    const openingCostBody = await body(openingCost);
+    expect(openingCost.status, JSON.stringify(openingCostBody)).toBe(200);
   });
 
   afterAll(async () => client?.end());

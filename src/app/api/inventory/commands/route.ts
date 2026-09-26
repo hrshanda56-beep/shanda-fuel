@@ -7,7 +7,9 @@ import {
   createTankFromRequest,
   deactivateTankFromRequest,
   postInventoryAdjustmentFromRequest,
+  recordOpeningInventoryCostFromRequest,
   recordOpeningBalanceFromRequest,
+  recordReceiptCostFromRequest,
   recordTankDipFromRequest,
 } from '../../../../modules/inventory';
 import { AppError } from '../../../../platform/errors';
@@ -20,6 +22,8 @@ const COMMANDS = [
   'ConfirmDelivery',
   'PostInventoryAdjustment',
   'RecordOpeningBalance',
+  'RecordOpeningInventoryCost',
+  'RecordReceiptCost',
 ] as const;
 
 type CommandType = (typeof COMMANDS)[number];
@@ -61,6 +65,12 @@ export async function POST(request: Request): Promise<Response> {
         break;
       case 'RecordOpeningBalance':
         result = await recordOpeningBalanceFromRequest(request, body);
+        break;
+      case 'RecordOpeningInventoryCost':
+        result = await recordOpeningInventoryCostFromRequest(request, body);
+        break;
+      case 'RecordReceiptCost':
+        result = await recordReceiptCostFromRequest(request, body);
         break;
     }
     return json(result, 200);
