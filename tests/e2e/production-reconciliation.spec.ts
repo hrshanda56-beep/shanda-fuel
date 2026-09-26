@@ -150,11 +150,18 @@ test.describe('production reconciliation persistence', () => {
         ('${ids.openingCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_COST', 'CUTOVER', '${ids.openingSource}', '2026-09-22T05:00:00Z', '2026-09-22', 3000.0000, 'USD', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
       insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
+        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at,
+         strong_authentication_expires_at, step_up_level, step_up_expires_at)
       values
-        ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', '${supervisorToken}', '${ids.supervisorActor}', true, now()),
-        ('${ids.managerSession}', '2030-01-01T00:00:00Z', '${managerToken}', '${ids.managerActor}', true, now())
-        on conflict (id) do update set expires_at=excluded.expires_at, strong_authentication_verified=true;
+        ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', '${supervisorToken}', '${ids.supervisorActor}', true, now(), null, null, null),
+        ('${ids.managerSession}', '2030-01-01T00:00:00Z', '${managerToken}', '${ids.managerActor}', true, now(), '2030-01-01T00:00:00Z', 1, '2030-01-01T00:00:00Z')
+        on conflict (id) do update set
+          expires_at=excluded.expires_at,
+          strong_authentication_verified=excluded.strong_authentication_verified,
+          strong_authenticated_at=excluded.strong_authenticated_at,
+          strong_authentication_expires_at=excluded.strong_authentication_expires_at,
+          step_up_level=excluded.step_up_level,
+          step_up_expires_at=excluded.step_up_expires_at;
     `);
   });
 

@@ -6,6 +6,7 @@ import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/comman
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
 import { DECIMAL_POLICIES, ExactDecimal } from '../../src/platform/domain/primitives';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -484,6 +485,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
           ('${ids.managerSession}', '2030-01-01T00:00:00Z', 'a5-manager-session-token', '${ids.managerActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedActiveStepUp(client, ids.managerSession);
   });
 
   afterAll(async () => {

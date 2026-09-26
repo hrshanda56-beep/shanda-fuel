@@ -22,6 +22,7 @@ import {
 } from '../../src/modules/forecourt/contracts';
 import { litres, money, unitPrice } from '../../src/platform/domain/primitives';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -241,6 +242,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         values ('${ids.negativeSession}', '2030-01-01T00:00:00Z', 'a3-negative-session-token', '${ids.actorD}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedActiveStepUp(client, ids.routeSession);
   });
 
   afterAll(async () => {

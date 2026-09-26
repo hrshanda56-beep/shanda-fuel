@@ -4,6 +4,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { GET as dailyReportGet } from '../../src/app/api/reports/daily/route';
 import { GET as managementReportGet } from '../../src/app/api/reports/management/route';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -362,6 +363,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         values ('${ids.factDelivery}', '${ids.tenant}', '${ids.station}', '${ids.factProduct}', 'A10-DELIVERY', '2026-09-20T10:00:00Z', '2026-09-20', 20.000, 20.000, 0.000, 'CONFIRMED', 2.00000000, 40.0000, 'USD', '${ids.membership}', '${ids.membership}', '2026-09-20T11:00:00Z')
         on conflict (id) do nothing;
     `);
+    await seedActiveStepUp(client, ids.session);
 
     const seal = await forecourtCommand(
       {
