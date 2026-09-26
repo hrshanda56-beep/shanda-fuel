@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { makeSignature } from 'better-auth/crypto';
 import { resolveAuthenticatedActor } from '../../src/modules/identity/authenticated-actor';
-import { resolveTenantExecutionContext } from '../../src/modules/tenancy/authority';
+import {
+  loadTenantMembershipWithDatabase,
+  resolveTenantExecutionContext,
+} from '../../src/modules/tenancy/authority';
 import { getAuth } from '../../src/platform/auth/server';
+import * as schema from '../../src/platform/db/schema';
+import type { Database } from '../../src/platform/db';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -21,6 +27,12 @@ const actorB = '66666666-6666-4666-8666-666666666666';
 const actorWithoutMembership = '99999999-9999-4999-8999-999999999999';
 const membershipA = '77777777-7777-4777-8777-777777777777';
 const membershipB = '88888888-8888-4888-8888-888888888888';
+const tenantInactive = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const actorInactive = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const membershipInactive = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const roleAssignmentA = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const temporaryGrantA = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const forgedMembership = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const authSessionToken = 'a1-auth-session-token';
 const authSessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const expiredSessionToken = 'a1-expired-session-token';
@@ -31,6 +43,8 @@ const noMembershipSessionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const runtimeRoles = ['app_runtime', 'job_runtime', 'diagnostics_readonly'] as const;
 
 let client: ReturnType<typeof postgres>;
+let runtimeClient: ReturnType<typeof postgres>;
+let runtimeDatabase: Database;
 
 async function setTenantContext(
   sql: Sql | TransactionSql,
@@ -64,24 +78,129 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
       insert into app.tenants (id, name, slug)
       values
         ('${tenantA}', 'Tenant A', 'a-isolation-test'),
-        ('${tenantB}', 'Tenant B', 'b-isolation-test')
+        ('${tenantB}', 'Tenant B', 'b-isolation-test'),
+        ('${tenantInactive}', 'Tenant Inactive', 'inactive-membership-test')
       on conflict (id) do nothing;
       insert into auth."user" (id, name, email)
-      values
-        ('${actorA}', 'Actor A', 'a-isolation@example.test'),
-        ('${actorB}', 'Actor B', 'b-isolation@example.test'),
-        ('${actorWithoutMembership}', 'Actor Without Membership', 'no-membership@example.test')
-      on conflict (id) do nothing;
+        values
+          ('${actorA}', 'Actor A', 'a-isolation@example.test'),
+          ('${actorB}', 'Actor B', 'b-isolation@example.test'),
+          ('${actorWithoutMembership}', 'Actor Without Membership', 'no-membership@example.test'),
+          ('${actorInactive}', 'Actor Inactive', 'inactive-membership@example.test')
+        on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status)
-      values
-        ('${membershipA}', '${tenantA}', '${actorA}', 'ACTIVE'),
-        ('${membershipB}', '${tenantB}', '${actorB}', 'ACTIVE')
-      on conflict (id) do update set status = 'ACTIVE';
+        values
+          ('${membershipA}', '${tenantA}', '${actorA}', 'ACTIVE'),
+          ('${membershipB}', '${tenantB}', '${actorB}', 'ACTIVE'),
+          ('${membershipInactive}', '${tenantInactive}', '${actorInactive}', 'SUSPENDED')
+        on conflict (id) do update set status = 'ACTIVE';
+      update app.memberships
+      set status = 'SUSPENDED'
+      where id = '${membershipInactive}';
+      insert into app.membership_role_assignments (
+        id, tenant_id, membership_id, role_code, scope_type
+      ) values (
+        '${roleAssignmentA}', '${tenantA}', '${membershipA}', 'SUPERVISOR', 'TENANT'
+      )
+      on conflict (id) do update set
+        tenant_id = excluded.tenant_id,
+        membership_id = excluded.membership_id,
+        role_code = excluded.role_code,
+        scope_type = excluded.scope_type;
+      insert into app.temporary_permission_grants (
+        id, tenant_id, membership_id, permission_code, scope_type, expires_at, reason
+      ) values (
+        '${temporaryGrantA}', '${tenantA}', '${membershipA}', 'report.view', 'TENANT',
+        '2030-01-01T00:00:00Z', 'A1 runtime authority integration test'
+      )
+      on conflict (id) do update set
+        tenant_id = excluded.tenant_id,
+        membership_id = excluded.membership_id,
+        permission_code = excluded.permission_code,
+        scope_type = excluded.scope_type,
+        expires_at = excluded.expires_at,
+        revoked_at = null,
+        reason = excluded.reason;
     `);
+
+    runtimeClient = postgres(databaseUrl, { max: 1, prepare: false });
+    await runtimeClient.unsafe('set role app_runtime');
+    runtimeDatabase = drizzle(runtimeClient, { schema });
   });
 
   afterAll(async () => {
     await client?.end();
+    await runtimeClient?.end();
+  });
+
+  it('loads authority through app_runtime and rejects forged or invalid membership context', async () => {
+    const session = {
+      sessionId: authSessionId,
+      userId: actorA,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    };
+    const request = new Request('http://127.0.0.1:3000/api/test');
+    const loadRuntimeMembership = (identityId: string, tenantId: string) =>
+      loadTenantMembershipWithDatabase(identityId, tenantId, runtimeDatabase);
+
+    const active = await resolveTenantExecutionContext({
+      request,
+      requestedTenantId: tenantA,
+      resolveActor: async () => ({ identityId: actorA, session }),
+      loadMembership: loadRuntimeMembership,
+      now: new Date('2026-09-20T10:00:00Z'),
+    });
+    expect(active.membership.membershipId).toBe(membershipA);
+    expect(active.membership.roleAssignments).toEqual([
+      expect.objectContaining({ roleCode: 'SUPERVISOR', tenantId: tenantA, scopeType: 'TENANT' }),
+    ]);
+    expect(active.membership.temporaryGrants).toEqual([
+      expect.objectContaining({ permissionCode: 'report.view', tenantId: tenantA }),
+    ]);
+
+    await expect(
+      resolveTenantExecutionContext({
+        request,
+        requestedTenantId: tenantB,
+        resolveActor: async () => ({ identityId: actorA, session }),
+        loadMembership: loadRuntimeMembership,
+      }),
+    ).rejects.toThrow('no membership');
+
+    await expect(
+      resolveTenantExecutionContext({
+        request,
+        requestedTenantId: tenantA,
+        resolveActor: async () => ({ identityId: actorB, session: { ...session, userId: actorB } }),
+        loadMembership: loadRuntimeMembership,
+      }),
+    ).rejects.toThrow('no membership');
+
+    await expect(
+      resolveTenantExecutionContext({
+        request,
+        requestedTenantId: tenantInactive,
+        resolveActor: async () => ({
+          identityId: actorInactive,
+          session: { ...session, userId: actorInactive },
+        }),
+        loadMembership: loadRuntimeMembership,
+      }),
+    ).rejects.toThrow('active membership');
+
+    await runtimeClient.begin(async (transaction) => {
+      await setTenantContext(transaction, tenantA, actorA, forgedMembership);
+      const activeMembership = await transaction<{ active: boolean }[]>`
+        select app.has_active_membership() as active
+      `;
+      const assignments = await transaction<{ id: string }[]>`
+        select id
+        from app.membership_role_assignments
+        where tenant_id = ${tenantA} and membership_id = ${membershipA}
+      `;
+      expect(activeMembership[0]?.active).toBe(false);
+      expect(assignments).toEqual([]);
+    });
   });
 
   it('verifies Better Auth UUID identity compatibility and the membership foreign key', async () => {

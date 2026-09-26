@@ -3,6 +3,7 @@ import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import type { Database } from '../../platform/db';
 import { z } from 'zod';
+import { assertStepUp } from '../../platform/security';
 import {
   authorize,
   type AccessScope,
@@ -381,11 +382,8 @@ function assertForecourtCommandAuthorization(
   if (context.scope.scopeType !== policy.requiredScopeType) {
     throw new AppError('FORBIDDEN', 'The command policy requires station scope');
   }
-  if (
-    policy.assuranceRequirement === 'STEP_UP' &&
-    context.authority.authorization.strongAuthenticationVerified !== true
-  ) {
-    throw new AppError('FORBIDDEN', 'The command requires step-up assurance');
+  if (policy.assuranceRequirement === 'STEP_UP') {
+    assertStepUp(context.authority.actor.session, 1);
   }
 }
 
