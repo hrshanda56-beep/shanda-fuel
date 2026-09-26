@@ -40,6 +40,7 @@ const ids = {
   overviewRevision: 'a11b0000-0000-4000-8000-000000000153',
   overviewEvent: 'a11b0000-0000-4000-8000-000000000154',
   overviewPermissionGrant: 'a11b0000-0000-4000-8000-000000000155',
+  overviewLockPermissionGrant: 'a11b0000-0000-4000-8000-000000000159',
   overviewAuditPermissionGrant: 'a11b0000-0000-4000-8000-000000000158',
   outsideStationDay: 'a11b0000-0000-4000-8000-000000000157',
 };
@@ -204,6 +205,10 @@ describe('A11 daily operations composition read', () => {
       insert into app.temporary_permission_grants
         (id, tenant_id, membership_id, permission_code, scope_type, legal_entity_id, station_id, expires_at, reason)
       values ('${ids.overviewAuditPermissionGrant}', '${ids.tenant}', '${ids.supervisorMembership}', 'audit.view', 'STATION', '${ids.legal}', '${ids.station}', '2030-01-01T00:00:00Z', 'A11 overview audit authorization test')
+        on conflict (id) do nothing;
+      insert into app.temporary_permission_grants
+        (id, tenant_id, membership_id, permission_code, scope_type, legal_entity_id, station_id, expires_at, reason)
+      values ('${ids.overviewLockPermissionGrant}', '${ids.tenant}', '${ids.supervisorMembership}', 'business_day.lock', 'STATION', '${ids.legal}', '${ids.station}', '2030-01-01T00:00:00Z', 'A11 overview lock step-up test')
       on conflict (id) do nothing;
       insert into platform.security_events
         (id, tenant_id, membership_id, actor_id, event_code, request_id, occurred_at, details, key_id, algorithm, signature)
@@ -300,14 +305,38 @@ describe('A11 daily operations composition read', () => {
     const supervisorBody = (await supervisorResponse.json()) as {
       reconciliations: Array<{ id: string }>;
       timeline: Array<{ eventCode: string; subjectId: string | null }>;
+      visibility: { reconciliations: boolean; auditTimeline: boolean };
+      actions: {
+        OpenBusinessDay: { canExecute: boolean };
+        CloseBusinessDay: { canExecute: boolean };
+        LockBusinessDay: {
+          canExecute: boolean;
+          permissionGranted: boolean;
+          requiresStepUp: boolean;
+        };
+        StartShift: { canExecute: boolean };
+        CloseMeters: { canExecute: boolean };
+        CompleteShift: { canExecute: boolean };
+      };
     };
     const attendantBody = (await attendantResponse.json()) as {
       shifts: Array<{ id: string }>;
       reconciliations: Array<{ id: string }>;
       timeline: Array<{ eventCode: string }>;
+      visibility: { reconciliations: boolean; auditTimeline: boolean };
+      actions: Record<string, { canExecute: boolean }>;
     };
 
     expect(supervisorResponse.status).toBe(200);
+    expect(supervisorBody.visibility).toEqual({ reconciliations: true, auditTimeline: true });
+    expect(supervisorBody.actions).toMatchObject({
+      OpenBusinessDay: { canExecute: true },
+      CloseBusinessDay: { canExecute: true },
+      LockBusinessDay: { canExecute: false, permissionGranted: true, requiresStepUp: true },
+      StartShift: { canExecute: true },
+      CloseMeters: { canExecute: true },
+      CompleteShift: { canExecute: true },
+    });
     expect(supervisorBody.reconciliations.map((item) => item.id)).toContain(ids.overviewRecon);
     expect(supervisorBody.timeline).toEqual(
       expect.arrayContaining([
@@ -318,6 +347,8 @@ describe('A11 daily operations composition read', () => {
       ]),
     );
     expect(attendantResponse.status).toBe(200);
+    expect(attendantBody.visibility).toEqual({ reconciliations: false, auditTimeline: false });
+    expect(Object.values(attendantBody.actions).every((action) => !action.canExecute)).toBe(true);
     expect(attendantBody.shifts.map((shift) => shift.id)).toContain(ids.shift);
     expect(attendantBody.reconciliations).toHaveLength(0);
     expect(attendantBody.timeline).toHaveLength(0);

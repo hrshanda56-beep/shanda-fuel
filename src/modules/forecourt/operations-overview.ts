@@ -4,10 +4,13 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
+import { assertStepUp } from '../../platform/security';
 import { authorize } from '../../platform/security/permissions';
 import {
+  FORECOURT_COMMAND_POLICY,
   resolveForecourtCommandContext,
   type ForecourtCommandContext,
+  type ForecourtCommandType,
   type ForecourtTransaction,
 } from './application';
 import { loadForecourtStation } from './persistence';
@@ -22,6 +25,25 @@ export const operationsOverviewQuery = z.object({
 });
 
 type OperationsOverviewInput = z.infer<typeof operationsOverviewQuery>;
+
+const CONTROL_ROOM_COMMANDS = [
+  'OpenBusinessDay',
+  'CloseBusinessDay',
+  'LockBusinessDay',
+  'StartShift',
+  'CloseMeters',
+  'CompleteShift',
+] as const satisfies readonly ForecourtCommandType[];
+
+type ActionAvailability = {
+  canExecute: boolean;
+  permissionGranted: boolean;
+  requiresStepUp: boolean;
+};
+
+type ControlRoomActions = {
+  [Command in (typeof CONTROL_ROOM_COMMANDS)[number]]: ActionAvailability;
+};
 
 type TimelineRow = {
   eventCode: string;
@@ -77,6 +99,47 @@ function hasPermission(
   }
 }
 
+function actionAvailability(
+  context: ForecourtCommandContext,
+  commandType: ForecourtCommandType,
+): ActionAvailability {
+  const policy = FORECOURT_COMMAND_POLICY[commandType];
+  try {
+    authorize({
+      actor: context.authority.authorization,
+      permissionCode: policy.permissionCode,
+      requestedScope: context.scope,
+    });
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'FORBIDDEN') {
+      return { canExecute: false, permissionGranted: false, requiresStepUp: false };
+    }
+    throw error;
+  }
+
+  if (policy.assuranceRequirement === 'STEP_UP') {
+    try {
+      assertStepUp(context.authority.actor.session, 1);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'FORBIDDEN') {
+        return { canExecute: false, permissionGranted: true, requiresStepUp: true };
+      }
+      throw error;
+    }
+  }
+
+  return { canExecute: true, permissionGranted: true, requiresStepUp: false };
+}
+
+function loadControlRoomActions(context: ForecourtCommandContext): ControlRoomActions {
+  return Object.fromEntries(
+    CONTROL_ROOM_COMMANDS.map((commandType) => [
+      commandType,
+      actionAvailability(context, commandType),
+    ]),
+  ) as ControlRoomActions;
+}
+
 export async function getOperationsOverviewFromRequest(
   request: Request,
   input: OperationsOverviewInput,
@@ -95,9 +158,11 @@ export async function getOperationsOverviewFromRequest(
 
   const canViewReconciliations = hasPermission(context, 'reconciliation.view');
   const canViewAudit = hasPermission(context, 'audit.view');
+  const actions = loadControlRoomActions(context);
 
   return withTenantTransaction(context.authority.transaction, (transaction) =>
     loadOperationsOverview(transaction, context, input, {
+      actions,
       canViewAudit,
       canViewReconciliations,
     }),
@@ -109,6 +174,7 @@ async function loadOperationsOverview(
   context: ForecourtCommandContext,
   input: OperationsOverviewInput,
   permissions: {
+    actions: ControlRoomActions;
     canViewAudit: boolean;
     canViewReconciliations: boolean;
   },
@@ -180,6 +246,11 @@ async function loadOperationsOverview(
       shifts: [],
       reconciliations: [],
       timeline: [],
+      visibility: {
+        reconciliations: permissions.canViewReconciliations,
+        auditTimeline: permissions.canViewAudit,
+      },
+      actions: permissions.actions,
     };
   }
 
@@ -253,6 +324,22 @@ async function loadOperationsOverview(
     ...shifts.map((shift) => shift.id),
     ...reconciliations.map((item) => item.id),
   ];
+  const subjectIdsFilter = sql.join(
+    subjectIds.map((subjectId) => sql`${subjectId}`),
+    sql`, `,
+  );
+  const shiftTimelineFilter = shifts.length
+    ? sql`or e.details->'metadata'->>'shiftId' in (${sql.join(
+        shifts.map((shift) => sql`${shift.id}`),
+        sql`, `,
+      )})`
+    : sql``;
+  const reconciliationTimelineFilter = reconciliations.length
+    ? sql`or e.details->'metadata'->>'reconciliationId' in (${sql.join(
+        reconciliations.map((item) => sql`${item.id}`),
+        sql`, `,
+      )})`
+    : sql``;
   const timeline =
     permissions.canViewAudit && subjectIds.length
       ? await transaction.execute<TimelineRow>(sql`
@@ -266,10 +353,10 @@ async function loadOperationsOverview(
         left join auth."user" u on u.id=e.actor_id
         where e.tenant_id=${context.tenantId}
           and (
-            e.details->>'subjectId' = any(${subjectIds}::text[])
+            e.details->>'subjectId' in (${subjectIdsFilter})
             or e.details->'metadata'->>'businessDayId' = ${selectedDay.id}
-            or e.details->'metadata'->>'shiftId' = any(${shifts.map((shift) => shift.id)}::text[])
-            or e.details->'metadata'->>'reconciliationId' = any(${reconciliations.map((item) => item.id)}::text[])
+            ${shiftTimelineFilter}
+            ${reconciliationTimelineFilter}
           )
         order by e.occurred_at desc
         limit 100
@@ -281,6 +368,11 @@ async function loadOperationsOverview(
     organisation: { id: station.tenantId, name: station.tenantName },
     currentBusinessDate,
     currentBusinessDayId: days.find((day) => day.date === currentBusinessDate)?.id ?? null,
+    visibility: {
+      reconciliations: permissions.canViewReconciliations,
+      auditTimeline: permissions.canViewAudit,
+    },
+    actions: permissions.actions,
     businessDays: days.map((day) => ({
       id: day.id,
       date: day.date,

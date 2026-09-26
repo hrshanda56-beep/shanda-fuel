@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -12,11 +12,34 @@ import {
 import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
+type ActionAvailability = {
+  canExecute: boolean;
+  permissionGranted: boolean;
+  requiresStepUp: boolean;
+};
+
+type OperationsCommandError = Error & {
+  status: number;
+  code?: string;
+};
+
 type Overview = {
   station: { code: string; name: string; timezone: string };
   organisation: { name: string };
   currentBusinessDate: string;
   currentBusinessDayId: string | null;
+  visibility: {
+    reconciliations: boolean;
+    auditTimeline: boolean;
+  };
+  actions: {
+    OpenBusinessDay: ActionAvailability;
+    CloseBusinessDay: ActionAvailability;
+    LockBusinessDay: ActionAvailability;
+    StartShift: ActionAvailability;
+    CloseMeters: ActionAvailability;
+    CompleteShift: ActionAvailability;
+  };
   businessDays: Array<{
     id: string;
     date: string;
@@ -76,19 +99,22 @@ function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational'
   return 'informational';
 }
 
-function commandKey(commandType: string, subjectId: string) {
-  return `ux-ops-${commandType}-${subjectId}-${crypto.randomUUID()}`;
+function timeRange(start: string, end: string, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  });
+  return `${formatter.format(new Date(start))} – ${formatter.format(new Date(end))}`;
 }
 
-function timeRange(start: string, end: string) {
-  return `${new Date(start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${new Date(end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-}
-
-function formatTimestamp(value: string | null) {
+function formatTimestamp(value: string | null, timeZone: string) {
   return value
-    ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(
-        new Date(value),
-      )
+    ? new Intl.DateTimeFormat('en-GB', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone,
+      }).format(new Date(value))
     : '—';
 }
 
@@ -97,7 +123,9 @@ export function OperationsControlRoom({ context }: { context: Context }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [conflict, setConflict] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const idempotencyKeys = useRef(new Map<string, string>());
 
   const endpoint = useMemo(() => {
     const params = new URLSearchParams({
@@ -108,45 +136,91 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     return `/api/forecourt/operations/overview?${params.toString()}`;
   }, [context.businessDayId, context.stationId, context.tenantId]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(undefined);
-    try {
-      const response = await fetch(endpoint, { cache: 'no-store' });
-      const body = (await response.json()) as Overview & { message?: string; error?: string };
-      if (!response.ok) {
-        if (response.status === 403)
-          throw new Error('You do not have permission to view operations for this station.');
-        throw new Error(body.message ?? 'The operations control room could not be loaded.');
+  const load = useCallback(
+    async (preserveConflict = false) => {
+      setLoading(true);
+      setError(undefined);
+      if (!preserveConflict) setConflict(undefined);
+      try {
+        const response = await fetch(endpoint, { cache: 'no-store' });
+        const body = (await response.json()) as Overview & { message?: string; error?: string };
+        if (!response.ok) {
+          if (response.status === 403)
+            throw new Error('You do not have permission to view operations for this station.');
+          throw new Error(body.message ?? 'The operations control room could not be loaded.');
+        }
+        setOverview(body);
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : 'The operations control room could not be loaded.',
+        );
+      } finally {
+        setLoading(false);
       }
-      setOverview(body);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : 'The operations control room could not be loaded.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [endpoint]);
+    },
+    [endpoint],
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  function stableIdempotencyKey(
+    commandType: string,
+    values: Record<string, unknown>,
+    subjectId: string,
+  ) {
+    const fingerprint = `${commandType}:${subjectId}:${JSON.stringify(values)}`;
+    const existing = idempotencyKeys.current.get(fingerprint);
+    if (existing) return existing;
+    const key = `ux-ops-${commandType}-${subjectId}-${crypto.randomUUID()}`;
+    idempotencyKeys.current.set(fingerprint, key);
+    return key;
+  }
+
   async function command(commandType: string, values: Record<string, unknown>, subjectId: string) {
     const response = await fetch('/api/forecourt/commands', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': commandKey(commandType, subjectId),
+        'idempotency-key': stableIdempotencyKey(commandType, values, subjectId),
       },
       body: JSON.stringify({ commandType, ...values }),
     });
-    const body = (await response.json()) as { message?: string };
-    if (!response.ok) throw new Error(body.message ?? 'The server could not complete that action.');
+    const body = (await response.json()) as { message?: string; error?: string };
+    if (!response.ok) {
+      const failure = new Error(
+        body.message ?? 'The server could not complete that action.',
+      ) as OperationsCommandError;
+      failure.status = response.status;
+      failure.code = body.error;
+      throw failure;
+    }
+  }
+
+  function isConflictError(caught: unknown): caught is OperationsCommandError {
+    return (
+      caught instanceof Error &&
+      'status' in caught &&
+      ((caught as OperationsCommandError).status === 409 ||
+        (caught as OperationsCommandError).code === 'CONFLICT' ||
+        (caught as OperationsCommandError).code === 'IDEMPOTENCY_CONFLICT')
+    );
+  }
+
+  function commandErrorMessage(caught: unknown, commandType: string) {
+    if (
+      caught instanceof Error &&
+      'status' in caught &&
+      (caught as OperationsCommandError).status === 403 &&
+      (caught.message.toLowerCase().includes('step-up') || commandType === 'LockBusinessDay')
+    ) {
+      return 'Locking a business day requires the existing step-up authentication flow. No change was posted.';
+    }
+    return caught instanceof Error ? caught.message : 'The server could not complete that action.';
   }
 
   async function runCommand(
@@ -159,15 +233,21 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     if (!window.confirm(consequence)) return;
     setBusy(true);
     setError(undefined);
+    setConflict(undefined);
     setNotice(undefined);
     try {
       await command(commandType, values, subjectId);
       setNotice(success);
       await load();
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : 'The server could not complete that action.',
-      );
+      if (isConflictError(caught)) {
+        await load(true);
+        setConflict(
+          'This operation changed elsewhere or is stale. The authoritative state has been refreshed; review it before trying again. The command was not retried.',
+        );
+      } else {
+        setError(commandErrorMessage(caught, commandType));
+      }
     } finally {
       setBusy(false);
     }
@@ -198,6 +278,9 @@ export function OperationsControlRoom({ context }: { context: Context }) {
   const selectedShift = overview.shifts[0];
   const isCurrentDay = day?.id === overview.currentBusinessDayId;
   const openDayId = day?.id ?? crypto.randomUUID();
+  const openBusinessDay = overview.actions.OpenBusinessDay;
+  const closeBusinessDay = overview.actions.CloseBusinessDay;
+  const lockBusinessDay = overview.actions.LockBusinessDay;
 
   return (
     <div className="operations-control-room" aria-label="Operations control room">
@@ -216,6 +299,13 @@ export function OperationsControlRoom({ context }: { context: Context }) {
         <ErrorState
           title="Action needs attention"
           message={error}
+          action={<Button onClick={() => void load()}>Refresh</Button>}
+        />
+      ) : null}
+      {conflict ? (
+        <ErrorState
+          title="State changed"
+          message={conflict}
           action={<Button onClick={() => void load()}>Refresh</Button>}
         />
       ) : null}
@@ -252,11 +342,19 @@ export function OperationsControlRoom({ context }: { context: Context }) {
               </div>
               <div>
                 <dt>Opened</dt>
-                <dd>{day.openedAt ? formatTimestamp(day.openedAt) : 'Not opened'}</dd>
+                <dd>
+                  {day.openedAt
+                    ? formatTimestamp(day.openedAt, overview.station.timezone)
+                    : 'Not opened'}
+                </dd>
               </div>
               <div>
                 <dt>Closed</dt>
-                <dd>{day.closedAt ? formatTimestamp(day.closedAt) : 'Not closed'}</dd>
+                <dd>
+                  {day.closedAt
+                    ? formatTimestamp(day.closedAt, overview.station.timezone)
+                    : 'Not closed'}
+                </dd>
               </div>
             </dl>
           ) : (
@@ -266,7 +364,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             />
           )}
           <div className="form-actions">
-            {!day || day.state === 'NOT_STARTED' ? (
+            {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
               <Button
                 variant="primary"
                 disabled={busy}
@@ -288,7 +386,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                 Open business day
               </Button>
             ) : null}
-            {day?.state === 'OPEN' ? (
+            {day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
               <Button
                 variant="danger"
                 disabled={busy}
@@ -310,7 +408,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                 Close business day
               </Button>
             ) : null}
-            {day?.state === 'CLOSED' ? (
+            {day?.state === 'CLOSED' && lockBusinessDay.canExecute ? (
               <Button
                 variant="danger"
                 disabled={busy}
@@ -331,6 +429,23 @@ export function OperationsControlRoom({ context }: { context: Context }) {
               >
                 Lock business day
               </Button>
+            ) : null}
+            {day?.state === 'CLOSED' &&
+            lockBusinessDay.permissionGranted &&
+            lockBusinessDay.requiresStepUp ? (
+              <>
+                <Button
+                  variant="danger"
+                  disabled
+                  aria-describedby="lock-business-day-step-up-help"
+                >
+                  Lock business day
+                </Button>
+                <p className="semantic-note" id="lock-business-day-step-up-help" role="status">
+                Locking this business day requires a current step-up authentication. No step-up
+                prompt is available in this workspace.
+                </p>
+              </>
             ) : null}
           </div>
           {day?.state === 'CLOSED' ? (
@@ -362,7 +477,9 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                 <a className="operations-list-row" key={item.id} href={dayHref(item.id)}>
                   <span>
                     <strong>{formatBusinessDate(item.date)}</strong>
-                    <small>Updated {formatTimestamp(item.updatedAt)}</small>
+                    <small>
+                      Updated {formatTimestamp(item.updatedAt, overview.station.timezone)}
+                    </small>
                   </span>
                   <StatusBadge tone={tone(item.state)}>{formatStatusLabel(item.state)}</StatusBadge>
                 </a>
@@ -402,7 +519,13 @@ export function OperationsControlRoom({ context }: { context: Context }) {
               return (
                 <article className="operations-list-row operations-shift-row" key={shift.id}>
                   <div>
-                    <strong>{timeRange(shift.plannedStartAt, shift.plannedEndAt)}</strong>
+                    <strong>
+                      {timeRange(
+                        shift.plannedStartAt,
+                        shift.plannedEndAt,
+                        overview.station.timezone,
+                      )}
+                    </strong>
                     <small>
                       {shift.attendantCount} attendant{shift.attendantCount === 1 ? '' : 's'} ·{' '}
                       {shift.id}
@@ -412,7 +535,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                     {formatStatusLabel(shift.state)}
                   </StatusBadge>
                   <div className="inline-links">
-                    {shift.state === 'PLANNED' ? (
+                    {shift.state === 'PLANNED' && overview.actions.StartShift.canExecute ? (
                       <Button
                         variant="secondary"
                         disabled={busy}
@@ -433,7 +556,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                         Start shift
                       </Button>
                     ) : null}
-                    {shift.state === 'OPEN' ? (
+                    {shift.state === 'OPEN' && overview.actions.CloseMeters.canExecute ? (
                       <Button
                         variant="secondary"
                         disabled={busy}
@@ -450,7 +573,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                         Close meters
                       </Button>
                     ) : null}
-                    {shift.state === 'METER_CLOSED' ? (
+                    {shift.state === 'METER_CLOSED' && overview.actions.CompleteShift.canExecute ? (
                       <Button
                         variant="secondary"
                         disabled={busy}
@@ -500,7 +623,12 @@ export function OperationsControlRoom({ context }: { context: Context }) {
               <h2 id="approval-queue-title">Reconciliations</h2>
             </div>
           </div>
-          {overview.reconciliations.length === 0 ? (
+          {!overview.visibility.reconciliations ? (
+            <EmptyState
+              title="Reconciliation details restricted"
+              message="You do not have permission to view reconciliation details for this station."
+            />
+          ) : overview.reconciliations.length === 0 ? (
             <EmptyState
               title="No reconciliations yet"
               message="A production reconciliation appears here after a server-backed draft is created for a shift."
@@ -512,7 +640,8 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                   <span>
                     <strong>{formatStatusLabel(item.state)}</strong>
                     <small>
-                      Revision {item.revision ?? '—'} · updated {formatTimestamp(item.updatedAt)}
+                      Revision {item.revision ?? '—'} · updated{' '}
+                      {formatTimestamp(item.updatedAt, overview.station.timezone)}
                     </small>
                   </span>
                   <StatusBadge tone={tone(item.state)}>
@@ -543,7 +672,12 @@ export function OperationsControlRoom({ context }: { context: Context }) {
               <h2 id="timeline-title">Actor and timestamp history</h2>
             </div>
           </div>
-          {overview.timeline.length === 0 ? (
+          {!overview.visibility.auditTimeline ? (
+            <EmptyState
+              title="Audit history restricted"
+              message="You do not have permission to view audit history for this station."
+            />
+          ) : overview.timeline.length === 0 ? (
             <EmptyState
               title="No recorded actions"
               message="Authoritative commands will appear here with their actor and server timestamp."
@@ -555,7 +689,8 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                   <div>
                     <strong>{formatStatusLabel(event.eventCode.replace('FORECOURT.', ''))}</strong>
                     <small>
-                      {event.actorName ?? 'Unknown actor'} · {formatTimestamp(event.occurredAt)}
+                      {event.actorName ?? 'Unknown actor'} ·{' '}
+                      {formatTimestamp(event.occurredAt, overview.station.timezone)}
                     </small>
                     {event.reason ? <p>{event.reason}</p> : null}
                   </div>
