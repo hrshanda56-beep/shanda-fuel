@@ -247,6 +247,8 @@ export const QA1_TIMES = {
   segmentOpen: '2026-09-26T06:00:00.000Z',
   deliveryBoundary: '2026-09-26T07:00:00.000Z',
   segmentClose: '2026-09-26T08:00:00.000Z',
+  blockedSegmentOpen: '2026-09-26T08:00:00.000Z',
+  blockedSegmentClose: '2026-09-26T09:00:00.000Z',
   lateDelivery: '2026-09-26T06:30:00.000Z',
   futureSegmentOpen: '2026-09-26T09:00:00.000Z',
   futureSegmentClose: '2026-09-26T10:00:00.000Z',

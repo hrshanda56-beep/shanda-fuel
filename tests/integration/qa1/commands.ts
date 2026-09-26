@@ -213,7 +213,13 @@ export async function sealMeterSegments(
   shiftId: string,
   readings: readonly string[],
   keyPrefix: string,
+  boundaryTimes: readonly string[] = readings.length === 3
+    ? [QA1_TIMES.segmentOpen, QA1_TIMES.deliveryBoundary, QA1_TIMES.segmentClose]
+    : [QA1_TIMES.segmentOpen, QA1_TIMES.segmentClose],
 ): Promise<{ segmentIds: string[] }> {
+  if (boundaryTimes.length !== readings.length) {
+    throw new Error('QA1 boundary time count must match meter reading count');
+  }
   const shift = await currentShiftVersion(client, ctx, shiftId);
   const boundaryIds: string[] = [];
   for (const [index, readingValue] of readings.entries()) {
@@ -261,11 +267,6 @@ export async function sealMeterSegments(
       throw new Error('QA1 production boundaries are not monotonically chronological');
     }
   }
-  const boundaryTimes =
-    readings.length === 3
-      ? [QA1_TIMES.segmentOpen, QA1_TIMES.deliveryBoundary, QA1_TIMES.segmentClose]
-      : [QA1_TIMES.segmentOpen, QA1_TIMES.segmentClose];
-
   const segmentIds: string[] = [];
   for (let index = 0; index < readings.length - 1; index += 1) {
     const segmentId = randomUUID();
@@ -424,6 +425,7 @@ export async function createApprovedSale(
     existingShiftId?: string;
     openingReading?: string;
     approve?: boolean;
+    segmentBoundaryTimes?: readonly string[];
   },
 ): Promise<PostedSale> {
   if (!input.existingShiftId) {
@@ -442,6 +444,7 @@ export async function createApprovedSale(
     shiftId,
     [openingReading, closingReading],
     keyPrefix,
+    input.segmentBoundaryTimes,
   );
   if (input.completeShiftAfter) await completeShift(client, ctx, shiftId, keyPrefix);
 
