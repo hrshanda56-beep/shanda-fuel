@@ -111,6 +111,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       ctx,
       { ...openBody, stationId: ctx.outsideStationId },
       'g7-cross-station',
+      'supervisor',
     );
     expect(crossStation.response.status).toBe(403);
     const denied = await forecourt(ctx, openBody, 'g7-permission-denied', 'attendant');
@@ -216,6 +217,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       saleLitres: '100.000',
       payments: [{ method: 'CASH', amount: '250.0000' }],
       post: true,
+      completeShiftAfter: true,
     });
     const originalMovement = await rows<Record<string, any>>(
       client,
@@ -230,10 +232,6 @@ describe('QA1 cross-module golden financial scenarios', () => {
       `select * from app.inventory_sale_cost_attributions where meter_segment_id in ('${historical.segmentIds.join("','")}')`,
     );
     const beforeLateCost = await snapshotQa1(client, ctx);
-    await (
-      await import('./qa1/commands')
-    ).completeShift(client, ctx, historical.shiftId, 'g2-historical');
-
     const delivery = await createDelivery(ctx, 'g2-late', {
       quantityLitres: '100.000',
       deliveredAt: '2026-09-25T23:30:00.000Z',
@@ -256,6 +254,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       saleLitres: '100.000',
       payments: [{ method: 'CASH', amount: '250.0000' }],
       post: false,
+      completeShiftAfter: true,
       existingShiftId: nextShift.shiftId,
       openingReading: '100100.000',
       approve: false,
@@ -418,6 +417,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       saleLitres: '100.000',
       payments: [{ method: 'CASH', amount: '250.0000' }],
       post: true,
+      completeShiftAfter: true,
       existingShiftId: futureShift.shiftId,
       openingReading: '100200.000',
     });
@@ -641,6 +641,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       saleLitres: '240.000',
       payments: [{ method: 'CASH', amount: '600.0000' }],
       post: true,
+      completeShiftAfter: true,
     });
     const before = await snapshotQa1(client, ctx);
     expect(before.cashCollections).toHaveLength(0);
@@ -735,6 +736,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         { method: 'PREPAID', amount: '25.0000' },
       ],
       post: true,
+      completeShiftAfter: true,
     });
     const customerResult = await customer(
       ctx,
@@ -905,6 +907,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         { method: 'ECOCASH', amount: '150.0000' },
       ],
       post: true,
+      completeShiftAfter: true,
     });
     const provider = await settlement(
       ctx,
