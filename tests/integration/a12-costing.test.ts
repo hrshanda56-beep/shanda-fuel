@@ -18,6 +18,7 @@ const ids = {
   productTwo: 'a1220000-0000-4000-8000-000000000052',
   tank: 'a1220000-0000-4000-8000-000000000061',
   tankTwo: 'a1220000-0000-4000-8000-000000000062',
+  wrongStreamTank: 'a1220000-0000-4000-8000-000000000113',
   openingMovement: 'a1220000-0000-4000-8000-000000000070',
   costEvent: 'a1220000-0000-4000-8000-000000000071',
   costEventSource: 'a1220000-0000-4000-8000-000000000081',
@@ -149,6 +150,7 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       insert into app.tanks (id, tenant_id, station_id, code, product_id, capacity_litres, created_by, updated_by) values
         ('${ids.tank}', '${ids.tenant}', '${ids.station}', 'A122-D1', '${ids.product}', '20000', '${ids.membership}', '${ids.membership}'),
         ('${ids.tankTwo}', '${ids.tenant}', '${ids.stationTwo}', 'A122-P1', '${ids.productTwo}', '12000', '${ids.membership}', '${ids.membership}'),
+        ('${ids.wrongStreamTank}', '${ids.tenant}', '${ids.stationTwo}', 'A122-WRONG', '${ids.productTwo}', '12000', '${ids.membership}', '${ids.membership}'),
         ('${phase.openingLateTank}', '${ids.tenant}', '${ids.stationTwo}', 'A122-P2-LATE-OPEN', '${ids.productTwo}', '12000', '${ids.membership}', '${ids.membership}') on conflict (id) do nothing;
       insert into app.pumps (id, tenant_id, station_id, number, status)
         values ('${ids.salePump}', '${ids.tenant}', '${ids.station}', 'A122-SALE', 'ACTIVE') on conflict (id) do nothing;
@@ -218,7 +220,7 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       insert into app.inventory_cost_events
         (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at, business_date, amount, currency, actor_membership_id)
       values
-        ('${ids.wrongStreamCostEvent}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.wrongStreamSegment}', '2026-09-25T12:00:00Z', '2026-09-25', '-12.3456', 'USD', '${ids.membership}'),
+        ('${ids.wrongStreamCostEvent}', '${ids.tenant}', '${ids.stationTwo}', '${ids.wrongStreamTank}', '${ids.productTwo}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.wrongStreamSegment}', '2026-09-25T12:00:00Z', '2026-09-25', '-12.3456', 'USD', '${ids.membership}'),
         ('${ids.effectiveCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.effectiveSegment}', '2026-09-25T15:59:00Z', '2026-09-25', '-12.3456', 'USD', '${ids.membership}'),
         ('${ids.businessCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.businessSegment}', '2026-09-25T20:00:00Z', '2026-09-26', '-12.3456', 'USD', '${ids.membership}')
       on conflict (id) do nothing;
