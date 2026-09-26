@@ -347,7 +347,14 @@ test.describe('production reconciliation persistence', () => {
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
     await expect(controlRoom.getByText('Audit history restricted')).toBeVisible();
-    await expect(controlRoom.getByText('08:00 – 16:00')).toBeVisible();
+    await expect(
+      controlRoom
+        .locator('article.operations-shift-row strong')
+        .filter({
+          hasText: '08:00 – 16:00',
+        })
+        .first(),
+    ).toBeVisible();
 
     const closeMeters = controlRoom.getByRole('button', { name: 'Close meters' }).first();
     await closeMeters.focus();
