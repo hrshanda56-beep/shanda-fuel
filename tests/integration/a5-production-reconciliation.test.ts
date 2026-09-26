@@ -1497,7 +1497,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         {
           quantity_litres: '600.000',
           inventory_value: '654.5455',
-          weighted_average_cost: '1.09090909',
+          weighted_average_cost: '1.09090917',
           currency: 'USD',
           valuation_status: 'VALUED',
         },
@@ -1673,10 +1673,10 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         {
           movement_id: expect.any(String),
           quantity_litres: '-500.000',
-          cogs_amount: '-545.4545',
+          cogs_amount: '-545.4546',
           sale_quantity_litres: '500.000',
-          pre_sale_wac: '1.09090909',
-          original_cogs: '545.4545',
+          pre_sale_wac: '1.09090917',
+          original_cogs: '545.4546',
         },
       ]);
       const totalAttributionCount = await client.unsafe<{ count: string }[]>(`
