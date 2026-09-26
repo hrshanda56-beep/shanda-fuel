@@ -956,6 +956,40 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     expectDecimalEqual(saleCostRows[0]!.amount, '-250.0000');
     expectDecimalEqual(saleCostRows[1]!.amount, '-287.0370');
     expect(saleCostRows.every((row) => row.currency === 'USD')).toBe(true);
+    const saleRevenueRows = await client.unsafe<
+      {
+        id: string;
+        source_id: string;
+        inventory_sale_movement_id: string;
+        quantity_litres: string;
+        reconciliation_value: string;
+        recognized_revenue_amount: string;
+        currency: string;
+      }[]
+    >(`
+      select id, source_id, inventory_sale_movement_id, quantity_litres,
+             reconciliation_value, recognized_revenue_amount, currency
+      from app.sale_recognition_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_type='METER_SEGMENT_SALE'
+        and source_id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
+      order by effective_at, id
+    `);
+    expect(saleRevenueRows).toHaveLength(2);
+    expect(saleRevenueRows.map((row) => row.source_id)).toEqual([
+      sealed.segmentIds[1],
+      sealed.segmentIds[2],
+    ]);
+    expect(saleRevenueRows.map((row) => row.inventory_sale_movement_id)).toEqual(
+      saleMovements.map((row) => row.id),
+    );
+    expectDecimalEqual(saleRevenueRows[0]!.quantity_litres, '250.000');
+    expectDecimalEqual(saleRevenueRows[0]!.reconciliation_value, '375.0000');
+    expectDecimalEqual(saleRevenueRows[0]!.recognized_revenue_amount, '375.0000');
+    expectDecimalEqual(saleRevenueRows[1]!.quantity_litres, '250.000');
+    expectDecimalEqual(saleRevenueRows[1]!.reconciliation_value, '375.0000');
+    expectDecimalEqual(saleRevenueRows[1]!.recognized_revenue_amount, '375.0000');
+    expect(saleRevenueRows.every((row) => row.currency === 'USD')).toBe(true);
     const saleAttributionRows = await client.unsafe<
       {
         inventory_movement_id: string;
@@ -1011,6 +1045,35 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     expect(fingerprintsAfterRetry.map((row) => row.replay_fingerprint)).toEqual(
       fingerprintsBeforeRetry,
     );
+    const revenueCountAfterRetry = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.sale_recognition_movements
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and source_id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
+    `);
+    expect(revenueCountAfterRetry).toEqual([{ count: '2' }]);
+    await expect(
+      client.unsafe(`
+        insert into app.sale_recognition_movements (
+          id, tenant_id, legal_entity_id, station_id, business_date, product_id,
+          tank_id, nozzle_id, shift_id, meter_segment_id,
+          inventory_sale_movement_id, reconciliation_id, reconciliation_revision_id,
+          reconciliation_meter_reading_id, quantity_litres, reconciliation_value,
+          recognized_revenue_amount, currency, effective_at, classification,
+          source_type, source_id, actor_membership_id, request_id, replay_fingerprint
+        )
+        select gen_random_uuid(), tenant_id, legal_entity_id, station_id, business_date, product_id,
+               tank_id, nozzle_id, shift_id, meter_segment_id,
+               inventory_sale_movement_id, reconciliation_id, reconciliation_revision_id,
+               reconciliation_meter_reading_id, quantity_litres,
+               reconciliation_value + 1.0000, recognized_revenue_amount + 1.0000,
+               currency, effective_at, classification, source_type, source_id,
+               actor_membership_id, request_id, replay_fingerprint
+        from app.sale_recognition_movements
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+          and source_id='${sealed.segmentIds[1]}'
+      `),
+    ).rejects.toThrow('must equal');
 
     const approved = await expectOk(await readReconciliation(reconciliationId));
     expect(approved.state).toBe('APPROVED');
@@ -1415,7 +1478,13 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       `);
       expect(blockedState).toEqual([{ state: 'SUBMITTED', version: 6 }]);
       const failedSaleEvidence = await client.unsafe<
-        { movements: string; cogs: string; attributions: string; bridges: string }[]
+        {
+          movements: string;
+          cogs: string;
+          attributions: string;
+          bridges: string;
+          revenue: string;
+        }[]
       >(`
         select
           (select count(*)::text from app.inventory_movements
@@ -1431,10 +1500,13 @@ describe('A5 production daily reconciliation persistence and approval', () => {
              and meter_segment_id in ('${blocked.segmentIds.join("','")}')) as attributions,
           (select count(*)::text from app.reconciliation_meter_reading_segments
            where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-             and reconciliation_id='${blockedReconciliationId}') as bridges
+             and reconciliation_id='${blockedReconciliationId}') as bridges,
+          (select count(*)::text from app.sale_recognition_movements
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and source_id in ('${blocked.segmentIds.join("','")}')) as revenue
       `);
       expect(failedSaleEvidence).toEqual([
-        { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
+        { movements: '0', cogs: '0', attributions: '0', bridges: '0', revenue: '0' },
       ]);
 
       const requested = await expectOk(
@@ -1846,7 +1918,13 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     `);
       expect(state).toEqual([{ state: 'SUBMITTED' }]);
       const failedEvidence = await client.unsafe<
-        { movements: string; cogs: string; attributions: string; bridges: string }[]
+        {
+          movements: string;
+          cogs: string;
+          attributions: string;
+          bridges: string;
+          revenue: string;
+        }[]
       >(`
       select
         (select count(*)::text from app.inventory_movements
@@ -1860,10 +1938,13 @@ describe('A5 production daily reconciliation persistence and approval', () => {
            and meter_segment_id in ('${segmentIds.join("','")}')) as attributions,
         (select count(*)::text from app.reconciliation_meter_reading_segments
          where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-           and reconciliation_id='${reconciliationId}') as bridges
+           and reconciliation_id='${reconciliationId}') as bridges,
+        (select count(*)::text from app.sale_recognition_movements
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and source_id in ('${segmentIds.join("','")}')) as revenue
     `);
       expect(failedEvidence).toEqual([
-        { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
+        { movements: '0', cogs: '0', attributions: '0', bridges: '0', revenue: '0' },
       ]);
       const after = await client.unsafe<
         { projection_version: number; quantity_litres: string; valuation_status: string }[]
@@ -1916,7 +1997,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     `);
     expect(state).toEqual([{ state: 'SUBMITTED' }]);
     const failedEvidence = await client.unsafe<
-      { movements: string; cogs: string; attributions: string; bridges: string }[]
+      { movements: string; cogs: string; attributions: string; bridges: string; revenue: string }[]
     >(`
       select
         (select count(*)::text from app.inventory_movements
@@ -1930,10 +2011,13 @@ describe('A5 production daily reconciliation persistence and approval', () => {
            and meter_segment_id in ('${segmentIds.join("','")}')) as attributions,
         (select count(*)::text from app.reconciliation_meter_reading_segments
          where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-           and reconciliation_id='${reconciliationId}') as bridges
+           and reconciliation_id='${reconciliationId}') as bridges,
+        (select count(*)::text from app.sale_recognition_movements
+         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+           and source_id in ('${segmentIds.join("','")}')) as revenue
     `);
     expect(failedEvidence).toEqual([
-      { movements: '0', cogs: '0', attributions: '0', bridges: '0' },
+      { movements: '0', cogs: '0', attributions: '0', bridges: '0', revenue: '0' },
     ]);
     const after = await client.unsafe<{ projection_version: number; quantity_litres: string }[]>(`
       select projection_version, quantity_litres
@@ -1942,6 +2026,90 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         and tank_id='${ids.tank}' and product_id='${ids.product}'
     `);
     expect(after).toEqual(before);
+  });
+
+  it('rolls back A4, A12, bridge, and revenue when revenue insertion fails', async () => {
+    const reconciliationId = randomUUID();
+    const { common, segmentIds } = await createPopulatedProductionReconciliation(
+      reconciliationId,
+      '1201',
+    );
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-revenue-failure-submit-${reconciliationId}`,
+      ),
+    );
+
+    try {
+      await client.unsafe(`
+        create or replace function public.a5_fail_sale_revenue() returns trigger
+        language plpgsql as $$
+        begin
+          raise exception 'test-injected revenue insertion failure';
+        end;
+        $$;
+        drop trigger if exists a5_fail_sale_revenue on app.sale_recognition_movements;
+        create trigger a5_fail_sale_revenue
+          before insert on app.sale_recognition_movements
+          for each row execute function public.a5_fail_sale_revenue();
+      `);
+      const failed = await postCommand(
+        { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+        `a5-revenue-failure-approve-${reconciliationId}`,
+        'a5-manager-session-token',
+      );
+      expect(failed.status).not.toBe(200);
+      const state = await client.unsafe<{ state: string }[]>(`
+        select state from app.reconciliations
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+      `);
+      expect(state).toEqual([{ state: 'SUBMITTED' }]);
+      const revisionState = await client.unsafe<{ state: string }[]>(`
+        select state
+        from app.reconciliation_revisions
+        where tenant_id='${ids.tenant}'
+          and station_id='${ids.station}'
+          and reconciliation_id='${reconciliationId}'
+        order by revision desc, id desc
+        limit 1
+      `);
+      expect(revisionState).toEqual([{ state: 'PENDING_APPROVAL' }]);
+      const evidence = await client.unsafe<
+        {
+          movements: string;
+          cogs: string;
+          attributions: string;
+          bridges: string;
+          revenue: string;
+        }[]
+      >(`
+        select
+          (select count(*)::text from app.inventory_movements
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and source_type='METER_SEGMENT_SALE' and source_id in ('${segmentIds.join("','")}')) as movements,
+          (select count(*)::text from app.inventory_cost_events
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and event_type='SALE_COGS' and source_id in ('${segmentIds.join("','")}')) as cogs,
+          (select count(*)::text from app.inventory_sale_cost_attributions
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and meter_segment_id in ('${segmentIds.join("','")}')) as attributions,
+          (select count(*)::text from app.reconciliation_meter_reading_segments
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and reconciliation_id='${reconciliationId}') as bridges,
+          (select count(*)::text from app.sale_recognition_movements
+           where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+             and source_id in ('${segmentIds.join("','")}')) as revenue
+      `);
+      expect(evidence).toEqual([
+        { movements: '0', cogs: '0', attributions: '0', bridges: '0', revenue: '0' },
+      ]);
+    } finally {
+      await client.unsafe(`
+        drop trigger if exists a5_fail_sale_revenue on app.sale_recognition_movements;
+        drop function if exists public.a5_fail_sale_revenue();
+      `);
+    }
   });
 
   it('preserves a returned revision and approves only its corrected replacement', async () => {

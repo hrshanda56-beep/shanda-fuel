@@ -193,6 +193,20 @@ are rejected. A12.4 provides the separate approved late-cost revaluation
 workflow. No FX, adjustment/transfer costing, or A10 profitability changes are
 included.
 
+### REV1 — Canonical ordinary fuel-sale revenue — PARTIAL
+
+Evidence: `src/modules/revenue/`; migration
+`0014_rev1_sale_revenue.sql`; atomic posting integration in
+`src/modules/forecourt/production-reconciliation.ts`; ADR-014 and
+`docs/architecture/revenue.md`.
+
+Wave 1 establishes one immutable, tenant-aware revenue movement per positive
+unsuperseded A3 meter segment. The amount is exact-decimal segment litres times
+segment selling price, and posting is atomic with the A4 SALE and A12
+SALE_COGS/attribution. A5 `accounted_sales`, A5 reading `sales_value`, A10
+reporting, historical backfill, corrections, reversals, refunds, discounts,
+tax, non-fuel, internal/benefit, and FX revenue remain outside this wave.
+
 ### A12.4 — Late-cost historical revaluation — COMPLETE
 
 Evidence: migration `0013_a12_late_cost_revaluation.sql`; costing persistence
