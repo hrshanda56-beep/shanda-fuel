@@ -218,6 +218,13 @@ describe('QA1 cross-module golden financial scenarios', () => {
       payments: [{ method: 'CASH', amount: '250.0000' }],
       post: true,
       completeShiftAfter: true,
+      businessDayId: ctx.historicalBusinessDayId,
+      plannedStartAt: QA1_TIMES.historicalShiftStart,
+      plannedEndAt: QA1_TIMES.historicalShiftEnd,
+      segmentBoundaryTimes: [
+        QA1_TIMES.historicalSegmentOpen,
+        QA1_TIMES.historicalSegmentClose,
+      ],
     });
     const originalMovement = await rows<Record<string, any>>(
       client,
@@ -234,7 +241,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
     const beforeLateCost = await snapshotQa1(client, ctx);
     const delivery = await createDelivery(ctx, 'g2-late', {
       quantityLitres: '100.000',
-      deliveredAt: '2026-09-25T23:30:00.000Z',
+      deliveredAt: '2026-09-23T23:30:00.000Z',
     });
     await confirmDelivery(ctx, delivery.deliveryId, 'g2-late-confirm');
     const unvalued = await rows<{
@@ -249,7 +256,13 @@ describe('QA1 cross-module golden financial scenarios', () => {
       { valuation_status: 'UNVALUED', inventory_value: null, weighted_average_cost: null },
     ]);
 
-    const nextShift = await startShift(ctx, 'g2-blocked');
+    const nextShift = await openBusinessDayAndShift(
+      ctx,
+      'g2-blocked',
+      ctx.blockedBusinessDayId,
+      QA1_TIMES.blockedShiftStart,
+      QA1_TIMES.blockedShiftEnd,
+    );
     const blocked = await createApprovedSale(client, ctx, 'g2-blocked-reconciliation', {
       saleLitres: '100.000',
       payments: [{ method: 'CASH', amount: '250.0000' }],
@@ -257,8 +270,12 @@ describe('QA1 cross-module golden financial scenarios', () => {
       completeShiftAfter: true,
       existingShiftId: nextShift.shiftId,
       openingReading: '100100.000',
-      segmentBoundaryTimes: [QA1_TIMES.blockedSegmentOpen, QA1_TIMES.blockedSegmentClose],
       approve: false,
+      businessDayId: ctx.blockedBusinessDayId,
+      segmentBoundaryTimes: [
+        QA1_TIMES.blockedDaySegmentOpen,
+        QA1_TIMES.blockedDaySegmentClose,
+      ],
     }).catch((error: unknown) => ({ error }));
     if ('error' in blocked) throw blocked.error;
     const blockedRevision = await currentRevision(client, ctx, blocked.reconciliationId);
@@ -413,13 +430,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       ),
     ).toEqual(originalCogs);
 
-    const futureShift = await openBusinessDayAndShift(
-      ctx,
-      'g2-future',
-      ctx.futureBusinessDayId,
-      QA1_TIMES.futureBusinessDayShiftStart,
-      QA1_TIMES.futureBusinessDayShiftEnd,
-    );
+    const futureShift = await openBusinessDayAndShift(ctx, 'g2-future');
     const future = await createApprovedSale(client, ctx, 'g2-future', {
       saleLitres: '100.000',
       payments: [{ method: 'CASH', amount: '250.0000' }],
@@ -427,11 +438,8 @@ describe('QA1 cross-module golden financial scenarios', () => {
       completeShiftAfter: true,
       existingShiftId: futureShift.shiftId,
       openingReading: '100200.000',
-      segmentBoundaryTimes: [
-        QA1_TIMES.futureBusinessDaySegmentOpen,
-        QA1_TIMES.futureBusinessDaySegmentClose,
-      ],
-      businessDayId: ctx.futureBusinessDayId,
+      segmentBoundaryTimes: [QA1_TIMES.futureSegmentOpen, QA1_TIMES.futureSegmentClose],
+      businessDayId: ctx.businessDayId,
     });
     const futureCogs = expectOne(
       await rows<{ amount: string }>(

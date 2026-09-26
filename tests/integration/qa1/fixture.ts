@@ -8,7 +8,8 @@ export type Qa1ScenarioContext = {
   runId: string;
   label: string;
   businessDate: string;
-  futureBusinessDate: string;
+  historicalBusinessDate: string;
+  blockedBusinessDate: string;
   timezone: 'Africa/Harare';
   tenantId: string;
   otherTenantId: string;
@@ -25,7 +26,8 @@ export type Qa1ScenarioContext = {
   priceId: string;
   tankId: string;
   businessDayId: string;
-  futureBusinessDayId: string;
+  historicalBusinessDayId: string;
+  blockedBusinessDayId: string;
   tillId: string;
   safeId: string;
   bankAccountId: string;
@@ -54,7 +56,8 @@ export async function createQa1ScenarioContext(
 ): Promise<Qa1ScenarioContext> {
   const runId = randomUUID();
   const businessDate = '2026-09-26';
-  const futureBusinessDate = '2026-09-27';
+  const historicalBusinessDate = '2026-09-24';
+  const blockedBusinessDate = '2026-09-25';
   const tenantId = id();
   const otherTenantId = id();
   const legalEntityId = id();
@@ -70,7 +73,8 @@ export async function createQa1ScenarioContext(
   const priceId = id();
   const tankId = id();
   const businessDayId = id();
-  const futureBusinessDayId = id();
+  const historicalBusinessDayId = id();
+  const blockedBusinessDayId = id();
   const tillId = id();
   const safeId = id();
   const bankAccountId = id();
@@ -191,8 +195,9 @@ export async function createQa1ScenarioContext(
 
     insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
     values
-      ('${businessDayId}', '${tenantId}', '${stationId}', '${businessDate}', 'NOT_STARTED'),
-      ('${futureBusinessDayId}', '${tenantId}', '${stationId}', '${futureBusinessDate}', 'NOT_STARTED')
+      ('${historicalBusinessDayId}', '${tenantId}', '${stationId}', '${historicalBusinessDate}', 'NOT_STARTED'),
+      ('${blockedBusinessDayId}', '${tenantId}', '${stationId}', '${blockedBusinessDate}', 'NOT_STARTED'),
+      ('${businessDayId}', '${tenantId}', '${stationId}', '${businessDate}', 'NOT_STARTED')
     on conflict (id) do nothing;
 
     insert into app.cash_locations (id, tenant_id, station_id, code, name, location_type)
@@ -225,7 +230,8 @@ export async function createQa1ScenarioContext(
     runId,
     label,
     businessDate,
-    futureBusinessDate,
+    historicalBusinessDate,
+    blockedBusinessDate,
     timezone: 'Africa/Harare',
     tenantId,
     otherTenantId,
@@ -242,7 +248,8 @@ export async function createQa1ScenarioContext(
     priceId,
     tankId,
     businessDayId,
-    futureBusinessDayId,
+    historicalBusinessDayId,
+    blockedBusinessDayId,
     tillId,
     safeId,
     bankAccountId,
@@ -260,8 +267,12 @@ export const QA1_TIMES = {
   lateDelivery: '2026-09-26T06:30:00.000Z',
   futureSegmentOpen: '2026-09-26T09:00:00.000Z',
   futureSegmentClose: '2026-09-26T10:00:00.000Z',
-  futureBusinessDaySegmentOpen: '2026-09-27T06:00:00.000Z',
-  futureBusinessDaySegmentClose: '2026-09-27T07:00:00.000Z',
-  futureBusinessDayShiftStart: '2026-09-27T05:00:00.000Z',
-  futureBusinessDayShiftEnd: '2026-09-28T05:00:00.000Z',
+  historicalShiftStart: '2026-09-24T05:00:00.000Z',
+  historicalShiftEnd: '2026-09-25T05:00:00.000Z',
+  historicalSegmentOpen: '2026-09-24T06:00:00.000Z',
+  historicalSegmentClose: '2026-09-24T07:00:00.000Z',
+  blockedShiftStart: '2026-09-25T05:00:00.000Z',
+  blockedShiftEnd: '2026-09-26T05:00:00.000Z',
+  blockedDaySegmentOpen: '2026-09-25T06:00:00.000Z',
+  blockedDaySegmentClose: '2026-09-25T07:00:00.000Z',
 } as const;
