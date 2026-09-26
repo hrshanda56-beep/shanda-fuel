@@ -32,9 +32,13 @@ import {
   postInventoryMovementInTransaction,
 } from './persistence';
 import {
+  approveInventoryCostRevaluationInTransaction,
   persistInventoryCostProjectionInTransaction,
+  persistHistoricalLateSourceUnvaluedProjectionInTransaction,
+  postInventoryCostRevaluationInTransaction,
   postOpeningInventoryCostInTransaction,
   postReceiptCostInTransaction,
+  requestInventoryCostRevaluationInTransaction,
 } from '../costing';
 
 const uuid = z.string().uuid();
@@ -123,6 +127,21 @@ const receiptCostPayload = authorityPayload.extend({
   allocationId: uuid,
   amount: costAmount,
   currency: currencyCode,
+});
+const revaluationSourceType = z.enum(['OPENING_BALANCE', 'FUEL_DELIVERY_ALLOCATION']);
+const requestInventoryCostRevaluationPayload = authorityPayload.extend({
+  tankId: uuid,
+  productId: uuid,
+  sourceType: revaluationSourceType,
+  sourceId: uuid,
+  amount: costAmount,
+  currency: currencyCode,
+  reason: z.string().trim().min(1).max(1000),
+  restatementFromAt: instant.nullish(),
+  restatementThroughAt: instant.nullish(),
+});
+const inventoryCostRevaluationTransitionPayload = authorityPayload.extend({
+  revaluationId: uuid,
 });
 
 function contextFor(request: Request, payload: { tenantId: string; stationId: string }) {
@@ -437,12 +456,18 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
           'CONFLICT',
           'All received delivery litres must be allocated before confirmation',
         );
-      const affectedStreams = new Map<string, { tankId: string; productId: string }>();
+      const affectedStreams = new Map<
+        string,
+        { tankId: string; productId: string; sourceIds: string[] }
+      >();
       for (const allocation of allocations) {
-        affectedStreams.set(`${allocation.tankId}:${delivery.productId}`, {
+        const stream = affectedStreams.get(`${allocation.tankId}:${delivery.productId}`) ?? {
           tankId: allocation.tankId,
           productId: delivery.productId,
-        });
+          sourceIds: [],
+        };
+        stream.sourceIds.push(allocation.id);
+        affectedStreams.set(`${allocation.tankId}:${delivery.productId}`, stream);
         await postInventoryMovementInTransaction(transaction, {
           tenantId: context.tenantId,
           stationId: context.stationId,
@@ -461,12 +486,30 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
         });
       }
       for (const stream of affectedStreams.values()) {
-        await persistInventoryCostProjectionInTransaction(transaction, {
-          tenantId: context.tenantId,
-          stationId: context.stationId,
-          tankId: stream.tankId,
-          productId: stream.productId,
-        });
+        let persistedUnvaluedProjection = false;
+        for (const sourceId of stream.sourceIds) {
+          if (
+            await persistHistoricalLateSourceUnvaluedProjectionInTransaction(transaction, {
+              tenantId: context.tenantId,
+              stationId: context.stationId,
+              tankId: stream.tankId,
+              productId: stream.productId,
+              sourceType: 'FUEL_DELIVERY_ALLOCATION',
+              sourceId,
+            })
+          ) {
+            persistedUnvaluedProjection = true;
+            break;
+          }
+        }
+        if (!persistedUnvaluedProjection) {
+          await persistInventoryCostProjectionInTransaction(transaction, {
+            tenantId: context.tenantId,
+            stationId: context.stationId,
+            tankId: stream.tankId,
+            productId: stream.productId,
+          });
+        }
       }
       await transaction
         .update(fuelDeliveries)
@@ -563,6 +606,7 @@ export async function recordOpeningBalanceFromRequest(request: Request, input: u
         .limit(1);
       if (existing.length)
         throw new AppError('CONFLICT', 'An opening balance already exists for this tank');
+      const sourceId = randomUUID();
       const movementId = await postInventoryMovementInTransaction(transaction, {
         tenantId: context.tenantId,
         stationId: context.stationId,
@@ -573,16 +617,27 @@ export async function recordOpeningBalanceFromRequest(request: Request, input: u
         effectiveAt: new Date(payload.effectiveAt),
         businessDate: deriveBusinessDate(payload.effectiveAt, context.stationTimezone),
         sourceType: 'OPENING_BALANCE',
-        sourceId: randomUUID(),
+        sourceId,
         actorMembershipId: context.authority.membership.membershipId,
       });
-      await persistInventoryCostProjectionInTransaction(transaction, {
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        tankId: tank.id,
-        productId: tank.productId,
-      });
-      return { movementId };
+      const persistedUnvaluedProjection =
+        await persistHistoricalLateSourceUnvaluedProjectionInTransaction(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: tank.id,
+          productId: tank.productId,
+          sourceType: 'OPENING_BALANCE',
+          sourceId,
+        });
+      if (!persistedUnvaluedProjection) {
+        await persistInventoryCostProjectionInTransaction(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: tank.id,
+          productId: tank.productId,
+        });
+      }
+      return { movementId, sourceId };
     },
   });
 }
@@ -646,6 +701,100 @@ export async function recordReceiptCostFromRequest(request: Request, input: unkn
         amount: payload.amount,
         currency: payload.currency,
         actorMembershipId: context.authority.membership.membershipId,
+      }),
+  });
+}
+
+export async function requestInventoryCostRevaluationFromRequest(request: Request, input: unknown) {
+  const payload = requestInventoryCostRevaluationPayload.parse(input);
+  if (payload.restatementFromAt || payload.restatementThroughAt) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Bounded restatement semantics are not supported by A12.4 yet',
+    );
+  }
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'RequestInventoryCostRevaluation',
+    permissionCode: 'inventory.adjustment.post',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.COST_REVALUATION_REQUESTED',
+      subjectType: 'InventoryCostRevaluation',
+      subjectId: (result) => (result as { revaluationId: string }).revaluationId,
+      reason: payload.reason,
+    },
+    execute: (transaction) =>
+      requestInventoryCostRevaluationInTransaction(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+        productId: payload.productId,
+        sourceType: payload.sourceType,
+        sourceId: payload.sourceId,
+        amount: payload.amount,
+        currency: payload.currency,
+        reason: payload.reason,
+        restatementFromAt: payload.restatementFromAt
+          ? new Date(payload.restatementFromAt)
+          : undefined,
+        restatementThroughAt: payload.restatementThroughAt
+          ? new Date(payload.restatementThroughAt)
+          : undefined,
+        requestedBy: context.authority.membership.membershipId,
+      }),
+  });
+}
+
+export async function approveInventoryCostRevaluationFromRequest(request: Request, input: unknown) {
+  const payload = inventoryCostRevaluationTransitionPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'ApproveInventoryCostRevaluation',
+    permissionCode: 'approval.act',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.COST_REVALUATION_APPROVED',
+      subjectType: 'InventoryCostRevaluation',
+      subjectId: payload.revaluationId,
+    },
+    execute: (transaction) =>
+      approveInventoryCostRevaluationInTransaction(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        revaluationId: payload.revaluationId,
+        approvedBy: context.authority.membership.membershipId,
+      }),
+  });
+}
+
+export async function postInventoryCostRevaluationFromRequest(request: Request, input: unknown) {
+  const payload = inventoryCostRevaluationTransitionPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'PostInventoryCostRevaluation',
+    permissionCode: 'inventory.adjustment.post',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.COST_REVALUATION_POSTED',
+      subjectType: 'InventoryCostRevaluation',
+      subjectId: payload.revaluationId,
+    },
+    execute: (transaction) =>
+      postInventoryCostRevaluationInTransaction(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        revaluationId: payload.revaluationId,
+        postedBy: context.authority.membership.membershipId,
       }),
   });
 }

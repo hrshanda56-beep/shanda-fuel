@@ -84,7 +84,10 @@ export const inventoryCostEvents = appSchema.table(
       'inventory_cost_events_sale_cogs_negative_ck',
       sql`${table.eventType} <> 'SALE_COGS' or ${table.amount} < 0`,
     ),
-    check('inventory_cost_events_amount_nonzero_ck', sql`${table.amount} <> 0`),
+    check(
+      'inventory_cost_events_amount_nonzero_ck',
+      sql`${table.eventType} = 'COGS_REVALUATION' or ${table.amount} <> 0`,
+    ),
     check('inventory_cost_events_currency_nonempty_ck', sql`btrim(${table.currency}) <> ''`),
     foreignKey({
       columns: [table.tenantId],
@@ -253,6 +256,10 @@ export const inventoryCostRevaluations = appSchema.table(
     productId: uuid('product_id').notNull(),
     reason: text('reason').notNull(),
     status: text('status').notNull().default('REQUESTED'),
+    sourceType: text('source_type'),
+    sourceId: uuid('source_id'),
+    amount: moneyColumn('amount'),
+    currency: text('currency'),
     effectiveAt: utcTimestamp('effective_at').notNull(),
     businessDate: text('business_date').notNull(),
     restatementFromAt: utcTimestamp('restatement_from_at'),
@@ -261,6 +268,9 @@ export const inventoryCostRevaluations = appSchema.table(
     requestedAt: utcTimestamp('requested_at').notNull().defaultNow(),
     approvedBy: uuid('approved_by'),
     approvedAt: utcTimestamp('approved_at'),
+    postedBy: uuid('posted_by'),
+    postedAt: utcTimestamp('posted_at'),
+    replayFingerprint: text('replay_fingerprint'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },
@@ -273,11 +283,28 @@ export const inventoryCostRevaluations = appSchema.table(
       table.productId,
       table.effectiveAt,
     ),
+    unique('inventory_cost_revaluations_source_uidx').on(
+      table.tenantId,
+      table.sourceType,
+      table.sourceId,
+    ),
     check(
       'inventory_cost_revaluations_status_ck',
       sql`${table.status} in ('REQUESTED','APPROVED','REJECTED','CANCELLED','POSTED')`,
     ),
     check('inventory_cost_revaluations_reason_nonempty_ck', sql`btrim(${table.reason}) <> ''`),
+    check(
+      'inventory_cost_revaluations_currency_nonempty_ck',
+      sql`${table.currency} is null or btrim(${table.currency}) <> ''`,
+    ),
+    check(
+      'inventory_cost_revaluations_amount_positive_ck',
+      sql`${table.amount} is null or ${table.amount} > 0`,
+    ),
+    check(
+      'inventory_cost_revaluations_posted_fields_ck',
+      sql`${table.status} <> 'POSTED' or (${table.sourceType} is not null and ${table.sourceId} is not null and ${table.amount} is not null and ${table.amount} > 0 and ${table.currency} is not null and ${table.postedBy} is not null and ${table.postedAt} is not null and ${table.replayFingerprint} is not null and btrim(${table.replayFingerprint}) <> '')`,
+    ),
     check(
       'inventory_cost_revaluations_boundary_order_ck',
       sql`${table.restatementThroughAt} is null or ${table.restatementFromAt} is null or ${table.restatementThroughAt} >= ${table.restatementFromAt}`,
@@ -307,6 +334,93 @@ export const inventoryCostRevaluations = appSchema.table(
       columns: [table.tenantId, table.approvedBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'inventory_cost_revaluations_approved_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.postedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'inventory_cost_revaluations_posted_by_fk',
+    }),
+  ],
+);
+
+export const inventoryCostRevaluationLines = appSchema.table(
+  'inventory_cost_revaluation_lines',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    tankId: uuid('tank_id').notNull(),
+    productId: uuid('product_id').notNull(),
+    revaluationId: uuid('revaluation_id').notNull(),
+    saleMovementId: uuid('sale_movement_id').notNull(),
+    saleAttributionId: uuid('sale_attribution_id').notNull(),
+    originalPreSaleWac: wacColumn('original_pre_sale_wac').notNull(),
+    recomputedPreSaleWac: wacColumn('recomputed_pre_sale_wac').notNull(),
+    originalCogs: moneyColumn('original_cogs').notNull(),
+    priorRestatedCogs: moneyColumn('prior_restated_cogs').notNull(),
+    recomputedCogs: moneyColumn('recomputed_cogs').notNull(),
+    cogsDelta: moneyColumn('cogs_delta').notNull(),
+    currency: text('currency').notNull(),
+    saleEffectiveAt: utcTimestamp('sale_effective_at').notNull(),
+    cogsRevaluationEventId: uuid('cogs_revaluation_event_id').notNull(),
+    replayFingerprint: text('replay_fingerprint').notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('inventory_cost_revaluation_lines_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('inventory_cost_revaluation_lines_revaluation_sale_uidx').on(
+      table.tenantId,
+      table.revaluationId,
+      table.saleMovementId,
+    ),
+    index('inventory_cost_revaluation_lines_revaluation_idx').on(
+      table.tenantId,
+      table.revaluationId,
+      table.saleEffectiveAt,
+      table.saleMovementId,
+    ),
+    check(
+      'inventory_cost_revaluation_lines_currency_nonempty_ck',
+      sql`btrim(${table.currency}) <> ''`,
+    ),
+    check(
+      'inventory_cost_revaluation_lines_fingerprint_nonempty_ck',
+      sql`btrim(${table.replayFingerprint}) <> ''`,
+    ),
+    check(
+      'inventory_cost_revaluation_lines_delta_arithmetic_ck',
+      sql`${table.recomputedCogs} = ${table.priorRestatedCogs} + ${table.cogsDelta}`,
+    ),
+    foreignKey({
+      columns: [table.tenantId],
+      foreignColumns: [tenants.id],
+      name: 'inventory_cost_revaluation_lines_tenant_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId],
+      foreignColumns: [stations.tenantId, stations.id],
+      name: 'inventory_cost_revaluation_lines_station_fk',
+    }),
+    tenantStationTankProduct(table, 'inventory_cost_revaluation_lines_tank_product_fk'),
+    foreignKey({
+      columns: [table.tenantId, table.revaluationId],
+      foreignColumns: [inventoryCostRevaluations.tenantId, inventoryCostRevaluations.id],
+      name: 'inventory_cost_revaluation_lines_revaluation_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.saleMovementId],
+      foreignColumns: [inventoryMovements.tenantId, inventoryMovements.id],
+      name: 'inventory_cost_revaluation_lines_sale_movement_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.saleAttributionId],
+      foreignColumns: [inventorySaleCostAttributions.tenantId, inventorySaleCostAttributions.id],
+      name: 'inventory_cost_revaluation_lines_sale_attribution_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.cogsRevaluationEventId],
+      foreignColumns: [inventoryCostEvents.tenantId, inventoryCostEvents.id],
+      name: 'inventory_cost_revaluation_lines_cogs_event_fk',
     }),
   ],
 );

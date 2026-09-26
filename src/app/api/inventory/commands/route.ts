@@ -6,11 +6,14 @@ import {
   createDeliveryFromRequest,
   createTankFromRequest,
   deactivateTankFromRequest,
+  approveInventoryCostRevaluationFromRequest,
   postInventoryAdjustmentFromRequest,
+  postInventoryCostRevaluationFromRequest,
   recordOpeningInventoryCostFromRequest,
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  requestInventoryCostRevaluationFromRequest,
 } from '../../../../modules/inventory';
 import { AppError } from '../../../../platform/errors';
 
@@ -24,6 +27,9 @@ const COMMANDS = [
   'RecordOpeningBalance',
   'RecordOpeningInventoryCost',
   'RecordReceiptCost',
+  'RequestInventoryCostRevaluation',
+  'ApproveInventoryCostRevaluation',
+  'PostInventoryCostRevaluation',
 ] as const;
 
 type CommandType = (typeof COMMANDS)[number];
@@ -71,6 +77,15 @@ export async function POST(request: Request): Promise<Response> {
         break;
       case 'RecordReceiptCost':
         result = await recordReceiptCostFromRequest(request, body);
+        break;
+      case 'RequestInventoryCostRevaluation':
+        result = await requestInventoryCostRevaluationFromRequest(request, body);
+        break;
+      case 'ApproveInventoryCostRevaluation':
+        result = await approveInventoryCostRevaluationFromRequest(request, body);
+        break;
+      case 'PostInventoryCostRevaluation':
+        result = await postInventoryCostRevaluationFromRequest(request, body);
         break;
     }
     return json(result, 200);

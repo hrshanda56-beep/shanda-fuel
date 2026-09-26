@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
+import { makeSignature } from 'better-auth/crypto';
+import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for A12.3 costing integration tests.');
@@ -15,6 +18,7 @@ const ids = {
   productTwo: 'a1220000-0000-4000-8000-000000000052',
   tank: 'a1220000-0000-4000-8000-000000000061',
   tankTwo: 'a1220000-0000-4000-8000-000000000062',
+  wrongStreamTank: 'a1220000-0000-4000-8000-000000000113',
   openingMovement: 'a1220000-0000-4000-8000-000000000070',
   costEvent: 'a1220000-0000-4000-8000-000000000071',
   costEventSource: 'a1220000-0000-4000-8000-000000000081',
@@ -49,9 +53,54 @@ const ids = {
   businessBoundaryOpening: 'a1220000-0000-4000-8000-000000000110',
   businessBoundaryClosing: 'a1220000-0000-4000-8000-000000000111',
   revaluation: 'a1220000-0000-4000-8000-000000000091',
+  phase2Session: 'a1220000-0000-4000-8000-000000000112',
 };
 
 let client: Sql;
+let phase2PostedRevaluationId: string | null = null;
+const phase = {
+  day: randomUUID(),
+  shift: randomUUID(),
+  pump: randomUUID(),
+  nozzle: randomUUID(),
+  meter: randomUUID(),
+  installation: randomUUID(),
+  openingBoundary: randomUUID(),
+  closingBoundary: randomUUID(),
+  segment: randomUUID(),
+  openingMovement: randomUUID(),
+  openingSource: randomUUID(),
+  openingCostEvent: randomUUID(),
+  saleMovement: randomUUID(),
+  saleCostEvent: randomUUID(),
+  saleAttribution: randomUUID(),
+  secondOpeningBoundary: randomUUID(),
+  secondClosingBoundary: randomUUID(),
+  secondSegment: randomUUID(),
+  secondSaleMovement: randomUUID(),
+  secondSaleCostEvent: randomUUID(),
+  secondSaleAttribution: randomUUID(),
+  openingLateTank: randomUUID(),
+  openingLateDelivery: randomUUID(),
+  openingLateAllocation: randomUUID(),
+  openingLateDeliveryMovement: randomUUID(),
+  openingLateReceiptCost: randomUUID(),
+  openingLateOpeningBoundary: randomUUID(),
+  openingLateClosingBoundary: randomUUID(),
+  openingLateSegment: randomUUID(),
+  openingLateSaleMovement: randomUUID(),
+  openingLateSaleCost: randomUUID(),
+  openingLateAttribution: randomUUID(),
+  firstDelivery: randomUUID(),
+  firstAllocation: randomUUID(),
+  firstMovement: randomUUID(),
+  secondDelivery: randomUUID(),
+  secondAllocation: randomUUID(),
+  secondMovement: randomUUID(),
+  thirdDelivery: randomUUID(),
+  thirdAllocation: randomUUID(),
+  thirdMovement: randomUUID(),
+};
 
 async function setContext(tenantId: string, stationId: string): Promise<void> {
   await client.unsafe(`
@@ -62,7 +111,26 @@ async function setContext(tenantId: string, stationId: string): Promise<void> {
   `);
 }
 
-describe('A12.3 PostgreSQL costing and projection persistence', () => {
+async function postInventoryCommand(
+  input: Record<string, unknown>,
+  key: string,
+): Promise<Response> {
+  const token = 'a122-phase2-session-token';
+  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return inventoryCommandPost(
+    new Request('http://127.0.0.1:3000/api/inventory/commands', {
+      method: 'POST',
+      headers: {
+        cookie: `shanda-fuel.session_token=${signedToken}`,
+        'content-type': 'application/json',
+        'idempotency-key': key,
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
   beforeAll(async () => {
     client = postgres(databaseUrl, { max: 1, prepare: false });
     await setContext(ids.tenant, ids.station);
@@ -81,7 +149,9 @@ describe('A12.3 PostgreSQL costing and projection persistence', () => {
         ('${ids.productTwo}', '${ids.tenant}', 'A122-PETROL', 'A12.2 Petrol') on conflict (id) do nothing;
       insert into app.tanks (id, tenant_id, station_id, code, product_id, capacity_litres, created_by, updated_by) values
         ('${ids.tank}', '${ids.tenant}', '${ids.station}', 'A122-D1', '${ids.product}', '20000', '${ids.membership}', '${ids.membership}'),
-        ('${ids.tankTwo}', '${ids.tenant}', '${ids.stationTwo}', 'A122-P1', '${ids.productTwo}', '12000', '${ids.membership}', '${ids.membership}') on conflict (id) do nothing;
+        ('${ids.tankTwo}', '${ids.tenant}', '${ids.stationTwo}', 'A122-P1', '${ids.productTwo}', '12000', '${ids.membership}', '${ids.membership}'),
+        ('${ids.wrongStreamTank}', '${ids.tenant}', '${ids.stationTwo}', 'A122-WRONG', '${ids.productTwo}', '12000', '${ids.membership}', '${ids.membership}'),
+        ('${phase.openingLateTank}', '${ids.tenant}', '${ids.stationTwo}', 'A122-P2-LATE-OPEN', '${ids.productTwo}', '12000', '${ids.membership}', '${ids.membership}') on conflict (id) do nothing;
       insert into app.pumps (id, tenant_id, station_id, number, status)
         values ('${ids.salePump}', '${ids.tenant}', '${ids.station}', 'A122-SALE', 'ACTIVE') on conflict (id) do nothing;
       insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id, status)
@@ -150,10 +220,13 @@ describe('A12.3 PostgreSQL costing and projection persistence', () => {
       insert into app.inventory_cost_events
         (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at, business_date, amount, currency, actor_membership_id)
       values
-        ('${ids.wrongStreamCostEvent}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.wrongStreamSegment}', '2026-09-25T12:00:00Z', '2026-09-25', '-12.3456', 'USD', '${ids.membership}'),
+        ('${ids.wrongStreamCostEvent}', '${ids.tenant}', '${ids.stationTwo}', '${ids.wrongStreamTank}', '${ids.productTwo}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.wrongStreamSegment}', '2026-09-25T12:00:00Z', '2026-09-25', '-12.3456', 'USD', '${ids.membership}'),
         ('${ids.effectiveCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.effectiveSegment}', '2026-09-25T15:59:00Z', '2026-09-25', '-12.3456', 'USD', '${ids.membership}'),
         ('${ids.businessCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.businessSegment}', '2026-09-25T20:00:00Z', '2026-09-26', '-12.3456', 'USD', '${ids.membership}')
       on conflict (id) do nothing;
+      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
+      values ('${ids.phase2Session}', '2030-01-01T00:00:00Z', 'a122-phase2-session-token', '${ids.actor}', true, now())
+      on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
   });
 
@@ -397,5 +470,587 @@ describe('A12.3 PostgreSQL costing and projection persistence', () => {
         `update app.inventory_cost_revaluations set reason='rewritten' where id='${ids.revaluation}'`,
       ),
     ).rejects.toThrow('immutable');
+  });
+
+  it('posts late receipt revaluations transactionally and incrementally through inventory commands', async () => {
+    await setContext(ids.tenant, ids.stationTwo);
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state, opened_at)
+      values ('${phase.day}', '${ids.tenant}', '${ids.stationTwo}', '2026-09-27', 'NOT_STARTED', null);
+      update app.station_business_days set state='OPEN', opened_at='2026-09-27T00:00:00Z'
+      where id='${phase.day}';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date, opened_at)
+      values ('${phase.shift}', '${ids.tenant}', '${ids.stationTwo}', '${phase.day}', 'PLANNED', '2026-09-27T00:00:00Z', '2026-09-28T00:00:00Z', '2026-09-27', null);
+      update app.shifts set state='OPEN', opened_at='2026-09-27T00:00:00Z'
+      where id='${phase.shift}';
+      insert into app.pumps (id, tenant_id, station_id, number, status)
+      values ('${phase.pump}', '${ids.tenant}', '${ids.stationTwo}', 'A122-PHASE2', 'ACTIVE');
+      insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id, status)
+      values ('${phase.nozzle}', '${ids.tenant}', '${ids.stationTwo}', '${phase.pump}', '1', '${ids.productTwo}', 'ACTIVE');
+      insert into app.meters (id, tenant_id, serial_number)
+      values ('${phase.meter}', '${ids.tenant}', 'A122-PHASE2-METER');
+      insert into app.meter_installations
+        (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
+      values ('${phase.installation}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.meter}', '2026-09-27T00:00:00Z', '${ids.membership}');
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${phase.openingBoundary}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', 'SHIFT_OPEN', 'AVAILABLE', '0.000', '2026-09-27T05:00:00Z', '2026-09-27T05:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}'),
+        ('${phase.closingBoundary}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', 'SHIFT_CLOSE', 'AVAILABLE', '10.000', '2026-09-27T08:00:00Z', '2026-09-27T08:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}');
+      insert into app.meter_segments
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, currency, boundary_reason, segment_start_at, segment_end_at, sealed_at, state, version)
+      values ('${phase.segment}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', '${phase.openingBoundary}', '${phase.closingBoundary}', '${ids.productTwo}', '${ids.membership}', '${ids.membership}', '0.000', '10.000', '10.000', '1.500000', '15.0000', 'USD', 'SHIFT_CLOSE', '2026-09-27T05:00:00Z', '2026-09-27T08:00:00Z', '2026-09-27T08:00:01Z', 'OPEN', 0);
+      select app.seal_meter_segment('${ids.tenant}', '${ids.stationTwo}', '${phase.segment}', 0);
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${phase.secondOpeningBoundary}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', 'SHIFT_OPEN', 'AVAILABLE', '10.000', '2026-09-27T09:00:00Z', '2026-09-27T09:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}'),
+        ('${phase.secondClosingBoundary}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', 'SHIFT_CLOSE', 'AVAILABLE', '20.000', '2026-09-27T10:00:00Z', '2026-09-27T10:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}');
+      insert into app.meter_segments
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, currency, boundary_reason, segment_start_at, segment_end_at, sealed_at, state, version)
+      values ('${phase.secondSegment}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', '${phase.secondOpeningBoundary}', '${phase.secondClosingBoundary}', '${ids.productTwo}', '${ids.membership}', '${ids.membership}', '10.000', '20.000', '10.000', '1.500000', '15.0000', 'USD', 'SHIFT_CLOSE', '2026-09-27T09:00:00Z', '2026-09-27T10:00:00Z', '2026-09-27T10:00:01Z', 'OPEN', 0);
+      select app.seal_meter_segment('${ids.tenant}', '${ids.stationTwo}', '${phase.secondSegment}', 0);
+      insert into app.meter_boundaries
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by, attendant_id)
+      values
+        ('${phase.openingLateOpeningBoundary}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', 'SHIFT_OPEN', 'AVAILABLE', '20.000', '2026-09-27T11:00:00Z', '2026-09-27T11:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}'),
+        ('${phase.openingLateClosingBoundary}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', 'SHIFT_CLOSE', 'AVAILABLE', '30.000', '2026-09-27T12:00:00Z', '2026-09-27T12:00:01Z', '${ids.membership}', '${ids.membership}', '${ids.membership}');
+      insert into app.meter_segments
+        (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id, opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by, opening_reading, closing_reading, litres, unit_price, expected_sale_value, currency, boundary_reason, segment_start_at, segment_end_at, sealed_at, state, version)
+      values ('${phase.openingLateSegment}', '${ids.tenant}', '${ids.stationTwo}', '${phase.nozzle}', '${phase.installation}', '${phase.day}', '${phase.shift}', '${phase.openingLateOpeningBoundary}', '${phase.openingLateClosingBoundary}', '${ids.productTwo}', '${ids.membership}', '${ids.membership}', '20.000', '30.000', '10.000', '1.500000', '15.0000', 'USD', 'SHIFT_CLOSE', '2026-09-27T11:00:00Z', '2026-09-27T12:00:00Z', '2026-09-27T12:00:01Z', 'OPEN', 0);
+      select app.seal_meter_segment('${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateSegment}', 0);
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
+      values
+        ('${phase.openingMovement}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'OPENING_BALANCE', '100.000', '2026-09-27T04:00:00Z', '2026-09-27', 'OPENING_BALANCE', '${phase.openingSource}', '${ids.membership}'),
+        ('${phase.saleMovement}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'SALE', '-10.000', '2026-09-27T08:00:00Z', '2026-09-27', 'METER_SEGMENT_SALE', '${phase.segment}', '${ids.membership}'),
+        ('${phase.secondSaleMovement}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'SALE', '-10.000', '2026-09-27T10:00:00Z', '2026-09-27', 'METER_SEGMENT_SALE', '${phase.secondSegment}', '${ids.membership}'),
+        ('${phase.openingLateDeliveryMovement}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateTank}', '${ids.productTwo}', 'DELIVERY', '100.000', '2026-09-27T07:00:00Z', '2026-09-27', 'FUEL_DELIVERY_ALLOCATION', '${phase.openingLateAllocation}', '${ids.membership}'),
+        ('${phase.openingLateSaleMovement}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateTank}', '${ids.productTwo}', 'SALE', '-10.000', '2026-09-27T12:00:00Z', '2026-09-27', 'METER_SEGMENT_SALE', '${phase.openingLateSegment}', '${ids.membership}');
+      insert into app.fuel_deliveries
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
+      values ('${phase.openingLateDelivery}', '${ids.tenant}', '${ids.stationTwo}', '${ids.productTwo}', 'A122-PHASE2-OPENING', '2026-09-27T07:00:00Z', '2026-09-27', '100.000', '100.000', '0.000', 'CONFIRMED', '${ids.membership}', '${ids.membership}', '2026-09-27T07:00:01Z');
+      insert into app.fuel_delivery_allocations
+        (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
+      values ('${phase.openingLateAllocation}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateDelivery}', '${phase.openingLateTank}', '${ids.productTwo}', '100.000');
+      insert into app.inventory_cost_events
+        (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at, business_date, amount, currency, actor_membership_id)
+      values
+        ('${phase.openingCostEvent}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'OPENING_COST', 'OPENING_BALANCE', '${phase.openingSource}', '2026-09-27T04:00:00Z', '2026-09-27', '100.0000', 'USD', '${ids.membership}'),
+        ('${phase.saleCostEvent}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${phase.segment}', '2026-09-27T08:00:00Z', '2026-09-27', '-10.0000', 'USD', '${ids.membership}'),
+        ('${phase.secondSaleCostEvent}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${phase.secondSegment}', '2026-09-27T10:00:00Z', '2026-09-27', '-10.0000', 'USD', '${ids.membership}'),
+        ('${phase.openingLateReceiptCost}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateTank}', '${ids.productTwo}', 'RECEIPT_COST', 'FUEL_DELIVERY_ALLOCATION', '${phase.openingLateAllocation}', '2026-09-27T07:00:00Z', '2026-09-27', '100.0000', 'USD', '${ids.membership}'),
+        ('${phase.openingLateSaleCost}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateTank}', '${ids.productTwo}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${phase.openingLateSegment}', '2026-09-27T12:00:00Z', '2026-09-27', '-10.0000', 'USD', '${ids.membership}');
+      insert into app.inventory_sale_cost_attributions
+        (id, tenant_id, station_id, tank_id, product_id, inventory_movement_id, meter_segment_id, sale_quantity_litres, pre_sale_wac, original_cogs, valuation_status, valuation_basis, replay_fingerprint, sale_cost_event_id, effective_at, business_date)
+      values ('${phase.saleAttribution}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', '${phase.saleMovement}', '${phase.segment}', '10.000', '1.00000000', '10.0000', 'VALUED', 'PRE_SALE_WAC', 'a122-phase2-original', '${phase.saleCostEvent}', '2026-09-27T08:00:00Z', '2026-09-27');
+      insert into app.inventory_sale_cost_attributions
+        (id, tenant_id, station_id, tank_id, product_id, inventory_movement_id, meter_segment_id, sale_quantity_litres, pre_sale_wac, original_cogs, valuation_status, valuation_basis, replay_fingerprint, sale_cost_event_id, effective_at, business_date)
+      values ('${phase.secondSaleAttribution}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', '${phase.secondSaleMovement}', '${phase.secondSegment}', '10.000', '1.00000000', '10.0000', 'VALUED', 'PRE_SALE_WAC', 'a122-phase2-original-2', '${phase.secondSaleCostEvent}', '2026-09-27T10:00:00Z', '2026-09-27');
+      insert into app.inventory_sale_cost_attributions
+        (id, tenant_id, station_id, tank_id, product_id, inventory_movement_id, meter_segment_id, sale_quantity_litres, pre_sale_wac, original_cogs, valuation_status, valuation_basis, replay_fingerprint, sale_cost_event_id, effective_at, business_date)
+      values ('${phase.openingLateAttribution}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateTank}', '${ids.productTwo}', '${phase.openingLateSaleMovement}', '${phase.openingLateSegment}', '10.000', '1.00000000', '10.0000', 'VALUED', 'PRE_SALE_WAC', 'a122-phase2-opening-original', '${phase.openingLateSaleCost}', '2026-09-27T12:00:00Z', '2026-09-27');
+    `);
+
+    const createdDelivery = await postInventoryCommand(
+      {
+        commandType: 'CreateDelivery',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        productId: ids.productTwo,
+        deliveryNoteNumber: 'A122-PHASE2-1',
+        deliveredAt: '2026-09-27T07:00:00Z',
+        noteQuantityLitres: '100.000',
+        actualQuantityLitres: '100.000',
+        allocations: [{ tankId: ids.tankTwo, quantityLitres: '100.000' }],
+      },
+      'a122-phase2-create-delivery-1',
+    );
+    expect(createdDelivery.status).toBe(200);
+    const createdDeliveryBody = (await createdDelivery.json()) as {
+      deliveryId: string;
+      allocationIds: string[];
+    };
+    const confirmedDelivery = await postInventoryCommand(
+      {
+        commandType: 'ConfirmDelivery',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        deliveryId: createdDeliveryBody.deliveryId,
+      },
+      'a122-phase2-confirm-delivery-1',
+    );
+    expect(confirmedDelivery.status).toBe(200);
+    const firstAllocationId = createdDeliveryBody.allocationIds[0]!;
+    const unvaluedAfterConfirmation = await client.unsafe<
+      {
+        quantity_litres: string;
+        inventory_value: string | null;
+        weighted_average_cost: string | null;
+        currency: string | null;
+        movement_id: string | null;
+        cost_count: string;
+      }[]
+    >(`
+      select state.quantity_litres::text as quantity_litres,
+             state.inventory_value::text as inventory_value,
+             state.weighted_average_cost::text as weighted_average_cost,
+             state.currency,
+             (select id::text from app.inventory_movements movement
+              where movement.tenant_id=state.tenant_id and movement.station_id=state.station_id
+                and movement.tank_id=state.tank_id and movement.product_id=state.product_id
+                and movement.source_type='FUEL_DELIVERY_ALLOCATION' and movement.source_id='${firstAllocationId}') as movement_id,
+             (select count(*)::text from app.inventory_cost_events event
+              where event.tenant_id=state.tenant_id and event.station_id=state.station_id
+                and event.tank_id=state.tank_id and event.product_id=state.product_id
+                and event.source_type='FUEL_DELIVERY_ALLOCATION' and event.source_id='${firstAllocationId}') as cost_count
+      from app.inventory_cost_stream_state state
+      where state.tenant_id='${ids.tenant}' and state.station_id='${ids.stationTwo}'
+        and state.tank_id='${ids.tankTwo}' and state.product_id='${ids.productTwo}'
+    `);
+    expect(unvaluedAfterConfirmation).toEqual([
+      {
+        quantity_litres: '180.000',
+        inventory_value: null,
+        weighted_average_cost: null,
+        currency: null,
+        movement_id: expect.any(String),
+        cost_count: '0',
+      },
+    ]);
+
+    const openingBalance = await postInventoryCommand(
+      {
+        commandType: 'RecordOpeningBalance',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        tankId: phase.openingLateTank,
+        quantityLitres: '50.000',
+        effectiveAt: '2026-09-27T06:00:00Z',
+      },
+      'a122-phase2-record-late-opening',
+    );
+    expect(openingBalance.status).toBe(200);
+    const openingBalanceBody = (await openingBalance.json()) as {
+      movementId: string;
+      sourceId: string;
+    };
+    const unvaluedOpening = await client.unsafe<
+      {
+        quantity_litres: string;
+        inventory_value: string | null;
+        weighted_average_cost: string | null;
+        currency: string | null;
+        opening_cost_count: string;
+      }[]
+    >(`
+      select state.quantity_litres::text as quantity_litres,
+             state.inventory_value::text as inventory_value,
+             state.weighted_average_cost::text as weighted_average_cost,
+             state.currency,
+             (select count(*)::text from app.inventory_cost_events event
+              where event.tenant_id=state.tenant_id and event.station_id=state.station_id
+                and event.tank_id=state.tank_id and event.product_id=state.product_id
+                and event.event_type='OPENING_COST' and event.source_id='${openingBalanceBody.sourceId}') as opening_cost_count
+      from app.inventory_cost_stream_state state
+      where state.tenant_id='${ids.tenant}' and state.station_id='${ids.stationTwo}'
+        and state.tank_id='${phase.openingLateTank}' and state.product_id='${ids.productTwo}'
+    `);
+    expect(unvaluedOpening).toEqual([
+      {
+        quantity_litres: '140.000',
+        inventory_value: null,
+        weighted_average_cost: null,
+        currency: null,
+        opening_cost_count: '0',
+      },
+    ]);
+    const openingRequest = await postInventoryCommand(
+      {
+        commandType: 'RequestInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        tankId: phase.openingLateTank,
+        productId: ids.productTwo,
+        sourceType: 'OPENING_BALANCE',
+        sourceId: openingBalanceBody.sourceId,
+        amount: '50.0000',
+        currency: 'USD',
+        reason: 'Late historical opening cost',
+      },
+      'a122-phase2-request-late-opening',
+    );
+    expect(openingRequest.status).toBe(200);
+    const openingRequestBody = (await openingRequest.json()) as { revaluationId: string };
+    expect(
+      (
+        await postInventoryCommand(
+          {
+            commandType: 'ApproveInventoryCostRevaluation',
+            tenantId: ids.tenant,
+            stationId: ids.stationTwo,
+            revaluationId: openingRequestBody.revaluationId,
+          },
+          'a122-phase2-approve-late-opening',
+        )
+      ).status,
+    ).toBe(200);
+    const openingPosted = await postInventoryCommand(
+      {
+        commandType: 'PostInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        revaluationId: openingRequestBody.revaluationId,
+      },
+      'a122-phase2-post-late-opening',
+    );
+    expect(openingPosted.status).toBe(200);
+    const valuedOpening = await client.unsafe<
+      { quantity_litres: string; inventory_value: string; valuation_status: string }[]
+    >(`
+      select quantity_litres::text as quantity_litres,
+             inventory_value::text as inventory_value,
+             valuation_status
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.stationTwo}'
+        and tank_id='${phase.openingLateTank}' and product_id='${ids.productTwo}'
+    `);
+    expect(valuedOpening).toEqual([
+      { quantity_litres: '140.000', inventory_value: '140.0000', valuation_status: 'VALUED' },
+    ]);
+    const preservedOpeningSale = await client.unsafe<
+      { original_cogs: string; replay_fingerprint: string }[]
+    >(`
+      select original_cogs, replay_fingerprint
+      from app.inventory_sale_cost_attributions
+      where id='${phase.openingLateAttribution}'
+    `);
+    expect(preservedOpeningSale).toEqual([
+      { original_cogs: '10.0000', replay_fingerprint: 'a122-phase2-opening-original' },
+    ]);
+
+    const requestPayload = {
+      commandType: 'RequestInventoryCostRevaluation',
+      tenantId: ids.tenant,
+      stationId: ids.stationTwo,
+      tankId: ids.tankTwo,
+      productId: ids.productTwo,
+      sourceType: 'FUEL_DELIVERY_ALLOCATION',
+      sourceId: firstAllocationId,
+      amount: '200.0000',
+      currency: 'USD',
+      reason: 'Late confirmed receipt cost',
+    };
+    for (const boundary of ['restatementFromAt', 'restatementThroughAt'] as const) {
+      const bounded = await postInventoryCommand(
+        { ...requestPayload, [boundary]: '2026-09-27T08:00:00Z' },
+        `a122-phase2-bounded-${boundary}`,
+      );
+      expect(bounded.status).toBe(400);
+      await expect(bounded.json()).resolves.toMatchObject({
+        error: 'VALIDATION_FAILED',
+        message: 'Bounded restatement semantics are not supported by A12.4 yet',
+      });
+    }
+    const boundedEnvelopeCount = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.inventory_cost_revaluations
+      where tenant_id='${ids.tenant}' and station_id='${ids.stationTwo}'
+        and source_type='FUEL_DELIVERY_ALLOCATION' and source_id='${phase.firstAllocation}'
+    `);
+    expect(boundedEnvelopeCount).toEqual([{ count: '0' }]);
+
+    const requested = await postInventoryCommand(requestPayload, 'a122-phase2-request-1');
+    expect(requested.status).toBe(200);
+    const requestedBody = (await requested.json()) as { revaluationId: string; status: string };
+    phase2PostedRevaluationId = requestedBody.revaluationId;
+    expect(requestedBody.status).toBe('REQUESTED');
+    const approved = await postInventoryCommand(
+      {
+        commandType: 'ApproveInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        revaluationId: requestedBody.revaluationId,
+      },
+      'a122-phase2-approve-1',
+    );
+    expect(approved.status).toBe(200);
+    const posted = await postInventoryCommand(
+      {
+        commandType: 'PostInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        revaluationId: requestedBody.revaluationId,
+      },
+      'a122-phase2-post-1',
+    );
+    expect(posted.status).toBe(200);
+    const postedBody = await posted.json();
+
+    const firstEvidence = await client.unsafe<
+      {
+        revaluation_status: string;
+        sale_movement_id: string;
+        ordinary_effective_at: string;
+        original_cogs: string;
+        cogs_delta: string;
+        event_source_type: string;
+        event_source_id: string;
+        event_effective_at: string;
+        event_amount: string;
+        inventory_value: string;
+        weighted_average_cost: string;
+        quantity_litres: string;
+        movement_count: string;
+      }[]
+    >(`
+      select r.status as revaluation_status,
+             line.sale_movement_id,
+             ordinary.effective_at::text as ordinary_effective_at,
+             line.original_cogs::text as original_cogs,
+             line.cogs_delta::text as cogs_delta,
+             event.source_type as event_source_type,
+             event.source_id::text as event_source_id,
+             event.effective_at::text as event_effective_at,
+             event.amount::text as event_amount,
+             state.inventory_value::text as inventory_value,
+             state.weighted_average_cost::text as weighted_average_cost,
+             state.quantity_litres::text as quantity_litres,
+             (select count(*)::text from app.inventory_movements where tenant_id='${ids.tenant}' and station_id='${ids.stationTwo}' and tank_id='${ids.tankTwo}' and product_id='${ids.productTwo}') as movement_count
+      from app.inventory_cost_revaluations r
+      join app.inventory_cost_revaluation_lines line on line.tenant_id=r.tenant_id and line.revaluation_id=r.id
+      join app.inventory_cost_events event on event.tenant_id=line.tenant_id and event.id=line.cogs_revaluation_event_id
+      join app.inventory_cost_events ordinary on ordinary.tenant_id=r.tenant_id and ordinary.source_type=r.source_type and ordinary.source_id=r.source_id and ordinary.event_type='RECEIPT_COST'
+      join app.inventory_cost_stream_state state on state.tenant_id=r.tenant_id and state.station_id=r.station_id and state.tank_id=r.tank_id and state.product_id=r.product_id
+      where r.id='${requestedBody.revaluationId}'
+      order by line.sale_effective_at, line.sale_movement_id
+    `);
+    expect(firstEvidence).toEqual([
+      {
+        revaluation_status: 'POSTED',
+        sale_movement_id: phase.saleMovement,
+        ordinary_effective_at: '2026-09-27 07:00:00+00',
+        original_cogs: '10.0000',
+        cogs_delta: '5.0000',
+        event_source_type: 'INVENTORY_COST_REVALUATION_LINE',
+        event_source_id: expect.any(String),
+        event_effective_at: '2026-09-27 08:00:00+00',
+        event_amount: '5.0000',
+        inventory_value: '270.0000',
+        weighted_average_cost: '1.50000000',
+        quantity_litres: '180.000',
+        movement_count: '4',
+      },
+      {
+        revaluation_status: 'POSTED',
+        sale_movement_id: phase.secondSaleMovement,
+        ordinary_effective_at: '2026-09-27 07:00:00+00',
+        original_cogs: '10.0000',
+        cogs_delta: '5.0000',
+        event_source_type: 'INVENTORY_COST_REVALUATION_LINE',
+        event_source_id: expect.any(String),
+        event_effective_at: '2026-09-27 10:00:00+00',
+        event_amount: '5.0000',
+        inventory_value: '270.0000',
+        weighted_average_cost: '1.50000000',
+        quantity_litres: '180.000',
+        movement_count: '4',
+      },
+    ]);
+    expect(firstEvidence[0]!.event_source_id).toBe(
+      (
+        await client.unsafe<{ id: string }[]>(
+          `select id::text as id from app.inventory_cost_revaluation_lines where revaluation_id='${requestedBody.revaluationId}'`,
+        )
+      )[0]!.id,
+    );
+    expect(postedBody.conservation).toMatchObject({
+      lateCostAmount: '200.0000',
+      cogsDeltaTotal: '10.0000',
+      endingInventoryValueIncrease: '190.0000',
+      residual: '0.0000',
+    });
+
+    const retry = await postInventoryCommand(
+      {
+        commandType: 'PostInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        revaluationId: requestedBody.revaluationId,
+      },
+      'a122-phase2-post-1',
+    );
+    expect(await retry.json()).toEqual(postedBody);
+    expect(
+      (
+        await postInventoryCommand(
+          { ...requestPayload, amount: '201.0000' },
+          'a122-phase2-request-1',
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await postInventoryCommand(
+          { ...requestPayload, amount: '200.0000' },
+          'a122-phase2-request-reused-source',
+        )
+      ).status,
+    ).toBe(409);
+
+    await client.unsafe(`
+      insert into app.fuel_deliveries
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
+      values ('${phase.secondDelivery}', '${ids.tenant}', '${ids.stationTwo}', '${ids.productTwo}', 'A122-PHASE2-2', '2026-09-27T06:00:00Z', '2026-09-27', '100.000', '100.000', '0.000', 'CONFIRMED', '${ids.membership}', '${ids.membership}', '2026-09-27T09:00:00Z');
+      insert into app.fuel_delivery_allocations (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
+      values ('${phase.secondAllocation}', '${ids.tenant}', '${ids.stationTwo}', '${phase.secondDelivery}', '${ids.tankTwo}', '${ids.productTwo}', '100.000');
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
+      values ('${phase.secondMovement}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'DELIVERY', '100.000', '2026-09-27T06:00:00Z', '2026-09-27', 'FUEL_DELIVERY_ALLOCATION', '${phase.secondAllocation}', '${ids.membership}');
+    `);
+    const secondRequest = await postInventoryCommand(
+      { ...requestPayload, sourceId: phase.secondAllocation, amount: '100.0000' },
+      'a122-phase2-request-2',
+    );
+    const secondRequestBody = (await secondRequest.json()) as { revaluationId: string };
+    const secondApproved = await postInventoryCommand(
+      {
+        commandType: 'ApproveInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        revaluationId: secondRequestBody.revaluationId,
+      },
+      'a122-phase2-approve-2',
+    );
+    expect(secondApproved.status).toBe(200);
+    const secondPosted = await postInventoryCommand(
+      {
+        commandType: 'PostInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        revaluationId: secondRequestBody.revaluationId,
+      },
+      'a122-phase2-post-2',
+    );
+    expect(secondPosted.status).toBe(200);
+    const finalProjection = await client.unsafe<
+      { inventory_value: string; quantity_litres: string }[]
+    >(`
+      select inventory_value::text as inventory_value, quantity_litres::text as quantity_litres
+      from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.stationTwo}' and tank_id='${ids.tankTwo}' and product_id='${ids.productTwo}'
+    `);
+    expect(finalProjection).toEqual([{ inventory_value: '373.3334', quantity_litres: '280.000' }]);
+
+    const beforeRollback = await client.unsafe<{ projection_version: number }[]>(`
+      select projection_version from app.inventory_cost_stream_state
+      where tenant_id='${ids.tenant}' and station_id='${ids.stationTwo}' and tank_id='${ids.tankTwo}' and product_id='${ids.productTwo}'
+    `);
+    await client.unsafe(`
+      insert into app.fuel_deliveries
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date, note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status, recorded_by, confirmed_by, confirmed_at)
+      values ('${phase.thirdDelivery}', '${ids.tenant}', '${ids.stationTwo}', '${ids.productTwo}', 'A122-PHASE2-3', '2026-09-27T05:30:00Z', '2026-09-27', '100.000', '100.000', '0.000', 'CONFIRMED', '${ids.membership}', '${ids.membership}', '2026-09-27T09:00:00Z');
+      insert into app.fuel_delivery_allocations (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
+      values ('${phase.thirdAllocation}', '${ids.tenant}', '${ids.stationTwo}', '${phase.thirdDelivery}', '${ids.tankTwo}', '${ids.productTwo}', '100.000');
+      insert into app.inventory_movements
+        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
+      values ('${phase.thirdMovement}', '${ids.tenant}', '${ids.stationTwo}', '${ids.tankTwo}', '${ids.productTwo}', 'DELIVERY', '100.000', '2026-09-27T05:30:00Z', '2026-09-27', 'FUEL_DELIVERY_ALLOCATION', '${phase.thirdAllocation}', '${ids.membership}');
+    `);
+    const mismatchRequest = await postInventoryCommand(
+      { ...requestPayload, sourceId: phase.thirdAllocation, amount: '100.0000', currency: 'ZWL' },
+      'a122-phase2-request-3',
+    );
+    const mismatchRequestBody = (await mismatchRequest.json()) as { revaluationId: string };
+    await postInventoryCommand(
+      {
+        commandType: 'ApproveInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.stationTwo,
+        revaluationId: mismatchRequestBody.revaluationId,
+      },
+      'a122-phase2-approve-3',
+    );
+    expect(
+      (
+        await postInventoryCommand(
+          {
+            commandType: 'PostInventoryCostRevaluation',
+            tenantId: ids.tenant,
+            stationId: ids.stationTwo,
+            revaluationId: mismatchRequestBody.revaluationId,
+          },
+          'a122-phase2-post-3',
+        )
+      ).status,
+    ).toBe(409);
+    const rollback = await client.unsafe<
+      { status: string; event_count: string; line_count: string; projection_version: number }[]
+    >(`
+      select r.status,
+             (select count(*)::text from app.inventory_cost_events where tenant_id=r.tenant_id and source_type='FUEL_DELIVERY_ALLOCATION' and source_id=r.source_id and event_type='RECEIPT_COST') as event_count,
+             (select count(*)::text from app.inventory_cost_revaluation_lines where revaluation_id=r.id) as line_count,
+             (select projection_version from app.inventory_cost_stream_state where tenant_id=r.tenant_id and station_id=r.station_id and tank_id=r.tank_id and product_id=r.product_id) as projection_version
+      from app.inventory_cost_revaluations r where r.id='${mismatchRequestBody.revaluationId}'
+    `);
+    expect(rollback).toEqual([
+      {
+        status: 'APPROVED',
+        event_count: '0',
+        line_count: '0',
+        projection_version: beforeRollback[0]!.projection_version,
+      },
+    ]);
+  });
+
+  it('enforces tenant and station isolation for revaluation reads and transitions', async () => {
+    expect(phase2PostedRevaluationId).toBeTruthy();
+    const revaluationId = phase2PostedRevaluationId!;
+    await client.unsafe('set role app_runtime');
+    try {
+      await setContext(ids.tenant, ids.station);
+      const otherStationEnvelope = await client.unsafe<{ id: string }[]>(
+        `select id::text as id from app.inventory_cost_revaluations where id='${revaluationId}'`,
+      );
+      const otherStationLines = await client.unsafe<{ id: string }[]>(
+        `select id::text as id from app.inventory_cost_revaluation_lines where revaluation_id='${revaluationId}'`,
+      );
+      expect(otherStationEnvelope).toEqual([]);
+      expect(otherStationLines).toEqual([]);
+
+      await setContext('a1230000-0000-0000-0000-000000000001', ids.stationTwo);
+      const otherTenantEnvelope = await client.unsafe<{ id: string }[]>(
+        `select id::text as id from app.inventory_cost_revaluations where id='${revaluationId}'`,
+      );
+      const otherTenantLines = await client.unsafe<{ id: string }[]>(
+        `select id::text as id from app.inventory_cost_revaluation_lines where revaluation_id='${revaluationId}'`,
+      );
+      expect(otherTenantEnvelope).toEqual([]);
+      expect(otherTenantLines).toEqual([]);
+    } finally {
+      await client.unsafe('reset role');
+    }
+
+    await setContext(ids.tenant, ids.station);
+    const approveOutsideStation = await postInventoryCommand(
+      {
+        commandType: 'ApproveInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        revaluationId,
+      },
+      'a122-phase2-rls-approve-outside-station',
+    );
+    expect(approveOutsideStation.status).toBe(404);
+    const postOutsideStation = await postInventoryCommand(
+      {
+        commandType: 'PostInventoryCostRevaluation',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        revaluationId,
+      },
+      'a122-phase2-rls-post-outside-station',
+    );
+    expect(postOutsideStation.status).toBe(404);
   });
 });
