@@ -128,6 +128,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         providerType: 'OTHER_ELECTRONIC',
       },
       'g7-provider',
+      'admin',
     );
     expectStatus(provider, 201);
     const account = await settlement(
@@ -143,6 +144,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         accountStationId: ctx.stationId,
       },
       'g7-provider-account',
+      'admin',
     );
     expectStatus(account, 201);
     const beforeCurrency = await snapshotQa1(client, ctx);
@@ -557,17 +559,67 @@ describe('QA1 cross-module golden financial scenarios', () => {
       state: 'REVERSED',
       reversal_of_id: activeAllocation.id,
     });
-    const movement = await rows<{ movement_type: string; amount: string }>(
-      client,
-      `select movement_type, amount::text as amount from app.supplier_account_movements where tenant_id='${ctx.tenantId}' and supplier_id='${supplierId}' order by effective_date, id`,
+    expect(
+      expectOne(
+        supplierSnapshot.supplierPayments.filter((row) => row.id === paymentId),
+        'persisted supplier payment',
+      ),
+    ).toMatchObject({
+      id: paymentId,
+      supplier_id: supplierId,
+      amount: '600.0000',
+      state: 'REVERSED',
+    });
+    expect(
+      expectOne(
+        supplierSnapshot.supplierDocuments.filter((row) => row.id === documentId),
+        'persisted supplier document',
+      ),
+    ).toMatchObject({
+      id: documentId,
+      supplier_id: supplierId,
+      amount: '600.0000',
+      state: 'POSTED',
+    });
+    const movement = supplierSnapshot.supplierMovements.filter(
+      (row) => row.supplier_id === supplierId,
     );
-    expect(movement.map((row) => row.movement_type)).toEqual([
-      'INVOICE',
-      'PAYMENT',
-      'PAYMENT_REVERSAL',
-    ]);
+    expect(movement).toHaveLength(3);
+    const invoiceMovement = expectOne(
+      movement.filter(
+        (row) =>
+          row.movement_type === 'INVOICE' &&
+          row.source_type === 'SUPPLIER_DOCUMENT' &&
+          row.source_id === documentId,
+      ),
+      'supplier invoice movement',
+    );
+    const paymentMovement = expectOne(
+      movement.filter(
+        (row) =>
+          row.movement_type === 'PAYMENT' &&
+          row.source_type === 'SUPPLIER_PAYMENT' &&
+          row.source_id === paymentId,
+      ),
+      'supplier payment movement',
+    );
+    const paymentReversalMovement = expectOne(
+      movement.filter(
+        (row) =>
+          row.movement_type === 'PAYMENT_REVERSAL' &&
+          row.source_type === 'SUPPLIER_PAYMENT_REVERSAL' &&
+          row.source_id === paymentId,
+      ),
+      'supplier payment reversal movement',
+    );
+    expect(invoiceMovement.amount).toBe('600.0000');
+    expect(paymentMovement.amount).toBe('600.0000');
+    expect(paymentReversalMovement).toMatchObject({
+      amount: '600.0000',
+      reversal_of_id: paymentMovement.id,
+    });
     expectConservation(
-      movement.map((row) => row.amount),
+      [invoiceMovement.amount, `-${paymentMovement.amount}`, paymentReversalMovement.amount],
       '600.0000',
       'supplier payable after payment reversal',
     );
@@ -865,6 +917,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         providerType: 'OTHER_ELECTRONIC',
       },
       'g6-provider',
+      'admin',
     );
     expectStatus(provider, 201);
     const account = await settlement(
@@ -880,6 +933,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         accountStationId: ctx.stationId,
       },
       'g6-account',
+      'admin',
     );
     expectStatus(account, 201);
     const recorded = await settlement(

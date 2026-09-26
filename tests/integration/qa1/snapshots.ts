@@ -204,7 +204,7 @@ export async function snapshotQa1(client: Sql, ctx: Qa1ScenarioContext): Promise
     `),
     client.unsafe(`
       select id, supplier_id, movement_type, amount::text as amount,
-             source_type, source_id from app.supplier_account_movements
+             source_type, source_id, reversal_of_id from app.supplier_account_movements
       where tenant_id='${ctx.tenantId}' order by effective_date, id
     `),
     client.unsafe(`

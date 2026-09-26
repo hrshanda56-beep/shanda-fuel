@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Sql } from 'postgres';
+import { seedActiveStepUp } from '../auth-session-fixtures';
 
 export type Qa1ActorName = 'admin' | 'supervisor' | 'finance' | 'attendant' | 'otherTenant';
 
@@ -26,7 +27,10 @@ export type Qa1ScenarioContext = {
   tillId: string;
   safeId: string;
   bankAccountId: string;
-  actors: Record<Qa1ActorName, { actorId: string; membershipId: string; token: string }>;
+  actors: Record<
+    Qa1ActorName,
+    { actorId: string; membershipId: string; sessionId: string; token: string }
+  >;
 };
 
 function id(): string {
@@ -68,12 +72,30 @@ export async function createQa1ScenarioContext(
   const bankAccountId = id();
 
   const actors = {
-    admin: { actorId: id(), membershipId: id(), token: token(label, 'admin') },
-    supervisor: { actorId: id(), membershipId: id(), token: token(label, 'supervisor') },
-    finance: { actorId: id(), membershipId: id(), token: token(label, 'finance') },
-    attendant: { actorId: id(), membershipId: id(), token: token(label, 'attendant') },
-    otherTenant: { actorId: id(), membershipId: id(), token: token(label, 'otherTenant') },
-  } satisfies Record<Qa1ActorName, { actorId: string; membershipId: string; token: string }>;
+    admin: { actorId: id(), membershipId: id(), sessionId: id(), token: token(label, 'admin') },
+    supervisor: {
+      actorId: id(),
+      membershipId: id(),
+      sessionId: id(),
+      token: token(label, 'supervisor'),
+    },
+    finance: { actorId: id(), membershipId: id(), sessionId: id(), token: token(label, 'finance') },
+    attendant: {
+      actorId: id(),
+      membershipId: id(),
+      sessionId: id(),
+      token: token(label, 'attendant'),
+    },
+    otherTenant: {
+      actorId: id(),
+      membershipId: id(),
+      sessionId: id(),
+      token: token(label, 'otherTenant'),
+    },
+  } satisfies Record<
+    Qa1ActorName,
+    { actorId: string; membershipId: string; sessionId: string; token: string }
+  >;
 
   await client.unsafe(`
     insert into app.tenants (id, name, slug) values
@@ -111,9 +133,11 @@ export async function createQa1ScenarioContext(
     insert into app.membership_role_assignments
       (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
     values
+      ('${tenantId}', '${actors.admin.membershipId}', 'ADMINISTRATOR', 'TENANT', null, null),
       ('${tenantId}', '${actors.admin.membershipId}', 'ADMINISTRATOR', 'STATION', '${legalEntityId}', '${stationId}'),
       ('${tenantId}', '${actors.supervisor.membershipId}', 'SUPERVISOR', 'STATION', '${legalEntityId}', '${stationId}'),
       ('${tenantId}', '${actors.finance.membershipId}', 'FINANCE', 'TENANT', null, null),
+      ('${tenantId}', '${actors.finance.membershipId}', 'FINANCE', 'LEGAL_ENTITY', '${legalEntityId}', null),
       ('${tenantId}', '${actors.finance.membershipId}', 'FINANCE', 'STATION', '${legalEntityId}', '${stationId}'),
       ('${tenantId}', '${actors.attendant.membershipId}', 'ATTENDANT', 'STATION', '${legalEntityId}', '${stationId}'),
       ('${otherTenantId}', '${actors.otherTenant.membershipId}', 'ADMINISTRATOR', 'TENANT', null, null),
@@ -179,13 +203,17 @@ export async function createQa1ScenarioContext(
     insert into auth.session
       (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
     values
-      ('${id()}', '2030-01-01T00:00:00Z', '${actors.admin.token}', '${actors.admin.actorId}', true, '2026-09-26T05:00:00Z'),
-      ('${id()}', '2030-01-01T00:00:00Z', '${actors.supervisor.token}', '${actors.supervisor.actorId}', true, '2026-09-26T05:00:00Z'),
-      ('${id()}', '2030-01-01T00:00:00Z', '${actors.finance.token}', '${actors.finance.actorId}', true, '2026-09-26T05:00:00Z'),
-      ('${id()}', '2030-01-01T00:00:00Z', '${actors.attendant.token}', '${actors.attendant.actorId}', false, null),
-      ('${id()}', '2030-01-01T00:00:00Z', '${actors.otherTenant.token}', '${actors.otherTenant.actorId}', true, '2026-09-26T05:00:00Z')
+      ('${actors.admin.sessionId}', '2030-01-01T00:00:00Z', '${actors.admin.token}', '${actors.admin.actorId}', true, '2026-09-26T05:00:00Z'),
+      ('${actors.supervisor.sessionId}', '2030-01-01T00:00:00Z', '${actors.supervisor.token}', '${actors.supervisor.actorId}', true, '2026-09-26T05:00:00Z'),
+      ('${actors.finance.sessionId}', '2030-01-01T00:00:00Z', '${actors.finance.token}', '${actors.finance.actorId}', true, '2026-09-26T05:00:00Z'),
+      ('${actors.attendant.sessionId}', '2030-01-01T00:00:00Z', '${actors.attendant.token}', '${actors.attendant.actorId}', false, null),
+      ('${actors.otherTenant.sessionId}', '2030-01-01T00:00:00Z', '${actors.otherTenant.token}', '${actors.otherTenant.actorId}', true, '2026-09-26T05:00:00Z')
     on conflict (id) do nothing;
   `);
+
+  await seedActiveStepUp(client, actors.admin.sessionId);
+  await seedActiveStepUp(client, actors.supervisor.sessionId);
+  await seedActiveStepUp(client, actors.finance.sessionId);
 
   return {
     runId,
