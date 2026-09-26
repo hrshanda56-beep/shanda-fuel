@@ -2,8 +2,19 @@ import 'server-only';
 
 import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
-import { normalizeValuedSaleCogs, summarizeRestatedCogs } from './domain';
-import type { RestatedCogsQueryFilters, RestatedCogsReport, RestatedSaleCogs } from './contracts';
+import {
+  normalizeCanonicalRevenueAmount,
+  normalizeValuedSaleCogs,
+  summarizeCanonicalRevenue,
+  summarizeRestatedCogs,
+} from './domain';
+import type {
+  CanonicalRevenueReport,
+  CanonicalSaleRevenue,
+  RestatedCogsQueryFilters,
+  RestatedCogsReport,
+  RestatedSaleCogs,
+} from './contracts';
 
 type ProfitabilityTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -231,4 +242,80 @@ export async function readRestatedCogs(
 
   const sales = rows.map(mapSale);
   return { ...summarizeRestatedCogs(sales), sales };
+}
+
+type CanonicalRevenueRow = {
+  station_id: string;
+  reconciliation_id: string;
+  revision_id: string;
+  meter_segment_id: string;
+  revenue_movement_id: string;
+  recognized_revenue: string;
+  quantity_litres: string;
+  business_date: string;
+  effective_at: Date | string;
+  currency: string;
+};
+
+/**
+ * Read only the REV1 ordinary-fuel revenue authority for the latest finalized
+ * A5 revision. Revenue is filtered by its canonical station business date;
+ * posting time and A5 control/payment amounts are not period semantics.
+ */
+export async function readCanonicalRevenue(
+  transaction: ProfitabilityTransaction,
+  filters: RestatedCogsQueryFilters,
+): Promise<CanonicalRevenueReport> {
+  const rows = await transaction.execute<CanonicalRevenueRow>(sql`
+    with latest_finalized_revisions as (
+      select distinct on (r.id)
+        r.id as reconciliation_id,
+        r.station_id,
+        rev.id as revision_id
+      from app.reconciliations r
+      join app.reconciliation_revisions rev
+        on rev.tenant_id = r.tenant_id
+       and rev.station_id = r.station_id
+       and rev.reconciliation_id = r.id
+      where r.tenant_id = ${filters.tenantId}
+        and rev.state in ${FINALIZED_REVISION_STATES}
+        ${stationClause('r', filters.stationId)}
+      order by r.id, rev.revision desc
+    )
+    select
+      revenue.station_id,
+      revenue.reconciliation_id,
+      revenue.reconciliation_revision_id as revision_id,
+      revenue.meter_segment_id,
+      revenue.id as revenue_movement_id,
+      revenue.recognized_revenue_amount::text as recognized_revenue,
+      revenue.quantity_litres::text as quantity_litres,
+      revenue.business_date,
+      revenue.effective_at,
+      revenue.currency
+    from latest_finalized_revisions latest
+    join app.sale_recognition_movements revenue
+      on revenue.tenant_id = ${filters.tenantId}
+     and revenue.station_id = latest.station_id
+     and revenue.reconciliation_id = latest.reconciliation_id
+     and revenue.reconciliation_revision_id = latest.revision_id
+     and revenue.classification = 'ORDINARY_FUEL_SALE'
+     and revenue.source_type = 'METER_SEGMENT_SALE'
+     and revenue.business_date between ${filters.fromDate} and ${filters.toDate}
+    order by revenue.business_date, revenue.effective_at, revenue.id
+  `);
+
+  const sales = rows.map((row): CanonicalSaleRevenue => ({
+    stationId: row.station_id,
+    reconciliationId: row.reconciliation_id,
+    revisionId: row.revision_id,
+    meterSegmentId: row.meter_segment_id,
+    revenueMovementId: row.revenue_movement_id,
+    recognizedRevenue: normalizeCanonicalRevenueAmount(row.recognized_revenue),
+    quantityLitres: row.quantity_litres,
+    businessDate: row.business_date,
+    effectiveAt: toIso(row.effective_at),
+    currency: row.currency,
+  }));
+  return summarizeCanonicalRevenue(sales);
 }

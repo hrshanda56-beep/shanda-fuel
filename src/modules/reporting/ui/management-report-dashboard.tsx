@@ -143,6 +143,20 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
               detail={`${report.sales.approvedReconciliationCount} approved reconciliations`}
             />
             <Metric
+              label="Recognized revenue"
+              value={formatMoney(report.revenue.recognizedRevenue)}
+              detail="REV1 ordinary fuel sales"
+            />
+            <Metric
+              label="Gross margin"
+              value={report.grossMargin === null ? 'Unavailable' : formatMoney(report.grossMargin)}
+              detail={
+                report.grossMargin === null
+                  ? `COGS status: ${report.costing.costingStatus}`
+                  : 'Recognized revenue − restated COGS'
+              }
+            />
+            <Metric
               label="Litres sold"
               value={formatLitres(report.sales.litresSold)}
               detail="A5 meter readings"
@@ -240,7 +254,9 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
                 />
               ) : null}
               <p className="metric-meta">
-                Payment evidence:{' '}
+                Accounted sales and reading sales value are operational control evidence, not
+                revenue authority. Canonical recognized revenue is{' '}
+                {formatMoney(report.revenue.recognizedRevenue)}. Payment evidence:{' '}
                 {report.sales.payments
                   .map((payment) => `${payment.method} ${formatMoney(payment.amount)}`)
                   .join(' · ') || 'none'}{' '}

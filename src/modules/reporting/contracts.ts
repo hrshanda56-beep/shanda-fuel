@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RestatedCogsReport } from '../profitability/contracts';
+import type { CanonicalRevenueReport, RestatedCogsReport } from '../profitability/contracts';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must use YYYY-MM-DD');
 
@@ -27,6 +27,7 @@ export type ManagementReportQuery = z.infer<typeof managementReportQuerySchema> 
 
 export type ReportDateBasis = {
   sales: 'A5 business date';
+  recognizedRevenue: 'REV1 sale_recognition_movements.business_date';
   cashEvidence: 'A5 business date';
   cashCollections: 'A6 cash_collections.business_date';
   bankedCash: 'A6 bank_deposits.deposited_at UTC calendar date';
@@ -194,8 +195,9 @@ export type ManagementReport = Readonly<{
       expenseIds: readonly string[];
     }[];
   }>;
+  revenue: CanonicalRevenueReport;
   costing: RestatedCogsReport;
-  grossMargin: null;
+  grossMargin: ReportMoney | null;
 }>;
 
 export type DailyOperationsRow = Readonly<{

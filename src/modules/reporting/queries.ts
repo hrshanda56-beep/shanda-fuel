@@ -7,7 +7,7 @@ import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-
 import { authorize } from '../../platform/security/permissions';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
-import { readRestatedCogs } from '../profitability';
+import { calculateGrossMargin, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
   customerScopeAvailability,
@@ -794,6 +794,7 @@ async function readDaily(
 
 const dateBasis: ReportDateBasis = {
   sales: 'A5 business date',
+  recognizedRevenue: 'REV1 sale_recognition_movements.business_date',
   cashEvidence: 'A5 business date',
   cashCollections: 'A6 cash_collections.business_date',
   bankedCash: 'A6 bank_deposits.deposited_at UTC calendar date',
@@ -838,18 +839,29 @@ export async function getManagementReportFromRequest(
       })
     : authority.transaction;
   return withTenantTransaction(reportTransactionContext, async (transaction) => {
-    const [stations, sales, cash, providers, suppliers, customers, inventory, expenses, costing] =
-      await Promise.all([
-        listStations(transaction, filters),
-        readSales(transaction, filters),
-        readCash(transaction, filters),
-        readProviders(transaction, filters),
-        readSuppliers(transaction, filters, station?.legalEntityId),
-        readCustomers(transaction, filters),
-        readInventory(transaction, filters),
-        readExpenses(transaction, filters),
-        readRestatedCogs(transaction, filters),
-      ]);
+    const [
+      stations,
+      sales,
+      cash,
+      providers,
+      suppliers,
+      customers,
+      inventory,
+      expenses,
+      costing,
+      revenue,
+    ] = await Promise.all([
+      listStations(transaction, filters),
+      readSales(transaction, filters),
+      readCash(transaction, filters),
+      readProviders(transaction, filters),
+      readSuppliers(transaction, filters, station?.legalEntityId),
+      readCustomers(transaction, filters),
+      readInventory(transaction, filters),
+      readExpenses(transaction, filters),
+      readRestatedCogs(transaction, filters),
+      readCanonicalRevenue(transaction, filters),
+    ]);
     return {
       report: 'MANAGEMENT_OVERVIEW',
       state: 'POSTED',
@@ -869,8 +881,9 @@ export async function getManagementReportFromRequest(
       customers,
       inventory,
       expenses,
+      revenue,
       costing,
-      grossMargin: null,
+      grossMargin: calculateGrossMargin(revenue, costing),
     };
   });
 }
