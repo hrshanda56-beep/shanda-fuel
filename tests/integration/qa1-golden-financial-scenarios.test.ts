@@ -221,10 +221,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       businessDayId: ctx.historicalBusinessDayId,
       plannedStartAt: QA1_TIMES.historicalShiftStart,
       plannedEndAt: QA1_TIMES.historicalShiftEnd,
-      segmentBoundaryTimes: [
-        QA1_TIMES.historicalSegmentOpen,
-        QA1_TIMES.historicalSegmentClose,
-      ],
+      segmentBoundaryTimes: [QA1_TIMES.historicalSegmentOpen, QA1_TIMES.historicalSegmentClose],
     });
     const originalMovement = await rows<Record<string, any>>(
       client,
@@ -272,10 +269,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       openingReading: '100100.000',
       approve: false,
       businessDayId: ctx.blockedBusinessDayId,
-      segmentBoundaryTimes: [
-        QA1_TIMES.blockedDaySegmentOpen,
-        QA1_TIMES.blockedDaySegmentClose,
-      ],
+      segmentBoundaryTimes: [QA1_TIMES.blockedDaySegmentOpen, QA1_TIMES.blockedDaySegmentClose],
     }).catch((error: unknown) => ({ error }));
     if ('error' in blocked) throw blocked.error;
     const blockedRevision = await currentRevision(client, ctx, blocked.reconciliationId);
