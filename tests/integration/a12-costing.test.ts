@@ -824,7 +824,7 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       join app.inventory_cost_events ordinary on ordinary.tenant_id=r.tenant_id and ordinary.source_type=r.source_type and ordinary.source_id=r.source_id and ordinary.event_type='RECEIPT_COST'
       join app.inventory_cost_stream_state state on state.tenant_id=r.tenant_id and state.station_id=r.station_id and state.tank_id=r.tank_id and state.product_id=r.product_id
       where r.id='${requestedBody.revaluationId}'
-      order by line.sale_movement_id
+      order by line.sale_effective_at, line.sale_movement_id
     `);
     expect(firstEvidence).toEqual([
       {
