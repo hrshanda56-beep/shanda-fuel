@@ -574,7 +574,7 @@ async function assertLateCostSourceIsRequired(
       and movement.product_id = ${input.productId}
       and movement.movement_type = 'SALE'
       and movement.source_type = 'METER_SEGMENT_SALE'
-      and movement.effective_at >= ${input.effectiveAt}
+      and movement.effective_at >= ${input.effectiveAt.toISOString()}
     order by movement.effective_at, movement.id
     limit 1
   `);
