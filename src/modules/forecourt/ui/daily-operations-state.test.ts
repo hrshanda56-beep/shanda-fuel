@@ -30,5 +30,12 @@ describe('daily operations state mapping', () => {
         'Closing meter reading cannot be below opening',
       ),
     ).toContain('closing');
+    expect(
+      mapDailyOperationsError(
+        409,
+        'CONFLICT',
+        'A canonical sale cannot be posted from an UNVALUED inventory stream',
+      ),
+    ).toContain('Inventory → Valuation');
   });
 });
