@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   orderInventoryCostEvents,
   orderInventoryMovements,
+  calculateLateCostRevaluation,
   deriveSaleCogsFromPreSaleState,
   projectInventoryCost,
   projectInventoryCostBeforeSale,
   replayFingerprint,
+  restateSaleCogs,
+  type OriginalSaleCostAttribution,
   type CostingEvent,
   type CostingMovement,
 } from './domain';
@@ -42,6 +45,160 @@ function event(overrides: Partial<CostingEvent> = {}): CostingEvent {
     amount: '123.4567',
     currency: 'USD',
     ...overrides,
+  };
+}
+
+function lateRevaluationScenario(
+  options: {
+    lateAmount?: string;
+    includeUnaffectedSale?: boolean;
+    includeSecondSale?: boolean;
+    saleQuantityLitres?: string;
+  } = {},
+) {
+  const saleQuantityLitres = options.saleQuantityLitres ?? '25.000';
+  const includeSecondSale = options.includeSecondSale ?? true;
+  const saleCogs = `${saleQuantityLitres}0`;
+  const opening = movement({
+    id: '00000000-0000-4000-8000-000000000111',
+    quantityLitres: '100.000',
+  });
+  const unaffectedSale = movement({
+    id: '00000000-0000-4000-8000-000000000112',
+    movementType: 'SALE',
+    quantityLitres: '-10.000',
+    effectiveAt: '2026-09-25T06:30:00.000Z',
+    sourceType: 'METER_SEGMENT_SALE',
+    sourceId: '00000000-0000-4000-8000-000000000212',
+  });
+  const lateReceipt = movement({
+    id: '00000000-0000-4000-8000-000000000113',
+    movementType: 'DELIVERY',
+    quantityLitres: '100.000',
+    effectiveAt: '2026-09-25T07:00:00.000Z',
+    sourceType: 'FUEL_DELIVERY_ALLOCATION',
+    sourceId: '00000000-0000-4000-8000-000000000213',
+  });
+  const firstSale = movement({
+    id: '00000000-0000-4000-8000-000000000114',
+    movementType: 'SALE',
+    quantityLitres: `-${saleQuantityLitres}`,
+    effectiveAt: '2026-09-25T08:00:00.000Z',
+    sourceType: 'METER_SEGMENT_SALE',
+    sourceId: '00000000-0000-4000-8000-000000000214',
+  });
+  const secondSale = movement({
+    id: '00000000-0000-4000-8000-000000000115',
+    movementType: 'SALE',
+    quantityLitres: `-${saleQuantityLitres}`,
+    effectiveAt: '2026-09-25T10:00:00.000Z',
+    sourceType: 'METER_SEGMENT_SALE',
+    sourceId: '00000000-0000-4000-8000-000000000215',
+  });
+  const openingCost = event({
+    id: '00000000-0000-4000-8000-000000000311',
+    amount: '100.0000',
+  });
+  const unaffectedSaleCost = event({
+    id: '00000000-0000-4000-8000-000000000312',
+    eventType: 'SALE_COGS',
+    sourceType: 'METER_SEGMENT_SALE',
+    sourceId: unaffectedSale.sourceId,
+    effectiveAt: unaffectedSale.effectiveAt,
+    amount: '-10.0000',
+  });
+  const firstSaleCost = event({
+    id: '00000000-0000-4000-8000-000000000313',
+    eventType: 'SALE_COGS',
+    sourceType: 'METER_SEGMENT_SALE',
+    sourceId: firstSale.sourceId,
+    effectiveAt: firstSale.effectiveAt,
+    amount: `-${saleCogs}`,
+  });
+  const secondSaleCost = event({
+    id: '00000000-0000-4000-8000-000000000314',
+    eventType: 'SALE_COGS',
+    sourceType: 'METER_SEGMENT_SALE',
+    sourceId: secondSale.sourceId,
+    effectiveAt: secondSale.effectiveAt,
+    amount: `-${saleCogs}`,
+  });
+  const lateCost = event({
+    id: '00000000-0000-4000-8000-000000000315',
+    eventType: 'RECEIPT_COST',
+    sourceType: lateReceipt.sourceType,
+    sourceId: lateReceipt.sourceId,
+    effectiveAt: lateReceipt.effectiveAt,
+    amount: options.lateAmount ?? '300.0000',
+  });
+  const originalMovements = [
+    opening,
+    ...(options.includeUnaffectedSale ? [unaffectedSale] : []),
+    firstSale,
+    ...(includeSecondSale ? [secondSale] : []),
+  ];
+  const originalCostEvents = [
+    openingCost,
+    ...(options.includeUnaffectedSale ? [unaffectedSaleCost] : []),
+    firstSaleCost,
+    ...(includeSecondSale ? [secondSaleCost] : []),
+  ];
+  const originalAttributions: OriginalSaleCostAttribution[] = [
+    ...(options.includeUnaffectedSale
+      ? [
+          {
+            id: '00000000-0000-4000-8000-000000000411',
+            movementId: unaffectedSale.id,
+            meterSegmentId: unaffectedSale.sourceId,
+            saleQuantityLitres: '10.000',
+            preSaleWac: '1.00000000',
+            originalCogs: '10.0000',
+            saleCostEventId: unaffectedSaleCost.id,
+            valuationStatus: 'VALUED',
+            valuationBasis: 'PRE_SALE_WAC',
+            replayFingerprint: 'original-unaffected',
+            effectiveAt: unaffectedSale.effectiveAt,
+          } satisfies OriginalSaleCostAttribution,
+        ]
+      : []),
+    {
+      id: '00000000-0000-4000-8000-000000000412',
+      movementId: firstSale.id,
+      meterSegmentId: firstSale.sourceId,
+      saleQuantityLitres,
+      preSaleWac: '1.00000000',
+      originalCogs: saleCogs,
+      saleCostEventId: firstSaleCost.id,
+      valuationStatus: 'VALUED',
+      valuationBasis: 'PRE_SALE_WAC',
+      replayFingerprint: 'original-first',
+      effectiveAt: firstSale.effectiveAt,
+    },
+    ...(includeSecondSale
+      ? [
+          {
+            id: '00000000-0000-4000-8000-000000000413',
+            movementId: secondSale.id,
+            meterSegmentId: secondSale.sourceId,
+            saleQuantityLitres,
+            preSaleWac: '1.00000000',
+            originalCogs: saleCogs,
+            saleCostEventId: secondSaleCost.id,
+            valuationStatus: 'VALUED',
+            valuationBasis: 'PRE_SALE_WAC',
+            replayFingerprint: 'original-second',
+            effectiveAt: secondSale.effectiveAt,
+          } satisfies OriginalSaleCostAttribution,
+        ]
+      : []),
+  ];
+  return {
+    key,
+    originalMovements,
+    originalCostEvents,
+    lateCostMovement: lateReceipt,
+    lateCostEvent: lateCost,
+    originalAttributions,
   };
 }
 
@@ -909,5 +1066,220 @@ describe('inventory costing domain', () => {
         },
       }),
     ).toBe(replayFingerprint({ ...args, canonicalStartingPoint: startingPoint }));
+  });
+
+  it('calculates one-sale late receipt revaluation and conserves the cost', () => {
+    const input = lateRevaluationScenario({
+      includeSecondSale: false,
+      saleQuantityLitres: '25.000',
+    });
+    const result = calculateLateCostRevaluation(input);
+
+    expect(result.affectedSales).toHaveLength(1);
+    expect(result.affectedSales[0]).toMatchObject({
+      originalPreSaleWac: '1.00000000',
+      recomputedPreSaleWac: '2.00000000',
+      originalCogs: '25.0000',
+      recomputedCogs: '50.0000',
+      cogsDelta: '25.0000',
+      currency: 'USD',
+    });
+    expect(result.conservation).toEqual({
+      lateCostAmount: '300.0000',
+      cogsDeltaTotal: '25.0000',
+      endingInventoryValueIncrease: '275.0000',
+      reconciledAmount: '300.0000',
+      residual: '0.0000',
+      isConserved: true,
+    });
+    expect(result.originalFinalInventoryValue).toBe('75.0000');
+    expect(result.recomputedFinalInventoryValue).toBe('350.0000');
+  });
+
+  it('revalues multiple affected sales while leaving earlier sales unchanged', () => {
+    const result = calculateLateCostRevaluation(
+      lateRevaluationScenario({ includeUnaffectedSale: true }),
+    );
+
+    expect(result.affectedSales.map((sale) => sale.saleMovementId)).toEqual([
+      '00000000-0000-4000-8000-000000000114',
+      '00000000-0000-4000-8000-000000000115',
+    ]);
+    expect(
+      result.affectedSales.every(
+        (sale) => sale.saleMovementId !== '00000000-0000-4000-8000-000000000112',
+      ),
+    ).toBe(true);
+    expect(result.affectedSales.map((sale) => sale.cogsDelta)).toEqual(['26.3158', '26.3158']);
+  });
+
+  it('applies sequential late-cost deltas incrementally to the same historical sale', () => {
+    const firstInput = lateRevaluationScenario({
+      includeSecondSale: false,
+      saleQuantityLitres: '25.000',
+    });
+    const first = calculateLateCostRevaluation(firstInput);
+    const firstLine = first.affectedSales[0];
+    expect(firstLine).toBeDefined();
+
+    const firstLineId = '00000000-0000-4000-8000-000000000501';
+    const firstRevaluationEvent = event({
+      id: '00000000-0000-4000-8000-000000000502',
+      eventType: 'COGS_REVALUATION',
+      sourceType: 'INVENTORY_COST_REVALUATION_LINE',
+      sourceId: firstLineId,
+      effectiveAt: firstLine!.saleEffectiveAt,
+      amount: firstLine!.cogsDelta,
+    });
+    const secondLateReceipt = movement({
+      id: '00000000-0000-4000-8000-000000000116',
+      movementType: 'DELIVERY',
+      quantityLitres: '100.000',
+      effectiveAt: '2026-09-25T06:30:00.000Z',
+      sourceType: 'FUEL_DELIVERY_ALLOCATION',
+      sourceId: '00000000-0000-4000-8000-000000000216',
+    });
+    const secondLateCost = event({
+      id: '00000000-0000-4000-8000-000000000503',
+      eventType: 'RECEIPT_COST',
+      sourceType: secondLateReceipt.sourceType,
+      sourceId: secondLateReceipt.sourceId,
+      effectiveAt: secondLateReceipt.effectiveAt,
+      amount: '100.0000',
+    });
+    const second = calculateLateCostRevaluation({
+      ...firstInput,
+      originalMovements: [...firstInput.originalMovements, firstInput.lateCostMovement],
+      originalCostEvents: [
+        ...firstInput.originalCostEvents,
+        firstInput.lateCostEvent,
+        firstRevaluationEvent,
+      ],
+      lateCostMovement: secondLateReceipt,
+      lateCostEvent: secondLateCost,
+      priorRevaluationDeltas: [
+        {
+          revaluationLineId: firstLineId,
+          saleMovementId: firstLine!.saleMovementId,
+          saleCostEventId: firstLine!.saleCostEventId,
+          amount: firstLine!.cogsDelta,
+          priorRestatedCogs: firstLine!.originalCogs,
+          recomputedCogs: firstLine!.recomputedCogs,
+          replayFingerprint: firstLine!.replayFingerprint,
+          postedAt: '2026-09-26T10:00:00.000Z',
+        },
+      ],
+    });
+    const secondLine = second.affectedSales[0];
+
+    expect(firstLine).toMatchObject({
+      originalCogs: '25.0000',
+      priorRestatedCogs: '25.0000',
+      recomputedCogs: '50.0000',
+      cogsDelta: '25.0000',
+    });
+    expect(secondLine).toMatchObject({
+      originalCogs: '25.0000',
+      priorRestatedCogs: '50.0000',
+      recomputedCogs: '41.6667',
+      cogsDelta: '-8.3333',
+    });
+    expect(
+      restateSaleCogs({
+        originalCogs: firstLine!.originalCogs,
+        saleMovementId: secondLine!.saleMovementId,
+        saleCostEventId: secondLine!.saleCostEventId,
+        cogsRevaluationDeltas: [
+          { ...firstLine!, amount: firstLine!.cogsDelta },
+          { ...secondLine!, amount: secondLine!.cogsDelta },
+        ],
+      }),
+    ).toBe('41.6667');
+    expect(first.conservation.residual).toBe('0.0000');
+    expect(second.conservation).toMatchObject({
+      lateCostAmount: '100.0000',
+      cogsDeltaTotal: '-8.3333',
+      endingInventoryValueIncrease: '108.3333',
+      reconciledAmount: '100.0000',
+      residual: '0.0000',
+      isConserved: true,
+    });
+    expect(second.basis.priorDeltas).toHaveLength(1);
+  });
+
+  it('retains a zero-delta affected sale after money quantization', () => {
+    const result = calculateLateCostRevaluation(
+      lateRevaluationScenario({
+        includeSecondSale: false,
+        lateAmount: '100.0000',
+        saleQuantityLitres: '1.000',
+      }),
+    );
+
+    expect(result.affectedSales).toHaveLength(1);
+    expect(result.affectedSales.every((sale) => sale.cogsDelta === '0.0000')).toBe(true);
+    expect(result.conservation.residual).toBe('0.0000');
+  });
+
+  it('is deterministic across input order and exposes a stable replay fingerprint', () => {
+    const input = lateRevaluationScenario();
+    const first = calculateLateCostRevaluation(input);
+    const reversed = calculateLateCostRevaluation({
+      ...input,
+      originalMovements: [...input.originalMovements].reverse(),
+      originalCostEvents: [...input.originalCostEvents].reverse(),
+      originalAttributions: [...input.originalAttributions].reverse(),
+    });
+
+    expect(reversed).toEqual(first);
+    expect(first.replayFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(first.affectedSales.every((sale) => sale.replayFingerprint.length === 64)).toBe(true);
+  });
+
+  it('supports append-only COGS delta restatement without changing original COGS', () => {
+    const original = '100.0000';
+    const deltas = [
+      {
+        saleMovementId: 'sale-1',
+        saleCostEventId: 'sale-cost-1',
+        amount: '12.3456',
+      },
+      {
+        saleMovementId: 'sale-1',
+        saleCostEventId: 'sale-cost-1',
+        amount: '-2.0000',
+      },
+    ];
+    expect(
+      restateSaleCogs({
+        originalCogs: original,
+        saleMovementId: 'sale-1',
+        saleCostEventId: 'sale-cost-1',
+        cogsRevaluationDeltas: deltas,
+      }),
+    ).toBe('110.3456');
+    expect(original).toBe('100.0000');
+  });
+
+  it('rejects late-cost currency mismatch', () => {
+    const input = lateRevaluationScenario();
+    expect(() =>
+      calculateLateCostRevaluation({
+        ...input,
+        lateCostEvent: { ...input.lateCostEvent, currency: 'ZWL' as CurrencyCode },
+      }),
+    ).toThrow('currency does not match');
+  });
+
+  it('rejects negative-stock original chronology', () => {
+    const input = lateRevaluationScenario({ saleQuantityLitres: '125.000' });
+    expect(() => calculateLateCostRevaluation(input)).toThrow('negative inventory');
+  });
+
+  it('does not mutate original chronology or attribution inputs', () => {
+    const input = lateRevaluationScenario();
+    const before = structuredClone(input);
+    calculateLateCostRevaluation(input);
+    expect(input).toEqual(before);
   });
 });

@@ -92,6 +92,13 @@
       "when": 1790360000000,
       "tag": "0012_a12_cost_projection_writer",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790404952875,
+      "tag": "0013_a12_late_cost_revaluation",
+      "breakpoints": true
     }
   ]
 }
