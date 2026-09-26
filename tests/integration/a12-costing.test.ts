@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
+import { GET as inventoryValuationGet } from '../../src/app/api/inventory/valuation/route';
+import { GET as inventoryRevaluationGet } from '../../src/app/api/inventory/valuation/revaluations/[id]/route';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for A12.3 costing integration tests.');
@@ -127,6 +129,33 @@ async function postInventoryCommand(
       },
       body: JSON.stringify(input),
     }),
+  );
+}
+
+async function getInventoryValuation(tenantId: string, stationId: string): Promise<Response> {
+  const token = 'a122-phase2-session-token';
+  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return inventoryValuationGet(
+    new Request(
+      `http://127.0.0.1:3000/api/inventory/valuation?tenantId=${tenantId}&stationId=${stationId}`,
+      { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+    ),
+  );
+}
+
+async function getInventoryRevaluation(
+  tenantId: string,
+  stationId: string,
+  revaluationId: string,
+): Promise<Response> {
+  const token = 'a122-phase2-session-token';
+  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return inventoryRevaluationGet(
+    new Request(
+      `http://127.0.0.1:3000/api/inventory/valuation/revaluations/${revaluationId}?tenantId=${tenantId}&stationId=${stationId}`,
+      { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+    ),
+    { params: Promise.resolve({ id: revaluationId }) },
   );
 }
 
@@ -1001,6 +1030,56 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
         projection_version: beforeRollback[0]!.projection_version,
       },
     ]);
+  });
+
+  it('serves an operator read model with station isolation and persisted revaluation lineage', async () => {
+    await setContext(ids.tenant, ids.stationTwo);
+    const stationTwoResponse = await getInventoryValuation(ids.tenant, ids.stationTwo);
+    expect(stationTwoResponse.status).toBe(200);
+    const stationTwoBody = (await stationTwoResponse.json()) as {
+      streams: Array<{ station: { id: string } }>;
+      revaluations: Array<{ id: string; status: string; affectedSales: number }>;
+    };
+    expect(stationTwoBody.streams.every((stream) => stream.station.id === ids.stationTwo)).toBe(
+      true,
+    );
+    expect(
+      stationTwoBody.revaluations.some(
+        (item) => item.status === 'POSTED' && item.affectedSales > 0,
+      ),
+    ).toBe(true);
+    const postedRevaluation = stationTwoBody.revaluations.find((item) => item.status === 'POSTED');
+    expect(postedRevaluation).toBeDefined();
+    const detailResponse = await getInventoryRevaluation(
+      ids.tenant,
+      ids.stationTwo,
+      postedRevaluation!.id,
+    );
+    expect(detailResponse.status).toBe(200);
+    const detailBody = (await detailResponse.json()) as {
+      revaluation: {
+        costAllocation: Record<string, unknown> | null;
+        currentStreamProjection: Record<string, unknown>;
+      };
+    };
+    expect(detailBody.revaluation.costAllocation).not.toHaveProperty('isConserved');
+    expect(detailBody.revaluation.costAllocation).toHaveProperty('impliedEndingInventoryIncrease');
+    expect(detailBody.revaluation).not.toHaveProperty('resultingProjection');
+    expect(detailBody.revaluation.currentStreamProjection).toBeDefined();
+
+    await setContext(ids.tenant, ids.station);
+    const otherStationResponse = await getInventoryValuation(ids.tenant, ids.station);
+    expect(otherStationResponse.status).toBe(200);
+    const otherStationBody = (await otherStationResponse.json()) as {
+      streams: Array<{ station: { id: string } }>;
+      revaluations: Array<{ station: { id: string } }>;
+    };
+    expect(otherStationBody.streams.every((stream) => stream.station.id === ids.station)).toBe(
+      true,
+    );
+    expect(otherStationBody.revaluations.every((item) => item.station.id === ids.station)).toBe(
+      true,
+    );
   });
 
   it('enforces tenant and station isolation for revaluation reads and transitions', async () => {
