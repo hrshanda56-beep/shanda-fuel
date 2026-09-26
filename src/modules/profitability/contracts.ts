@@ -45,3 +45,26 @@ export type RestatedCogsQueryFilters = Readonly<{
   fromDate: string;
   toDate: string;
 }>;
+
+export type CanonicalRevenueStatus = 'NO_SALES' | 'POSTED';
+
+export type CanonicalSaleRevenue = Readonly<{
+  stationId: string;
+  reconciliationId: string;
+  revisionId: string;
+  meterSegmentId: string;
+  revenueMovementId: string;
+  recognizedRevenue: string;
+  quantityLitres: string;
+  businessDate: string;
+  effectiveAt: string;
+  currency: string;
+}>;
+
+export type CanonicalRevenueReport = Readonly<{
+  currency: 'USD';
+  revenueStatus: CanonicalRevenueStatus;
+  recognizedRevenue: string;
+  saleCount: number;
+  sales: readonly CanonicalSaleRevenue[];
+}>;

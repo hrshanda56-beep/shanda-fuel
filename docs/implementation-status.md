@@ -204,8 +204,9 @@ Wave 1 establishes one immutable, tenant-aware revenue movement per positive
 unsuperseded A3 meter segment. The amount is exact-decimal segment litres times
 segment selling price, and posting is atomic with the A4 SALE and A12
 SALE_COGS/attribution. A5 `accounted_sales`, A5 reading `sales_value`, A10
-reporting, historical backfill, corrections, reversals, refunds, discounts,
-tax, non-fuel, internal/benefit, and FX revenue remain outside this wave.
+reporting integration beyond A10.2, historical backfill, corrections,
+reversals, refunds, discounts, tax, non-fuel, internal/benefit, and FX revenue
+remain outside this wave.
 
 ### A12.4 — Late-cost historical revaluation — COMPLETE
 
@@ -253,8 +254,8 @@ reporting remain separate reporting concerns.
 | Phase 4 — Cash, banking, and electronic settlements | **PARTIAL** | Collections, deposits, manual bank confirmation, and A9 provider settlement reconciliation are implemented; cash counts, handovers, disputes, and any separate provider-batch scope remain. |
 | Phase 5 — Suppliers, customers, and expenses | **PARTIAL** | Supplier creditors are complete; the implemented customer subset is complete; customer invoices/benefits/policy items and expenses/recurring costs remain. |
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
-| Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10 management/daily reporting is present, but profitability/COGS/gross margin, exports/artifacts, full as-of, Action Center, and Explain This Number are incomplete. |
-| Phase 6 — Profitability and gross margin | **OPEN** | Requires profitability, reporting, and posted sale-recognition integration on top of the A12.3/A12.4 costing authorities; A10 does not yet consume canonical COGS for gross-margin reporting. |
+| Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10.2 now provides canonical ordinary-fuel revenue and gross-margin reporting from REV1/A12 authorities; exports/artifacts, full as-of, Action Center, and Explain This Number remain incomplete. |
+| Phase 6 — Profitability and gross margin | **PARTIAL** | Canonical REV1 revenue and A12 restated COGS are consumed by the A10 profitability read model with latest-finalized-revision, business-date, tenant, and station safeguards; operating expenses, fixed-cost recognition, and broader profitability remain incomplete. |
 | Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations and representative accessibility/weak-network behavior exist; full cross-module review, performance, offline sync, observability, backup/restore, and incident readiness remain. |
 | Phase 8 — Pilot and cutover | **PARTIAL** | Onboarding workbook and per-tank opening balance support exist; approved cross-domain opening batch, training, shadow operation, UAT, discrepancy classification, and pilot exit evidence remain. |
 | Phase 8 — Client/accounting/signed-scope inputs | **REQUIRES_CLIENT_DECISION** | Real station master data, opening positions, accounting/tax policy, external identifiers, and signed SOW/contract scope are outside repository-only determination. |

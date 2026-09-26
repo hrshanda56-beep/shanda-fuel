@@ -648,6 +648,12 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const body = (await response.json()) as Record<string, any>;
     expect(body.sales.salesValue).toBe('0.0000');
     expect(body.sales.litresSold).toBe('0.000');
+    expect(body.revenue).toMatchObject({
+      revenueStatus: 'NO_SALES',
+      recognizedRevenue: '0.0000',
+      saleCount: 0,
+      sales: [],
+    });
     expect(body.cash.cashEvidence).toBe('0.0000');
     expect(body.cash.collected).toBe('0.0000');
     expect(body.cash.banked).toBe('0.0000');
@@ -665,6 +671,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       sales: [],
     });
     expect(body.grossMargin).toBeNull();
+    expect(body.revenue.revenueStatus).toBe('NO_SALES');
     expect(body.dateBasis.providerSettlements).toBe('A9 settlement date');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
     expect(body.dateBasis.suppliers).toBe('A7 effective_date <= toDate; balance as of toDate');
@@ -690,7 +697,38 @@ describe('A10 management reporting PostgreSQL read model', () => {
       salesVariance: '-5.0000',
       approvedReconciliationCount: 1,
     });
+    expect(body.revenue).toMatchObject({
+      revenueStatus: 'POSTED',
+      recognizedRevenue: '105.0000',
+      saleCount: 1,
+    });
+    expect(body.revenue.sales[0]).toMatchObject({
+      stationId: ids.station,
+      reconciliationId: ids.factRecon,
+      revisionId: ids.factRevision,
+      meterSegmentId: ids.factSegment,
+      recognizedRevenue: '105.0000',
+      quantityLitres: '10.500',
+      businessDate: '2026-09-20',
+      currency: 'USD',
+    });
+    expect(body.grossMargin).toBe('79.7500');
     expect(body.sales.reconciliationIds).toContain(ids.factRecon);
+
+    const priorBusinessDateResponse = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-19&toDate=2026-09-19`,
+        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+      ),
+    );
+    const priorBusinessDateBody = (await priorBusinessDateResponse.json()) as Record<string, any>;
+    expect(priorBusinessDateBody.revenue).toMatchObject({
+      revenueStatus: 'NO_SALES',
+      recognizedRevenue: '0.0000',
+      saleCount: 0,
+    });
+    expect(priorBusinessDateBody.grossMargin).toBeNull();
+
     expect(body.costing).toMatchObject({
       currency: 'USD',
       costingStatus: 'COMPLETE',
@@ -846,6 +884,13 @@ describe('A10 management reporting PostgreSQL read model', () => {
       valuedSaleCount: 0,
       unvaluedSaleCount: 2,
     });
+    expect(saleDateBody.revenue).toMatchObject({
+      revenueStatus: 'NO_SALES',
+      recognizedRevenue: '0.0000',
+      saleCount: 0,
+      sales: [],
+    });
+    expect(saleDateBody.grossMargin).toBeNull();
     expect(saleDateBody.costing.sales).toHaveLength(2);
     expect(saleDateBody.costing.sales).toEqual(
       expect.arrayContaining([
@@ -907,6 +952,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
       revaluationDelta: '0.0000',
       restatedCogs: '0.0000',
     });
+    expect(reconciliationDateBody.revenue.revenueStatus).toBe('NO_SALES');
+    expect(reconciliationDateBody.grossMargin).toBeNull();
 
     const otherStationResponse = await managementReportGet(
       new Request(
@@ -917,6 +964,12 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(otherStationResponse.status).toBe(200);
     const otherStationBody = (await otherStationResponse.json()) as Record<string, any>;
     expect(otherStationBody.costing).toMatchObject({ costingStatus: 'NO_SALES', saleCount: 0 });
+    expect(otherStationBody.revenue).toMatchObject({
+      revenueStatus: 'NO_SALES',
+      recognizedRevenue: '0.0000',
+      saleCount: 0,
+    });
+    expect(otherStationBody.grossMargin).toBeNull();
   });
 
   it('rejects cross-tenant report selection and unauthorized station scope', async () => {

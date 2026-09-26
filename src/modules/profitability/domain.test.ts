@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeValuedSaleCogs, summarizeRestatedCogs } from './domain';
-import type { RestatedSaleCogs } from './contracts';
+import {
+  calculateGrossMargin,
+  normalizeValuedSaleCogs,
+  summarizeCanonicalRevenue,
+  summarizeRestatedCogs,
+} from './domain';
+import type { CanonicalSaleRevenue, RestatedSaleCogs } from './contracts';
 
 function sale(overrides: Partial<RestatedSaleCogs> = {}): RestatedSaleCogs {
   return {
@@ -24,7 +29,69 @@ function sale(overrides: Partial<RestatedSaleCogs> = {}): RestatedSaleCogs {
   };
 }
 
+function revenue(overrides: Partial<CanonicalSaleRevenue> = {}): CanonicalSaleRevenue {
+  return {
+    stationId: '00000000-0000-4000-8000-000000000000',
+    reconciliationId: '00000000-0000-4000-8000-000000000001',
+    revisionId: '00000000-0000-4000-8000-000000000002',
+    meterSegmentId: '00000000-0000-4000-8000-000000000003',
+    revenueMovementId: '00000000-0000-4000-8000-000000000004',
+    recognizedRevenue: '1.2345',
+    quantityLitres: '1.000',
+    businessDate: '2026-09-20',
+    effectiveAt: '2026-09-20T07:00:00.000Z',
+    currency: 'USD',
+    ...overrides,
+  };
+}
+
 describe('canonical restated COGS reporting', () => {
+  it('summarizes canonical revenue without using operational sales evidence', () => {
+    expect(
+      summarizeCanonicalRevenue([
+        revenue(),
+        revenue({
+          meterSegmentId: '00000000-0000-4000-8000-000000000007',
+          revenueMovementId: '00000000-0000-4000-8000-000000000008',
+          recognizedRevenue: '2.3456',
+        }),
+      ]),
+    ).toMatchObject({
+      revenueStatus: 'POSTED',
+      recognizedRevenue: '3.5801',
+      saleCount: 2,
+    });
+  });
+
+  it('calculates exact gross margin from recognized revenue and restated COGS', () => {
+    const canonicalRevenue = summarizeCanonicalRevenue([revenue()]);
+    const costing = summarizeRestatedCogs([
+      sale({ originalCogs: '0.0001', restatedCogs: '0.0001' }),
+    ]);
+    expect(calculateGrossMargin(canonicalRevenue, costing)).toBe('1.2344');
+  });
+
+  it('does not publish a margin for no-sales or unvalued periods', () => {
+    const noRevenue = summarizeCanonicalRevenue([]);
+    const noSales = summarizeRestatedCogs([]);
+    expect(calculateGrossMargin(noRevenue, noSales)).toBeNull();
+    expect(
+      calculateGrossMargin(
+        summarizeCanonicalRevenue([revenue()]),
+        summarizeRestatedCogs([
+          sale({
+            valuationStatus: 'UNVALUED',
+            attributionId: null,
+            originalSaleCogsEventId: null,
+            originalCogs: null,
+            revaluationDelta: null,
+            restatedCogs: null,
+          }),
+        ]),
+      ),
+    ).toBeNull();
+  });
+
   it('returns a distinct zero-valued no-sales result', () => {
     expect(summarizeRestatedCogs([])).toEqual({
       currency: 'USD',

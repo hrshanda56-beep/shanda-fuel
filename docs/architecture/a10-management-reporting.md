@@ -30,6 +30,7 @@ The selected latest revision prevents an approved correction and its superseded 
 The API includes a `dateBasis` object so a range is not presented as if every source shared one date field:
 
 - sales, A5 cash evidence, provider evidence, and A5 expenses: A5 `business_date`.
+- recognized revenue: REV1 `sale_recognition_movements.business_date`.
 - collections: A6 `cash_collections.business_date`.
 - banked cash: A6 `bank_deposits.deposited_at` interpreted as a UTC calendar date; the deposit state must be `CONFIRMED`. This is intentionally independent of the linked collection's business date.
 - provider settlements: A9 `settlement_date`.
@@ -49,13 +50,15 @@ The reporting service resolves the tenant from the authenticated server context,
 
 The dashboard is intentionally labeled a management/operational view. It does not claim to be a general ledger, trial balance, statutory P&L, balance sheet, cash-flow statement, tax report, or bank statement.
 
-Gross margin is not exposed in this wave. REV1 now provides the canonical posted
-ordinary fuel-sale movement in `app.sale_recognition_movements`, while A12
-provides chronological attributable COGS/revaluation evidence. A10 still does
-not consume either authority for gross-margin reporting until the dedicated
-profitability contract is reviewed and enabled. Existing management totals
-remain historical/read-model behavior and must not be interpreted as the
-canonical revenue ledger.
+Canonical profitability consumes the posted ordinary fuel-sale movement in
+`app.sale_recognition_movements` and the A12 chronological attributable
+COGS/revaluation evidence. The report returns recognized revenue separately
+from A5 accounted-sales/readings/payment evidence, and publishes gross margin
+only when the latest finalized A5 revision has a complete valued COGS set:
+recognized revenue minus restated COGS. `NO_SALES` and `UNVALUED` remain
+non-numeric margin states; a missing REV1 row is never treated as zero revenue.
+There is no historical revenue backfill, and REV1 posting semantics are
+unchanged.
 
 A8 customer ledger balances do not contain a station dimension. A tenant-wide report returns `availability: AVAILABLE` and balances as of `toDate`; a station-filtered report returns `availability: UNAVAILABLE_STATION_DIMENSION`, nullable customer totals, and no customer balance rows rather than leaking or inventing a station allocation. PREPAID_LITRES remains quantity evidence and is never converted to money.
 
