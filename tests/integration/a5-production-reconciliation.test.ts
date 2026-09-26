@@ -1201,6 +1201,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             effectiveAt: openingEffectiveAt.toISOString(),
           },
           `a5-phase3-opening-${phase3TankId}`,
+          'a5-manager-session-token',
         ),
       );
       await expectOk(
@@ -1449,6 +1450,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             reason: 'A5 Phase 3 late historical receipt cost',
           },
           `a5-phase3-request-revaluation-${phase3TankId}`,
+          'a5-manager-session-token',
         ),
       );
       const revaluationId = requested.revaluationId as string;
@@ -1473,6 +1475,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             revaluationId,
           },
           `a5-phase3-post-revaluation-${phase3TankId}`,
+          'a5-manager-session-token',
         ),
       );
 
