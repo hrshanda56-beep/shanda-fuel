@@ -1,6 +1,6 @@
 # ADR-013: A12.4 Late-Cost Historical Revaluation
 
-- Status: Accepted for A12.4 Phase 1
+- Status: Accepted for A12.4 and A12.5 v1 closure
 - Date: 2026-09-26
 - Decision owners: A12 costing workstream
 
@@ -19,6 +19,25 @@ record the missing historical cost and restate the consumed share without
 rewriting A4 quantity movements or the original sale evidence.
 
 ## Decision
+
+### V1 posting scope
+
+Whole-history revaluation is the only supported v1 posting semantics. A late
+authoritative opening or receipt cost revalues the complete causally affected
+historical stream from its effective chronology through the current projection.
+It emits append-only `COGS_REVALUATION` deltas for every affected canonical
+sale and allocates the remainder to ending inventory. Original A4 movements,
+original `SALE_COGS` events, and original sale attributions remain immutable.
+
+Bounded restatement is intentionally deferred from v1. The nullable
+`restatementFromAt` and `restatementThroughAt` envelope fields are reserved
+metadata retained for migration compatibility only; they do not define v1
+replay, allocation, projection, or posting semantics. Non-null values remain
+rejected at the public request boundary and must not be silently ignored.
+
+Reporting period filtering and future `as_of` reporting are separate concerns.
+They must use report period/effective criteria and posted-time cutoffs in the
+reporting layer, and must not reuse these reserved revaluation fields.
 
 ### Ordinary historical cost plus append-only COGS deltas
 

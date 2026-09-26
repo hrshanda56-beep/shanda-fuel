@@ -15,6 +15,7 @@ The application is a modular monolith. Each module owns its authoritative domain
 | Customers | Credit, prepaid value/litres, authorizations, payments, invoices | Forecourt, reconciliation | Duplicate meter litres/revenue or mix prepaid products. |
 | Expenses | Expenses and recurring-cost recognition/payment allocation | Cash, suppliers, approvals | Double-count inventory costs as operating expenses. |
 | Reconciliation/approvals | Reconciliation revisions and approval workflow | Forecourt, money, customers, audit | Generic status mutation or double-post inventory sales. |
+| Revenue | Append-only canonical sale-recognition movements and ordinary fuel-sale revenue derivation | Forecourt segments, A4 SALE, A5 approval/reconciliation lineage, A12 COGS | Treat declarations, payments, reading aggregates, or settlement amounts as revenue; mutate posted revenue in place. |
 | Documents | Evidence identities, immutable versions, verification | All owning modules | Use public objects or overwrite evidence in place. |
 | Reporting | Canonical calculations, report runs/artifacts, explanations | Published authoritative movements/projections | Recalculate official numbers separately in UI/PDF/XLSX. |
 | Audit/notifications | Audit/security events and notification delivery | All modules through contracts | Expose secrets or mutate business truth. |

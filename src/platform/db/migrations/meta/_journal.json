@@ -99,6 +99,13 @@
       "when": 1790404952875,
       "tag": "0013_a12_late_cost_revaluation",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790408550000,
+      "tag": "0014_rev1_sale_revenue",
+      "breakpoints": true
     }
   ]
 }

@@ -1,2 +1,9 @@
-/** Profitability workflows are owned by later workstreams; this is the public module boundary. */
-export {};
+export { normalizeValuedSaleCogs, summarizeRestatedCogs } from './domain';
+export { readRestatedCogs } from './query';
+export type {
+  CostingStatus,
+  RestatedCogsQueryFilters,
+  RestatedCogsReport,
+  RestatedSaleCogs,
+  SaleValuationStatus,
+} from './contracts';
