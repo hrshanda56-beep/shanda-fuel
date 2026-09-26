@@ -72,6 +72,48 @@ const ids = {
   factOpeningBoundary: 'a10b0000-0000-4000-8000-0000000000c2',
   factClosingBoundary: 'a10b0000-0000-4000-8000-0000000000c3',
   factSegment: 'a10b0000-0000-4000-8000-0000000000c4',
+  revaluationPositive: 'a10b0000-0000-4000-8000-0000000000c7',
+  revaluationNegative: 'a10b0000-0000-4000-8000-0000000000c8',
+  revaluationSequential: 'a10b0000-0000-4000-8000-0000000000c9',
+  revaluationPending: 'a10b0000-0000-4000-8000-0000000000ca',
+  revaluationSourcePositive: 'a10b0000-0000-4000-8000-0000000000cb',
+  revaluationSourceNegative: 'a10b0000-0000-4000-8000-0000000000cc',
+  revaluationSourceSequential: 'a10b0000-0000-4000-8000-0000000000cd',
+  revaluationSourcePending: 'a10b0000-0000-4000-8000-0000000000ce',
+  revaluationLinePositive: 'a10b0000-0000-4000-8000-0000000000cf',
+  revaluationLineNegative: 'a10b0000-0000-4000-8000-0000000000d0',
+  revaluationLineSequential: 'a10b0000-0000-4000-8000-0000000000d1',
+  revaluationLinePending: 'a10b0000-0000-4000-8000-0000000000d2',
+  revaluationEventPositive: 'a10b0000-0000-4000-8000-0000000000d3',
+  revaluationEventNegative: 'a10b0000-0000-4000-8000-0000000000d4',
+  revaluationEventSequential: 'a10b0000-0000-4000-8000-0000000000d5',
+  revaluationEventPending: 'a10b0000-0000-4000-8000-0000000000d6',
+  costingDay: 'a10b0000-0000-4000-8000-0000000000d7',
+  costingShift: 'a10b0000-0000-4000-8000-0000000000d8',
+  costingRecon: 'a10b0000-0000-4000-8000-0000000000d9',
+  costingRevisionSuperseded: 'a10b0000-0000-4000-8000-0000000000da',
+  costingRevisionLatest: 'a10b0000-0000-4000-8000-0000000000db',
+  costingReading: 'a10b0000-0000-4000-8000-0000000000dc',
+  costingSegmentSuperseded: 'a10b0000-0000-4000-8000-0000000000dd',
+  costingSegmentLatest: 'a10b0000-0000-4000-8000-0000000000de',
+  costingMovementSuperseded: 'a10b0000-0000-4000-8000-0000000000df',
+  costingMovementLatest: 'a10b0000-0000-4000-8000-0000000000e0',
+  costingBridgeSuperseded: 'a10b0000-0000-4000-8000-0000000000e1',
+  costingBridgeLatest: 'a10b0000-0000-4000-8000-0000000000e2',
+  costingTank: 'a10b0000-0000-4000-8000-0000000000e3',
+  costingNozzle: 'a10b0000-0000-4000-8000-0000000000e4',
+  costingInstallation: 'a10b0000-0000-4000-8000-0000000000e5',
+  costingOpeningBoundary: 'a10b0000-0000-4000-8000-0000000000e6',
+  costingClosingBoundary: 'a10b0000-0000-4000-8000-0000000000e7',
+  costingOpeningBoundaryLatest: 'a10b0000-0000-4000-8000-0000000000e8',
+  costingClosingBoundaryLatest: 'a10b0000-0000-4000-8000-0000000000e9',
+  costingSegmentMissing: 'a10b0000-0000-4000-8000-0000000000ea',
+  costingMovementMissing: 'a10b0000-0000-4000-8000-0000000000eb',
+  costingBridgeMissing: 'a10b0000-0000-4000-8000-0000000000ec',
+  costingMissingOpeningBoundary: 'a10b0000-0000-4000-8000-0000000000ed',
+  costingMissingClosingBoundary: 'a10b0000-0000-4000-8000-0000000000ee',
+  costingInvalidAttribution: 'a10b0000-0000-4000-8000-0000000000ef',
+  costingInvalidEvent: 'a10b0000-0000-4000-8000-0000000000f0',
 };
 const sessionToken = 'a10-management-session-token';
 const scopedSessionToken = 'a10-management-scoped-session-token';
@@ -384,6 +426,213 @@ describe('A10 management reporting PostgreSQL read model', () => {
         quantity_litres: '-10.500',
       },
     ]);
+
+    const saleEvidence = await client.unsafe<
+      {
+        sale_movement_id: string;
+        attribution_id: string;
+        original_cogs: string;
+        pre_sale_wac: string;
+        sale_effective_at: string;
+        business_date: string;
+      }[]
+    >(`
+      select movement.id as sale_movement_id,
+             attribution.id as attribution_id,
+             attribution.original_cogs::text as original_cogs,
+             attribution.pre_sale_wac::text as pre_sale_wac,
+             movement.effective_at::text as sale_effective_at,
+             movement.business_date
+      from app.inventory_movements movement
+      join app.inventory_sale_cost_attributions attribution
+        on attribution.tenant_id = movement.tenant_id
+       and attribution.station_id = movement.station_id
+       and attribution.inventory_movement_id = movement.id
+      where movement.tenant_id = '${ids.tenant}'
+        and movement.station_id = '${ids.station}'
+        and movement.source_type = 'METER_SEGMENT_SALE'
+        and movement.source_id = '${ids.factSegment}'
+        and movement.movement_type = 'SALE'
+    `);
+    expect(saleEvidence).toHaveLength(1);
+
+    const sale = saleEvidence[0]!;
+    const revaluations = [
+      {
+        revaluationId: ids.revaluationPositive,
+        sourceId: ids.revaluationSourcePositive,
+        lineId: ids.revaluationLinePositive,
+        eventId: ids.revaluationEventPositive,
+        delta: '5.0000',
+        prior: '21.0000',
+        recomputed: '26.0000',
+        posted: true,
+      },
+      {
+        revaluationId: ids.revaluationNegative,
+        sourceId: ids.revaluationSourceNegative,
+        lineId: ids.revaluationLineNegative,
+        eventId: ids.revaluationEventNegative,
+        delta: '-2.0000',
+        prior: '26.0000',
+        recomputed: '24.0000',
+        posted: true,
+      },
+      {
+        revaluationId: ids.revaluationSequential,
+        sourceId: ids.revaluationSourceSequential,
+        lineId: ids.revaluationLineSequential,
+        eventId: ids.revaluationEventSequential,
+        delta: '1.2500',
+        prior: '24.0000',
+        recomputed: '25.2500',
+        posted: true,
+      },
+      {
+        revaluationId: ids.revaluationPending,
+        sourceId: ids.revaluationSourcePending,
+        lineId: ids.revaluationLinePending,
+        eventId: ids.revaluationEventPending,
+        delta: '100.0000',
+        prior: '25.2500',
+        recomputed: '125.2500',
+        posted: false,
+      },
+    ] as const;
+
+    for (const revaluation of revaluations) {
+      await client.unsafe(`
+        insert into app.inventory_cost_revaluations
+          (id, tenant_id, station_id, tank_id, product_id, reason, status, source_type, source_id,
+           amount, currency, effective_at, business_date, requested_by, requested_at)
+        values
+          ('${revaluation.revaluationId}', '${ids.tenant}', '${ids.station}', '${ids.factTank}', '${ids.factProduct}',
+           'A10 restated COGS integration evidence', 'REQUESTED', 'A10_TEST_REVALUATION', '${revaluation.sourceId}',
+           ${revaluation.delta.startsWith('-') ? revaluation.delta.slice(1) : revaluation.delta}, 'USD',
+           '${sale.sale_effective_at}', '${sale.business_date}', '${ids.membership}', '2026-09-25T08:00:00Z')
+        on conflict (id) do nothing;
+        update app.inventory_cost_revaluations
+           set status = 'APPROVED', approved_by = '${ids.membership}', approved_at = '2026-09-25T09:00:00Z'
+         where id = '${revaluation.revaluationId}' and status = 'REQUESTED';
+        insert into app.inventory_cost_events
+          (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id,
+           effective_at, business_date, amount, currency, actor_membership_id)
+        values
+          ('${revaluation.eventId}', '${ids.tenant}', '${ids.station}', '${ids.factTank}', '${ids.factProduct}',
+           'COGS_REVALUATION', 'INVENTORY_COST_REVALUATION_LINE', '${revaluation.lineId}',
+           '${sale.sale_effective_at}', '${sale.business_date}', ${revaluation.delta}, 'USD', '${ids.membership}')
+        on conflict (id) do nothing;
+        insert into app.inventory_cost_revaluation_lines
+          (id, tenant_id, station_id, tank_id, product_id, revaluation_id, sale_movement_id,
+           sale_attribution_id, original_pre_sale_wac, recomputed_pre_sale_wac, original_cogs,
+           prior_restated_cogs, recomputed_cogs, cogs_delta, currency, sale_effective_at,
+           cogs_revaluation_event_id, replay_fingerprint)
+        values
+          ('${revaluation.lineId}', '${ids.tenant}', '${ids.station}', '${ids.factTank}', '${ids.factProduct}',
+           '${revaluation.revaluationId}', '${sale.sale_movement_id}', '${sale.attribution_id}',
+           ${sale.pre_sale_wac}, ${sale.pre_sale_wac}, ${sale.original_cogs}, ${revaluation.prior},
+           ${revaluation.recomputed}, ${revaluation.delta}, 'USD', '${sale.sale_effective_at}',
+           '${revaluation.eventId}', 'a10-revaluation-${revaluation.lineId}')
+        on conflict (id) do nothing;
+        ${
+          revaluation.posted
+            ? `update app.inventory_cost_revaluations
+                 set status = 'POSTED', posted_by = '${ids.membership}', posted_at = '2026-09-25T10:00:00Z',
+                     replay_fingerprint = 'a10-posted-${revaluation.revaluationId}'
+               where id = '${revaluation.revaluationId}' and status = 'APPROVED';`
+            : ''
+        }
+      `);
+    }
+
+    const immutableOriginalCogs = await client.unsafe<{ original_cogs: string }[]>(`
+      select original_cogs::text
+      from app.inventory_sale_cost_attributions
+      where tenant_id = '${ids.tenant}' and id = '${sale.attribution_id}'
+    `);
+    expect(immutableOriginalCogs).toEqual([{ original_cogs: '21.0000' }]);
+
+    await client.begin(async (transaction) => {
+      // This deliberately malformed historical fixture is isolated to the A10
+      // read-model test. It proves that reporting period membership follows
+      // the persisted A4 sale movement date rather than reconciliation-day
+      // metadata, while the production A4/A5/A12 guards remain unchanged.
+      await transaction.unsafe(`set local session_replication_role = 'replica'`);
+      await transaction.unsafe(`
+        insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${ids.costingDay}', '${ids.tenant}', '${ids.scopedStation}', '2026-10-11', 'OPEN')
+        on conflict (id) do nothing;
+        insert into app.reconciliations
+          (id, tenant_id, station_id, business_day_id, state, version)
+        values ('${ids.costingRecon}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingDay}', 'POSTED', 0)
+        on conflict (id) do nothing;
+        insert into app.reconciliation_revisions
+          (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales,
+           accounted_sales, variance, currency, variance_classification, declarations,
+           source_segment_ids, source_shift_ids, source_revision_id, correction_of_revision_id,
+           posted_by, posted_at)
+        values
+          ('${ids.costingRevisionSuperseded}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingRecon}',
+           1, 'POSTED', 10.0000, 10.0000, 0.0000, 'USD', 'INFORMATIONAL', '[]'::jsonb,
+           '["${ids.costingSegmentSuperseded}"]'::jsonb, '["${ids.costingShift}"]'::jsonb,
+           null, null, '${ids.scopedMembership}', '2026-10-11T22:00:00Z'),
+          ('${ids.costingRevisionLatest}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingRecon}',
+           2, 'POSTED', 10.0000, 10.0000, 0.0000, 'USD', 'INFORMATIONAL', '[]'::jsonb,
+           '["${ids.costingSegmentLatest}", "${ids.costingSegmentMissing}"]'::jsonb, '["${ids.costingShift}"]'::jsonb,
+           '${ids.costingRevisionSuperseded}', '${ids.costingRevisionSuperseded}',
+           '${ids.scopedMembership}', '2026-10-11T23:00:00Z')
+        on conflict (id) do nothing;
+        insert into app.meter_segments
+          (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+           opening_boundary_id, closing_boundary_id, product_id, attendant_id, entered_by,
+           opening_reading, closing_reading, litres, unit_price, expected_sale_value, currency,
+           boundary_reason, segment_start_at, segment_end_at, sealed_at, state, version)
+        values
+          ('${ids.costingSegmentSuperseded}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingNozzle}', '${ids.costingInstallation}', '${ids.costingDay}', '${ids.costingShift}',
+           '${ids.costingOpeningBoundary}', '${ids.costingClosingBoundary}', '${ids.factProduct}', '${ids.scopedMembership}', '${ids.scopedMembership}',
+           0.000, 1.000, 1.000, 10.000000, 10.0000, 'USD', 'A10 TEST', '2026-10-10T06:00:00Z', '2026-10-10T07:00:00Z', '2026-10-11T20:00:00Z', 'SEALED', 1),
+          ('${ids.costingSegmentLatest}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingNozzle}', '${ids.costingInstallation}', '${ids.costingDay}', '${ids.costingShift}',
+           '${ids.costingOpeningBoundaryLatest}', '${ids.costingClosingBoundaryLatest}', '${ids.factProduct}', '${ids.scopedMembership}', '${ids.scopedMembership}',
+           1.000, 2.000, 1.000, 10.000000, 10.0000, 'USD', 'A10 TEST', '2026-10-10T07:00:00Z', '2026-10-10T08:00:00Z', '2026-10-11T20:00:00Z', 'SEALED', 1),
+          ('${ids.costingSegmentMissing}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingNozzle}', '${ids.costingInstallation}', '${ids.costingDay}', '${ids.costingShift}',
+           '${ids.costingMissingOpeningBoundary}', '${ids.costingMissingClosingBoundary}', '${ids.factProduct}', '${ids.scopedMembership}', '${ids.scopedMembership}',
+           2.000, 3.000, 1.000, 10.000000, 10.0000, 'USD', 'A10 TEST', '2026-10-10T08:00:00Z', '2026-10-10T09:00:00Z', '2026-10-11T20:00:00Z', 'SEALED', 1)
+        on conflict (id) do nothing;
+        insert into app.reconciliation_meter_reading_segments
+          (id, tenant_id, station_id, reconciliation_id, revision_id, reconciliation_meter_reading_id,
+           meter_segment_id, allocated_litres)
+        values
+          ('${ids.costingBridgeSuperseded}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingRecon}', '${ids.costingRevisionSuperseded}', '${ids.costingReading}', '${ids.costingSegmentSuperseded}', 1.000),
+          ('${ids.costingBridgeLatest}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingRecon}', '${ids.costingRevisionLatest}', '${ids.costingReading}', '${ids.costingSegmentLatest}', 1.000),
+          ('${ids.costingBridgeMissing}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingRecon}', '${ids.costingRevisionLatest}', '${ids.costingReading}', '${ids.costingSegmentMissing}', 1.000)
+        on conflict (id) do nothing;
+        insert into app.inventory_movements
+          (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres,
+           effective_at, business_date, source_type, source_id, actor_membership_id, posted_at)
+        values
+          ('${ids.costingMovementSuperseded}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingTank}', '${ids.factProduct}', 'SALE', -1.000,
+           '2026-10-10T07:00:00Z', '2026-10-10', 'METER_SEGMENT_SALE', '${ids.costingSegmentSuperseded}', '${ids.scopedMembership}', '2026-10-11T20:00:00Z'),
+          ('${ids.costingMovementLatest}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingTank}', '${ids.factProduct}', 'SALE', -1.000,
+           '2026-10-10T08:00:00Z', '2026-10-10', 'METER_SEGMENT_SALE', '${ids.costingSegmentLatest}', '${ids.scopedMembership}', '2026-10-11T20:00:00Z'),
+          ('${ids.costingMovementMissing}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingTank}', '${ids.factProduct}', 'SALE', -1.000,
+           '2026-10-10T09:00:00Z', '2026-10-10', 'METER_SEGMENT_SALE', '${ids.costingSegmentMissing}', '${ids.scopedMembership}', '2026-10-11T20:00:00Z')
+        on conflict (id) do nothing;
+        insert into app.inventory_cost_events
+          (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id,
+           effective_at, business_date, amount, currency, actor_membership_id)
+        values ('${ids.costingInvalidEvent}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingTank}', '${ids.factProduct}',
+          'SALE_COGS', 'A10_INVALID_SOURCE', '${ids.costingSegmentLatest}', '2026-10-10T08:00:00Z', '2026-10-10', -21.0000, 'USD', '${ids.scopedMembership}')
+        on conflict (id) do nothing;
+        insert into app.inventory_sale_cost_attributions
+          (id, tenant_id, station_id, tank_id, product_id, inventory_movement_id, meter_segment_id,
+           sale_quantity_litres, pre_sale_wac, original_cogs, valuation_status, valuation_basis,
+           replay_fingerprint, sale_cost_event_id, effective_at, business_date)
+        values ('${ids.costingInvalidAttribution}', '${ids.tenant}', '${ids.scopedStation}', '${ids.costingTank}', '${ids.factProduct}',
+          '${ids.costingMovementLatest}', '${ids.costingSegmentLatest}', 1.000, 2.00000000, 21.0000,
+          'VALUED', 'PRE_SALE_WAC', 'a10-invalid-attribution', '${ids.costingInvalidEvent}', '2026-10-10T08:00:00Z', '2026-10-10')
+        on conflict (id) do nothing;
+      `);
+    });
   });
 
   afterAll(async () => client?.end());
@@ -404,6 +653,17 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(body.cash.banked).toBe('0.0000');
     expect(body.providers.paymentEvidence).toBe('0.0000');
     expect(body.inventory.expectedLitres).toBe('0.000');
+    expect(body.costing).toMatchObject({
+      currency: 'USD',
+      costingStatus: 'NO_SALES',
+      originalCogs: '0.0000',
+      revaluationDelta: '0.0000',
+      restatedCogs: '0.0000',
+      saleCount: 0,
+      valuedSaleCount: 0,
+      unvaluedSaleCount: 0,
+      sales: [],
+    });
     expect(body.grossMargin).toBeNull();
     expect(body.dateBasis.providerSettlements).toBe('A9 settlement date');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
@@ -431,6 +691,47 @@ describe('A10 management reporting PostgreSQL read model', () => {
       approvedReconciliationCount: 1,
     });
     expect(body.sales.reconciliationIds).toContain(ids.factRecon);
+    expect(body.costing).toMatchObject({
+      currency: 'USD',
+      costingStatus: 'COMPLETE',
+      originalCogs: '21.0000',
+      revaluationDelta: '4.2500',
+      restatedCogs: '25.2500',
+      saleCount: 1,
+      valuedSaleCount: 1,
+      unvaluedSaleCount: 0,
+    });
+    expect(body.costing.sales[0]).toMatchObject({
+      stationId: ids.station,
+      reconciliationId: ids.factRecon,
+      revisionId: ids.factRevision,
+      meterSegmentId: ids.factSegment,
+      saleMovementId: expect.any(String),
+      attributionId: expect.any(String),
+      originalSaleCogsEventId: expect.any(String),
+      originalCogs: '21.0000',
+      revaluationDelta: '4.2500',
+      restatedCogs: '25.2500',
+      businessDate: '2026-09-20',
+      currency: 'USD',
+      valuationStatus: 'VALUED',
+    });
+    expect(body.costing.sales[0].revaluationLineIds).toEqual(
+      expect.arrayContaining([
+        ids.revaluationLinePositive,
+        ids.revaluationLineNegative,
+        ids.revaluationLineSequential,
+      ]),
+    );
+    expect(body.costing.sales[0].revaluationLineIds).not.toContain(ids.revaluationLinePending);
+    expect(body.costing.sales[0].revaluationEventIds).toEqual(
+      expect.arrayContaining([
+        ids.revaluationEventPositive,
+        ids.revaluationEventNegative,
+        ids.revaluationEventSequential,
+      ]),
+    );
+    expect(body.costing.sales[0].revaluationEventIds).not.toContain(ids.revaluationEventPending);
     expect(body.cash).toMatchObject({
       cashEvidence: '70.0000',
       collected: '60.0000',
@@ -520,6 +821,102 @@ describe('A10 management reporting PostgreSQL read model', () => {
       reservedLitres: null,
       rows: [],
     });
+  });
+
+  it('uses the A4 sale business date for costing periods and does not double-count revisions', async () => {
+    const saleDateResponse = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.scopedStation}&fromDate=2026-10-10&toDate=2026-10-10`,
+        {
+          headers: {
+            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+          },
+        },
+      ),
+    );
+    expect(saleDateResponse.status).toBe(200);
+    const saleDateBody = (await saleDateResponse.json()) as Record<string, any>;
+    expect(saleDateBody.costing).toMatchObject({
+      currency: 'USD',
+      costingStatus: 'UNVALUED',
+      originalCogs: null,
+      revaluationDelta: null,
+      restatedCogs: null,
+      saleCount: 2,
+      valuedSaleCount: 0,
+      unvaluedSaleCount: 2,
+    });
+    expect(saleDateBody.costing.sales).toHaveLength(2);
+    expect(saleDateBody.costing.sales).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reconciliationId: ids.costingRecon,
+          revisionId: ids.costingRevisionLatest,
+          meterSegmentId: ids.costingSegmentLatest,
+          saleMovementId: ids.costingMovementLatest,
+          attributionId: ids.costingInvalidAttribution,
+          originalSaleCogsEventId: ids.costingInvalidEvent,
+          originalCogs: null,
+          revaluationDelta: null,
+          restatedCogs: null,
+          businessDate: '2026-10-10',
+          currency: 'USD',
+          valuationStatus: 'UNVALUED',
+        }),
+        expect.objectContaining({
+          reconciliationId: ids.costingRecon,
+          revisionId: ids.costingRevisionLatest,
+          meterSegmentId: ids.costingSegmentMissing,
+          saleMovementId: ids.costingMovementMissing,
+          attributionId: null,
+          originalSaleCogsEventId: null,
+          originalCogs: null,
+          revaluationDelta: null,
+          restatedCogs: null,
+          businessDate: '2026-10-10',
+          currency: null,
+          valuationStatus: 'UNVALUED',
+        }),
+      ]),
+    );
+    expect(
+      saleDateBody.costing.sales.every(
+        (sale: Record<string, unknown>) => sale.revisionId === ids.costingRevisionLatest,
+      ),
+    ).toBe(true);
+    expect(
+      saleDateBody.costing.sales.map((sale: Record<string, string>) => sale.revisionId),
+    ).not.toContain(ids.costingRevisionSuperseded);
+
+    const reconciliationDateResponse = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.scopedStation}&fromDate=2026-10-11&toDate=2026-10-11`,
+        {
+          headers: {
+            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+          },
+        },
+      ),
+    );
+    expect(reconciliationDateResponse.status).toBe(200);
+    const reconciliationDateBody = (await reconciliationDateResponse.json()) as Record<string, any>;
+    expect(reconciliationDateBody.costing).toMatchObject({
+      costingStatus: 'NO_SALES',
+      saleCount: 0,
+      originalCogs: '0.0000',
+      revaluationDelta: '0.0000',
+      restatedCogs: '0.0000',
+    });
+
+    const otherStationResponse = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.station}&fromDate=2026-10-10&toDate=2026-10-10`,
+        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+      ),
+    );
+    expect(otherStationResponse.status).toBe(200);
+    const otherStationBody = (await otherStationResponse.json()) as Record<string, any>;
+    expect(otherStationBody.costing).toMatchObject({ costingStatus: 'NO_SALES', saleCount: 0 });
   });
 
   it('rejects cross-tenant report selection and unauthorized station scope', async () => {
