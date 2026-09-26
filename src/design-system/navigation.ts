@@ -28,7 +28,7 @@ export const primaryNavigation = [
   },
   {
     key: 'work',
-    href: '#operations',
+    href: '/operations/daily',
     label: 'Operations',
     mobileLabel: 'Work',
     description: 'Station day, shifts and operations',

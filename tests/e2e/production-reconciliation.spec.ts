@@ -31,6 +31,7 @@ const ids = {
   a11RetryShift: 'a5e00000-0000-4000-8000-000000000135',
   a11RetryShiftTwo: 'a5e00000-0000-4000-8000-000000000136',
   a11RetryShiftThree: 'a5e00000-0000-4000-8000-000000000137',
+  controlRoomShift: 'a5e00000-0000-4000-8000-000000000138',
   tank: 'a5e00000-0000-4000-8000-000000000141',
   openingSource: 'a5e00000-0000-4000-8000-000000000151',
   openingCostEvent: 'a5e00000-0000-4000-8000-000000000152',
@@ -130,10 +131,11 @@ test.describe('production reconciliation persistence', () => {
       values
         ('${ids.a11RetryShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T06:00:00Z', '2026-09-23T14:00:00Z', '2026-09-23'),
         ('${ids.a11RetryShiftTwo}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23'),
-        ('${ids.a11RetryShiftThree}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23')
+        ('${ids.a11RetryShiftThree}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23'),
+        ('${ids.controlRoomShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23')
         on conflict (id) do nothing;
       update app.shifts set state='OPEN', opened_at=coalesce(opened_at, now())
-        where id in ('${ids.shift}', '${ids.retryShift}', '${ids.retryShiftTwo}', '${ids.retryShiftThree}', '${ids.a11RetryShift}', '${ids.a11RetryShiftTwo}', '${ids.a11RetryShiftThree}');
+        where id in ('${ids.shift}', '${ids.retryShift}', '${ids.retryShiftTwo}', '${ids.retryShiftThree}', '${ids.a11RetryShift}', '${ids.a11RetryShiftTwo}', '${ids.a11RetryShiftThree}', '${ids.controlRoomShift}');
       insert into app.tanks
         (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
       values
@@ -324,7 +326,87 @@ test.describe('production reconciliation persistence', () => {
     return { openingReading, closingReading, segmentId };
   }
 
-  test('persists through refresh, submits, approves, locks, and rejects edits', async ({
+  test('A11 control room exposes authorized actions, station time, restricted audit, and mobile keyboard access', async ({
+    context,
+    page,
+  }) => {
+    await authenticate(context, supervisorToken);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(
+      `/operations/daily?${new URLSearchParams({
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        businessDayId: ids.day,
+      })}`,
+    );
+
+    const controlRoom = page.locator('[aria-label="Operations control room"]');
+    await expect(
+      controlRoom.getByRole('heading', { name: 'Business day, shifts and reconciliation' }),
+    ).toBeVisible();
+    await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
+    await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
+    await expect(controlRoom.getByText('Audit history restricted')).toBeVisible();
+    await expect(
+      controlRoom
+        .locator('article.operations-shift-row strong')
+        .filter({
+          hasText: '08:00 – 16:00',
+        })
+        .first(),
+    ).toBeVisible();
+
+    const closeMeters = controlRoom.getByRole('button', { name: 'Close meters' }).first();
+    await closeMeters.focus();
+    await expect(closeMeters).toBeFocused();
+
+    const layout = await page.evaluate(() => ({
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.documentWidth).toBe(layout.viewportWidth);
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+  });
+
+  test('A11 control room refreshes and explains a stale shift action without retrying it', async ({
+    context,
+    page,
+  }) => {
+    await authenticate(context, supervisorToken);
+    await page.goto(
+      `/operations/daily?${new URLSearchParams({
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        businessDayId: ids.day,
+      })}`,
+    );
+
+    const shiftRow = page
+      .locator('article.operations-shift-row')
+      .filter({ hasText: ids.controlRoomShift });
+    const closeMeters = shiftRow.getByRole('button', { name: 'Close meters' });
+    await expect(closeMeters).toBeVisible();
+    await client.unsafe(
+      `update app.shifts set version = version + 1 where id = '${ids.controlRoomShift}'`,
+    );
+
+    page.once('dialog', (dialog) => void dialog.accept());
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/forecourt/commands') &&
+        response.request().method() === 'POST',
+    );
+    await closeMeters.click();
+    const response = await responsePromise;
+    expect(response.status()).toBe(409);
+    await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
+    await expect(
+      page.getByText(/authoritative state has been refreshed; review it before trying again/i),
+    ).toBeVisible();
+  });
+
+  test('persists through refresh, submits, approves, and rejects edits after production approval', async ({
     context,
     page,
   }, testInfo) => {
@@ -432,7 +514,8 @@ test.describe('production reconciliation persistence', () => {
         response.url().includes('/api/forecourt/commands') &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Approve and lock' }).click();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
     const approveResponse = await approveResponsePromise;
     expect(approveResponse.ok(), await approveResponse.text()).toBe(true);
     await expect
@@ -453,7 +536,7 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText('APPROVED', { exact: true })).toBeVisible();
     await expect(
       page.getByText(
-        'Approved records are locked. Further changes require a named correction workflow.',
+        'Approved records have posted canonical sale evidence. Further changes require a named correction workflow.',
       ),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save persisted draft' })).toHaveCount(0);
@@ -501,7 +584,7 @@ test.describe('production reconciliation persistence', () => {
     ]);
   });
 
-  test('A11 workspace captures representative evidence, requires a return reason, and locks after approval', async ({
+  test('A11 workspace captures representative evidence, requires a return reason, and approves production evidence', async ({
     context,
     page,
   }, testInfo) => {
@@ -650,9 +733,10 @@ test.describe('production reconciliation persistence', () => {
 
     await authenticate(context, managerToken);
     await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
-    await page.getByRole('button', { name: 'Approve and lock' }).click();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
     await expect(page.getByText('Approved', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Approved records cannot be edited/)).toBeVisible();
+    await expect(page.getByText(/Canonical sale evidence has been posted/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save persisted draft' })).toBeDisabled();
     const accessibility = await new AxeBuilder({ page })
       .include('[aria-label="Daily station operations workspace"]')

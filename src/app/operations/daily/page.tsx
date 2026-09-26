@@ -5,6 +5,7 @@ import {
   DailyOperationsWorkspace,
   type DailyOperationsContext,
 } from '@/modules/forecourt/ui/daily-operations-workspace';
+import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
 
 export default async function DailyOperationsPage({
   searchParams,
@@ -30,6 +31,7 @@ export default async function DailyOperationsPage({
         reconciliationId: search.reconciliationId,
       }
     : undefined;
+  const hasStationContext = Boolean(search.tenantId && search.stationId);
 
   return (
     <AppShell
@@ -46,6 +48,14 @@ export default async function DailyOperationsPage({
     >
       {context ? (
         <DailyOperationsWorkspace context={context} />
+      ) : hasStationContext ? (
+        <OperationsControlRoom
+          context={{
+            tenantId: search.tenantId!,
+            stationId: search.stationId!,
+            businessDayId: search.businessDayId,
+          }}
+        />
       ) : (
         <DailyOperationsContextRequired />
       )}
