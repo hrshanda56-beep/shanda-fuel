@@ -562,7 +562,6 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
         noteQuantityLitres: '100.000',
         actualQuantityLitres: '100.000',
         allocations: [{ tankId: ids.tankTwo, quantityLitres: '100.000' }],
-        currency: 'USD',
       },
       'a122-phase2-create-delivery-1',
     );
