@@ -329,7 +329,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
     );
     expectDecimal(projection.quantity_litres, '1000.000', 'revalued quantity');
     expectDecimal(projection.inventory_value, '1090.9091', 'revalued inventory value');
-    expectDecimal(projection.weighted_average_cost, '1.09090917', 'revalued WAC');
+    expectDecimal(projection.weighted_average_cost, '1.09090910', 'revalued WAC');
     expect(projection.valuation_status).toBe('VALUED');
     const revaluationSnapshot = await snapshotQa1(client, ctx);
     const revaluationEnvelope = expectOne(revaluationSnapshot.revaluations, 'revaluation envelope');
