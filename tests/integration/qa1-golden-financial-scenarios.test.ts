@@ -219,6 +219,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
       post: true,
       completeShiftAfter: true,
       businessDayId: ctx.historicalBusinessDayId,
+      openingEffectiveAt: QA1_TIMES.historicalShiftStart,
       plannedStartAt: QA1_TIMES.historicalShiftStart,
       plannedEndAt: QA1_TIMES.historicalShiftEnd,
       segmentBoundaryTimes: [QA1_TIMES.historicalSegmentOpen, QA1_TIMES.historicalSegmentClose],

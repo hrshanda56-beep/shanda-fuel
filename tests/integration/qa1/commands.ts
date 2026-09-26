@@ -116,6 +116,7 @@ export async function postOpeningPosition(
   keyPrefix: string,
   quantity = '1000.000',
   amount = '1000.0000',
+  effectiveAt: string = QA1_TIMES.opening,
 ): Promise<void> {
   const openingSourceId = randomUUID();
   const opening = await inventory(
@@ -126,7 +127,7 @@ export async function postOpeningPosition(
       stationId: ctx.stationId,
       tankId: ctx.tankId,
       quantityLitres: quantity,
-      effectiveAt: QA1_TIMES.opening,
+      effectiveAt,
     },
     `${keyPrefix}-opening-${openingSourceId}`,
   );
@@ -435,13 +436,14 @@ export async function createApprovedSale(
     approve?: boolean;
     segmentBoundaryTimes?: readonly string[];
     businessDayId?: string;
+    openingEffectiveAt?: string;
     plannedStartAt?: string;
     plannedEndAt?: string;
   },
 ): Promise<PostedSale> {
   const businessDayId = input.businessDayId ?? ctx.businessDayId;
   if (!input.existingShiftId) {
-    await postOpeningPosition(client, ctx, keyPrefix);
+    await postOpeningPosition(client, ctx, keyPrefix, '1000.000', '1000.0000', input.openingEffectiveAt);
   }
   const { shiftId } = input.existingShiftId
     ? { shiftId: input.existingShiftId }
