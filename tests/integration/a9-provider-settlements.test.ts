@@ -20,6 +20,7 @@ const ids = {
   station: 'a9b00000-0000-4000-8000-000000000021',
   otherLegal: 'a9b00000-0000-4000-8000-000000000012',
   otherStation: 'a9b00000-0000-4000-8000-000000000022',
+  otherStationSameTenant: 'a9b00000-0000-4000-8000-000000000023',
   actor: 'a9b00000-0000-4000-8000-000000000031',
   membership: 'a9b00000-0000-4000-8000-000000000041',
   session: 'a9b00000-0000-4000-8000-000000000051',
@@ -38,6 +39,7 @@ const ids = {
   otherDay: 'a9b00000-0000-4000-8000-000000000091',
   otherReconciliation: 'a9b00000-0000-4000-8000-000000000092',
   otherPayment: 'a9b00000-0000-4000-8000-000000000093',
+  invalidReversal: 'a9b00000-0000-4000-8000-0000000000a1',
 };
 
 let client: Sql;
@@ -121,6 +123,7 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
       on conflict (id) do nothing;
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values
         ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A9MAIN', 'A9 Main Station', 'ACTIVE'),
+        ('${ids.otherStationSameTenant}', '${ids.tenant}', '${ids.legal}', 'A9OTHER', 'A9 Other Station', 'ACTIVE'),
         ('${ids.otherStation}', '${ids.otherTenant}', '${ids.otherLegal}', 'A9OTHER', 'A9 Other Station', 'ACTIVE')
       on conflict (id) do nothing;
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
@@ -129,6 +132,7 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
         ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.otherTenant}', '${ids.otherMembership}', 'ADMINISTRATOR', 'TENANT', null, null),
         ('${ids.otherTenant}', '${ids.otherMembership}', 'ADMINISTRATOR', 'STATION', '${ids.otherLegal}', '${ids.otherStation}'),
+        ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.otherStationSameTenant}'),
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}')
       on conflict do nothing;
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
@@ -350,6 +354,284 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
       'SETTLEMENT.AllocateProviderSettlement': 3,
       'SETTLEMENT.ReconcileProviderSettlement': 1,
     });
+  });
+
+  it('reverses the first provider settlement allocation', async () => {
+    const providerResponse = await command(
+      {
+        commandType: 'CreatePaymentProvider',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        code: 'A9-REVERSAL-PROVIDER',
+        name: 'A9 Reversal Provider',
+        providerType: 'POS',
+      },
+      'a9-reversal-create-provider',
+    );
+    expect(providerResponse.status).toBe(201);
+    const provider = await responseBody(providerResponse);
+
+    const accountResponse = await command(
+      {
+        commandType: 'ConfigureProviderAccount',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        providerId: provider.providerId,
+        accountReference: 'A9-REVERSAL-MERCHANT',
+        displayName: 'A9 Reversal Merchant',
+        currency: 'USD',
+        accountStationId: ids.station,
+      },
+      'a9-reversal-create-account',
+    );
+    expect(accountResponse.status).toBe(201);
+    const account = await responseBody(accountResponse);
+
+    const settlementResponse = await command(
+      {
+        commandType: 'RecordProviderSettlement',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        providerAccountId: account.providerAccountId,
+        settlementReference: 'A9-REVERSAL-SETTLEMENT',
+        transactionDate: '2026-09-20',
+        settlementDate: '2026-09-25',
+        currency: 'USD',
+        grossAmount: '10.0000',
+        sourceType: 'MANUAL',
+        sourceKey: 'a9-reversal-settlement',
+      },
+      'a9-reversal-record-settlement',
+    );
+    expect(settlementResponse.status).toBe(201);
+    const settlement = await responseBody(settlementResponse);
+
+    const allocationResponse = await command(
+      {
+        commandType: 'AllocateProviderSettlement',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        settlementId: settlement.settlementId,
+        reconciliationPaymentId: ids.paymentThree,
+        amount: '10.0000',
+        allocationKey: 'a9-reversal-allocation',
+        expectedVersion: 0,
+      },
+      'a9-reversal-allocate',
+    );
+    expect(allocationResponse.status).toBe(201);
+    const allocation = await responseBody(allocationResponse);
+    const unrelatedBefore = await client<
+      {
+        id: string;
+        amount: string;
+        state: string;
+        reversal_of_id: string | null;
+      }[]
+    >`
+      select id, amount::text, state, reversal_of_id
+        from app.provider_settlement_allocations
+       where tenant_id = ${ids.tenant}
+         and allocation_key in ('a9-allocation-001', 'a9-allocation-002', 'a9-allocation-003')
+       order by allocation_key
+    `;
+
+    const reversalResponse = await command(
+      {
+        commandType: 'ReverseProviderSettlementAllocation',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        allocationId: allocation.allocationId,
+        reversalKey: 'a9-reversal-row',
+        expectedVersion: 1,
+      },
+      'a9-reversal-command',
+    );
+    expect(reversalResponse.status).toBe(201);
+    const reversal = await responseBody(reversalResponse);
+    expect(reversal).toMatchObject({
+      allocationId: allocation.allocationId,
+      state: 'REVERSED',
+    });
+
+    const allocationRows = await client<
+      {
+        id: string;
+        settlement_id: string;
+        reconciliation_payment_id: string;
+        station_id: string;
+        amount: string;
+        state: string;
+        reversal_of_id: string | null;
+      }[]
+    >`
+      select id, settlement_id, reconciliation_payment_id, station_id,
+             amount::text, state, reversal_of_id
+        from app.provider_settlement_allocations
+       where tenant_id = ${ids.tenant}
+         and (id = ${allocation.allocationId} or reversal_of_id = ${allocation.allocationId})
+       order by state, id
+    `;
+    expect(allocationRows).toHaveLength(2);
+    const original = allocationRows.find((row) => row.id === allocation.allocationId);
+    const reversalRow = allocationRows.find(
+      (row) => row.reversal_of_id === allocation.allocationId,
+    );
+    expect(original).toMatchObject({
+      settlement_id: settlement.settlementId,
+      reconciliation_payment_id: ids.paymentThree,
+      station_id: ids.station,
+      amount: '10.0000',
+      state: 'POSTED',
+      reversal_of_id: null,
+    });
+    expect(reversalRow).toMatchObject({
+      settlement_id: settlement.settlementId,
+      reconciliation_payment_id: ids.paymentThree,
+      station_id: ids.station,
+      amount: '10.0000',
+      state: 'REVERSED',
+      reversal_of_id: allocation.allocationId,
+    });
+    const netRows = await client<{ net: string }[]>`
+      select coalesce(sum(case when state = 'POSTED' then amount else -amount end), 0)::text as net
+        from app.provider_settlement_allocations
+       where tenant_id = ${ids.tenant}
+         and (id = ${allocation.allocationId} or reversal_of_id = ${allocation.allocationId})
+    `;
+    expect(netRows[0]?.net).toBe('0.0000');
+
+    const duplicateReversal = await command(
+      {
+        commandType: 'ReverseProviderSettlementAllocation',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        allocationId: allocation.allocationId,
+        reversalKey: 'a9-reversal-row-duplicate',
+        expectedVersion: 2,
+      },
+      'a9-reversal-duplicate-command',
+    );
+    expect(duplicateReversal.status).toBe(409);
+
+    const crossTenantReversal = await command(
+      {
+        commandType: 'ReverseProviderSettlementAllocation',
+        tenantId: ids.otherTenant,
+        stationId: ids.otherStation,
+        allocationId: allocation.allocationId,
+        reversalKey: 'a9-reversal-cross-tenant',
+        expectedVersion: 2,
+      },
+      'a9-reversal-cross-tenant-command',
+      'a9-other-session-token',
+    );
+    expect(crossTenantReversal.status).toBe(404);
+
+    const crossStationReversal = await command(
+      {
+        commandType: 'ReverseProviderSettlementAllocation',
+        tenantId: ids.tenant,
+        stationId: ids.otherStationSameTenant,
+        allocationId: allocation.allocationId,
+        reversalKey: 'a9-reversal-cross-station',
+        expectedVersion: 2,
+      },
+      'a9-reversal-cross-station-command',
+    );
+    expect(crossStationReversal.status).toBe(404);
+
+    const secondProviderResponse = await command(
+      {
+        commandType: 'CreatePaymentProvider',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        code: 'A9-REVERSAL-OTHER-PROVIDER',
+        name: 'A9 Other Reversal Provider',
+        providerType: 'MOBILE_MONEY',
+      },
+      'a9-reversal-create-other-provider',
+    );
+    expect(secondProviderResponse.status).toBe(201);
+    const secondProvider = await responseBody(secondProviderResponse);
+    const secondAccountResponse = await command(
+      {
+        commandType: 'ConfigureProviderAccount',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        providerId: secondProvider.providerId,
+        accountReference: 'A9-REVERSAL-OTHER-MERCHANT',
+        displayName: 'A9 Other Reversal Merchant',
+        currency: 'USD',
+        accountStationId: ids.station,
+      },
+      'a9-reversal-create-other-account',
+    );
+    expect(secondAccountResponse.status).toBe(201);
+    const secondAccount = await responseBody(secondAccountResponse);
+    const secondSettlementResponse = await command(
+      {
+        commandType: 'RecordProviderSettlement',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        providerAccountId: secondAccount.providerAccountId,
+        settlementReference: 'A9-REVERSAL-OTHER-SETTLEMENT',
+        transactionDate: '2026-09-20',
+        settlementDate: '2026-09-25',
+        currency: 'USD',
+        grossAmount: '10.0000',
+        sourceType: 'MANUAL',
+        sourceKey: 'a9-reversal-other-settlement',
+      },
+      'a9-reversal-record-other-settlement',
+    );
+    expect(secondSettlementResponse.status).toBe(201);
+    const secondSettlement = await responseBody(secondSettlementResponse);
+
+    await expect(
+      client.begin(async (transaction) => {
+        await transaction`
+          insert into app.provider_settlement_allocations
+            (id, tenant_id, station_id, settlement_id, reconciliation_payment_id,
+             amount, allocation_key, state, reversal_of_id, allocated_by)
+          values
+            (${ids.invalidReversal}, ${ids.tenant}, ${ids.station}, ${secondSettlement.settlementId},
+             ${ids.paymentThree}, 10.0000, 'a9-reversal-cross-provider', 'REVERSED',
+             ${allocation.allocationId}, ${ids.membership})
+        `;
+      }),
+    ).rejects.toThrow(/original settlement|retain the original/);
+
+    const failedReversalRows = await client<{ count: string }[]>`
+      select count(*)::text as count
+        from app.provider_settlement_allocations
+       where tenant_id = ${ids.tenant}
+         and allocation_key = 'a9-reversal-cross-provider'
+    `;
+    expect(failedReversalRows[0]?.count).toBe('0');
+
+    const unrelatedAfter = await client<
+      {
+        id: string;
+        amount: string;
+        state: string;
+        reversal_of_id: string | null;
+      }[]
+    >`
+      select id, amount::text, state, reversal_of_id
+        from app.provider_settlement_allocations
+       where tenant_id = ${ids.tenant}
+         and allocation_key in ('a9-allocation-001', 'a9-allocation-002', 'a9-allocation-003')
+       order by allocation_key
+    `;
+    expect(unrelatedAfter).toEqual(unrelatedBefore);
+
+    const settlementState = await client<{ state: string; version: number }[]>`
+      select state, version
+        from app.provider_settlements
+       where tenant_id = ${ids.tenant} and id = ${settlement.settlementId}
+    `;
+    expect(settlementState).toEqual([{ state: 'EXCEPTION', version: 2 }]);
   });
 
   it('rejects cash, cross-tenant evidence, currency mismatch, and over-allocation', async () => {
