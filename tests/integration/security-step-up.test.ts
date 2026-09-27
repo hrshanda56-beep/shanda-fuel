@@ -183,7 +183,7 @@ describe('production TOTP step-up establishment', () => {
       cookieFromSetCookie(enrollment.headers.get('set-cookie')) ?? sessionCookie;
 
     const wrongTotp = await stepUpPost(
-      stepUpRequest(ids.tenant, 'correct-password', '000000', effectiveSessionCookie),
+      stepUpRequest(ids.tenant, 'correct-password', '123123', effectiveSessionCookie),
     );
     expect(wrongTotp.status).toBe(403);
 
@@ -281,6 +281,6 @@ describe('production TOTP step-up establishment', () => {
     expect(events.some((event) => event.event_code === 'SECURITY.STEP_UP_FAILED')).toBe(true);
     expect(events.some((event) => event.event_code === 'SECURITY.STEP_UP_SUCCEEDED')).toBe(true);
     expect(events.every((event) => !event.details.includes('correct-password'))).toBe(true);
-    expect(events.every((event) => !event.details.includes('000000'))).toBe(true);
+    expect(events.every((event) => !event.details.includes('123123'))).toBe(true);
   });
 });
