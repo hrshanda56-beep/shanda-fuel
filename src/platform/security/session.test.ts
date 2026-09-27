@@ -3,6 +3,7 @@ import {
   assertSessionActive,
   assertStepUp,
   assertStrongAuthentication,
+  invalidateExpiredAssurance,
   type SessionRecord,
 } from './session';
 
@@ -17,13 +18,14 @@ const baseSession: SessionRecord = {
   strongAuthenticationVerified: true,
   stepUpLevel: 2,
   stepUpExpiresAt: new Date('2026-09-20T10:10:00.000Z'),
+  stepUpTenantId: '33333333-3333-4333-8333-333333333333',
 };
 
 describe('session security', () => {
   it('accepts an active session and step-up', () => {
     expect(() => assertSessionActive(baseSession, now)).not.toThrow();
     expect(() => assertStrongAuthentication(baseSession, now)).not.toThrow();
-    expect(() => assertStepUp(baseSession, 2, now)).not.toThrow();
+    expect(() => assertStepUp(baseSession, 2, now, baseSession.stepUpTenantId!)).not.toThrow();
   });
 
   it('rejects revoked and expired sessions', () => {
@@ -41,8 +43,18 @@ describe('session security', () => {
         { ...baseSession, stepUpExpiresAt: new Date('2026-09-20T09:59:00.000Z') },
         1,
         now,
+        baseSession.stepUpTenantId!,
       ),
     ).toThrow('step-up');
+  });
+
+  it('requires the step-up tenant to match the active tenant context', () => {
+    expect(() =>
+      assertStepUp(baseSession, 1, now, '33333333-3333-4333-8333-333333333333'),
+    ).not.toThrow();
+    expect(() => assertStepUp(baseSession, 1, now, '44444444-4444-4444-8444-444444444444')).toThrow(
+      'step-up',
+    );
   });
 
   it('rejects an expired strong-authentication assertion', () => {
@@ -58,5 +70,37 @@ describe('session security', () => {
     expect(() =>
       assertStrongAuthentication({ ...baseSession, strongAuthenticationVerified: false }, now),
     ).toThrow('Strong authentication');
+  });
+
+  it('rejects a step-up bound to a different tenant', () => {
+    expect(() =>
+      assertStepUp(
+        {
+          ...baseSession,
+          stepUpTenantId: '44444444-4444-4444-8444-444444444444',
+        },
+        1,
+        now,
+        '55555555-5555-4555-8555-555555555555',
+      ),
+    ).toThrow('step-up');
+  });
+
+  it('invalidates expired assurance before authorization can reuse it', () => {
+    const expired = invalidateExpiredAssurance(
+      { ...baseSession, stepUpExpiresAt: new Date('2026-09-20T09:59:00.000Z') },
+      now,
+    );
+    expect(expired.stepUpLevel).toBeUndefined();
+    expect(expired.stepUpExpiresAt).toBeUndefined();
+    expect(expired.strongAuthenticationVerified).toBe(true);
+
+    const expiredStrong = invalidateExpiredAssurance(
+      { ...baseSession, strongAuthenticationExpiresAt: new Date('2026-09-20T09:59:00.000Z') },
+      now,
+    );
+    expect(expiredStrong.strongAuthenticationVerified).toBe(false);
+    expect(expiredStrong.strongAuthenticatedAt).toBeUndefined();
+    expect(expiredStrong.stepUpLevel).toBeUndefined();
   });
 });

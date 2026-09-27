@@ -485,7 +485,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
           ('${ids.managerSession}', '2030-01-01T00:00:00Z', 'a5-manager-session-token', '${ids.managerActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
-    await seedActiveStepUp(client, ids.managerSession);
+    await seedActiveStepUp(client, ids.managerSession, ids.tenant);
   });
 
   afterAll(async () => {

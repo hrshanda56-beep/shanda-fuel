@@ -236,6 +236,7 @@ export async function resolveTenantExecutionContext(input: {
     strongAuthenticationExpiresAt: actor.session.strongAuthenticationExpiresAt,
     strongAuthenticationVerified: actor.session.strongAuthenticationVerified,
     stepUpLevel: actor.session.stepUpLevel,
+    stepUpTenantId: actor.session.stepUpTenantId,
     roleAssignments: membership.roleAssignments,
     temporaryGrants: membership.temporaryGrants,
   };

@@ -21,6 +21,7 @@ function context(sessionOverrides: Partial<SessionRecord> = {}): CustomerCommand
     sessionId: '77777777-7777-4777-8777-777777777777',
     userId: ids.actor,
     expiresAt: new Date('2030-01-01T00:00:00Z'),
+    stepUpTenantId: ids.tenant,
     ...sessionOverrides,
   };
   const transaction = createTrustedTenantTransactionContext({

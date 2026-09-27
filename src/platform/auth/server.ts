@@ -1,6 +1,7 @@
 import 'server-only';
 import { betterAuth } from 'better-auth/minimal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { twoFactor } from 'better-auth/plugins/two-factor';
 import { getServerEnv } from '../config/env';
 import { getDatabase } from '../db';
 import { authTables } from '../db/schema';
@@ -38,6 +39,15 @@ export function getAuth() {
       enabled: true,
       disableSignUp: AUTH_SECURITY_POLICY.publicSignUpDisabled,
     },
+    plugins: [
+      twoFactor({
+        issuer: 'Shanda Fuel',
+        allowPasswordless: false,
+        skipVerificationOnEnable: false,
+        totpOptions: { issuer: 'Shanda Fuel', digits: 6, period: 30 },
+        accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 },
+      }),
+    ],
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
@@ -48,6 +58,7 @@ export function getAuth() {
         strongAuthenticationVerified: { type: 'boolean', required: false, input: false },
         stepUpLevel: { type: 'number', required: false, input: false },
         stepUpExpiresAt: { type: 'date', required: false, input: false },
+        stepUpTenantId: { type: 'string', required: false, input: false },
       },
     },
     advanced: {

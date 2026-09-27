@@ -222,9 +222,9 @@ export async function createQa1ScenarioContext(
     on conflict (id) do nothing;
   `);
 
-  await seedActiveStepUp(client, actors.admin.sessionId);
-  await seedActiveStepUp(client, actors.supervisor.sessionId);
-  await seedActiveStepUp(client, actors.finance.sessionId);
+  await seedActiveStepUp(client, actors.admin.sessionId, tenantId);
+  await seedActiveStepUp(client, actors.supervisor.sessionId, tenantId);
+  await seedActiveStepUp(client, actors.finance.sessionId, tenantId);
 
   return {
     runId,

@@ -130,6 +130,7 @@ export type AuthorizationActor = {
   strongAuthenticationExpiresAt?: Date;
   strongAuthenticationVerified?: boolean;
   stepUpLevel?: 0 | 1 | 2;
+  stepUpTenantId?: string;
   roleAssignments: readonly RoleAssignment[];
   temporaryGrants?: readonly TemporaryPermissionGrant[];
 };
@@ -439,7 +440,13 @@ export function isAuthorized(input: {
     actor.strongAuthenticationVerified === true &&
     actor.strongAuthenticationAt &&
     (!actor.strongAuthenticationExpiresAt || actor.strongAuthenticationExpiresAt > now);
-  if (highRiskPermissions.has(permissionCode) && !currentStrongAuthentication) return false;
+  if (
+    highRiskPermissions.has(permissionCode) &&
+    (!currentStrongAuthentication ||
+      (actor.stepUpTenantId !== undefined && actor.stepUpTenantId !== requestedScope.tenantId))
+  ) {
+    return false;
+  }
   const roleGrant = actor.roleAssignments.some(
     (assignment) =>
       isActive(assignment.expiresAt, now) &&

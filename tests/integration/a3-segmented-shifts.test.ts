@@ -243,8 +243,8 @@ describe('A3 shift templates and multi-segment shifts through production command
           ('${ids.approverSession}', '2030-01-01T00:00:00Z', 'a3c-approver-session-token', '${ids.approverActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
-    await seedActiveStepUp(client, ids.session);
-    await seedActiveStepUp(client, ids.approverSession);
+    await seedActiveStepUp(client, ids.session, ids.tenant);
+    await seedActiveStepUp(client, ids.approverSession, ids.tenant);
   });
 
   afterAll(async () => {

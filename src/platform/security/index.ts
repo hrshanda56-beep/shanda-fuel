@@ -18,7 +18,12 @@ export type {
   TemporaryPermissionGrant,
   RoleMutation,
 } from './permissions';
-export { assertSessionActive, assertStepUp, assertStrongAuthentication } from './session';
+export {
+  assertSessionActive,
+  assertStepUp,
+  assertStrongAuthentication,
+  invalidateExpiredAssurance,
+} from './session';
 export type { SessionRecord } from './session';
 export { serializeSafe } from './safe-serialization';
 export type { SerializationPolicy } from './safe-serialization';

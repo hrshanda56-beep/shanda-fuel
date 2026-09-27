@@ -383,7 +383,7 @@ function assertForecourtCommandAuthorization(
     throw new AppError('FORBIDDEN', 'The command policy requires station scope');
   }
   if (policy.assuranceRequirement === 'STEP_UP') {
-    assertStepUp(context.authority.actor.session, 1);
+    assertStepUp(context.authority.actor.session, 1, new Date(), context.scope.tenantId);
   }
 }
 
