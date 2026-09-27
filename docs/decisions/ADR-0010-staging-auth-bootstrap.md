@@ -40,6 +40,6 @@ layers.
 - The operator must provide a reserved `.invalid` synthetic email and a
   runtime password.
 - The script requires staging audit signing configuration for mutation mode.
-- A0 may add a convenience `pnpm staging:auth-smoke-bootstrap` package script
-  during integration; this slice uses `pnpm exec tsx` to avoid changing A0-owned
-  package/tooling configuration.
+- The integrated repository exposes the convenience
+  `pnpm staging:auth-smoke-bootstrap` package script. This does not create a
+  general provisioning path or change authentication behavior.

@@ -17,25 +17,29 @@ Status vocabulary:
 
 ## Integration base
 
-Current merged base: `5bf7c5c30a7e6bb876517d4554ad40f1d0753042` (`main`, current
-canonical integration tip).
+Current merged base: `244ad14` (`main`, current canonical integration tip;
+2026-09-27).
 
 First-parent merged work includes A4 inventory (`afed2eb`), A5 daily
 reconciliation (`bca2ea0`), A6 cash/banking (`fba3cfb`), A7 supplier creditors
 (`e2e2d81`), A8 customer accounts (`e457098`), A9 provider settlements
 (`555f4a5`) plus provider allocation reversal (`46d71a4`, migration 0015),
 A10 management reporting (`84c77e2` plus A10.1/A10.2), A11 daily operations
-(`79321d8`, PR #17), REV1 revenue, and A12 costing/revaluation slices.
-Security Wave1 step-up establishment is implemented in the current release
-candidate lane with Better Auth password re-authentication plus TOTP,
-tenant-bound session state, and short-lived expiry. Supervisors can enroll an
-authenticator through the authenticated setup flow; password-only step-up is
-rejected.
+(`79321d8`, PR #17), REV1 revenue, A12 costing/revaluation slices, the release
+hardening merge (`5bf7c5c`, PR #32), and Security Wave 1 step-up/MFA
+establishment (`244ad14`, PR #33). Security Wave 1 uses Better Auth password
+reauthentication plus TOTP, tenant-bound session state, and short-lived expiry.
+Supervisors can enroll an authenticator through the authenticated setup flow;
+password-only step-up is rejected. This paragraph records merged behavior; it
+does not change the authentication or MFA contract.
 
 The repository contains PostgreSQL integration and Playwright tests for the
 implemented slices. PostgreSQL tests require `DATABASE_URL`; CI supplies an
 ephemeral PostgreSQL 16 service. Browser tests intentionally skip only their
 authorized persistence cases when the database/auth environment is absent.
+The current RC still requires the authenticated staging gate, a restore drill,
+and performance evidence before pilot or production sign-off; those are
+operational execution gates, not missing implementation claims.
 
 ## Merged workstreams
 
@@ -53,8 +57,10 @@ environment validation, migration journal, and test harness are present.
 Evidence: `src/modules/identity/`, `src/modules/tenancy/`,
 `src/modules/authorization/`, `src/platform/auth/`,
 `src/platform/db/tenant-context.ts`; migrations
-`0001_a1_auth_identity.sql` and `0002_a1_tenant_authorization_security.sql`;
-`tests/integration/a1-isolation.test.ts`; `docs/database-security.md`.
+`0001_a1_auth_identity.sql`, `0002_a1_tenant_authorization_security.sql`,
+`0016_security_step_up_tenant_binding.sql`, and
+`0017_security_totp_mfa.sql`; `tests/integration/a1-isolation.test.ts`,
+`tests/integration/security-step-up.test.ts`; `docs/database-security.md`.
 
 Tenant hierarchy, authenticated actor resolution, authorization, fail-closed
 tenant context, RLS, runtime-role separation, append-only security events,
@@ -268,7 +274,7 @@ reporting remain separate reporting concerns.
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
 | Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10.2 now provides canonical ordinary-fuel revenue and gross-margin reporting from REV1/A12 authorities; exports/artifacts, full as-of, Action Center, and Explain This Number remain incomplete. |
 | Phase 6 — Profitability and gross margin | **PARTIAL** | Canonical REV1 revenue and A12 restated COGS are consumed by the A10 profitability read model with latest-finalized-revision, business-date, tenant, and station safeguards; operating expenses, fixed-cost recognition, and broader profitability remain incomplete. |
-| Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations and representative accessibility/weak-network behavior exist; full cross-module review, performance, offline sync, observability, backup/restore, and incident readiness remain. |
+| Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations, representative accessibility/weak-network behavior, release notes, operational procedures, health/readiness checks, and staging smoke tooling exist; authenticated staging execution, performance evidence, restore-drill evidence, production-grade monitoring integration, offline sync, and full incident/tenant-recovery exercises remain. |
 | Phase 8 — Pilot and cutover | **PARTIAL** | Onboarding workbook and per-tank opening balance support exist; approved cross-domain opening batch, training, shadow operation, UAT, discrepancy classification, and pilot exit evidence remain. |
 | Phase 8 — Client/accounting/signed-scope inputs | **REQUIRES_CLIENT_DECISION** | Real station master data, opening positions, accounting/tax policy, external identifiers, and signed SOW/contract scope are outside repository-only determination. |
 

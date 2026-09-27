@@ -9,3 +9,7 @@
 - `PARALLEL_EXECUTION.md` is the coordination board for branches, worktrees, integration, and shared-file ownership.
 - `DEVELOPMENT_PHASES.md` defines dependency stages and which work may proceed in parallel.
 - `DEFINITION_OF_DONE.md` is the completion standard for implementation work.
+- `release-readiness.md` is the current RC gate ledger; `release-notes/` holds
+  candidate notes and known limitations.
+- `runbooks/` contains deployment, recovery, staging, monitoring, and incident
+  procedures, with an inventory of execution gaps.
