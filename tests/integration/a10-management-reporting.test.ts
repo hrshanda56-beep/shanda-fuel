@@ -55,6 +55,7 @@ const ids = {
   factProviderAccount: 'a10b0000-0000-4000-8000-0000000000b1',
   factSettlement: 'a10b0000-0000-4000-8000-0000000000b2',
   factSettlementAllocation: 'a10b0000-0000-4000-8000-0000000000b3',
+  factSettlementReversal: 'a10b0000-0000-4000-8000-0000000000f1',
   factSupplier: 'a10b0000-0000-4000-8000-0000000000b4',
   factSupplierInvoice: 'a10b0000-0000-4000-8000-0000000000b5',
   factSupplierCredit: 'a10b0000-0000-4000-8000-0000000000b6',
@@ -806,6 +807,29 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(body.expenses.total).toBe('2.0000');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
 
+    await client.unsafe(`
+      insert into app.provider_settlement_allocations
+        (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, reversal_of_id, allocated_by)
+      values ('${ids.factSettlementReversal}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION-REVERSAL', 'REVERSED', '${ids.factSettlementAllocation}', '${ids.membership}')
+      on conflict (id) do nothing;
+    `);
+
+    const reversedResponse = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
+        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+      ),
+    );
+    expect(reversedResponse.status).toBe(200);
+    const reversedBody = (await reversedResponse.json()) as Record<string, any>;
+    expect(reversedBody.providers).toMatchObject({
+      paymentEvidence: '45.0000',
+      settlementGross: '45.0000',
+      allocatedAmount: '0.0000',
+      unallocatedProviderAmount: '45.0000',
+      unmatchedEvidenceAmount: '45.0000',
+    });
+
     const collectionDateOnly = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-20`,
@@ -836,7 +860,12 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const dailyBody = (await dailyResponse.json()) as Record<string, any>;
     expect(dailyBody.rows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ reportDate: '2026-09-22', bankedCash: '40.0000' }),
+        expect.objectContaining({
+          reportDate: '2026-09-22',
+          bankedCash: '40.0000',
+          providerSettledAmount: '45.0000',
+          providerOutstandingAmount: '45.0000',
+        }),
       ]),
     );
     expect(dailyBody.rows.every((row: Record<string, any>) => !('businessDate' in row))).toBe(true);

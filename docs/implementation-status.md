@@ -17,18 +17,20 @@ Status vocabulary:
 
 ## Integration base
 
-Current merged base: `79321d895d45835058702439ced0191b4e205d15` (`main`).
+Current merged base: `46d71a4527ec90eebd629bd0e7bbd1e00dcde4a7` (`main`, current
+canonical integration tip).
 
 First-parent merged work includes A4 inventory (`afed2eb`), A5 daily
 reconciliation (`bca2ea0`), A6 cash/banking (`fba3cfb`), A7 supplier creditors
 (`e2e2d81`), A8 customer accounts (`e457098`), A9 provider settlements
-(`555f4a5`), A10 management reporting (`84c77e2`), and A11 daily operations
-(`79321d8`, PR #17).
+(`555f4a5`) plus provider allocation reversal (`46d71a4`, migration 0015),
+A10 management reporting (`84c77e2` plus A10.1/A10.2), A11 daily operations
+(`79321d8`, PR #17), REV1 revenue, and A12 costing/revaluation slices.
 
 The repository contains PostgreSQL integration and Playwright tests for the
-implemented slices. A fresh test run is environment-dependent: PostgreSQL
-tests require `DATABASE_URL`, and the current workspace did not have a usable
-package-manager install path during this audit.
+implemented slices. PostgreSQL tests require `DATABASE_URL`; CI supplies an
+ephemeral PostgreSQL 16 service. Browser tests intentionally skip only their
+authorized persistence cases when the database/auth environment is absent.
 
 ## Merged workstreams
 
@@ -122,8 +124,8 @@ remain unresolved.
 
 ### A9 — Provider settlement reconciliation — COMPLETE
 
-Evidence: `src/modules/settlements/`; migration
-`0009_provider_settlements.sql`; routes under
+Evidence: `src/modules/settlements/`; migrations
+`0009_provider_settlements.sql` and `0015_a9_provider_allocation_reversal.sql`; routes under
 `src/app/api/settlements/`; `tests/integration/a9-provider-settlements.test.ts`;
 `docs/architecture/a9-provider-settlements.md`.
 
@@ -135,7 +137,7 @@ scope clarification.
 
 ### A10 — Management reporting — PARTIAL
 
-Evidence: `src/modules/reporting/`; routes
+Evidence: `src/modules/reporting/` and `src/modules/profitability/`; routes
 `src/app/api/reports/management/` and `src/app/api/reports/daily/`;
 `src/app/reports/page.tsx`; `tests/integration/a10-management-reporting.test.ts`;
 `tests/e2e/management-reporting.spec.ts`;
@@ -143,9 +145,11 @@ Evidence: `src/modules/reporting/`; routes
 
 Tenant-safe management and daily read models combine finalized A4–A9 facts,
 return source IDs, preserve metric-specific date bases, and expose an initial
-responsive dashboard. Gross margin, canonical COGS, report artifacts, export
-generation, full timestamp-based `as_of`, Action Center behavior, and Explain
-This Number are not complete.
+responsive dashboard. A10.2 now consumes REV1 revenue and A12 restated COGS for
+ordinary-fuel gross margin, including explicit unavailable states. Report
+artifacts, export generation, full timestamp-based `as_of`, Action Center
+behavior, Explain This Number, operating-expense recognition, and broader
+profitability remain incomplete.
 
 ### A11 — Daily operations workspace — COMPLETE
 

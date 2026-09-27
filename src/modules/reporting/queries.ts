@@ -685,9 +685,20 @@ async function readDaily(
         array_agg(s.id) as settlement_ids
       from app.provider_settlements s left join (
         select settlement_id, sum(amount) filter (where state = 'POSTED') as allocated
-        from app.provider_settlement_allocations where tenant_id = ${filters.tenantId} group by settlement_id
+        from app.provider_settlement_allocations allocation
+        where allocation.tenant_id = ${filters.tenantId}
+          and allocation.state = 'POSTED'
+          and not exists (
+            select 1
+            from app.provider_settlement_allocations reversal
+            where reversal.tenant_id = allocation.tenant_id
+              and reversal.reversal_of_id = allocation.id
+              and reversal.state = 'REVERSED'
+          )
+        group by settlement_id
       ) a on a.settlement_id = s.id
       where s.tenant_id = ${filters.tenantId} and s.settlement_date between ${filters.fromDate} and ${filters.toDate}
+      ${stationClause('s', filters.stationId)}
       group by s.settlement_date, s.station_id
     ), expenses as (
       select a.business_date as report_date, a.station_id, sum(e.amount)::text as expenses

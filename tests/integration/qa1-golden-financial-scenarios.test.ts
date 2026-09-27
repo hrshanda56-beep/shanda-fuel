@@ -1039,7 +1039,5 @@ describe('QA1 cross-module golden financial scenarios', () => {
       '400.0000',
       'provider reconciled allocation',
     );
-    // Allocation reversal is a tracked product gap: the current deferred A9
-    // trigger rejects the reversal row because it matches the row being inserted.
   });
 });
