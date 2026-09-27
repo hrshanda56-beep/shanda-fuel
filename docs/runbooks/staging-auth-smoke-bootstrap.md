@@ -1,6 +1,6 @@
 # Staging auth smoke bootstrap runbook
 
-This runbook creates one synthetic Better Auth credential identity and two
+This runbook creates one synthetic Better Auth credential identity and four
 short-lived Station A permission grants for the deployed A3 authenticated smoke
 test. It is an operator-only staging action. It is not an HTTP endpoint, does
 not create a session, and refuses every environment other than `staging`.

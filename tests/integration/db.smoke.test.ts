@@ -38,7 +38,7 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(18);
+    expect(migrations).toHaveLength(19);
 
     const stepUpBinding = await client<{ column_name: string }[]>`
       select column_name

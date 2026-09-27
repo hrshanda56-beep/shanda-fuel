@@ -11,7 +11,12 @@ export const STAGING_AUTH_SMOKE_IDS = {
   stationId: 'a5000000-0000-4000-8000-000000000001',
 } as const;
 
-export const STAGING_AUTH_SMOKE_PERMISSIONS = ['business_day.open', 'shift.start'] as const;
+export const STAGING_AUTH_SMOKE_PERMISSIONS = [
+  'business_day.view',
+  'business_day.open',
+  'shift.view',
+  'shift.start',
+] as const;
 
 export const STAGING_AUTH_SMOKE_DISPLAY_NAME = 'Shanda Fuel Staging Smoke Operator';
 export const STAGING_AUTH_SMOKE_EMAIL_SUFFIX = '@staging.shandafuel.invalid';
