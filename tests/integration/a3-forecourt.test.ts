@@ -242,7 +242,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         values ('${ids.negativeSession}', '2030-01-01T00:00:00Z', 'a3-negative-session-token', '${ids.actorD}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
-    await seedActiveStepUp(client, ids.routeSession);
+    await seedActiveStepUp(client, ids.routeSession, ids.tenantA);
   });
 
   afterAll(async () => {

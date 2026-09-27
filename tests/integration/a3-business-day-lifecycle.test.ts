@@ -208,8 +208,8 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
           ('${ids.outsiderSession}', '2030-01-01T00:00:00Z', 'a3b-outsider-session-token', '${ids.outsiderActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
-    await seedActiveStepUp(client, ids.session);
-    await seedActiveStepUp(client, ids.approverSession);
+    await seedActiveStepUp(client, ids.session, ids.tenant);
+    await seedActiveStepUp(client, ids.approverSession, ids.tenant);
   });
 
   afterAll(async () => {

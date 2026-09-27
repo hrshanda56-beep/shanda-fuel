@@ -6,7 +6,7 @@ describe('authentication access policy', () => {
     expect(AUTH_SECURITY_POLICY.publicSignUpDisabled).toBe(true);
   });
 
-  it('keeps strong authentication fail-closed until Better Auth verification is wired', () => {
+  it('keeps strong authentication fail-closed until provider verification succeeds', () => {
     expect(AUTH_SECURITY_POLICY.strongAuthenticationMode).toBe('fail-closed-until-verified');
   });
 });

@@ -1,7 +1,11 @@
 import 'server-only';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
-import { assertSessionActive, type SessionRecord } from '../../platform/security';
+import {
+  assertSessionActive,
+  invalidateExpiredAssurance,
+  type SessionRecord,
+} from '../../platform/security';
 import { getAuth } from '../../platform/auth';
 
 /**
@@ -19,7 +23,21 @@ export type AuthenticatedActorResolver = (
 
 export type BetterAuthSessionReader = {
   api: {
-    getSession: (input: { headers: Headers }) => Promise<unknown>;
+    getSession: (input: {
+      headers: Headers;
+      query?: { disableCookieCache?: boolean };
+    }) => Promise<unknown>;
+  };
+};
+
+export type BetterAuthPasswordVerifier = {
+  api: {
+    getSession: (input: {
+      headers: Headers;
+      query?: { disableCookieCache?: boolean };
+    }) => Promise<unknown>;
+    verifyPassword: (input: { headers: Headers; body: { password: string } }) => Promise<unknown>;
+    verifyTOTP: (input: { headers: Headers; body: { code: string } }) => Promise<unknown>;
   };
 };
 
@@ -51,6 +69,7 @@ const betterAuthSessionSchema = z.object({
       .optional()
       .transform((value) => value ?? undefined),
     stepUpExpiresAt: z.coerce.date().nullable().optional(),
+    stepUpTenantId: z.string().uuid().nullable().optional(),
   }),
 });
 
@@ -60,7 +79,10 @@ export async function resolveAuthenticatedActor(
   auth: BetterAuthSessionReader = getAuth(),
   now = new Date(),
 ): Promise<AuthenticatedActorContext | null> {
-  const result = await auth.api.getSession({ headers: request.headers });
+  const result = await auth.api.getSession({
+    headers: request.headers,
+    query: { disableCookieCache: true },
+  });
   if (!result) return null;
   const parsed = betterAuthSessionSchema.safeParse(result);
   if (!parsed.success || parsed.data.user.id !== parsed.data.session.userId) {
@@ -76,9 +98,10 @@ export async function resolveAuthenticatedActor(
     strongAuthenticationVerified: parsed.data.session.strongAuthenticationVerified,
     stepUpLevel: parsed.data.session.stepUpLevel,
     stepUpExpiresAt: parsed.data.session.stepUpExpiresAt ?? undefined,
+    stepUpTenantId: parsed.data.session.stepUpTenantId ?? undefined,
   };
   assertSessionActive(session, now);
-  return { identityId: parsed.data.user.id, session };
+  return { identityId: parsed.data.user.id, session: invalidateExpiredAssurance(session, now) };
 }
 
 /** Revoke all Better Auth sessions for the authenticated identity on compromise. */

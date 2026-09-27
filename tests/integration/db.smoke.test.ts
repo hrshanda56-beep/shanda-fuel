@@ -38,13 +38,23 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(16);
+    expect(migrations).toHaveLength(18);
+
+    const stepUpBinding = await client<{ column_name: string }[]>`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'auth'
+        and table_name = 'session'
+        and column_name = 'step_up_tenant_id'
+    `;
+    expect(stepUpBinding).toEqual([{ column_name: 'step_up_tenant_id' }]);
 
     const objects = await client<{ schema_name: string; table_name: string }[]>`
       select table_schema as schema_name, table_name
       from information_schema.tables
       where (table_schema, table_name) in (
         ('auth', 'user'), ('auth', 'session'), ('auth', 'account'), ('auth', 'verification'),
+        ('auth', 'two_factor'),
         ('app', 'tenants'), ('app', 'memberships'), ('app', 'forecourt_idempotency_records'),
         ('app', 'forecourt_outbox'), ('app', 'cash_collections'),
         ('app', 'cash_collection_allocations'), ('app', 'bank_deposits'),
@@ -54,7 +64,7 @@ describe('PostgreSQL integration harness', () => {
       )
       order by table_schema, table_name
     `;
-    expect(objects).toHaveLength(17);
+    expect(objects).toHaveLength(18);
 
     const a12Table = await client<{ relrowsecurity: boolean; relforcerowsecurity: boolean }[]>`
       select c.relrowsecurity, c.relforcerowsecurity

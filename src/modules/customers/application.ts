@@ -257,7 +257,12 @@ export function assertCustomerCommandAuthorization(input: {
   }
   authorizeCustomerCommand(input.context, input.permissionCode);
   if (policy.requiresStepUp) {
-    assertStepUp(input.context.authority.actor.session, 1);
+    assertStepUp(
+      input.context.authority.actor.session,
+      1,
+      new Date(),
+      input.context.scope.tenantId,
+    );
   }
 }
 

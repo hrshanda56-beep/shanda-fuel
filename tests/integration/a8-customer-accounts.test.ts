@@ -313,7 +313,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         values ('${ids.session}', '2030-01-01T00:00:00Z', 'a8-session-token', '${ids.actor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
-    await seedActiveStepUp(client, ids.session);
+    await seedActiveStepUp(client, ids.session, ids.tenant);
     await withTenantTransaction(
       createTrustedTenantTransactionContext({
         tenantId: ids.tenant,

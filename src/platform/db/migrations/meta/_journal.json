@@ -113,6 +113,20 @@
       "when": 1790455104000,
       "tag": "0015_a9_provider_allocation_reversal",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790467200000,
+      "tag": "0016_security_step_up_tenant_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790469000000,
+      "tag": "0017_security_totp_mfa",
+      "breakpoints": true
     }
   ]
 }

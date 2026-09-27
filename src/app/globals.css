@@ -919,6 +919,20 @@ p {
   background: var(--color-positive-soft);
 }
 
+.step-up-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.mfa-uri {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface-subtle);
+}
+
 .state-empty {
   background: var(--color-surface-subtle);
 }

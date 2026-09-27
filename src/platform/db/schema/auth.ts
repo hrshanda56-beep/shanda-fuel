@@ -12,6 +12,7 @@ export const authUser = authSchema.table('user', {
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
+  twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
   image: text('image'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -36,6 +37,7 @@ export const authSession = authSchema.table(
     strongAuthenticationVerified: boolean('strong_authentication_verified'),
     stepUpLevel: integer('step_up_level'),
     stepUpExpiresAt: timestamp('step_up_expires_at'),
+    stepUpTenantId: uuid('step_up_tenant_id'),
   },
   (table) => [index('auth_session_user_id_idx').on(table.userId)],
 );
@@ -78,9 +80,30 @@ export const authVerification = authSchema.table(
   (table) => [index('auth_verification_identifier_idx').on(table.identifier)],
 );
 
+export const authTwoFactor = authSchema.table(
+  'two_factor',
+  {
+    id: generatedUuid(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => authUser.id, { onDelete: 'cascade' }),
+    secret: text('secret').notNull(),
+    backupCodes: text('backup_codes').notNull(),
+    verified: boolean('verified').notNull().default(true),
+    failedVerificationCount: integer('failed_verification_count').notNull().default(0),
+    lockedUntil: timestamp('locked_until'),
+  },
+  (table) => [
+    index('auth_two_factor_secret_idx').on(table.secret),
+    index('auth_two_factor_user_id_idx').on(table.userId),
+    uniqueIndex('auth_two_factor_user_id_uidx').on(table.userId),
+  ],
+);
+
 export const authTables = {
   user: authUser,
   session: authSession,
   account: authAccount,
   verification: authVerification,
+  twoFactor: authTwoFactor,
 };

@@ -17,7 +17,7 @@ Status vocabulary:
 
 ## Integration base
 
-Current merged base: `46d71a4527ec90eebd629bd0e7bbd1e00dcde4a7` (`main`, current
+Current merged base: `5bf7c5c30a7e6bb876517d4554ad40f1d0753042` (`main`, current
 canonical integration tip).
 
 First-parent merged work includes A4 inventory (`afed2eb`), A5 daily
@@ -26,6 +26,11 @@ reconciliation (`bca2ea0`), A6 cash/banking (`fba3cfb`), A7 supplier creditors
 (`555f4a5`) plus provider allocation reversal (`46d71a4`, migration 0015),
 A10 management reporting (`84c77e2` plus A10.1/A10.2), A11 daily operations
 (`79321d8`, PR #17), REV1 revenue, and A12 costing/revaluation slices.
+Security Wave1 step-up establishment is implemented in the current release
+candidate lane with Better Auth password re-authentication plus TOTP,
+tenant-bound session state, and short-lived expiry. Supervisors can enroll an
+authenticator through the authenticated setup flow; password-only step-up is
+rejected.
 
 The repository contains PostgreSQL integration and Playwright tests for the
 implemented slices. PostgreSQL tests require `DATABASE_URL`; CI supplies an
@@ -52,8 +57,11 @@ Evidence: `src/modules/identity/`, `src/modules/tenancy/`,
 `tests/integration/a1-isolation.test.ts`; `docs/database-security.md`.
 
 Tenant hierarchy, authenticated actor resolution, authorization, fail-closed
-tenant context, RLS, runtime-role separation, append-only security events, and
-tenant-isolation tests are integrated.
+tenant context, RLS, runtime-role separation, append-only security events,
+tenant-isolation tests, and the production step-up establishment route are
+integrated. Migration `0016_security_step_up_tenant_binding.sql` binds
+successful step-up state to the active tenant; `assertStepUp` enforces that
+binding centrally and expired assurance is invalidated at session resolution.
 
 ### A2 — UI foundation — COMPLETE
 
