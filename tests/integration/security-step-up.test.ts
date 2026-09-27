@@ -233,7 +233,7 @@ describe('production TOTP step-up establishment', () => {
 
     assertStepUp(actor!.session, 1, new Date(), ids.tenant);
     expect(() => assertStepUp(actor!.session, 1, new Date(), ids.otherTenant)).toThrow(
-      'Strong authentication is required for this action',
+      'current step-up authentication',
     );
 
     const otherSession = await resolveAuthenticatedActor(
@@ -243,7 +243,7 @@ describe('production TOTP step-up establishment', () => {
     );
     expect(otherSession).not.toBeNull();
     expect(() => assertStepUp(otherSession!.session, 1, new Date(), ids.tenant)).toThrow(
-      'Strong authentication is required for this action',
+      'current step-up authentication',
     );
 
     await client`
@@ -254,7 +254,7 @@ describe('production TOTP step-up establishment', () => {
     `;
     const expiredActor = await resolveAuthenticatedActor(request);
     expect(() => assertStepUp(expiredActor!.session, 1, new Date(), ids.tenant)).toThrow(
-      'Strong authentication is required for this action',
+      'current step-up authentication',
     );
 
     await client`
