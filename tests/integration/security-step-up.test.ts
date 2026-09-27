@@ -98,7 +98,7 @@ describe('production TOTP step-up establishment', () => {
         ('${ids.actor}', 'Step Up Actor', 'step-up-actor@example.test')
       on conflict (id) do nothing;
       insert into auth.account (account_id, provider_id, user_id, password)
-        values ('step-up-actor@example.test', 'credential', '${ids.actor}', '${password}')
+        values ('${ids.actor}', 'credential', '${ids.actor}', '${password}')
       on conflict (provider_id, account_id) do update set password = excluded.password;
       update auth."user" set two_factor_enabled = false where id = '${ids.actor}';
       delete from auth.two_factor where user_id = '${ids.actor}';
