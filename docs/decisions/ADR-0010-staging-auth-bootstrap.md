@@ -11,8 +11,9 @@ Tenant A hierarchy and active Membership A before any mutation. If the
 synthetic identity or credential account is missing, the script creates only
 Actor A and hashes the operator-supplied password with Better Auth 1.7.5's
 official `better-auth/crypto` `hashPassword` export. It then creates only the
-two explicit Station A temporary grants required by the smoke:
-`business_day.open` and `shift.start`, with a two-hour expiry.
+four explicit Station A temporary grants required by the deployed smoke UI and
+its two workflows: `business_day.view`,
+`business_day.open`, `shift.view`, and `shift.start`, with a two-hour expiry.
 
 The script uses `DATABASE_DIRECT_URL` when supplied, refuses production,
 requires an explicit confirmation flag and exact synthetic Tenant A/Station A

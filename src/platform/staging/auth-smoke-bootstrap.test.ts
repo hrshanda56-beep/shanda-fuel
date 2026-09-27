@@ -180,7 +180,7 @@ describe('staging auth smoke bootstrap', () => {
     ).rejects.toThrow('display name');
   });
 
-  it('creates only Actor A and only the two Station A grants', async () => {
+  it('creates only Actor A and only the four Station A grants', async () => {
     const { repository, writes } = fakeRepository();
     const result = await runStagingAuthSmokeBootstrap({
       repository,
@@ -194,7 +194,7 @@ describe('staging auth smoke bootstrap', () => {
     expect(writes.users).toEqual([
       { id: STAGING_AUTH_SMOKE_IDS.actorId, name: STAGING_AUTH_SMOKE_DISPLAY_NAME, email },
     ]);
-    expect(writes.grants).toHaveLength(2);
+    expect(writes.grants).toHaveLength(4);
     expect(writes.grants.map((grant) => grant.permissionCode)).toEqual(
       expect.arrayContaining([...STAGING_AUTH_SMOKE_PERMISSIONS]),
     );
