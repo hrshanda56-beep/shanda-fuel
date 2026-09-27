@@ -1,12 +1,12 @@
 # Requirements traceability
 
 This compact matrix reconciles the roadmap requirements with evidence present
-on integration base `79321d895d45835058702439ced0191b4e205d15`. Statuses use
+on integration base `244ad14`. Statuses use
 the vocabulary defined in `docs/implementation-status.md`.
 
 | Requirement | Implementation | Migration | Test evidence | Status | Limitation / next decision |
 | --- | --- | --- | --- | --- | --- |
-| Tenant hierarchy, identity, authorization, RLS | `src/modules/identity/`, `tenancy/`, `authorization/`, `src/platform/db/tenant-context.ts` | `0001_a1_auth_identity.sql`, `0002_a1_tenant_authorization_security.sql` | `tests/integration/a1-isolation.test.ts` | COMPLETE | Final integrated release review still belongs to Phase 7. |
+| Tenant hierarchy, identity, authorization, RLS | `src/modules/identity/`, `tenancy/`, `authorization/`, `src/platform/db/tenant-context.ts` | `0001_a1_auth_identity.sql`, `0002_a1_tenant_authorization_security.sql`, `0016_security_step_up_tenant_binding.sql`, `0017_security_totp_mfa.sql` | `tests/integration/a1-isolation.test.ts`, `tests/integration/security-step-up.test.ts` | COMPLETE | Final deployed staging/release review still belongs to Phase 7; the merged step-up/MFA behavior is recorded here without changing its contract. |
 | Forecourt day/shift/meter/pricing workflow | `src/modules/forecourt/` | `0003_a3_forecourt_reconciliation.sql` | `tests/integration/a3-forecourt.test.ts`, `a3-business-day-lifecycle.test.ts`, `a3-segmented-shifts.test.ts` | COMPLETE | A3 remains the source for meter-derived quantity and sales evidence. |
 | Daily reconciliation evidence and approval workflow | `src/modules/forecourt/daily-reconciliation.ts`, `production-reconciliation.ts` | `0005_daily_reconciliation.sql` | `tests/integration/a5-production-reconciliation.test.ts`, `tests/e2e/production-reconciliation.spec.ts` | COMPLETE | A5 payment evidence is distinct from downstream cash/provider settlement. |
 | Tank, dip, delivery, movement, adjustment foundation | `src/modules/inventory/` | `0004_a4_inventory.sql` | `tests/integration/a4-inventory.test.ts` | PARTIAL | No complete inventory-pool/transfer/calibration-execution/partial-delivery workflow. |
@@ -25,7 +25,7 @@ the vocabulary defined in `docs/implementation-status.md`.
 | Full timestamp-based `as_of` behavior | Date-based A10 positions; customer/supplier/inventory queries have limited as-of inputs | None | No report-artifact as-of test | PARTIAL | Blueprint requires posted-time cutoff and prior-artifact stability. |
 | Explain This Number and owner Action Center | Minimal `/reports` dashboard | None | Management reporting E2E covers filters/readability only | OPEN | Requires report drill-down, explanation lineage, and action projections. |
 | A11 daily operations composition | `src/app/operations/`, `daily-operations-workspace.tsx` | None | `tests/integration/a11-daily-operations.test.ts`, `tests/e2e/a11-daily-operations.spec.ts` | COMPLETE | No full offline synchronization or conflict merging. |
-| Phase 7 hardening | A1 security baseline, design-system/a11 states, health/readiness and staging smoke scripts | Existing migrations only | Representative E2E/axe tests | PARTIAL | No performance, restore drill, complete observability, offline sync, or incident runbooks. |
+| Phase 7 hardening | A1 security baseline, design-system/a11 states, health/readiness, staging smoke scripts, and release/operations documentation | Existing migrations only | Representative E2E/axe tests; repository CI gate | PARTIAL | Authenticated staging execution, performance evidence, restore-drill evidence, production monitoring integration, offline sync, and tenant-recovery exercise remain open. |
 | Phase 8 onboarding/opening/cutover | `docs/onboarding/README.md`, setup workbook, A4 `RecordOpeningBalance` | Existing A4 migration only | Synthetic fixtures and smoke flows | PARTIAL | No atomic cross-domain opening batch or real client setup. |
 | Training, shadow operation, UAT, pilot exit | No repository implementation/evidence | None | No client UAT or pilot evidence | OPEN | Requires client participation and approved exit criteria. |
 

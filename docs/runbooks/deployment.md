@@ -1,5 +1,14 @@
 # Deployment runbook
 
+## Release preflight
+
+1. Confirm the release commit, CI run, approved change record, backup freshness,
+   and the staging evidence in [`../release-readiness.md`](../release-readiness.md).
+2. Confirm that production uses separate Vercel/Neon/R2/auth secrets and HTTPS.
+   Do not copy staging data or credentials into production.
+3. Confirm the separate database role topology below. If it cannot be
+   established, stop deployment; do not weaken RLS or use one shared role.
+
 ## Initial managed PostgreSQL provisioning
 
 1. Use a Neon/provider owner or deployment-admin connection. Do not use the application runtime credential for role creation or ownership changes.
@@ -9,3 +18,35 @@
 5. Set `DATABASE_URL` to the pooled runtime connection and keep `DATABASE_DIRECT_URL` restricted to migration/deployment automation. Never start the application with migration-owner credentials.
 
 Neon provisioning may require its project owner/admin connection for `CREATE ROLE`, `ALTER ROLE`, and ownership reassignment. Treat inability to establish the four-role topology as a deployment blocker; do not weaken the migration or grant model to accommodate a single shared application role.
+
+## Deploy and verify
+
+1. Deploy the immutable application build through the approved hosting control
+   plane. Do not run migrations from the browser or application startup.
+2. Apply canonical migrations only through the restricted direct migration path
+   and record the migration result. Migrations are forward-only; do not invent
+   or run down-migrations during release operations.
+3. Check `/api/health` and `/api/readiness`, then run the approved authenticated
+   smoke and permission-denial checks. Keep tenant, station, and financial
+   data synthetic until pilot approval.
+4. Watch errors, latency, database connectivity, audit/security events, and
+   provider/storage signals for the agreed observation window. Record the
+   deployment ID, commit, migration state, and operator sign-off.
+
+## Rollback
+
+### Application-only rollback
+
+If the application is defective and the database remains compatible, repoint
+traffic to the last known-good immutable deployment. Confirm compatibility
+before doing so, and rerun health/readiness plus affected workflow checks. Do
+not reset Git, rewrite history, or reverse a migration.
+
+### Database/data incident
+
+If the issue is database availability, incompatible schema/data, or broad
+corruption, stop and use [`backup-restore.md`](backup-restore.md) and
+[`incident-response.md`](incident-response.md). A restore requires the incident
+owner and database/provider owner; it is not an application rollback. Use
+named domain correction/reversal commands for posted records rather than direct
+SQL edits.
