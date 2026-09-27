@@ -201,7 +201,7 @@ describe('production TOTP step-up establishment', () => {
     `;
     expect(afterWrongTotp[0]).toEqual({ step_up_tenant_id: null, step_up_level: null });
     expect(() => assertStepUp(actorAfterWrongTotp!.session, 1, new Date(), ids.tenant)).toThrow(
-      'step-up',
+      'Strong authentication is required for this action',
     );
 
     const wrongPassword = await stepUpPost(
@@ -232,7 +232,9 @@ describe('production TOTP step-up establishment', () => {
     expect(rows[0]?.expires_at.getTime()).toBeGreaterThan(Date.now());
 
     assertStepUp(actor!.session, 1, new Date(), ids.tenant);
-    expect(() => assertStepUp(actor!.session, 1, new Date(), ids.otherTenant)).toThrow('step-up');
+    expect(() => assertStepUp(actor!.session, 1, new Date(), ids.otherTenant)).toThrow(
+      'Strong authentication is required for this action',
+    );
 
     const otherSession = await resolveAuthenticatedActor(
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
@@ -240,7 +242,9 @@ describe('production TOTP step-up establishment', () => {
       }),
     );
     expect(otherSession).not.toBeNull();
-    expect(() => assertStepUp(otherSession!.session, 1, new Date(), ids.tenant)).toThrow('step-up');
+    expect(() => assertStepUp(otherSession!.session, 1, new Date(), ids.tenant)).toThrow(
+      'Strong authentication is required for this action',
+    );
 
     await client`
       update auth.session
@@ -249,7 +253,9 @@ describe('production TOTP step-up establishment', () => {
       where id = ${actor!.session.sessionId}
     `;
     const expiredActor = await resolveAuthenticatedActor(request);
-    expect(() => assertStepUp(expiredActor!.session, 1, new Date(), ids.tenant)).toThrow('step-up');
+    expect(() => assertStepUp(expiredActor!.session, 1, new Date(), ids.tenant)).toThrow(
+      'Strong authentication is required for this action',
+    );
 
     await client`
       update auth.session
