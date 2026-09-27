@@ -243,7 +243,7 @@ describe('production TOTP step-up establishment', () => {
     );
     expect(otherSession).not.toBeNull();
     expect(() => assertStepUp(otherSession!.session, 1, new Date(), ids.tenant)).toThrow(
-      'current step-up authentication',
+      'Strong authentication is required for this action',
     );
 
     await client`
