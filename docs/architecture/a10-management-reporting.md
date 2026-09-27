@@ -64,4 +64,9 @@ A8 customer ledger balances do not contain a station dimension. A tenant-wide re
 
 ## Migration and performance
 
-A10 requires no schema migration `0010`. The service uses existing indexed source predicates and bounded aggregates. It does not add materialized views, a reporting warehouse, or summary transaction tables. Export and artifact persistence remain future work; the returned row shape is ready for CSV/XLSX serialization without changing calculations.
+A10 requires no schema migration. The service uses existing indexed source
+predicates and bounded aggregates; daily provider positions exclude reversed
+A9 allocations, matching the settlement read model. It does not add
+materialized views, a reporting warehouse, or summary transaction tables.
+Export and artifact persistence remain future work; the returned row shape is
+ready for CSV/XLSX serialization without changing calculations.

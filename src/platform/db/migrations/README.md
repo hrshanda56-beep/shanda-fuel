@@ -10,3 +10,4 @@ This directory is the single production migration history for Shanda Fuel.
 - `0001` is derived from the pinned Better Auth 1.7.5 configuration and owns the `auth` persistence tables. `0002` owns Shanda tenant authorization/security tables and its reviewed hand-authored RLS/grant layer.
 - The initial A0 migration only creates the `auth`, `app`, and `platform` namespaces. It intentionally contains no business tables.
 - Security SQL after the generated table/index statements in `0002` is deliberately hand-authored. Drizzle checks table metadata; it does not regenerate or replace reviewed policies, context functions, ownership, or grants.
+- The current journal contains exactly 16 ordered entries, `0000` through `0015`. Migrations `0012`, `0014`, and `0015` are reviewed hand-authored SQL deltas and therefore do not add generated Drizzle snapshots; `pnpm db:check` remains the metadata consistency check for the generated history.
