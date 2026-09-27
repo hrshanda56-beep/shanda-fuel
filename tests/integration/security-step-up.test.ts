@@ -274,7 +274,8 @@ describe('production TOTP step-up establishment', () => {
 
     const events = await client<{ event_code: string; details: string }[]>`
       select event_code, details::text from platform.security_events
-      where subject_id = ${actor!.session.sessionId}
+      where actor_id = ${ids.actor}
+        and details->>'sessionId' = ${actor!.session.sessionId}
         and event_code in ('SECURITY.STEP_UP_FAILED', 'SECURITY.STEP_UP_SUCCEEDED')
     `;
     expect(events.some((event) => event.event_code === 'SECURITY.STEP_UP_FAILED')).toBe(true);
