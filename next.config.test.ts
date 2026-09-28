@@ -1,17 +1,48 @@
-import { describe, expect, it } from 'vitest';
-import nextConfig from './next.config';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(() => {
+  vi.resetModules();
+  vi.unstubAllEnvs();
+});
+
+async function securityHeadersFor(nodeEnv: 'development' | 'production') {
+  vi.resetModules();
+  vi.stubEnv('NODE_ENV', nodeEnv);
+  const { default: nextConfig } = await import('./next.config');
+  const rules = await nextConfig.headers?.();
+  return new Map((rules?.[0]?.headers ?? []).map((header) => [header.key, header.value]));
+}
+
+function expectRequiredHeaders(headers: Map<string, string>) {
+  const csp = headers.get('Content-Security-Policy');
+  expect(csp).toBeDefined();
+  expect(csp).toContain("default-src 'self'");
+  expect(csp).toContain("base-uri 'self'");
+  expect(csp).toContain("frame-ancestors 'none'");
+  expect(csp).toContain("object-src 'none'");
+  expect(csp).toContain("form-action 'self'");
+  expect(headers.get('Strict-Transport-Security')).toContain('max-age=31536000');
+  expect(headers.get('X-Content-Type-Options')).toBe('nosniff');
+  expect(headers.get('X-Frame-Options')).toBe('DENY');
+  expect(headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+  expect(headers.get('Permissions-Policy')).toContain('camera=()');
+}
 
 describe('Next security headers', () => {
-  it('declares browser security headers for every route', async () => {
-    const rules = await nextConfig.headers?.();
-    const headers = rules?.[0]?.headers ?? [];
-    const values = new Map(headers.map((header) => [header.key, header.value]));
+  it('keeps the required headers and allows eval only in development', async () => {
+    const headers = await securityHeadersFor('development');
+    const csp = headers.get('Content-Security-Policy');
 
-    expect(values.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
-    expect(values.get('Strict-Transport-Security')).toContain('max-age=31536000');
-    expect(values.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(values.get('X-Frame-Options')).toBe('DENY');
-    expect(values.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
-    expect(values.get('Permissions-Policy')).toContain('camera=()');
+    expectRequiredHeaders(headers);
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+  });
+
+  it('keeps eval out of production CSP while preserving the required headers', async () => {
+    const headers = await securityHeadersFor('production');
+    const csp = headers.get('Content-Security-Policy');
+
+    expectRequiredHeaders(headers);
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).not.toContain("'unsafe-eval'");
   });
 });
