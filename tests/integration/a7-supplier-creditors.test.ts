@@ -4,6 +4,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST as supplierCommandPost } from '../../src/app/api/suppliers/commands/route';
 import { GET as supplierSummaryGet } from '../../src/app/api/suppliers/summary/route';
 import { GET as supplierStatementGet } from '../../src/app/api/suppliers/statement/route';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -61,6 +62,7 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         values ('${ids.session}', '2030-01-01T00:00:00Z', 'a7-session-token', '${ids.actor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedActiveStepUp(client, ids.session, ids.tenant);
   });
 
   afterAll(async () => client?.end());

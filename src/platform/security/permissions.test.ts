@@ -4,6 +4,7 @@ import {
   assertRoleMutationAllowed,
   DEFAULT_ROLE_PERMISSIONS,
   isAuthorized,
+  isPermissionGranted,
   scopeCovers,
   type AuthorizationActor,
 } from './permissions';
@@ -19,6 +20,7 @@ const actor: AuthorizationActor = {
   strongAuthenticationAt: new Date('2026-09-20T08:00:00.000Z'),
   strongAuthenticationExpiresAt: new Date('2026-09-20T18:00:00.000Z'),
   strongAuthenticationVerified: true,
+  stepUpTenantId: tenantId,
   roleAssignments: [
     {
       roleCode: 'SUPERVISOR',
@@ -72,6 +74,31 @@ describe('permission authorization', () => {
         actor: { ...actor, strongAuthenticationAt: undefined },
         permissionCode: 'membership.manage',
         requestedScope: { tenantId, scopeType: 'STATION', legalEntityId, stationId },
+      }),
+    ).toBe(false);
+  });
+
+  it('requires privileged assurance to be bound to the requested tenant', () => {
+    const requestedScope = { tenantId, scopeType: 'STATION' as const, legalEntityId, stationId };
+    expect(
+      isPermissionGranted({
+        actor: { ...actor, stepUpTenantId: undefined },
+        permissionCode: 'meter.reset',
+        requestedScope,
+      }),
+    ).toBe(true);
+    expect(
+      isAuthorized({
+        actor: { ...actor, stepUpTenantId: undefined },
+        permissionCode: 'meter.reset',
+        requestedScope,
+      }),
+    ).toBe(false);
+    expect(
+      isAuthorized({
+        actor: { ...actor, stepUpTenantId: '77777777-7777-4777-8777-777777777777' },
+        permissionCode: 'meter.reset',
+        requestedScope,
       }),
     ).toBe(false);
   });

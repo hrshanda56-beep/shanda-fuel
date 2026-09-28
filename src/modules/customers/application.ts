@@ -5,7 +5,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { withTenantTransaction } from '../../platform/db/transaction';
-import { getServerEnv } from '../../platform/config/env';
+import { getAuditSigningKey } from '../../platform/config/env';
 import { AppError } from '../../platform/errors';
 import { assertStepUp } from '../../platform/security';
 import {
@@ -335,9 +335,7 @@ export async function executeCustomerCommand<T>(input: {
       return (row.resultPayload as { value: T }).value;
     }
     const result = await input.execute(transaction);
-    const env = getServerEnv();
-    if (!env.AUDIT_SIGNING_KEY_ID || !env.AUDIT_SIGNING_KEY)
-      throw new AppError('DEPENDENCY_UNAVAILABLE', 'Audit signing credentials are not configured');
+    const auditKey = getAuditSigningKey();
     await appendSecurityEvent(
       {
         eventId: randomUUID(),
@@ -358,7 +356,7 @@ export async function executeCustomerCommand<T>(input: {
         reason: input.audit.reason,
         metadata: { ...(input.audit.metadata ?? {}), stationId: input.context.stationId ?? null },
       },
-      { keyId: env.AUDIT_SIGNING_KEY_ID, secret: env.AUDIT_SIGNING_KEY },
+      auditKey,
       transaction,
     );
     await transaction

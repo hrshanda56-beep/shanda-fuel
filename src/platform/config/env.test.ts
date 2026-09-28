@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { getServerEnv } from './env';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getAuditSigningKey, getServerEnv } from './env';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('server environment validation', () => {
   it('accepts local development without production credentials', () => {
@@ -126,5 +130,42 @@ describe('server environment validation', () => {
         DATABASE_URL: 'postgresql://configured',
       }),
     ).toThrow();
+  });
+
+  it('requires audit signing credentials in production', () => {
+    const base = {
+      APP_ENV: 'production',
+      APP_URL: 'https://fuel.shandahr.com',
+      DATABASE_URL: 'postgresql://configured',
+      BETTER_AUTH_SECRET: 'a'.repeat(32),
+    };
+    expect(() => getServerEnv(base)).toThrow(/AUDIT_SIGNING_KEY_ID|AUDIT_SIGNING_KEY/);
+    expect(() =>
+      getServerEnv({
+        ...base,
+        AUDIT_SIGNING_KEY_ID: 'audit-v1',
+        AUDIT_SIGNING_KEY: 'short',
+      }),
+    ).toThrow('at least 32 characters');
+    expect(
+      getAuditSigningKey({
+        ...base,
+        AUDIT_SIGNING_KEY_ID: 'audit-v1',
+        AUDIT_SIGNING_KEY: 's'.repeat(32),
+      }),
+    ).toEqual({ keyId: 'audit-v1', secret: 's'.repeat(32) });
+  });
+
+  it('requires APP_ENV to be explicit in a production Node runtime while allowing staging', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(() => getServerEnv({ APP_URL: 'https://fuel.shandahr.com' })).toThrow(
+      'APP_ENV must be explicitly configured',
+    );
+    expect(
+      getServerEnv({
+        APP_ENV: 'staging',
+        APP_URL: 'https://staging.shandahr.com',
+      }).APP_ENV,
+    ).toBe('staging');
   });
 });

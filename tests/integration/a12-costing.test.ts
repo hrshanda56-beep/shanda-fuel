@@ -5,6 +5,7 @@ import { makeSignature } from 'better-auth/crypto';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as inventoryValuationGet } from '../../src/app/api/inventory/valuation/route';
 import { GET as inventoryRevaluationGet } from '../../src/app/api/inventory/valuation/revaluations/[id]/route';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for A12.3 costing integration tests.');
@@ -257,6 +258,7 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       values ('${ids.phase2Session}', '2030-01-01T00:00:00Z', 'a122-phase2-session-token', '${ids.actor}', true, now())
       on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedActiveStepUp(client, ids.phase2Session, ids.tenant);
   });
 
   afterAll(async () => client?.end());

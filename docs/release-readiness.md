@@ -354,7 +354,7 @@ not be replaced with an invented PR number, SHA, validation result, or owner.
 
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Security P0 | Phase 1 | **IN PROGRESS** | Codex — Agent 1 (security owner) | `hardening/security-p0-v2` | None recorded | TBD | TBD |
+| Security P0 | Phase 1 | **READY FOR REVIEW** | Codex — Agent 1 (security owner) | `hardening/security-p0-v2` | None recorded | TBD | TBD |
 | Design System Foundation | Phase 1 | **NOT STARTED** | Claude — Agent 2 (design-system owner) | TBD | None requiring wait | TBD | TBD |
 | CI Security Hardening | Phase 1 | **BLOCKED** | Codex — TBD | TBD | Security P0 must merge | TBD | TBD |
 | Observability P0 | Phase 1 | **BLOCKED** | Codex — Agent 3 after Security P0 merge | TBD | Security P0 should merge first | TBD | TBD |
@@ -379,7 +379,7 @@ identified in each record.
 | --- | --- |
 | Workstream | Security P0 |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **IN PROGRESS** |
+| Status | **READY FOR REVIEW** |
 | Owner / Agent | Codex — Agent 1 (security owner) |
 | Branch | `hardening/security-p0-v2` |
 | Dependencies | None recorded for starting this workstream. |
@@ -388,8 +388,8 @@ identified in each record.
 | Required Validation | Fresh disposable PostgreSQL bootstrap; migrations through `0019`; `db check`; integration tests; direct privilege verification; final diff review; staging; staged diff review; commit; push; PR; CI; merge; and post-merge verification as required. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Observed validation already recorded: format check passed; lint passed; typecheck passed; 46 unit-test files passed; 289 unit tests passed; production build passed; `git diff --check` passed. These results do not establish merge or final verification. |
-| Remaining Follow-up | Complete the required disposable-PostgreSQL, migration, database, integration, privilege, staging, review, PR, CI, merge, and post-merge gates. Rejected in-memory rate limiting is not part of this patch; provider/durable rate limiting remains separate; `app_runtime` remains separately reviewable. |
+| Verification / Evidence | Implementation commit `58ddf9a`. Fresh PostgreSQL 16 bootstrap passed; canonical `pnpm db:migrate:test` passed; migrations `0000`–`0019` applied with 20 migration records; `pnpm db:check` passed; integration tests passed (16 files / 94 tests); unit tests passed (46 files / 289 tests); Prettier, ESLint, typecheck, production build, and `git diff --check` passed; direct privilege verification confirmed 10/10 checks with no auth schema USAGE or SELECT access for `job_runtime` and `diagnostics_readonly`; migration `0002` unchanged; rejected process-local/in-memory rate limiter absent; staging remains supported through explicit `APP_ENV=staging`. |
+| Remaining Follow-up | Stage/staged-diff review, then push; PR; CI; merge; and post-merge/runtime verification as required. Provider/durable rate limiting remains separate; broader `app_runtime` least-privilege work is not claimed complete. |
 
 Locked decisions for this workstream:
 

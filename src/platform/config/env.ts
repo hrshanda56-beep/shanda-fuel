@@ -1,5 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
+import { AppError } from '../errors';
 
 const r2AccountIdPattern = /^[a-f0-9]{32}$/i;
 const r2BucketNamePattern = /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/;
@@ -38,7 +39,7 @@ const envSchema = z
     RESEND_API_KEY: z.string().min(1).optional(),
     RESEND_FROM_EMAIL: z.string().email().optional(),
     CRON_SECRET: z.string().min(32).optional(),
-    AUDIT_SIGNING_KEY_ID: z.string().min(1).optional(),
+    AUDIT_SIGNING_KEY_ID: z.string().trim().min(1).optional(),
     AUDIT_SIGNING_KEY: z.string().min(1).optional(),
   })
   .superRefine((value, context) => {
@@ -117,12 +118,54 @@ const envSchema = z
         message: 'Required in production',
       });
     }
+    if (value.APP_ENV === 'production' && !value.AUDIT_SIGNING_KEY_ID) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUDIT_SIGNING_KEY_ID'],
+        message: 'Required in production',
+      });
+    }
+    if (value.APP_ENV === 'production' && !value.AUDIT_SIGNING_KEY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUDIT_SIGNING_KEY'],
+        message: 'Required in production',
+      });
+    }
+    if (
+      value.APP_ENV === 'production' &&
+      value.AUDIT_SIGNING_KEY &&
+      value.AUDIT_SIGNING_KEY.length < 32
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUDIT_SIGNING_KEY'],
+        message: 'Must be at least 32 characters in production',
+      });
+    }
   });
 
 export type ServerEnv = z.infer<typeof envSchema>;
 
 export function getServerEnv(input: Record<string, string | undefined> = process.env): ServerEnv {
+  if (process.env.NODE_ENV === 'production' && input.APP_ENV === undefined) {
+    throw new AppError(
+      'INVARIANT_VIOLATION',
+      'APP_ENV must be explicitly configured when NODE_ENV=production',
+    );
+  }
   return envSchema.parse(input);
+}
+
+export function getAuditSigningKey(input: Record<string, string | undefined> = process.env): {
+  keyId: string;
+  secret: string;
+} {
+  const env = getServerEnv(input);
+  if (!env.AUDIT_SIGNING_KEY_ID || !env.AUDIT_SIGNING_KEY) {
+    throw new AppError('DEPENDENCY_UNAVAILABLE', 'Audit signing credentials are not configured');
+  }
+  return { keyId: env.AUDIT_SIGNING_KEY_ID, secret: env.AUDIT_SIGNING_KEY };
 }
 
 export function assertDatabaseConfigured(

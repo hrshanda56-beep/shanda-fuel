@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import { type Database } from '../../platform/db';
-import { getServerEnv } from '../../platform/config/env';
+import { getAuditSigningKey } from '../../platform/config/env';
 import { securityEvents } from '../../platform/db/schema/a1';
 import { databaseForecourtTransactionPort } from './application';
 import { forecourtIdempotencyRecords, forecourtOutbox } from '../../platform/db/schema/a3';
@@ -141,10 +141,7 @@ export const databaseIdempotencyPort: IdempotencyPort = {
 export const databaseAuditPort: ForecourtAuditPort = {
   async append(input) {
     const tx = dbTransaction(input.transaction);
-    const env = getServerEnv();
-    if (!env.AUDIT_SIGNING_KEY_ID || !env.AUDIT_SIGNING_KEY) {
-      throw new AppError('DEPENDENCY_UNAVAILABLE', 'Audit signing credentials are not configured');
-    }
+    const auditKey = getAuditSigningKey();
     const event = signAuditEvent(
       {
         eventId: randomUUID(),
@@ -174,7 +171,7 @@ export const databaseAuditPort: ForecourtAuditPort = {
           ...input.auditMetadata,
         },
       },
-      { keyId: env.AUDIT_SIGNING_KEY_ID, secret: env.AUDIT_SIGNING_KEY },
+      auditKey,
     );
     await tx.insert(securityEvents).values({
       id: event.eventId,

@@ -5,6 +5,7 @@ import { POST as commandPost } from '../../src/app/api/settlements/commands/rout
 import { GET as summaryGet } from '../../src/app/api/settlements/summary/route';
 import { GET as unmatchedGet } from '../../src/app/api/settlements/unmatched/route';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -173,6 +174,9 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
          set state = 'APPROVED', approved_by = '${ids.otherMembership}', approved_at = now(), version = version + 1
        where id = '${ids.otherReconciliation}' and state = 'SUBMITTED';
     `);
+    await seedActiveStepUp(client, ids.session, ids.tenant);
+    await seedActiveStepUp(client, ids.otherSession, ids.otherTenant);
+    await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
     await openBusinessDay(ids.tenant, ids.station, ids.day, 'a9-session-token');
     await openBusinessDay(
       ids.otherTenant,
