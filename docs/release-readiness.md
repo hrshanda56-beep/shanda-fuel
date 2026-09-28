@@ -1,6 +1,6 @@
 # Release readiness ledger
 
-**Scope:** current RC at `6b85ae5`
+**Validated application baseline:** `7ba5e68`
 **Last reconciled:** 2026-09-28
 **Classification:** operational release record; it does not change domain, accounting, authentication, MFA, RLS, authorization, migration, reporting, or settlement behavior.
 
@@ -10,10 +10,10 @@
 | --- | --- | --- |
 | Merged implementation baseline | **RECORDED** | `docs/implementation-status.md`; current integration tip `6b85ae5`. |
 | Repository quality gate | **DEFINED** | `.github/workflows/ci.yml`; attach the CI run for the RC commit. |
-| Authenticated staging smoke | **DEFERRED** | Requires staging URL, deployment secrets, synthetic database records, and an approved operator. Use [`staging-auth-smoke-bootstrap.md`](runbooks/staging-auth-smoke-bootstrap.md), [`STAGING_SMOKE.md`](platform/STAGING_SMOKE.md), and the normal sign-in flow. |
+| Authenticated staging smoke | **COMPLETE / PASSED** | Completed authenticated staging operator flow using the normal sign-in path and the approved staging procedure. |
 | Cross-module staging journeys | **DEFERRED** | Exercise station/day/shift, reconciliation approval, inventory/costing evidence, cash/provider distinction, reporting, and permission-denial paths with synthetic data. |
-| Tenant-isolation verification on deployed staging | **DEFERRED** | Prove Tenant A cannot read, write, link, export, or process Tenant B through application and job paths. Do not use production data. |
-| Backup/restore drill | **DATABASE DRILL COMPLETE; APP READINESS BLOCKED** | Lane 4 isolated PITR restore and restored-DB integrity/security validation are complete. Local app-to-restored-DB readiness is not verified; see [`backup-restore.md`](runbooks/backup-restore.md). |
+| Tenant-isolation verification on deployed staging | **COMPLETE / PASSED** | Completed deployed-staging tenant-isolation and RLS verification. |
+| Backup/restore drill | **DATABASE AND APP READINESS VERIFIED; R2 GAP OPEN** | Lane 4 isolated PITR restore, restored-DB integrity/security validation, and isolated Vercel Preview application readiness are complete. R2 deleted-object recovery remains open; see [`backup-restore.md`](runbooks/backup-restore.md). |
 | R2 deleted-object recovery | **NOT AVAILABLE; OPEN GAP** | Current staging configuration does not provide deleted-object recovery; a synthetic put/copy round-trip is not recovery evidence. |
 | Performance verification | **PROCEDURE READY; EXECUTION OPEN** | Follow [`staging-performance-verification.md`](runbooks/staging-performance-verification.md) and record p50/p95 results against Blueprint planning goals. |
 | Monitoring and alert routing | **EXPECTATIONS RECORDED; INTEGRATION OPEN** | Follow [`observability.md`](runbooks/observability.md); connect the deployed platform to the approved log/alert destination. |
@@ -28,16 +28,18 @@
 | --- | --- |
 | Database PITR isolated restore drill | **COMPLETE** — temporary Neon recovery branch `lane4-restore-drill-20260928` remains available and auto-expires after one day. |
 | Restored DB integrity/security validation | **COMPLETE** — independently validated through Neon SQL Editor, including migrations, hierarchy, permissions, lineage, audit evidence, RLS/policies, and checksums. |
-| Local app process startup | **VERIFIED** — local Next.js instance started against the recovery-branch `DATABASE_URL`. |
-| `/api/health` | **HTTP 200**. |
-| `/api/readiness` | **HTTP 503**; response reported database `unavailable`; the DB check took approximately 22.8 seconds. |
-| App-to-restored-DB readiness | **BLOCKED / NOT VERIFIED** — this is not classified as a restored-database failure. It is consistent with the previously observed local raw PostgreSQL transport limitation, but no definitive root cause is recorded without a captured connection exception. |
-| Side-effect scope | No auth, POST, financial, R2, email, cron, migration, or other write-capable route was invoked. The recovery URL was cleared afterward. |
+| Local app process startup | **VERIFIED** — a local Next.js instance started against the recovery-branch `DATABASE_URL`; the earlier local readiness result was not classified as a restored-database failure. |
+| Isolated application verification | **VERIFIED** — temporary Vercel Preview deployment `dpl_Ejf2DLRpiuQUnqg87FXwnvnhyLqY` of source commit `7ba5e683f751f92fbb39755f7d322bfdcc10a8e3` used the recovery-branch `DATABASE_URL`. |
+| `/api/health` | **HTTP 200** with application `ok`. |
+| `/api/readiness` | **HTTP 200** with database `ok`. |
+| App-to-restored-DB readiness | **VERIFIED** by the isolated Vercel Preview deployment. |
+| Side-effect scope | No auth, POST, financial, R2, email, cron, migration, smoke, or other write-capable route was invoked. The temporary Vercel project and its deployments were deleted afterward. |
 | RPO ≤15 minutes | **NOT DEMONSTRATED BY THIS DRILL**. |
 | Full RTO ≤4 hours | **NOT DEMONSTRATED**. |
 
-This evidence does not establish application connectivity to the recovered
-branch and does not convert the R2 deleted-object recovery gap into a pass.
+This evidence establishes isolated application connectivity to the recovered
+branch. Lane 4 remains open solely because the R2 deleted-object recovery gap
+is not a pass.
 
 ## Deferred authenticated staging gate
 
@@ -69,10 +71,9 @@ These are not silently converted into implementation work by the RC:
 
 1. Connect production-grade structured log collection, dashboards, alert
    routing, retention, and on-call ownership.
-2. Resolve the blocked local app-to-restored-DB connectivity check and establish
-   a supported R2 deleted-object recovery procedure before claiming complete
-   recovery readiness. Do not claim the RPO/RTO planning targets from this
-   drill.
+2. Establish a supported R2 deleted-object recovery procedure before claiming
+   complete recovery readiness. Do not claim the RPO/RTO planning targets from
+   this drill.
 3. Complete the staging performance run with representative synthetic data and
    investigate any regression before pilot.
 4. Complete key rotation and tenant-scoped recovery exercises with provider

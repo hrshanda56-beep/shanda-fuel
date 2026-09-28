@@ -96,11 +96,12 @@ Run before pilot/major database changes and at least quarterly thereafter:
 | Restored timestamp and target | Temporary Neon recovery branch `lane4-restore-drill-20260928`; auto-expiring after one day. |
 | RPO achieved | **NOT DEMONSTRATED BY THIS DRILL**; RPO ≤15 minutes is not claimed. |
 | RTO achieved | **NOT DEMONSTRATED**; full RTO ≤4 hours is not claimed. |
-| Application/readiness/RLS checks | Local Next.js process startup **VERIFIED**. `/api/health` returned HTTP 200. `/api/readiness` returned HTTP 503 with database `unavailable`; the DB check took approximately 22.8 seconds. App-to-restored-DB readiness is **BLOCKED / NOT VERIFIED**. |
+| Application/readiness/RLS checks | Isolated temporary Vercel Preview deployment `dpl_Ejf2DLRpiuQUnqg87FXwnvnhyLqY` of source commit `7ba5e683f751f92fbb39755f7d322bfdcc10a8e3` **VERIFIED** app-to-restored-DB readiness. `/api/health` returned HTTP 200 with application `ok`; `/api/readiness` returned HTTP 200 with database `ok`. |
 | Lineage and audit checks | **COMPLETE** through independent Neon SQL Editor validation of migrations, hierarchy, permissions, lineage, audit evidence, RLS/policies, and checksums. |
 | Object-storage/checkpoint checks | R2 deleted-object recovery is **NOT AVAILABLE / OPEN GAP** in the current staging configuration. A synthetic put/copy round-trip is not deleted-object recovery evidence. |
-| Exceptions and follow-ups | Do not classify the readiness result as a restored-database failure. It is consistent with the previously observed inability of local raw PostgreSQL transport to reach Neon, but no definitive root cause is recorded without a captured connection exception. The recovery URL was cleared afterward; no auth, POST, financial, R2, email, cron, migration, or other write-capable route was invoked. Do not retry with or retrieve the recovery credential. |
+| Exceptions and follow-ups | The earlier local readiness result was not classified as a restored-database failure. The isolated Vercel Preview verification invoked no auth, POST, financial, R2, email, cron, migration, smoke, or other write-capable route. The temporary Vercel project and deployments were deleted afterward. Do not claim RPO ≤15 minutes or RTO ≤4 hours from this drill. |
 
-Lane 4 provides evidence of the isolated database restore and independent
-restored-database validation. Application-level connectivity to the recovered
-branch remains unverified, and the R2 deleted-object recovery gap remains open.
+Lane 4 provides evidence of the isolated database restore, independent
+restored-database validation, and isolated application connectivity to the
+recovered branch. It remains open because R2 deleted-object recovery remains
+unavailable.
