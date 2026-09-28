@@ -66,6 +66,7 @@ function context(
       strongAuthenticationExpiresAt: session.strongAuthenticationExpiresAt,
       strongAuthenticationVerified: session.strongAuthenticationVerified,
       stepUpLevel: session.stepUpLevel,
+      stepUpTenantId: session.stepUpTenantId,
       roleAssignments: [
         {
           tenantId: ids.tenant,

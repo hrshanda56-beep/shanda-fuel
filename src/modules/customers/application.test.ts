@@ -55,6 +55,7 @@ function context(sessionOverrides: Partial<SessionRecord> = {}): CustomerCommand
       strongAuthenticationExpiresAt: session.strongAuthenticationExpiresAt,
       strongAuthenticationVerified: session.strongAuthenticationVerified,
       stepUpLevel: session.stepUpLevel,
+      stepUpTenantId: session.stepUpTenantId,
       roleAssignments: [roleAssignment],
       temporaryGrants: [],
     },

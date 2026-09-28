@@ -34,11 +34,44 @@ describe('PostgreSQL integration harness', () => {
     expect(rows.map((row) => row.schema_name)).toEqual(['app', 'auth', 'platform']);
   });
 
+  it('denies auth schema reads to non-auth runtime roles', async () => {
+    const privileges = await client<
+      {
+        rolname: string;
+        table_name: string;
+        schema_usage: boolean;
+        can_select: boolean;
+      }[]
+    >`
+      select
+        r.rolname,
+        c.relname as table_name,
+        has_schema_privilege(r.rolname, 'auth', 'USAGE') as schema_usage,
+        has_table_privilege(r.rolname, c.oid, 'SELECT') as can_select
+      from pg_roles r
+      cross join pg_namespace n
+      cross join pg_class c
+      where r.rolname in ('job_runtime', 'diagnostics_readonly')
+        and n.nspname = 'auth'
+        and c.relnamespace = n.oid
+        and c.relkind in ('r', 'p')
+        and c.relname in ('user', 'session', 'account', 'verification', 'two_factor')
+      order by r.rolname, c.relname
+    `;
+
+    expect(privileges).toHaveLength(10);
+    expect(
+      privileges.every(
+        ({ schema_usage, can_select }) => schema_usage === false && can_select === false,
+      ),
+    ).toBe(true);
+  });
+
   it('sees the ordered canonical migration history and security objects', async () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(19);
+    expect(migrations).toHaveLength(20);
 
     const stepUpBinding = await client<{ column_name: string }[]>`
       select column_name

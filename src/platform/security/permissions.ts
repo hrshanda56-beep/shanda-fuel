@@ -435,18 +435,30 @@ export function isAuthorized(input: {
 }): boolean {
   const now = input.now ?? new Date();
   const { actor, permissionCode, requestedScope } = input;
-  if (!actor.membershipActive || actor.tenantId !== requestedScope.tenantId) return false;
+  if (!isPermissionGranted(input)) return false;
   const currentStrongAuthentication =
     actor.strongAuthenticationVerified === true &&
     actor.strongAuthenticationAt &&
     (!actor.strongAuthenticationExpiresAt || actor.strongAuthenticationExpiresAt > now);
   if (
     highRiskPermissions.has(permissionCode) &&
-    (!currentStrongAuthentication ||
-      (actor.stepUpTenantId !== undefined && actor.stepUpTenantId !== requestedScope.tenantId))
+    (!currentStrongAuthentication || actor.stepUpTenantId !== requestedScope.tenantId)
   ) {
     return false;
   }
+
+  return true;
+}
+
+export function isPermissionGranted(input: {
+  actor: AuthorizationActor;
+  permissionCode: PermissionCode;
+  requestedScope: AccessScope;
+  now?: Date;
+}): boolean {
+  const now = input.now ?? new Date();
+  const { actor, permissionCode, requestedScope } = input;
+  if (!actor.membershipActive || actor.tenantId !== requestedScope.tenantId) return false;
   const roleGrant = actor.roleAssignments.some(
     (assignment) =>
       isActive(assignment.expiresAt, now) &&
