@@ -152,10 +152,11 @@ export async function loadTenantMembershipWithDatabase(
       };
     }
 
-    await transaction.execute(sql`select set_config('app.tenant_id', ${row.tenant_id}, true)`);
-    await transaction.execute(
-      sql`select set_config('app.membership_id', ${row.membership_id}, true)`,
-    );
+    await transaction.execute(sql`
+      select
+        set_config('app.tenant_id', ${row.tenant_id}, true),
+        set_config('app.membership_id', ${row.membership_id}, true)
+    `);
     const roleRows = (await transaction.execute(sql`
       select tenant_id, role_code, scope_type, legal_entity_id, station_id, expires_at
       from app.membership_role_assignments
