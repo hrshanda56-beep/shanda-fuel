@@ -3,7 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { getAuth } from '../../platform/auth';
-import { getServerEnv } from '../../platform/config/env';
+import { getAuditSigningKey } from '../../platform/config/env';
 import { type Database, withTenantTransaction } from '../../platform/db';
 import { AppError } from '../../platform/errors';
 import { appendSecurityEvent } from '../audit/contracts';
@@ -37,11 +37,7 @@ export type StepUpDependencies = {
 };
 
 function auditKey(): { keyId: string; secret: string } {
-  const env = getServerEnv();
-  if (!env.AUDIT_SIGNING_KEY_ID || !env.AUDIT_SIGNING_KEY) {
-    throw new AppError('DEPENDENCY_UNAVAILABLE', 'Audit signing credentials are not configured');
-  }
-  return { keyId: env.AUDIT_SIGNING_KEY_ID, secret: env.AUDIT_SIGNING_KEY };
+  return getAuditSigningKey();
 }
 
 async function appendStepUpEvent(

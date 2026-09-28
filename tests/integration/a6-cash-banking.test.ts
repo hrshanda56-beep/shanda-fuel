@@ -5,6 +5,7 @@ import { makeSignature } from 'better-auth/crypto';
 import { POST as cashCommandPost } from '../../src/app/api/cash/commands/route';
 import { GET as cashSummaryGet } from '../../src/app/api/cash/summary/route';
 import { ExactDecimal } from '../../src/platform/domain/primitives';
+import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -134,6 +135,8 @@ describe('A6 cash collection and banking persistence', () => {
           ('${ids.managerSession}', '2030-01-01T00:00:00Z', 'a6-manager-session-token', '${ids.managerActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
+    await seedActiveStepUp(client, ids.managerSession, ids.tenant);
   });
 
   afterAll(async () => {

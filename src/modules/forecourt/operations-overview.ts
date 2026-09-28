@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
 import { assertStepUp } from '../../platform/security';
-import { authorize } from '../../platform/security/permissions';
+import { authorize, isPermissionGranted } from '../../platform/security/permissions';
 import {
   FORECOURT_COMMAND_POLICY,
   resolveForecourtCommandContext,
@@ -104,17 +104,13 @@ function actionAvailability(
   commandType: ForecourtCommandType,
 ): ActionAvailability {
   const policy = FORECOURT_COMMAND_POLICY[commandType];
-  try {
-    authorize({
-      actor: context.authority.authorization,
-      permissionCode: policy.permissionCode,
-      requestedScope: context.scope,
-    });
-  } catch (error) {
-    if (error instanceof AppError && error.code === 'FORBIDDEN') {
-      return { canExecute: false, permissionGranted: false, requiresStepUp: false };
-    }
-    throw error;
+  const permissionGranted = isPermissionGranted({
+    actor: context.authority.authorization,
+    permissionCode: policy.permissionCode,
+    requestedScope: context.scope,
+  });
+  if (!permissionGranted) {
+    return { canExecute: false, permissionGranted: false, requiresStepUp: false };
   }
 
   if (policy.assuranceRequirement === 'STEP_UP') {

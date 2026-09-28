@@ -71,6 +71,7 @@ function context(): InventoryCommandContext {
         strongAuthenticatedAt: new Date('2026-09-23T00:00:00Z'),
         strongAuthenticationExpiresAt: new Date('2030-01-01T00:00:00Z'),
         strongAuthenticationVerified: true,
+        stepUpTenantId: ids.tenant,
       },
     },
     membership: {
@@ -90,6 +91,7 @@ function context(): InventoryCommandContext {
       strongAuthenticationAt: new Date('2026-09-23T00:00:00Z'),
       strongAuthenticationExpiresAt: new Date('2030-01-01T00:00:00Z'),
       strongAuthenticationVerified: true,
+      stepUpTenantId: ids.tenant,
       roleAssignments: [assignment],
       temporaryGrants: [],
     },
