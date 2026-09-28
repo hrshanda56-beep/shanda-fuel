@@ -4,7 +4,7 @@ import { getServerEnv } from '../src/platform/config/env';
 import { assertStagingSmokeAllowed } from '../src/platform/config/staging-smoke';
 import { createResendEmailSender } from '../src/platform/email';
 import {
-  createR2Storage,
+  createR2SmokeStorage,
   createUniquePrivateObjectKey,
   StorageError,
 } from '../src/platform/storage';
@@ -42,7 +42,7 @@ async function main() {
   try {
     const env = getServerEnv();
     if (r2Enabled) {
-      const storage = createR2Storage(env);
+      const storage = createR2SmokeStorage(env);
       const key = createUniquePrivateObjectKey('staging/smoke');
       const content = new TextEncoder().encode(`staging smoke ${randomUUID()}`);
       await storage.put({ key, body: content, contentType: 'text/plain; charset=utf-8' });

@@ -18,6 +18,7 @@
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "smoke:staging-platform": "node --conditions=react-server --import tsx scripts/staging-platform-smoke.ts",
+    "drill:staging-r2-recovery": "node --conditions=react-server --import tsx scripts/staging-r2-recovery-drill.ts",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
     "db:check": "drizzle-kit check",

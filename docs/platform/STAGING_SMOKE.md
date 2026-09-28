@@ -25,6 +25,12 @@ To run both checks together:
 APP_ENV=staging pnpm smoke:staging-platform -- --r2 --send-email --recipient "$STAGING_SMOKE_RECIPIENT"
 ```
 
-Resend requires `RESEND_API_KEY` and `RESEND_FROM_EMAIL`; R2 requires all four
-`R2_*` settings. Output contains only check status and the Resend message ID.
-The recipient and email content are never printed.
+Resend requires `RESEND_API_KEY` and `RESEND_FROM_EMAIL`; this ordinary R2
+smoke requires only the four primary `R2_*` settings. Output contains only
+check status and the Resend message ID. The recipient and email content are
+never printed.
+
+This smoke is not deleted-object recovery evidence. Use the separate
+[`r2-object-recovery.md`](../runbooks/r2-object-recovery.md) procedure after
+the recovery bucket, Bucket Lock, retention policy, and separate credentials
+have been configured.

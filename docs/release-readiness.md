@@ -14,7 +14,7 @@
 | Cross-module staging journeys | **DEFERRED** | Exercise station/day/shift, reconciliation approval, inventory/costing evidence, cash/provider distinction, reporting, and permission-denial paths with synthetic data. |
 | Tenant-isolation verification on deployed staging | **COMPLETE / PASSED** | Completed deployed-staging tenant-isolation and RLS verification. |
 | Backup/restore drill | **DATABASE AND APP READINESS VERIFIED; R2 GAP OPEN** | Lane 4 isolated PITR restore, restored-DB integrity/security validation, and isolated Vercel Preview application readiness are complete. R2 deleted-object recovery remains open; see [`backup-restore.md`](runbooks/backup-restore.md). |
-| R2 deleted-object recovery | **NOT AVAILABLE; OPEN GAP** | Current staging configuration does not provide deleted-object recovery; a synthetic put/copy round-trip is not recovery evidence. |
+| R2 deleted-object recovery | **IMPLEMENTED; PROVIDER CONFIGURATION AND DRILL OPEN** | The repository now has recovery-aware storage and a dedicated drill, but staging has not yet evidenced a distinct locked recovery bucket, approved retention, or deleted-object restore. A synthetic put/copy round-trip is not recovery evidence. |
 | Performance verification | **PROCEDURE READY; EXECUTION OPEN** | Follow [`staging-performance-verification.md`](runbooks/staging-performance-verification.md) and record p50/p95 results against Blueprint planning goals. |
 | Monitoring and alert routing | **EXPECTATIONS RECORDED; INTEGRATION OPEN** | Follow [`observability.md`](runbooks/observability.md); connect the deployed platform to the approved log/alert destination. |
 | Incident and app rollback path | **DOCUMENTED** | [`incident-response.md`](runbooks/incident-response.md) and [`deployment.md`](runbooks/deployment.md). Provider-specific console access remains an owner prerequisite. |
@@ -39,7 +39,7 @@
 
 This evidence establishes isolated application connectivity to the recovered
 branch. Lane 4 remains open solely because the R2 deleted-object recovery gap
-is not a pass.
+has not yet passed its provider-configured staging drill.
 
 ## Deferred authenticated staging gate
 
@@ -71,7 +71,8 @@ These are not silently converted into implementation work by the RC:
 
 1. Connect production-grade structured log collection, dashboards, alert
    routing, retention, and on-call ownership.
-2. Establish a supported R2 deleted-object recovery procedure before claiming
+2. Configure and witness the supported R2 deleted-object recovery procedure in
+   [`r2-object-recovery.md`](runbooks/r2-object-recovery.md) before claiming
    complete recovery readiness. Do not claim the RPO/RTO planning targets from
    this drill.
 3. Complete the staging performance run with representative synthetic data and

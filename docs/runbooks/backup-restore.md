@@ -67,7 +67,8 @@ Run before pilot/major database changes and at least quarterly thereafter:
    A6/A9, REV1/A12, audit, idempotency, and security-event evidence. Use
    tenant-scoped queries through the application or approved diagnostics role.
 6. Confirm that private objects/audit checkpoints needed by the restored
-   environment are available through their separate recovery procedures.
+   environment are available through their separate recovery procedures. For
+   R2 deleted objects, use [`r2-object-recovery.md`](r2-object-recovery.md).
 7. Measure time from incident declaration to usable isolated service and record
    the recovered timestamp. Compare with RPO/RTO planning goals.
 8. Destroy or quarantine the isolated target according to the provider's
@@ -98,10 +99,10 @@ Run before pilot/major database changes and at least quarterly thereafter:
 | RTO achieved | **NOT DEMONSTRATED**; full RTO ≤4 hours is not claimed. |
 | Application/readiness/RLS checks | Isolated temporary Vercel Preview deployment `dpl_Ejf2DLRpiuQUnqg87FXwnvnhyLqY` of source commit `7ba5e683f751f92fbb39755f7d322bfdcc10a8e3` **VERIFIED** app-to-restored-DB readiness. `/api/health` returned HTTP 200 with application `ok`; `/api/readiness` returned HTTP 200 with database `ok`. |
 | Lineage and audit checks | **COMPLETE** through independent Neon SQL Editor validation of migrations, hierarchy, permissions, lineage, audit evidence, RLS/policies, and checksums. |
-| Object-storage/checkpoint checks | R2 deleted-object recovery is **NOT AVAILABLE / OPEN GAP** in the current staging configuration. A synthetic put/copy round-trip is not deleted-object recovery evidence. |
+| Object-storage/checkpoint checks | Recovery-aware R2 adapter and drill tooling are implemented, but R2 deleted-object recovery remains **NOT AVAILABLE / OPEN GAP** until a separate locked recovery bucket, approved retention policy, and witnessed staging drill are evidenced. A synthetic put/copy round-trip is not deleted-object recovery evidence. |
 | Exceptions and follow-ups | The earlier local readiness result was not classified as a restored-database failure. The isolated Vercel Preview verification invoked no auth, POST, financial, R2, email, cron, migration, smoke, or other write-capable route. The temporary Vercel project and deployments were deleted afterward. Do not claim RPO ≤15 minutes or RTO ≤4 hours from this drill. |
 
 Lane 4 provides evidence of the isolated database restore, independent
 restored-database validation, and isolated application connectivity to the
-recovered branch. It remains open because R2 deleted-object recovery remains
-unavailable.
+recovered branch. It remains open because R2 deleted-object recovery has not
+yet been provider-configured and exercised.
