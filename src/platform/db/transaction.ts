@@ -16,24 +16,15 @@ export async function withTenantTransaction<T>(
   return database.transaction(async (transaction) => {
     // Every key is set, including absent optional values, so a pooled
     // connection can never retain a broader context from another command.
-    await transaction.execute(
-      sql`select set_config('app.tenant_id', ${validContext.tenantId}, true)`,
-    );
-    await transaction.execute(
-      sql`select set_config('app.actor_id', ${validContext.actorId}, true)`,
-    );
-    await transaction.execute(
-      sql`select set_config('app.membership_id', ${validContext.membershipId ?? ''}, true)`,
-    );
-    await transaction.execute(
-      sql`select set_config('app.legal_entity_id', ${validContext.legalEntityId ?? ''}, true)`,
-    );
-    await transaction.execute(
-      sql`select set_config('app.station_id', ${validContext.stationId ?? ''}, true)`,
-    );
-    await transaction.execute(
-      sql`select set_config('app.request_id', ${validContext.requestId ?? ''}, true)`,
-    );
+    await transaction.execute(sql`
+      select
+        set_config('app.tenant_id', ${validContext.tenantId}, true),
+        set_config('app.actor_id', ${validContext.actorId}, true),
+        set_config('app.membership_id', ${validContext.membershipId ?? ''}, true),
+        set_config('app.legal_entity_id', ${validContext.legalEntityId ?? ''}, true),
+        set_config('app.station_id', ${validContext.stationId ?? ''}, true),
+        set_config('app.request_id', ${validContext.requestId ?? ''}, true)
+    `);
     return work(transaction);
   });
 }
