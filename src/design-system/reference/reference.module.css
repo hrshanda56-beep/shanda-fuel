@@ -1,0 +1,105 @@
+/* Layout for the internal design-system reference page only. */
+
+.root {
+  padding-inline: var(--page-gutter);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.toolbar select {
+  width: auto;
+  min-width: 9rem;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
+  gap: var(--space-3);
+}
+
+.swatch {
+  display: grid;
+  gap: var(--space-1-5);
+  font-size: var(--font-size-xs);
+}
+
+.swatchChip {
+  height: 2.75rem;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.swatch code {
+  color: var(--text-secondary);
+  font-size: var(--font-size-2xs);
+  overflow-wrap: anywhere;
+}
+
+.typeRow {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.typeRow:last-child {
+  border-bottom: 0;
+}
+
+.scaleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-size-xs);
+}
+
+.scaleRow code {
+  width: 7rem;
+  color: var(--text-secondary);
+}
+
+.spaceBar {
+  height: 0.5rem;
+  border-radius: var(--radius-xs);
+  background: var(--accent-muted);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8rem), 1fr));
+  gap: var(--space-4);
+}
+
+.tile {
+  display: grid;
+  height: 5rem;
+  place-items: center;
+  border: var(--border-width) solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.demoRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.twoCol {
+  display: grid;
+  gap: var(--grid-gap);
+}
+
+@media (min-width: 48rem) {
+  .twoCol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
