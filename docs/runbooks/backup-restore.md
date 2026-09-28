@@ -91,15 +91,16 @@ Run before pilot/major database changes and at least quarterly thereafter:
 
 | Field | Result |
 | --- | --- |
-| Drill date/operator/approver |  |
-| Source backup/PITR timestamp |  |
-| Restored timestamp and target |  |
-| RPO achieved |  |
-| RTO achieved |  |
-| Application/readiness/RLS checks |  |
-| Lineage and audit checks |  |
-| Object-storage/checkpoint checks |  |
-| Exceptions and follow-ups |  |
+| Drill date/operator/approver | 2026-09-28; operator/approver not recorded in this documentation update. |
+| Source backup/PITR timestamp | Neon PITR isolated restore; exact source timestamp is not recorded here. |
+| Restored timestamp and target | Temporary Neon recovery branch `lane4-restore-drill-20260928`; auto-expiring after one day. |
+| RPO achieved | **NOT DEMONSTRATED BY THIS DRILL**; RPO ≤15 minutes is not claimed. |
+| RTO achieved | **NOT DEMONSTRATED**; full RTO ≤4 hours is not claimed. |
+| Application/readiness/RLS checks | Local Next.js process startup **VERIFIED**. `/api/health` returned HTTP 200. `/api/readiness` returned HTTP 503 with database `unavailable`; the DB check took approximately 22.8 seconds. App-to-restored-DB readiness is **BLOCKED / NOT VERIFIED**. |
+| Lineage and audit checks | **COMPLETE** through independent Neon SQL Editor validation of migrations, hierarchy, permissions, lineage, audit evidence, RLS/policies, and checksums. |
+| Object-storage/checkpoint checks | R2 deleted-object recovery is **NOT AVAILABLE / OPEN GAP** in the current staging configuration. A synthetic put/copy round-trip is not deleted-object recovery evidence. |
+| Exceptions and follow-ups | Do not classify the readiness result as a restored-database failure. It is consistent with the previously observed inability of local raw PostgreSQL transport to reach Neon, but no definitive root cause is recorded without a captured connection exception. The recovery URL was cleared afterward; no auth, POST, financial, R2, email, cron, migration, or other write-capable route was invoked. Do not retry with or retrieve the recovery credential. |
 
-The current RC has this procedure, but no repository evidence of a provider-
-executed restore drill. That execution remains a staging/operations gate.
+Lane 4 provides evidence of the isolated database restore and independent
+restored-database validation. Application-level connectivity to the recovered
+branch remains unverified, and the R2 deleted-object recovery gap remains open.

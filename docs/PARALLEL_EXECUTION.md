@@ -2,7 +2,7 @@
 
 ## Integration Base
 
-`origin/main` and the current checkout are at `244ad14` (2026-09-27). The
+`origin/main` and the current checkout are at `6b85ae5` (2026-09-28). The
 integration base includes A0–A12 slices, release hardening from PR #32, and
 Security Wave 1 step-up/MFA establishment from PR #33. The entries below retain
 historical branch/worktree handoff context; merged state is authoritative.

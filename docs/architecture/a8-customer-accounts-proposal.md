@@ -1,6 +1,6 @@
 # A8 Customer Credit and Prepaid Accounts
 
-Status: merged and present in `main` at integration tip `244ad14`.
+Status: merged and present in `main` at integration tip `6b85ae5`.
 Canonical migration `0008_customer_accounts.sql` follows
 `0007_supplier_creditors.sql` in the merged migration journal. This document
 records the implemented customer-account boundary and remaining policy

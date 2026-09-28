@@ -17,8 +17,8 @@ Status vocabulary:
 
 ## Integration base
 
-Current merged base: `244ad14` (`main`, current canonical integration tip;
-2026-09-27).
+Current merged base: `6b85ae5` (`main`, current canonical integration tip;
+2026-09-28).
 
 First-parent merged work includes A4 inventory (`afed2eb`), A5 daily
 reconciliation (`bca2ea0`), A6 cash/banking (`fba3cfb`), A7 supplier creditors
@@ -274,7 +274,7 @@ reporting remain separate reporting concerns.
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
 | Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10.2 now provides canonical ordinary-fuel revenue and gross-margin reporting from REV1/A12 authorities; exports/artifacts, full as-of, Action Center, and Explain This Number remain incomplete. |
 | Phase 6 — Profitability and gross margin | **PARTIAL** | Canonical REV1 revenue and A12 restated COGS are consumed by the A10 profitability read model with latest-finalized-revision, business-date, tenant, and station safeguards; operating expenses, fixed-cost recognition, and broader profitability remain incomplete. |
-| Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations, representative accessibility/weak-network behavior, release notes, operational procedures, health/readiness checks, and staging smoke tooling exist; authenticated staging execution, performance evidence, restore-drill evidence, production-grade monitoring integration, offline sync, and full incident/tenant-recovery exercises remain. |
+| Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations, representative accessibility/weak-network behavior, release notes, operational procedures, health/readiness checks, staging smoke tooling, and Lane 4 database PITR/integrity/security evidence exist; local app-to-restored-DB readiness remains blocked, R2 deleted-object recovery is unavailable, authenticated staging execution, performance evidence, production-grade monitoring integration, offline sync, and full incident/tenant-recovery exercises remain. |
 | Phase 8 — Pilot and cutover | **PARTIAL** | Onboarding workbook and per-tank opening balance support exist; approved cross-domain opening batch, training, shadow operation, UAT, discrepancy classification, and pilot exit evidence remain. |
 | Phase 8 — Client/accounting/signed-scope inputs | **REQUIRES_CLIENT_DECISION** | Real station master data, opening positions, accounting/tax policy, external identifiers, and signed SOW/contract scope are outside repository-only determination. |
 

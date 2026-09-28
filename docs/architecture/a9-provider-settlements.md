@@ -1,6 +1,6 @@
 # A9 provider settlement reconciliation
 
-Status: merged and present in `main` at integration tip `244ad14`.
+Status: merged and present in `main` at integration tip `6b85ae5`.
 Canonical migration `0009_provider_settlements.sql` and the implementation are
 part of the merged migration and module sequence. The repository contains the
 PostgreSQL integration coverage and it has passed in the merged CI integration
