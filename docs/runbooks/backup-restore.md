@@ -99,10 +99,12 @@ Run before pilot/major database changes and at least quarterly thereafter:
 | RTO achieved | **NOT DEMONSTRATED**; full RTO ≤4 hours is not claimed. |
 | Application/readiness/RLS checks | Isolated temporary Vercel Preview deployment `dpl_Ejf2DLRpiuQUnqg87FXwnvnhyLqY` of source commit `7ba5e683f751f92fbb39755f7d322bfdcc10a8e3` **VERIFIED** app-to-restored-DB readiness. `/api/health` returned HTTP 200 with application `ok`; `/api/readiness` returned HTTP 200 with database `ok`. |
 | Lineage and audit checks | **COMPLETE** through independent Neon SQL Editor validation of migrations, hierarchy, permissions, lineage, audit evidence, RLS/policies, and checksums. |
-| Object-storage/checkpoint checks | Recovery-aware R2 adapter and drill tooling are implemented, but R2 deleted-object recovery remains **NOT AVAILABLE / OPEN GAP** until a separate locked recovery bucket, approved retention policy, and witnessed staging drill are evidenced. A synthetic put/copy round-trip is not deleted-object recovery evidence. |
+| Object-storage/checkpoint checks | **COMPLETE / PASSED FOR STAGING R2 DELETED-OBJECT RECOVERY** — separate private recovery bucket `shanda-fuel-staging-recovery`; 30-day Bucket Lock on `recovery/v1/objects/` and `recovery/v1/manifests/`; 30-day `recovery/v1/` lifecycle expiry; witnessed drill exit code 0; backup `a8e1cd42-cd34-4f73-a837-1710648d3c7e`; SHA-256 `146f8cd7a6a4435906f62232c7ee4586a0889181bd6424fe49d45f2f3264a2d7`; retained object and manifest present afterward; synthetic primary deleted; temporary primary-drill credential revoked. |
 | Exceptions and follow-ups | The earlier local readiness result was not classified as a restored-database failure. The isolated Vercel Preview verification invoked no auth, POST, financial, R2, email, cron, migration, smoke, or other write-capable route. The temporary Vercel project and deployments were deleted afterward. Do not claim RPO ≤15 minutes or RTO ≤4 hours from this drill. |
 
 Lane 4 provides evidence of the isolated database restore, independent
-restored-database validation, and isolated application connectivity to the
-recovered branch. It remains open because R2 deleted-object recovery has not
-yet been provider-configured and exercised.
+restored-database validation, isolated application connectivity to the
+recovered branch, and provider-configured staging R2 deleted-object recovery.
+The exercised database/application/R2 recovery scope is complete. RPO ≤15
+minutes and RTO ≤4 hours remain unproven, and tenant-scoped recovery remains a
+separate exercise.
