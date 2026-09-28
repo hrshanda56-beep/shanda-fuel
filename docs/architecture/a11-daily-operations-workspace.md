@@ -1,6 +1,6 @@
 # A11 — Daily Operations Workspace
 
-Status: merged in `main` at `244ad14` (the A11 slice itself merged in PR #17).
+Status: merged in `main` at `6b85ae5` (the A11 slice itself merged in PR #17).
 The workspace requires no migration and composes the merged A3–A10 contracts.
 
 ## Purpose

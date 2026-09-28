@@ -7,7 +7,7 @@ evidence that the operational exercise has passed.
 | Runbook | Status | Remaining action |
 | --- | --- | --- |
 | [`deployment.md`](deployment.md) | Procedure ready | Fill provider control-plane owner and attach deployment evidence. |
-| [`backup-restore.md`](backup-restore.md) | Procedure ready; drill open | Configure independent backup/PITR details and execute an isolated restore drill. |
+| [`backup-restore.md`](backup-restore.md) | Database drill complete; app readiness blocked | Retain the Lane 4 evidence, resolve local app-to-restored-DB connectivity, and close the R2 deleted-object recovery gap. |
 | [`incident-response.md`](incident-response.md) | Procedure ready | Connect paging, traffic controls, and on-call ownership. |
 | [`observability.md`](observability.md) | Expectations ready; integration open | Connect structured logs, dashboards, alert routing, retention, and escalation. |
 | [`staging-performance-verification.md`](staging-performance-verification.md) | Procedure ready; execution open | Run with the RC against representative synthetic data. |

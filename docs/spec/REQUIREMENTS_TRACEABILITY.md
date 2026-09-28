@@ -1,7 +1,7 @@
 # Requirements traceability
 
 This compact matrix reconciles the roadmap requirements with evidence present
-on integration base `244ad14`. Statuses use
+on integration base `6b85ae5`. Statuses use
 the vocabulary defined in `docs/implementation-status.md`.
 
 | Requirement | Implementation | Migration | Test evidence | Status | Limitation / next decision |
