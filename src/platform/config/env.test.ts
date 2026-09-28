@@ -68,6 +68,32 @@ describe('server environment validation', () => {
     });
   });
 
+  it('requires complete, separate recovery configuration when any recovery setting is supplied', () => {
+    expect(() =>
+      getServerEnv({ ...validR2, R2_RECOVERY_BUCKET: 'shanda-staging-recovery' }),
+    ).toThrow('R2 recovery storage configuration must be complete');
+    expect(() =>
+      getServerEnv({
+        ...validR2,
+        R2_RECOVERY_BUCKET: validR2.R2_BUCKET,
+        R2_RECOVERY_ACCESS_KEY_ID: 'recovery-access-key',
+        R2_RECOVERY_SECRET_ACCESS_KEY: 'recovery-secret-key',
+      }),
+    ).toThrow('R2 recovery bucket must differ');
+  });
+
+  it('requires recovery configuration when private storage is configured in production', () => {
+    expect(() =>
+      getServerEnv({
+        ...validR2,
+        APP_ENV: 'production',
+        APP_URL: 'https://fuel.shandahr.com',
+        DATABASE_URL: 'postgresql://configured',
+        BETTER_AUTH_SECRET: 'a'.repeat(32),
+      }),
+    ).toThrow('R2 recovery storage is required');
+  });
+
   it('requires a sender address when Resend is configured', () => {
     expect(() => getServerEnv({ APP_ENV: 'test', RESEND_API_KEY: 'configured' })).toThrow(
       'Required when Resend is configured',

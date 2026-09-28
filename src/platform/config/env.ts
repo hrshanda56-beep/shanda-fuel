@@ -29,6 +29,12 @@ const envSchema = z
       .optional(),
     R2_ACCESS_KEY_ID: z.string().min(1).optional(),
     R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+    R2_RECOVERY_BUCKET: z
+      .string()
+      .regex(r2BucketNamePattern, { error: 'R2 recovery bucket name is invalid' })
+      .optional(),
+    R2_RECOVERY_ACCESS_KEY_ID: z.string().min(1).optional(),
+    R2_RECOVERY_SECRET_ACCESS_KEY: z.string().min(1).optional(),
     RESEND_API_KEY: z.string().min(1).optional(),
     RESEND_FROM_EMAIL: z.string().email().optional(),
     CRON_SECRET: z.string().min(32).optional(),
@@ -47,6 +53,40 @@ const envSchema = z
         code: 'custom',
         path: ['R2_BUCKET'],
         message: 'R2 storage configuration must be complete',
+      });
+    }
+    const recoveryValues = [
+      value.R2_RECOVERY_BUCKET,
+      value.R2_RECOVERY_ACCESS_KEY_ID,
+      value.R2_RECOVERY_SECRET_ACCESS_KEY,
+    ];
+    if (recoveryValues.some(Boolean) && recoveryValues.some((item) => !item)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['R2_RECOVERY_BUCKET'],
+        message: 'R2 recovery storage configuration must be complete',
+      });
+    }
+    if (
+      value.R2_BUCKET &&
+      value.R2_RECOVERY_BUCKET &&
+      value.R2_BUCKET === value.R2_RECOVERY_BUCKET
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['R2_RECOVERY_BUCKET'],
+        message: 'R2 recovery bucket must differ from the private storage bucket',
+      });
+    }
+    if (
+      value.APP_ENV === 'production' &&
+      r2Values.every(Boolean) &&
+      !recoveryValues.every(Boolean)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['R2_RECOVERY_BUCKET'],
+        message: 'R2 recovery storage is required when private storage is configured in production',
       });
     }
     if (value.RESEND_API_KEY && !value.RESEND_FROM_EMAIL) {
