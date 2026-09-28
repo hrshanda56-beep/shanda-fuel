@@ -354,7 +354,7 @@ not be replaced with an invented PR number, SHA, validation result, or owner.
 
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Security P0 | Phase 1 | **READY FOR REVIEW** | Codex — Agent 1 (security owner) | `hardening/security-p0-v2` | None recorded | TBD | TBD |
+| Security P0 | Phase 1 | **VERIFIED** | Codex — Agent 1 (security owner) | `hardening/security-p0-v2` | None recorded | #43 | `4aa39f5a5cd588a94a95e5899ab87938c0179315` |
 | Design System Foundation | Phase 1 | **NOT STARTED** | Claude — Agent 2 (design-system owner) | TBD | None requiring wait | TBD | TBD |
 | CI Security Hardening | Phase 1 | **BLOCKED** | Codex — TBD | TBD | Security P0 must merge | TBD | TBD |
 | Observability P0 | Phase 1 | **BLOCKED** | Codex — Agent 3 after Security P0 merge | TBD | Security P0 should merge first | TBD | TBD |
@@ -379,17 +379,17 @@ identified in each record.
 | --- | --- |
 | Workstream | Security P0 |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **READY FOR REVIEW** |
+| Status | **VERIFIED** |
 | Owner / Agent | Codex — Agent 1 (security owner) |
 | Branch | `hardening/security-p0-v2` |
 | Dependencies | None recorded for starting this workstream. |
 | Scope | Production audit-signing fail-closed behavior; explicit `APP_ENV` handling compatible with staging; tenant-bound privileged step-up/MFA authorization; security response headers; forward-only migration `0019` removing inappropriate auth-schema access from non-auth runtime roles; regression tests; preserve historical migrations unchanged. |
 | Definition of Done | Complete the scoped Security P0 implementation, preserve migration `0002`, pass all required validation, complete diff/staged-diff review, and carry the work through PR, CI, merge, and required post-merge verification. Do not claim full runtime-role least privilege from this patch. |
 | Required Validation | Fresh disposable PostgreSQL bootstrap; migrations through `0019`; `db check`; integration tests; direct privilege verification; final diff review; staging; staged diff review; commit; push; PR; CI; merge; and post-merge verification as required. |
-| PR | TBD |
-| Merge SHA | TBD |
-| Verification / Evidence | Implementation commit `58ddf9a`. Fresh PostgreSQL 16 bootstrap passed; canonical `pnpm db:migrate:test` passed; migrations `0000`–`0019` applied with 20 migration records; `pnpm db:check` passed; integration tests passed (16 files / 94 tests); unit tests passed (46 files / 289 tests); Prettier, ESLint, typecheck, production build, and `git diff --check` passed; direct privilege verification confirmed 10/10 checks with no auth schema USAGE or SELECT access for `job_runtime` and `diagnostics_readonly`; migration `0002` unchanged; rejected process-local/in-memory rate limiter absent; staging remains supported through explicit `APP_ENV=staging`. |
-| Remaining Follow-up | Stage/staged-diff review, then push; PR; CI; merge; and post-merge/runtime verification as required. Provider/durable rate limiting remains separate; broader `app_runtime` least-privilege work is not claimed complete. |
+| PR | #43 |
+| Merge SHA | `4aa39f5a5cd588a94a95e5899ab87938c0179315` |
+| Verification / Evidence | Post-merge verification on canonical `main`: targeted Security P0 unit tests passed (56 tests); tenant-bound step-up integration test passed (1 test); production build passed; local built runtime emitted all configured security headers; production `NODE_ENV` requires explicit `APP_ENV`; explicit `APP_ENV=staging` remains valid; migration `0019` is present; historical migration `0002` is unchanged; existing staging deployment `shanda-fuel-staging-jgv72gv64-shanda-hr-s-projects.vercel.app` is READY at this merge SHA; staging `/api/health` and `/api/readiness` returned HTTP 200 with database status `ok`; staging `/login` emitted the expected security headers; explicit staging environment configuration is present; no rejected process-local/in-memory rate limiter is present. |
+| Remaining Follow-up | Provider/durable rate limiting remains separate; broader `app_runtime` least-privilege work is not claimed complete. |
 
 Locked decisions for this workstream:
 
