@@ -3,9 +3,9 @@
 ## Status and scope
 
 The repository contains a recovery-aware private-storage adapter and a dedicated
-staging drill. This is not evidence that R2 deleted-object recovery has passed:
-the provider prerequisites below must be configured and the drill must be
-witnessed before this capability can close the Lane 4 gap.
+staging drill. The provider prerequisites were configured and the staging drill
+was witnessed successfully on 2026-09-28, closing the R2 deleted-object recovery
+sub-gate for the exercised Lane 4 staging scope.
 
 The ordinary [`staging platform smoke`](../platform/STAGING_SMOKE.md) remains a
 put/read/delete check only. It does not exercise or evidence recovery.
@@ -22,9 +22,10 @@ repository:
 2. Bucket Lock rules covering `recovery/v1/objects/` and
    `recovery/v1/manifests/`. The lock must prevent overwrite and deletion for
    the approved retention period.
-3. An owner/accountant-approved retention and lifecycle policy. No retention
-   duration is defined in application code or this runbook. Lifecycle expiry,
-   if approved, must not expire an object before its Bucket Lock period ends.
+3. An owner/accountant-approved retention and lifecycle policy. No default
+   retention duration is defined in application code. Staging currently uses
+   30 days for both Bucket Lock and `recovery/v1/` lifecycle expiry; production
+   retention remains a separate owner/accountant decision.
 4. Private, least-privilege access: no public bucket/domain access; separate
    recovery-bucket credentials; no bucket-configuration authority in the
    application runtime; and a named recovery operator for the drill and any
@@ -73,7 +74,7 @@ and the operator has approval to create one synthetic staging object.
 Run only from a trusted operator shell:
 
 ```sh
-APP_ENV=staging pnpm drill:staging-r2-recovery -- --confirm-recovery-drill
+APP_ENV=staging pnpm drill:staging-r2-recovery --confirm-recovery-drill
 ```
 
 The command uses a random `private/staging/recovery-drill/` key and performs:
@@ -108,6 +109,31 @@ complete:
   environment, source and recovery bucket names, backup ID, digest, outcome,
   and primary cleanup result; and
 - confirmation that the retained artifact remains readable while locked.
+
+## Witnessed staging evidence — 2026-09-28
+
+| Field | Result |
+| --- | --- |
+| Environment | Staging |
+| Canonical source commit | `fc10d0112b1e504a58f241326167edec934571cc` |
+| Staging deployment | `dpl_4p5rQvNKxP7hzS8BXtNjpbj1AxpP`; Ready; `/api/health` and `/api/readiness` HTTP 200 before the drill |
+| Primary bucket | `shanda-fuel-staging-private` |
+| Recovery bucket | `shanda-fuel-staging-recovery`; Standard; public access disabled |
+| Bucket Lock | `recovery/v1/objects/` and `recovery/v1/manifests/`, 30 days, enabled |
+| Lifecycle | `recovery/v1/`, delete after 30 days, enabled; provider default incomplete-multipart abort remains 7 days |
+| Drill result | **PASS**, exit code 0 |
+| Backup ID | `a8e1cd42-cd34-4f73-a837-1710648d3c7e` |
+| SHA-256 | `146f8cd7a6a4435906f62232c7ee4586a0889181bd6424fe49d45f2f3264a2d7` |
+| Retained evidence | Object present under `recovery/v1/objects/` (59 B, `text/plain`) and manifest present under `recovery/v1/manifests/` (685 B, `application/json`) |
+| Provider timestamp | Both retained artifacts recorded at 2026-09-28 16:30:53 Africa/Harare (14:30:53 UTC) |
+| Primary cleanup | Synthetic primary object deleted after restore verification |
+| Credential cleanup | Temporary primary-drill credential revoked; recovery application credential remains active |
+| Operator/approver | Authenticated staging operator; no separate approver is recorded in this evidence |
+| RPO/RTO | **NOT DEMONSTRATED** by this drill |
+
+The retained object was read and checksum-verified by the guarded deletion and
+restore flow while the lock controls were active, and the retained object and
+manifest remained present afterward in the provider UI.
 
 This drill is deleted-object recovery evidence, not an RPO or RTO measurement.
 RPO ≤15 minutes and RTO ≤4 hours remain unproven until separately measured and

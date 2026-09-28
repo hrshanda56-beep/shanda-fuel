@@ -37,9 +37,10 @@ The repository contains PostgreSQL integration and Playwright tests for the
 implemented slices. PostgreSQL tests require `DATABASE_URL`; CI supplies an
 ephemeral PostgreSQL 16 service. Browser tests intentionally skip only their
 authorized persistence cases when the database/auth environment is absent.
-The current RC still requires the authenticated staging gate, a restore drill,
-and performance evidence before pilot or production sign-off; those are
-operational execution gates, not missing implementation claims.
+The authenticated staging gate, Lane 3 performance verification, and the
+Lane 4 database/application/R2 recovery drills have now been executed. Pilot
+or production sign-off still depends on the remaining release-readiness gates;
+those are operational execution gates, not missing implementation claims.
 
 ## Merged workstreams
 
@@ -274,7 +275,7 @@ reporting remain separate reporting concerns.
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
 | Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10.2 now provides canonical ordinary-fuel revenue and gross-margin reporting from REV1/A12 authorities; exports/artifacts, full as-of, Action Center, and Explain This Number remain incomplete. |
 | Phase 6 — Profitability and gross margin | **PARTIAL** | Canonical REV1 revenue and A12 restated COGS are consumed by the A10 profitability read model with latest-finalized-revision, business-date, tenant, and station safeguards; operating expenses, fixed-cost recognition, and broader profitability remain incomplete. |
-| Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations, representative accessibility/weak-network behavior, release notes, operational procedures, health/readiness checks, staging smoke tooling, and Lane 4 database PITR/integrity/security plus isolated app-to-restored-DB evidence exist. Recovery-aware R2 code and a dedicated drill are implemented, but separate locked recovery-bucket configuration, retention approval, and witnessed deleted-object recovery remain open; production-grade monitoring integration, offline sync, and full incident/tenant-recovery exercises also remain. |
+| Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations, representative accessibility/weak-network behavior, release notes, operational procedures, health/readiness checks, staging smoke tooling, Lane 4 database PITR/integrity/security, isolated app-to-restored-DB readiness, and witnessed R2 deleted-object recovery evidence exist. Staging R2 uses a separate private recovery bucket with 30-day Bucket Lock and lifecycle controls plus a successful retained-copy/delete/restore/checksum drill. RPO/RTO targets remain unproven, and production-grade monitoring integration, offline sync, and full incident/tenant-recovery exercises remain open. |
 | Phase 8 — Pilot and cutover | **PARTIAL** | Onboarding workbook and per-tank opening balance support exist; approved cross-domain opening batch, training, shadow operation, UAT, discrepancy classification, and pilot exit evidence remain. |
 | Phase 8 — Client/accounting/signed-scope inputs | **REQUIRES_CLIENT_DECISION** | Real station master data, opening positions, accounting/tax policy, external identifiers, and signed SOW/contract scope are outside repository-only determination. |
 
