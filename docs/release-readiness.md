@@ -355,10 +355,10 @@ not be replaced with an invented PR number, SHA, validation result, or owner.
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Security P0 | Phase 1 | **VERIFIED** | Codex — Agent 1 (security owner) | `fix/security-p0-dev-csp` | None recorded | #45 | `843c3fa60977d591035157bd740c8a11a564b448` |
-| Design System Foundation | Phase 1 | **READY FOR REVIEW** | Claude — Agent 2 (design-system owner) | `ui/design-system-foundation` | Security P0 verified on current main | TBD | TBD |
-| CI Security Hardening | Phase 1 | **NOT STARTED** | Codex — TBD | TBD | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
+| Design System Foundation | Phase 1 | **VERIFIED** | Claude — Agent 2 (design-system owner) | `ui/design-system-foundation` | None recorded | #47 | `f1c7b80` |
+| CI Security Hardening | Phase 1 | **IN PROGRESS** | Codex | `codex/ci-security-hardening-20260929` | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
 | Observability P0 | Phase 1 | **NOT STARTED** | Codex — Agent 3 after Security P0 merge | TBD | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
-| Product Shell | Phase 2 | **BLOCKED** | Claude — Agent 2 after foundation stabilizes | TBD | Design System Foundation | TBD | TBD |
+| Product Shell | Phase 2 | **NOT STARTED** | Claude — Agent 2 after foundation stabilizes | TBD | Design System Foundation is verified | TBD | TBD |
 | Golden Path UX | Phase 3 | **BLOCKED** | Claude — Agent 4 after shell stabilizes | TBD | Design System Foundation; Product Shell | TBD | TBD |
 | Remaining Product UI/UX Sweep | Phase 4 | **BLOCKED** | Claude — TBD | TBD | Golden-path patterns and shared foundations | TBD | TBD |
 | Client-Ready Staging | Phase 5 | **BLOCKED** | Codex + Claude — split technical/UX ownership; coordinator TBD | TBD | Cross-module staging access, golden path, QA, and open release gates | TBD | TBD |
@@ -405,17 +405,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | Design System Foundation |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **READY FOR REVIEW** |
+| Status | **VERIFIED** |
 | Owner / Agent | Claude — Agent 2 (design-system owner) |
 | Branch | `ui/design-system-foundation` |
-| Dependencies | Security P0 verified on current main. |
+| Dependencies | None recorded. |
 | Scope | Design tokens; typography; spacing; layout/grid rules; color system; restrained Shanda Fuel brand accent; light theme; dark theme; system preference detection; manual theme override; surfaces/cards; buttons; inputs; form controls; tables; chart/visualization rules; notifications; dialogs/modals; confirmations; loading/skeleton states; empty states; error states; WIP treatment; responsive primitives; motion rules; and accessibility foundations. Scope must align with the locked UX/product plan above. |
 | Definition of Done | Reusable product infrastructure is implemented and documented across the defined foundation areas. This is not a one-off page redesign. Required local validation and review are complete, and the implementation is ready for the integration sequence. |
 | Required Validation | Formatting, lint, typecheck, build, unit, accessibility, responsive, and theme validation before review. |
-| PR | TBD |
-| Merge SHA | TBD |
-| Verification / Evidence | Implementation commit `d9ec984` on `ui/design-system-foundation` remains byte-identical and intact. Current integration HEAD is `168cca1`. The clean worktree passed format, lint, typecheck, and build; 50 unit-test files / 375 tests passed; full E2E passed in 4 consecutive runs with 25 passed / 5 skipped per run; no React/Next CSP eval errors occurred under `next dev`; `/design-system` was available in development and returned 404 under `next start`; and the inherited CSP issue is resolved. |
-| Remaining Follow-up | Complete review, PR, CI, merge, and post-merge verification. Do not claim MERGED or VERIFIED from this record. |
+| PR | #47 |
+| Merge SHA | `f1c7b80` |
+| Verification / Evidence | Implementation commit `d9ec984` on `ui/design-system-foundation` remains byte-identical and intact; accessibility follow-up commit `2c1c13d` is included. Post-merge `main` was clean. Lint, typecheck, production build, and `git diff --check` passed; 52 unit-test files / 378 tests passed; `next dev` had no CSP/eval errors; `/design-system` returned 200 in development and 404 under `next start`; post-merge serial E2E with `--workers=1 --retries=0` passed 30/30; and responsive-table accessibility checks passed. PR #47 CI/quality was green before merge. The serial E2E result is not identical to CI: current Playwright CI uses `fullyParallel` and permits retries. |
+| Remaining Follow-up | Continue with the next product-shell work when scheduled; retain the post-merge E2E and responsive-table evidence for future regressions. |
 
 #### 3. CI Security Hardening
 
@@ -423,17 +423,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | CI Security Hardening |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **NOT STARTED** |
-| Owner / Agent | Codex — TBD |
-| Branch | TBD |
+| Status | **IN PROGRESS** |
+| Owner / Agent | Codex |
+| Branch | `codex/ci-security-hardening-20260929` |
 | Dependencies | Security P0 is verified, so no dependency currently blocks starting this workstream. Existing agent work, if any, must be reviewed and transplanted onto current `main` rather than blindly rebased. |
 | Scope | Dependency scanning; secret scanning; SAST/CodeQL; pinned GitHub Actions where practical; CI failure artifacts; production-server health/readiness smoke; and meaningful runtime-role security validation. |
 | Definition of Done | CI security checks run against the merged Security P0/runtime-role model, fail meaningfully on applicable findings, produce useful failure artifacts, and do not make misleading least-privilege claims merely because a privileged PostgreSQL connection uses `SET ROLE`. |
 | Required Validation | Security P0 merge; CI workflow validation; dependency, secret, SAST/CodeQL, health/readiness, and runtime-role checks; final diff/staged-diff review; PR/CI; merge; and required post-merge verification. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Not started. No completion evidence is recorded. |
-| Remaining Follow-up | Review any existing agent work against current `main`, define ownership and branch, implement the workstream, and record honest runtime-role findings. |
+| Verification / Evidence | Implementation/review is actively underway from current canonical `main`. No PR or merge SHA yet. Non-blocking tooling follow-ups: a local `.vercel/project.json` can trip `format:check` because `.vercel` is not in `.prettierignore`; shared-database Playwright parallelism can produce intermittent cross-test interference; and current CI uses `fullyParallel` with retries, so CI hardening should review test isolation and worker strategy. |
+| Remaining Follow-up | Complete implementation, validation, final review, PR/CI, merge, and post-merge verification; record honest runtime-role findings. |
 
 #### 4. Observability P0
 
@@ -459,17 +459,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | Product Shell |
 | Phase | Phase 2 — Product shell |
-| Status | **BLOCKED** |
+| Status | **NOT STARTED** |
 | Owner / Agent | Claude — Agent 2 after the foundation stabilizes |
 | Branch | TBD |
-| Dependencies | Design System Foundation must be sufficiently stable first. |
+| Dependencies | Design System Foundation is verified. |
 | Scope | Grouped collapsible desktop sidebar; mobile navigation; responsive page shell; header/top-level controls; theme control; Needs Attention notification pattern; global loading/error/WIP states; responsive layout behavior; and subtle premium motion. |
 | Definition of Done | The permanent reusable shell is composed from the approved design-system foundations, works intentionally across supported screen sizes and themes, and includes the shared state patterns without becoming a temporary or one-off redesign. |
 | Required Validation | Responsive and device/browser checks; light/dark checks; accessibility checks; applicable format, lint, typecheck, build, unit/E2E checks; final diff/staged-diff review; PR/CI; merge; and required post-merge verification. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Blocked pending foundation stability. No shell completion evidence is recorded. |
-| Remaining Follow-up | Do not begin substantial shared-shell work until the Design System Foundation is sufficiently stable; record the owner and branch before implementation. |
+| Verification / Evidence | Not started. No shell completion evidence is recorded. |
+| Remaining Follow-up | Begin substantial shared-shell work when scheduled; record the owner and branch before implementation. |
 
 #### 6. Golden Path UX
 
