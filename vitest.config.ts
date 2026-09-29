@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: { alias: { 'server-only': serverOnlyShim } },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'next.config.test.ts'],
     passWithNoTests: false,
   },
 });
