@@ -354,10 +354,10 @@ not be replaced with an invented PR number, SHA, validation result, or owner.
 
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Security P0 | Phase 1 | **READY FOR REVIEW** | Codex — Agent 1 (security owner) | `fix/security-p0-dev-csp` | Design System E2E validation is waiting on this development CSP compatibility fix | #43 | `4aa39f5a5cd588a94a95e5899ab87938c0179315` |
-| Design System Foundation | Phase 1 | **BLOCKED** | Claude — Agent 2 (design-system owner) | `ui/design-system-foundation` | Security P0 development CSP compatibility fix | TBD | TBD |
-| CI Security Hardening | Phase 1 | **BLOCKED** | Codex — TBD | TBD | Security P0 must merge | TBD | TBD |
-| Observability P0 | Phase 1 | **BLOCKED** | Codex — Agent 3 after Security P0 merge | TBD | Security P0 should merge first | TBD | TBD |
+| Security P0 | Phase 1 | **VERIFIED** | Codex — Agent 1 (security owner) | `fix/security-p0-dev-csp` | None recorded | #45 | `843c3fa60977d591035157bd740c8a11a564b448` |
+| Design System Foundation | Phase 1 | **READY FOR REVIEW** | Claude — Agent 2 (design-system owner) | `ui/design-system-foundation` | Security P0 verified on current main | TBD | TBD |
+| CI Security Hardening | Phase 1 | **NOT STARTED** | Codex — TBD | TBD | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
+| Observability P0 | Phase 1 | **NOT STARTED** | Codex — Agent 3 after Security P0 merge | TBD | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
 | Product Shell | Phase 2 | **BLOCKED** | Claude — Agent 2 after foundation stabilizes | TBD | Design System Foundation | TBD | TBD |
 | Golden Path UX | Phase 3 | **BLOCKED** | Claude — Agent 4 after shell stabilizes | TBD | Design System Foundation; Product Shell | TBD | TBD |
 | Remaining Product UI/UX Sweep | Phase 4 | **BLOCKED** | Claude — TBD | TBD | Golden-path patterns and shared foundations | TBD | TBD |
@@ -379,17 +379,17 @@ identified in each record.
 | --- | --- |
 | Workstream | Security P0 |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **READY FOR REVIEW** |
+| Status | **VERIFIED** |
 | Owner / Agent | Codex — Agent 1 (security owner) |
 | Branch | `fix/security-p0-dev-csp` |
-| Dependencies | Original implementation is merged; review and merge of this development-only CSP compatibility fix are required before post-merge verification can be complete. |
+| Dependencies | None recorded. |
 | Scope | Production audit-signing fail-closed behavior; explicit `APP_ENV` handling compatible with staging; tenant-bound privileged step-up/MFA authorization; security response headers; forward-only migration `0019` removing inappropriate auth-schema access from non-auth runtime roles; regression tests; preserve historical migrations unchanged. |
 | Definition of Done | Complete the scoped Security P0 implementation, preserve migration `0002`, pass all required validation, complete diff/staged-diff review, and carry the work through PR, CI, merge, and required post-merge verification. Do not claim full runtime-role least privilege from this patch. |
 | Required Validation | Fresh disposable PostgreSQL bootstrap; migrations through `0019`; `db check`; integration tests; direct privilege verification; final diff review; staging; staged diff review; commit; push; PR; CI; merge; and post-merge verification as required. |
-| PR | #43 |
-| Merge SHA | `4aa39f5a5cd588a94a95e5899ab87938c0179315` |
-| Verification / Evidence | Original post-merge verification was complete, but a regression was discovered afterward: the global CSP omitted `'unsafe-eval'` under `next dev`, causing Next/React development eval errors and timing-sensitive Design System accessibility E2E behavior; production behavior was not affected. Fix branch `fix/security-p0-dev-csp` adds `'unsafe-eval'` only when `NODE_ENV=development`, preserving explicit staging production behavior, the inline theme-script allowance, and all existing security headers. Local validation passed: development `/`, `/login`, and Design System runtime checks; production build/start with `/design-system` returning 404 and no `'unsafe-eval'`; 4 consecutive Design System accessibility runs (10 tests each); 46 unit-test files / 289 tests; formatter; ESLint; typecheck; and `git diff --check`. |
-| Remaining Follow-up | Stage, review, push, PR, CI, merge, and post-merge/runtime verification of this fix. Provider/durable rate limiting remains separate; broader `app_runtime` least-privilege work is not claimed complete. |
+| PR | #45 |
+| Merge SHA | `843c3fa60977d591035157bd740c8a11a564b448` |
+| Verification / Evidence | Post-merge verification on canonical `main` at `843c3fa60977d591035157bd740c8a11a564b448`: development CSP contained `'unsafe-eval'`; production CSP omitted it; all existing Security P0 headers and CSP restrictions remained intact; canonical `next dev` emitted no React/Next eval CSP errors; explicit `APP_ENV=staging` production startup succeeded; production build passed; and `git diff --check` passed. The corrected CI test discovery now runs `next.config.test.ts` (2 CSP assertions) as part of `pnpm test:unit`; the full unit suite passed with 47 files / 291 tests. |
+| Remaining Follow-up | Provider/durable rate limiting remains separate; broader `app_runtime` least-privilege work is not claimed complete. |
 
 Locked decisions for this workstream:
 
@@ -405,17 +405,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | Design System Foundation |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **BLOCKED** |
+| Status | **READY FOR REVIEW** |
 | Owner / Agent | Claude — Agent 2 (design-system owner) |
 | Branch | `ui/design-system-foundation` |
-| Dependencies | Security P0 development CSP compatibility fix. |
+| Dependencies | Security P0 verified on current main. |
 | Scope | Design tokens; typography; spacing; layout/grid rules; color system; restrained Shanda Fuel brand accent; light theme; dark theme; system preference detection; manual theme override; surfaces/cards; buttons; inputs; form controls; tables; chart/visualization rules; notifications; dialogs/modals; confirmations; loading/skeleton states; empty states; error states; WIP treatment; responsive primitives; motion rules; and accessibility foundations. Scope must align with the locked UX/product plan above. |
 | Definition of Done | Reusable product infrastructure is implemented and documented across the defined foundation areas. This is not a one-off page redesign. Required local validation and review are complete, and the implementation is ready for the integration sequence. |
-| Required Validation | TBD; define and run the applicable formatting, lint, typecheck, build, accessibility, responsive, theme, and component-level validation before review. |
+| Required Validation | Formatting, lint, typecheck, build, unit, accessibility, responsive, and theme validation before review. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Implementation commit `d9ec984` on `ui/design-system-foundation` remains intact and validated except for the inherited Security P0 development CSP/E2E issue. The implementation is not yet ready for review status in this ledger. |
-| Remaining Follow-up | Wait for the Security P0 CSP fix to merge, rerun the Design System accessibility/runtime verification against the merged fix, then move through review, merge, and verification. |
+| Verification / Evidence | Implementation commit `d9ec984` on `ui/design-system-foundation` remains byte-identical and intact. Current integration HEAD is `168cca1`. The clean worktree passed format, lint, typecheck, and build; 50 unit-test files / 375 tests passed; full E2E passed in 4 consecutive runs with 25 passed / 5 skipped per run; no React/Next CSP eval errors occurred under `next dev`; `/design-system` was available in development and returned 404 under `next start`; and the inherited CSP issue is resolved. |
+| Remaining Follow-up | Complete review, PR, CI, merge, and post-merge verification. Do not claim MERGED or VERIFIED from this record. |
 
 #### 3. CI Security Hardening
 
@@ -423,17 +423,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | CI Security Hardening |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **BLOCKED** |
+| Status | **NOT STARTED** |
 | Owner / Agent | Codex — TBD |
 | Branch | TBD |
-| Dependencies | Security P0 must merge first so CI can validate the final security/runtime-role model. Existing agent work, if any, must be reviewed and transplanted onto current `main` rather than blindly rebased. |
+| Dependencies | Security P0 is verified, so no dependency currently blocks starting this workstream. Existing agent work, if any, must be reviewed and transplanted onto current `main` rather than blindly rebased. |
 | Scope | Dependency scanning; secret scanning; SAST/CodeQL; pinned GitHub Actions where practical; CI failure artifacts; production-server health/readiness smoke; and meaningful runtime-role security validation. |
 | Definition of Done | CI security checks run against the merged Security P0/runtime-role model, fail meaningfully on applicable findings, produce useful failure artifacts, and do not make misleading least-privilege claims merely because a privileged PostgreSQL connection uses `SET ROLE`. |
 | Required Validation | Security P0 merge; CI workflow validation; dependency, secret, SAST/CodeQL, health/readiness, and runtime-role checks; final diff/staged-diff review; PR/CI; merge; and required post-merge verification. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Blocked pending the named Security P0 dependency. No completion evidence is recorded. |
-| Remaining Follow-up | Review any existing agent work against current `main`, define ownership and branch, implement after Security P0 merges, and record honest runtime-role findings. |
+| Verification / Evidence | Not started. No completion evidence is recorded. |
+| Remaining Follow-up | Review any existing agent work against current `main`, define ownership and branch, implement the workstream, and record honest runtime-role findings. |
 
 #### 4. Observability P0
 
@@ -441,17 +441,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | Observability P0 |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **BLOCKED** |
+| Status | **NOT STARTED** |
 | Owner / Agent | Codex — Agent 3 after Security P0 merge |
 | Branch | TBD |
-| Dependencies | Security P0 should merge first because observability changes overlap shared API, authentication, and command routes. |
+| Dependencies | Security P0 is verified. Observability changes overlap shared API, authentication, and command routes and should be coordinated against current `main`. |
 | Scope | Request IDs; consistent propagation; centralized safe/redacted error logging; consistent API error handling; safe status/duration/error telemetry hooks; and removal or replacement of unsafe raw exception logging where appropriate. |
 | Definition of Done | Shared observability behavior is implemented without leaking sensitive data, route errors are consistently handled, request correlation is preserved, and relevant validation/evidence is recorded through merge and required verification. |
 | Required Validation | Review shared API/auth/command overlap; applicable format, lint, typecheck, build, unit/integration, security, and runtime checks; final diff/staged-diff review; PR/CI; merge; and required post-merge verification. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Blocked pending the named Security P0 dependency. No vendor-specific observability platform decision is recorded or implied. |
-| Remaining Follow-up | Resolve the dependency, assign a concrete branch and owner, implement safe/redacted telemetry, and record evidence without inventing a vendor decision. |
+| Verification / Evidence | Not started. No completion evidence is recorded, and no vendor-specific observability platform decision is recorded or implied. |
+| Remaining Follow-up | Assign a concrete branch and owner, implement safe/redacted telemetry, and record evidence without inventing a vendor decision. |
 
 #### 5. Product Shell
 
