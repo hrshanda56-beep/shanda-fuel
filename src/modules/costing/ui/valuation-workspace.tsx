@@ -14,6 +14,7 @@ import {
   StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
+import { TableScrollRegion } from '@/design-system/table';
 
 type Context = { tenantId: string; stationId: string };
 type Capabilities = { request: boolean; approve: boolean; post: boolean };
@@ -295,7 +296,7 @@ export function ValuationOverview({ context }: { context: Context }) {
               <p>Value and WAC are read from the persisted projection.</p>
             </div>
           </div>
-          <div className="responsive-table-wrap">
+          <TableScrollRegion label="Inventory valuation streams">
             <table className="data-table">
               <caption className="visually-hidden">Inventory valuation streams</caption>
               <thead>
@@ -350,7 +351,7 @@ export function ValuationOverview({ context }: { context: Context }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         </Card>
       )}
       <Card className="table-card">
@@ -366,7 +367,7 @@ export function ValuationOverview({ context }: { context: Context }) {
             message="A request appears here when a source movement needs late authoritative cost."
           />
         ) : (
-          <div className="responsive-table-wrap">
+          <TableScrollRegion label="Revaluation workflow history">
             <table className="data-table">
               <caption className="visually-hidden">Revaluation workflow history</caption>
               <thead>
@@ -409,7 +410,7 @@ export function ValuationOverview({ context }: { context: Context }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         )}
       </Card>
     </div>
@@ -712,7 +713,7 @@ export function ValuationStreamDetail({
             message="No request, approval, or posting evidence exists for this stream."
           />
         ) : (
-          <div className="responsive-table-wrap">
+          <TableScrollRegion label="Revaluation history for this stream">
             <table className="data-table">
               <thead>
                 <tr>
@@ -744,7 +745,7 @@ export function ValuationStreamDetail({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         )}
       </Card>
     </div>
@@ -1012,7 +1013,7 @@ export function RevaluationDetail({
             message="Pending workflows have no posted COGS_REVALUATION lines."
           />
         ) : (
-          <div className="responsive-table-wrap">
+          <TableScrollRegion label="Affected historical sales">
             <table className="data-table">
               <caption className="visually-hidden">Affected historical sales</caption>
               <thead>
@@ -1054,7 +1055,7 @@ export function RevaluationDetail({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         )}
       </Card>
       <Card>

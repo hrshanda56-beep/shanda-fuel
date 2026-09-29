@@ -90,7 +90,9 @@ If a Content Security Policy is introduced, the inline init script in
   `.table-wrap`. Hairline rows, no zebra stripes or vertical rules, quiet sentence-case
   headers, `.cell-numeric` for right-aligned tabular numbers, `.table-hover` for
   clickable rows, `.table-compact` for dense reporting. `.responsive-table` collapses to
-  labelled rows on phones; set `data-label` on each cell.
+  labelled rows on phones; set `data-label` on each cell. Wrap wide tables in
+  `TableScrollRegion` (named after the caption, or a nearby heading when no caption exists), never a bare scrolling `div`: while the
+  table overflows it becomes a focusable, labelled region so keyboard users can scroll it.
 - **Status:** `StatusBadge` tones are semantic, never the only carrier of meaning; the
   text always states the status.
 - **Notices:** `Notice` for inline, region-level messages. Dismissal is presentation only.

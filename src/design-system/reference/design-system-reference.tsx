@@ -21,6 +21,7 @@ import {
   StatusBadge,
   type StatusTone,
 } from '../primitives';
+import { TableScrollRegion } from '../table';
 import { useThemePreference } from '../theme-runtime';
 import { isThemePreference } from '../theme';
 import styles from './reference.module.css';
@@ -375,7 +376,7 @@ export function DesignSystemReference() {
               description="Dense, hairline rows, tabular numbers."
             >
               <Card className="card-body table-card">
-                <div className="responsive-table-wrap">
+                <TableScrollRegion label="Synthetic station reconciliation summary">
                   <table className="responsive-table table-hover">
                     <caption className="visually-hidden">
                       Synthetic station reconciliation summary
@@ -413,7 +414,7 @@ export function DesignSystemReference() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableScrollRegion>
               </Card>
             </Section>
 

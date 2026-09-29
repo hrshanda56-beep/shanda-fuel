@@ -27,6 +27,7 @@ import {
   StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
+import { TableScrollRegion } from '@/design-system/table';
 
 export default function HomePage() {
   return (
@@ -149,7 +150,7 @@ export default function HomePage() {
               View all
             </a>
           </div>
-          <div className="responsive-table-wrap">
+          <TableScrollRegion label="Synthetic operations overview">
             <table className="responsive-table">
               <caption className="visually-hidden">Synthetic operations overview</caption>
               <thead>
@@ -176,7 +177,7 @@ export default function HomePage() {
                 </tr>
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         </Card>
       </div>
 

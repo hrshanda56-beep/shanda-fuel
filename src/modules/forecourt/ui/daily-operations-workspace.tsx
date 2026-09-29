@@ -11,6 +11,7 @@ import {
   NumericInput,
   StatusBadge,
 } from '../../../design-system/primitives';
+import { TableScrollRegion } from '../../../design-system/table';
 import {
   formatBusinessDate,
   formatLitres,
@@ -1296,7 +1297,7 @@ export function DailyOperationsWorkspace({
               </div>
             </div>
             {record.deliveries.length || record.dips.length ? (
-              <div className="responsive-table-wrap">
+              <TableScrollRegion label="Inventory evidence linked to this reconciliation">
                 <table className="responsive-table">
                   <caption className="visually-hidden">
                     Inventory evidence linked to this reconciliation
@@ -1329,7 +1330,7 @@ export function DailyOperationsWorkspace({
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableScrollRegion>
             ) : (
               <EmptyState
                 title="No linked inventory evidence"
