@@ -357,7 +357,7 @@ not be replaced with an invented PR number, SHA, validation result, or owner.
 | Security P0 | Phase 1 | **VERIFIED** | Codex — Agent 1 (security owner) | `fix/security-p0-dev-csp` | None recorded | #45 | `843c3fa60977d591035157bd740c8a11a564b448` |
 | Design System Foundation | Phase 1 | **VERIFIED** | Claude — Agent 2 (design-system owner) | `ui/design-system-foundation` | None recorded | #47 | `f1c7b80` |
 | CI Security Hardening | Phase 1 | **VERIFIED** | Codex | `codex/ci-security-hardening-20260929` | Security P0 is verified; no dependency currently blocks starting this workstream | #49 | `12106be` |
-| Observability P0 | Phase 1 | **NOT STARTED** | Codex — Agent 3 after Security P0 merge | TBD | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
+| Observability P0 | Phase 1 | **VERIFIED** | Codex — Agent 3 after Security P0 merge | `codex/observability-p0-20260929` | Security P0 is verified; no dependency currently blocks starting this workstream | #68 | `d4f6e15` |
 | Product Shell | Phase 2 | **NOT STARTED** | Claude — Agent 2 after foundation stabilizes | TBD | Design System Foundation is verified | TBD | TBD |
 | Golden Path UX | Phase 3 | **BLOCKED** | Claude — Agent 4 after shell stabilizes | TBD | Design System Foundation; Product Shell | TBD | TBD |
 | Remaining Product UI/UX Sweep | Phase 4 | **BLOCKED** | Claude — TBD | TBD | Golden-path patterns and shared foundations | TBD | TBD |
@@ -441,17 +441,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | Observability P0 |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **IN PROGRESS** |
+| Status | **VERIFIED** |
 | Owner / Agent | Codex |
 | Branch | `codex/observability-p0-20260929` |
 | Dependencies | Security P0 is verified. Observability changes overlap shared API, authentication, and command routes and should be coordinated against current `main`. |
 | Scope | Request IDs; consistent propagation; centralized safe/redacted error logging; consistent API error handling; safe status/duration/error telemetry hooks; and removal or replacement of unsafe raw exception logging where appropriate. |
 | Definition of Done | Shared observability behavior is implemented without leaking sensitive data, route errors are consistently handled, request correlation is preserved, and relevant validation/evidence is recorded through merge and required verification. |
 | Required Validation | Review shared API/auth/command overlap; applicable format, lint, typecheck, build, unit/integration, security, and runtime checks; final diff/staged-diff review; PR/CI; merge; and required post-merge verification. |
-| PR | TBD |
-| Merge SHA | TBD |
-| Verification / Evidence | In progress on `codex/observability-p0-20260929`: added `src/platform/observability/` with bounded request-ID normalization, response propagation, one structured completion event, centralized redacted error classification/handling, dependency-failure visibility, and logging-failure isolation; wrapped all API route handlers including auth, health, and readiness; removed raw route-level exception logging. Unit tests passed: 53 files / 383 tests. Lint, typecheck, Prettier check, production build, and Playwright E2E (`--workers=1 --retries=0`, 25 passed / 5 authorized persistence skips) passed. PostgreSQL integration validation was attempted but is not locally executable because `DATABASE_URL` is not configured. No vendor-specific observability platform decision is recorded or implied; the stale reference worktree `/private/tmp/shanda-observability-p0` was absent, so no code was transplanted. |
-| Remaining Follow-up | Review/CI/merge and post-merge runtime verification remain. Configure a dedicated PostgreSQL integration environment and rerun the integration gate. Before pilot sign-off, connect deployed structured logs to the approved sink, dashboards, alerts, retention, and named on-call/escalation ownership described in [`runbooks/observability.md`](runbooks/observability.md). |
+| PR | #68 |
+| Merge SHA | `d4f6e15` |
+| Verification / Evidence | Merged to canonical `main` by PR #68 at `d4f6e15`; implementation commit `e5e96b7`. Post-merge verification passed on the clean canonical checkout: lint, typecheck, full unit suite (53 files / 388 tests), focused observability tests (10 tests), production build, Playwright E2E (`--workers=1 --retries=0`, 25 passed / 5 authorized persistence skips), and `git diff --check`. Route/security review confirmed all 26 API route files use the shared wrapper, no route-level raw console logging remains, no package dependency was introduced, and no business/auth/authorization semantics were changed. Full `pnpm format:check` reported only the known generated `.vercel/project.json` issue; that file was not modified. PR #68 CI evidence passed for quality, dependency audit, secret scan, Semgrep CE SAST, runtime-role proof, Vercel deployment, and Vercel preview comments; CodeQL was skipped because repository code-scanning support remains unavailable. No vendor-specific observability platform decision is recorded or implied. |
+| Remaining Follow-up | Dedicated local PostgreSQL integration remains environment-dependent because `DATABASE_URL` is not configured; no integration evidence is claimed. Before pilot sign-off, connect deployed structured logs to the approved sink, dashboards, alerts, retention, and named on-call/escalation ownership described in [`runbooks/observability.md`](runbooks/observability.md), without implying a vendor selection. |
 
 #### 5. Product Shell
 
