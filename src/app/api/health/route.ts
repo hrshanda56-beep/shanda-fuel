@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
+import { getRequestId, withRequestObservability } from '@/platform/observability';
 
 export const runtime = 'nodejs';
 
-export function GET(request: Request) {
-  const requestId = request.headers.get('x-request-id') ?? randomUUID();
+export const GET = withRequestObservability((request: Request) => {
+  const requestId = getRequestId(request);
 
   return NextResponse.json(
     {
@@ -16,4 +16,4 @@ export function GET(request: Request) {
     },
     { headers: { 'cache-control': 'no-store', 'x-request-id': requestId } },
   );
-}
+});

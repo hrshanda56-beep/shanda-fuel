@@ -441,17 +441,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | Observability P0 |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **NOT STARTED** |
-| Owner / Agent | Codex — Agent 3 after Security P0 merge |
-| Branch | TBD |
+| Status | **IN PROGRESS** |
+| Owner / Agent | Codex |
+| Branch | `codex/observability-p0-20260929` |
 | Dependencies | Security P0 is verified. Observability changes overlap shared API, authentication, and command routes and should be coordinated against current `main`. |
 | Scope | Request IDs; consistent propagation; centralized safe/redacted error logging; consistent API error handling; safe status/duration/error telemetry hooks; and removal or replacement of unsafe raw exception logging where appropriate. |
 | Definition of Done | Shared observability behavior is implemented without leaking sensitive data, route errors are consistently handled, request correlation is preserved, and relevant validation/evidence is recorded through merge and required verification. |
 | Required Validation | Review shared API/auth/command overlap; applicable format, lint, typecheck, build, unit/integration, security, and runtime checks; final diff/staged-diff review; PR/CI; merge; and required post-merge verification. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Not started. No completion evidence is recorded, and no vendor-specific observability platform decision is recorded or implied. |
-| Remaining Follow-up | Assign a concrete branch and owner, implement safe/redacted telemetry, and record evidence without inventing a vendor decision. |
+| Verification / Evidence | In progress on `codex/observability-p0-20260929`: added `src/platform/observability/` with bounded request-ID normalization, response propagation, one structured completion event, centralized redacted error classification/handling, dependency-failure visibility, and logging-failure isolation; wrapped all API route handlers including auth, health, and readiness; removed raw route-level exception logging. Unit tests passed: 53 files / 383 tests. Lint, typecheck, Prettier check, production build, and Playwright E2E (`--workers=1 --retries=0`, 25 passed / 5 authorized persistence skips) passed. PostgreSQL integration validation was attempted but is not locally executable because `DATABASE_URL` is not configured. No vendor-specific observability platform decision is recorded or implied; the stale reference worktree `/private/tmp/shanda-observability-p0` was absent, so no code was transplanted. |
+| Remaining Follow-up | Review/CI/merge and post-merge runtime verification remain. Configure a dedicated PostgreSQL integration environment and rerun the integration gate. Before pilot sign-off, connect deployed structured logs to the approved sink, dashboards, alerts, retention, and named on-call/escalation ownership described in [`runbooks/observability.md`](runbooks/observability.md). |
 
 #### 5. Product Shell
 

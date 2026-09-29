@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { ZodError } from 'zod';
-import { AppError } from '../../../../platform/errors';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   authorizeForecourtCommandPreflight,
@@ -49,6 +47,8 @@ import {
   setReconciliationAttendantsFromRequest,
   submitProductionReconciliationFromRequest,
 } from '../../../../modules/forecourt/production-reconciliation';
+import { AppError } from '../../../../platform/errors';
+import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 
 /**
  * The exhaustive set of forecourt command types this route can dispatch.
@@ -122,7 +122,7 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
     await requireAuthenticatedActor(request);
     const body: unknown = await request.json();
@@ -276,16 +276,9 @@ export async function POST(request: Request): Promise<Response> {
     }
     return jsonResponse(result, commandType === 'SealSegment' ? 201 : 200);
   } catch (error) {
-    if (error instanceof ZodError) {
-      return jsonResponse({ error: 'VALIDATION_FAILED', issues: error.issues }, 400);
-    }
-    if (error instanceof AppError) {
-      return jsonResponse(
-        { error: error.code, message: error.message, details: error.details },
-        error.httpStatus,
-      );
-    }
-    console.error('forecourt command failed', error);
-    return jsonResponse({ error: 'INTERNAL_ERROR' }, 500);
+    return apiErrorResponse(request, error, {
+      includeDetails: true,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
+});

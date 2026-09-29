@@ -4,10 +4,11 @@
 
 This runbook defines the minimum operational signals for Shanda Fuel. It does
 not introduce a monitoring dependency or change application behavior. The
-current repository provides request IDs on health/readiness responses, a
-redacting logger for platform adapters, safe serialization helpers, and
-structured error codes. Several application routes still use direct error
-logging; replacing those calls and wiring a production sink is a follow-up.
+current repository provides bounded request IDs and response propagation for
+API route handlers, one structured request-completion event with status and
+duration, centralized redacted error classification, a redacting logger for
+platform adapters, safe serialization helpers, and structured error codes.
+Wiring the deployed application to a production sink remains a follow-up.
 
 ## Endpoints and checks
 

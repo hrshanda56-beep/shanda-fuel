@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { z, ZodError } from 'zod';
+import { z } from 'zod';
 import { requireAuthenticatedActor } from '../../../../../modules/identity';
 import { getAuth } from '../../../../../platform/auth';
-import { AppError } from '../../../../../platform/errors';
+import { apiErrorResponse, withRequestObservability } from '../../../../../platform/observability';
 
 export const runtime = 'nodejs';
 
@@ -17,7 +17,7 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
     await requireAuthenticatedActor(request);
     const result = await getAuth().api.getSession({
@@ -27,17 +27,14 @@ export async function GET(request: Request): Promise<Response> {
     const user = result?.user as { twoFactorEnabled?: boolean } | undefined;
     return jsonResponse({ enabled: user?.twoFactorEnabled === true }, 200);
   } catch (error) {
-    if (error instanceof AppError) {
-      return jsonResponse(
-        { error: error.code, message: error.message, details: error.details },
-        error.httpStatus,
-      );
-    }
-    return jsonResponse({ error: 'INTERNAL_ERROR' }, 500);
+    return apiErrorResponse(request, error, {
+      includeDetails: true,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
+});
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
     await requireAuthenticatedActor(request);
     const input = startSchema.parse(await request.json());
@@ -58,15 +55,11 @@ export async function POST(request: Request): Promise<Response> {
       200,
     );
   } catch (error) {
-    if (error instanceof ZodError) {
-      return jsonResponse({ error: 'VALIDATION_FAILED', issues: error.issues }, 400);
-    }
-    if (error instanceof AppError) {
-      return jsonResponse(
-        { error: error.code, message: error.message, details: error.details },
-        error.httpStatus,
-      );
-    }
-    return jsonResponse({ error: 'MFA_SETUP_FAILED' }, 400);
+    return apiErrorResponse(request, error, {
+      includeDetails: true,
+      unknownBody: { error: 'MFA_SETUP_FAILED' },
+      unknownStatus: 400,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
+});

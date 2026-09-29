@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { ZodError } from 'zod';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   confirmDeliveryFromRequest,
@@ -16,6 +15,7 @@ import {
   requestInventoryCostRevaluationFromRequest,
 } from '../../../../modules/inventory';
 import { AppError } from '../../../../platform/errors';
+import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 
 const COMMANDS = [
   'CreateTank',
@@ -38,7 +38,7 @@ function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
     await requireAuthenticatedActor(request);
     const body: unknown = await request.json();
@@ -90,14 +90,9 @@ export async function POST(request: Request): Promise<Response> {
     }
     return json(result, 200);
   } catch (error) {
-    if (error instanceof ZodError)
-      return json({ error: 'VALIDATION_FAILED', issues: error.issues }, 400);
-    if (error instanceof AppError)
-      return json(
-        { error: error.code, message: error.message, details: error.details },
-        error.httpStatus,
-      );
-    console.error('inventory command failed', error);
-    return json({ error: 'INTERNAL_ERROR' }, 500);
+    return apiErrorResponse(request, error, {
+      includeDetails: true,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
+});
