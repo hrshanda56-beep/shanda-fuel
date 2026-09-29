@@ -1,12 +1,13 @@
 import { toNextJsHandler } from 'better-auth/next-js';
 import { getAuth } from '../../../../platform/auth';
+import { withRequestObservability } from '../../../../platform/observability';
 
 export const runtime = 'nodejs';
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withRequestObservability(async (request: Request): Promise<Response> => {
   return toNextJsHandler(getAuth()).GET(request);
-}
+});
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
   return toNextJsHandler(getAuth()).POST(request);
-}
+});

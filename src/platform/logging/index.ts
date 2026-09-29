@@ -2,6 +2,9 @@ const sensitiveKey = /(authorization|cookie|secret|password|token|api[-_]?key|da
 
 function redact(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redact);
+  if (value instanceof Error) {
+    return { type: value.constructor?.name || 'Error' };
+  }
   if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value).map(([key, child]) => [
@@ -26,7 +29,11 @@ export function createLogger(base: Record<string, unknown> = {}) {
       ...fields,
       timestamp: new Date().toISOString(),
     });
-    console[level](JSON.stringify(record));
+    try {
+      console[level](JSON.stringify(record));
+    } catch {
+      // Logging is an observability aid and must never change request behavior.
+    }
   };
 
   return {

@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
-import { z, ZodError } from 'zod';
+import { z } from 'zod';
 import { requireAuthenticatedActor } from '../../../../../../modules/identity';
 import { getAuth } from '../../../../../../platform/auth';
-import { AppError } from '../../../../../../platform/errors';
+import {
+  apiErrorResponse,
+  withRequestObservability,
+} from '../../../../../../platform/observability';
 
 export const runtime = 'nodejs';
 
@@ -28,7 +31,7 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
     await requireAuthenticatedActor(request);
     const body = requestSchema.parse(await request.json());
@@ -44,15 +47,11 @@ export async function POST(request: Request): Promise<Response> {
     headers.set('Cache-Control', 'no-store');
     return NextResponse.json({ status: 'enabled' }, { status: 200, headers });
   } catch (error) {
-    if (error instanceof ZodError) {
-      return jsonResponse({ error: 'VALIDATION_FAILED', issues: error.issues }, 400);
-    }
-    if (error instanceof AppError) {
-      return jsonResponse(
-        { error: error.code, message: error.message, details: error.details },
-        error.httpStatus,
-      );
-    }
-    return jsonResponse({ error: 'MFA_VERIFICATION_FAILED' }, 400);
+    return apiErrorResponse(request, error, {
+      includeDetails: true,
+      unknownBody: { error: 'MFA_VERIFICATION_FAILED' },
+      unknownStatus: 400,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
+});

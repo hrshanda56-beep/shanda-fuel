@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { z, ZodError } from 'zod';
+import { z } from 'zod';
 import { establishStepUp, requireAuthenticatedActor } from '../../../../modules/identity';
 import { resolveTenantExecutionContext } from '../../../../modules/tenancy/authority';
-import { AppError } from '../../../../platform/errors';
+import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 
 export const runtime = 'nodejs';
 
@@ -19,7 +19,7 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
     await requireAuthenticatedActor(request);
     const body = requestSchema.parse(await request.json());
@@ -42,16 +42,9 @@ export async function POST(request: Request): Promise<Response> {
       200,
     );
   } catch (error) {
-    if (error instanceof ZodError) {
-      return jsonResponse({ error: 'VALIDATION_FAILED', issues: error.issues }, 400);
-    }
-    if (error instanceof AppError) {
-      return jsonResponse(
-        { error: error.code, message: error.message, details: error.details },
-        error.httpStatus,
-      );
-    }
-    console.error('step-up establishment failed', error);
-    return jsonResponse({ error: 'INTERNAL_ERROR' }, 500);
+    return apiErrorResponse(request, error, {
+      includeDetails: true,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
+});

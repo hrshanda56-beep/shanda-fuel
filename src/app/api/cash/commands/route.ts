@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { ZodError } from 'zod';
-import { AppError } from '../../../../platform/errors';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   assertCashCommandType,
@@ -9,6 +7,7 @@ import {
   receiveCashCollectionFromRequest,
   recordCashCollectionFromRequest,
 } from '../../../../modules/cash/commands';
+import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 
 function response(body: unknown, status = 200): Response {
   return NextResponse.json(body, {
@@ -17,7 +16,7 @@ function response(body: unknown, status = 200): Response {
   });
 }
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
     await requireAuthenticatedActor(request);
     const body: unknown = await request.json();
@@ -36,16 +35,9 @@ export async function POST(request: Request): Promise<Response> {
         return response(await confirmBankDepositFromRequest(request, body));
     }
   } catch (error) {
-    if (error instanceof ZodError) {
-      return response({ error: 'VALIDATION_FAILED', issues: error.issues }, 400);
-    }
-    if (error instanceof AppError) {
-      return response(
-        { error: error.code, message: error.message, details: error.details },
-        error.httpStatus,
-      );
-    }
-    console.error('cash command failed', error);
-    return response({ error: 'INTERNAL_ERROR' }, 500);
+    return apiErrorResponse(request, error, {
+      includeDetails: true,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
+});
