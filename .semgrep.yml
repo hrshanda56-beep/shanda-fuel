@@ -1,0 +1,43 @@
+# Semgrep CE uses INFO, WARNING, and ERROR. ERROR is the highest rule severity
+# and is the active high-severity SAST gate in CI.
+rules:
+  - id: javascript-dangerous-eval
+    languages:
+      - javascript
+      - typescript
+    message: Do not evaluate dynamically constructed JavaScript.
+    severity: ERROR
+    metadata:
+      category: security
+      confidence: HIGH
+      impact: HIGH
+      likelihood: HIGH
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: window.eval(...)
+
+  - id: javascript-dynamic-function
+    languages:
+      - javascript
+      - typescript
+    message: Do not construct executable code dynamically with Function.
+    severity: ERROR
+    metadata:
+      category: security
+      confidence: HIGH
+      impact: HIGH
+      likelihood: HIGH
+    pattern: new Function(...)
+
+  - id: javascript-child-process-exec
+    languages:
+      - javascript
+      - typescript
+    message: Review shell execution before merging; use an argument-safe API instead of child_process.exec.
+    severity: ERROR
+    metadata:
+      category: security
+      confidence: MEDIUM
+      impact: HIGH
+      likelihood: HIGH
+    pattern: child_process.exec(...)

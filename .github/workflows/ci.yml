@@ -6,12 +6,18 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16
@@ -35,11 +41,11 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
       DATABASE_DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: 11.25.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
           cache: pnpm
@@ -59,4 +65,202 @@ jobs:
       - run: pnpm test:integration
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e --workers=1 --retries=0
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: playwright-failure-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 1
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install locked dependencies without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit production and development dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm audit --audit-level=high 2>&1 | tee pnpm-audit.txt
+      - name: Upload dependency audit output
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: dependency-audit-${{ github.run_id }}
+          path: pnpm-audit.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+
+  sast:
+    name: SAST (Semgrep CE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    container:
+      image: semgrep/semgrep@sha256:cef085245254d15c66d96be413c730f0b458823a1d0c39afbc12f705b664ce8f # Semgrep CE 1.102.0
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Validate Semgrep rules
+        run: semgrep --metrics off --validate --config .semgrep.yml
+      - name: Run high-severity static analysis
+        run: >-
+          semgrep scan --metrics off --config .semgrep.yml --severity ERROR
+          --error --sarif-output=semgrep.sarif
+      - name: Upload SAST result
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: semgrep-sast-${{ github.run_id }}
+          path: semgrep.sarif
+          if-no-files-found: ignore
+          retention-days: 14
+
+  codeql:
+    name: CodeQL
+    # Enable only after GitHub Code Scanning/GHAS is enabled for this private repository.
+    if: vars.CODEQL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4.31.10
+        with:
+          languages: ${{ matrix.language }}
+          config-file: ./.github/codeql/codeql-config.yml
+      - name: Analyze with CodeQL
+        uses: github/codeql-action/analyze@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4.31.10
+        with:
+          category: /language:${{ matrix.language }}
+
+  runtime-role:
+    name: Runtime-role proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shanda_fuel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d shanda_fuel_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: test
+      APP_URL: http://127.0.0.1:3100
+      BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
+      AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
+      AUDIT_SIGNING_KEY: integration-ci-audit-secret
+      DATABASE_DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
+      RUNTIME_PROOF_FILE: runtime-role-proof.txt
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Wait for PostgreSQL
+        run: pg_isready --host 127.0.0.1 --port 5432 --username postgres --dbname shanda_fuel_test
+      - name: Bootstrap disposable database roles
+        run: scripts/db/bootstrap-test.sh
+      - name: Apply migrations with the privileged direct connection
+        run: pnpm db:migrate:test
+      - name: Assign migration metadata ownership
+        run: psql "$DATABASE_DIRECT_URL" --set ON_ERROR_STOP=1 --command "ALTER SCHEMA drizzle OWNER TO migration_owner; ALTER TABLE drizzle.__drizzle_migrations OWNER TO migration_owner;"
+      - name: Configure disposable app_runtime login
+        run: scripts/db/prepare-ci-runtime.sh
+      - name: Assert runtime-role database restrictions
+        env:
+          DATABASE_DIRECT_URL: ''
+        run: scripts/db/assert-ci-runtime-role.sh
+      - name: Build application
+        run: env -u DATABASE_DIRECT_URL pnpm build
+      - name: Start application without direct migration credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          env -u DATABASE_DIRECT_URL sh -c 'test -n "${DATABASE_URL-}" && test -z "${DATABASE_DIRECT_URL-}" && exec pnpm start --hostname 127.0.0.1 --port 3100' > runtime-app.log 2>&1 &
+          echo $! > runtime-app.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:3100/api/readiness > runtime-readiness.json; then
+              break
+            fi
+            sleep 1
+          done
+          test -s runtime-readiness.json
+          grep -q '"status":"ok"' runtime-readiness.json
+          curl --fail --silent --show-error http://127.0.0.1:3100/api/health > runtime-health.json
+      - name: Stop runtime-role proof server
+        if: always()
+        run: |
+          if test -s runtime-app.pid; then
+            kill "$(cat runtime-app.pid)" || true
+          fi
+      - name: Upload runtime-role proof artifacts
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: runtime-role-proof-${{ github.run_id }}
+          path: |
+            runtime-role-proof.txt
+            runtime-readiness.json
+            runtime-health.json
+          if-no-files-found: ignore
+          retention-days: 14
