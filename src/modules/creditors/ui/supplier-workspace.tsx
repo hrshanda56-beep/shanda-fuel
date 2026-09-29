@@ -9,6 +9,7 @@ import {
   LoadingState,
   StatusBadge,
 } from '../../../design-system/primitives';
+import { TableScrollRegion } from '../../../design-system/table';
 
 type SupplierSummary = {
   supplierId: string;
@@ -97,7 +98,7 @@ export function SupplierWorkspace({
           />
         ) : null}
         {!loading && !error && rows.length > 0 ? (
-          <div className="responsive-table-wrap">
+          <TableScrollRegion label="Supplier creditor balances">
             <table className="responsive-table">
               <caption className="visually-hidden">Supplier creditor balances</caption>
               <thead>
@@ -129,7 +130,7 @@ export function SupplierWorkspace({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         ) : null}
       </Card>
     </div>

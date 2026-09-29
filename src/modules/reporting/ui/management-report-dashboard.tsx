@@ -10,6 +10,7 @@ import {
   LoadingState,
   StatusBadge,
 } from '../../../design-system/primitives';
+import { TableScrollRegion } from '../../../design-system/table';
 import type { ManagementReport } from '../contracts';
 
 function today(): string {
@@ -206,7 +207,7 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
                 </div>
                 <StatusBadge tone="informational">A5 business date</StatusBadge>
               </div>
-              <div className="responsive-table-wrap">
+              <TableScrollRegion label="Payments and products table">
                 <table className="responsive-table">
                   <caption className="visually-hidden">Sales by date, station, and product</caption>
                   <thead>
@@ -246,7 +247,7 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableScrollRegion>
               {report.sales.rows.length === 0 ? (
                 <EmptyState
                   title="No approved sales"

@@ -11,6 +11,7 @@ import {
   LoadingState,
   StatusBadge,
 } from '../../../design-system/primitives';
+import { TableScrollRegion } from '../../../design-system/table';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 
 export function SettlementWorkspace({
@@ -195,7 +196,7 @@ export function SettlementWorkspace({
           />
         ) : null}
         {!loading && !error && settlements.length > 0 ? (
-          <div className="responsive-table-wrap">
+          <TableScrollRegion label="Provider settlement reconciliation">
             <table className="responsive-table">
               <caption className="visually-hidden">Provider settlement reconciliation</caption>
               <thead>
@@ -254,7 +255,7 @@ export function SettlementWorkspace({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         ) : null}
       </Card>
 

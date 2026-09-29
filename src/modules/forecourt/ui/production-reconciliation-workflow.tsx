@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Field, StatusBadge } from '../../../design-system/primitives';
+import { TableScrollRegion } from '../../../design-system/table';
 
 export type ProductionReconciliationContext = Readonly<{
   tenantId: string;
@@ -323,12 +324,7 @@ export function ProductionReconciliationWorkflow({
         <Card as="section" className="panel" aria-labelledby="production-meter-title">
           <p className="eyebrow">Meter readings</p>
           <h2 id="production-meter-title">Server-derived sales</h2>
-          <div
-            className="responsive-table-wrap"
-            role="region"
-            aria-label="Persisted meter readings table"
-            tabIndex={0}
-          >
+          <TableScrollRegion label="Persisted meter readings table">
             <table className="responsive-table">
               <caption className="visually-hidden">Persisted meter readings</caption>
               <thead>
@@ -352,7 +348,7 @@ export function ProductionReconciliationWorkflow({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScrollRegion>
         </Card>
         <Card as="section" className="panel" aria-labelledby="production-totals-title">
           <p className="eyebrow">Payments and stock</p>

@@ -1,0 +1,475 @@
+/*
+ * Shanda Fuel design tokens.
+ *
+ * Layering:
+ *   1. Primitive palette (--palette-*) — raw values. Never reference these from
+ *      components; they exist so semantic tokens have one source.
+ *   2. Semantic tokens (--bg-*, --text-*, --border-*, --accent-*, --tone-*) —
+ *      the only colour tokens components should use. Redefined per theme.
+ *   3. Scale tokens — type, space, radius, elevation, size, layout, motion.
+ *   4. Legacy aliases (--color-*) — kept so pre-foundation module CSS keeps
+ *      rendering correctly. Do not use them in new code.
+ *
+ * Themes: light is the default. Dark applies when the device prefers dark and
+ * no explicit override exists, or when <html data-theme="dark"> is set.
+ * <html data-theme="light"> forces light. See theme.ts.
+ *
+ * Breakpoints cannot be custom properties inside media queries; the canonical
+ * values live in tokens.ts and are mirrored here for reference:
+ *   sm 40rem (640px) · md 48rem (768px) · lg 64rem (1024px) · xl 80rem (1280px)
+ */
+
+:root {
+  /* 1. Primitive palette ------------------------------------------------- */
+  --palette-white: #ffffff;
+  --palette-neutral-25: #fbfbfa;
+  --palette-neutral-50: #f6f6f5;
+  --palette-neutral-100: #efefed;
+  --palette-neutral-150: #e7e7e4;
+  --palette-neutral-200: #dcdcd8;
+  --palette-neutral-300: #c4c4bf;
+  --palette-neutral-400: #9e9e98;
+  --palette-neutral-500: #75756f;
+  --palette-neutral-600: #5b5b56;
+  --palette-neutral-700: #43433f;
+  --palette-neutral-800: #2c2c29;
+  --palette-neutral-850: #222220;
+  --palette-neutral-900: #1a1a19;
+  --palette-neutral-950: #131312;
+
+  /* Shanda Fuel brand green, anchored on the existing brand colour #0d6b58. */
+  --palette-brand-50: #eef7f4;
+  --palette-brand-100: #d9eee7;
+  --palette-brand-200: #b2dccd;
+  --palette-brand-300: #7cc2ab;
+  --palette-brand-400: #4aa78b;
+  --palette-brand-500: #1d8a6f;
+  --palette-brand-600: #0d6b58;
+  --palette-brand-700: #0a5a4a;
+  --palette-brand-800: #084a3d;
+  --palette-brand-900: #06382e;
+
+  /* 3. Typography -------------------------------------------------------- */
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    monospace;
+
+  --font-size-2xs: 0.6875rem; /* 11px — eyebrows, dense meta */
+  --font-size-xs: 0.75rem; /* 12px — captions, badges, table headers */
+  --font-size-sm: 0.8125rem; /* 13px — secondary text, dense tables */
+  --font-size-md: 0.875rem; /* 14px — controls, table body, UI default */
+  --font-size-base: 0.9375rem; /* 15px — reading text */
+  --font-size-lg: 1.0625rem; /* 17px — card / section titles */
+  --font-size-xl: 1.25rem; /* 20px — section headings */
+  --font-size-2xl: 1.5rem; /* 24px — page title (compact) */
+  --font-size-3xl: 1.875rem; /* 30px — page title (roomy), key metrics */
+  --font-size-4xl: 2.25rem; /* 36px — hero metric only */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.2;
+  --line-height-snug: 1.35;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-snug: -0.01em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-caps: 0.06em;
+
+  /* Spacing (4px base) ---------------------------------------------------- */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-0-5: 0.125rem;
+  --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-2-5: 0.625rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+
+  /* Radii ------------------------------------------------------------------ */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 999px;
+
+  /* Borders ---------------------------------------------------------------- */
+  --border-width: 1px;
+  --border-width-strong: 1.5px;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* Sizing ----------------------------------------------------------------- */
+  --control-height-sm: 2rem;
+  --control-height-md: 2.5rem;
+  --control-height-lg: 2.75rem;
+  --touch-target-min: 2.75rem; /* 44px — coarse pointers */
+  --icon-size-sm: 1rem;
+  --icon-size-md: 1.25rem;
+  --icon-size-lg: 1.5rem;
+
+  /* Layout ----------------------------------------------------------------- */
+  --content-narrow: 40rem; /* focused forms, dialogs-in-page */
+  --content-default: 72rem; /* standard workspaces */
+  --content-wide: 90rem; /* dense reporting and reconciliation */
+  --measure: 65ch; /* max readable line length */
+  --page-gutter: clamp(1rem, 0.5rem + 2.5vw, 3rem);
+  --page-block: clamp(1.25rem, 0.75rem + 2vw, 2.5rem);
+  --section-gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
+  --stack-gap: var(--space-4);
+  --grid-gap: clamp(0.75rem, 0.5rem + 0.75vw, 1.25rem);
+  --sidebar-width: 16rem;
+  --sidebar-width-collapsed: 4.5rem;
+  --topbar-height: 3.75rem;
+
+  /* Motion ----------------------------------------------------------------- */
+  --duration-instant: 80ms;
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --transition-colors:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+
+  /* Stacking --------------------------------------------------------------- */
+  --z-base: 0;
+  --z-raised: 1;
+  --z-dropdown: 20;
+  --z-sticky: 30;
+  --z-overlay: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+  --z-skip-link: 70;
+
+  /* 2. Semantic colour — light theme (default) ----------------------------- */
+  color-scheme: light;
+
+  --bg-canvas: var(--palette-neutral-50);
+  --bg-surface: var(--palette-white);
+  --bg-surface-raised: var(--palette-white);
+  --bg-subtle: var(--palette-neutral-25);
+  --bg-muted: var(--palette-neutral-100);
+  --bg-hover: rgb(26 26 25 / 4.5%);
+  --bg-pressed: rgb(26 26 25 / 8%);
+  --bg-selected: var(--palette-brand-50);
+  --bg-inverse: var(--palette-neutral-900);
+  --bg-overlay: rgb(19 19 18 / 40%);
+  --bg-skeleton: var(--palette-neutral-100);
+  --bg-skeleton-highlight: var(--palette-neutral-50);
+
+  --text-primary: var(--palette-neutral-900);
+  --text-secondary: var(--palette-neutral-600);
+  --text-tertiary: #6b6b65;
+  --text-disabled: var(--palette-neutral-400);
+  --text-placeholder: var(--palette-neutral-500);
+  --text-inverse: var(--palette-white);
+  --text-on-accent: var(--palette-white);
+  --text-link: var(--palette-brand-600);
+
+  --border-subtle: var(--palette-neutral-150);
+  --border-default: var(--palette-neutral-200);
+  --border-strong: var(--palette-neutral-300);
+  --border-control: #8f8f89;
+  --border-control-hover: var(--palette-neutral-500);
+
+  --accent: var(--palette-brand-600);
+  --accent-hover: var(--palette-brand-700);
+  --accent-pressed: var(--palette-brand-800);
+  --accent-subtle: var(--palette-brand-50);
+  --accent-muted: var(--palette-brand-100);
+  --accent-text: var(--palette-brand-700);
+  --accent-border: var(--palette-brand-200);
+
+  --focus-ring: var(--palette-brand-600);
+  --focus-ring-halo: rgb(13 107 88 / 18%);
+
+  /* Semantic tones: -fg (icons/solid), -text (readable text on -bg), -bg, -border */
+  --tone-positive-fg: #1b7a4f;
+  --tone-positive-text: #16603f;
+  --tone-positive-bg: #eef7f1;
+  --tone-positive-border: #c6e3d2;
+
+  --tone-warning-fg: #b07410;
+  --tone-warning-text: #7a4f06;
+  --tone-warning-bg: #fdf6e7;
+  --tone-warning-border: #f0dcae;
+
+  --tone-critical-fg: #c0362c;
+  --tone-critical-text: #9a2a22;
+  --tone-critical-bg: #fdf1ef;
+  --tone-critical-border: #f3cdc8;
+
+  --tone-info-fg: #2f63b3;
+  --tone-info-text: #264f8f;
+  --tone-info-bg: #f0f5fc;
+  --tone-info-border: #cddcf1;
+
+  --tone-neutral-fg: var(--palette-neutral-500);
+  --tone-neutral-text: var(--palette-neutral-700);
+  --tone-neutral-bg: var(--palette-neutral-100);
+  --tone-neutral-border: var(--palette-neutral-200);
+
+  --tone-offline-fg: #6a52a8;
+  --tone-offline-text: #4d3a85;
+  --tone-offline-bg: #f4f1fb;
+  --tone-offline-border: #ddd5f1;
+
+  /* Elevation: borders carry structure; shadows only hint at lift. */
+  --shadow-xs: 0 1px 2px rgb(19 19 18 / 4%);
+  --shadow-sm: 0 1px 2px rgb(19 19 18 / 4%), 0 1px 3px rgb(19 19 18 / 5%);
+  --shadow-md: 0 2px 4px rgb(19 19 18 / 4%), 0 6px 16px rgb(19 19 18 / 6%);
+  --shadow-lg: 0 4px 8px rgb(19 19 18 / 4%), 0 16px 40px rgb(19 19 18 / 10%);
+  --shadow-inset-control: inset 0 1px 1px rgb(19 19 18 / 3%);
+
+  /* Charts: accent-led, then quiet neutrals and muted hues. Max 5 series. */
+  --chart-1: var(--palette-brand-600);
+  --chart-2: #6e8fb8;
+  --chart-3: #c49a4a;
+  --chart-4: #9a7fb0;
+  --chart-5: var(--palette-neutral-400);
+  --chart-positive: var(--tone-positive-fg);
+  --chart-negative: var(--tone-critical-fg);
+  --chart-grid: var(--palette-neutral-150);
+  --chart-axis: var(--palette-neutral-300);
+  --chart-label: var(--text-tertiary);
+
+  /* 4. Legacy aliases (pre-foundation). Do not use in new code. ------------- */
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-surface-muted: var(--bg-muted);
+  --color-surface-subtle: var(--bg-subtle);
+  --color-sidebar: var(--bg-surface);
+  --color-ink: var(--text-primary);
+  --color-ink-muted: var(--text-secondary);
+  --color-placeholder: var(--text-placeholder);
+  --color-text-on-accent: var(--text-on-accent);
+  --color-border: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-brand: var(--accent);
+  --color-brand-dark: var(--accent-text);
+  --color-brand-soft: var(--accent-subtle);
+  --color-active-muted: var(--text-secondary);
+  --color-focus: var(--focus-ring);
+  --color-overlay: var(--bg-overlay);
+  --color-positive: var(--tone-positive-fg);
+  --color-positive-soft: var(--tone-positive-bg);
+  --color-warning: var(--tone-warning-fg);
+  --color-warning-ink: var(--tone-warning-text);
+  --color-warning-soft: var(--tone-warning-bg);
+  --color-warning-border: var(--tone-warning-border);
+  --color-critical: var(--tone-critical-fg);
+  --color-critical-ink: var(--tone-critical-text);
+  --color-critical-soft: var(--tone-critical-bg);
+  --color-critical-border: var(--tone-critical-border);
+  --color-offline: var(--tone-offline-fg);
+  --color-offline-strong: var(--tone-offline-text);
+  --color-offline-soft: var(--tone-offline-bg);
+  --color-offline-border: var(--tone-offline-border);
+  --font-tabular: var(--font-mono);
+  --shadow-card: var(--shadow-xs);
+  --shadow-dialog: var(--shadow-lg);
+  --shadow-mobile-nav: 0 -1px 0 var(--border-subtle);
+}
+
+/*
+ * Dark theme. Declared twice with identical values: once for the device
+ * preference (unless light is forced) and once for the explicit override.
+ * Keep the two blocks in sync; tokens.test.ts enforces it.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --bg-canvas: var(--palette-neutral-950);
+    --bg-surface: var(--palette-neutral-900);
+    --bg-surface-raised: var(--palette-neutral-850);
+    --bg-subtle: #171716;
+    --bg-muted: var(--palette-neutral-850);
+    --bg-hover: rgb(255 255 255 / 5%);
+    --bg-pressed: rgb(255 255 255 / 9%);
+    --bg-selected: rgb(95 195 163 / 12%);
+    --bg-inverse: var(--palette-neutral-50);
+    --bg-overlay: rgb(0 0 0 / 60%);
+    --bg-skeleton: var(--palette-neutral-850);
+    --bg-skeleton-highlight: var(--palette-neutral-800);
+
+    --text-primary: #ededeb;
+    --text-secondary: #a8a8a2;
+    --text-tertiary: #8b8b85;
+    --text-disabled: #62625d;
+    --text-placeholder: #8e8e88;
+    --text-inverse: var(--palette-neutral-900);
+    --text-on-accent: #07261f;
+    --text-link: #6fcfae;
+
+    --border-subtle: #262624;
+    --border-default: #2f2f2c;
+    --border-strong: #42423e;
+    --border-control: #6c6c66;
+    --border-control-hover: #85857f;
+
+    --accent: #5fc3a3;
+    --accent-hover: #78d1b4;
+    --accent-pressed: #93dcc4;
+    --accent-subtle: rgb(95 195 163 / 10%);
+    --accent-muted: rgb(95 195 163 / 18%);
+    --accent-text: #7fd6b9;
+    --accent-border: rgb(95 195 163 / 32%);
+
+    --focus-ring: #7fd6b9;
+    --focus-ring-halo: rgb(127 214 185 / 22%);
+
+    --tone-positive-fg: #5ccf94;
+    --tone-positive-text: #8fe0b5;
+    --tone-positive-bg: rgb(92 207 148 / 10%);
+    --tone-positive-border: rgb(92 207 148 / 26%);
+
+    --tone-warning-fg: #e7b454;
+    --tone-warning-text: #f0cb82;
+    --tone-warning-bg: rgb(231 180 84 / 10%);
+    --tone-warning-border: rgb(231 180 84 / 28%);
+
+    --tone-critical-fg: #f07f73;
+    --tone-critical-text: #f6aaa1;
+    --tone-critical-bg: rgb(240 127 115 / 10%);
+    --tone-critical-border: rgb(240 127 115 / 28%);
+
+    --tone-info-fg: #7ea8e8;
+    --tone-info-text: #a9c5f0;
+    --tone-info-bg: rgb(126 168 232 / 10%);
+    --tone-info-border: rgb(126 168 232 / 28%);
+
+    --tone-neutral-fg: #8b8b85;
+    --tone-neutral-text: #c4c4bf;
+    --tone-neutral-bg: rgb(255 255 255 / 6%);
+    --tone-neutral-border: rgb(255 255 255 / 12%);
+
+    --tone-offline-fg: #b09cf0;
+    --tone-offline-text: #cdbff7;
+    --tone-offline-bg: rgb(176 156 240 / 10%);
+    --tone-offline-border: rgb(176 156 240 / 28%);
+
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 1px 3px rgb(0 0 0 / 25%);
+    --shadow-md: 0 2px 4px rgb(0 0 0 / 30%), 0 8px 20px rgb(0 0 0 / 35%);
+    --shadow-lg: 0 4px 8px rgb(0 0 0 / 35%), 0 20px 48px rgb(0 0 0 / 50%);
+    --shadow-inset-control: none;
+
+    --chart-1: #5fc3a3;
+    --chart-2: #86a6d0;
+    --chart-3: #d6ae62;
+    --chart-4: #b39ac8;
+    --chart-5: #6f6f6a;
+    --chart-grid: #262624;
+    --chart-axis: #42423e;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-canvas: var(--palette-neutral-950);
+  --bg-surface: var(--palette-neutral-900);
+  --bg-surface-raised: var(--palette-neutral-850);
+  --bg-subtle: #171716;
+  --bg-muted: var(--palette-neutral-850);
+  --bg-hover: rgb(255 255 255 / 5%);
+  --bg-pressed: rgb(255 255 255 / 9%);
+  --bg-selected: rgb(95 195 163 / 12%);
+  --bg-inverse: var(--palette-neutral-50);
+  --bg-overlay: rgb(0 0 0 / 60%);
+  --bg-skeleton: var(--palette-neutral-850);
+  --bg-skeleton-highlight: var(--palette-neutral-800);
+
+  --text-primary: #ededeb;
+  --text-secondary: #a8a8a2;
+  --text-tertiary: #8b8b85;
+  --text-disabled: #62625d;
+  --text-placeholder: #8e8e88;
+  --text-inverse: var(--palette-neutral-900);
+  --text-on-accent: #07261f;
+  --text-link: #6fcfae;
+
+  --border-subtle: #262624;
+  --border-default: #2f2f2c;
+  --border-strong: #42423e;
+  --border-control: #6c6c66;
+  --border-control-hover: #85857f;
+
+  --accent: #5fc3a3;
+  --accent-hover: #78d1b4;
+  --accent-pressed: #93dcc4;
+  --accent-subtle: rgb(95 195 163 / 10%);
+  --accent-muted: rgb(95 195 163 / 18%);
+  --accent-text: #7fd6b9;
+  --accent-border: rgb(95 195 163 / 32%);
+
+  --focus-ring: #7fd6b9;
+  --focus-ring-halo: rgb(127 214 185 / 22%);
+
+  --tone-positive-fg: #5ccf94;
+  --tone-positive-text: #8fe0b5;
+  --tone-positive-bg: rgb(92 207 148 / 10%);
+  --tone-positive-border: rgb(92 207 148 / 26%);
+
+  --tone-warning-fg: #e7b454;
+  --tone-warning-text: #f0cb82;
+  --tone-warning-bg: rgb(231 180 84 / 10%);
+  --tone-warning-border: rgb(231 180 84 / 28%);
+
+  --tone-critical-fg: #f07f73;
+  --tone-critical-text: #f6aaa1;
+  --tone-critical-bg: rgb(240 127 115 / 10%);
+  --tone-critical-border: rgb(240 127 115 / 28%);
+
+  --tone-info-fg: #7ea8e8;
+  --tone-info-text: #a9c5f0;
+  --tone-info-bg: rgb(126 168 232 / 10%);
+  --tone-info-border: rgb(126 168 232 / 28%);
+
+  --tone-neutral-fg: #8b8b85;
+  --tone-neutral-text: #c4c4bf;
+  --tone-neutral-bg: rgb(255 255 255 / 6%);
+  --tone-neutral-border: rgb(255 255 255 / 12%);
+
+  --tone-offline-fg: #b09cf0;
+  --tone-offline-text: #cdbff7;
+  --tone-offline-bg: rgb(176 156 240 / 10%);
+  --tone-offline-border: rgb(176 156 240 / 28%);
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 1px 3px rgb(0 0 0 / 25%);
+  --shadow-md: 0 2px 4px rgb(0 0 0 / 30%), 0 8px 20px rgb(0 0 0 / 35%);
+  --shadow-lg: 0 4px 8px rgb(0 0 0 / 35%), 0 20px 48px rgb(0 0 0 / 50%);
+  --shadow-inset-control: none;
+
+  --chart-1: #5fc3a3;
+  --chart-2: #86a6d0;
+  --chart-3: #d6ae62;
+  --chart-4: #b39ac8;
+  --chart-5: #6f6f6a;
+  --chart-grid: #262624;
+  --chart-axis: #42423e;
+}

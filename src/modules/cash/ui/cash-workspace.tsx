@@ -12,6 +12,7 @@ import {
   StatusBadge,
   SuccessState,
 } from '../../../design-system/primitives';
+import { TableScrollRegion } from '../../../design-system/table';
 
 type CashSummary = {
   totals: {
@@ -178,7 +179,7 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
                 message="Record a collection against approved A5 reconciliation cash evidence."
               />
             ) : (
-              <div className="responsive-table-wrap">
+              <TableScrollRegion label="Station cash collections">
                 <table className="data-table">
                   <caption className="sr-only">Station cash collections</caption>
                   <thead>
@@ -206,7 +207,7 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableScrollRegion>
             )}
           </>
         ) : null}

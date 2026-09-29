@@ -3,8 +3,6 @@
 import {
   cloneElement,
   isValidElement,
-  useEffect,
-  useId,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -12,19 +10,29 @@ import {
   type MouseEvent,
   type ReactElement,
   type ReactNode,
+  type Ref,
 } from 'react';
-import { createPortal } from 'react-dom';
 
-type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
+import { Icon, type IconName } from './icons';
+import { FOCUSABLE_SELECTOR, Modal } from './modal';
+
+export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
+export type ControlSize = 'sm' | 'md' | 'lg';
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
+  size?: ControlSize;
+  /** Full-width button, e.g. the primary action of a phone form. */
+  block?: boolean;
   loading?: boolean;
+  ref?: Ref<HTMLButtonElement>;
   children: ReactNode;
 };
 
 export function Button({
   variant = 'primary',
+  size = 'md',
+  block = false,
   className = '',
   loading = false,
   disabled,
@@ -32,9 +40,17 @@ export function Button({
   type = 'button',
   ...props
 }: ButtonProps) {
+  const classes = [
+    'button',
+    `button-${variant}`,
+    size !== 'md' ? `button-${size}` : '',
+    block ? 'button-block' : '',
+    loading ? 'button-loading' : '',
+    className,
+  ];
   return (
     <button
-      className={`button button-${variant} ${loading ? 'button-loading' : ''} ${className}`.trim()}
+      className={classes.filter(Boolean).join(' ')}
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
@@ -42,6 +58,42 @@ export function Button({
     >
       {loading ? <span className="button-spinner" aria-hidden="true" /> : null}
       {children}
+    </button>
+  );
+}
+
+type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & {
+  /** Accessible name. Required: an icon alone never labels a control. */
+  label: string;
+  icon: IconName;
+  size?: 'sm' | 'md';
+  variant?: 'quiet' | 'outlined';
+};
+
+export function IconButton({
+  label,
+  icon,
+  size = 'md',
+  variant = 'quiet',
+  className = '',
+  type = 'button',
+  ...props
+}: IconButtonProps) {
+  const classes = [
+    'icon-button',
+    size === 'sm' ? 'icon-button-sm' : '',
+    variant === 'outlined' ? 'icon-button-outlined' : '',
+    className,
+  ];
+  return (
+    <button
+      className={classes.filter(Boolean).join(' ')}
+      type={type}
+      aria-label={label}
+      title={label}
+      {...props}
+    >
+      <Icon name={icon} size={size === 'sm' ? 'sm' : 'md'} />
     </button>
   );
 }
@@ -56,8 +108,56 @@ export type StatusTone =
   | 'locked'
   | 'offline';
 
-export function StatusBadge({ tone, children }: { tone: StatusTone; children: ReactNode }) {
-  return <span className={`status status-${tone}`}>{children}</span>;
+export function StatusBadge({
+  tone,
+  plain = false,
+  children,
+}: {
+  tone: StatusTone;
+  /** Hide the leading dot, e.g. inside dense tables with many badges. */
+  plain?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <span className={`status status-${tone} ${plain ? 'status-plain' : ''}`.trim()}>
+      {children}
+    </span>
+  );
+}
+
+function FieldLabel({
+  htmlFor,
+  label,
+  required,
+  optional,
+}: {
+  htmlFor: string;
+  label: string;
+  required: boolean;
+  optional: boolean;
+}) {
+  return (
+    <label htmlFor={htmlFor}>
+      {label}
+      {required ? (
+        <span className="field-required" aria-hidden="true">
+          {' '}
+          *
+        </span>
+      ) : null}
+      {optional && !required ? <span className="field-optional"> (optional)</span> : null}
+    </label>
+  );
+}
+
+function FieldError({ id, error }: { id?: string; error?: string }) {
+  if (!error) return null;
+  return (
+    <p className="field-error" id={id} role="alert">
+      <Icon name="error" />
+      <span>{error}</span>
+    </p>
+  );
 }
 
 export function NumericInput({
@@ -84,11 +184,7 @@ export function NumericInput({
 
   return (
     <div className="field">
-      <label htmlFor={id}>
-        {label}
-        {required ? <span aria-hidden="true"> *</span> : null}
-        {optional && !required ? <span className="field-optional"> (optional)</span> : null}
-      </label>
+      <FieldLabel htmlFor={id} label={label} required={required} optional={optional} />
       {hint ? (
         <p className="field-hint" id={hintId}>
           {hint}
@@ -107,11 +203,7 @@ export function NumericInput({
         />
         {unit ? <span className="numeric-unit">{unit}</span> : null}
       </div>
-      {error ? (
-        <p className="field-error" id={errorId} role="alert">
-          {error}
-        </p>
-      ) : null}
+      <FieldError id={errorId} error={error} />
     </div>
   );
 }
@@ -172,22 +264,14 @@ export function Field({
 
   return (
     <div className="field">
-      <label htmlFor={id}>
-        {label}
-        {required ? <span aria-hidden="true"> *</span> : null}
-        {optional && !required ? <span className="field-optional"> (optional)</span> : null}
-      </label>
+      <FieldLabel htmlFor={id} label={label} required={required} optional={optional} />
       {hint ? (
         <p className="field-hint" id={descriptionId}>
           {hint}
         </p>
       ) : null}
       <div>{control}</div>
-      {error ? (
-        <p className="field-error" id={errorId} role="alert">
-          {error}
-        </p>
-      ) : null}
+      <FieldError id={errorId} error={error} />
     </div>
   );
 }
@@ -201,12 +285,73 @@ export function LoadingState({ label = 'Loading' }: { label?: string }) {
   );
 }
 
-export function Skeleton({ lines = 3 }: { lines?: number }) {
+export function Skeleton({
+  lines = 3,
+  label = 'Loading content',
+}: {
+  lines?: number;
+  label?: string;
+}) {
   return (
-    <div className="skeleton-group" role="status" aria-label="Loading content">
+    <div className="skeleton-group" role="status" aria-label={label}>
       {Array.from({ length: lines }, (_, index) => (
         <span className={`skeleton-line skeleton-line-${index + 1}`} key={index} />
       ))}
+    </div>
+  );
+}
+
+/** A single skeleton shape for mirroring real layout (cards, avatars, chart areas). */
+export function SkeletonBlock({
+  width = '100%',
+  height = '1rem',
+  shape = 'rect',
+}: {
+  width?: string;
+  height?: string;
+  shape?: 'rect' | 'circle';
+}) {
+  return (
+    <span
+      className={`skeleton ${shape === 'circle' ? 'skeleton-circle' : ''}`.trim()}
+      style={{ width, height }}
+      aria-hidden="true"
+    />
+  );
+}
+
+type StateLayout = 'inline' | 'block';
+
+/**
+ * Centred, spacious presentation for a whole region or page. Inline states
+ * (the default) sit compactly inside an existing surface.
+ */
+function StateBlock({
+  icon,
+  title,
+  message,
+  action,
+  tone,
+  role,
+}: {
+  icon: IconName;
+  title: string;
+  message: string;
+  action?: ReactNode;
+  tone: 'neutral' | 'error';
+  role?: 'alert' | 'status';
+}) {
+  return (
+    <div
+      className={`state-block ${tone === 'error' ? 'state-block-error' : ''}`.trim()}
+      role={role}
+    >
+      <span className="state-icon" aria-hidden="true">
+        <Icon name={icon} size="md" />
+      </span>
+      <h3>{title}</h3>
+      <p>{message}</p>
+      {action ? <div className="state-action">{action}</div> : null}
     </div>
   );
 }
@@ -215,11 +360,25 @@ export function ErrorState({
   title = 'Something needs attention',
   message,
   action,
+  layout = 'inline',
 }: {
   title?: string;
   message: string;
   action?: ReactNode;
+  layout?: StateLayout;
 }) {
+  if (layout === 'block') {
+    return (
+      <StateBlock
+        icon="error"
+        tone="error"
+        role="alert"
+        title={title}
+        message={message}
+        action={action}
+      />
+    );
+  }
   return (
     <div className="state state-error" role="alert">
       <div>
@@ -246,11 +405,20 @@ export function EmptyState({
   title,
   message,
   action,
+  layout = 'inline',
+  icon = 'inbox',
 }: {
   title: string;
   message: string;
   action?: ReactNode;
+  layout?: StateLayout;
+  icon?: IconName;
 }) {
+  if (layout === 'block') {
+    return (
+      <StateBlock icon={icon} tone="neutral" title={title} message={message} action={action} />
+    );
+  }
   return (
     <div className="state state-empty">
       <div>
@@ -307,9 +475,6 @@ export function NotFoundState({
   );
 }
 
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 type ModalProps = {
   trigger: ReactElement;
   title: string;
@@ -318,6 +483,10 @@ type ModalProps = {
   presentation?: 'dialog' | 'sheet';
 };
 
+/**
+ * Trigger-owned dialog: clones `trigger` to open it. Use `Modal` directly when
+ * the open state belongs to the caller (e.g. after a command succeeds).
+ */
 export function DialogFrame({
   trigger,
   title,
@@ -327,93 +496,6 @@ export function DialogFrame({
 }: ModalProps) {
   const [open, setOpen] = useState(false);
   const triggerContainerRef = useRef<HTMLSpanElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
-  const instanceId = useId().replace(/:/g, '');
-  const titleId = `${slugify(title)}-${instanceId}-title`;
-  const descriptionId = description ? `${slugify(title)}-${instanceId}-description` : undefined;
-  const portalTarget = open && typeof document !== 'undefined' ? document.body : null;
-
-  useEffect(() => {
-    if (!open) return;
-
-    const modalOverlay = document.querySelector<HTMLElement>('[data-modal-overlay="true"]');
-    if (!modalOverlay) return;
-
-    const triggerContainer = triggerContainerRef.current;
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : (triggerContainer?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ?? null);
-    const siblings = Array.from(document.body.children).filter((child) => child !== modalOverlay);
-    const inertBefore = siblings.map((child) => ({
-      child,
-      inert: (child as HTMLElement & { inert?: boolean }).inert ?? false,
-      ariaHidden: child.getAttribute('aria-hidden'),
-    }));
-    const bodyOverflow = document.body.style.overflow;
-
-    siblings.forEach((child) => {
-      (child as HTMLElement & { inert?: boolean }).inert = true;
-      child.setAttribute('aria-hidden', 'true');
-    });
-    document.body.style.overflow = 'hidden';
-
-    const focusDialog = () => {
-      const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      (firstFocusable ?? dialogRef.current)?.focus();
-    };
-    const animationFrame = window.requestAnimationFrame(focusDialog);
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setOpen(false);
-        return;
-      }
-      if (event.key !== 'Tab' || !dialogRef.current) return;
-
-      const focusables = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      );
-      if (focusables.length === 0) {
-        event.preventDefault();
-        dialogRef.current.focus();
-        return;
-      }
-
-      const first = focusables[0]!;
-      const last = focusables[focusables.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = bodyOverflow;
-      inertBefore.forEach(({ child, inert, ariaHidden }) => {
-        (child as HTMLElement & { inert?: boolean }).inert = inert;
-        if (ariaHidden === null) child.removeAttribute('aria-hidden');
-        else child.setAttribute('aria-hidden', ariaHidden);
-      });
-      const restoreTarget =
-        restoreFocusRef.current ?? triggerContainer?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      window.requestAnimationFrame(() => restoreTarget?.focus());
-      restoreFocusRef.current = null;
-    };
-  }, [open]);
-
-  const openDialog = () => {
-    setOpen(true);
-  };
 
   const triggerElement = trigger as ReactElement<{
     onClick?: (event: MouseEvent<HTMLElement>) => void;
@@ -425,51 +507,22 @@ export function DialogFrame({
         {cloneElement(triggerElement, {
           onClick: (event: MouseEvent<HTMLElement>) => {
             triggerElement.props.onClick?.(event);
-            if (!event.defaultPrevented) openDialog();
+            if (!event.defaultPrevented) setOpen(true);
           },
         })}
       </span>
-      {open && portalTarget
-        ? createPortal(
-            <div
-              className={`dialog-backdrop ${presentation === 'sheet' ? 'dialog-backdrop-sheet' : ''}`.trim()}
-              data-modal-overlay="true"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) setOpen(false);
-              }}
-            >
-              <section
-                className={`dialog-panel ${presentation === 'sheet' ? 'bottom-sheet' : ''}`.trim()}
-                ref={dialogRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={titleId}
-                aria-describedby={descriptionId}
-                tabIndex={-1}
-              >
-                {presentation === 'sheet' ? (
-                  <span className="sheet-handle" aria-hidden="true" />
-                ) : null}
-                <div className="dialog-heading">
-                  <div>
-                    <h2 id={titleId}>{title}</h2>
-                    {description ? <p id={descriptionId}>{description}</p> : null}
-                  </div>
-                  <button
-                    className="dialog-close"
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    aria-label={`Close ${title}`}
-                  >
-                    ×
-                  </button>
-                </div>
-                {children}
-              </section>
-            </div>,
-            portalTarget,
-          )
-        : null}
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={title}
+        description={description}
+        presentation={presentation}
+        returnFocus={() =>
+          triggerContainerRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+        }
+      >
+        {children}
+      </Modal>
     </>
   );
 }
@@ -545,10 +598,6 @@ function formatEvidenceState(state: EvidenceState) {
     : state === 'available'
       ? 'Available'
       : state.charAt(0).toUpperCase() + state.slice(1);
-}
-
-function slugify(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
 export function OfflineBanner() {
