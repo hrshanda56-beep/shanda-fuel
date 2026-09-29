@@ -21,12 +21,15 @@ html {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   text-size-adjust: 100%;
-  font-feature-settings: 'cv11', 'ss01';
+  font-variant-numeric: tabular-nums;
 }
 
 body {
   margin: 0;
-  background: var(--bg-canvas);
+  min-height: 100vh;
+  background-color: var(--bg-canvas);
+  background-image: var(--bg-app);
+  background-attachment: fixed;
   color: var(--text-primary);
   font-size: var(--font-size-base);
 }
@@ -62,13 +65,14 @@ h4 {
 
 h1 {
   margin-bottom: var(--space-2);
-  font-size: clamp(var(--font-size-2xl), 1.2rem + 1vw, var(--font-size-3xl));
-  line-height: var(--line-height-tight);
+  font-size: clamp(var(--font-size-3xl), 1.1rem + 2vw, var(--font-size-5xl));
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.1;
 }
 
 h2 {
   margin-bottom: var(--space-1);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-xl);
   line-height: var(--line-height-snug);
   letter-spacing: var(--letter-spacing-snug);
 }
@@ -228,12 +232,11 @@ button:disabled {
 .eyebrow {
   display: block;
   margin: 0 0 var(--space-1-5);
-  color: var(--text-tertiary);
-  font-size: var(--font-size-2xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--letter-spacing-caps);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-normal);
   line-height: var(--line-height-snug);
-  text-transform: uppercase;
 }
 
 .lede {

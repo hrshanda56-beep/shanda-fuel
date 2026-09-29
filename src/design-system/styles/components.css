@@ -121,14 +121,24 @@
   border-top: var(--border-width) solid var(--border-subtle);
 }
 
-/* Surfaces -------------------------------------------------------------- */
+/* Surfaces --------------------------------------------------------------
+ * ADR-015: solid surfaces on phones and tablets; translucent glass from the
+ * desktop breakpoint up, unless the user asks for reduced transparency.
+ */
 
 .card {
   min-width: 0;
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border-glass);
+  border-radius: var(--radius-2xl);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-glass);
+}
+
+@media (min-width: 64rem) and (prefers-reduced-transparency: no-preference) {
+  .card:not(.card-subtle) {
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--glass-blur)) saturate(120%);
+  }
 }
 
 .card-flat {
@@ -155,7 +165,7 @@
 .panel,
 .form-panel,
 .card-body {
-  padding: var(--space-5);
+  padding: var(--space-6);
 }
 
 .card-header {
@@ -190,7 +200,7 @@
   display: grid;
   align-content: start;
   gap: var(--space-1);
-  padding: var(--space-5);
+  padding: var(--space-6);
 }
 
 .metric-label {
@@ -206,7 +216,7 @@
   display: block;
   margin: var(--space-1) 0 0;
   color: var(--text-primary);
-  font-size: var(--font-size-3xl);
+  font-size: clamp(var(--font-size-2xl), 1.2rem + 1vw, var(--font-size-4xl));
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--letter-spacing-tight);
@@ -235,7 +245,7 @@
   gap: var(--space-2);
   padding: 0 var(--space-4);
   border: var(--border-width) solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-tight);
@@ -284,30 +294,30 @@
   width: 100%;
 }
 
+/* ADR-015: the primary action is a solid neutral pill (white on dark,
+ * ink on light); secondary is an outline pill. Green stays for accents. */
 .button-primary {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  box-shadow: var(--shadow-xs);
+  background: var(--action-bg);
+  color: var(--action-text);
 }
 
 .button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--action-hover);
 }
 
 .button-primary:active:not(:disabled) {
-  background: var(--accent-pressed);
+  background: var(--action-hover);
 }
 
 .button-secondary {
-  border-color: var(--border-control);
-  background: var(--bg-surface);
+  border-color: var(--border-outline);
+  background: transparent;
   color: var(--text-primary);
-  box-shadow: var(--shadow-xs);
 }
 
 .button-secondary:hover:not(:disabled) {
-  border-color: var(--border-control-hover);
-  background: var(--bg-subtle);
+  border-color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .button-quiet {
@@ -1889,9 +1899,11 @@ input[type='radio']:focus-visible {
 /* Charts -----------------------------------------------------------------
  * Frame and legend only; rendering is chart-specific. Rules: a chart must
  * answer one question stated in its title; use --chart-* tokens in order;
- * max 5 series; hairline grid (--chart-grid), no chart borders, no 3D, no
- * gradients; label values directly where possible; always provide a table
- * or text equivalent for screen readers.
+ * max 5 series; hairline grid (--chart-grid), no chart borders, no 3D; the
+ * only gradient is the soft vertical fade under areas and bars (ADR-015);
+ * label values directly where possible; always provide a table or text
+ * equivalent for screen readers. Keep plots short: charts support a number,
+ * they do not dominate the card.
  */
 
 .chart {
@@ -1943,6 +1955,127 @@ input[type='radio']:focus-visible {
   color: var(--chart-label);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Chart primitives (charts.tsx) */
+
+.chart-area {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: stretch;
+  margin: 0;
+}
+
+.chart-y-axis {
+  display: flex;
+  height: 6.5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  margin-top: -0.45rem;
+  color: var(--chart-label);
+  font-size: var(--font-size-xs);
+  text-align: right;
+}
+
+.chart-plot {
+  position: relative;
+  min-width: 0;
+  padding-bottom: 1.5rem;
+}
+
+.chart-plot svg {
+  display: block;
+  width: 100%;
+  height: 6.5rem;
+  overflow: visible;
+}
+
+.chart-gridline {
+  stroke: var(--chart-grid);
+  stroke-dasharray: 3 4;
+  stroke-width: 1;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--chart-1);
+  stroke-width: 2;
+}
+
+.chart-x-axis {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1.25rem;
+  color: var(--chart-label);
+  font-size: var(--font-size-xs);
+}
+
+.chart-x-axis span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.chart-x-axis span:first-child {
+  transform: none;
+}
+
+.chart-x-axis span:last-child {
+  transform: translateX(-100%);
+}
+
+.chart-bars {
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.chart-bar-row,
+.chart-bar-labels {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+}
+
+.chart-bar-row {
+  height: 5rem;
+  align-items: end;
+  border-bottom: var(--border-width) solid var(--chart-axis);
+}
+
+.chart-bar-slot {
+  display: flex;
+  height: 100%;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.chart-bar {
+  width: 0.75rem;
+  border-radius: var(--radius-full) var(--radius-full) 0 0;
+  background: linear-gradient(
+    to bottom,
+    var(--chart-1),
+    color-mix(in srgb, var(--chart-1) 10%, transparent)
+  );
+}
+
+.chart-bar-labels {
+  color: var(--chart-label);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+.chart-donut {
+  margin: 0;
+}
+
+.chart-donut svg {
+  display: block;
+  width: 6.5rem;
+  height: 6.5rem;
 }
 
 /* Navigation helpers ----------------------------------------------------- */

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('application foundation renders and exposes liveness health', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
   await expect(page.getByRole('heading', { name: 'Good morning, Demo user' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   await expect(page.getByText('Offline draft mode')).toBeVisible();
@@ -13,7 +13,7 @@ test('application foundation renders and exposes liveness health', async ({ page
 
 test('foundation exposes mobile navigation and labelled controls', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/foundation');
 
   await expect(page.getByRole('navigation', { name: 'Mobile navigation' })).toBeVisible();
   const mobileContext = page.getByRole('region', { name: 'Active mobile work context' });
@@ -28,14 +28,14 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(page.getByLabel('Quantity')).not.toHaveAttribute('required');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
   await expect(
-    page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('link'),
+    page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('listitem'),
   ).toHaveText(['Home', 'Tasks', 'Work', 'More']);
 });
 
 test('shared button defaults and modal triggers do not submit forms accidentally', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
 
   await expect(page.getByRole('button', { name: 'Open accessible dialog' })).toHaveAttribute(
     'type',
@@ -48,7 +48,7 @@ test('shared button defaults and modal triggers do not submit forms accidentally
 });
 
 test('accessible dialog traps focus, closes with Escape, and restores focus', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
   const trigger = page.getByRole('button', { name: 'Open accessible dialog' });
   await trigger.focus();
   await page.keyboard.press('Enter');
@@ -71,7 +71,7 @@ test('accessible dialog traps focus, closes with Escape, and restores focus', as
 
 test('bottom sheet exposes modal semantics and keyboard close', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/foundation');
   await page.getByRole('button', { name: 'Open mobile sheet' }).click();
 
   const sheet = page.getByRole('dialog', { name: 'Quick context' });

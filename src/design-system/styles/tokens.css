@@ -50,9 +50,10 @@
   --palette-brand-900: #06382e;
 
   /* 3. Typography -------------------------------------------------------- */
+  /* DM Sans is self-hosted by next/font and exposed as --font-dm-sans (ADR-015). */
   --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
+    var(--font-dm-sans, 'DM Sans'), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono:
     'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
@@ -66,7 +67,8 @@
   --font-size-xl: 1.25rem; /* 20px — section headings */
   --font-size-2xl: 1.5rem; /* 24px — page title (compact) */
   --font-size-3xl: 1.875rem; /* 30px — page title (roomy), key metrics */
-  --font-size-4xl: 2.25rem; /* 36px — hero metric only */
+  --font-size-4xl: 2.25rem; /* 36px — hero metric, section-scale KPI values */
+  --font-size-5xl: 2.75rem; /* 44px — desktop page title (ADR-015) */
 
   --font-weight-regular: 400;
   --font-weight-medium: 500;
@@ -108,6 +110,8 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+  --radius-2xl: 1.5rem; /* 24px — cards (ADR-015) */
+  --radius-3xl: 2rem; /* 32px — the main content sheet */
   --radius-full: 999px;
 
   /* Borders ---------------------------------------------------------------- */
@@ -135,9 +139,10 @@
   --section-gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
   --stack-gap: var(--space-4);
   --grid-gap: clamp(0.75rem, 0.5rem + 0.75vw, 1.25rem);
-  --sidebar-width: 16rem;
-  --sidebar-width-collapsed: 4.5rem;
-  --topbar-height: 3.75rem;
+  --sidebar-width: 16.75rem;
+  --sidebar-width-collapsed: 6rem;
+  --topbar-height: 5rem;
+  --glass-blur: 24px;
 
   /* Motion ----------------------------------------------------------------- */
   --duration-instant: 80ms;
@@ -166,33 +171,45 @@
   /* 2. Semantic colour — light theme (default) ----------------------------- */
   color-scheme: light;
 
-  --bg-canvas: var(--palette-neutral-50);
+  --bg-canvas: #e6ecea;
+  /* Page background. Decorative image; --bg-canvas is the solid equivalent used for contrast. */
+  --bg-app:
+    radial-gradient(1100px 800px at 18% 105%, rgb(13 107 88 / 8%), transparent 65%),
+    radial-gradient(900px 600px at 95% -10%, rgb(160 180 176 / 30%), transparent 60%),
+    linear-gradient(170deg, #dfe6e4 0%, #e5ebe9 50%, #eaefed 100%);
+  --bg-sheet: rgb(255 255 255 / 38%);
   --bg-surface: var(--palette-white);
+  /* Desktop glass card fill; composites to ≈ --bg-surface over --bg-sheet. */
+  --bg-glass: rgb(255 255 255 / 78%);
   --bg-surface-raised: var(--palette-white);
-  --bg-subtle: var(--palette-neutral-25);
-  --bg-muted: var(--palette-neutral-100);
-  --bg-hover: rgb(26 26 25 / 4.5%);
-  --bg-pressed: rgb(26 26 25 / 8%);
+  --bg-subtle: #f3f6f5;
+  --bg-muted: #edf1ef;
+  --bg-hover: rgb(20 32 30 / 5%);
+  --bg-pressed: rgb(20 32 30 / 9%);
   --bg-selected: var(--palette-brand-50);
-  --bg-inverse: var(--palette-neutral-900);
-  --bg-overlay: rgb(19 19 18 / 40%);
-  --bg-skeleton: var(--palette-neutral-100);
-  --bg-skeleton-highlight: var(--palette-neutral-50);
+  --bg-nav-active: rgb(255 255 255 / 70%);
+  --bg-inverse: #14201e;
+  --bg-overlay: rgb(20 32 30 / 30%);
+  --bg-skeleton: #e3e9e7;
+  --bg-skeleton-highlight: #eef2f1;
 
-  --text-primary: var(--palette-neutral-900);
-  --text-secondary: var(--palette-neutral-600);
-  --text-tertiary: #6b6b65;
-  --text-disabled: var(--palette-neutral-400);
-  --text-placeholder: var(--palette-neutral-500);
+  --text-primary: #14201e;
+  --text-secondary: #4b5b58;
+  --text-tertiary: #52625e;
+  --text-disabled: #8d9a96;
+  --text-placeholder: #5a6a66;
   --text-inverse: var(--palette-white);
   --text-on-accent: var(--palette-white);
   --text-link: var(--palette-brand-600);
 
-  --border-subtle: var(--palette-neutral-150);
-  --border-default: var(--palette-neutral-200);
-  --border-strong: var(--palette-neutral-300);
-  --border-control: #8f8f89;
-  --border-control-hover: var(--palette-neutral-500);
+  --border-subtle: rgb(20 32 30 / 9%);
+  --border-default: rgb(20 32 30 / 14%);
+  --border-strong: rgb(20 32 30 / 24%);
+  --border-glass: rgb(255 255 255 / 60%);
+  /* Outline pill buttons and the search field. */
+  --border-outline: rgb(20 32 30 / 45%);
+  --border-control: #7d8a86;
+  --border-control-hover: #5e6c68;
 
   --accent: var(--palette-brand-600);
   --accent-hover: var(--palette-brand-700);
@@ -202,22 +219,27 @@
   --accent-text: var(--palette-brand-700);
   --accent-border: var(--palette-brand-200);
 
+  /* Neutral action fill: selected pills and the primary call to action. */
+  --action-bg: #14201e;
+  --action-hover: #2a3835;
+  --action-text: var(--palette-white);
+
   --focus-ring: var(--palette-brand-600);
   --focus-ring-halo: rgb(13 107 88 / 18%);
 
   /* Semantic tones: -fg (icons/solid), -text (readable text on -bg), -bg, -border */
   --tone-positive-fg: #1b7a4f;
-  --tone-positive-text: #16603f;
+  --tone-positive-text: #0b7250;
   --tone-positive-bg: #eef7f1;
   --tone-positive-border: #c6e3d2;
 
   --tone-warning-fg: #b07410;
-  --tone-warning-text: #7a4f06;
+  --tone-warning-text: #8a5300;
   --tone-warning-bg: #fdf6e7;
   --tone-warning-border: #f0dcae;
 
   --tone-critical-fg: #c0362c;
-  --tone-critical-text: #9a2a22;
+  --tone-critical-text: #b42318;
   --tone-critical-bg: #fdf1ef;
   --tone-critical-border: #f3cdc8;
 
@@ -237,7 +259,8 @@
   --tone-offline-border: #ddd5f1;
 
   /* Elevation: borders carry structure; shadows only hint at lift. */
-  --shadow-xs: 0 1px 2px rgb(19 19 18 / 4%);
+  --shadow-xs: 0 1px 2px rgb(20 32 30 / 4%);
+  --shadow-glass: 0 1px 2px rgb(20 32 30 / 4%), 0 8px 24px rgb(20 32 30 / 5%);
   --shadow-sm: 0 1px 2px rgb(19 19 18 / 4%), 0 1px 3px rgb(19 19 18 / 5%);
   --shadow-md: 0 2px 4px rgb(19 19 18 / 4%), 0 6px 16px rgb(19 19 18 / 6%);
   --shadow-lg: 0 4px 8px rgb(19 19 18 / 4%), 0 16px 40px rgb(19 19 18 / 10%);
@@ -246,13 +269,13 @@
   /* Charts: accent-led, then quiet neutrals and muted hues. Max 5 series. */
   --chart-1: var(--palette-brand-600);
   --chart-2: #6e8fb8;
-  --chart-3: #c49a4a;
+  --chart-3: #c57a17; /* petrol */
   --chart-4: #9a7fb0;
   --chart-5: var(--palette-neutral-400);
   --chart-positive: var(--tone-positive-fg);
   --chart-negative: var(--tone-critical-fg);
-  --chart-grid: var(--palette-neutral-150);
-  --chart-axis: var(--palette-neutral-300);
+  --chart-grid: rgb(20 32 30 / 12%);
+  --chart-axis: rgb(20 32 30 / 40%);
   --chart-label: var(--text-tertiary);
 
   /* 4. Legacy aliases (pre-foundation). Do not use in new code. ------------- */
@@ -302,174 +325,202 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --bg-canvas: var(--palette-neutral-950);
-    --bg-surface: var(--palette-neutral-900);
-    --bg-surface-raised: var(--palette-neutral-850);
-    --bg-subtle: #171716;
-    --bg-muted: var(--palette-neutral-850);
-    --bg-hover: rgb(255 255 255 / 5%);
-    --bg-pressed: rgb(255 255 255 / 9%);
-    --bg-selected: rgb(95 195 163 / 12%);
-    --bg-inverse: var(--palette-neutral-50);
-    --bg-overlay: rgb(0 0 0 / 60%);
-    --bg-skeleton: var(--palette-neutral-850);
-    --bg-skeleton-highlight: var(--palette-neutral-800);
+    --bg-canvas: #303938;
+    --bg-app:
+      radial-gradient(1100px 800px at 18% 105%, rgb(125 152 148 / 10%), transparent 65%),
+      radial-gradient(900px 600px at 95% -10%, rgb(95 120 118 / 14%), transparent 60%),
+      linear-gradient(170deg, #2c3534 0%, #303938 50%, #343e3d 100%);
+    --bg-sheet: rgb(255 255 255 / 3%);
+    --bg-surface: #414a49;
+    --bg-glass: rgb(255 255 255 / 6.5%);
+    --bg-surface-raised: #4a5352;
+    --bg-subtle: #3a4342;
+    --bg-muted: #465050;
+    --bg-hover: rgb(255 255 255 / 6%);
+    --bg-pressed: rgb(255 255 255 / 10%);
+    --bg-selected: rgb(63 207 159 / 12%);
+    --bg-nav-active: rgb(255 255 255 / 8%);
+    --bg-inverse: var(--palette-white);
+    --bg-overlay: rgb(20 26 25 / 55%);
+    --bg-skeleton: #465050;
+    --bg-skeleton-highlight: #505a59;
 
-    --text-primary: #ededeb;
-    --text-secondary: #a8a8a2;
-    --text-tertiary: #8b8b85;
-    --text-disabled: #62625d;
-    --text-placeholder: #8e8e88;
-    --text-inverse: var(--palette-neutral-900);
+    --text-primary: #ffffff;
+    --text-secondary: #cdd6d3;
+    --text-tertiary: #c2ccc8;
+    --text-disabled: #7f8a87;
+    --text-placeholder: #bcc6c2;
+    --text-inverse: #1d2625;
     --text-on-accent: #07261f;
-    --text-link: #6fcfae;
+    --text-link: #6fdcb5;
 
-    --border-subtle: #262624;
-    --border-default: #2f2f2c;
-    --border-strong: #42423e;
-    --border-control: #6c6c66;
-    --border-control-hover: #85857f;
+    --border-subtle: rgb(255 255 255 / 10%);
+    --border-default: rgb(255 255 255 / 16%);
+    --border-strong: rgb(255 255 255 / 26%);
+    --border-glass: rgb(255 255 255 / 8%);
+    --border-outline: rgb(255 255 255 / 60%);
+    --border-control: #97a29f;
+    --border-control-hover: #b2bcb9;
 
-    --accent: #5fc3a3;
-    --accent-hover: #78d1b4;
-    --accent-pressed: #93dcc4;
-    --accent-subtle: rgb(95 195 163 / 10%);
-    --accent-muted: rgb(95 195 163 / 18%);
-    --accent-text: #7fd6b9;
-    --accent-border: rgb(95 195 163 / 32%);
+    --accent: #3fcf9f;
+    --accent-hover: #5fd9ae;
+    --accent-pressed: #7fe2c0;
+    --accent-subtle: rgb(63 207 159 / 8%);
+    --accent-muted: rgb(63 207 159 / 18%);
+    --accent-text: #86e6c3;
+    --accent-border: rgb(63 207 159 / 32%);
 
-    --focus-ring: #7fd6b9;
-    --focus-ring-halo: rgb(127 214 185 / 22%);
+    --action-bg: var(--palette-white);
+    --action-hover: #e4ebe9;
+    --action-text: #1d2625;
 
-    --tone-positive-fg: #5ccf94;
-    --tone-positive-text: #8fe0b5;
-    --tone-positive-bg: rgb(92 207 148 / 10%);
-    --tone-positive-border: rgb(92 207 148 / 26%);
+    --focus-ring: #86e6c3;
+    --focus-ring-halo: rgb(134 230 195 / 22%);
 
-    --tone-warning-fg: #e7b454;
-    --tone-warning-text: #f0cb82;
-    --tone-warning-bg: rgb(231 180 84 / 10%);
-    --tone-warning-border: rgb(231 180 84 / 28%);
+    --tone-positive-fg: #5fd3a6;
+    --tone-positive-text: #92ebcb;
+    --tone-positive-bg: rgb(95 211 166 / 7%);
+    --tone-positive-border: rgb(95 211 166 / 26%);
 
-    --tone-critical-fg: #f07f73;
-    --tone-critical-text: #f6aaa1;
-    --tone-critical-bg: rgb(240 127 115 / 10%);
-    --tone-critical-border: rgb(240 127 115 / 28%);
+    --tone-warning-fg: #e9b665;
+    --tone-warning-text: #f9d693;
+    --tone-warning-bg: rgb(233 182 101 / 7%);
+    --tone-warning-border: rgb(233 182 101 / 28%);
 
-    --tone-info-fg: #7ea8e8;
-    --tone-info-text: #a9c5f0;
-    --tone-info-bg: rgb(126 168 232 / 10%);
-    --tone-info-border: rgb(126 168 232 / 28%);
+    --tone-critical-fg: #ff9a8f;
+    --tone-critical-text: #ffc7c0;
+    --tone-critical-bg: rgb(255 154 143 / 7%);
+    --tone-critical-border: rgb(255 154 143 / 28%);
 
-    --tone-neutral-fg: #8b8b85;
-    --tone-neutral-text: #c4c4bf;
+    --tone-info-fg: #8fb4ee;
+    --tone-info-text: #c0d5f7;
+    --tone-info-bg: rgb(143 180 238 / 7%);
+    --tone-info-border: rgb(143 180 238 / 28%);
+
+    --tone-neutral-fg: #aab5b1;
+    --tone-neutral-text: #d7dfdc;
     --tone-neutral-bg: rgb(255 255 255 / 6%);
-    --tone-neutral-border: rgb(255 255 255 / 12%);
+    --tone-neutral-border: rgb(255 255 255 / 14%);
 
-    --tone-offline-fg: #b09cf0;
-    --tone-offline-text: #cdbff7;
-    --tone-offline-bg: rgb(176 156 240 / 10%);
-    --tone-offline-border: rgb(176 156 240 / 28%);
+    --tone-offline-fg: #b8a6f2;
+    --tone-offline-text: #dcd2fa;
+    --tone-offline-bg: rgb(184 166 242 / 7%);
+    --tone-offline-border: rgb(184 166 242 / 28%);
 
-    --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 1px 3px rgb(0 0 0 / 25%);
-    --shadow-md: 0 2px 4px rgb(0 0 0 / 30%), 0 8px 20px rgb(0 0 0 / 35%);
-    --shadow-lg: 0 4px 8px rgb(0 0 0 / 35%), 0 20px 48px rgb(0 0 0 / 50%);
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 18%);
+    --shadow-glass: 0 1px 2px rgb(0 0 0 / 12%), 0 10px 30px rgb(0 0 0 / 14%);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 22%), 0 1px 3px rgb(0 0 0 / 18%);
+    --shadow-md: 0 2px 4px rgb(0 0 0 / 22%), 0 8px 20px rgb(0 0 0 / 26%);
+    --shadow-lg: 0 4px 8px rgb(0 0 0 / 26%), 0 20px 48px rgb(0 0 0 / 38%);
     --shadow-inset-control: none;
 
-    --chart-1: #5fc3a3;
-    --chart-2: #86a6d0;
-    --chart-3: #d6ae62;
-    --chart-4: #b39ac8;
-    --chart-5: #6f6f6a;
-    --chart-grid: #262624;
-    --chart-axis: #42423e;
+    --chart-1: #3fcf9f;
+    --chart-2: #8fb4ee;
+    --chart-3: #e9b665;
+    --chart-4: #c3adf0;
+    --chart-5: #97a29f;
+    --chart-grid: rgb(255 255 255 / 14%);
+    --chart-axis: rgb(255 255 255 / 45%);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --bg-canvas: var(--palette-neutral-950);
-  --bg-surface: var(--palette-neutral-900);
-  --bg-surface-raised: var(--palette-neutral-850);
-  --bg-subtle: #171716;
-  --bg-muted: var(--palette-neutral-850);
-  --bg-hover: rgb(255 255 255 / 5%);
-  --bg-pressed: rgb(255 255 255 / 9%);
-  --bg-selected: rgb(95 195 163 / 12%);
-  --bg-inverse: var(--palette-neutral-50);
-  --bg-overlay: rgb(0 0 0 / 60%);
-  --bg-skeleton: var(--palette-neutral-850);
-  --bg-skeleton-highlight: var(--palette-neutral-800);
+  --bg-canvas: #303938;
+  --bg-app:
+    radial-gradient(1100px 800px at 18% 105%, rgb(125 152 148 / 10%), transparent 65%),
+    radial-gradient(900px 600px at 95% -10%, rgb(95 120 118 / 14%), transparent 60%),
+    linear-gradient(170deg, #2c3534 0%, #303938 50%, #343e3d 100%);
+  --bg-sheet: rgb(255 255 255 / 3%);
+  --bg-surface: #414a49;
+  --bg-glass: rgb(255 255 255 / 6.5%);
+  --bg-surface-raised: #4a5352;
+  --bg-subtle: #3a4342;
+  --bg-muted: #465050;
+  --bg-hover: rgb(255 255 255 / 6%);
+  --bg-pressed: rgb(255 255 255 / 10%);
+  --bg-selected: rgb(63 207 159 / 12%);
+  --bg-nav-active: rgb(255 255 255 / 8%);
+  --bg-inverse: var(--palette-white);
+  --bg-overlay: rgb(20 26 25 / 55%);
+  --bg-skeleton: #465050;
+  --bg-skeleton-highlight: #505a59;
 
-  --text-primary: #ededeb;
-  --text-secondary: #a8a8a2;
-  --text-tertiary: #8b8b85;
-  --text-disabled: #62625d;
-  --text-placeholder: #8e8e88;
-  --text-inverse: var(--palette-neutral-900);
+  --text-primary: #ffffff;
+  --text-secondary: #cdd6d3;
+  --text-tertiary: #c2ccc8;
+  --text-disabled: #7f8a87;
+  --text-placeholder: #bcc6c2;
+  --text-inverse: #1d2625;
   --text-on-accent: #07261f;
-  --text-link: #6fcfae;
+  --text-link: #6fdcb5;
 
-  --border-subtle: #262624;
-  --border-default: #2f2f2c;
-  --border-strong: #42423e;
-  --border-control: #6c6c66;
-  --border-control-hover: #85857f;
+  --border-subtle: rgb(255 255 255 / 10%);
+  --border-default: rgb(255 255 255 / 16%);
+  --border-strong: rgb(255 255 255 / 26%);
+  --border-glass: rgb(255 255 255 / 8%);
+  --border-outline: rgb(255 255 255 / 60%);
+  --border-control: #97a29f;
+  --border-control-hover: #b2bcb9;
 
-  --accent: #5fc3a3;
-  --accent-hover: #78d1b4;
-  --accent-pressed: #93dcc4;
-  --accent-subtle: rgb(95 195 163 / 10%);
-  --accent-muted: rgb(95 195 163 / 18%);
-  --accent-text: #7fd6b9;
-  --accent-border: rgb(95 195 163 / 32%);
+  --accent: #3fcf9f;
+  --accent-hover: #5fd9ae;
+  --accent-pressed: #7fe2c0;
+  --accent-subtle: rgb(63 207 159 / 8%);
+  --accent-muted: rgb(63 207 159 / 18%);
+  --accent-text: #86e6c3;
+  --accent-border: rgb(63 207 159 / 32%);
 
-  --focus-ring: #7fd6b9;
-  --focus-ring-halo: rgb(127 214 185 / 22%);
+  --action-bg: var(--palette-white);
+  --action-hover: #e4ebe9;
+  --action-text: #1d2625;
 
-  --tone-positive-fg: #5ccf94;
-  --tone-positive-text: #8fe0b5;
-  --tone-positive-bg: rgb(92 207 148 / 10%);
-  --tone-positive-border: rgb(92 207 148 / 26%);
+  --focus-ring: #86e6c3;
+  --focus-ring-halo: rgb(134 230 195 / 22%);
 
-  --tone-warning-fg: #e7b454;
-  --tone-warning-text: #f0cb82;
-  --tone-warning-bg: rgb(231 180 84 / 10%);
-  --tone-warning-border: rgb(231 180 84 / 28%);
+  --tone-positive-fg: #5fd3a6;
+  --tone-positive-text: #92ebcb;
+  --tone-positive-bg: rgb(95 211 166 / 7%);
+  --tone-positive-border: rgb(95 211 166 / 26%);
 
-  --tone-critical-fg: #f07f73;
-  --tone-critical-text: #f6aaa1;
-  --tone-critical-bg: rgb(240 127 115 / 10%);
-  --tone-critical-border: rgb(240 127 115 / 28%);
+  --tone-warning-fg: #e9b665;
+  --tone-warning-text: #f9d693;
+  --tone-warning-bg: rgb(233 182 101 / 7%);
+  --tone-warning-border: rgb(233 182 101 / 28%);
 
-  --tone-info-fg: #7ea8e8;
-  --tone-info-text: #a9c5f0;
-  --tone-info-bg: rgb(126 168 232 / 10%);
-  --tone-info-border: rgb(126 168 232 / 28%);
+  --tone-critical-fg: #ff9a8f;
+  --tone-critical-text: #ffc7c0;
+  --tone-critical-bg: rgb(255 154 143 / 7%);
+  --tone-critical-border: rgb(255 154 143 / 28%);
 
-  --tone-neutral-fg: #8b8b85;
-  --tone-neutral-text: #c4c4bf;
+  --tone-info-fg: #8fb4ee;
+  --tone-info-text: #c0d5f7;
+  --tone-info-bg: rgb(143 180 238 / 7%);
+  --tone-info-border: rgb(143 180 238 / 28%);
+
+  --tone-neutral-fg: #aab5b1;
+  --tone-neutral-text: #d7dfdc;
   --tone-neutral-bg: rgb(255 255 255 / 6%);
-  --tone-neutral-border: rgb(255 255 255 / 12%);
+  --tone-neutral-border: rgb(255 255 255 / 14%);
 
-  --tone-offline-fg: #b09cf0;
-  --tone-offline-text: #cdbff7;
-  --tone-offline-bg: rgb(176 156 240 / 10%);
-  --tone-offline-border: rgb(176 156 240 / 28%);
+  --tone-offline-fg: #b8a6f2;
+  --tone-offline-text: #dcd2fa;
+  --tone-offline-bg: rgb(184 166 242 / 7%);
+  --tone-offline-border: rgb(184 166 242 / 28%);
 
-  --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 1px 3px rgb(0 0 0 / 25%);
-  --shadow-md: 0 2px 4px rgb(0 0 0 / 30%), 0 8px 20px rgb(0 0 0 / 35%);
-  --shadow-lg: 0 4px 8px rgb(0 0 0 / 35%), 0 20px 48px rgb(0 0 0 / 50%);
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 18%);
+  --shadow-glass: 0 1px 2px rgb(0 0 0 / 12%), 0 10px 30px rgb(0 0 0 / 14%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 22%), 0 1px 3px rgb(0 0 0 / 18%);
+  --shadow-md: 0 2px 4px rgb(0 0 0 / 22%), 0 8px 20px rgb(0 0 0 / 26%);
+  --shadow-lg: 0 4px 8px rgb(0 0 0 / 26%), 0 20px 48px rgb(0 0 0 / 38%);
   --shadow-inset-control: none;
 
-  --chart-1: #5fc3a3;
-  --chart-2: #86a6d0;
-  --chart-3: #d6ae62;
-  --chart-4: #b39ac8;
-  --chart-5: #6f6f6a;
-  --chart-grid: #262624;
-  --chart-axis: #42423e;
+  --chart-1: #3fcf9f;
+  --chart-2: #8fb4ee;
+  --chart-3: #e9b665;
+  --chart-4: #c3adf0;
+  --chart-5: #97a29f;
+  --chart-grid: rgb(255 255 255 / 14%);
+  --chart-axis: rgb(255 255 255 / 45%);
 }

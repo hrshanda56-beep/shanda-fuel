@@ -13,7 +13,7 @@ import { expect, test } from '@playwright/test';
 test('forecourt workspace renders station/day/shift and reconciliation status', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
 
   const workspace = page.getByRole('region', { name: 'Keep today’s station moving' });
   await expect(workspace).toBeVisible();
@@ -34,7 +34,7 @@ test('forecourt workspace renders station/day/shift and reconciliation status', 
 test('forecourt workspace primary actions do not crash the page and stay disabled offline', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
 
   const workspace = page.getByRole('region', { name: 'Keep today’s station moving' });
   const closeMeters = workspace.getByRole('button', { name: 'Close meters' });
@@ -49,7 +49,7 @@ test('forecourt workspace primary actions do not crash the page and stay disable
 });
 
 test('forecourt workspace has no detectable accessibility violations', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
   const results = await new AxeBuilder({ page }).include('#forecourt').analyze();
   expect(results.violations).toEqual([]);
 });
