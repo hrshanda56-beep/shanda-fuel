@@ -356,7 +356,7 @@ not be replaced with an invented PR number, SHA, validation result, or owner.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Security P0 | Phase 1 | **VERIFIED** | Codex — Agent 1 (security owner) | `fix/security-p0-dev-csp` | None recorded | #45 | `843c3fa60977d591035157bd740c8a11a564b448` |
 | Design System Foundation | Phase 1 | **VERIFIED** | Claude — Agent 2 (design-system owner) | `ui/design-system-foundation` | None recorded | #47 | `f1c7b80` |
-| CI Security Hardening | Phase 1 | **IN PROGRESS** | Codex | `codex/ci-security-hardening-20260929` | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
+| CI Security Hardening | Phase 1 | **VERIFIED** | Codex | `codex/ci-security-hardening-20260929` | Security P0 is verified; no dependency currently blocks starting this workstream | #49 | `12106be` |
 | Observability P0 | Phase 1 | **NOT STARTED** | Codex — Agent 3 after Security P0 merge | TBD | Security P0 is verified; no dependency currently blocks starting this workstream | TBD | TBD |
 | Product Shell | Phase 2 | **NOT STARTED** | Claude — Agent 2 after foundation stabilizes | TBD | Design System Foundation is verified | TBD | TBD |
 | Golden Path UX | Phase 3 | **BLOCKED** | Claude — Agent 4 after shell stabilizes | TBD | Design System Foundation; Product Shell | TBD | TBD |
@@ -423,17 +423,17 @@ Locked decisions for this workstream:
 | --- | --- |
 | Workstream | CI Security Hardening |
 | Phase | Phase 1 — Finish launch-blocking foundation |
-| Status | **IN PROGRESS** |
+| Status | **VERIFIED** |
 | Owner / Agent | Codex |
 | Branch | `codex/ci-security-hardening-20260929` |
 | Dependencies | Security P0 is verified, so no dependency currently blocks starting this workstream. Existing agent work, if any, must be reviewed and transplanted onto current `main` rather than blindly rebased. |
 | Scope | Dependency scanning; secret scanning; SAST/CodeQL; pinned GitHub Actions where practical; CI failure artifacts; production-server health/readiness smoke; and meaningful runtime-role security validation. |
 | Definition of Done | CI security checks run against the merged Security P0/runtime-role model, fail meaningfully on applicable findings, produce useful failure artifacts, and do not make misleading least-privilege claims merely because a privileged PostgreSQL connection uses `SET ROLE`. |
 | Required Validation | Security P0 merge; CI workflow validation; dependency, secret, SAST/CodeQL, health/readiness, and runtime-role checks; final diff/staged-diff review; PR/CI; merge; and required post-merge verification. |
-| PR | TBD |
-| Merge SHA | TBD |
-| Verification / Evidence | Implementation/review is actively underway from canonical `main` at `5430c07`. The fresh `codex/ci-security-hardening-20260929` worktree migrates with the privileged direct connection, configures a disposable `app_runtime` login, then builds and starts the application with `DATABASE_DIRECT_URL` removed and `DATABASE_URL` set to `app_runtime`. Readiness exercises PostgreSQL through `DATABASE_URL`; health does not touch PostgreSQL. GitHub CLI review reports this private repository has `security_and_analysis: null`; Code Scanning returns 403 because it is not enabled, and the dependency-graph SBOM endpoint returns 404. Dependency review is therefore not enabled as a CI job; `pnpm audit --audit-level=high` remains the dependency gate with explicit Bash `pipefail` preservation. Semgrep Community Edition is the active repository-owned SAST gate, pinned to image digest `sha256:cef085245254d15c66d96be413c730f0b458823a1d0c39afbc12f705b664ce8f` for release `1.102.0`, with ERROR-severity rules failing CI; CodeQL remains configured for `javascript-typescript` and `actions` but gated until `CODEQL_ENABLED=true` is explicitly provisioned. The runtime proof now executes `SELECT count(*) FROM app.tenants` as `app_runtime` and succeeds with zero rows. Non-blocking tooling follow-ups remain: local `.vercel/project.json` formatting and shared-database Playwright parallel interference; CI E2E is serial with zero retries. |
-| Remaining Follow-up | Complete final diff and staged-diff review, exercise the CI-only runtime-role and secret-scanning gates in PR CI, enable CodeQL/code scanning when repository support is provisioned, then carry the work through PR, merge, and post-merge verification; record honest runtime-role findings. |
+| PR | #49 |
+| Merge SHA | `12106be` |
+| Verification / Evidence | Implementation commits `4851d5c` and `4336328` were merged by PR #49 as `12106be`. Successful PR CI run evidence: quality, dependency audit, Secret scan, Semgrep SAST, and Runtime-role proof passed; CodeQL was skipped because repository code-scanning support is not enabled. The Runtime-role proof exercised the migrated application with `app_runtime` in CI, including application build/start, readiness, health, and proof artifact upload. Dependency audit remains the current dependency gate; Semgrep CE is the active SAST gate. |
+| Remaining Follow-up | Provision GitHub Code Scanning/GHAS support and enable `CODEQL_ENABLED=true` before claiming CodeQL coverage; keep dependency audit as the current dependency gate until then. |
 
 #### 4. Observability P0
 
