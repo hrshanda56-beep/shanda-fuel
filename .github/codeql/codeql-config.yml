@@ -1,0 +1,8 @@
+name: Shanda Fuel CodeQL
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - docs/**
+  - '**/*.md'
