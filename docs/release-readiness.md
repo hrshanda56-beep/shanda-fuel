@@ -540,8 +540,8 @@ Locked decisions for this workstream:
 | Required Validation | All applicable production/rehearsal checks, including the release gates and runbooks below, with evidence linked in this document or its referenced artifacts. |
 | PR | TBD |
 | Merge SHA | TBD |
-| Verification / Evidence | Existing ledger records open performance execution, monitoring/alert integration, key rotation, tenant-scoped recovery, onboarding, and other release follow-ups. RPO/RTO planning targets remain unproven as recorded below. |
-| Remaining Follow-up | Close or explicitly disposition each security, integrity, observability, alerting, ownership, recovery, rollback, configuration, smoke, and cutover item before advancing this status. |
+| Verification / Evidence | A production-safe read-only verification harness is implemented under `src/platform/smoke/read-only.ts`, with the operator entry point `scripts/production-readonly-smoke.ts`, focused fake-transport/unit coverage, and no production or provider execution claimed. Existing ledger evidence still records open performance execution, monitoring/alert integration, key rotation, tenant-scoped recovery, onboarding, and other release follow-ups. RPO/RTO planning targets remain unproven as recorded below. |
+| Remaining Follow-up | Execute the harness only against an approved current staging deployment, then later under explicit production approval with a securely supplied Better Auth session cookie. Close or explicitly disposition each security, integrity, observability, alerting, ownership, recovery, rollback, configuration, smoke, and cutover item before advancing this status. |
 
 #### 10. Controlled Real Production Launch
 
