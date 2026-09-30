@@ -5,6 +5,15 @@ import { AppError } from '../errors';
 const r2AccountIdPattern = /^[a-f0-9]{32}$/i;
 const r2BucketNamePattern = /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/;
 
+function isDeployedEnvironment(value: ServerEnv['APP_ENV']): boolean {
+  return value === 'staging' || value === 'production';
+}
+
+function isLoopbackHost(value: string): boolean {
+  const hostname = new URL(value).hostname.toLowerCase();
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+}
+
 export function isValidR2AccountId(value: string): boolean {
   return r2AccountIdPattern.test(value);
 }
@@ -97,43 +106,50 @@ const envSchema = z
         message: 'Required when Resend is configured',
       });
     }
-    if (value.APP_ENV === 'production' && !value.DATABASE_URL) {
+    if (isDeployedEnvironment(value.APP_ENV) && !value.DATABASE_URL) {
       context.addIssue({
         code: 'custom',
         path: ['DATABASE_URL'],
-        message: 'Required in production',
+        message: 'Required in staging and production',
       });
     }
-    if (value.APP_ENV === 'production' && new URL(value.APP_URL).protocol !== 'https:') {
+    if (isDeployedEnvironment(value.APP_ENV) && new URL(value.APP_URL).protocol !== 'https:') {
       context.addIssue({
         code: 'custom',
         path: ['APP_URL'],
-        message: 'HTTPS is required in production',
+        message: 'HTTPS is required in staging and production',
       });
     }
-    if (value.APP_ENV === 'production' && !value.BETTER_AUTH_SECRET) {
+    if (isDeployedEnvironment(value.APP_ENV) && isLoopbackHost(value.APP_URL)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['APP_URL'],
+        message: 'Loopback APP_URL is not allowed in staging or production',
+      });
+    }
+    if (isDeployedEnvironment(value.APP_ENV) && !value.BETTER_AUTH_SECRET) {
       context.addIssue({
         code: 'custom',
         path: ['BETTER_AUTH_SECRET'],
-        message: 'Required in production',
+        message: 'Required in staging and production',
       });
     }
-    if (value.APP_ENV === 'production' && !value.AUDIT_SIGNING_KEY_ID) {
+    if (isDeployedEnvironment(value.APP_ENV) && !value.AUDIT_SIGNING_KEY_ID) {
       context.addIssue({
         code: 'custom',
         path: ['AUDIT_SIGNING_KEY_ID'],
-        message: 'Required in production',
+        message: 'Required in staging and production',
       });
     }
-    if (value.APP_ENV === 'production' && !value.AUDIT_SIGNING_KEY) {
+    if (isDeployedEnvironment(value.APP_ENV) && !value.AUDIT_SIGNING_KEY) {
       context.addIssue({
         code: 'custom',
         path: ['AUDIT_SIGNING_KEY'],
-        message: 'Required in production',
+        message: 'Required in staging and production',
       });
     }
     if (
-      value.APP_ENV === 'production' &&
+      isDeployedEnvironment(value.APP_ENV) &&
       value.AUDIT_SIGNING_KEY &&
       value.AUDIT_SIGNING_KEY.length < 32
     ) {
@@ -141,6 +157,13 @@ const envSchema = z
         code: 'custom',
         path: ['AUDIT_SIGNING_KEY'],
         message: 'Must be at least 32 characters in production',
+      });
+    }
+    if (isDeployedEnvironment(value.APP_ENV) && value.DATABASE_DIRECT_URL) {
+      context.addIssue({
+        code: 'custom',
+        path: ['DATABASE_DIRECT_URL'],
+        message: 'Migration-only DATABASE_DIRECT_URL must not be supplied to the app runtime',
       });
     }
   });

@@ -114,5 +114,6 @@ tenant business data, financial payloads, or secret values.
 - deployment/commit evidence identifiers;
 - approved observation window and evidence retention location.
 
-The migration README discrepancy (`0000`–`0018` text versus journal through
-`0019`) is outside this harness and remains a separate follow-up.
+The canonical migration README and journal are kept in sync through `0020`.
+This harness still does not provide provider-side DNS, TLS, WAF, secret-manager,
+or CodeQL availability evidence.

@@ -13,7 +13,9 @@ evidence that the operational exercise has passed.
 | [`observability.md`](observability.md) | Expectations ready; integration open | Connect structured logs, dashboards, alert routing, retention, and escalation. |
 | [`staging-performance-verification.md`](staging-performance-verification.md) | Procedure ready; execution open | Run with the RC against representative synthetic data. |
 | [`staging-auth-smoke-bootstrap.md`](staging-auth-smoke-bootstrap.md) | Procedure ready; staging execution open | Use only with the approved staging URL, secrets, and operator. |
-| [`key-rotation.md`](key-rotation.md) | Missing provider-specific procedure | Define secret-manager, overlap, verification, and retirement steps. |
+| [`key-rotation.md`](key-rotation.md) | Repository procedure ready; provider execution open | Name the secret manager, execute staging/production rotation, verify overlap/retirement, and retain metadata-only evidence. |
+| [`production-configuration.md`](production-configuration.md) | Repository checks ready; provider evidence open | Verify DNS, TLS, edge/WAF, environment binding, and runtime smoke with the provider/operator. |
+| [`codeql.md`](codeql.md) | Repository workflow prepared; provider availability open | Enable GitHub Code Scanning/GHAS support and record a successful CodeQL matrix run. |
 | [`tenant-recovery.md`](tenant-recovery.md) | Missing tested procedure | Define isolated extract tooling, repair ownership, and execute a drill. |
 
 There is no separate job/outbox operations runbook yet. It should be added if

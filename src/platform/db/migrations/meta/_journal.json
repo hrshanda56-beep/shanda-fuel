@@ -141,6 +141,13 @@
       "when": 1790530000000,
       "tag": "0019_security_runtime_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790533600000,
+      "tag": "0020_security_runtime_least_privilege_rate_limit",
+      "breakpoints": true
     }
   ]
 }

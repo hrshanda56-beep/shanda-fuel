@@ -6,6 +6,7 @@ import {
   apiErrorResponse,
   withRequestObservability,
 } from '../../../../../../platform/observability';
+import { AUTH_RATE_LIMIT, withPersistentRateLimit } from '../../../../../../platform/security';
 
 export const runtime = 'nodejs';
 
@@ -31,27 +32,29 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
-  try {
-    await requireAuthenticatedActor(request);
-    const body = requestSchema.parse(await request.json());
-    const result = await getAuth().api.verifyTOTP({
-      headers: request.headers,
-      body: { code: body.code },
-      returnHeaders: true,
-    });
-    if (!verificationSucceeded(result.response)) {
-      return jsonResponse({ error: 'MFA_VERIFICATION_FAILED' }, 400);
+export const POST = withRequestObservability(
+  withPersistentRateLimit(async (request: Request): Promise<Response> => {
+    try {
+      await requireAuthenticatedActor(request);
+      const body = requestSchema.parse(await request.json());
+      const result = await getAuth().api.verifyTOTP({
+        headers: request.headers,
+        body: { code: body.code },
+        returnHeaders: true,
+      });
+      if (!verificationSucceeded(result.response)) {
+        return jsonResponse({ error: 'MFA_VERIFICATION_FAILED' }, 400);
+      }
+      const headers = new Headers(result.headers);
+      headers.set('Cache-Control', 'no-store');
+      return NextResponse.json({ status: 'enabled' }, { status: 200, headers });
+    } catch (error) {
+      return apiErrorResponse(request, error, {
+        includeDetails: true,
+        unknownBody: { error: 'MFA_VERIFICATION_FAILED' },
+        unknownStatus: 400,
+        headers: { 'Cache-Control': 'no-store' },
+      });
     }
-    const headers = new Headers(result.headers);
-    headers.set('Cache-Control', 'no-store');
-    return NextResponse.json({ status: 'enabled' }, { status: 200, headers });
-  } catch (error) {
-    return apiErrorResponse(request, error, {
-      includeDetails: true,
-      unknownBody: { error: 'MFA_VERIFICATION_FAILED' },
-      unknownStatus: 400,
-      headers: { 'Cache-Control': 'no-store' },
-    });
-  }
-});
+  }, AUTH_RATE_LIMIT),
+);

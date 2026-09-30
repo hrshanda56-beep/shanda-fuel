@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuthenticatedActor } from '../../../../../modules/identity';
 import { getAuth } from '../../../../../platform/auth';
 import { apiErrorResponse, withRequestObservability } from '../../../../../platform/observability';
+import { AUTH_RATE_LIMIT, withPersistentRateLimit } from '../../../../../platform/security';
 
 export const runtime = 'nodejs';
 
@@ -34,32 +35,34 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
   }
 });
 
-export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
-  try {
-    await requireAuthenticatedActor(request);
-    const input = startSchema.parse(await request.json());
-    const result = await getAuth().api.enableTwoFactor({
-      headers: request.headers,
-      body: { password: input.password, method: 'totp', issuer: 'Shanda Fuel' },
-    });
-    if (result.method !== 'totp') {
-      return jsonResponse({ error: 'MFA_METHOD_UNAVAILABLE' }, 409);
+export const POST = withRequestObservability(
+  withPersistentRateLimit(async (request: Request): Promise<Response> => {
+    try {
+      await requireAuthenticatedActor(request);
+      const input = startSchema.parse(await request.json());
+      const result = await getAuth().api.enableTwoFactor({
+        headers: request.headers,
+        body: { password: input.password, method: 'totp', issuer: 'Shanda Fuel' },
+      });
+      if (result.method !== 'totp') {
+        return jsonResponse({ error: 'MFA_METHOD_UNAVAILABLE' }, 409);
+      }
+      return jsonResponse(
+        {
+          status: 'pending',
+          method: result.method,
+          totpURI: result.totpURI,
+          backupCodes: result.backupCodes,
+        },
+        200,
+      );
+    } catch (error) {
+      return apiErrorResponse(request, error, {
+        includeDetails: true,
+        unknownBody: { error: 'MFA_SETUP_FAILED' },
+        unknownStatus: 400,
+        headers: { 'Cache-Control': 'no-store' },
+      });
     }
-    return jsonResponse(
-      {
-        status: 'pending',
-        method: result.method,
-        totpURI: result.totpURI,
-        backupCodes: result.backupCodes,
-      },
-      200,
-    );
-  } catch (error) {
-    return apiErrorResponse(request, error, {
-      includeDetails: true,
-      unknownBody: { error: 'MFA_SETUP_FAILED' },
-      unknownStatus: 400,
-      headers: { 'Cache-Control': 'no-store' },
-    });
-  }
-});
+  }, AUTH_RATE_LIMIT),
+);
