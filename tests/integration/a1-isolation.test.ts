@@ -289,8 +289,7 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
           values ('77777777-7777-4777-8777-777777777777', 'Tenant B Copy', 'b-copy')
         `,
       ).rejects.toThrow();
-      const crossTenantDelete = await client`delete from app.tenants where id = ${tenantB}`;
-      expect(crossTenantDelete.count).toBe(0);
+      await expect(client`delete from app.tenants where id = ${tenantB}`).rejects.toThrow();
 
       await clearTenantContext(client);
       const visibleWithoutContext = await client<{ id: string }[]>`select id from app.tenants`;

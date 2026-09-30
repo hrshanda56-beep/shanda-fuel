@@ -16,6 +16,29 @@ The target database design uses separate `auth`, `app`, and `platform` schemas, 
 - Membership revocation denies new authority immediately, filters revoked/expired temporary grants, and the migration proposal revokes active grants on status transitions. Strong-authentication gates require a verified server-side assertion; absent verification fails closed. Public Better Auth signup is disabled and authentication alone never creates tenant access.
 - Production environment validation requires an HTTPS `APP_URL`, a database, and a Better Auth secret; secure cookies are enabled for production.
 
+### Runtime-role hardening after the historical grant
+
+Before migration `0020`, the historical `0002` grant gave `app_runtime`
+`SELECT, INSERT, UPDATE, DELETE` on all tables then present in `app` and `auth`.
+Later migrations added explicit per-table grants and selected append-only
+revocations, but the broad application-table delete remained as a historical
+default. Migration `0020` forward-only revokes `DELETE` on every `app` table
+and grants it back only to the seven draft reconciliation detail tables used by
+the current replacement flow: `reconciliation_attendants`,
+`reconciliation_meter_readings`, `reconciliation_payments`,
+`reconciliation_expenses`, `reconciliation_delivery_refs`,
+`reconciliation_dip_refs`, and `reconciliation_variance_explanations`.
+It also revokes `TRUNCATE`, `TRIGGER`, and `REFERENCES` on `app` and `auth`
+tables. Better Auth's required auth-table DML and all existing explicit
+application `SELECT`/`INSERT`/`UPDATE` grants remain. Integration and CI checks
+enumerate the effective privileges; this is a measured reduction and not a
+claim of full least privilege.
+
+The same migration creates `platform.rate_limit_windows` and gives
+`app_runtime` only `EXECUTE` on the fixed-signature
+`platform.consume_rate_limit` capability. Direct table `SELECT`/`INSERT`/
+`UPDATE` is denied and the capability uses atomic PostgreSQL fixed-window state.
+
 ## A3 forecourt `SECURITY DEFINER` capabilities
 
 `SECURITY DEFINER` is used in `src/platform/db/migrations/0003_a3_forecourt_reconciliation.sql` for a small, named set of authoritative forecourt capabilities that the `app_runtime` role must invoke but must not be able to perform through an ordinary table `UPDATE`/`INSERT`. This is a deliberate, reviewed exception to the general rule above, not a broad pattern -- each definition is scoped as narrowly as the specific transition it authorizes:

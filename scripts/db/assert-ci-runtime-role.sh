@@ -52,7 +52,58 @@ if psql "${DATABASE_URL}" --set ON_ERROR_STOP=1 --command \
   echo 'ERROR: app_runtime unexpectedly read migration metadata'
   exit 1
 else
-  echo 'Migration metadata denial: app_runtime cannot read drizzle.__drizzle_migrations'
+echo 'Migration metadata denial: app_runtime cannot read drizzle.__drizzle_migrations'
+fi
+
+app_delete_tables="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
+  "select coalesce(string_agg(c.relname, ',' order by c.relname), '')
+   from pg_namespace n
+   join pg_class c on c.relnamespace = n.oid
+   where n.nspname = 'app'
+     and c.relkind in ('r', 'p')
+     and has_table_privilege(current_user, c.oid, 'DELETE')")"
+printf 'app_delete_tables=%s\n' "${app_delete_tables}"
+test "${app_delete_tables}" = \
+  'reconciliation_attendants,reconciliation_delivery_refs,reconciliation_dip_refs,reconciliation_expenses,reconciliation_meter_readings,reconciliation_payments,reconciliation_variance_explanations'
+echo 'Measured DELETE capability: app_runtime retains only draft reconciliation replacement tables'
+
+rate_limit_public_execute="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
+  "select coalesce(bool_or(acl.grantee = 0 and acl.privilege_type = 'EXECUTE'), false)
+   from pg_proc p
+   join pg_namespace n on n.oid = p.pronamespace
+   left join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl on true
+   where p.oid = 'platform.consume_rate_limit(text,text,integer,integer)'::regprocedure")"
+rate_limit_function_owner="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
+   "select (pg_get_userbyid(p.proowner) = current_user)
+   from pg_proc p
+   where p.oid = 'platform.consume_rate_limit(text,text,integer,integer)'::regprocedure")"
+rate_limit_table_owner="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
+  "select (c.relowner = (select oid from pg_roles where rolname = current_user))
+   from pg_class c
+   join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'platform' and c.relname = 'rate_limit_windows'")"
+printf 'rate_limit_public_execute=%s\nrate_limit_function_owner_is_runtime=%s\nrate_limit_table_owner_is_runtime=%s\n' \
+  "${rate_limit_public_execute}" "${rate_limit_function_owner}" "${rate_limit_table_owner}"
+test "${rate_limit_public_execute}" = f
+test "${rate_limit_function_owner}" = f
+test "${rate_limit_table_owner}" = f
+
+rate_limit_scope="ci-runtime-proof-${GITHUB_RUN_ID:-local}-${BASHPID}-${RANDOM}-$(date +%s%N)"
+rate_limit_key="$(printf '%s' "${rate_limit_scope}" | sha256sum | awk '{print $1}')"
+rate_limit_first="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
+  "select allowed from platform.consume_rate_limit('${rate_limit_scope}', '${rate_limit_key}', 1, 60)")"
+rate_limit_second="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
+  "select allowed from platform.consume_rate_limit('${rate_limit_scope}', '${rate_limit_key}', 1, 60)")"
+printf 'rate_limit_first=%s\nrate_limit_second=%s\n' "${rate_limit_first}" "${rate_limit_second}"
+test "${rate_limit_first}" = t
+test "${rate_limit_second}" = f
+
+if psql "${DATABASE_URL}" --set ON_ERROR_STOP=1 --command \
+  'select count(*) from platform.rate_limit_windows'; then
+  echo 'ERROR: app_runtime unexpectedly read the rate-limit backing table'
+  exit 1
+else
+  echo 'Rate-limit table denial: app_runtime uses the named function only'
 fi
 
 echo 'Runtime-role database proof passed.'

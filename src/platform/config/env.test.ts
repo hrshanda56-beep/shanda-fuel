@@ -31,6 +31,11 @@ describe('server environment validation', () => {
 
   const validR2 = {
     APP_ENV: 'staging',
+    APP_URL: 'https://staging.shandahr.com',
+    DATABASE_URL: 'postgresql://staging-runtime',
+    BETTER_AUTH_SECRET: 'b'.repeat(32),
+    AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
+    AUDIT_SIGNING_KEY: 's'.repeat(32),
     R2_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
     R2_BUCKET: 'shanda-staging-private',
     R2_ACCESS_KEY_ID: 'test-access-key',
@@ -122,6 +127,39 @@ describe('server environment validation', () => {
     ).toThrow('HTTPS');
   });
 
+  it('requires deployed staging configuration and does not accept a loopback origin', () => {
+    expect(() =>
+      getServerEnv({
+        APP_ENV: 'staging',
+        APP_URL: 'https://staging.shandahr.com',
+      }),
+    ).toThrow('Required in staging and production');
+    expect(() =>
+      getServerEnv({
+        APP_ENV: 'staging',
+        APP_URL: 'https://localhost:3000',
+        DATABASE_URL: 'postgresql://configured',
+        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
+        AUDIT_SIGNING_KEY: 's'.repeat(32),
+      }),
+    ).toThrow('Loopback APP_URL');
+  });
+
+  it('rejects migration-only direct database credentials in deployed app runtime', () => {
+    expect(() =>
+      getServerEnv({
+        APP_ENV: 'production',
+        APP_URL: 'https://fuel.shandahr.com',
+        DATABASE_URL: 'postgresql://configured',
+        DATABASE_DIRECT_URL: 'postgresql://migration-owner',
+        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        AUDIT_SIGNING_KEY_ID: 'production-audit-v1',
+        AUDIT_SIGNING_KEY: 's'.repeat(32),
+      }),
+    ).toThrow('DATABASE_DIRECT_URL');
+  });
+
   it('requires the production authentication secret', () => {
     expect(() =>
       getServerEnv({
@@ -165,6 +203,10 @@ describe('server environment validation', () => {
       getServerEnv({
         APP_ENV: 'staging',
         APP_URL: 'https://staging.shandahr.com',
+        DATABASE_URL: 'postgresql://staging-runtime',
+        BETTER_AUTH_SECRET: 'b'.repeat(32),
+        AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
+        AUDIT_SIGNING_KEY: 's'.repeat(32),
       }).APP_ENV,
     ).toBe('staging');
   });
