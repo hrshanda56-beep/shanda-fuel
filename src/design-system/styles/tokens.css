@@ -50,9 +50,14 @@
   --palette-brand-900: #06382e;
 
   /* 3. Typography -------------------------------------------------------- */
+  /*
+   * Native system UI stack (SF Pro, Segoe UI Variable, Roboto): no web-font
+   * download, no layout shift, and the same face on every visit. Inter was
+   * listed here but never loaded, so it rendered only where installed locally.
+   */
   --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text',
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono:
     'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
@@ -260,7 +265,6 @@
   --color-surface: var(--bg-surface);
   --color-surface-muted: var(--bg-muted);
   --color-surface-subtle: var(--bg-subtle);
-  --color-sidebar: var(--bg-surface);
   --color-ink: var(--text-primary);
   --color-ink-muted: var(--text-secondary);
   --color-placeholder: var(--text-placeholder);
@@ -270,7 +274,6 @@
   --color-brand: var(--accent);
   --color-brand-dark: var(--accent-text);
   --color-brand-soft: var(--accent-subtle);
-  --color-active-muted: var(--text-secondary);
   --color-focus: var(--focus-ring);
   --color-overlay: var(--bg-overlay);
   --color-positive: var(--tone-positive-fg);
@@ -290,7 +293,6 @@
   --font-tabular: var(--font-mono);
   --shadow-card: var(--shadow-xs);
   --shadow-dialog: var(--shadow-lg);
-  --shadow-mobile-nav: 0 -1px 0 var(--border-subtle);
 }
 
 /*

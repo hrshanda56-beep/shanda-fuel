@@ -15,8 +15,10 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
 
-  await expect(page.getByRole('navigation', { name: 'Mobile navigation' })).toBeVisible();
-  const mobileContext = page.getByRole('region', { name: 'Active mobile work context' });
+  // Phones get a slim top bar; the grouped navigation opens from the menu.
+  await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
+  const mobileContext = page.getByRole('group', { name: 'Work context' });
   await expect(mobileContext).toContainText('Demo organisation');
   await expect(mobileContext).toContainText('Demo station');
   await expect(mobileContext).toContainText('20 Sep 2026');
@@ -27,9 +29,11 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(page.getByLabel('Draft note')).toHaveAttribute('aria-required', 'true');
   await expect(page.getByLabel('Quantity')).not.toHaveAttribute('required');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
-  await expect(
-    page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('link'),
-  ).toHaveText(['Home', 'Tasks', 'Work', 'More']);
+
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  const menu = page.getByRole('dialog', { name: 'Menu' });
+  await expect(menu.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
+  await expect(menu.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
 });
 
 test('shared button defaults and modal triggers do not submit forms accidentally', async ({

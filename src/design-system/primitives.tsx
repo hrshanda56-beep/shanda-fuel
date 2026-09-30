@@ -321,6 +321,8 @@ export function SkeletonBlock({
 }
 
 type StateLayout = 'inline' | 'block';
+/** Block states that are the whole page (route error / not found) use 1. */
+type StateHeadingLevel = 1 | 2 | 3;
 
 /**
  * Centred, spacious presentation for a whole region or page. Inline states
@@ -333,6 +335,7 @@ function StateBlock({
   action,
   tone,
   role,
+  headingLevel = 3,
 }: {
   icon: IconName;
   title: string;
@@ -340,7 +343,9 @@ function StateBlock({
   action?: ReactNode;
   tone: 'neutral' | 'error';
   role?: 'alert' | 'status';
+  headingLevel?: StateHeadingLevel;
 }) {
+  const Heading = `h${headingLevel}` as const;
   return (
     <div
       className={`state-block ${tone === 'error' ? 'state-block-error' : ''}`.trim()}
@@ -349,7 +354,7 @@ function StateBlock({
       <span className="state-icon" aria-hidden="true">
         <Icon name={icon} size="md" />
       </span>
-      <h3>{title}</h3>
+      <Heading>{title}</Heading>
       <p>{message}</p>
       {action ? <div className="state-action">{action}</div> : null}
     </div>
@@ -361,11 +366,13 @@ export function ErrorState({
   message,
   action,
   layout = 'inline',
+  headingLevel,
 }: {
   title?: string;
   message: string;
   action?: ReactNode;
   layout?: StateLayout;
+  headingLevel?: StateHeadingLevel;
 }) {
   if (layout === 'block') {
     return (
@@ -376,6 +383,7 @@ export function ErrorState({
         title={title}
         message={message}
         action={action}
+        headingLevel={headingLevel}
       />
     );
   }
@@ -407,16 +415,25 @@ export function EmptyState({
   action,
   layout = 'inline',
   icon = 'inbox',
+  headingLevel,
 }: {
   title: string;
   message: string;
   action?: ReactNode;
   layout?: StateLayout;
   icon?: IconName;
+  headingLevel?: StateHeadingLevel;
 }) {
   if (layout === 'block') {
     return (
-      <StateBlock icon={icon} tone="neutral" title={title} message={message} action={action} />
+      <StateBlock
+        icon={icon}
+        tone="neutral"
+        title={title}
+        message={message}
+        action={action}
+        headingLevel={headingLevel}
+      />
     );
   }
   return (

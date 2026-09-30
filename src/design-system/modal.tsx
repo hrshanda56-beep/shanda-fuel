@@ -17,7 +17,8 @@ export type ModalProps = {
   /** Actions row. Place the primary action last; it renders rightmost on wide screens. */
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
-  presentation?: 'dialog' | 'sheet';
+  /** `drawer` slides in from the inline start edge (Product Shell menu). */
+  presentation?: 'dialog' | 'sheet' | 'drawer';
   /** `alertdialog` for confirmations that interrupt a workflow. */
   role?: 'dialog' | 'alertdialog';
   /** When false, Escape and backdrop clicks do nothing (e.g. while a command is pending). */
@@ -35,7 +36,8 @@ export type ModalProps = {
  * Controlled accessible modal. Moves focus in, contains Tab, closes on
  * Escape, makes the rest of the page inert, locks scroll, and restores focus
  * to the opener. Renders centred on tablet/desktop and bottom-anchored on
- * phones; `presentation="sheet"` always renders as a bottom sheet.
+ * phones; `presentation="sheet"` always renders as a bottom sheet and
+ * `presentation="drawer"` as a full-height panel from the start edge.
  */
 export function Modal({
   open,
@@ -145,11 +147,12 @@ export function Modal({
   if (!open || typeof document === 'undefined') return null;
 
   const sheet = presentation === 'sheet';
+  const drawer = presentation === 'drawer';
 
   return createPortal(
     <div
       ref={overlayRef}
-      className={`dialog-backdrop ${sheet ? 'dialog-backdrop-sheet' : ''}`.trim()}
+      className={`dialog-backdrop ${sheet ? 'dialog-backdrop-sheet' : ''} ${drawer ? 'dialog-backdrop-drawer' : ''}`.trim()}
       data-modal-overlay="true"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && dismissibleRef.current) onCloseRef.current();
@@ -157,7 +160,7 @@ export function Modal({
     >
       <section
         ref={panelRef}
-        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''}`.trim()}
+        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''} ${drawer ? 'drawer' : ''}`.trim()}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
