@@ -17,7 +17,9 @@ async function main(): Promise<void> {
     environment = options.environment;
     deploymentId = options.deploymentId;
     commit = options.commit;
-    const evidence = await runReadOnlyVerification(options);
+    const evidence = await runReadOnlyVerification(options, {
+      vercelAutomationBypassSecret: process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+    });
     process.stdout.write(`${JSON.stringify(evidence)}\n`);
     process.exitCode = evidence.pass ? 0 : 1;
   } catch (error) {

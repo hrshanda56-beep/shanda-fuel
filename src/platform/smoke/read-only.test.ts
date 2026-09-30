@@ -67,17 +67,19 @@ describe('read-only HTTP safety', () => {
   });
 
   it('sends the opaque session cookie only to authenticated checks', async () => {
-    const calls: Array<{ method?: string; cookie?: string }> = [];
+    const calls: Array<{ method?: string; cookie?: string; bypass?: string }> = [];
     const fetcher = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       calls.push({
         method: init?.method,
         cookie: new Headers(init?.headers).get('cookie') ?? undefined,
+        bypass: new Headers(init?.headers).get('x-vercel-protection-bypass') ?? undefined,
       });
       return response('ok');
     });
     const client = createReadOnlyHttpClient({
       timeoutMs: 1000,
       sessionCookie: 'shanda-fuel.session_token=opaque',
+      vercelAutomationBypassSecret: 'bypass-secret',
       fetcher,
     });
 
@@ -85,9 +87,20 @@ describe('read-only HTTP safety', () => {
     await client.get('https://staging.example.test/private', { authenticated: true });
 
     expect(calls).toEqual([
-      { method: 'GET', cookie: undefined },
-      { method: 'GET', cookie: 'shanda-fuel.session_token=opaque' },
+      { method: 'GET', cookie: undefined, bypass: 'bypass-secret' },
+      { method: 'GET', cookie: 'shanda-fuel.session_token=opaque', bypass: 'bypass-secret' },
     ]);
+  });
+
+  it('omits the protection bypass header when it is not configured', async () => {
+    const fetcher = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get('x-vercel-protection-bypass')).toBeNull();
+      return response('ok');
+    });
+    const client = createReadOnlyHttpClient({ timeoutMs: 1000, fetcher });
+
+    await client.get('https://staging.example.test/public');
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -180,6 +193,16 @@ describe('read-only smoke target protection', () => {
     ).toThrow('control characters');
   });
 
+  it('rejects protection bypass secrets containing control characters', () => {
+    expect(() =>
+      createReadOnlyHttpClient({
+        timeoutMs: 1000,
+        vercelAutomationBypassSecret: 'bypass\nsecret',
+        fetcher: vi.fn(),
+      }),
+    ).toThrow('control characters');
+  });
+
   it('requires an explicit environment in CLI options and rejects APP_ENV mismatch', () => {
     expect(() =>
       parseReadOnlySmokeCli(
@@ -226,13 +249,56 @@ describe('read-only smoke target protection', () => {
     expect(safeError).toBe('Unknown command-line option.');
     expect(safeError).not.toContain(secretLikeArgument);
   });
+
+  it('does not accept the protection bypass secret as a CLI argument', () => {
+    const secret = 'bypass-secret-must-not-be-an-argument';
+    let error: unknown;
+
+    try {
+      parseReadOnlySmokeCli(['--vercel-automation-bypass-secret', secret]);
+    } catch (caught) {
+      error = caught;
+    }
+
+    const safeError = safeCliError(error);
+    expect(safeError).toBe('Unknown command-line option.');
+    expect(safeError).not.toContain(secret);
+  });
+
+  it('does not copy the process-environment bypass secret into parsed options', () => {
+    const secret = 'bypass-secret-must-not-be-returned';
+    const options = parseReadOnlySmokeCli(
+      [
+        '--environment',
+        'staging',
+        '--base-url',
+        'https://staging.example.test',
+        '--tenant-a-id',
+        tenantA.tenantId,
+        '--station-a-id',
+        tenantA.stationId,
+      ],
+      { APP_ENV: 'staging', VERCEL_AUTOMATION_BYPASS_SECRET: secret },
+    );
+
+    expect(options).not.toHaveProperty('vercelAutomationBypassSecret');
+    expect(JSON.stringify(options)).not.toContain(secret);
+  });
 });
 
 describe('read-only verification evidence', () => {
   it('passes health, readiness, Tenant A access, and Tenant B denial without exposing data', async () => {
+    const bypassSecret = 'bypass-secret-must-not-appear';
+    const requestHeaders: Headers[] = [];
     const evidence = await runReadOnlyVerification(
       validTarget({ tenantB, deploymentId: 'dpl_safe_123', commit: 'ba38adf' }),
-      { fetcher: async (input) => healthyResponses(String(input)) },
+      {
+        vercelAutomationBypassSecret: bypassSecret,
+        fetcher: async (input, init) => {
+          requestHeaders.push(new Headers(init?.headers));
+          return healthyResponses(String(input));
+        },
+      },
     );
 
     expect(evidence.pass).toBe(true);
@@ -246,6 +312,11 @@ describe('read-only verification evidence', () => {
     expect(serialized).not.toContain('tenant-a-data');
     expect(serialized).not.toContain('opaque-session-value');
     expect(serialized).not.toContain('tenant-b-data');
+    expect(serialized).not.toContain(bypassSecret);
+    expect(requestHeaders).toHaveLength(4);
+    expect(
+      requestHeaders.every((headers) => headers.get('x-vercel-protection-bypass') === bypassSecret),
+    ).toBe(true);
     expect(
       evidence.checks.every((check) =>
         Object.keys(check).every((key) =>

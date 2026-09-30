@@ -1,16 +1,11 @@
 import 'dotenv/config';
-import { randomUUID } from 'node:crypto';
 import { getServerEnv } from '../src/platform/config/env';
 import { assertStagingSmokeAllowed } from '../src/platform/config/staging-smoke';
-import {
-  createR2Storage,
-  createUniquePrivateObjectKey,
-  StorageError,
-} from '../src/platform/storage';
+import { runStagingR2RecoveryDrill } from '../src/platform/recovery/r2-drill';
 
 const confirmationFlag = '--confirm-recovery-drill';
 
-async function main() {
+export async function main() {
   try {
     assertStagingSmokeAllowed(process.env.APP_ENV);
   } catch (error) {
@@ -27,43 +22,16 @@ async function main() {
     return;
   }
 
-  const key = createUniquePrivateObjectKey('staging/recovery-drill');
-  const body = new TextEncoder().encode(`staging recovery drill ${randomUUID()}`);
-  const contentType = 'text/plain; charset=utf-8';
   try {
-    const storage = createR2Storage(getServerEnv());
-    const artifact = await storage.put({ key, body, contentType });
-    const written = await storage.get(key);
-    if (new TextDecoder().decode(written.body) !== new TextDecoder().decode(body)) {
-      throw new StorageError('checksum_mismatch', 'Primary object write verification failed');
-    }
-
-    await storage.delete(key);
-    try {
-      await storage.get(key);
-      throw new Error('Primary delete verification failed');
-    } catch (error) {
-      if (!(error instanceof StorageError) || error.code !== 'not_found') throw error;
-    }
-
-    await storage.restore({ key, backupId: artifact.backupId });
-    const restored = await storage.get(key);
-    if (
-      restored.body.byteLength !== body.byteLength ||
-      new TextDecoder().decode(restored.body) !== new TextDecoder().decode(body)
-    ) {
-      throw new StorageError('checksum_mismatch', 'Primary object restore verification failed');
-    }
-
-    await storage.delete(key);
+    const evidence = await runStagingR2RecoveryDrill({ env: getServerEnv() });
     console.log(
-      `R2 staging recovery drill: retained copy, delete, restore, and checksum verification passed (backup ${artifact.backupId}; sha256 ${artifact.sha256}).`,
+      `R2 staging recovery drill: retained copy, delete, restore, and checksum verification passed (backup ${evidence.backupId}; sha256 ${evidence.sha256}).`,
     );
     console.log(
       'Primary synthetic object deleted. Retained recovery objects remain until approved retention expires.',
     );
   } catch (error) {
-    const code = error instanceof StorageError ? error.code : 'provider';
+    const code = error instanceof Error && 'code' in error ? String(error.code) : 'provider';
     console.error(`R2 staging recovery drill failed (${code}).`);
     process.exitCode = 1;
   }

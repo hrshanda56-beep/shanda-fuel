@@ -212,11 +212,19 @@ type ReadOnlyHttpClientOptions = {
   fetcher?: FetchLike;
   timeoutMs: number;
   sessionCookie?: string;
+  vercelAutomationBypassSecret?: string;
 };
 
-function safeHeaders(options: ReadOnlyRequestOptions, sessionCookie: string | undefined): Headers {
+function safeHeaders(
+  options: ReadOnlyRequestOptions,
+  sessionCookie: string | undefined,
+  vercelAutomationBypassSecret: string | undefined,
+): Headers {
   const headers = new Headers({ accept: 'application/json' });
   if (options.authenticated && sessionCookie) headers.set('cookie', sessionCookie);
+  if (vercelAutomationBypassSecret) {
+    headers.set('x-vercel-protection-bypass', vercelAutomationBypassSecret);
+  }
   return headers;
 }
 
@@ -228,6 +236,15 @@ export function createReadOnlyHttpClient(options: ReadOnlyHttpClientOptions): Re
   const fetcher = options.fetcher ?? globalThis.fetch;
   if (!fetcher) {
     throw new ReadOnlySmokeError('invalid_configuration', 'The runtime does not provide fetch.');
+  }
+  if (
+    options.vercelAutomationBypassSecret !== undefined &&
+    CONTROL_CHARACTER_PATTERN.test(options.vercelAutomationBypassSecret)
+  ) {
+    throw new ReadOnlySmokeError(
+      'invalid_configuration',
+      'The Vercel protection bypass secret contains invalid control characters.',
+    );
   }
 
   async function request(
@@ -249,7 +266,11 @@ export function createReadOnlyHttpClient(options: ReadOnlyHttpClientOptions): Re
       return await Promise.race([
         fetcher(url, {
           method,
-          headers: safeHeaders(requestOptions, options.sessionCookie),
+          headers: safeHeaders(
+            requestOptions,
+            options.sessionCookie,
+            options.vercelAutomationBypassSecret,
+          ),
           redirect: 'manual',
           signal: controller.signal,
         }),
@@ -401,13 +422,17 @@ function isReadinessBody(body: unknown): boolean {
 
 export async function runReadOnlyVerification(
   input: ReadOnlySmokeTarget,
-  dependencies: { fetcher?: FetchLike } = {},
+  dependencies: {
+    fetcher?: FetchLike;
+    vercelAutomationBypassSecret?: string;
+  } = {},
 ): Promise<ReadOnlySmokeEvidence> {
   const target = validateReadOnlySmokeTarget(input);
   const client = createReadOnlyHttpClient({
     fetcher: dependencies.fetcher,
     timeoutMs: target.timeoutMs!,
     sessionCookie: target.sessionCookie,
+    vercelAutomationBypassSecret: dependencies.vercelAutomationBypassSecret,
   });
   const checks: SafeCheckResult[] = [];
 
