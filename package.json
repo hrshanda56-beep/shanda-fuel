@@ -21,6 +21,7 @@
     "drill:staging-r2-recovery": "node --conditions=react-server --import tsx scripts/staging-r2-recovery-drill.ts",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
+    "smoke:production-readonly": "node --conditions=react-server --import tsx scripts/production-readonly-smoke.ts",
     "db:check": "drizzle-kit check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
