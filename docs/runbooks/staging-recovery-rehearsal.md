@@ -36,7 +36,13 @@ The recovery owner must prepare these items before the rehearsal:
 1. An independent staging logical backup using
    [`scripts/db/create-staging-logical-backup.sh`](../../scripts/db/create-staging-logical-backup.sh),
    or an approved Neon/provider backup export. Keep the dump outside the
-   application bucket and retain its manifest and checksum.
+   application bucket and retain its manifest and checksum. The `pg_dump` and
+   `pg_restore` client major must be compatible with the staging database
+   server major. During the 2026-09-30 rehearsal, the staging server reported
+   PostgreSQL 18.6 and the successful Docker client was `postgres:18`. This is
+   verified rehearsal evidence, not a permanent infrastructure assumption;
+   recheck the server major before future runs. `postgres:16` is not a valid
+   client for the current staging server.
 2. A temporary, isolated Neon staging branch/restore target. The provider
    operator records the provider recovery-through timestamp; the application
    must not point normal staging traffic at this target.
