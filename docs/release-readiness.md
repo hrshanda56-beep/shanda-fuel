@@ -538,9 +538,9 @@ Locked decisions for this workstream:
 | Scope | Production configuration validation; security gates; integrity gates; observability and alerting gates; backup/recovery gates; rollback verification; production smoke rehearsal; operational ownership/runbooks; and the controlled launch checklist. |
 | Definition of Done | Every required rehearsal and final-launch gate has a named owner, passed evidence, an operational response path, and no unresolved launch-blocking gap. |
 | Required Validation | All applicable production/rehearsal checks, including the release gates and runbooks below, with evidence linked in this document or its referenced artifacts. |
-| PR | TBD |
-| Merge SHA | TBD |
-| Verification / Evidence | A production-safe read-only verification harness is implemented under `src/platform/smoke/read-only.ts`, with the operator entry point `scripts/production-readonly-smoke.ts`, focused fake-transport/unit coverage, and no production or provider execution claimed. Existing ledger evidence still records open performance execution, monitoring/alert integration, key rotation, tenant-scoped recovery, onboarding, and other release follow-ups. RPO/RTO planning targets remain unproven as recorded below. |
+| PR | #73 |
+| Merge SHA | `70e80925f7660bcec1abc5e24202dd2d679c27a0` |
+| Verification / Evidence | The production-safe read-only smoke harness implementation is **VERIFIED after merge** under `src/platform/smoke/read-only.ts`, with the operator entry point `scripts/production-readonly-smoke.ts`. Post-merge evidence from canonical `main` at `70e80925f7660bcec1abc5e24202dd2d679c27a0`: Prettier passed on affected files; typecheck passed; focused `src/platform/smoke/read-only.test.ts` passed 19/19; the production build passed with 34/34 pages; `git diff --check` passed; and the worktree was clean. No staging, production, or provider execution has been performed. Existing ledger evidence still records open performance execution, monitoring/alert integration, key rotation, tenant-scoped recovery, onboarding, and other release follow-ups. RPO/RTO planning targets remain unproven as recorded below. |
 | Remaining Follow-up | Execute the harness only against an approved current staging deployment, then later under explicit production approval with a securely supplied Better Auth session cookie. Close or explicitly disposition each security, integrity, observability, alerting, ownership, recovery, rollback, configuration, smoke, and cutover item before advancing this status. |
 
 #### 10. Controlled Real Production Launch
