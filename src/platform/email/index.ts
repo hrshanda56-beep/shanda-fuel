@@ -56,6 +56,7 @@ export function createResendEmailSender(env: ServerEnv = getServerEnv(), send?: 
         return { messageId: result.data.id };
       } catch {
         logger.error('Platform provider operation failed', {
+          signal: 'provider_failure',
           service: 'resend',
           errorCode: 'provider',
         });

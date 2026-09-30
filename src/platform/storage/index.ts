@@ -27,7 +27,11 @@ const recoveryFormatVersion = 'shanda-fuel.r2-recovery.v1';
 const logger = createLogger({ component: 'platform.storage' });
 
 function logProviderFailure() {
-  logger.error('Platform provider operation failed', { service: 'r2', errorCode: 'provider' });
+  logger.error('Platform provider operation failed', {
+    signal: 'provider_failure',
+    service: 'r2',
+    errorCode: 'provider',
+  });
 }
 
 declare const objectKeyBrand: unique symbol;

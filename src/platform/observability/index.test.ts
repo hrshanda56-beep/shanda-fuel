@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../errors';
-import { apiErrorResponse, getRequestId, withRequestObservability } from './index';
+import {
+  apiErrorResponse,
+  classifyRoute,
+  classifyStatus,
+  getRequestId,
+  withRequestObservability,
+} from './index';
 
 const validRequestId = '11111111-1111-4111-8111-111111111111';
 
@@ -14,6 +20,16 @@ function request(headers?: HeadersInit): Request {
 describe('server observability', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('normalizes route and status dimensions for provider-neutral queries', () => {
+    expect(classifyRoute('/api/auth/sign-in')).toBe('auth');
+    expect(classifyRoute('/api/readiness')).toBe('readiness');
+    expect(classifyRoute('/api/settlements/summary')).toBe('provider');
+    expect(classifyRoute('/dashboard')).toBe('web');
+    expect(classifyStatus(200)).toBe('2xx');
+    expect(classifyStatus(404)).toBe('4xx');
+    expect(classifyStatus(503)).toBe('5xx');
   });
 
   it('preserves a bounded valid request ID and rejects malformed or unbounded values', () => {
@@ -42,10 +58,13 @@ describe('server observability', () => {
     expect(record).toMatchObject({
       level: 'info',
       message: 'http.request.completed',
+      signal: 'http_request',
       requestId: validRequestId,
       method: 'POST',
       route: '/api/example',
+      routeClass: 'api',
       status: 201,
+      statusClass: '2xx',
       environment: expect.any(String),
       timestamp: expect.any(String),
     });
@@ -145,8 +164,11 @@ describe('server observability', () => {
     expect(JSON.parse(String(warn.mock.calls[0]?.[0]))).toMatchObject({
       level: 'warn',
       message: 'http.request.error',
+      signal: 'http_error',
       requestId: validRequestId,
       errorClassification: 'forbidden',
+      status: 403,
+      statusClass: '4xx',
     });
     expect(JSON.stringify(warn.mock.calls[0])).not.toContain('do-not-log');
 
@@ -199,6 +221,23 @@ describe('server observability', () => {
       ]),
     );
     expect(JSON.stringify(records)).not.toContain('do-not-log');
+  });
+
+  it('logs conflicts as warn-level operational signals without exposing details', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const response = apiErrorResponse(
+      request({ 'x-request-id': validRequestId }),
+      new AppError('IDEMPOTENCY_CONFLICT', 'duplicate command', { payload: 'private' }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(warn.mock.calls[0]?.[0]))).toMatchObject({
+      signal: 'http_error',
+      errorClassification: 'idempotency_conflict',
+      statusClass: '4xx',
+    });
+    expect(JSON.stringify(warn.mock.calls[0])).not.toContain('private');
   });
 
   it('does not break request flow when the log sink throws', async () => {

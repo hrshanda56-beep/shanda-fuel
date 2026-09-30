@@ -24,6 +24,22 @@ export type ErrorClassification =
   | 'internal'
   | 'unexpected';
 
+export type RouteClass =
+  | 'auth'
+  | 'readiness'
+  | 'health'
+  | 'forecourt'
+  | 'cash'
+  | 'inventory'
+  | 'provider'
+  | 'report'
+  | 'customer'
+  | 'supplier'
+  | 'api'
+  | 'web';
+
+export type StatusClass = '1xx' | '2xx' | '3xx' | '4xx' | '5xx';
+
 export type ApiRouteHandler<TContext = unknown> = (
   request: Request,
   context?: TContext,
@@ -58,6 +74,29 @@ function pathname(request: Request): string {
   } catch {
     return 'unknown';
   }
+}
+
+export function classifyRoute(route: string): RouteClass {
+  if (route === '/api/health') return 'health';
+  if (route === '/api/readiness') return 'readiness';
+  if (route === '/api/auth' || route.startsWith('/api/auth/')) return 'auth';
+  if (route === '/api/forecourt' || route.startsWith('/api/forecourt/')) return 'forecourt';
+  if (route === '/api/cash' || route.startsWith('/api/cash/')) return 'cash';
+  if (route === '/api/inventory' || route.startsWith('/api/inventory/')) return 'inventory';
+  if (route === '/api/settlements' || route.startsWith('/api/settlements/')) return 'provider';
+  if (route === '/api/reports' || route.startsWith('/api/reports/')) return 'report';
+  if (route === '/api/customers' || route.startsWith('/api/customers/')) return 'customer';
+  if (route === '/api/suppliers' || route.startsWith('/api/suppliers/')) return 'supplier';
+  if (route === '/api' || route.startsWith('/api/')) return 'api';
+  return 'web';
+}
+
+export function classifyStatus(status: number): StatusClass {
+  if (status >= 500) return '5xx';
+  if (status >= 400) return '4xx';
+  if (status >= 300) return '3xx';
+  if (status >= 200) return '2xx';
+  return '1xx';
 }
 
 function safeIncomingRequestId(value: string | null): string | undefined {
@@ -107,6 +146,8 @@ function shouldLogHandledError(error: unknown): boolean {
   return (
     classification === 'unauthenticated' ||
     classification === 'forbidden' ||
+    classification === 'conflict' ||
+    classification === 'idempotency_conflict' ||
     classification === 'dependency_unavailable' ||
     classification === 'internal' ||
     classification === 'unexpected'
@@ -115,18 +156,28 @@ function shouldLogHandledError(error: unknown): boolean {
 
 function logLevelForError(error: unknown): 'warn' | 'error' {
   const classification = classifyError(error);
-  return classification === 'unauthenticated' || classification === 'forbidden' ? 'warn' : 'error';
+  return classification === 'unauthenticated' ||
+    classification === 'forbidden' ||
+    classification === 'conflict' ||
+    classification === 'idempotency_conflict'
+    ? 'warn'
+    : 'error';
 }
 
 export function observeError(request: Request, error: unknown, event = 'http.request.error'): void {
   if (!shouldLogHandledError(error)) return;
   const fields = {
+    signal: 'http_error',
     requestId: getRequestId(request),
     method: request.method,
     route: pathname(request),
+    routeClass: classifyRoute(pathname(request)),
     environment: environment(),
     errorType: errorType(error),
     errorClassification: classifyError(error),
+    ...(error instanceof AppError
+      ? { status: error.httpStatus, statusClass: classifyStatus(error.httpStatus) }
+      : {}),
   };
   if (logLevelForError(error) === 'warn') logger.warn(event, fields);
   else logger.error(event, fields);
@@ -134,9 +185,11 @@ export function observeError(request: Request, error: unknown, event = 'http.req
 
 export function observeDependencyFailure(request: Request, dependency: string): void {
   logger.error('runtime.dependency.unavailable', {
+    signal: 'dependency_failure',
     requestId: getRequestId(request),
     method: request.method,
     route: pathname(request),
+    routeClass: classifyRoute(pathname(request)),
     environment: environment(),
     dependency,
     errorClassification: 'dependency_unavailable',
@@ -240,10 +293,13 @@ export function withRequestObservability<TContext = unknown>(
 
     response = attachRequestId(response, requestId);
     logger.info('http.request.completed', {
+      signal: 'http_request',
       requestId,
       method: request.method,
       route: pathname(request),
+      routeClass: classifyRoute(pathname(request)),
       status: response.status,
+      statusClass: classifyStatus(response.status),
       durationMs: durationMs(startedAt),
       environment: environment(),
     });
