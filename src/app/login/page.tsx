@@ -39,36 +39,57 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="foundation-showcase">
-      <Card as="section" className="form-panel" aria-labelledby="login-title">
-        <div className="section-heading">
-          <p className="eyebrow">Shanda Fuel</p>
-          <h1 id="login-title">Sign in</h1>
-          <p>Use your assigned account to continue.</p>
+    <main className="auth-layout">
+      <div className="auth-panel">
+        <div className="shell-brand">
+          <span className="brand-mark" aria-hidden="true">
+            SF
+          </span>
+          <span className="shell-brand-text">
+            <span className="brand-name">Shanda Fuel</span>
+            <span className="brand-byline">by ShandaHR</span>
+          </span>
         </div>
-
-        <form className="demo-form" onSubmit={handleSubmit}>
-          <Field id="email" label="Email" required>
-            <input id="email" name="email" type="email" autoComplete="username" inputMode="email" />
-          </Field>
-
-          <Field id="password" label="Password" required>
-            <input id="password" name="password" type="password" autoComplete="current-password" />
-          </Field>
-
-          {error ? (
-            <p className="field-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="form-actions">
-            <Button type="submit" variant="primary" loading={loading}>
-              Sign in
-            </Button>
+        <Card as="section" className="auth-card" aria-labelledby="login-title">
+          <div className="section-heading">
+            <h1 id="login-title">Sign in</h1>
+            <p>Use your assigned account to continue.</p>
           </div>
-        </form>
-      </Card>
+
+          <form className="demo-form" onSubmit={handleSubmit}>
+            <Field id="email" label="Email" required>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="username"
+                inputMode="email"
+              />
+            </Field>
+
+            <Field id="password" label="Password" required>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+              />
+            </Field>
+
+            {error ? (
+              <p className="field-error" role="alert">
+                {error}
+              </p>
+            ) : null}
+
+            <div className="form-actions">
+              <Button type="submit" variant="primary" loading={loading}>
+                Sign in
+              </Button>
+            </div>
+          </form>
+        </Card>
+      </div>
     </main>
   );
 }

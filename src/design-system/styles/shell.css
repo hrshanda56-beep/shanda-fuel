@@ -1,0 +1,705 @@
+/*
+ * Product Shell: the permanent application frame.
+ *
+ *   phone / tablet (< 64rem)  slim sticky top bar; the menu opens the grouped
+ *                             navigation in a drawer. Content keeps full width.
+ *   desktop (≥ 64rem)         persistent grouped sidebar beside the content;
+ *                             collapsible to an icon rail. The rail state is
+ *                             <html data-sidebar="collapsed">, set before first
+ *                             paint (shell-preferences.ts).
+ *
+ * Neutral surfaces carry the frame; the brand green marks only the current
+ * route's icon, focus, and the brand mark. Borders are hairlines, shadows
+ * hints. Semantic tokens only (see README).
+ */
+
+.app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-canvas);
+}
+
+.shell-body {
+  min-width: 0;
+}
+
+/* Brand ------------------------------------------------------------------- */
+
+.shell-brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2-5);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-caps);
+}
+
+.shell-brand-text {
+  display: grid;
+  min-width: 0;
+  line-height: var(--line-height-tight);
+}
+
+.brand-name {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-snug);
+}
+
+.brand-byline {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-2xs);
+}
+
+/* Top bar (phone and tablet) ------------------------------------------------ */
+
+.shell-topbar {
+  position: sticky;
+  z-index: var(--z-sticky);
+  top: 0;
+  display: flex;
+  height: var(--topbar-height);
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 0 var(--page-gutter) 0 calc(var(--page-gutter) - var(--space-2));
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-canvas);
+}
+
+.shell-menu-button {
+  display: grid;
+  width: var(--control-height-md);
+  height: var(--control-height-md);
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.shell-menu-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Sidebar (desktop only; see the 64rem block) ------------------------------- */
+
+.shell-sidebar {
+  display: none;
+}
+
+/* Content frame ------------------------------------------------------------ */
+
+.shell-main {
+  display: block;
+  width: 100%;
+  max-width: calc(var(--content-wide) + 2 * var(--page-gutter));
+  margin-inline: auto;
+  padding: var(--space-5) var(--page-gutter) var(--space-16);
+}
+
+.shell-main:focus {
+  outline: none;
+}
+
+.shell-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.shell-header-trail {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.shell-header .breadcrumbs {
+  margin-bottom: 0;
+}
+
+.shell-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+/* Trailing separators: a wrapped line ends on "·" rather than starting with one. */
+.shell-context-part:not(:last-child)::after {
+  margin-left: var(--space-2);
+  color: var(--text-tertiary);
+  content: '·';
+  content: '·' / '';
+}
+
+/* Needs attention entry ---------------------------------------------------- */
+
+.shell-attention {
+  display: inline-flex;
+  height: var(--control-height-sm);
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.shell-attention:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.shell-attention-count {
+  min-width: 1.25rem;
+  padding: 0 var(--space-1-5);
+  border-radius: var(--radius-full);
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-text);
+  font-size: var(--font-size-2xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+/* Navigation --------------------------------------------------------------- */
+
+.shell-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.nav-sections,
+.nav-group-items {
+  display: grid;
+  gap: var(--space-0-5);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.nav-group-items {
+  margin: var(--space-0-5) 0 var(--space-1) calc(var(--space-2-5) + var(--icon-size-sm) / 2);
+  padding-left: var(--space-2);
+  border-left: var(--border-width) solid var(--border-subtle);
+}
+
+.nav-group-items[hidden] {
+  display: none;
+}
+
+.nav-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: var(--space-1-5) var(--space-2-5);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-snug);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.nav-row:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-row:active {
+  background: var(--bg-pressed);
+}
+
+.nav-icon {
+  color: var(--text-tertiary);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.nav-row:hover .nav-icon {
+  color: var(--text-secondary);
+}
+
+.nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Current route: a raised neutral surface, heavier weight, accent icon. */
+.nav-row[aria-current='page'],
+.nav-group-toggle[data-contains-current][aria-expanded='false'] {
+  background: var(--bg-surface);
+  box-shadow:
+    0 0 0 var(--border-width) var(--border-subtle),
+    var(--shadow-xs);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.nav-row[aria-current='page'] .nav-icon,
+.nav-group-toggle[data-contains-current] .nav-icon {
+  color: var(--accent);
+}
+
+.nav-chevron {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+
+.nav-group-toggle[aria-expanded='false'] .nav-chevron {
+  transform: rotate(-90deg);
+}
+
+.nav-row .wip-badge,
+.nav-trailing-icon {
+  margin-left: auto;
+}
+
+.nav-row-restricted {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.nav-row-restricted:hover {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.nav-sections-end {
+  margin-top: auto;
+}
+
+/* Account and theme --------------------------------------------------------- */
+
+.shell-account {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2-5);
+}
+
+.shell-avatar {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.shell-account-text {
+  display: grid;
+  min-width: 0;
+  line-height: var(--line-height-snug);
+}
+
+.shell-account-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-account-role {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.theme-control {
+  display: inline-flex;
+  min-inline-size: 0;
+  flex: 0 0 auto;
+  gap: var(--space-0-5);
+  margin: 0;
+  padding: var(--space-0-5);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+}
+
+.theme-option {
+  position: relative;
+  display: grid;
+  width: 1.875rem;
+  height: 1.75rem;
+  place-items: center;
+  border-radius: var(--radius-full);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.theme-option:hover {
+  color: var(--text-primary);
+}
+
+.theme-option:has(:checked) {
+  background: var(--bg-surface);
+  box-shadow:
+    0 0 0 var(--border-width) var(--border-subtle),
+    var(--shadow-xs);
+  color: var(--text-primary);
+}
+
+.theme-option:has(:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.theme-option-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  cursor: pointer;
+  opacity: 0;
+}
+
+/* Drawer (phone and tablet menu) -------------------------------------------- */
+
+.dialog-backdrop.dialog-backdrop-drawer {
+  place-items: stretch start;
+  padding: 0;
+}
+
+.drawer {
+  display: flex;
+  width: min(20rem, calc(100vw - 3rem));
+  height: 100%;
+  max-height: none;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom));
+  border-block: 0;
+  border-left: 0;
+  border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+  animation: ds-drawer-in var(--duration-slow) var(--ease-out);
+}
+
+.drawer .dialog-heading {
+  align-items: center;
+  padding-left: var(--space-2-5);
+}
+
+.drawer .dialog-heading h2 {
+  font-size: var(--font-size-md);
+}
+
+.drawer .dialog-close {
+  margin: 0;
+}
+
+.drawer .dialog-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.shell-drawer-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding: var(--space-4) var(--space-2-5) 0;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+/* Route states --------------------------------------------------------------- */
+
+.route-loading {
+  display: grid;
+  gap: var(--section-gap);
+}
+
+.route-loading-header {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.route-loading-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--grid-gap);
+}
+
+.route-state {
+  display: grid;
+  justify-items: center;
+  padding-top: clamp(var(--space-4), 8vh, var(--space-16));
+}
+
+.route-state .state-block h1 {
+  font-size: var(--font-size-xl);
+  letter-spacing: var(--letter-spacing-snug);
+}
+
+.route-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.route-state-reference {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+/* Sign-in frame (outside the shell) ----------------------------------------- */
+
+.auth-layout {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: var(--page-block) var(--page-gutter);
+  background: var(--bg-canvas);
+}
+
+.auth-panel {
+  display: grid;
+  width: min(100%, 25rem);
+  gap: var(--space-6);
+}
+
+.auth-card {
+  padding: var(--space-8) var(--space-6);
+}
+
+.auth-card .section-heading {
+  margin-bottom: var(--space-6);
+}
+
+/* Responsive --------------------------------------------------------------- */
+
+@media (max-width: 39.99rem) {
+  /* The count and the accessible name remain; the visible label goes. */
+  .shell-attention-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 64rem) {
+  .app-shell {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    transition: grid-template-columns var(--duration-base) var(--ease-standard);
+  }
+
+  .shell-topbar {
+    display: none;
+  }
+
+  .shell-sidebar {
+    position: sticky;
+    z-index: var(--z-sticky);
+    top: 0;
+    display: flex;
+    height: 100vh;
+    height: 100dvh;
+    flex-direction: column;
+    padding: var(--space-5) var(--space-3) var(--space-4);
+    overflow: hidden auto;
+    border-right: var(--border-width) solid var(--border-subtle);
+    background: var(--bg-canvas);
+  }
+
+  .shell-sidebar > .shell-brand {
+    margin: 0 0 var(--space-8);
+    padding: var(--space-0-5) var(--space-2);
+  }
+
+  .shell-sidebar > .shell-nav {
+    flex: 1 1 auto;
+  }
+
+  .shell-sidebar-footer {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+    padding: var(--space-4) var(--space-2) 0;
+    border-top: var(--border-width) solid var(--border-subtle);
+  }
+
+  .shell-sidebar-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .shell-main {
+    padding-top: var(--space-8);
+  }
+
+  /* Icon rail ------------------------------------------------------------ */
+
+  :root[data-sidebar='collapsed'] .app-shell {
+    grid-template-columns: var(--sidebar-width-collapsed) minmax(0, 1fr);
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar {
+    align-items: center;
+    padding-inline: var(--space-2);
+    /* Visible so rail labels can extend over the content. */
+    overflow: visible;
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar > .shell-brand {
+    padding-inline: 0;
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar :is(.shell-brand-text, .shell-account-text) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar .shell-nav {
+    width: 100%;
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar .nav-row {
+    width: 2.5rem;
+    min-height: 2.5rem;
+    justify-content: center;
+    justify-self: center;
+    padding-inline: 0;
+  }
+
+  :root[data-sidebar='collapsed']
+    .shell-sidebar
+    :is(.nav-chevron, .wip-badge, .nav-trailing-icon, .nav-group-items) {
+    display: none;
+  }
+
+  /* In the rail, labels become tooltips on hover and keyboard focus. */
+  :root[data-sidebar='collapsed'] .shell-sidebar .nav-label {
+    position: absolute;
+    z-index: var(--z-dropdown);
+    top: 50%;
+    left: calc(100% + var(--space-2));
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-inverse);
+    color: var(--text-inverse);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    opacity: 0;
+    overflow: visible;
+    pointer-events: none;
+    transform: translate(-0.25rem, -50%);
+    transition:
+      opacity var(--duration-fast) var(--ease-standard),
+      transform var(--duration-fast) var(--ease-standard);
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar .nav-row:is(:hover, :focus-visible) .nav-label {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar-footer {
+    justify-items: center;
+    padding-inline: 0;
+  }
+
+  :root[data-sidebar='collapsed'] .shell-sidebar-controls {
+    flex-direction: column;
+  }
+
+  :root[data-sidebar='collapsed'] .theme-control {
+    flex-direction: column;
+    border-radius: var(--radius-lg);
+  }
+
+  :root[data-sidebar='collapsed'] .theme-option {
+    border-radius: var(--radius-md);
+  }
+}
+
+/* Touch: 44px targets in the drawer and top bar. */
+@media (pointer: coarse) {
+  .shell-menu-button {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+  }
+
+  .nav-row {
+    min-height: var(--touch-target-min);
+  }
+
+  .theme-option {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+  }
+
+  .shell-attention {
+    height: var(--touch-target-min);
+  }
+}

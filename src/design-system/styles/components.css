@@ -1634,7 +1634,7 @@ input[type='radio']:focus-visible {
   text-align: center;
 }
 
-.state-block h3 {
+.state-block :is(h1, h2, h3) {
   margin: 0;
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);

@@ -20,6 +20,7 @@ exercises it through `next dev`, which Playwright uses locally and in CI.
 | `styles/tokens.css`              | Palette, semantic colour (light + dark), type, space, radius, border, elevation, sizing, layout widths, motion, z-index, chart tokens, legacy aliases                                                                            |
 | `styles/base.css`                | Document defaults, typography, focus visibility, utilities, motion policy                                                                                                                                                        |
 | `styles/components.css`          | Styles for every primitive below                                                                                                                                                                                                 |
+| `styles/shell.css`               | Product Shell frame: sidebar, icon rail, top bar, drawer, content frame, route states, sign-in frame                                                                                                                             |
 | `tokens.ts`                      | Breakpoints, content widths, motion timings, chart series order for JS                                                                                                                                                           |
 | `theme.ts` / `theme-runtime.tsx` | Theme preference model, no-flash init script, `useThemePreference`                                                                                                                                                               |
 | `icons.tsx`                      | Minimal inline icon set (`Icon`)                                                                                                                                                                                                 |
@@ -29,11 +30,15 @@ exercises it through `next dev`, which Playwright uses locally and in CI.
 | `feedback.tsx`                   | `Notice`, `NeedsAttention`, `WipBadge`, `WorkInProgressPanel`                                                                                                                                                                    |
 | `dialogs.tsx`                    | `ConfirmDialog`, `WorkInProgressDialog`, `WorkInProgressTrigger`                                                                                                                                                                 |
 | `layout.tsx`                     | `PageHeader`, `PageContainer`, `Section`, `MetricCard`                                                                                                                                                                           |
-| `app-shell.tsx`, `navigation.ts` | Pre-Product-Shell app shell (to be replaced in Phase 2)                                                                                                                                                                          |
+| `app-shell.tsx`                  | `AppShell` (the permanent Product Shell) and `Breadcrumbs`                                                                                                                                                                       |
+| `navigation.ts`                  | Grouped navigation model, projection, work-context forwarding, current-route matching                                                                                                                                            |
+| `shell-preferences.ts`           | Per-device sidebar rail / closed-group preferences and their no-flash init script                                                                                                                                                |
+| `theme-control.tsx`              | `ThemeControl` segmented System / Light / Dark radio group                                                                                                                                                                       |
+| `route-states.tsx`               | `RouteLoading`, `RouteError`, `RouteNotFound` (whole-page states inside the shell)                                                                                                                                               |
 | `formatters.ts`                  | Presentation-only money, litre, ratio, percentage, date, status labels                                                                                                                                                           |
 
 Stylesheets are imported once, in order, from `src/app/layout.tsx`:
-tokens → base → components → `src/app/globals.css` (shell and module layouts only).
+tokens → base → components → shell → `src/app/globals.css` (module layouts only).
 
 ## Tokens
 
@@ -45,7 +50,8 @@ names are aliases kept so existing module CSS renders; do not use them in new co
 - **Colour:** neutral greys carry the interface. The Shanda Fuel green (`#0d6b58`) is the
   accent: primary actions, focus, selection, links, and "informational" status. Use it
   sparingly; a screen should read as mostly neutral.
-- **Type:** `--font-size-2xs` … `--font-size-4xl`. Controls and tables use `md` (14px),
+- **Type:** the native system UI stack (SF Pro, Segoe UI Variable, Roboto): no web-font
+  download or layout shift. `--font-size-2xs` … `--font-size-4xl`. Controls and tables use `md` (14px),
   reading text `base` (15px). Weights stop at semibold (600) for headings; avoid bold
   walls. Numbers use `.numeric` (tabular figures).
 - **Space:** 4px scale `--space-1` … `--space-20`. Page rhythm uses `--page-gutter`,
@@ -71,11 +77,34 @@ two dark-theme declarations identical. Run it after any colour change.
 Light and dark are both first-class. Default is the device preference. An explicit
 override sets `<html data-theme="light|dark">`, persisted per device in localStorage
 (`shanda-fuel:theme`); an inline script in the root layout applies it before first paint.
-The Product Shell theme control should use `useThemePreference()` from
-`theme-runtime.tsx`. Theme preference is presentation only and never sent to the server.
+The Product Shell's `ThemeControl` uses `useThemePreference()` from `theme-runtime.tsx`.
+Theme preference is presentation only and never sent to the server.
 
-If a Content Security Policy is introduced, the inline init script in
-`src/app/layout.tsx` needs a nonce or hash.
+The current Content Security Policy allows inline scripts. If it is tightened, the inline
+init script in `src/app/layout.tsx` (theme + shell preferences) needs a nonce or hash.
+
+## Product Shell
+
+Every product page renders inside `AppShell`; do not add per-page navigation markup.
+
+- **Desktop (≥ 64rem):** persistent sidebar grouped as Today, Operations, Finance,
+  Customers, Suppliers, Reports, Settings. Groups with several destinations collapse
+  (`aria-expanded`); single-destination sections are plain links. The sidebar collapses to
+  an icon rail whose labels become hover/focus tooltips. Rail and closed groups persist per
+  device (`shell-preferences.ts`); the rail is applied before first paint.
+- **Tablet and phone:** a slim sticky top bar; the menu opens the same grouped navigation
+  in a `Modal` drawer (`presentation="drawer"`) with the theme control. No bottom bar.
+- **Current route:** `aria-current="page"` on the link, shown as a raised neutral surface
+  with an accent icon; a closed group containing it is marked the same way.
+- **Destinations:** only existing routes are linked. Planned areas open
+  `WorkInProgressDialog`. Station-scoped areas explain station selection until a station is
+  in the URL. Navigation forwards `tenantId`, `legalEntityId` and `stationId` from the
+  current URL; they are not grants and every page re-validates them server-side.
+- **Context and attention:** pages pass `breadcrumbs` and `context` (shown as one quiet
+  line). `attention` is optional and must come from the server; the shell never invents
+  items.
+- **Route states:** `src/app/error.tsx`, `not-found.tsx` and segment `loading.tsx` files
+  render `route-states.tsx` inside the shell, so navigation stays put.
 
 ## Patterns
 

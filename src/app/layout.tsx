@@ -4,13 +4,15 @@ import type { Metadata, Viewport } from 'next';
 import '@/design-system/styles/tokens.css';
 import '@/design-system/styles/base.css';
 import '@/design-system/styles/components.css';
+import '@/design-system/styles/shell.css';
 import './globals.css';
 
+import { shellInitScript } from '@/design-system/shell-preferences';
 import { themeInitScript } from '@/design-system/theme';
 
 export const metadata: Metadata = {
   title: 'Shanda Fuel',
-  description: 'Shanda Fuel engineering foundation',
+  description: 'Fuel-station operations and financial control',
 };
 
 export const viewport: Viewport = {
@@ -23,10 +25,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    // The theme init script may set data-theme before hydration.
+    // The init scripts may set data-theme / data-sidebar before hydration.
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript + shellInitScript }} />
       </head>
       <body>{children}</body>
     </html>
