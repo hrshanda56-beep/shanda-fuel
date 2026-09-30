@@ -10,7 +10,9 @@ evidence that the operational exercise has passed.
 | [`backup-restore.md`](backup-restore.md) | Database and app verification complete; R2 recovery open | Retain the Lane 4 evidence and close the R2 deleted-object recovery gap. |
 | [`r2-object-recovery.md`](r2-object-recovery.md) | Implementation ready; provider configuration and witnessed drill open | Configure the separate locked recovery bucket and run the dedicated staging drill. |
 | [`incident-response.md`](incident-response.md) | Procedure ready | Connect paging, traffic controls, and on-call ownership. |
-| [`observability.md`](observability.md) | Expectations ready; integration open | Connect structured logs, dashboards, alert routing, retention, and escalation. |
+| [`observability.md`](observability.md) | In-repo contract and validation ready; provider integration open | Follow [`observability-provider-setup.md`](observability-provider-setup.md), then execute [`observability-staging-alert-proof.md`](observability-staging-alert-proof.md). |
+| [`observability-provider-setup.md`](observability-provider-setup.md) | Procedure ready; provider execution open | Select the approved sink, configure drain/parser, import alerts/dashboard, set retention and owners, and attach evidence. |
+| [`observability-staging-alert-proof.md`](observability-staging-alert-proof.md) | Safe rehearsal ready; execution open | Run only against staging and prove searchability, alert firing, owner delivery, acknowledgement, and cleanup. |
 | [`staging-performance-verification.md`](staging-performance-verification.md) | Procedure ready; execution open | Run with the RC against representative synthetic data. |
 | [`staging-auth-smoke-bootstrap.md`](staging-auth-smoke-bootstrap.md) | Procedure ready; staging execution open | Use only with the approved staging URL, secrets, and operator. |
 | [`key-rotation.md`](key-rotation.md) | Repository procedure ready; provider execution open | Name the secret manager, execute staging/production rotation, verify overlap/retirement, and retain metadata-only evidence. |

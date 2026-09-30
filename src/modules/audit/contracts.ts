@@ -6,6 +6,9 @@ import {
 } from '../../platform/security';
 import { sql } from 'drizzle-orm';
 import { getDatabase, type Database } from '../../platform/db';
+import { createLogger } from '../../platform/logging';
+
+const logger = createLogger({ component: 'security.audit' });
 
 export type AuditActorType = 'HUMAN' | 'SYSTEM' | 'SUPPORT';
 
@@ -61,19 +64,29 @@ export async function appendSecurityEvent(
   key: { keyId: string; secret: string },
   executor: Pick<Database, 'execute'> = getDatabase(),
 ): Promise<SignedSecurityEvent> {
-  const signed = signAuditEvent(draft, key);
-  await executor.execute(sql`
-    insert into platform.security_events (
-      id, tenant_id, membership_id, actor_id, event_code,
-      request_id, occurred_at, details, key_id, algorithm, signature
-    ) values (
-      ${signed.eventId}, ${signed.tenantId},
-      ${signed.membershipId ?? null}, ${signed.actorId ?? null}, ${signed.eventCode},
-      ${signed.requestId}, ${signed.occurredAt}, ${JSON.stringify(signed.details)}::jsonb,
-      ${signed.keyId}, ${signed.algorithm}, ${signed.signature}
-    )
-  `);
-  return signed;
+  try {
+    const signed = signAuditEvent(draft, key);
+    await executor.execute(sql`
+      insert into platform.security_events (
+        id, tenant_id, membership_id, actor_id, event_code,
+        request_id, occurred_at, details, key_id, algorithm, signature
+      ) values (
+        ${signed.eventId}, ${signed.tenantId},
+        ${signed.membershipId ?? null}, ${signed.actorId ?? null}, ${signed.eventCode},
+        ${signed.requestId}, ${signed.occurredAt}, ${JSON.stringify(signed.details)}::jsonb,
+        ${signed.keyId}, ${signed.algorithm}, ${signed.signature}
+      )
+    `);
+    return signed;
+  } catch (error) {
+    logger.error('security.audit.append_failed', {
+      signal: 'security_audit_failure',
+      requestId: draft.requestId,
+      eventCode: draft.actionCode,
+      errorType: error instanceof Error ? error.constructor?.name || 'Error' : typeof error,
+    });
+    throw error;
+  }
 }
 
 export function verifyAuditEvent(event: SignedSecurityEvent, secret: string): boolean {

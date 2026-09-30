@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "name": "Shanda Fuel launch observability",
+  "source": "structured-runtime-logs",
+  "logContract": "shanda-fuel.runtime.v1",
+  "refresh": "60s",
+  "timeRanges": ["15m", "1h", "24h"],
+  "panels": [
+    {
+      "id": "readiness",
+      "title": "Readiness failures",
+      "type": "stat",
+      "query": { "anyMessage": ["runtime.dependency.unavailable"], "route": "/api/readiness" },
+      "unit": "events",
+      "alertIds": ["readiness_failure"]
+    },
+    {
+      "id": "availability",
+      "title": "HTTP requests by status class",
+      "type": "timeseries",
+      "query": { "message": "http.request.completed", "groupBy": ["statusClass"] },
+      "unit": "requests",
+      "alertIds": ["http_5xx_rate"]
+    },
+    {
+      "id": "latency",
+      "title": "Request latency p50/p95",
+      "type": "timeseries",
+      "query": {
+        "message": "http.request.completed",
+        "percentiles": [50, 95],
+        "groupBy": ["routeClass"]
+      },
+      "unit": "milliseconds",
+      "alertIds": []
+    },
+    {
+      "id": "security",
+      "title": "Authentication and security failures",
+      "type": "timeseries",
+      "query": {
+        "signal": "http_error",
+        "errorClassification": ["unauthenticated", "forbidden"],
+        "groupBy": ["routeClass", "errorClassification"]
+      },
+      "unit": "events",
+      "alertIds": ["auth_security_failures"]
+    },
+    {
+      "id": "operational-failures",
+      "title": "Critical operational failures",
+      "type": "table",
+      "query": {
+        "signals": ["dependency_failure", "security_audit_failure"],
+        "errorClassifications": ["dependency_unavailable", "internal", "unexpected", "invariant"],
+        "columns": [
+          "timestamp",
+          "environment",
+          "component",
+          "route",
+          "routeClass",
+          "errorClassification",
+          "requestId"
+        ]
+      },
+      "unit": "events",
+      "alertIds": ["critical_operational_failure"]
+    },
+    {
+      "id": "providers",
+      "title": "Provider adapter failures",
+      "type": "stat",
+      "query": { "signal": "provider_failure", "groupBy": ["service", "errorCode"] },
+      "unit": "events",
+      "alertIds": ["provider_adapter_failure"]
+    }
+  ]
+}

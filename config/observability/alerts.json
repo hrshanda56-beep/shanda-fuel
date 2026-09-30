@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "source": "structured-runtime-logs",
+  "logContract": "shanda-fuel.runtime.v1",
+  "alerts": [
+    {
+      "id": "readiness_failure",
+      "name": "Staging or production readiness failure",
+      "severity": "P1",
+      "window": "5m",
+      "threshold": { "operator": ">=", "value": 1 },
+      "dedupeBy": ["environment", "route"],
+      "condition": {
+        "any": [
+          {
+            "all": [
+              { "field": "message", "equals": "http.request.completed" },
+              { "field": "route", "equals": "/api/readiness" },
+              { "field": "statusClass", "equals": "5xx" }
+            ]
+          },
+          {
+            "all": [
+              { "field": "message", "equals": "runtime.dependency.unavailable" },
+              { "field": "route", "equals": "/api/readiness" }
+            ]
+          }
+        ]
+      },
+      "notificationPolicy": "page-primary-then-secondary",
+      "runbook": "docs/runbooks/observability.md#readiness-failure",
+      "owner": "operator-to-fill-primary-on-call"
+    },
+    {
+      "id": "http_5xx_rate",
+      "name": "HTTP 5xx error rate",
+      "severity": "P1",
+      "window": "5m",
+      "threshold": { "operator": ">", "value": 0.05, "minimumRequests": 20 },
+      "aggregation": "ratio(statusClass=5xx) / count(message=http.request.completed)",
+      "dedupeBy": ["environment"],
+      "condition": {
+        "all": [
+          { "field": "message", "equals": "http.request.completed" },
+          { "field": "statusClass", "equals": "5xx" }
+        ]
+      },
+      "notificationPolicy": "page-primary-then-secondary",
+      "runbook": "docs/runbooks/observability.md#http-5xx-rate",
+      "owner": "operator-to-fill-primary-on-call"
+    },
+    {
+      "id": "auth_security_failures",
+      "name": "Authentication and security failure burst",
+      "severity": "P2",
+      "window": "10m",
+      "threshold": { "operator": ">=", "value": 10 },
+      "dedupeBy": ["environment", "routeClass", "errorClassification"],
+      "condition": {
+        "any": [
+          {
+            "all": [
+              { "field": "signal", "equals": "http_error" },
+              { "field": "errorClassification", "in": ["unauthenticated", "forbidden"] }
+            ]
+          },
+          {
+            "all": [
+              { "field": "signal", "equals": "http_request" },
+              { "field": "routeClass", "equals": "auth" },
+              { "field": "statusClass", "in": ["4xx", "5xx"] }
+            ]
+          }
+        ]
+      },
+      "notificationPolicy": "notify-security-owner-and-primary-on-call",
+      "runbook": "docs/runbooks/observability.md#authentication-and-security-failures",
+      "owner": "operator-to-fill-security-owner"
+    },
+    {
+      "id": "critical_operational_failure",
+      "name": "Critical application or dependency failure",
+      "severity": "P1",
+      "window": "5m",
+      "threshold": { "operator": ">=", "value": 3 },
+      "dedupeBy": ["environment", "routeClass", "errorClassification", "dependency"],
+      "condition": {
+        "any": [
+          {
+            "all": [
+              { "field": "signal", "equals": "http_error" },
+              {
+                "field": "errorClassification",
+                "in": ["dependency_unavailable", "internal", "unexpected", "invariant"]
+              }
+            ]
+          },
+          { "field": "signal", "equals": "dependency_failure" },
+          { "field": "signal", "equals": "security_audit_failure" }
+        ]
+      },
+      "notificationPolicy": "page-primary-then-secondary",
+      "runbook": "docs/runbooks/observability.md#critical-operational-failure",
+      "owner": "operator-to-fill-primary-on-call"
+    },
+    {
+      "id": "provider_adapter_failure",
+      "name": "Storage or email provider failure",
+      "severity": "P2",
+      "window": "5m",
+      "threshold": { "operator": ">=", "value": 1 },
+      "dedupeBy": ["environment", "service", "errorCode"],
+      "condition": {
+        "all": [
+          { "field": "signal", "equals": "provider_failure" },
+          { "field": "component", "in": ["platform.storage", "platform.email"] }
+        ]
+      },
+      "notificationPolicy": "notify-primary-on-call",
+      "runbook": "docs/runbooks/observability.md#provider-failure",
+      "owner": "operator-to-fill-primary-on-call"
+    }
+  ]
+}
