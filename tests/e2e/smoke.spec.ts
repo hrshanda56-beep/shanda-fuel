@@ -23,11 +23,6 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(mobileContext).toContainText('Demo station');
   await expect(mobileContext).toContainText('20 Sep 2026');
   await expect(mobileContext).toContainText('Morning shift');
-  await expect(page.getByLabel('Draft note')).toBeVisible();
-  await expect(page.getByLabel('Reason')).toBeVisible();
-  await expect(page.getByLabel('Draft note')).toHaveAttribute('required', '');
-  await expect(page.getByLabel('Draft note')).toHaveAttribute('aria-required', 'true');
-  await expect(page.getByLabel('Quantity')).not.toHaveAttribute('required');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
 
   await page.getByRole('button', { name: 'Open menu' }).click();
@@ -36,10 +31,24 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(menu.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
 });
 
+// The shared form, dialog and sheet patterns are exercised on the internal
+// design-system reference (served by `next dev`, which Playwright uses).
+test('form fields keep persistent labels and mark required state', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/design-system');
+
+  const reference = page.getByRole('textbox', { name: 'Reference', exact: true });
+  await expect(reference).toBeVisible();
+  await expect(reference).toHaveAttribute('required', '');
+  await expect(reference).toHaveAttribute('aria-required', 'true');
+  await expect(page.locator('#ref-reason')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#ref-litres')).not.toHaveAttribute('required');
+});
+
 test('shared button defaults and modal triggers do not submit forms accidentally', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/design-system');
 
   await expect(page.getByRole('button', { name: 'Open accessible dialog' })).toHaveAttribute(
     'type',
@@ -52,7 +61,7 @@ test('shared button defaults and modal triggers do not submit forms accidentally
 });
 
 test('accessible dialog traps focus, closes with Escape, and restores focus', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/design-system');
   const trigger = page.getByRole('button', { name: 'Open accessible dialog' });
   await trigger.focus();
   await page.keyboard.press('Enter');
@@ -60,7 +69,10 @@ test('accessible dialog traps focus, closes with Escape, and restores focus', as
   const dialog = page.getByRole('dialog', { name: 'Confirm return' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('heading', { name: 'Confirm return' })).toBeVisible();
-  await expect(page.locator('.app-shell')).toHaveAttribute('aria-hidden', 'true');
+  const hiddenPage = page
+    .locator('#main-content')
+    .locator('xpath=ancestor::*[@aria-hidden="true"]');
+  await expect(hiddenPage).toHaveCount(1);
 
   await page.keyboard.press('Tab');
   await expect(dialog.locator(':focus')).toBeVisible();
@@ -70,12 +82,12 @@ test('accessible dialog traps focus, closes with Escape, and restores focus', as
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
-  await expect(page.locator('.app-shell')).not.toHaveAttribute('aria-hidden', 'true');
+  await expect(hiddenPage).toHaveCount(0);
 });
 
 test('bottom sheet exposes modal semantics and keyboard close', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/design-system');
   await page.getByRole('button', { name: 'Open mobile sheet' }).click();
 
   const sheet = page.getByRole('dialog', { name: 'Quick context' });

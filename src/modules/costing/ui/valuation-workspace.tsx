@@ -14,6 +14,7 @@ import {
   StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
+import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
 
 type Context = { tenantId: string; stationId: string };
@@ -116,7 +117,7 @@ type RevaluationResponse = {
 
 function date(value: string | null) {
   if (!value) return 'Not recorded';
-  return new Intl.DateTimeFormat('en-ZW', { dateStyle: 'medium', timeStyle: 'short' }).format(
+  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
   );
 }
@@ -248,7 +249,7 @@ export function ValuationOverview({ context }: { context: Context }) {
     <div className="valuation-workspace">
       <div className="page-heading">
         <div>
-          <span className="eyebrow">Inventory control · A12</span>
+          <span className="eyebrow">Inventory control</span>
           <h1>Inventory valuation</h1>
           <p>
             See which cost streams are valued, what is blocking an unvalued stream, and how
@@ -260,36 +261,38 @@ export function ValuationOverview({ context }: { context: Context }) {
         </Button>
       </div>
       {success ? <SuccessState title="Workflow updated" message={success} /> : null}
-      <div className="valuation-summary-grid" aria-label="Valuation summary">
-        <Card>
-          <span className="metric-label">Streams</span>
-          <strong className="metric-value">{data.streams.length}</strong>
-          <p>Persisted A12 projections</p>
-        </Card>
-        <Card>
-          <span className="metric-label">Unvalued</span>
-          <strong className="metric-value metric-critical">{unvalued.length}</strong>
-          <p>May block sale-cost posting</p>
-        </Card>
-        <Card>
-          <span className="metric-label">Active revaluations</span>
-          <strong className="metric-value">
-            {
-              data.revaluations.filter(
-                (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
-              ).length
-            }
-          </strong>
-          <p>Requested or approved</p>
-        </Card>
-      </div>
+      <section className="metric-grid" aria-label="Valuation summary">
+        <MetricCard
+          label="Streams"
+          value={data.streams.length}
+          meta="Persisted cost projections"
+          href="#cost-streams"
+        />
+        <MetricCard
+          label="Unvalued"
+          value={unvalued.length}
+          meta="May block sale-cost posting"
+          tone={unvalued.length > 0 ? 'critical' : 'default'}
+          href="#cost-streams"
+        />
+        <MetricCard
+          label="Active revaluations"
+          value={
+            data.revaluations.filter(
+              (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
+            ).length
+          }
+          meta="Requested or approved"
+          href="#revaluation-history"
+        />
+      </section>
       {data.streams.length === 0 ? (
         <EmptyState
           title="No valuation streams yet"
-          message="This station has no persisted A12 cost stream projection. Create or import inventory movements before reviewing valuation."
+          message="This station has no persisted cost stream yet. Create or import inventory movements before reviewing valuation."
         />
       ) : (
-        <Card className="table-card">
+        <Card className="panel table-card" id="cost-streams">
           <div className="section-heading">
             <div>
               <h2>Cost streams</h2>
@@ -314,14 +317,15 @@ export function ValuationOverview({ context }: { context: Context }) {
                   <tr key={`${stream.tank.id}-${stream.product.id}`}>
                     <th scope="row">
                       <Link
+                        className="row-link"
                         href={`/inventory/valuation/streams/${stream.tank.id}/${stream.product.id}?${new URLSearchParams(context)}`}
                       >
                         {stream.tank.code} · {stream.product.name}
                       </Link>
                       <span className="table-secondary">{stream.product.code}</span>
                     </th>
-                    <td>{stream.quantityLitres} L</td>
-                    <td>
+                    <td data-label="Quantity">{stream.quantityLitres} L</td>
+                    <td data-label="Status">
                       <Status status={stream.valuationStatus} />
                       {stream.hasActiveRevaluation ? (
                         <span className="table-secondary">
@@ -329,20 +333,22 @@ export function ValuationOverview({ context }: { context: Context }) {
                         </span>
                       ) : null}
                     </td>
-                    <td>
+                    <td data-label="Inventory value">
                       {stream.inventoryValue === null
                         ? '—'
                         : `${stream.currency} ${stream.inventoryValue}`}
                     </td>
-                    <td>
+                    <td data-label="WAC">
                       {stream.weightedAverageCost === null
                         ? '—'
                         : `${stream.currency} ${stream.weightedAverageCost}/L`}
                     </td>
-                    <td>
+                    <td className="cell-action">
                       <Link
                         className="button button-secondary button-small"
                         href={`/inventory/valuation/streams/${stream.tank.id}/${stream.product.id}?${new URLSearchParams(context)}`}
+                        tabIndex={-1}
+                        aria-hidden="true"
                       >
                         Review stream
                       </Link>
@@ -354,7 +360,7 @@ export function ValuationOverview({ context }: { context: Context }) {
           </TableScrollRegion>
         </Card>
       )}
-      <Card className="table-card">
+      <Card className="panel table-card" id="revaluation-history">
         <div className="section-heading">
           <div>
             <h2>Revaluation history</h2>
@@ -384,24 +390,33 @@ export function ValuationOverview({ context }: { context: Context }) {
                 {data.revaluations.map((item) => (
                   <tr key={item.id}>
                     <th scope="row">
-                      {item.tank.code} · {item.product.name}
+                      <Link
+                        className="row-link"
+                        href={`/inventory/valuation/revaluations/${item.id}?${new URLSearchParams(context)}`}
+                      >
+                        {item.tank.code} · {item.product.name}
+                      </Link>
                       <span className="table-secondary">
                         {item.source?.type ?? 'Source unavailable'}
                       </span>
                     </th>
-                    <td>
+                    <td data-label="Status">
                       <Status status={item.status} />
                     </td>
-                    <td>{item.amount === null ? '—' : `${item.currency} ${item.amount}`}</td>
-                    <td>
+                    <td data-label="Amount">
+                      {item.amount === null ? '—' : `${item.currency} ${item.amount}`}
+                    </td>
+                    <td data-label="Requested">
                       {date(item.requestedAt)}
                       <span className="table-secondary">{item.requestedBy.name}</span>
                     </td>
-                    <td>{item.affectedSales}</td>
-                    <td>
+                    <td data-label="Affected sales">{item.affectedSales}</td>
+                    <td className="cell-action">
                       <Link
                         className="button button-secondary button-small"
                         href={`/inventory/valuation/revaluations/${item.id}?${new URLSearchParams(context)}`}
+                        tabIndex={-1}
+                        aria-hidden="true"
                       >
                         Open history
                       </Link>
@@ -491,8 +506,8 @@ function RequestRevaluationDialog({
           </p>
         </div>
         <p className="muted-small">
-          A12.5 is whole-history only. This request has no editable restatement bounds and reporting
-          filters do not change its revaluation scope.
+          Revaluation always covers the whole history. This request has no editable restatement
+          bounds, and reporting filters do not change its scope.
         </p>
         <Field
           id="revaluation-amount"
@@ -626,7 +641,7 @@ export function ValuationStreamDetail({
         />
       </div>
       <Card
-        className={`valuation-status-card ${stream.valuationStatus === 'UNVALUED' ? 'valuation-status-card-critical' : ''}`}
+        className={`panel valuation-status-card ${stream.valuationStatus === 'UNVALUED' ? 'valuation-status-card-critical' : ''}`}
       >
         <div>
           <span className="eyebrow">Current valuation status</span>
@@ -640,7 +655,7 @@ export function ValuationStreamDetail({
           </div>
           <p>
             {stream.blockingReason ??
-              'The persisted A12 projection has an authoritative cost basis for this stream.'}
+              'The persisted valuation has an authoritative cost basis for this stream.'}
           </p>
         </div>
         {stream.valuationStatus === 'UNVALUED' && stream.sourceMovementRequiringCost ? (
@@ -662,7 +677,7 @@ export function ValuationStreamDetail({
         ) : null}
       </Card>
       <div className="valuation-detail-grid">
-        <Card>
+        <Card className="panel">
           <h2>Projection</h2>
           <dl className="detail-list">
             <dt>Quantity</dt>
@@ -685,7 +700,7 @@ export function ValuationStreamDetail({
             <dd>{stream.currency ?? 'Not available while UNVALUED'}</dd>
           </dl>
         </Card>
-        <Card>
+        <Card className="panel">
           <h2>Workflow visibility</h2>
           {stream.activeRevaluation ? (
             <p>
@@ -700,12 +715,12 @@ export function ValuationStreamDetail({
             <p>No active revaluation workflow for this stream.</p>
           )}
           <p className="muted-small">
-            A5 reconciliation approval can remain blocked while this stream is UNVALUED. Resolve the
-            source cost, then retry the blocked operation.
+            Daily reconciliation approval can remain blocked while this stream is UNVALUED. Resolve
+            the source cost, then retry the blocked operation.
           </p>
         </Card>
       </div>
-      <Card className="table-card">
+      <Card className="panel table-card">
         <h2>Revaluation history for this stream</h2>
         {data.revaluations.length === 0 ? (
           <EmptyState
@@ -727,15 +742,17 @@ export function ValuationStreamDetail({
               <tbody>
                 {data.revaluations.map((item) => (
                   <tr key={item.id}>
-                    <td>
+                    <td data-label="Status">
                       <Status status={item.status} />
                     </td>
-                    <td>{item.source?.type ?? '—'}</td>
-                    <td>{item.amount === null ? '—' : `${item.currency} ${item.amount}`}</td>
-                    <td>{item.affectedSales}</td>
-                    <td>
+                    <td data-label="Source">{item.source?.type ?? '—'}</td>
+                    <td data-label="Amount">
+                      {item.amount === null ? '—' : `${item.currency} ${item.amount}`}
+                    </td>
+                    <td data-label="Affected sales">{item.affectedSales}</td>
+                    <td className="cell-action">
                       <Link
-                        className="button button-secondary button-small"
+                        className="button button-secondary button-small row-link"
                         href={`/inventory/valuation/revaluations/${item.id}?${new URLSearchParams(context)}`}
                       >
                         Open detail
@@ -888,7 +905,7 @@ export function RevaluationDetail({
         />
       ) : null}
       {confirmPost ? (
-        <Card className="confirmation-card">
+        <Card className="panel confirmation-card">
           <StatusBadge tone="warning">Irreversible accounting action</StatusBadge>
           <h2>Post this revaluation?</h2>
           <p>
@@ -910,7 +927,7 @@ export function RevaluationDetail({
           </div>
         </Card>
       ) : null}
-      <Card className="revaluation-header-card">
+      <Card className="panel revaluation-header-card">
         <div>
           <Status status={item.status} />
           <h2>{item.reason}</h2>
@@ -929,11 +946,11 @@ export function RevaluationDetail({
         </dl>
       </Card>
       <div className="valuation-detail-grid">
-        <Card>
+        <Card className="panel">
           <h2>Current stream projection</h2>
           <p className="muted-small">
             Read from the current persisted stream state. Later movements or revaluations may have
-            changed it; A12 does not persist a historical post-revaluation snapshot.
+            changed it; no historical post-revaluation snapshot is kept.
           </p>
           <dl className="detail-list">
             <dt>Status</dt>
@@ -960,12 +977,12 @@ export function RevaluationDetail({
             </dd>
           </dl>
         </Card>
-        <Card>
+        <Card className="panel">
           <h2>Cost allocation summary</h2>
           <p className="muted-small">
             Derived from the persisted envelope amount and posted COGS revaluation lines. The
-            ending-inventory figure is implied; A12 does not store independent pre/post evidence to
-            verify conservation here.
+            ending-inventory figure is implied; independent pre/post evidence to verify conservation
+            is not stored.
           </p>
           {item.costAllocation ? (
             <dl className="detail-list">
@@ -987,7 +1004,7 @@ export function RevaluationDetail({
           )}
         </Card>
       </div>
-      <Card>
+      <Card className="panel">
         <h2>Operator timeline</h2>
         <ol className="timeline">
           {item.timeline.map((event, index) => (
@@ -1005,7 +1022,7 @@ export function RevaluationDetail({
           ))}
         </ol>
       </Card>
-      <Card className="table-card">
+      <Card className="panel table-card">
         <h2>Affected historical sales and COGS</h2>
         {item.lines.length === 0 ? (
           <EmptyState
@@ -1035,19 +1052,19 @@ export function RevaluationDetail({
                         {line.saleQuantityLitres} L · meter {line.meterSegmentId.slice(0, 8)}…
                       </span>
                     </th>
-                    <td>
+                    <td data-label="Original COGS">
                       {line.currency} {line.originalCogs}
                     </td>
-                    <td>
+                    <td data-label="Prior restated COGS">
                       {line.currency} {line.priorRestatedCogs}
                     </td>
-                    <td>
+                    <td data-label="Recomputed COGS">
                       {line.currency} {line.recomputedCogs}
                     </td>
-                    <td>
+                    <td data-label="Signed delta">
                       {line.currency} {line.cogsDelta}
                     </td>
-                    <td>
+                    <td data-label="Event">
                       <span className="table-secondary">COGS_REVALUATION</span>
                       <code>{line.cogsRevaluationEventId}</code>
                     </td>
@@ -1058,7 +1075,7 @@ export function RevaluationDetail({
           </TableScrollRegion>
         )}
       </Card>
-      <Card>
+      <Card className="panel">
         <h2>Audit identity</h2>
         <dl className="detail-list">
           <dt>Requested by</dt>

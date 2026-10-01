@@ -26,7 +26,8 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     // The init scripts may set data-theme / data-sidebar before hydration.
-    <html lang="en" suppressHydrationWarning>
+    // data-scroll-behavior: in-page anchors scroll smoothly; route changes jump.
+    <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript + shellInitScript }} />
       </head>

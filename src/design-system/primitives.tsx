@@ -492,6 +492,29 @@ export function NotFoundState({
   );
 }
 
+/**
+ * A page that needs an operating context (tenant, legal entity, station)
+ * before it can load anything. This is a normal starting point, not an error,
+ * so it stays calm and neutral.
+ */
+export function ContextRequiredState({
+  title,
+  message,
+  headingLevel = 2,
+}: {
+  title: string;
+  message: string;
+  headingLevel?: 2 | 3;
+}) {
+  const Heading = `h${headingLevel}` as const;
+  return (
+    <div className="context-required">
+      <Heading>{title}</Heading>
+      <p>{message}</p>
+    </div>
+  );
+}
+
 type ModalProps = {
   trigger: ReactElement;
   title: string;

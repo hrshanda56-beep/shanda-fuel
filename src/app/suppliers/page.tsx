@@ -1,5 +1,7 @@
 import { AppShell } from '@/design-system/app-shell';
+import { PageHeader } from '@/design-system/layout';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { ContextRequiredState } from '@/design-system/primitives';
 import { SupplierWorkspace } from '@/modules/creditors/ui/supplier-workspace';
 
 export default async function SuppliersPage({
@@ -26,16 +28,17 @@ export default async function SuppliersPage({
       {tenantId && legalEntityId ? (
         <SupplierWorkspace tenantId={tenantId} legalEntityId={legalEntityId} />
       ) : (
-        <div className="content-grid">
-          <section className="panel" aria-labelledby="supplier-context-title">
-            <p className="eyebrow">Supplier creditors</p>
-            <h1 id="supplier-context-title">Select a legal entity</h1>
-            <p>
-              A trusted tenant and legal-entity context is required before creditor balances can be
-              loaded.
-            </p>
-          </section>
-        </div>
+        <>
+          <PageHeader
+            eyebrow="Supplier creditors"
+            title="Payables position"
+            description="What each legal entity owes its suppliers, current and overdue."
+          />
+          <ContextRequiredState
+            title="Select a legal entity"
+            message="A trusted tenant and legal-entity context is required before creditor balances can be loaded."
+          />
+        </>
       )}
     </AppShell>
   );

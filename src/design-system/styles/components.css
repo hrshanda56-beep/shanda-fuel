@@ -114,6 +114,11 @@
   align-items: start;
 }
 
+/* A wide item (usually a table) takes the whole row of a content grid. */
+.content-grid > .content-span {
+  grid-column: 1 / -1;
+}
+
 .divider {
   height: 0;
   margin: var(--space-4) 0;
@@ -152,6 +157,31 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* A card that is itself a link: the whole surface is the target. */
+a.card {
+  color: inherit;
+  text-decoration: none;
+  transition:
+    var(--transition-colors),
+    transform var(--duration-instant) var(--ease-standard);
+}
+
+@media (hover: hover) {
+  a.card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+a.card:active {
+  background: var(--bg-subtle);
+  transform: translateY(0.5px);
+}
+
+a.card:focus-visible {
+  border-radius: var(--radius-lg);
+}
+
 .panel,
 .form-panel,
 .card-body {
@@ -184,13 +214,19 @@
   margin-bottom: var(--space-4);
 }
 
-/* Metrics --------------------------------------------------------------- */
+/* Metrics ---------------------------------------------------------------
+ * A KPI is a label, a value and an optional one-line context. KPIs never
+ * carry icons. A KPI with somewhere to go is a link to the detail behind it.
+ * On phones the grid becomes one calm list: label left, value right.
+ */
 
 .metric-card {
   display: grid;
   align-content: start;
   gap: var(--space-1);
   padding: var(--space-5);
+  /* Values size to the card, so long amounts stay on one line. */
+  container-type: inline-size;
 }
 
 .metric-label {
@@ -206,7 +242,9 @@
   display: block;
   margin: var(--space-1) 0 0;
   color: var(--text-primary);
-  font-size: var(--font-size-3xl);
+  font-size: var(--font-size-2xl);
+  font-size: clamp(var(--font-size-xl), 10cqi, var(--font-size-3xl));
+  overflow-wrap: break-word;
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--letter-spacing-tight);
@@ -220,6 +258,104 @@
 .metric-meta {
   color: var(--text-tertiary);
   font-size: var(--font-size-sm);
+}
+
+/* .metric-list is the list presentation at every width; every KPI grid
+ * uses it on phones (same rules, repeated for the breakpoint). */
+.metric-list {
+  gap: 0;
+  overflow: hidden;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.metric-list > .metric-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-0-5) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.metric-list > .metric-card + .metric-card {
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.metric-list .metric-label,
+.metric-list .metric-meta {
+  grid-column: 1;
+}
+
+.metric-list .metric-value {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
+  font-size: var(--font-size-lg);
+  text-align: right;
+}
+
+.metric-list > a.metric-card:is(:hover, :active) {
+  background: var(--bg-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.metric-list > a.metric-card:focus-visible {
+  border-radius: var(--radius-md);
+  outline-offset: -2px;
+}
+
+@media (max-width: 47.99rem) {
+  .metric-grid {
+    gap: 0;
+    overflow: hidden;
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-xs);
+  }
+
+  .metric-grid > .metric-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-0-5) var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .metric-grid > .metric-card + .metric-card {
+    border-top: var(--border-width) solid var(--border-subtle);
+  }
+
+  .metric-grid .metric-label,
+  .metric-grid .metric-meta {
+    grid-column: 1;
+  }
+
+  .metric-grid .metric-value {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    margin: 0;
+    font-size: var(--font-size-lg);
+    text-align: right;
+  }
+
+  .metric-grid > a.metric-card:is(:hover, :active) {
+    background: var(--bg-hover);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .metric-grid > a.metric-card:focus-visible {
+    border-radius: var(--radius-md);
+    outline-offset: -2px;
+  }
 }
 
 /* Buttons ---------------------------------------------------------------
@@ -766,10 +902,6 @@ input[type='radio']:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.data-table {
-  min-width: 52rem;
-}
-
 .table caption,
 .data-table caption,
 .responsive-table caption {
@@ -887,20 +1019,98 @@ input[type='radio']:focus-visible {
   margin-top: calc(var(--space-2) * -1);
 }
 
+/* Long identifiers and references wrap instead of widening the table. */
+:is(.table, .data-table, .responsive-table) :is(td, th) code {
+  overflow-wrap: anywhere;
+}
+
+/* Action cells hold buttons; they never wrap mid-control. */
+:is(.table, .data-table, .responsive-table) .cell-action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Row links --------------------------------------------------------------
+ * Put .row-link on a row's primary link and the whole row becomes the
+ * target (cursor, hover, click). Other controls in the row stay on top and
+ * keep working. Keyboard users still tab to the one real link.
+ */
+
+.row-link {
+  color: inherit;
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+}
+
+.row-link::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+}
+
+.row-link:focus-visible {
+  outline: none;
+}
+
+tr:has(.row-link) {
+  position: relative;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+tr:has(.row-link) :is(a, button, input, select, textarea, label):not(.row-link) {
+  position: relative;
+  z-index: 1;
+}
+
+tr:has(.row-link:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+@media (hover: hover) {
+  tr:has(.row-link):hover {
+    background: var(--bg-hover);
+  }
+
+  tr:has(.row-link):hover .row-link {
+    text-decoration: underline;
+  }
+}
+
+tr:has(.row-link):active {
+  background: var(--bg-pressed);
+}
+
+/* Linked rows bleed slightly past the text so the highlight has room. */
+.responsive-table-wrap:has(.row-link) {
+  width: auto;
+  margin-inline: calc(var(--space-3) * -1);
+}
+
+.responsive-table-wrap:has(.row-link) :is(th, td):first-child {
+  padding-left: var(--space-3);
+}
+
+.responsive-table-wrap:has(.row-link) :is(th, td):last-child {
+  padding-right: var(--space-3);
+}
+
+/* Phones: every table stacks into label/value rows; nothing scrolls sideways. */
 @media (max-width: 47.99rem) {
   .responsive-table-wrap {
     overflow: visible;
   }
 
-  .responsive-table,
-  .responsive-table tbody,
-  .responsive-table tr,
-  .responsive-table td {
+  :is(.responsive-table, .data-table),
+  :is(.responsive-table, .data-table) tbody,
+  :is(.responsive-table, .data-table) tr,
+  :is(.responsive-table, .data-table) td,
+  :is(.responsive-table, .data-table) tbody th {
     display: block;
     width: 100%;
   }
 
-  .responsive-table thead {
+  :is(.responsive-table, .data-table) thead {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -912,40 +1122,95 @@ input[type='radio']:focus-visible {
     border: 0;
   }
 
-  .responsive-table tr {
+  :is(.responsive-table, .data-table) tr {
     padding: var(--space-3) 0;
     border-bottom: var(--border-width) solid var(--border-subtle);
   }
 
-  .responsive-table tr:last-child {
+  :is(.responsive-table, .data-table) tr:last-child {
     border-bottom: 0;
   }
 
-  .responsive-table td {
-    display: flex;
+  /* The row header (first column) titles the stacked row. */
+  :is(.responsive-table, .data-table) tbody th {
     height: auto;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-1) 0;
+    padding: 0 0 var(--space-1-5);
     border: 0;
-  }
-
-  .responsive-table td {
-    text-align: right;
-  }
-
-  .responsive-table td::before {
-    flex: 0 0 40%;
     text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  /* Label on the left (from data-label), value flowing on the right.
+   * :nth-child(n) lifts this above the desktop first/last-cell padding. */
+  :is(.responsive-table, .data-table) td:nth-child(n) {
+    position: relative;
+    min-height: 1.75rem;
+    height: auto;
+    padding: var(--space-1) 0 var(--space-1) 42%;
+    border: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  :is(.responsive-table, .data-table) td::before {
+    position: absolute;
+    top: var(--space-1);
+    left: 0;
+    width: 40%;
     color: var(--text-tertiary);
     content: attr(data-label);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
+    /* The value's line box, so label and value share a baseline. */
+    line-height: calc(var(--font-size-md) * var(--line-height-normal));
+    text-align: left;
   }
 
-  .responsive-table td > * {
-    text-align: right;
+  :is(.responsive-table, .data-table) td:not([data-label]),
+  :is(.responsive-table, .data-table) td.cell-action {
+    padding-left: 0;
+  }
+
+  :is(.responsive-table, .data-table) td.cell-action {
+    padding-top: var(--space-2);
+  }
+
+  :is(.responsive-table, .data-table) td.cell-action::before {
+    content: none;
+  }
+
+  /* A long status wraps inside its cell rather than pushing past the edge. */
+  :is(.responsive-table, .data-table) td .status {
+    min-height: 1.375rem;
+    padding-block: var(--space-0-5);
+    line-height: var(--line-height-snug);
+    text-align: left;
+    white-space: normal;
+  }
+
+  /* Linked rows keep the bleed as row padding instead of cell padding. */
+  .responsive-table-wrap:has(.row-link) tr {
+    padding-inline: var(--space-3);
+    border-radius: var(--radius-md);
+  }
+
+  .responsive-table-wrap:has(.row-link) th:is(:first-child, :last-child) {
+    padding-inline: 0;
+  }
+
+  .responsive-table-wrap:has(.row-link) td:is(:first-child, :last-child) {
+    padding-right: 0;
+  }
+
+  .responsive-table-wrap:has(.row-link) td:is(:first-child, :last-child):not([data-label]),
+  .responsive-table-wrap:has(.row-link) td.cell-action:is(:first-child, :last-child) {
+    padding-left: 0;
+  }
+
+  .responsive-table-wrap:has(.row-link)
+    td:is(:first-child, :last-child)[data-label]:not(.cell-action) {
+    padding-left: 42%;
   }
 }
 
@@ -967,6 +1232,7 @@ input[type='radio']:focus-visible {
   font-weight: var(--font-weight-medium);
   line-height: 1;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 .status::before {
@@ -1278,6 +1544,56 @@ input[type='radio']:focus-visible {
   align-items: center;
   gap: var(--space-1);
   margin: calc(var(--space-1) * -1) calc(var(--space-1) * -1) 0 0;
+}
+
+/* Linked items: the whole row opens the work; other controls stay usable. */
+.attention-item:has(.attention-item-link) {
+  position: relative;
+}
+
+.attention-item-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.attention-item-link::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
+}
+
+.attention-item-link:focus-visible {
+  outline: none;
+}
+
+.attention-item:has(.attention-item-link:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+.attention-item:has(.attention-item-link) .attention-item-actions > * {
+  position: relative;
+  z-index: 1;
+}
+
+.attention-item-go {
+  align-self: center;
+  color: var(--text-tertiary);
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+@media (hover: hover) {
+  .attention-item:has(.attention-item-link):hover .attention-item-go {
+    color: var(--text-primary);
+    transform: translateX(2px);
+  }
+}
+
+.attention-item:has(.attention-item-link):active {
+  background: var(--bg-pressed);
 }
 
 .attention-footer {
@@ -1886,6 +2202,17 @@ input[type='radio']:focus-visible {
   background: var(--bg-surface);
 }
 
+.context-required > :is(h2, h3) {
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-md);
+}
+
+.context-required > p {
+  max-width: var(--measure);
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
 /* Charts -----------------------------------------------------------------
  * Frame and legend only; rendering is chart-specific. Rules: a chart must
  * answer one question stated in its title; use --chart-* tokens in order;
@@ -2011,8 +2338,13 @@ input[type='radio']:focus-visible {
     justify-content: space-between;
   }
 
+  /* As many columns as fit, never narrower than a readable KPI. */
   .metric-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  }
+
+  .metric-grid.metric-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .content-grid {

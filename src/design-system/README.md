@@ -15,27 +15,27 @@ exercises it through `next dev`, which Playwright uses locally and in CI.
 
 ## Structure
 
-| File                             | Owns                                                                                                                                                                                                                             |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `styles/tokens.css`              | Palette, semantic colour (light + dark), type, space, radius, border, elevation, sizing, layout widths, motion, z-index, chart tokens, legacy aliases                                                                            |
-| `styles/base.css`                | Document defaults, typography, focus visibility, utilities, motion policy                                                                                                                                                        |
-| `styles/components.css`          | Styles for every primitive below                                                                                                                                                                                                 |
-| `styles/shell.css`               | Product Shell frame: sidebar, icon rail, top bar, drawer, content frame, route states, sign-in frame                                                                                                                             |
-| `tokens.ts`                      | Breakpoints, content widths, motion timings, chart series order for JS                                                                                                                                                           |
-| `theme.ts` / `theme-runtime.tsx` | Theme preference model, no-flash init script, `useThemePreference`                                                                                                                                                               |
-| `icons.tsx`                      | Minimal inline icon set (`Icon`)                                                                                                                                                                                                 |
-| `modal.tsx`                      | Controlled accessible `Modal` (focus trap, inert background, focus restore)                                                                                                                                                      |
-| `primitives.tsx`                 | `Button`, `IconButton`, `StatusBadge`, `Card`, `Field`, `NumericInput`, loading/skeleton/empty/error/access/not-found/conflict/success states, `DialogFrame`, `BottomSheet`, `RiskConfirmation`, `EvidenceFile`, `OfflineBanner` |
-| `forms.tsx`                      | `Select`, `Checkbox`, `Radio`, `Fieldset`, `Disclosure`                                                                                                                                                                          |
-| `feedback.tsx`                   | `Notice`, `NeedsAttention`, `WipBadge`, `WorkInProgressPanel`                                                                                                                                                                    |
-| `dialogs.tsx`                    | `ConfirmDialog`, `WorkInProgressDialog`, `WorkInProgressTrigger`                                                                                                                                                                 |
-| `layout.tsx`                     | `PageHeader`, `PageContainer`, `Section`, `MetricCard`                                                                                                                                                                           |
-| `app-shell.tsx`                  | `AppShell` (the permanent Product Shell) and `Breadcrumbs`                                                                                                                                                                       |
-| `navigation.ts`                  | Grouped navigation model, projection, work-context forwarding, current-route matching                                                                                                                                            |
-| `shell-preferences.ts`           | Per-device sidebar rail / closed-group preferences and their no-flash init script                                                                                                                                                |
-| `theme-control.tsx`              | `ThemeControl` segmented System / Light / Dark radio group                                                                                                                                                                       |
-| `route-states.tsx`               | `RouteLoading`, `RouteError`, `RouteNotFound` (whole-page states inside the shell)                                                                                                                                               |
-| `formatters.ts`                  | Presentation-only money, litre, ratio, percentage, date, status labels                                                                                                                                                           |
+| File                             | Owns                                                                                                                                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `styles/tokens.css`              | Palette, semantic colour (light + dark), type, space, radius, border, elevation, sizing, layout widths, motion, z-index, chart tokens, legacy aliases                                                                                             |
+| `styles/base.css`                | Document defaults, typography, focus visibility, utilities, motion policy                                                                                                                                                                         |
+| `styles/components.css`          | Styles for every primitive below                                                                                                                                                                                                                  |
+| `styles/shell.css`               | Product Shell frame: sidebar, icon rail, top bar, drawer, content frame, route states, sign-in frame                                                                                                                                              |
+| `tokens.ts`                      | Breakpoints, content widths, motion timings, chart series order for JS                                                                                                                                                                            |
+| `theme.ts` / `theme-runtime.tsx` | Theme preference model, no-flash init script, `useThemePreference`                                                                                                                                                                                |
+| `icons.tsx`                      | Minimal inline icon set (`Icon`)                                                                                                                                                                                                                  |
+| `modal.tsx`                      | Controlled accessible `Modal` (focus trap, inert background, focus restore)                                                                                                                                                                       |
+| `primitives.tsx`                 | `Button`, `IconButton`, `StatusBadge`, `Card`, `Field`, `NumericInput`, loading/skeleton/empty/error/access/not-found/conflict/success/context-required states, `DialogFrame`, `BottomSheet`, `RiskConfirmation`, `EvidenceFile`, `OfflineBanner` |
+| `forms.tsx`                      | `Select`, `Checkbox`, `Radio`, `Fieldset`, `Disclosure`                                                                                                                                                                                           |
+| `feedback.tsx`                   | `Notice`, `NeedsAttention`, `WipBadge`, `WorkInProgressPanel`                                                                                                                                                                                     |
+| `dialogs.tsx`                    | `ConfirmDialog`, `WorkInProgressDialog`, `WorkInProgressTrigger`                                                                                                                                                                                  |
+| `layout.tsx`                     | `PageHeader`, `PageContainer`, `Section`, `MetricCard`                                                                                                                                                                                            |
+| `app-shell.tsx`                  | `AppShell` (the permanent Product Shell) and `Breadcrumbs`                                                                                                                                                                                        |
+| `navigation.ts`                  | Grouped navigation model, projection, work-context forwarding, current-route matching                                                                                                                                                             |
+| `shell-preferences.ts`           | Per-device sidebar rail / closed-group preferences and their no-flash init script                                                                                                                                                                 |
+| `theme-control.tsx`              | `ThemeControl` segmented System / Light / Dark radio group                                                                                                                                                                                        |
+| `route-states.tsx`               | `RouteLoading`, `RouteError`, `RouteNotFound` (whole-page states inside the shell)                                                                                                                                                                |
+| `formatters.ts`                  | Presentation-only money, litre, ratio, percentage, date, status labels                                                                                                                                                                            |
 
 Stylesheets are imported once, in order, from `src/app/layout.tsx`:
 tokens → base → components → shell → `src/app/globals.css` (module layouts only).
@@ -118,8 +118,11 @@ Every product page renders inside `AppShell`; do not add per-page navigation mar
 - **Tables:** `.table` (or legacy `.data-table` / `.responsive-table`) inside
   `.table-wrap`. Hairline rows, no zebra stripes or vertical rules, quiet sentence-case
   headers, `.cell-numeric` for right-aligned tabular numbers, `.table-hover` for
-  clickable rows, `.table-compact` for dense reporting. `.responsive-table` collapses to
-  labelled rows on phones; set `data-label` on each cell. Wrap wide tables in
+  clickable rows, `.table-compact` for dense reporting. `.responsive-table` and
+  `.data-table` collapse to labelled rows on phones: set `data-label` on each `td`, use a
+  `th scope="row"` to title the row, and `.cell-action` for a cell that only holds
+  buttons. Phones never scroll a table sideways. Put `.row-link` on a row's primary
+  link to make the whole row the click target. Wrap wide tables in
   `TableScrollRegion` (named after the caption, or a nearby heading when no caption exists), never a bare scrolling `div`: while the
   table overflows it becomes a focusable, labelled region so keyboard users can scroll it.
 - **Status:** `StatusBadge` tones are semantic, never the only carrier of meaning; the
@@ -128,6 +131,18 @@ Every product page renders inside `AppShell`; do not add per-page navigation mar
 - **Needs attention:** `NeedsAttention` is the action-first home pattern. It orders by
   priority, caps the list (`limit`), provides a text equivalent for priority, and never
   dominates the page. The server decides what needs attention; dismissal only hides.
+  Give an item `href` and the whole item opens its work.
+- **KPIs:** `MetricCard` is a label, a value and one line of context. KPIs never carry
+  icons. Pass `href` when the number has a detail view (a page or an in-page section).
+  Values size to the card so amounts stay on one line. In a `.metric-grid` KPIs become
+  one list on phones; add `.metric-list` for that list at every width.
+- **Clickable things:** anything clickable shows the pointer cursor and a hover state;
+  unavailable controls show not-allowed. `base.css` applies the cursor to links, buttons,
+  selects, checkboxes, radios and ARIA widgets, so new controls need nothing extra. Make
+  the whole card, row or item the target (`MetricCard href`, `.row-link`, attention
+  `href`) rather than a small button inside it.
+- **Missing context:** `ContextRequiredState` when a page needs a tenant, legal entity or
+  station before it can load. It is a normal starting point, not an error.
 - **Dialogs:** `Modal` (controlled) or `DialogFrame` (trigger-owned). Centred on tablet
   and desktop, bottom-anchored on phones. Actions go in `footer`, primary last.
 - **Confirmation:** `ConfirmDialog` only for financial, destructive, irreversible, or
@@ -148,7 +163,11 @@ Every product page renders inside `AppShell`; do not add per-page navigation mar
   gradients, direct labels where possible, `.chart`/`.chart-legend` frame, and always a
   table or text equivalent. Prefer a number or table when it is clearer.
 - **Page composition:** `PageHeader` answers where am I / what can I do next;
-  `PageContainer` sets width; `Section` groups with a quiet heading.
+  `PageContainer` sets width; `Section` groups with a quiet heading. In a
+  `.content-grid`, `.content-span` gives a wide item (usually a table) the whole row.
+- **Phone width:** nothing scrolls sideways. The shell clips the content column as a
+  guard, but screens must adapt (stacked tables, KPI lists, wrapping labels);
+  `tests/e2e/ui-polish.spec.ts` checks every screen at 320 and 390px.
 
 ## Contract assumptions
 

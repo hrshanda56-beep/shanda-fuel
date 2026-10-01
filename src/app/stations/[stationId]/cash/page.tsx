@@ -1,5 +1,5 @@
 import { AppShell } from '@/design-system/app-shell';
-import { Card, ErrorState } from '@/design-system/primitives';
+import { ContextRequiredState } from '@/design-system/primitives';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
 import { CashWorkspace } from '@/modules/cash/ui/cash-workspace';
 
@@ -35,12 +35,10 @@ export default async function CashPage({
       {tenantId ? (
         <CashWorkspace tenantId={tenantId} stationId={stationId} />
       ) : (
-        <Card as="section" className="panel">
-          <ErrorState
-            title="Tenant context required"
-            message="Open this station from an authenticated tenant context before loading cash data."
-          />
-        </Card>
+        <ContextRequiredState
+          title="Tenant context required"
+          message="Open this station from an authenticated tenant context before loading cash data."
+        />
       )}
     </AppShell>
   );

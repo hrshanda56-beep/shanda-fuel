@@ -1,6 +1,6 @@
 import { AppShell } from '@/design-system/app-shell';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
-import { Card, ErrorState } from '@/design-system/primitives';
+import { ContextRequiredState } from '@/design-system/primitives';
 import { ManagementReportDashboard } from '@/modules/reporting/ui/management-report-dashboard';
 
 export default async function ReportsPage({
@@ -34,12 +34,10 @@ export default async function ReportsPage({
       {tenantId ? (
         <ManagementReportDashboard tenantId={tenantId} />
       ) : (
-        <Card as="section" className="panel">
-          <ErrorState
-            title="Tenant context required"
-            message="Open reporting from an authenticated tenant context before loading management facts."
-          />
-        </Card>
+        <ContextRequiredState
+          title="Tenant context required"
+          message="Open reporting from an authenticated tenant context before loading management facts."
+        />
       )}
     </AppShell>
   );
