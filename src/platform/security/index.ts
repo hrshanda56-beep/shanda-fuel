@@ -31,6 +31,7 @@ export { signSecurityEvent, verifySecurityEvent } from './audit-signing';
 export type { SignedSecurityEvent } from './audit-signing';
 export {
   AUTH_RATE_LIMIT,
+  STAGING_RATE_LIMIT_PROOF_POLICY,
   WRITE_RATE_LIMIT,
   consumePersistentRateLimit,
   getRateLimitClientAddress,
