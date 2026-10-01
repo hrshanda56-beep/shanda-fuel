@@ -40,11 +40,24 @@ to posted/locked records, RLS policies, migrations, or accounting authorities.
 An operator may use the provider's managed backup export or an approved
 `pg_dump` custom-format export from the direct database connection. Keep the
 connection string in the secret manager or process environment; never paste it
-into a ticket, shell history, or command output. Example shape:
+into a ticket, shell history, or command output. The `pg_dump` and `pg_restore`
+client major must be compatible with the staging database server major. During
+the 2026-09-30 staging rehearsal, the server reported PostgreSQL 18.6 and the
+successful Docker client was the official `postgres:18` image. This records the
+verified rehearsal environment, not a permanent infrastructure assumption:
+reconfirm the server major before future backups and use a matching client.
+`postgres:16` must not be used for the current staging server.
+
+The canonical staging procedure intentionally rejects `DATABASE_DIRECT_URL`.
+Run the existing backup script from the approved `postgres:18` client
+environment with the standard libpq variables and any approved service/pass
+files already inherited; no database credential is placed in a `pg_dump`
+argument:
 
 ```sh
-pg_dump --format=custom --file=/secure/recovery/shanda-fuel-UTC.dump "$DATABASE_DIRECT_URL"
-pg_restore --list /secure/recovery/shanda-fuel-UTC.dump >/secure/recovery/shanda-fuel-UTC.manifest
+APP_ENV=staging bash scripts/db/create-staging-logical-backup.sh \
+  --confirm-staging-backup \
+  --output-dir "$RECOVERY_EVIDENCE_DIR/backup"
 ```
 
 The exact provider export path, encryption key, retention, and bucket are
