@@ -80,6 +80,17 @@ credentials, or other secret values in shell history. The blocks below only
 validate that already-injected values exist. Use a secure evidence directory
 outside the repository.
 
+When the read-only session uses the synthetic identity from
+[`staging-auth-smoke-bootstrap.md`](staging-auth-smoke-bootstrap.md), its
+Tenant A read permissions (`business_day.view` and `shift.view`) are temporary
+Station A grants that expire two hours after the bootstrap. The grants and the
+session must already exist in the restored data, so bootstrap and HTTPS sign-in
+run against normal staging before the recovery point. Bootstrap → login →
+restore → isolated deploy → `complete` must therefore finish within two hours
+of the bootstrap, even though the RTO objective is four hours. Once the grants
+expire, the Tenant A check fails; never run the bootstrap or any other write
+against the restored target to extend them.
+
 ```sh
 : "${APP_ENV:?APP_ENV must already be set to staging}"
 : "${RECOVERY_APP_URL:?Set the isolated staging HTTPS origin before execution}"
@@ -112,10 +123,42 @@ or restores the temporary Neon branch at the selected recovery point and
 deploys the isolated application target. Record the provider's exact
 recovered-through timestamp; do not run application writes against the target.
 
+Supply `--last-known-good-at` and `--recovered-through-at` in exactly the UTC
+form `YYYY-MM-DDTHH:MM:SS.sssZ`, for example `2026-09-30T14:05:00.000Z`; the
+command rejects values without milliseconds or the `Z` suffix. Provider
+consoles may show local time, so convert the provider's recovered-through
+timestamp to UTC before supplying it. The command checks
+`--recovered-through-at` only after the database, application, and R2 phases
+have run: if the value is malformed or later than the completion time, it exits
+non-zero without writing evidence. A local time mislabeled with `Z` can still
+be accepted and would misstate the RPO bound.
+
 Then run the completion phase. It validates the restored schema and counts in
 a read-only transaction, checks application health/readiness plus Tenant A
 access and Tenant B denial, runs the existing R2 retained-copy/delete/restore
 drill, writes redacted JSON evidence, and exits non-zero on any failed phase.
+
+The R2 phase loads the full staging server configuration, so the completion
+shell also needs these variables in addition to the `RECOVERY_*` values and the
+R2 variables from [`r2-object-recovery.md`](r2-object-recovery.md):
+
+- `APP_URL`: the isolated staging HTTPS origin, the same value as
+  `RECOVERY_APP_URL`;
+- `DATABASE_URL`: the same value as `RECOVERY_DATABASE_URL`, the restored
+  target; the R2 drill does not connect to it, but the staging configuration
+  requires it;
+- `BETTER_AUTH_SECRET`: the staging value, at least 32 characters; and
+- `AUDIT_SIGNING_KEY_ID` and `AUDIT_SIGNING_KEY`: the staging values; the key
+  must be at least 32 characters.
+
+`DATABASE_DIRECT_URL` must be neither exported, even as an empty value, nor
+defined in the `.env` file that the command loads from the working directory.
+The command itself reports a missing, invalid, or forbidden value only in the
+R2 phase, after the database and application checks, and records it only as
+the generic `rehearsal_failed` code, so the block below checks these variables
+first; it does not check the R2 variables. It checks `DATABASE_DIRECT_URL`
+through the same `dotenv/config` loader as the command, so a `.env` value is
+caught too, without printing any value.
 
 ```sh
 : "${RECOVERY_DATABASE_URL:?Inject the restored staging database target before execution}"
@@ -125,6 +168,24 @@ drill, writes redacted JSON evidence, and exits non-zero on any failed phase.
 : "${RECOVERY_TENANT_B_ID:?Set Tenant B ID before execution}"
 : "${RECOVERY_STATION_B_ID:?Set Tenant B station ID before execution}"
 : "${RECOVERY_RECOVERED_THROUGH_AT:?Set the provider recovery-through timestamp before execution}"
+[[ "$RECOVERY_RECOVERED_THROUGH_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$ ]] ||
+  { echo "RECOVERY_RECOVERED_THROUGH_AT must be UTC YYYY-MM-DDTHH:MM:SS.sssZ." >&2; exit 1; }
+: "${APP_URL:?Set APP_URL to the isolated staging HTTPS origin before execution}"
+[[ "$APP_URL" == "$RECOVERY_APP_URL" ]] ||
+  { echo "APP_URL must exactly equal RECOVERY_APP_URL." >&2; exit 1; }
+: "${DATABASE_URL:?Inject the restored staging database target as DATABASE_URL before execution}"
+[[ "$DATABASE_URL" == "$RECOVERY_DATABASE_URL" ]] ||
+  { echo "DATABASE_URL must exactly equal RECOVERY_DATABASE_URL." >&2; exit 1; }
+: "${BETTER_AUTH_SECRET:?Inject the staging Better Auth secret before execution}"
+[[ ${#BETTER_AUTH_SECRET} -ge 32 ]] ||
+  { echo "BETTER_AUTH_SECRET must be at least 32 characters." >&2; exit 1; }
+: "${AUDIT_SIGNING_KEY_ID:?Set the staging audit signing key ID before execution}"
+: "${AUDIT_SIGNING_KEY:?Inject the staging audit signing key before execution}"
+[[ ${#AUDIT_SIGNING_KEY} -ge 32 ]] ||
+  { echo "AUDIT_SIGNING_KEY must be at least 32 characters." >&2; exit 1; }
+# Uses the command's dotenv/config loader, so a value in .env is caught too.
+node -e 'require("dotenv/config"); process.exit(process.env.DATABASE_DIRECT_URL === undefined ? 0 : 1)' ||
+  { echo "DATABASE_DIRECT_URL must not be exported or defined in .env." >&2; exit 1; }
 # If Deployment Protection is enabled, VERCEL_AUTOMATION_BYPASS_SECRET must
 # already be securely exported; it is never supplied as a command argument.
 
