@@ -1,5 +1,7 @@
 import { AppShell } from '@/design-system/app-shell';
+import { PageHeader } from '@/design-system/layout';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { ContextRequiredState } from '@/design-system/primitives';
 import { SettlementWorkspace } from '@/modules/settlements/ui/settlement-workspace';
 
 export default async function SettlementsPage({
@@ -28,15 +30,17 @@ export default async function SettlementsPage({
       {tenantId ? (
         <SettlementWorkspace tenantId={tenantId} stationId={stationId} />
       ) : (
-        <div className="content-grid">
-          <section className="panel" aria-labelledby="settlement-context-title">
-            <p className="eyebrow">Electronic payment control</p>
-            <h1 id="settlement-context-title">Select a tenant context</h1>
-            <p>
-              A trusted tenant and station context is required before settlement data can be loaded.
-            </p>
-          </section>
-        </div>
+        <>
+          <PageHeader
+            eyebrow="Electronic payment control"
+            title="Provider settlements"
+            description="Match provider settlements to the payment evidence in daily reconciliations."
+          />
+          <ContextRequiredState
+            title="Select a tenant context"
+            message="A trusted tenant and station context is required before settlement data can be loaded."
+          />
+        </>
       )}
     </AppShell>
   );

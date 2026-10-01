@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatBusinessDate, formatLitres, formatMoney } from '../../../design-system/formatters';
+import { MetricCard } from '../../../design-system/layout';
 import {
   Card,
   EmptyState,
@@ -15,16 +16,6 @@ import type { ManagementReport } from '../contracts';
 
 function today(): string {
   return new Intl.DateTimeFormat('en-CA').format(new Date());
-}
-
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <Card className="metric-card">
-      <span className="metric-label">{label}</span>
-      <strong className="metric-value numeric">{value}</strong>
-      {detail ? <span className="metric-meta">{detail}</span> : null}
-    </Card>
-  );
 }
 
 function customerMoney(value: string | null): string {
@@ -83,7 +74,6 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
       <Card as="section" className="panel" aria-labelledby="report-filters-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Posted operational facts</p>
             <h2 id="report-filters-title">Report filters</h2>
           </div>
           {report ? <StatusBadge tone="positive">{report.state}</StatusBadge> : null}
@@ -128,8 +118,9 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
           </button>
         </form>
         <p className="metric-meta">
-          Every section uses its documented source date basis. A10 reports posted source facts; it
-          is not a general ledger, statutory P&amp;L, balance sheet, tax report, or bank statement.
+          Figures come from posted source records, each on its own date basis. This is an
+          operational view, not a general ledger, statutory P&amp;L, balance sheet, tax report, or
+          bank statement.
         </p>
       </Card>
 
@@ -138,74 +129,87 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
       {!loading && !error && report ? (
         <>
           <section className="metric-grid" aria-label="Management report headline metrics">
-            <Metric
+            <MetricCard
               label="Accounted sales"
               value={formatMoney(report.sales.salesValue)}
-              detail={`${report.sales.approvedReconciliationCount} approved reconciliations`}
+              meta={`${report.sales.approvedReconciliationCount} approved reconciliations`}
+              href="#sales-report"
             />
-            <Metric
+            <MetricCard
               label="Recognized revenue"
               value={formatMoney(report.revenue.recognizedRevenue)}
-              detail="REV1 ordinary fuel sales"
+              meta="Ordinary fuel sales"
+              href="#sales-report"
             />
-            <Metric
+            <MetricCard
               label="Gross margin"
               value={report.grossMargin === null ? 'Unavailable' : formatMoney(report.grossMargin)}
-              detail={
+              meta={
                 report.grossMargin === null
                   ? `COGS status: ${report.costing.costingStatus}`
                   : 'Recognized revenue − restated COGS'
               }
             />
-            <Metric
+            <MetricCard
               label="Litres sold"
               value={formatLitres(report.sales.litresSold)}
-              detail="A5 meter readings"
+              meta="From meter readings"
+              href="#sales-report"
             />
-            <Metric
+            <MetricCard
               label="Cash collected"
               value={formatMoney(report.cash.collected)}
-              detail={`${formatMoney(report.cash.collectedButNotBanked)} not banked`}
+              meta={`${formatMoney(report.cash.collectedButNotBanked)} not banked`}
+              href="#cash-report"
             />
-            <Metric
+            <MetricCard
               label="Provider outstanding"
               value={formatMoney(report.providers.unallocatedProviderAmount)}
-              detail="A9 settlement evidence"
+              meta="Unallocated settlements"
+              href="#provider-report"
             />
-            <Metric
+            <MetricCard
               label="Supplier exposure"
               value={formatMoney(report.suppliers.outstandingBalance)}
-              detail="A7 balance as of toDate"
+              meta="Balance at the end date"
+              href="#commercial-report"
             />
-            <Metric
+            <MetricCard
               label="Customer receivables"
               value={customerMoney(report.customers.receivableBalance)}
-              detail={
+              meta={
                 report.customers.availability === 'AVAILABLE'
-                  ? 'A8 credit ledger as of toDate'
-                  : 'A8 has no station dimension'
+                  ? 'Credit ledger at the end date'
+                  : 'Not tracked per station'
               }
+              href="#commercial-report"
             />
-            <Metric
+            <MetricCard
               label="Expected stock"
               value={formatLitres(report.inventory.expectedLitres)}
-              detail={`${formatLitres(report.inventory.varianceLitres)} variance`}
+              meta={`${formatLitres(report.inventory.varianceLitres)} variance`}
+              href="#inventory-report"
             />
-            <Metric
+            <MetricCard
               label="Recorded expenses"
               value={formatMoney(report.expenses.total)}
-              detail="A5 only"
+              meta="From daily reconciliations"
             />
           </section>
 
           <div className="content-grid">
-            <Card as="section" className="panel" aria-labelledby="sales-report-title">
+            <Card
+              as="section"
+              className="panel content-span"
+              id="sales-report"
+              aria-labelledby="sales-report-title"
+            >
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Sales performance</p>
                   <h2 id="sales-report-title">Payments and products</h2>
                 </div>
-                <StatusBadge tone="informational">A5 business date</StatusBadge>
+                <StatusBadge tone="informational">Business date</StatusBadge>
               </div>
               <TableScrollRegion label="Payments and products table">
                 <table className="responsive-table">
@@ -265,21 +269,25 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
               </p>
             </Card>
 
-            <Card as="section" className="panel" aria-labelledby="cash-report-title">
+            <Card
+              as="section"
+              className="panel"
+              id="cash-report"
+              aria-labelledby="cash-report-title"
+            >
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Cash position</p>
                   <h2 id="cash-report-title">Evidence → collected → banked</h2>
                 </div>
-                <StatusBadge tone="warning">Never conflated</StatusBadge>
               </div>
               <dl className="summary-list">
                 <div>
-                  <dt>A5 cash evidence</dt>
+                  <dt>Cash declared in reconciliations</dt>
                   <dd>{formatMoney(report.cash.cashEvidence)}</dd>
                 </div>
                 <div>
-                  <dt>Collected by A6</dt>
+                  <dt>Collected</dt>
                   <dd>{formatMoney(report.cash.collected)}</dd>
                 </div>
                 <div>
@@ -295,7 +303,7 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
                   <dd>{formatMoney(report.cash.collectedButNotBanked)}</dd>
                 </div>
                 <div>
-                  <dt>A5 cash variance</dt>
+                  <dt>Reconciliation cash variance</dt>
                   <dd>{formatMoney(report.cash.cashVariance)}</dd>
                 </div>
               </dl>
@@ -305,17 +313,21 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
               </p>
             </Card>
 
-            <Card as="section" className="panel" aria-labelledby="provider-report-title">
+            <Card
+              as="section"
+              className="panel"
+              id="provider-report"
+              aria-labelledby="provider-report-title"
+            >
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Provider settlement position</p>
                   <h2 id="provider-report-title">Electronic evidence and settlements</h2>
                 </div>
-                <StatusBadge tone="informational">A5 / A9 separate</StatusBadge>
               </div>
               <dl className="summary-list">
                 <div>
-                  <dt>A5 provider evidence</dt>
+                  <dt>Provider payments in reconciliations</dt>
                   <dd>{formatMoney(report.providers.paymentEvidence)}</dd>
                 </div>
                 <div>
@@ -331,7 +343,7 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
                   <dd>{formatMoney(report.providers.unallocatedProviderAmount)}</dd>
                 </div>
                 <div>
-                  <dt>Unmatched A5 evidence</dt>
+                  <dt>Unmatched reconciliation evidence</dt>
                   <dd>{formatMoney(report.providers.unmatchedEvidenceAmount)}</dd>
                 </div>
                 <div>
@@ -342,7 +354,7 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
               {report.providers.rows.length === 0 ? (
                 <EmptyState
                   title="No settlement evidence"
-                  message="No A9 settlement records match the settlement-date window."
+                  message="No provider settlements fall in this settlement-date range."
                 />
               ) : (
                 <p className="metric-meta">
@@ -352,13 +364,18 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
               )}
             </Card>
 
-            <Card as="section" className="panel" aria-labelledby="commercial-report-title">
+            <Card
+              as="section"
+              className="panel"
+              id="commercial-report"
+              aria-labelledby="commercial-report-title"
+            >
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Commercial exposure</p>
                   <h2 id="commercial-report-title">Suppliers and customers</h2>
                 </div>
-                <StatusBadge tone="informational">A7 / A8 ledgers</StatusBadge>
+                <StatusBadge tone="informational">As of end date</StatusBadge>
               </div>
               <dl className="summary-list">
                 <div>
@@ -392,17 +409,21 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
                 {report.customers.availability === 'AVAILABLE'
                   ? 'Customer balances are shown as of the selected toDate. '
                   : 'Customer balances are unavailable at station scope because A8 balances are tenant-owned without a station dimension. '}
-                Prepaid litres remain quantity evidence; A10 does not convert them to money.
+                Prepaid litres remain quantity evidence; this report does not convert them to money.
               </p>
             </Card>
 
-            <Card as="section" className="panel" aria-labelledby="inventory-report-title">
+            <Card
+              as="section"
+              className="panel"
+              id="inventory-report"
+              aria-labelledby="inventory-report-title"
+            >
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Stock position</p>
                   <h2 id="inventory-report-title">Tanks, deliveries, and variance</h2>
                 </div>
-                <StatusBadge tone="informational">A4 source</StatusBadge>
               </div>
               <dl className="summary-list">
                 <div>

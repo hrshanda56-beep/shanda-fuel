@@ -184,7 +184,7 @@ export function SettlementWorkspace({
         </div>
         <p>
           POS and ECOCASH evidence is matched separately from cash custody and bank deposits. A
-          settlement date may lag the A5 transaction date.
+          settlement date may lag the transaction date.
         </p>
         {loading ? <LoadingState label="Loading provider settlements" /> : null}
         {error ? <ErrorState message={error} /> : null}
@@ -234,7 +234,7 @@ export function SettlementWorkspace({
                     </td>
                     <td data-label="Status">
                       <StatusBadge tone={row.state === 'RECONCILED' ? 'positive' : 'warning'}>
-                        {row.state}
+                        {row.state.replaceAll('_', ' ')}
                       </StatusBadge>
                     </td>
                     <td data-label="Action">
@@ -263,14 +263,14 @@ export function SettlementWorkspace({
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Named allocation</p>
-            <h2 id="matching-title">Match A5 electronic evidence</h2>
+            <h2 id="matching-title">Match electronic payment evidence</h2>
           </div>
           <StatusBadge tone="informational">No automatic inference</StatusBadge>
         </div>
         {unmatched.length === 0 ? (
           <EmptyState
             title="No unmatched POS or ECOCASH evidence"
-            message="Approved, posted, and locked A5 provider evidence appears here until fully allocated."
+            message="Provider evidence from approved, posted, and locked reconciliations appears here until fully allocated."
           />
         ) : (
           <form
@@ -294,7 +294,7 @@ export function SettlementWorkspace({
                 ))}
               </select>
             </Field>
-            <Field id="payment" label="A5 payment evidence" required>
+            <Field id="payment" label="Payment evidence" required>
               <select
                 id="payment"
                 value={paymentId}

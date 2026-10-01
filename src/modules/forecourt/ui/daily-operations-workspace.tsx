@@ -11,6 +11,7 @@ import {
   NumericInput,
   StatusBadge,
 } from '../../../design-system/primitives';
+import { MetricCard } from '../../../design-system/layout';
 import { TableScrollRegion } from '../../../design-system/table';
 import {
   formatBusinessDate,
@@ -775,27 +776,24 @@ export function DailyOperationsWorkspace({
         className="metric-grid operations-metrics"
         aria-label="Server-derived control totals"
       >
-        <Card className="metric-card">
-          <span className="metric-label">Expected sales</span>
-          <strong className="metric-value numeric">
-            {formatMoney(record.totals.expectedSales)}
-          </strong>
-          <span className="metric-meta">Meter-derived, server-owned</span>
-        </Card>
-        <Card className="metric-card">
-          <span className="metric-label">Accounted sales</span>
-          <strong className="metric-value numeric">
-            {formatMoney(record.totals.accountedSales)}
-          </strong>
-          <span className="metric-meta">Payment evidence</span>
-        </Card>
-        <Card className="metric-card">
-          <span className="metric-label">Sales variance</span>
-          <strong className="metric-value numeric">
-            {formatMoney(record.totals.salesVariance)}
-          </strong>
-          <span className="metric-meta">Explain if non-zero</span>
-        </Card>
+        <MetricCard
+          label="Expected sales"
+          value={formatMoney(record.totals.expectedSales)}
+          meta="From meter readings"
+          href="#operations-meters"
+        />
+        <MetricCard
+          label="Accounted sales"
+          value={formatMoney(record.totals.accountedSales)}
+          meta="Payment evidence"
+          href="#operations-evidence"
+        />
+        <MetricCard
+          label="Sales variance"
+          value={formatMoney(record.totals.salesVariance)}
+          meta="Explain if non-zero"
+          href="#operations-review"
+        />
       </section>
 
       <div className="operations-layout">
@@ -984,7 +982,7 @@ export function DailyOperationsWorkspace({
               eyebrow="3 · Payment evidence"
               title="Account for sales"
               headingId="operations-evidence-title"
-              detail="Evidence is recorded by canonical A5 method; it is not cash collection or provider settlement."
+              detail="Evidence is recorded by payment method; it is not cash collection or provider settlement."
             />
             <div className="entry-list">
               {payments.map((payment, index) => (
@@ -1280,7 +1278,7 @@ export function DailyOperationsWorkspace({
               eyebrow="6 · Inventory context"
               title="Linked deliveries and tank dips"
               headingId="operations-inventory-title"
-              detail="This workspace shows A4 context only; it does not calculate a second stock ledger."
+              detail="This workspace shows inventory context only; it does not calculate a second stock ledger."
             />
             <div className="context-grid">
               <div>
@@ -1334,7 +1332,7 @@ export function DailyOperationsWorkspace({
             ) : (
               <EmptyState
                 title="No linked inventory evidence"
-                message="When A4 delivery or dip evidence is linked to this reconciliation, it will appear here."
+                message="When delivery or dip evidence is linked to this reconciliation, it will appear here."
               />
             )}
           </Card>

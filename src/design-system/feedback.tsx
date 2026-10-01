@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useId, useState, type ReactNode } from 'react';
 
 import { Icon, type IconName } from './icons';
@@ -69,6 +70,11 @@ export type AttentionItem = {
   detail?: string;
   /** Context such as station, business date, or age ("Harare Rd · 2h ago"). */
   meta?: string;
+  /**
+   * Where the work lives. The whole item becomes a link to it, so the user
+   * can click anywhere on the row.
+   */
+  href?: string;
   /** The single next action, rendered as a link or button by the caller. */
   action?: ReactNode;
   /** Only for items that may be hidden without resolving anything. */
@@ -144,14 +150,26 @@ export function NeedsAttention({
               <span className="attention-indicator" aria-hidden="true" />
               <div>
                 <p className="attention-item-title">
-                  <span className="visually-hidden">{priorityLabel[item.priority]}: </span>
-                  {item.title}
+                  {item.href ? (
+                    <Link className="attention-item-link" href={item.href}>
+                      <span className="visually-hidden">{priorityLabel[item.priority]}: </span>
+                      {item.title}
+                    </Link>
+                  ) : (
+                    <>
+                      <span className="visually-hidden">{priorityLabel[item.priority]}: </span>
+                      {item.title}
+                    </>
+                  )}
                 </p>
                 {item.detail ? <p className="attention-item-detail">{item.detail}</p> : null}
                 {item.meta ? <span className="attention-item-meta">{item.meta}</span> : null}
               </div>
               <div className="attention-item-actions">
                 {item.action}
+                {item.href && !item.action ? (
+                  <Icon name="chevron-right" className="attention-item-go" />
+                ) : null}
                 {item.dismissible ? (
                   <IconButton
                     icon="close"

@@ -885,8 +885,8 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             </div>
           )}
           <p className="semantic-note">
-            <strong>Production lifecycle:</strong> approval is the A5 command that posts canonical
-            sale evidence and ends at APPROVED. A3 Post/Lock revision commands are not used here.
+            <strong>Production lifecycle:</strong> approval posts the canonical sale evidence and
+            ends at APPROVED. Separate post and lock revision commands are not used here.
           </p>
         </Card>
 
