@@ -30,7 +30,7 @@ export default async function InventoryValuationPage({
         <div className="valuation-workspace">
           <div className="page-heading">
             <div>
-              <span className="eyebrow">Inventory control · A12</span>
+              <span className="eyebrow">Inventory control</span>
               <h1>Inventory valuation</h1>
               <p>
                 Select an authorised tenant and station before reviewing persisted valuation

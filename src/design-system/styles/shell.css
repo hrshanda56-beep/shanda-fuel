@@ -19,8 +19,11 @@
   background: var(--bg-canvas);
 }
 
+/* The page never pans sideways. Wide content must adapt (tables stack on
+ * phones); this clip is only a guard, and `clip` keeps sticky positioning. */
 .shell-body {
   min-width: 0;
+  overflow-x: clip;
 }
 
 /* Brand ------------------------------------------------------------------- */

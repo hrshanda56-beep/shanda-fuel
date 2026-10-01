@@ -8,8 +8,10 @@ import { Checkbox, Disclosure, Fieldset, Radio, Select } from '../forms';
 import { MetricCard, PageContainer, PageHeader, Section } from '../layout';
 import { Modal } from '../modal';
 import {
+  BottomSheet,
   Button,
   Card,
+  DialogFrame,
   EmptyState,
   ErrorState,
   Field,
@@ -188,7 +190,8 @@ export function DesignSystemReference() {
                       id: 'c',
                       priority: 'info',
                       title: 'Delivery note uploaded',
-                      meta: 'Station C · 2h ago',
+                      meta: 'Station C · 2h ago · whole row opens it',
+                      href: '#ref-table',
                       dismissible: true,
                     },
                     {
@@ -480,6 +483,22 @@ export function DesignSystemReference() {
                   </a>
                 </WorkInProgressTrigger>
               </div>
+              <div className={styles.demoRow}>
+                <DialogFrame
+                  trigger={<Button variant="secondary">Open accessible dialog</Button>}
+                  title="Confirm return"
+                  description="A trigger-owned dialog: the trigger opens it and gets focus back."
+                >
+                  <p>Focus is contained here until the dialog is closed.</p>
+                </DialogFrame>
+                <BottomSheet
+                  trigger={<Button variant="quiet">Open mobile sheet</Button>}
+                  title="Quick context"
+                  description="Short contextual tasks can use this responsive presentation."
+                >
+                  <p>Longer workflows should remain full pages.</p>
+                </BottomSheet>
+              </div>
               <Modal
                 open={modalOpen}
                 onClose={() => setModalOpen(false)}
@@ -571,16 +590,37 @@ export function DesignSystemReference() {
               </div>
             </Section>
 
-            <Section title="Metrics" headingId="ref-metrics">
-              <div className="metric-grid">
-                <MetricCard label="Litres sold" value="24,380.500" meta="Today, all products" />
-                <MetricCard label="Cash to bank" value="USD 31,204.00" meta="2 deposits pending" />
-                <MetricCard
-                  label="Unexplained variance"
-                  value="42.500 L"
-                  meta="Pump 3"
-                  tone="critical"
-                />
+            <Section
+              title="Metrics"
+              headingId="ref-metrics"
+              description="Label, value, one line of context. Never an icon. A KPI with a detail view links to it; on phones every KPI grid becomes a list."
+            >
+              <div className="stack">
+                <div className="metric-grid">
+                  <MetricCard label="Litres sold" value="24,380.500" meta="Today, all products" />
+                  <MetricCard
+                    label="Cash to bank"
+                    value="USD 31,204.00"
+                    meta="2 deposits pending"
+                    href="#ref-table"
+                  />
+                  <MetricCard
+                    label="Unexplained variance"
+                    value="42.500 L"
+                    meta="Pump 3"
+                    tone="critical"
+                    href="#ref-table"
+                  />
+                </div>
+                <div className="metric-grid metric-list" style={{ maxWidth: '24rem' }}>
+                  <MetricCard label="Shift progress" value="2 of 3" meta="Shifts completed" />
+                  <MetricCard
+                    label="Open tasks"
+                    value="4"
+                    meta="2 need attention"
+                    href="#ref-attention"
+                  />
+                </div>
               </div>
             </Section>
 

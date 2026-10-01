@@ -176,7 +176,7 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
             {summary.collections.length === 0 ? (
               <EmptyState
                 title="No collections yet"
-                message="Record a collection against approved A5 reconciliation cash evidence."
+                message="Record a collection against cash evidence from an approved daily reconciliation."
               />
             ) : (
               <TableScrollRegion label="Station cash collections">
@@ -184,19 +184,19 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
                   <caption className="sr-only">Station cash collections</caption>
                   <thead>
                     <tr>
-                      <th>Reference</th>
-                      <th>Amount</th>
-                      <th>Unbanked</th>
-                      <th>Custody</th>
+                      <th scope="col">Reference</th>
+                      <th scope="col">Amount</th>
+                      <th scope="col">Unbanked</th>
+                      <th scope="col">Custody</th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.collections.map((collection) => (
                       <tr key={collection.collectionId}>
                         <th scope="row">{collection.collectionReference}</th>
-                        <td>{collection.amount} USD</td>
-                        <td>{collection.collectedButUnbanked} USD</td>
-                        <td>
+                        <td data-label="Amount">{collection.amount} USD</td>
+                        <td data-label="Unbanked">{collection.collectedButUnbanked} USD</td>
+                        <td data-label="Custody">
                           <StatusBadge
                             tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
                           >
@@ -230,7 +230,7 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
           </Field>
           <Field
             id="reconciliation-id"
-            label="Approved A5 reconciliation ID"
+            label="Approved reconciliation ID"
             hint="Use the server identifier; browser totals are never authoritative."
             required
           >

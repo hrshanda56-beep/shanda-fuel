@@ -161,12 +161,55 @@ label {
   -webkit-tap-highlight-color: transparent;
 }
 
-button {
+/* Pointer policy ----------------------------------------------------------
+ * Anything that responds to a click shows the hand cursor; anything that is
+ * visible but unavailable shows not-allowed. Text inputs keep the text caret.
+ * Components never need to opt in, so new controls behave by default.
+ */
+
+a[href],
+button,
+summary,
+select,
+label:has(> input:is([type='checkbox'], [type='radio'])),
+input:is(
+  [type='checkbox'],
+  [type='radio'],
+  [type='file'],
+  [type='color'],
+  [type='range'],
+  [type='button'],
+  [type='submit'],
+  [type='reset']
+),
+[role='button'],
+[role='link'],
+[role='tab'],
+[role='option'],
+[role='menuitem'],
+[role='switch'] {
   cursor: pointer;
 }
 
-button:disabled {
+input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+
+:is(button, select, input, textarea):disabled,
+[aria-disabled='true'],
+label:has(> input:disabled) {
   cursor: not-allowed;
+}
+
+/* Anchored sections land with breathing room, clear of the sticky top bar. */
+[id] {
+  scroll-margin-top: var(--space-6);
+}
+
+@media (max-width: 63.99rem) {
+  [id] {
+    scroll-margin-top: calc(var(--topbar-height) + var(--space-4));
+  }
 }
 
 /* Focus and keyboard visibility -----------------------------------------

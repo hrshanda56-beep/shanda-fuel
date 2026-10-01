@@ -339,11 +339,19 @@ export function ProductionReconciliationWorkflow({
               <tbody>
                 {record.readings.map((reading) => (
                   <tr key={reading.id}>
-                    <td>{reading.nozzleId}</td>
-                    <td className="numeric">{reading.openingReading}</td>
-                    <td className="numeric">{reading.closingReading}</td>
-                    <td className="numeric">{reading.litresSold}</td>
-                    <td className="numeric">{reading.salesValue} USD</td>
+                    <td data-label="Nozzle">{reading.nozzleId}</td>
+                    <td data-label="Opening" className="numeric">
+                      {reading.openingReading}
+                    </td>
+                    <td data-label="Closing" className="numeric">
+                      {reading.closingReading}
+                    </td>
+                    <td data-label="Litres" className="numeric">
+                      {reading.litresSold}
+                    </td>
+                    <td data-label="Sales" className="numeric">
+                      {reading.salesValue} USD
+                    </td>
                   </tr>
                 ))}
               </tbody>

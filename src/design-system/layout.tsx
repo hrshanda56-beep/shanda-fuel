@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
@@ -81,27 +82,41 @@ export function Section({
 }
 
 /**
- * One key number. Values are display strings from server responses or the
- * presentation formatters; this component never calculates.
+ * One key number (KPI): a label, a value and an optional line of context.
+ * Values are display strings from server responses or the presentation
+ * formatters; this component never calculates.
+ *
+ * KPIs never carry icons. When the number has a detail view, pass `href` and
+ * the whole card becomes the link to it (another page or an in-page section).
  */
 export function MetricCard({
   label,
   value,
   meta,
   tone = 'default',
+  href,
 }: {
   label: string;
   value: ReactNode;
   meta?: ReactNode;
   tone?: 'default' | 'critical';
+  /** Where the detail behind this number lives, e.g. `#cash` or `/reports`. */
+  href?: string;
 }) {
-  return (
-    <div className="card metric-card">
+  const content = (
+    <>
       <span className="metric-label">{label}</span>
       <strong className={`metric-value ${tone === 'critical' ? 'metric-critical' : ''}`.trim()}>
         {value}
       </strong>
       {meta ? <span className="metric-meta">{meta}</span> : null}
-    </div>
+    </>
+  );
+  return href ? (
+    <Link className="card metric-card" href={href}>
+      {content}
+    </Link>
+  ) : (
+    <div className="card metric-card">{content}</div>
   );
 }

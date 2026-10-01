@@ -9,7 +9,8 @@ test('foundation page has no detectable accessibility violations', async ({ page
 
 test('foundation honors reduced motion preference', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
+  // The loading indicator is shown on the design-system reference.
+  await page.goto('/design-system');
 
   await expect(page.locator('.loading-dot')).toBeVisible();
   await expect(page.locator('html')).toHaveCSS('scroll-behavior', 'auto');
