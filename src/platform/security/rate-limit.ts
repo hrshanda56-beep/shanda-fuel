@@ -8,7 +8,7 @@ import { createLogger } from '../logging';
 const logger = createLogger({ component: 'rate-limit' });
 
 export type RateLimitPolicy = Readonly<{
-  scope: 'auth' | 'write';
+  scope: 'auth' | 'write' | 'proof';
   limit: number;
   windowSeconds: number;
 }>;
@@ -29,6 +29,12 @@ export const AUTH_RATE_LIMIT: RateLimitPolicy = {
 export const WRITE_RATE_LIMIT: RateLimitPolicy = {
   scope: 'write',
   limit: 120,
+  windowSeconds: 60,
+};
+
+export const STAGING_RATE_LIMIT_PROOF_POLICY: RateLimitPolicy = {
+  scope: 'proof',
+  limit: 20,
   windowSeconds: 60,
 };
 
