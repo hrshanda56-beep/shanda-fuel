@@ -1,5 +1,8 @@
 # Staging auth smoke bootstrap runbook
 
+> Retired. This historical runbook is retained for audit context only. The
+> bootstrap helper and package command were removed from the application.
+
 This runbook creates one synthetic Better Auth credential identity and four
 short-lived Station A permission grants for the deployed A3 authenticated smoke
 test. It is an operator-only staging action. It is not an HTTP endpoint, does

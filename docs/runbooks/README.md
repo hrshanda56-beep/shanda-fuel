@@ -14,7 +14,7 @@ evidence that the operational exercise has passed.
 | [`observability-provider-setup.md`](observability-provider-setup.md) | Procedure ready; provider execution open | Select the approved sink, configure drain/parser, import alerts/dashboard, set retention and owners, and attach evidence. |
 | [`observability-staging-alert-proof.md`](observability-staging-alert-proof.md) | Safe rehearsal ready; execution open | Run only against staging and prove searchability, alert firing, owner delivery, acknowledgement, and cleanup. |
 | [`staging-performance-verification.md`](staging-performance-verification.md) | Procedure ready; execution open | Run with the RC against representative synthetic data. |
-| [`staging-auth-smoke-bootstrap.md`](staging-auth-smoke-bootstrap.md) | Procedure ready; staging execution open | Use only with the approved staging URL, secrets, and operator. |
+| [`staging-auth-smoke-bootstrap.md`](staging-auth-smoke-bootstrap.md) | Retired historical record | The temporary bootstrap helper and package command were removed; do not execute this procedure. |
 | [`staging-rate-limit-proof.md`](staging-rate-limit-proof.md) | Procedure ready; staging execution open | Run only against the approved staging HTTPS origin with a current authenticated session and migration `0020` deployed. |
 | [`key-rotation.md`](key-rotation.md) | Repository procedure ready; provider execution open | Name the secret manager, execute staging/production rotation, verify overlap/retirement, and retain metadata-only evidence. |
 | [`production-configuration.md`](production-configuration.md) | Repository checks ready; provider evidence open | Verify DNS, TLS, edge/WAF, environment binding, and runtime smoke with the provider/operator. |
