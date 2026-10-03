@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted for the A3 staging smoke bootstrap only.
+Retired. Historical record of the temporary A3 staging smoke bootstrap; the
+implementation and package command were removed before final staging cleanup.
 
 ## Decision
 
@@ -41,6 +42,7 @@ layers.
 - The operator must provide a reserved `.invalid` synthetic email and a
   runtime password.
 - The script requires staging audit signing configuration for mutation mode.
-- The integrated repository exposes the convenience
-  `pnpm staging:auth-smoke-bootstrap` package script. This does not create a
-  general provisioning path or change authentication behavior.
+- The historical implementation exposed the convenience
+  `pnpm staging:auth-smoke-bootstrap` package script. That script and its
+  helper were removed before final staging cleanup; this ADR does not define
+  a current provisioning path or change authentication behavior.
