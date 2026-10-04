@@ -102,6 +102,10 @@
   flex-shrink: 0;
 }
 
+.panel-heading > :first-child {
+  min-width: 0;
+}
+
 .metric-grid,
 .content-grid,
 .state-grid {
@@ -2379,6 +2383,14 @@ tr:has(.row-link):active {
 }
 
 @media (max-width: 47.99rem) {
+  .panel-heading {
+    flex-wrap: wrap;
+  }
+
+  .panel-heading > .status {
+    flex-shrink: 1;
+  }
+
   .detail-list {
     grid-template-columns: 1fr;
     gap: var(--space-1);
