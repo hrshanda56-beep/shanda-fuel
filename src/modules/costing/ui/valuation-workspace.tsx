@@ -16,18 +16,14 @@ import {
 } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import {
+  InventoryOperationalActions,
+  type InventoryContext,
+  type MissingCostSource,
+} from '@/modules/inventory/ui/inventory-workspace';
 
-type Context = { tenantId: string; stationId: string };
 type Capabilities = { request: boolean; approve: boolean; post: boolean };
-type SourceMovement = {
-  id: string;
-  movementType: string;
-  sourceType: string;
-  sourceId: string;
-  quantityLitres: string;
-  effectiveAt: string | null;
-  businessDate: string;
-};
+type SourceMovement = MissingCostSource & { id: string };
 type Stream = {
   station: { id: string; code: string; name: string };
   tank: { id: string; code: string };
@@ -184,16 +180,30 @@ function knownError(error: string, message: string) {
   };
 }
 
-function apiUrl(path: string, context: Context) {
-  const params = new URLSearchParams(context);
+function apiUrl(path: string, context: InventoryContext) {
+  const params = new URLSearchParams({
+    tenantId: context.tenantId,
+    stationId: context.stationId,
+  });
   return `${path}?${params.toString()}`;
+}
+
+function hrefWithContext(path: string, contextHref: string) {
+  const query = contextHref.split('?')[1];
+  return query ? `${path}?${query}` : path;
 }
 
 function Status({ status }: { status: string }) {
   return <StatusBadge tone={tone(status)}>{status}</StatusBadge>;
 }
 
-export function ValuationOverview({ context }: { context: Context }) {
+export function ValuationOverview({
+  context,
+  contextHref,
+}: {
+  context: InventoryContext;
+  contextHref: string;
+}) {
   const [data, setData] = useState<ValuationResponse | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -318,7 +328,10 @@ export function ValuationOverview({ context }: { context: Context }) {
                     <th scope="row">
                       <Link
                         className="row-link"
-                        href={`/inventory/valuation/streams/${stream.tank.id}/${stream.product.id}?${new URLSearchParams(context)}`}
+                        href={hrefWithContext(
+                          `/inventory/valuation/streams/${stream.tank.id}/${stream.product.id}`,
+                          contextHref,
+                        )}
                       >
                         {stream.tank.code} · {stream.product.name}
                       </Link>
@@ -346,7 +359,10 @@ export function ValuationOverview({ context }: { context: Context }) {
                     <td className="cell-action">
                       <Link
                         className="button button-secondary button-small"
-                        href={`/inventory/valuation/streams/${stream.tank.id}/${stream.product.id}?${new URLSearchParams(context)}`}
+                        href={hrefWithContext(
+                          `/inventory/valuation/streams/${stream.tank.id}/${stream.product.id}`,
+                          contextHref,
+                        )}
                         tabIndex={-1}
                         aria-hidden="true"
                       >
@@ -392,7 +408,10 @@ export function ValuationOverview({ context }: { context: Context }) {
                     <th scope="row">
                       <Link
                         className="row-link"
-                        href={`/inventory/valuation/revaluations/${item.id}?${new URLSearchParams(context)}`}
+                        href={hrefWithContext(
+                          `/inventory/valuation/revaluations/${item.id}`,
+                          contextHref,
+                        )}
                       >
                         {item.tank.code} · {item.product.name}
                       </Link>
@@ -414,7 +433,10 @@ export function ValuationOverview({ context }: { context: Context }) {
                     <td className="cell-action">
                       <Link
                         className="button button-secondary button-small"
-                        href={`/inventory/valuation/revaluations/${item.id}?${new URLSearchParams(context)}`}
+                        href={hrefWithContext(
+                          `/inventory/valuation/revaluations/${item.id}`,
+                          contextHref,
+                        )}
                         tabIndex={-1}
                         aria-hidden="true"
                       >
@@ -438,7 +460,7 @@ function RequestRevaluationDialog({
   capability,
   onSuccess,
 }: {
-  context: Context;
+  context: InventoryContext;
   stream: Stream;
   capability: boolean;
   onSuccess: () => void;
@@ -562,10 +584,12 @@ function RequestRevaluationDialog({
 
 export function ValuationStreamDetail({
   context,
+  contextHref,
   tankId,
   productId,
 }: {
-  context: Context;
+  context: InventoryContext;
+  contextHref: string;
   tankId: string;
   productId: string;
 }) {
@@ -622,7 +646,7 @@ export function ValuationStreamDetail({
     <div className="valuation-workspace">
       <div className="page-heading">
         <div>
-          <Link className="back-link" href={`/inventory/valuation?${new URLSearchParams(context)}`}>
+          <Link className="back-link" href={contextHref}>
             ← Inventory valuation
           </Link>
           <span className="eyebrow">Cost stream explanation</span>
@@ -706,7 +730,10 @@ export function ValuationStreamDetail({
             <p>
               <Status status={stream.activeRevaluation.status} />{' '}
               <Link
-                href={`/inventory/valuation/revaluations/${stream.activeRevaluation.id}?${new URLSearchParams(context)}`}
+                href={hrefWithContext(
+                  `/inventory/valuation/revaluations/${stream.activeRevaluation.id}`,
+                  contextHref,
+                )}
               >
                 Open active revaluation
               </Link>
@@ -720,6 +747,14 @@ export function ValuationStreamDetail({
           </p>
         </Card>
       </div>
+      <InventoryOperationalActions
+        context={context}
+        tankId={stream.tank.id}
+        productId={stream.product.id}
+        sourceMovementRequiringCost={stream.sourceMovementRequiringCost}
+        canRecordReceiptCost={data.capabilities.request}
+        onRefresh={load}
+      />
       <Card className="panel table-card">
         <h2>Revaluation history for this stream</h2>
         {data.revaluations.length === 0 ? (
@@ -753,7 +788,10 @@ export function ValuationStreamDetail({
                     <td className="cell-action">
                       <Link
                         className="button button-secondary button-small row-link"
-                        href={`/inventory/valuation/revaluations/${item.id}?${new URLSearchParams(context)}`}
+                        href={hrefWithContext(
+                          `/inventory/valuation/revaluations/${item.id}`,
+                          contextHref,
+                        )}
                       >
                         Open detail
                       </Link>
@@ -771,9 +809,11 @@ export function ValuationStreamDetail({
 
 export function RevaluationDetail({
   context,
+  contextHref,
   revaluationId,
 }: {
-  context: Context;
+  context: InventoryContext;
+  contextHref: string;
   revaluationId: string;
 }) {
   const [data, setData] = useState<RevaluationResponse | null>(null);
@@ -861,7 +901,7 @@ export function RevaluationDetail({
     <div className="valuation-workspace">
       <div className="page-heading">
         <div>
-          <Link className="back-link" href={`/inventory/valuation?${new URLSearchParams(context)}`}>
+          <Link className="back-link" href={contextHref}>
             ← Inventory valuation
           </Link>
           <span className="eyebrow">Revaluation evidence</span>

@@ -1,5 +1,22 @@
 import { redirect } from 'next/navigation';
 
-export default function InventoryPage() {
-  redirect('/inventory/valuation');
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function InventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const search = await searchParams;
+  const context = new URLSearchParams();
+  for (const name of ['organisationId', 'legalEntityId', 'stationId', 'allStations']) {
+    const value = first(search[name]);
+    if (value) context.set(name, value);
+  }
+  const query = context.toString();
+  redirect(query ? `/inventory/valuation?${query}` : '/inventory/valuation');
 }

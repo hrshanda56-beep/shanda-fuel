@@ -367,7 +367,9 @@ test.describe('phones never scroll sideways', () => {
       await expectFitsWidth(page);
 
       await page.goto('/inventory/valuation?tenantId=tenant-1&stationId=station-1');
-      await expect(page.getByRole('heading', { name: 'Revaluation history' })).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: 'Inventory needs a station context' }),
+      ).toBeVisible();
       await expectFitsWidth(page);
 
       await page.goto('/suppliers?tenantId=tenant-1&legalEntityId=entity-1');
@@ -459,7 +461,10 @@ test.describe('click targets', () => {
 test.describe('data screens stay accessible', () => {
   const screens = [
     ['/reports?tenantId=tenant-1', 'Payments and products'],
-    ['/inventory/valuation?tenantId=tenant-1&stationId=station-1', 'Revaluation history'],
+    [
+      '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
+      'Inventory needs a station context',
+    ],
     ['/stations/station-1/cash?tenantId=tenant-1', 'Station collections'],
   ] as const;
 
