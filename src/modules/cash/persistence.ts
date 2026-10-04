@@ -419,19 +419,32 @@ export async function confirmBankDepositInTransaction(
 export async function getCashStationSummaryInTransaction(
   transaction: ForecourtTransaction,
   context: CashCommandContext,
+  options: Readonly<{
+    includeDepositDetails?: boolean;
+    capabilities?: Readonly<{
+      viewDeposits: boolean;
+      recordCollection: boolean;
+      receiveCollection: boolean;
+      recordDeposit: boolean;
+      confirmDeposit: boolean;
+    }>;
+  }> = {},
 ) {
   const rows = await transaction.execute<{
     id: string;
     collection_reference: string;
+    source_location_id: string;
     amount: string;
     state: string;
     current_location_id: string;
+    version: number | string;
     recorded_at: string | Date;
     received_at: string | Date | null;
     allocated_amount: string;
     confirmed_amount: string;
   }>(sql`
-    select c.id, c.collection_reference, c.amount::text, c.state, c.current_location_id,
+    select c.id, c.collection_reference, c.source_location_id, c.amount::text, c.state,
+           c.current_location_id, c.version,
            c.recorded_at, c.received_at,
            coalesce(sum(case when d.state <> 'REVERSED' then a.amount else 0 end), 0)::text as allocated_amount,
            coalesce(sum(case when d.state = 'CONFIRMED' then a.amount else 0 end), 0)::text as confirmed_amount
@@ -443,10 +456,110 @@ export async function getCashStationSummaryInTransaction(
     where c.tenant_id = ${context.tenantId}
       and c.station_id = ${context.stationId}
       and c.state <> 'REVERSED'
-    group by c.id, c.collection_reference, c.amount, c.state, c.current_location_id,
-             c.recorded_at, c.received_at
+    group by c.id, c.collection_reference, c.source_location_id, c.amount, c.state,
+             c.current_location_id, c.version, c.recorded_at, c.received_at
     order by c.recorded_at, c.id
   `);
+
+  const locations = await transaction.execute<{
+    id: string;
+    code: string;
+    name: string;
+    location_type: string;
+  }>(sql`
+    select id, code, name, location_type
+    from app.cash_locations
+    where tenant_id = ${context.tenantId}
+      and station_id = ${context.stationId}
+      and status = 'ACTIVE'
+    order by code, id
+  `);
+
+  const reconciliationSources = await transaction.execute<{
+    reconciliation_id: string;
+    business_date: string;
+    counted_cash: string;
+    allocated_cash: string;
+  }>(sql`
+    select r.id as reconciliation_id,
+           bd.business_date,
+           cd.counted_cash::text as counted_cash,
+           coalesce(sum(a.amount), 0)::text as allocated_cash
+    from app.reconciliations r
+    join app.station_business_days bd
+      on bd.tenant_id = r.tenant_id
+     and bd.station_id = r.station_id
+     and bd.id = r.business_day_id
+    join app.reconciliation_cash_declarations cd
+      on cd.tenant_id = r.tenant_id
+     and cd.station_id = r.station_id
+     and cd.reconciliation_id = r.id
+    left join app.cash_collection_allocations a
+      on a.tenant_id = r.tenant_id
+     and a.station_id = r.station_id
+     and a.reconciliation_id = r.id
+    where r.tenant_id = ${context.tenantId}
+      and r.station_id = ${context.stationId}
+      and r.state in ('APPROVED', 'POSTED', 'LOCKED')
+    group by r.id, bd.business_date, cd.counted_cash
+    having cd.counted_cash - coalesce(sum(a.amount), 0) > 0
+    order by bd.business_date desc, r.id
+  `);
+
+  const depositRows = options.includeDepositDetails
+    ? await transaction.execute<{
+        id: string;
+        deposit_reference: string;
+        amount: string;
+        state: string;
+        version: number | string;
+        source_location_id: string;
+        bank_account_id: string;
+        bank_account_name: string;
+        confirmed_amount: string | null;
+        confirmation_variance: string | null;
+        bank_reference: string | null;
+        deposited_at: string | Date;
+      }>(sql`
+        select d.id,
+               d.deposit_reference,
+               d.amount::text,
+               d.state,
+               d.version,
+               d.source_location_id,
+               d.bank_account_id,
+               ba.name as bank_account_name,
+               d.confirmed_amount::text,
+               d.confirmation_variance::text,
+               d.bank_reference,
+               d.deposited_at
+        from app.bank_deposits d
+        join app.bank_accounts ba
+          on ba.tenant_id = d.tenant_id
+         and ba.id = d.bank_account_id
+        where d.tenant_id = ${context.tenantId}
+          and d.station_id = ${context.stationId}
+          and d.state <> 'REVERSED'
+        order by d.deposited_at desc, d.id desc
+      `)
+    : [];
+
+  const bankAccounts = options.includeDepositDetails
+    ? await transaction.execute<{
+        id: string;
+        name: string;
+        bank_name: string;
+        account_reference_masked: string;
+      }>(sql`
+        select id, name, bank_name, account_reference_masked
+        from app.bank_accounts
+        where tenant_id = ${context.tenantId}
+          and legal_entity_id = ${context.legalEntityId}
+          and status = 'ACTIVE'
+          and currency = 'USD'
+        order by name, id
+      `)
+    : [];
 
   let availableAtStation = new ExactDecimal('0');
   let collectedButUnbanked = new ExactDecimal('0');
@@ -481,11 +594,38 @@ export async function getCashStationSummaryInTransaction(
       pendingBankConfirmation: pending.toString(),
       state: row.state,
       custodyState,
+      sourceLocationId: row.source_location_id,
       currentLocationId: row.current_location_id,
+      version: Number(row.version),
       recordedAt: new Date(row.recorded_at).toISOString(),
       receivedAt: row.received_at ? new Date(row.received_at).toISOString() : null,
     };
   });
+
+  const availableSources = reconciliationSources.map((row) => ({
+    reconciliationId: row.reconciliation_id,
+    businessDate: row.business_date,
+    countedCash: decimal(row.counted_cash).toString(),
+    allocatedCash: decimal(row.allocated_cash).toString(),
+    availableCash: remainingCashAmount(row.counted_cash, row.allocated_cash),
+  }));
+
+  const deposits = depositRows.map((row) => ({
+    depositId: row.id,
+    depositReference: row.deposit_reference,
+    amount: decimal(row.amount).toString(),
+    state: row.state,
+    version: Number(row.version),
+    sourceLocationId: row.source_location_id,
+    bankAccountId: row.bank_account_id,
+    bankAccountName: row.bank_account_name,
+    confirmedAmount: row.confirmed_amount ? decimal(row.confirmed_amount).toString() : null,
+    confirmationVariance: row.confirmation_variance
+      ? decimal(row.confirmation_variance).toString()
+      : null,
+    bankReference: row.bank_reference,
+    depositedAt: new Date(row.deposited_at).toISOString(),
+  }));
 
   return {
     stationId: context.stationId,
@@ -496,5 +636,26 @@ export async function getCashStationSummaryInTransaction(
       pendingBankConfirmation: pendingBankConfirmation.toString(),
     },
     collections,
+    locations: locations.map((row) => ({
+      locationId: row.id,
+      code: row.code,
+      name: row.name,
+      locationType: row.location_type,
+    })),
+    reconciliationSources: availableSources,
+    bankAccounts: bankAccounts.map((row) => ({
+      bankAccountId: row.id,
+      name: row.name,
+      bankName: row.bank_name,
+      accountReferenceMasked: row.account_reference_masked,
+    })),
+    deposits,
+    capabilities: options.capabilities ?? {
+      viewDeposits: false,
+      recordCollection: false,
+      receiveCollection: false,
+      recordDeposit: false,
+      confirmDeposit: false,
+    },
   };
 }

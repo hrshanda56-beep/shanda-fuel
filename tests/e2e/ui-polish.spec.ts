@@ -153,6 +153,8 @@ const unmatched = [
 ];
 
 const cashSummary = {
+  stationId: 'station-1',
+  currency: 'USD',
   totals: {
     availableAtStation: '14567.89',
     collectedButUnbanked: '70000.00',
@@ -164,11 +166,69 @@ const cashSummary = {
       collectionReference: 'COL-HRE01-2026-09-20-MORNING-000042',
       amount: '720000.00',
       allocatedAmount: '720000.00',
+      confirmedAmount: '0',
+      availableAtStation: '0',
       collectedButUnbanked: '70000.00',
+      pendingBankConfirmation: '0',
+      state: 'RECEIVED',
       custodyState: 'IN_TRANSIT_TO_BANK',
+      sourceLocationId: 'location-1',
       currentLocationId: 'location-1',
+      version: 1,
     },
   ],
+  locations: [
+    { locationId: 'location-1', code: 'TILL', name: 'Station till', locationType: 'STATION_TILL' },
+    { locationId: 'location-2', code: 'SAFE', name: 'Station safe', locationType: 'STATION_SAFE' },
+  ],
+  reconciliationSources: [],
+  bankAccounts: [],
+  deposits: [],
+  capabilities: {
+    viewDeposits: true,
+    recordCollection: true,
+    receiveCollection: true,
+    recordDeposit: true,
+    confirmDeposit: true,
+  },
+};
+
+const stationContext = {
+  data: {
+    available: {
+      organisations: [
+        {
+          id: 'tenant-1',
+          name: 'Test organisation',
+          legalEntities: [
+            {
+              id: 'entity-1',
+              name: 'Test legal entity',
+              stations: [
+                {
+                  id: 'station-1',
+                  code: 'HRE-01',
+                  name: 'Harare Road Service Station',
+                  timezone: 'Africa/Harare',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    current: {
+      organisationId: 'tenant-1',
+      legalEntityId: 'entity-1',
+      stationId: 'station-1',
+      allStations: false,
+    },
+    route: {
+      pathname: '/stations/station-1/cash',
+      policy: { legalEntity: 'required', station: 'required', allStationsAllowed: false },
+    },
+    persistedContextInvalid: false,
+  },
 };
 
 const suppliers = [
@@ -328,7 +388,14 @@ async function mockApis(page: Page) {
   await page.route('**/api/reports/management**', (route) => route.fulfill(json(report)));
   await page.route('**/api/settlements/summary**', (route) => route.fulfill(json(settlements)));
   await page.route('**/api/settlements/unmatched**', (route) => route.fulfill(json(unmatched)));
-  await page.route('**/api/cash/summary**', (route) => route.fulfill(json(cashSummary)));
+  await page.route(/\/api\/context(?:\?|$)/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill(json(stationContext));
+  });
+  await page.route(/\/api\/cash\/summary(?:\?|$)/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill(json(cashSummary));
+  });
   await page.route('**/api/suppliers/summary**', (route) => route.fulfill(json(suppliers)));
   await page.route('**/api/inventory/valuation?**', (route) => route.fulfill(json(valuation)));
 }

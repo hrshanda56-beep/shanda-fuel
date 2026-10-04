@@ -31,6 +31,13 @@ const ids = {
   bankAccount: 'a6b00000-0000-4000-8000-000000000101',
 };
 
+const stationContext = {
+  organisationId: ids.tenant,
+  legalEntityId: ids.legal,
+  stationId: ids.station,
+  allStations: false,
+} as const;
+
 let client: Sql;
 
 async function signedCookie(token: string): Promise<string> {
@@ -40,16 +47,17 @@ async function signedCookie(token: string): Promise<string> {
 async function postCashCommand(
   input: Record<string, unknown>,
   key: string,
-  token = 'a6-supervisor-session-token',
+  token: string | null = 'a6-supervisor-session-token',
 ) {
+  const headers = new Headers({
+    'content-type': 'application/json',
+    'idempotency-key': key,
+  });
+  if (token) headers.set('cookie', `shanda-fuel.session_token=${await signedCookie(token)}`);
   return cashCommandPost(
     new Request('http://127.0.0.1:3000/api/cash/commands', {
       method: 'POST',
-      headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie(token)}`,
-        'content-type': 'application/json',
-        'idempotency-key': key,
-      },
+      headers,
       body: JSON.stringify(input),
     }),
   );
@@ -147,8 +155,7 @@ describe('A6 cash collection and banking persistence', () => {
     const first = await postCashCommand(
       {
         commandType: 'RecordCashCollection',
-        tenantId: ids.tenant,
-        stationId: ids.station,
+        context: stationContext,
         collectionReference: 'A6-COL-001',
         sourceLocationId: ids.till,
         sources: [{ reconciliationId: ids.reconciliation, amount: '600.00' }],
@@ -161,8 +168,7 @@ describe('A6 cash collection and banking persistence', () => {
     const firstRetry = await postCashCommand(
       {
         commandType: 'RecordCashCollection',
-        tenantId: ids.tenant,
-        stationId: ids.station,
+        context: stationContext,
         collectionReference: 'A6-COL-001',
         sourceLocationId: ids.till,
         sources: [{ reconciliationId: ids.reconciliation, amount: '600.00' }],
@@ -174,8 +180,7 @@ describe('A6 cash collection and banking persistence', () => {
     const second = await postCashCommand(
       {
         commandType: 'RecordCashCollection',
-        tenantId: ids.tenant,
-        stationId: ids.station,
+        context: stationContext,
         collectionReference: 'A6-COL-002',
         sourceLocationId: ids.till,
         sources: [{ reconciliationId: ids.reconciliation, amount: '200.00' }],
@@ -192,8 +197,7 @@ describe('A6 cash collection and banking persistence', () => {
       const received = await postCashCommand(
         {
           commandType: 'ReceiveCashCollection',
-          tenantId: ids.tenant,
-          stationId: ids.station,
+          context: stationContext,
           collectionId,
           targetLocationId: ids.safe,
           expectedVersion: 0,
@@ -206,8 +210,7 @@ describe('A6 cash collection and banking persistence', () => {
 
     const depositInput = {
       commandType: 'CreateBankDeposit',
-      tenantId: ids.tenant,
-      stationId: ids.station,
+      context: stationContext,
       bankAccountId: ids.bankAccount,
       sourceLocationId: ids.safe,
       depositReference: 'A6-DEP-001',
@@ -236,8 +239,7 @@ describe('A6 cash collection and banking persistence', () => {
     const confirmed = await postCashCommand(
       {
         commandType: 'ConfirmBankDeposit',
-        tenantId: ids.tenant,
-        stationId: ids.station,
+        context: stationContext,
         depositId: depositBody.depositId,
         expectedVersion: 0,
         confirmedAmount: '700.00',
@@ -251,8 +253,7 @@ describe('A6 cash collection and banking persistence', () => {
     const confirmedRetry = await postCashCommand(
       {
         commandType: 'ConfirmBankDeposit',
-        tenantId: ids.tenant,
-        stationId: ids.station,
+        context: stationContext,
         depositId: depositBody.depositId,
         expectedVersion: 0,
         confirmedAmount: '700.00',
@@ -271,8 +272,7 @@ describe('A6 cash collection and banking persistence', () => {
     const overAllocation = await postCashCommand(
       {
         commandType: 'CreateBankDeposit',
-        tenantId: ids.tenant,
-        stationId: ids.station,
+        context: stationContext,
         bankAccountId: ids.bankAccount,
         sourceLocationId: ids.safe,
         depositReference: 'A6-DEP-OVER',
@@ -286,8 +286,7 @@ describe('A6 cash collection and banking persistence', () => {
     const unauthorized = await postCashCommand(
       {
         commandType: 'ConfirmBankDeposit',
-        tenantId: ids.tenant,
-        stationId: ids.station,
+        context: stationContext,
         depositId: depositBody.depositId,
         expectedVersion: 0,
         confirmedAmount: '700.00',
@@ -300,8 +299,10 @@ describe('A6 cash collection and banking persistence', () => {
     const crossTenant = await postCashCommand(
       {
         commandType: 'RecordCashCollection',
-        tenantId: 'a6b00000-0000-4000-8000-000000000099',
-        stationId: ids.station,
+        context: {
+          ...stationContext,
+          organisationId: 'a6b00000-0000-4000-8000-000000000099',
+        },
         collectionReference: 'A6-CROSS-TENANT',
         sourceLocationId: ids.till,
         sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
@@ -318,5 +319,36 @@ describe('A6 cash collection and banking persistence', () => {
         and details ? 'subjectId'
     `);
     expect(Number(auditRows[0]?.count ?? 0)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('rejects unauthenticated and all-stations cash commands before any mutation', async () => {
+    const unauthenticated = await postCashCommand(
+      {
+        commandType: 'RecordCashCollection',
+        context: stationContext,
+        collectionReference: 'A6-UNAUTH',
+        sourceLocationId: ids.till,
+        sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
+      },
+      'a6-unauthenticated',
+      null,
+    );
+    expect(unauthenticated.status).toBe(401);
+
+    const allStations = await postCashCommand(
+      {
+        commandType: 'RecordCashCollection',
+        context: {
+          organisationId: ids.tenant,
+          legalEntityId: ids.legal,
+          allStations: true,
+        },
+        collectionReference: 'A6-ALL-STATIONS',
+        sourceLocationId: ids.till,
+        sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
+      },
+      'a6-all-stations',
+    );
+    expect(allStations.status).toBe(403);
   });
 });
