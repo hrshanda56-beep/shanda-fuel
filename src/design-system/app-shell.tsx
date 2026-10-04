@@ -80,7 +80,11 @@ type AppShellProps = {
   searchPlacement?: 'header' | 'page' | 'none';
 };
 
-type WipRequest = { feature: string; message?: string };
+type WipRequest = {
+  feature: string;
+  message?: string;
+  returnFocus?: () => HTMLElement | null | undefined;
+};
 type ShellContextValue = { openSearch: () => void };
 const ShellContext = createContext<ShellContextValue | null>(null);
 
@@ -249,7 +253,7 @@ export function AppShell({
               </div>
               {context ? <WorkContextLine context={context} /> : null}
               {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
-              <AccountPill userName={userName} role={role} />
+              <AccountPill userName={userName} role={role} onWip={openWip} />
             </header>
             <main className="shell-sheet" id="main-content" tabIndex={-1}>
               {breadcrumbs.length > 0 || attention ? (
@@ -315,7 +319,7 @@ export function AppShell({
           onClose={() => setWip(null)}
           feature={wip?.feature ?? ''}
           message={wip?.message}
-          returnFocus={() => menuButtonRef.current}
+          returnFocus={wip?.returnFocus ?? (() => menuButtonRef.current)}
         />
       </div>
     </ShellContext.Provider>
@@ -580,9 +584,19 @@ function AccountSummary({ userName, role }: { userName?: string; role?: string }
   );
 }
 
-function AccountPill({ userName, role }: { userName?: string; role?: string }) {
+function AccountPill({
+  userName,
+  role,
+  onWip,
+}: {
+  userName?: string;
+  role?: string;
+  onWip: (request: WipRequest) => void;
+}) {
   const { resolvedTheme, setPreference } = useThemePreference();
   const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
+  const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   if (!userName) return null;
 
   return (
@@ -592,6 +606,7 @@ function AccountPill({ userName, role }: { userName?: string; role?: string }) {
       aria-label={`Account: ${userName}${role ? `, ${role}` : ''}`}
     >
       <button
+        ref={helpButtonRef}
         type="button"
         className="shell-icon-button"
         aria-label={`Switch to ${nextTheme} theme`}
@@ -605,14 +620,33 @@ function AccountPill({ userName, role }: { userName?: string; role?: string }) {
         className="shell-icon-button shell-hide-mobile"
         aria-label="Help"
         title="Help"
+        aria-haspopup="dialog"
+        onClick={() =>
+          onWip({
+            feature: 'Help',
+            message:
+              'Help content is not available yet. Nothing has been changed; contact your administrator for assistance.',
+            returnFocus: () => helpButtonRef.current,
+          })
+        }
       >
         <Icon name="help" size="md" />
       </button>
       <button
+        ref={notificationsButtonRef}
         type="button"
         className="shell-icon-button"
         aria-label="Notifications"
         title="Notifications"
+        aria-haspopup="dialog"
+        onClick={() =>
+          onWip({
+            feature: 'Notifications',
+            message:
+              'Notifications are not available yet. Nothing has been changed; no notification data is being shown.',
+            returnFocus: () => notificationsButtonRef.current,
+          })
+        }
       >
         <Icon name="bell" size="md" />
       </button>

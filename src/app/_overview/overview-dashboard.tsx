@@ -6,6 +6,7 @@ import { GlobalSearchButton } from '@/design-system/app-shell';
 import { AreaChart, BarChart, DonutChart } from '@/design-system/charts';
 import { WorkInProgressTrigger } from '@/design-system/dialogs';
 import { Icon } from '@/design-system/icons';
+import { EmptyState } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
 
 import {
@@ -25,6 +26,61 @@ const FILTERS: { key: AttentionType | 'all'; label: string }[] = [
   { key: 'info', label: 'Info' },
 ];
 const PRIORITY_CLASS = { High: 'text-critical', Medium: 'text-warning', Low: 'text-positive' };
+
+/**
+ * Production boundary for the overview until a trusted reporting context and
+ * dashboard projection are available. Never replace these states with sample
+ * values or a silent fallback after a fetch failure.
+ */
+export function ProductionSafeOverview() {
+  return (
+    <div className="overview">
+      <div className="overview-title">
+        <div>
+          <h1 id="page-title">Dashboard</h1>
+          <p className="overview-sample">Live figures are unavailable for this context.</p>
+        </div>
+        <GlobalSearchButton />
+      </div>
+
+      <section className="overview-section" aria-labelledby="today-heading">
+        <h2 id="today-heading">Today at a glance</h2>
+        <div className="card">
+          <EmptyState
+            layout="block"
+            headingLevel={3}
+            title="Live metrics unavailable"
+            message="No authoritative dashboard projection is available yet. Sample financial and operational figures are intentionally hidden."
+          />
+        </div>
+      </section>
+
+      <section className="overview-section" aria-labelledby="stats-heading">
+        <h2 id="stats-heading">Statistics by period</h2>
+        <div className="card">
+          <EmptyState
+            layout="block"
+            headingLevel={3}
+            title="Trends unavailable"
+            message="Period charts will appear when an authoritative reporting projection is available."
+          />
+        </div>
+      </section>
+
+      <section className="overview-section" aria-labelledby="attention-heading">
+        <h2 id="attention-heading">Needs attention</h2>
+        <div className="card">
+          <EmptyState
+            layout="block"
+            headingLevel={3}
+            title="Live attention feed unavailable"
+            message="No sample tasks, attention rows, or action-center data are shown on the production dashboard."
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
 
 /** Owner/Finance Overview (ADR-015): today's KPIs, period charts, then Needs attention. */
 export function OverviewDashboard() {
