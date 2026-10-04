@@ -119,6 +119,65 @@ const paths = {
       <circle cx="10" cy="17" r="2" />
     </>
   ),
+  dashboard: (
+    <>
+      <rect x="3" y="3" width="7" height="9" rx="1.5" />
+      <rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" />
+      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </>
+  ),
+  alert: (
+    <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+  ),
+  drop: <path d="M12 2.7 6.3 8.4a8 8 0 1 0 11.4 0Z" />,
+  tag: (
+    <path d="m20.6 13.4-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8ZM7.5 7.5h.01" />
+  ),
+  card: <path d="M2 5h20v14H2zM2 10h20M6 15h4" />,
+  scale: <path d="M12 3v18M5 7h14M5 7l-3 7a3 3 0 0 0 6 0ZM19 7l-3 7a3 3 0 0 0 6 0ZM8 21h8" />,
+  receipt: <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2ZM9 8h6M9 12h6" />,
+  building: <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />,
+  dollar: <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />,
+  trend: <path d="m22 7-8.5 8.5-5-5L2 17M16 7h6v6" />,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </>
+  ),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" />
+    </>
+  ),
+  logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />,
+  'sidebar-collapse': (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <path d="M9 3v18M16 10l-2 2 2 2" />
+    </>
+  ),
+  'sidebar-expand': (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <path d="M9 3v18M14 10l2 2-2 2" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof paths;

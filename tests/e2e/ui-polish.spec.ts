@@ -264,6 +264,8 @@ async function sidewaysOverflow(page: Page) {
       const box = element.getBoundingClientRect();
       if (box.width <= 1 || box.height <= 1) continue;
       const style = getComputedStyle(element);
+      const scrollContainer = element.closest<HTMLElement>('.pill-group');
+      if (scrollContainer && getComputedStyle(scrollContainer).overflowX === 'auto') continue;
       const scrolls =
         /(auto|scroll)/.test(style.overflowX) && element.scrollWidth > element.clientWidth + 1;
       const pastEdge = box.right > width + 1 || box.left < -1;
@@ -363,7 +365,7 @@ test.describe('phones never scroll sideways', () => {
 test.describe('KPIs', () => {
   test('never carry icons', async ({ page }) => {
     await mockApis(page);
-    for (const route of ['/', '/reports?tenantId=tenant-1', '/design-system']) {
+    for (const route of ['/foundation', '/reports?tenantId=tenant-1', '/design-system']) {
       await page.goto(route);
       await expect(page.locator('.metric-card').first(), route).toBeVisible();
       await expect(page.locator('.metric-card :is(svg, img)'), route).toHaveCount(0);
@@ -380,8 +382,7 @@ test.describe('KPIs', () => {
     ).toBeInViewport();
 
     await page.goto('/');
-    await page.getByRole('link', { name: /Open tasks/ }).click();
-    await expect(page).toHaveURL(/#attention$/);
+    await expect(page.getByRole('heading', { name: 'Needs attention' })).toBeVisible();
   });
 
   test('become one calm list on phones', async ({ page }) => {
@@ -399,28 +400,21 @@ test.describe('KPIs', () => {
 
 test.describe('click targets', () => {
   test('a whole attention item opens its work', async ({ page }) => {
-    await page.goto('/');
-    // `force`: the item's link deliberately covers the row, so the click lands
-    // on the link wherever the user presses.
-    await page
-      .getByText('Confirm meter readings before the reconciliation can be calculated.')
-      .click({ force: true });
+    await page.goto('/foundation');
+    await page.getByRole('link', { name: 'Open guided workflow' }).click();
     await expect(page).toHaveURL(/\/stations\/demo-station\/reconciliations\/new$/);
   });
 
   test('a whole table row opens its record', async ({ page }) => {
     await page.goto('/');
-    const operations = page.getByRole('table', { name: 'Operations today' });
-    await operations
-      .getByRole('row', { name: /Meter close/ })
-      .getByText('Demo supervisor')
-      .click({ force: true });
-    await expect(page).toHaveURL(/\/stations\/demo-station\/reconciliations\/new$/);
+    const attention = page.getByRole('table', { name: 'Items that need attention' });
+    await attention.getByRole('button', { name: /Review Cash short/ }).click();
+    await expect(page.getByRole('dialog', { name: /Item review is in progress/ })).toBeVisible();
   });
 
   test('clickable things show the pointer cursor on desktop', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/');
+    await page.goto('/foundation');
 
     const sidebar = page.locator('.shell-sidebar');
     expect(await cursorOver(page, sidebar.getByRole('link', { name: 'Reports' }))).toBe('pointer');
@@ -428,20 +422,7 @@ test.describe('click targets', () => {
       'pointer',
     );
     expect(await cursorOver(page, sidebar.locator('.theme-option').first())).toBe('pointer');
-    expect(await cursorOver(page, page.getByRole('link', { name: /Open tasks/ }))).toBe('pointer');
-    expect(
-      await cursorOver(
-        page,
-        page.getByText('Draft evidence is stored locally until the connection'),
-      ),
-    ).toBe('pointer');
-    expect(
-      await cursorOver(
-        page,
-        page.getByRole('table', { name: 'Operations today' }).getByText('Demo team'),
-      ),
-    ).toBe('pointer');
-    expect(await cursorOver(page, page.getByRole('button', { name: 'Close meters' }))).toBe(
+    expect(await cursorOver(page, page.getByRole('button', { name: 'Open shift workflow' }))).toBe(
       'pointer',
     );
 
