@@ -30,6 +30,7 @@ export type ModalProps = {
   /** Content leading the title, e.g. a tone icon. */
   leading?: ReactNode;
   hideCloseButton?: boolean;
+  className?: string;
 };
 
 /**
@@ -54,6 +55,7 @@ export function Modal({
   returnFocus,
   leading,
   hideCloseButton = false,
+  className = '',
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -160,7 +162,7 @@ export function Modal({
     >
       <section
         ref={panelRef}
-        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''} ${drawer ? 'drawer' : ''}`.trim()}
+        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''} ${drawer ? 'drawer' : ''} ${className}`.trim()}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}

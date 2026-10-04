@@ -88,13 +88,14 @@ init script in `src/app/layout.tsx` (theme + shell preferences) needs a nonce or
 
 Every product page renders inside `AppShell`; do not add per-page navigation markup.
 
-- **Desktop (≥ 64rem):** persistent sidebar grouped as Today, Operations, Finance,
-  Customers, Suppliers, Reports, Settings. Groups with several destinations collapse
+- **Desktop (≥ 75rem):** persistent sidebar grouped as Today, Operations, Finance,
+  Suppliers, Reports, Settings. Groups with several destinations collapse
   (`aria-expanded`); single-destination sections are plain links. The sidebar collapses to
   an icon rail whose labels become hover/focus tooltips. Rail and closed groups persist per
   device (`shell-preferences.ts`); the rail is applied before first paint.
-- **Tablet and phone:** a slim sticky top bar; the menu opens the same grouped navigation
-  in a `Modal` drawer (`presentation="drawer"`) with the theme control. No bottom bar.
+- **Tablet (48–74.99rem):** a persistent icon rail with hover/focus labels. Phone (<48rem)
+  gets a slim sticky top bar; the menu opens the same grouped navigation in a `Modal` drawer
+  (`presentation="drawer"`). The theme control lives in the account menu only.
 - **Current route:** `aria-current="page"` on the link, shown as a raised neutral surface
   with an accent icon; a closed group containing it is marked the same way.
 - **Destinations:** only existing routes are linked. Planned areas open

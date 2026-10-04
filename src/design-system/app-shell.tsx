@@ -40,7 +40,7 @@ import {
   toggleClosedGroup,
 } from './shell-preferences';
 import { ThemeControl } from './theme-control';
-import { useThemePreference } from './theme-runtime';
+import { applyThemePreference, readStoredThemePreference } from './theme';
 
 /* Types -------------------------------------------------------------------- */
 
@@ -124,6 +124,7 @@ export function AppShell({
     [navigationProjection, workContext],
   );
   const todayHref = findHref(sections, 'today') ?? '/';
+  const shellMode = useShellMode();
 
   const collapsed = useSyncExternalStore(
     subscribeShellPreferences,
@@ -136,6 +137,7 @@ export function AppShell({
     () => '',
   );
   const closedGroups = useMemo(() => parseClosedGroups(closedGroupsRaw), [closedGroupsRaw]);
+  const rail = shellMode === 'tablet' || (shellMode === 'desktop' && collapsed);
 
   // False during server render and hydration, true once client handlers are live.
   const hydrated = useSyncExternalStore(
@@ -150,6 +152,13 @@ export function AppShell({
   const [contextSelectorOpen, setContextSelectorOpen] = useState(false);
   const [wip, setWip] = useState<WipRequest | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    // AppShell can survive a soft route transition while the document head
+    // init script does not run again. Re-apply the device preference whenever
+    // the active route changes so the shell never falls back to system mode.
+    applyThemePreference(readStoredThemePreference());
+  }, [pathname]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -204,12 +213,13 @@ export function AppShell({
         className="app-shell"
         data-hydrated={hydrated || undefined}
         data-sidebar={collapsed ? 'collapsed' : 'expanded'}
+        data-shell-mode={shellMode}
       >
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
 
-        <div className="shell-topbar" role="navigation" aria-label="Mobile app bar">
+        <header className="shell-topbar" aria-label="Application header">
           <button
             ref={menuButtonRef}
             type="button"
@@ -222,25 +232,28 @@ export function AppShell({
             <span className="visually-hidden">Open menu</span>
           </button>
           <BrandLink href={todayHref} />
-        </div>
+          {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
+          <AccountMenu userName={userName} role={role} placement="mobile" />
+        </header>
 
         <aside className="shell-sidebar" aria-label="Sidebar">
           <BrandLink href={todayHref} />
-          <nav className="shell-nav" aria-label="Primary navigation">
-            {openTasks ? (
-              <OpenTasks
-                tasks={openTasks}
-                open={tasksOpen}
-                onToggle={() => setTasksOpen((current) => !current)}
-                onWip={openWip}
-                collapsed={collapsed}
-              />
-            ) : null}
-            <NavigationTree {...navigationProps} rail={collapsed} onExpandRail={expandRailGroup} />
-          </nav>
+          <div className="shell-sidebar-nav-region">
+            <nav className="shell-nav" aria-label="Primary navigation">
+              {openTasks ? (
+                <OpenTasks
+                  tasks={openTasks}
+                  open={tasksOpen}
+                  onToggle={() => setTasksOpen((current) => !current)}
+                  onWip={openWip}
+                  collapsed={rail}
+                />
+              ) : null}
+              <NavigationTree {...navigationProps} rail={rail} onExpandRail={expandRailGroup} />
+            </nav>
+          </div>
           <div className="shell-sidebar-footer">
             <div className="shell-sidebar-controls">
-              <ThemeControl />
               <IconButton
                 icon="panel-left"
                 size="sm"
@@ -249,16 +262,12 @@ export function AppShell({
                 onClick={() => setSidebarCollapsed(!collapsed)}
               />
             </div>
-            <AccountSummary userName={userName} role={role} />
           </div>
         </aside>
 
         <div className="shell-body">
           <div className="shell-main">
-            <header className="shell-header">
-              <div className="shell-mobile-brand">
-                <BrandLink href={todayHref} />
-              </div>
+            <div className="shell-header" role="region" aria-label="Work context and account">
               <ContextSelector
                 fallback={context}
                 open={contextSelectorOpen}
@@ -266,8 +275,8 @@ export function AppShell({
                 onClose={() => setContextSelectorOpen(false)}
               />
               {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
-              <AccountPill userName={userName} role={role} onWip={openWip} />
-            </header>
+              <AccountMenu userName={userName} role={role} placement="desktop" />
+            </div>
             <main className="shell-sheet" id="main-content" tabIndex={-1}>
               {breadcrumbs.length > 0 || attention ? (
                 <div className="shell-sheet-header">
@@ -298,10 +307,6 @@ export function AppShell({
               onNavigate={() => setMenuOpen(false)}
             />
           </nav>
-          <div className="shell-drawer-footer">
-            <AccountSummary userName={userName} role={role} />
-            <ThemeControl />
-          </div>
         </Modal>
 
         {attention ? (
@@ -601,96 +606,101 @@ function BrandLink({ href }: { href: string }) {
   );
 }
 
-function AccountSummary({ userName, role }: { userName?: string; role?: string }) {
-  if (!userName) return null;
+function AccountMenu({
+  userName,
+  role,
+  placement,
+}: {
+  userName?: string;
+  role?: string;
+  placement: 'desktop' | 'mobile';
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const displayName = displayableIdentity(userName);
+  const displayRole = displayName ? displayableRole(role) : undefined;
+  const label = displayName ? `Account: ${displayName}` : 'Account';
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!panelRef.current?.parentElement?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        window.requestAnimationFrame(() => triggerRef.current?.focus());
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    window.requestAnimationFrame(() => panelRef.current?.focus());
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="shell-account">
-      <span className="shell-avatar" aria-hidden="true">
-        {initials(userName)}
-      </span>
-      <span className="shell-account-text">
-        <span className="shell-account-name">{userName}</span>
-        {role ? <span className="shell-account-role">{role}</span> : null}
-      </span>
+    <div className={`shell-account-menu shell-account-menu-${placement}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="shell-account-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="shell-avatar" aria-hidden="true">
+          {displayName ? initials(displayName) : <Icon name="users" />}
+        </span>
+        <span className="shell-account-text shell-account-trigger-text">
+          <span className="shell-account-name">{displayName ?? 'Account'}</span>
+          {displayRole ? <span className="shell-account-role">{displayRole}</span> : null}
+        </span>
+        <Icon name="chevron-down" className="shell-account-chevron" />
+      </button>
+      {open ? (
+        <div
+          ref={panelRef}
+          className="account-menu-panel"
+          role="menu"
+          aria-label="Account menu"
+          tabIndex={-1}
+        >
+          <div className="account-menu-identity">
+            <strong>{displayName ?? 'Account preferences'}</strong>
+            {displayRole ? <span>{displayRole}</span> : null}
+          </div>
+          <div role="group" aria-label="Theme" className="account-menu-theme">
+            <span className="account-menu-label">Theme</span>
+            <ThemeControl />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function AccountPill({
-  userName,
-  role,
-  onWip,
-}: {
-  userName?: string;
-  role?: string;
-  onWip: (request: WipRequest) => void;
-}) {
-  const { resolvedTheme, setPreference } = useThemePreference();
-  const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
-  const helpButtonRef = useRef<HTMLButtonElement>(null);
-  const notificationsButtonRef = useRef<HTMLButtonElement>(null);
-  if (!userName) return null;
+function displayableIdentity(value?: string) {
+  const candidate = value?.trim();
+  if (
+    !candidate ||
+    /^(?:current user|cu|demo(?: owner| user)?|finance operator)$/i.test(candidate)
+  ) {
+    return undefined;
+  }
+  return candidate;
+}
 
-  return (
-    <div
-      className="shell-account shell-account-pill"
-      role="group"
-      aria-label={`Account: ${userName}${role ? `, ${role}` : ''}`}
-    >
-      <button
-        ref={helpButtonRef}
-        type="button"
-        className="shell-icon-button"
-        aria-label={`Switch to ${nextTheme} theme`}
-        title={`Switch to ${nextTheme} theme`}
-        onClick={() => setPreference(nextTheme)}
-      >
-        <Icon name={resolvedTheme === 'dark' ? 'sun' : 'moon'} size="md" />
-      </button>
-      <button
-        type="button"
-        className="shell-icon-button shell-hide-mobile"
-        aria-label="Help"
-        title="Help"
-        aria-haspopup="dialog"
-        onClick={() =>
-          onWip({
-            feature: 'Help',
-            message:
-              'Help content is not available yet. Nothing has been changed; contact your administrator for assistance.',
-            returnFocus: () => helpButtonRef.current,
-          })
-        }
-      >
-        <Icon name="help" size="md" />
-      </button>
-      <button
-        ref={notificationsButtonRef}
-        type="button"
-        className="shell-icon-button"
-        aria-label="Notifications"
-        title="Notifications"
-        aria-haspopup="dialog"
-        onClick={() =>
-          onWip({
-            feature: 'Notifications',
-            message:
-              'Notifications are not available yet. Nothing has been changed; no notification data is being shown.',
-            returnFocus: () => notificationsButtonRef.current,
-          })
-        }
-      >
-        <Icon name="bell" size="md" />
-      </button>
-      <span className="shell-avatar" aria-hidden="true">
-        {initials(userName)}
-      </span>
-      <span className="shell-account-text shell-hide-mobile">
-        <span className="shell-account-name">{userName}</span>
-        {role ? <span className="shell-account-role">{role}</span> : null}
-      </span>
-    </div>
-  );
+function displayableRole(value?: string) {
+  const candidate = value?.trim();
+  if (!candidate || /^(?:current user|cu)$/i.test(candidate)) return undefined;
+  return candidate;
 }
 
 function initials(name: string) {
@@ -724,17 +734,18 @@ function AttentionTrigger({ count, onOpen }: { count: number; onOpen: () => void
 /** Opens the global page search without exposing records or private data. */
 export function GlobalSearchButton({ compact = false }: { compact?: boolean }) {
   const shell = useContext(ShellContext);
+  const shortcut = useSyncExternalStore(subscribeToNothing, readKeyboardShortcut, () => '⌘K');
   return (
     <button
       type="button"
       className={`global-search ${compact ? 'global-search-compact' : ''}`.trim()}
       aria-haspopup="dialog"
-      aria-label="Search anything"
+      aria-label="Search pages"
       aria-keyshortcuts="Meta+K Control+K"
       onClick={() => shell?.openSearch()}
     >
-      <span>Search anything…</span>
-      <kbd>⌘K</kbd>
+      <span>Search pages…</span>
+      <kbd>{shortcut}</kbd>
       <Icon name="search" size="md" />
     </button>
   );
@@ -778,7 +789,8 @@ function SearchPalette({
   const listId = useId();
   const results = items.filter(
     (item) =>
-      item.state !== 'restricted' && item.label.toLowerCase().includes(query.trim().toLowerCase()),
+      item.state !== 'restricted' &&
+      item.searchLabel.toLowerCase().includes(query.trim().toLowerCase()),
   );
   const safeIndex = Math.min(activeIndex, Math.max(results.length - 1, 0));
 
@@ -801,6 +813,7 @@ function SearchPalette({
       title="Search"
       description="Pages and areas you can open. Record search arrives with each module."
       size="md"
+      className="modal-command-palette"
       initialFocusRef={inputRef}
     >
       <div className="search-palette">
@@ -845,7 +858,7 @@ function SearchPalette({
               onClick={() => choose(item)}
             >
               <Icon name={item.icon} size="md" />
-              <span>{item.label}</span>
+              <span>{item.searchLabel}</span>
               {item.state === 'wip' ? (
                 <span className="search-palette-meta">In progress</span>
               ) : null}
@@ -885,4 +898,25 @@ function subscribeToHistory(onChange: () => void) {
 
 function readLocationSearch() {
   return window.location.search;
+}
+
+function readKeyboardShortcut() {
+  if (typeof navigator === 'undefined') return '⌘K';
+  return /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K';
+}
+
+function useShellMode(): 'mobile' | 'tablet' | 'desktop' {
+  return useSyncExternalStore(subscribeToViewport, readShellMode, () => 'desktop');
+}
+
+function subscribeToViewport(onChange: () => void) {
+  window.addEventListener('resize', onChange);
+  return () => window.removeEventListener('resize', onChange);
+}
+
+function readShellMode(): 'mobile' | 'tablet' | 'desktop' {
+  if (typeof window === 'undefined') return 'desktop';
+  if (window.innerWidth < 768) return 'mobile';
+  if (window.innerWidth < 1200) return 'tablet';
+  return 'desktop';
 }

@@ -1,4 +1,7 @@
+import { notFound } from 'next/navigation';
+
 import { AppShell } from '@/design-system/app-shell';
+import { isDesignSystemReferenceAvailable } from '@/design-system/reference/availability';
 import { ForecourtWorkspace } from '@/modules/forecourt/ui/forecourt-workspace';
 import {
   formatBusinessDate,
@@ -35,6 +38,8 @@ import { TableScrollRegion } from '@/design-system/table';
  * E2E coverage) until the golden-path screens replace it. `/` is the Overview.
  */
 export default function FoundationPreviewPage() {
+  if (!isDesignSystemReferenceAvailable()) notFound();
+
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}

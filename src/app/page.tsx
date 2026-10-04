@@ -18,7 +18,7 @@ export default function OverviewPage() {
       role={isProduction ? undefined : 'Owner'}
       userName={isProduction ? undefined : 'Demo owner'}
       openTasks={isProduction ? undefined : sampleTasks}
-      searchPlacement="page"
+      searchPlacement="header"
     >
       {isProduction ? <ProductionSafeOverview /> : <OverviewDashboard />}
     </AppShell>

@@ -13,7 +13,6 @@ export default function SuppliersPage() {
         shift: 'Finance',
       }}
       role="Finance"
-      userName="Current user"
       breadcrumbs={[{ label: 'Suppliers' }]}
     >
       <SupplierWorkspace />

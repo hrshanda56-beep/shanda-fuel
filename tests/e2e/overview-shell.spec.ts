@@ -3,6 +3,34 @@ import { expect, test } from '@playwright/test';
 
 /** ADR-015 owner overview: synthetic data is labelled and presentation-only. */
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/context**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          available: { organisations: [] },
+          current: null,
+          route: {
+            pathname: '/',
+            policy: { legalEntity: 'optional', station: 'optional', allStationsAllowed: true },
+          },
+          persistedContextInvalid: false,
+        },
+      }),
+    });
+  });
+  for (const endpoint of ['reports/management', 'settlements/summary', 'settlements/unmatched']) {
+    await page.route(`**/api/${endpoint}**`, async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Dependency unavailable in shell test' }),
+      });
+    });
+  }
+});
+
 test('overview shows KPIs first, then period charts, then needs attention', async ({ page }) => {
   await page.goto('/');
 
@@ -55,11 +83,13 @@ test('owner shell keeps grouped navigation, collapse, and global search', async 
   await expect(sidebar.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
   await expect(sidebar.getByRole('searchbox')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Search anything' }).click();
+  await page.getByRole('button', { name: 'Search pages' }).click();
   await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeFocused();
   await page.keyboard.press('Escape');
 
-  await sidebar.getByRole('button', { name: 'Collapse sidebar' }).click();
+  await sidebar
+    .getByRole('button', { name: 'Collapse sidebar' })
+    .evaluate((button) => (button as HTMLButtonElement).click());
   await expect(page.locator('.app-shell')).toHaveAttribute('data-sidebar', 'collapsed');
 });
 

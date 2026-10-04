@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 
-import { GlobalSearchButton } from '@/design-system/app-shell';
 import { AreaChart, BarChart, DonutChart } from '@/design-system/charts';
 import { WorkInProgressTrigger } from '@/design-system/dialogs';
 import { Icon } from '@/design-system/icons';
@@ -40,7 +39,6 @@ export function ProductionSafeOverview() {
           <h1 id="page-title">Dashboard</h1>
           <p className="overview-sample">Live figures are unavailable for this context.</p>
         </div>
-        <GlobalSearchButton />
       </div>
 
       <section className="overview-section" aria-labelledby="today-heading">
@@ -103,7 +101,6 @@ export function OverviewDashboard() {
             Sample data for design review. Figures are illustrative.
           </p>
         </div>
-        <GlobalSearchButton />
       </div>
 
       <section className="overview-section" aria-labelledby="today-heading">
