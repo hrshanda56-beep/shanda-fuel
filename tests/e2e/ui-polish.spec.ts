@@ -112,12 +112,25 @@ const report = {
 const settlements = [
   {
     settlementId: 'settlement-1',
+    providerId: 'provider-1',
+    providerCode: 'ZSWITCH',
     providerName: 'Zimswitch POS acquiring services',
+    providerAccountId: 'account-1',
+    accountReference: 'MERCHANT-001',
+    stationId: 'station-1',
     settlementReference: 'ZSW-2026-09-20-000123456789',
+    batchReference: 'BATCH-001',
     transactionDate: '2026-09-20',
     settlementDate: '2026-09-22',
+    currency: 'USD',
     grossAmount: '498000.00',
     allocatedAmount: '490000.00',
+    unallocatedProviderAmount: '8000.00',
+    expectedEvidenceAmount: '490000.00',
+    unmatchedEvidenceAmount: '10000.00',
+    providerFeeAmount: '1500.00',
+    providerDeductionAmount: '500.00',
+    reportedNetAmount: '496000.00',
     varianceAmount: '8000.00',
     state: 'PARTIALLY_MATCHED',
     version: 1,
@@ -127,9 +140,15 @@ const settlements = [
 const unmatched = [
   {
     paymentId: 'payment-0000-1111-2222-333344445555',
+    stationId: 'station-1',
+    reconciliationId: 'reconciliation-1',
+    reconciliationState: 'APPROVED',
     method: 'POS',
     businessDate: '2026-09-20',
     amount: '10000.00',
+    reference: 'POS-2026-09-20-0001',
+    allocatedAmount: '0.00',
+    unallocatedAmount: '10000.00',
   },
 ];
 
@@ -256,6 +275,47 @@ async function mockApis(page: Page) {
     contentType: 'application/json',
     body: JSON.stringify(body),
   });
+  await page.route('**/api/context*', (route) =>
+    route.fulfill(
+      json({
+        data: {
+          available: {
+            organisations: [
+              {
+                id: 'tenant-1',
+                name: 'Test organisation',
+                legalEntities: [
+                  {
+                    id: 'entity-1',
+                    name: 'Test legal entity',
+                    stations: [
+                      {
+                        id: 'station-1',
+                        code: 'TEST-01',
+                        name: 'Test station',
+                        timezone: 'Africa/Harare',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          current: {
+            organisationId: 'tenant-1',
+            legalEntityId: 'entity-1',
+            stationId: 'station-1',
+            allStations: false,
+          },
+          route: {
+            pathname: '/stations/station-1/settlements',
+            policy: { legalEntity: 'required', station: 'required', allStationsAllowed: false },
+          },
+          persistedContextInvalid: false,
+        },
+      }),
+    ),
+  );
   await page.route('**/api/reports/management**', (route) => route.fulfill(json(report)));
   await page.route('**/api/settlements/summary**', (route) => route.fulfill(json(settlements)));
   await page.route('**/api/settlements/unmatched**', (route) => route.fulfill(json(unmatched)));
