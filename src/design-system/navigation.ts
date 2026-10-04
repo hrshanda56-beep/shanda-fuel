@@ -182,11 +182,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'settings',
         label: 'Settings',
         icon: 'settings',
-        destination: {
-          kind: 'wip',
-          message:
-            'Organisation, station and user settings are still being completed. This is where they will live. Nothing has been changed.',
-        },
+        destination: { kind: 'route', path: '/settings' },
         match: [/^\/settings(\/|$)/],
       },
     ],

@@ -332,21 +332,13 @@ test.describe('phone navigation', () => {
     await expect(page.getByRole('dialog', { name: 'Menu' })).toBeHidden();
   });
 
-  test('a planned area from the menu shows one dialog and returns focus to the menu button', async ({
-    page,
-  }) => {
+  test('Settings links to the real route from the menu', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await page
-      .getByRole('dialog', { name: 'Menu' })
-      .getByRole('button', { name: /Settings/ })
-      .click();
-
-    await expect(page.getByRole('dialog', { name: 'Settings is in progress' })).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Menu' })).toBeHidden();
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
+    await expect(
+      page.getByRole('dialog', { name: 'Menu' }).getByRole('link', { name: 'Settings' }),
+    ).toHaveAttribute('href', '/settings');
   });
 });
 
