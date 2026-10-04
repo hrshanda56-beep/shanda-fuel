@@ -96,7 +96,7 @@ test.describe('Settings', () => {
       await expect(page.getByRole('link', { name: 'Account' })).toBeVisible();
       await page.getByRole('link', { name: 'Account' }).focus();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/settings#account$/);
+      await expect(page).toHaveURL(/\/settings\?.*#account$/);
 
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
