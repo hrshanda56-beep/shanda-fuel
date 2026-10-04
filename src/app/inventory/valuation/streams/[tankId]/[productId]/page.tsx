@@ -97,7 +97,6 @@ export default async function InventoryValuationStreamPage({
     <AppShell
       navigationProjection={syntheticNavigationProjection}
       role="Inventory control"
-      userName="Current user"
       breadcrumbs={[
         {
           label: 'Inventory',

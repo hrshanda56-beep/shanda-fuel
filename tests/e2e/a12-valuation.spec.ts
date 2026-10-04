@@ -7,7 +7,7 @@ test.describe('A12 inventory valuation operator surface', () => {
   }) => {
     await page.goto('/inventory');
     await expect(page).toHaveURL(/\/inventory\/valuation$/);
-    await expect(page.getByText('Select an authorised tenant and station context')).toBeVisible();
+    await expect(page.getByText('Select an authorised organisation and station')).toBeVisible();
     await expect(
       page.getByRole('navigation', { name: 'Breadcrumb' }).getByText('Inventory'),
     ).toBeVisible();

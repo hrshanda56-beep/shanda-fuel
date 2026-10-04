@@ -119,20 +119,15 @@ test.describe('desktop sidebar', () => {
     await expect(nav.getByRole('link', { name: 'Daily operations' })).toBeVisible();
   });
 
-  test('Settings stays represented while its page is not integrated', async ({ page }) => {
+  test('Settings links to the integrated page', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
     const settings = sidebarNav(page).getByRole('button', { name: 'Settings' });
-
-    await settings.click();
-    const dialog = page.getByRole('dialog', { name: 'Settings is in progress' });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('Nothing has been changed.');
-    await expect(page).toHaveURL(/\/reports$/);
-
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-    await expect(settings).toBeFocused();
+    await expect(settings).toHaveCount(0);
+    await expect(sidebarNav(page).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
   });
 
   test('Help and Notifications are not active-looking shell controls', async ({ page }) => {

@@ -18,7 +18,6 @@ export default async function SupplierDetailPage({
         shift: 'Finance',
       }}
       role="Finance"
-      userName="Current user"
       breadcrumbs={[{ label: 'Suppliers', href: '/suppliers' }, { label: 'Supplier detail' }]}
     >
       <SupplierDetailWorkspace supplierId={supplierId} />

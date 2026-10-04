@@ -99,8 +99,10 @@ test.describe('shared shell consistency', () => {
     await page.getByRole('button', { name: 'Open menu' }).click();
     const drawer = page.getByRole('dialog', { name: 'Menu' });
     await expect(drawer).toBeVisible();
-    await expect(drawer.getByRole('link', { name: 'Settings' })).toHaveCount(0);
-    await expect(drawer.getByRole('button', { name: 'Settings' })).toBeVisible();
+    await expect(drawer.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
     await expect(drawer.getByText('Customers', { exact: true })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
@@ -110,7 +112,10 @@ test.describe('shared shell consistency', () => {
     await prepareShell(page, { width: 1482, height: 900 });
     const sidebar = page.locator('.shell-sidebar');
     await expect(sidebar.getByText('Customers', { exact: true })).toHaveCount(0);
-    await expect(sidebar.getByRole('button', { name: 'Settings' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
 
     await page.getByRole('button', { name: 'Search pages' }).click();
     const palette = page.getByRole('dialog', { name: 'Search' });

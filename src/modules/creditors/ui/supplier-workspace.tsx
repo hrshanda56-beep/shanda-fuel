@@ -290,7 +290,7 @@ export function SupplierWorkspace() {
           {!loading && !error && rows.length === 0 ? (
             <EmptyState
               title="No suppliers yet"
-              message="Supplier master data will appear after onboarding."
+              message="Supplier records will appear after onboarding."
               action={
                 <Button
                   onClick={() => {
@@ -355,7 +355,7 @@ export function SupplierWorkspace() {
           if (!creating) setCreateOpen(false);
         }}
         title="Add supplier"
-        description="Create a supplier master record in the currently authorised legal entity."
+        description="Create a supplier record in the currently authorised legal entity."
         dismissible={!creating}
         footer={
           <>

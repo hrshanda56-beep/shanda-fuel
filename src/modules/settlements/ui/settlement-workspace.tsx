@@ -453,7 +453,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           </div>
           <p>
             Settlement evidence is always loaded for one authorised station. Provider setup and
-            settlement recording remain unavailable until their setup read support lands.
+            settlement recording are unavailable until the required account details are available.
           </p>
           {workspaceState === 'loading' ? (
             <LoadingState label="Resolving authorised station context" />
@@ -502,8 +502,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           settlement date may lag the transaction date.
         </p>
         <p className="field-hint">
-          Provider setup and settlement recording are unavailable in this slice because their
-          authorised read projection is not yet implemented.
+          Provider setup and settlement recording are unavailable in this view until the required
+          account details are available.
         </p>
         {loading ? <LoadingState label="Loading provider settlements" /> : null}
         {error && errorKind === 'conflict' ? <ConflictState message={error} /> : null}

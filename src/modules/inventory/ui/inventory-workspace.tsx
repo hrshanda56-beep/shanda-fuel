@@ -649,7 +649,7 @@ function ReceiptCostForm({
         key.current,
       );
       key.current = null;
-      setSuccess('Receipt cost recorded. Refreshing the persisted WAC projection.');
+      setSuccess('Receipt cost recorded. Refreshing the weighted-average cost.');
       setAmount('');
       onRefresh();
     } catch (caught) {
@@ -704,7 +704,7 @@ export function InventoryContextRequired() {
     <Card className="panel">
       <h1>Inventory needs a station context</h1>
       <p>
-        Select an authorised tenant and station context using the shared legal-entity and station
+        Select an authorised organisation and station using the shared legal-entity and station
         selector before opening an operational Inventory workflow. All stations is not valid for
         Inventory commands.
       </p>
