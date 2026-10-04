@@ -34,7 +34,7 @@ jobs:
           --health-retries 5
     env:
       APP_ENV: test
-      APP_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3100
       BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
