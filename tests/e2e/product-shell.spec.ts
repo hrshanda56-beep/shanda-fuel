@@ -124,15 +124,16 @@ test.describe('desktop sidebar', () => {
     await expect(notificationsDialog).toContainText('Notifications are not available yet.');
   });
 
-  test('station areas explain station selection until a station is in context', async ({
+  test('station areas open the shared context selector instead of a WIP dialog', async ({
     page,
   }) => {
     await page.goto('/reports');
     await waitForHydration(page);
     await sidebarNav(page).getByRole('button', { name: 'Cash and banking' }).click();
+    await expect(page.getByRole('dialog', { name: 'Select work context' })).toBeVisible();
     await expect(
       page.getByRole('dialog', { name: 'Station selection is in progress' }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await page.keyboard.press('Escape');
 
     await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
@@ -149,6 +150,105 @@ test.describe('desktop sidebar', () => {
     await expect(nav.getByRole('link', { name: 'Provider settlements' })).toHaveAttribute(
       'aria-current',
       'page',
+    );
+  });
+
+  test('renders authorised context options and switches a cross-station route', async ({
+    page,
+  }) => {
+    const organisationId = '11111111-1111-4111-8111-111111111111';
+    const legalEntityId = '22222222-2222-4222-8222-222222222222';
+    const stationId = '33333333-3333-4333-8333-333333333333';
+    await page.route('**/api/context*', async (route) => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              current: { organisationId, legalEntityId, stationId, allStations: false },
+            },
+          }),
+        });
+        return;
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            available: {
+              organisations: [
+                {
+                  id: organisationId,
+                  name: 'Authorised organisation',
+                  legalEntities: [
+                    {
+                      id: legalEntityId,
+                      name: 'Trading entity',
+                      stations: [
+                        {
+                          id: stationId,
+                          code: 'STA',
+                          name: 'Authorised station',
+                          timezone: 'Africa/Harare',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            current: { organisationId, allStations: true },
+            route: {
+              pathname: '/reports',
+              policy: { legalEntity: 'optional', station: 'optional', allStationsAllowed: true },
+            },
+            persistedContextInvalid: false,
+          },
+        }),
+      });
+    });
+
+    await page.goto('/reports');
+    await waitForHydration(page);
+    await page.getByRole('button', { name: /Change work context/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Select work context' });
+    await expect(dialog).toContainText('Authorised organisation');
+    await expect(dialog.locator('option', { hasText: 'All stations' })).toBeAttached();
+    await expect(dialog.locator('option', { hasText: 'Authorised station' })).toBeAttached();
+
+    await dialog.getByLabel('Station (optional)').selectOption(stationId);
+    await dialog.getByRole('button', { name: 'Use this context' }).click();
+    await expect(page).toHaveURL(
+      `/reports?tenantId=${organisationId}&legalEntityId=${legalEntityId}&stationId=${stationId}`,
+    );
+  });
+
+  test('context selector remains usable at 320px without horizontal overflow', async ({ page }) => {
+    await page.route('**/api/context*', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            available: { organisations: [] },
+            current: null,
+            route: {
+              pathname: '/reports',
+              policy: { legalEntity: 'optional', station: 'optional', allStationsAllowed: true },
+            },
+            persistedContextInvalid: false,
+          },
+        }),
+      });
+    });
+    await page.setViewportSize({ width: 320, height: 844 });
+    await page.goto('/reports');
+    await waitForHydration(page);
+    const trigger = page.getByRole('button', { name: /Change work context/ });
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Select work context' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      await page.evaluate(() => window.innerWidth),
     );
   });
 

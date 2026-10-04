@@ -31,6 +31,7 @@ exercises it through `next dev`, which Playwright uses locally and in CI.
 | `dialogs.tsx`                    | `ConfirmDialog`, `WorkInProgressDialog`, `WorkInProgressTrigger`                                                                                                                                                                                  |
 | `layout.tsx`                     | `PageHeader`, `PageContainer`, `Section`, `MetricCard`                                                                                                                                                                                            |
 | `app-shell.tsx`                  | `AppShell` (the permanent Product Shell) and `Breadcrumbs`                                                                                                                                                                                        |
+| `context-selector.tsx`           | Accessible shared context selector backed by the server context contract                                                                                                                                                                          |
 | `navigation.ts`                  | Grouped navigation model, projection, work-context forwarding, current-route matching                                                                                                                                                             |
 | `shell-preferences.ts`           | Per-device sidebar rail / closed-group preferences and their no-flash init script                                                                                                                                                                 |
 | `theme-control.tsx`              | `ThemeControl` segmented System / Light / Dark radio group                                                                                                                                                                                        |
@@ -97,12 +98,19 @@ Every product page renders inside `AppShell`; do not add per-page navigation mar
 - **Current route:** `aria-current="page"` on the link, shown as a raised neutral surface
   with an accent icon; a closed group containing it is marked the same way.
 - **Destinations:** only existing routes are linked. Planned areas open
-  `WorkInProgressDialog`. Station-scoped areas explain station selection until a station is
-  in the URL. Navigation forwards `tenantId`, `legalEntityId` and `stationId` from the
-  current URL; they are not grants and every page re-validates them server-side.
-- **Context and attention:** pages pass `breadcrumbs` and `context` (shown as one quiet
-  line). `attention` is optional and must come from the server; the shell never invents
-  items.
+  `WorkInProgressDialog`. Station-scoped areas open the shared `ContextSelector` when a
+  station is missing. Navigation forwards `tenantId`, `legalEntityId` and `stationId` from
+  the current URL; they are not grants and every page re-validates them server-side.
+- **Context and attention:** the shell's `ContextSelector` consumes the single server-owned
+  contract in `src/modules/context` and never reads localStorage or trusts client IDs. Its
+  route policy makes `All stations` explicit. Pages may pass a synthetic `context` only as a
+  display fallback while the server projection loads. `attention` is optional and must come
+  from the server; the shell never invents items.
+
+See [`src/modules/context/README.md`](../modules/context/README.md) for the consuming-agent
+contract: current-context resolution, station/legal-entity requirements, explicit all-stations
+semantics, validated navigation, and the server-owned files feature agents must not modify.
+
 - **Route states:** `src/app/error.tsx`, `not-found.tsx` and segment `loading.tsx` files
   render `route-states.tsx` inside the shell, so navigation stays put.
 

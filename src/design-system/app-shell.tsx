@@ -16,6 +16,7 @@ import {
 } from 'react';
 
 import { WorkInProgressDialog } from './dialogs';
+import { ContextSelector } from './context-selector';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
 import { Icon } from './icons';
 import { Modal } from './modal';
@@ -146,6 +147,7 @@ export function AppShell({
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [contextSelectorOpen, setContextSelectorOpen] = useState(false);
   const [wip, setWip] = useState<WipRequest | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -180,12 +182,18 @@ export function AppShell({
     setWip(request);
   }, []);
 
+  const openContextSelector = useCallback(() => {
+    setMenuOpen(false);
+    setContextSelectorOpen(true);
+  }, []);
+
   const navigationProps = {
     sections,
     pathname,
     closedGroups,
     onToggleGroup: toggleGroup,
     onWip: openWip,
+    onContextRequired: openContextSelector,
   };
 
   const shellContext = useMemo(() => ({ openSearch: () => setSearchOpen(true) }), []);
@@ -251,7 +259,12 @@ export function AppShell({
               <div className="shell-mobile-brand">
                 <BrandLink href={todayHref} />
               </div>
-              {context ? <WorkContextLine context={context} /> : null}
+              <ContextSelector
+                fallback={context}
+                open={contextSelectorOpen}
+                onOpen={() => setContextSelectorOpen(true)}
+                onClose={() => setContextSelectorOpen(false)}
+              />
               {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
               <AccountPill userName={userName} role={role} onWip={openWip} />
             </header>
@@ -335,6 +348,7 @@ type NavigationTreeProps = {
   rail: boolean;
   onToggleGroup: (key: string) => void;
   onWip: (request: WipRequest) => void;
+  onContextRequired: () => void;
   onExpandRail?: (key: string) => void;
   onNavigate?: () => void;
 };
@@ -367,6 +381,7 @@ function NavigationSectionEntry({
   rail,
   onToggleGroup,
   onWip,
+  onContextRequired,
   onExpandRail,
   onNavigate,
 }: NavigationTreeProps & { section: ResolvedNavigationSection }) {
@@ -379,6 +394,7 @@ function NavigationSectionEntry({
           item={section.items[0]!}
           pathname={pathname}
           onWip={onWip}
+          onContextRequired={onContextRequired}
           onNavigate={onNavigate}
           withIcon
         />
@@ -413,6 +429,7 @@ function NavigationSectionEntry({
               item={item}
               pathname={pathname}
               onWip={onWip}
+              onContextRequired={onContextRequired}
               onNavigate={onNavigate}
             />
           </li>
@@ -426,12 +443,14 @@ function NavigationEntry({
   item,
   pathname,
   onWip,
+  onContextRequired,
   onNavigate,
   withIcon = false,
 }: {
   item: ResolvedNavigationItem;
   pathname: string | null;
   onWip: (request: WipRequest) => void;
+  onContextRequired: () => void;
   onNavigate?: () => void;
   withIcon?: boolean;
 }) {
@@ -453,6 +472,19 @@ function NavigationEntry({
   }
 
   if (item.state === 'wip') {
+    if (item.reason === 'station') {
+      return (
+        <button
+          type="button"
+          className="nav-row nav-link"
+          aria-haspopup="dialog"
+          onClick={onContextRequired}
+        >
+          {icon}
+          <span className="nav-label">{item.label}</span>
+        </button>
+      );
+    }
     return (
       <button
         type="button"
@@ -669,21 +701,6 @@ function initials(name: string) {
       .slice(0, 2)
       .map((part) => part[0]!.toUpperCase())
       .join('') || '?'
-  );
-}
-
-function WorkContextLine({ context }: { context: ShellContext }) {
-  const parts = [context.organisation, context.station, context.businessDate, context.shift].filter(
-    (part): part is string => Boolean(part),
-  );
-  return (
-    <p className="shell-context" role="group" aria-label="Work context">
-      {parts.map((part, index) => (
-        <span key={`${part}-${index}`} className="shell-context-part">
-          {part}
-        </span>
-      ))}
-    </p>
   );
 }
 
