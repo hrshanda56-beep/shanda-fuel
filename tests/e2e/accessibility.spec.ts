@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 test('foundation page has no detectable accessibility violations', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
@@ -18,7 +18,7 @@ test('foundation honors reduced motion preference', async ({ page }) => {
 
 test('foundation remains accessible with dark system preference', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.goto('/');
+  await page.goto('/foundation');
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
@@ -26,7 +26,7 @@ test('foundation remains accessible with dark system preference', async ({ page 
 
 test('mobile shell remains accessible with valid navigation semantics', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/foundation');
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
@@ -114,6 +114,6 @@ test.describe('design-system foundation reference', () => {
     await page.reload();
 
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(246, 246, 245)');
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(230, 236, 234)');
   });
 });

@@ -22,6 +22,8 @@ function customerMoney(value: string | null): string {
   return value === null ? 'Unavailable' : formatMoney(value);
 }
 
+const managementReportState: ManagementReport['state'] = 'POSTED';
+
 export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
   const [fromDate, setFromDate] = useState(today());
   const [toDate, setToDate] = useState(today());
@@ -76,7 +78,9 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
           <div>
             <h2 id="report-filters-title">Report filters</h2>
           </div>
-          {report ? <StatusBadge tone="positive">{report.state}</StatusBadge> : null}
+          <StatusBadge tone="positive" role="status" aria-live="polite">
+            {report?.state ?? managementReportState}
+          </StatusBadge>
         </div>
         <form className="demo-form" onSubmit={submit}>
           <div className="form-grid">

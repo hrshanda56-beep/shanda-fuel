@@ -5,6 +5,7 @@ import {
   formatDecimal,
   formatLitres,
   formatMoney,
+  formatUsd,
   formatPercentage,
   formatStatusLabel,
 } from './formatters';
@@ -13,6 +14,9 @@ describe('presentation formatters', () => {
   it('preserves decimal text while adding readable grouping and units', () => {
     expect(formatDecimal('1234567.8900')).toBe('1,234,567.8900');
     expect(formatMoney('12500.00')).toBe('USD 12,500.00');
+    expect(formatUsd('7460')).toBe('$7,460');
+    expect(formatUsd('-212.40')).toBe('−$212.40');
+    expect(formatUsd('abc')).toBe('—');
     expect(formatLitres('1050.375')).toBe('1,050.375 L');
     expect(formatPercentage('4.25')).toBe('4.25%');
   });

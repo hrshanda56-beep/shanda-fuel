@@ -16,6 +16,14 @@ export function formatMoney(value: string, currency = 'USD'): string {
   return `${currency} ${formatDecimal(value)}`;
 }
 
+/** Compact USD for dashboards, e.g. "$7,460" or "−$212.40". */
+export function formatUsd(value: string): string {
+  const normalized = value.trim();
+  if (!DECIMAL_PATTERN.test(normalized)) return '—';
+  const negative = normalized.startsWith('-');
+  return `${negative ? '−' : ''}$${formatDecimal(negative ? normalized.slice(1) : normalized)}`;
+}
+
 export function formatLitres(value: string): string {
   return formatDecimal(value, ' L');
 }

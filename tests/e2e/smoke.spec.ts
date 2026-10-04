@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('application foundation renders and exposes liveness health', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/foundation');
   await expect(page.getByRole('heading', { name: 'Good morning, Demo user' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   await expect(page.getByText('Offline draft mode')).toBeVisible();
@@ -13,7 +13,7 @@ test('application foundation renders and exposes liveness health', async ({ page
 
 test('foundation exposes mobile navigation and labelled controls', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/foundation');
 
   // Phones get a slim top bar; the grouped navigation opens from the menu.
   await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
@@ -28,7 +28,7 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await page.getByRole('button', { name: 'Open menu' }).click();
   const menu = page.getByRole('dialog', { name: 'Menu' });
   await expect(menu.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
-  await expect(menu.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
+  await expect(menu.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('href', '/');
 });
 
 // The shared form, dialog and sheet patterns are exercised on the internal

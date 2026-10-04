@@ -105,6 +105,25 @@ test.describe('desktop sidebar', () => {
     await expect(customers).toBeFocused();
   });
 
+  test('Help and Notifications explain that they are unavailable', async ({ page }) => {
+    await page.goto('/foundation');
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Help' }).click();
+    const helpDialog = page.getByRole('dialog', { name: 'Help is in progress' });
+    await expect(helpDialog).toBeVisible();
+    await expect(helpDialog).toContainText('Help content is not available yet.');
+    await page.keyboard.press('Escape');
+    await expect(helpDialog).toBeHidden();
+
+    await page.getByRole('button', { name: 'Notifications' }).click();
+    const notificationsDialog = page.getByRole('dialog', {
+      name: 'Notifications is in progress',
+    });
+    await expect(notificationsDialog).toBeVisible();
+    await expect(notificationsDialog).toContainText('Notifications are not available yet.');
+  });
+
   test('station areas explain station selection until a station is in context', async ({
     page,
   }) => {

@@ -5,6 +5,7 @@ import {
   isValidElement,
   useRef,
   useState,
+  type HTMLAttributes,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type MouseEvent,
@@ -112,14 +113,15 @@ export function StatusBadge({
   tone,
   plain = false,
   children,
+  ...props
 }: {
   tone: StatusTone;
   /** Hide the leading dot, e.g. inside dense tables with many badges. */
   plain?: boolean;
   children: ReactNode;
-}) {
+} & HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span className={`status status-${tone} ${plain ? 'status-plain' : ''}`.trim()}>
+    <span className={`status status-${tone} ${plain ? 'status-plain' : ''}`.trim()} {...props}>
       {children}
     </span>
   );
