@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest';
+
+import { buildContextHref, contextRoutePolicy, readContextRoute } from './routes';
+
+const selection = {
+  organisationId: '11111111-1111-4111-8111-111111111111',
+  legalEntityId: '22222222-2222-4222-8222-222222222222',
+  stationId: '33333333-3333-4333-8333-333333333333',
+  allStations: false,
+} as const;
+
+describe('context route policy', () => {
+  it('marks station command routes as station-required', () => {
+    expect(contextRoutePolicy('/stations/station-a/cash')).toEqual({
+      legalEntity: 'required',
+      station: 'required',
+      allStationsAllowed: false,
+    });
+    expect(contextRoutePolicy('/reports')).toEqual({
+      legalEntity: 'optional',
+      station: 'optional',
+      allStationsAllowed: true,
+    });
+  });
+
+  it('replaces a dynamic station route without leaving a stale station query', () => {
+    expect(
+      buildContextHref('/stations/old-station/cash', '?tenantId=old&stationId=old', selection),
+    ).toBe(
+      `/stations/${selection.stationId}/cash?tenantId=${selection.organisationId}&legalEntityId=${selection.legalEntityId}`,
+    );
+  });
+
+  it('makes all-stations explicit on cross-station routes', () => {
+    expect(
+      buildContextHref('/reports', '', {
+        organisationId: selection.organisationId,
+        allStations: true,
+      }),
+    ).toBe(`/reports?tenantId=${selection.organisationId}&allStations=true`);
+    expect(buildContextHref('/reports', '', selection)).toBe(
+      `/reports?tenantId=${selection.organisationId}&legalEntityId=${selection.legalEntityId}&stationId=${selection.stationId}`,
+    );
+  });
+
+  it('prefers a station encoded in the path over a query station', () => {
+    expect(
+      readContextRoute(
+        '/stations/path-station/cash',
+        new URLSearchParams('stationId=query-station'),
+      ),
+    ).toMatchObject({ stationId: 'path-station', hasExplicitStation: true });
+  });
+});

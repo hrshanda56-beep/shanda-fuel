@@ -261,7 +261,7 @@ export type ResolvedNavigationSection = Omit<NavigationSection, 'items'> & {
 };
 
 export function stationSelectionMessage(label: string) {
-  return `${label} opens for one station at a time. Choosing a station from the menu is still being completed, so open it from a station link for now. Nothing has been changed.`;
+  return `${label} requires an authorised station. Use the shared context selector to choose one. Nothing has been changed.`;
 }
 
 export function resolveNavigationItem(
