@@ -335,6 +335,7 @@ function StateBlock({
   title,
   message,
   action,
+  secondaryAction,
   tone,
   role,
   headingLevel = 3,
@@ -343,6 +344,7 @@ function StateBlock({
   title: string;
   message: string;
   action?: ReactNode;
+  secondaryAction?: ReactNode;
   tone: 'neutral' | 'error';
   role?: 'alert' | 'status';
   headingLevel?: StateHeadingLevel;
@@ -358,7 +360,14 @@ function StateBlock({
       </span>
       <Heading>{title}</Heading>
       <p>{message}</p>
-      {action ? <div className="state-action">{action}</div> : null}
+      {action || secondaryAction ? (
+        <div className="state-actions">
+          {secondaryAction ? (
+            <span className="state-action-secondary">{secondaryAction}</span>
+          ) : null}
+          {action ? <span className="state-action">{action}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -367,12 +376,14 @@ export function ErrorState({
   title = 'Something needs attention',
   message,
   action,
+  secondaryAction,
   layout = 'inline',
   headingLevel,
 }: {
   title?: string;
   message: string;
   action?: ReactNode;
+  secondaryAction?: ReactNode;
   layout?: StateLayout;
   headingLevel?: StateHeadingLevel;
 }) {
@@ -385,6 +396,7 @@ export function ErrorState({
         title={title}
         message={message}
         action={action}
+        secondaryAction={secondaryAction}
         headingLevel={headingLevel}
       />
     );
@@ -395,7 +407,14 @@ export function ErrorState({
         <h3>{title}</h3>
         <p>{message}</p>
       </div>
-      {action ? <div className="state-action">{action}</div> : null}
+      {action || secondaryAction ? (
+        <div className="state-actions">
+          {secondaryAction ? (
+            <span className="state-action-secondary">{secondaryAction}</span>
+          ) : null}
+          {action ? <span className="state-action">{action}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -415,6 +434,7 @@ export function EmptyState({
   title,
   message,
   action,
+  secondaryAction,
   layout = 'inline',
   icon = 'inbox',
   headingLevel,
@@ -422,6 +442,7 @@ export function EmptyState({
   title: string;
   message: string;
   action?: ReactNode;
+  secondaryAction?: ReactNode;
   layout?: StateLayout;
   icon?: IconName;
   headingLevel?: StateHeadingLevel;
@@ -434,6 +455,7 @@ export function EmptyState({
         title={title}
         message={message}
         action={action}
+        secondaryAction={secondaryAction}
         headingLevel={headingLevel}
       />
     );
@@ -444,7 +466,14 @@ export function EmptyState({
         <h3>{title}</h3>
         <p>{message}</p>
       </div>
-      {action ? <div className="state-action">{action}</div> : null}
+      {action || secondaryAction ? (
+        <div className="state-actions">
+          {secondaryAction ? (
+            <span className="state-action-secondary">{secondaryAction}</span>
+          ) : null}
+          {action ? <span className="state-action">{action}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

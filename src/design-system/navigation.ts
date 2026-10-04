@@ -3,10 +3,9 @@ import type { IconName } from './icons';
 /**
  * Product Shell navigation model.
  *
- * Sections follow the locked business grouping in docs/release-readiness.md:
- * Today, Operations, Finance, Customers, Suppliers, Reports, Settings. Only
- * routes that exist are linked. Planned areas without a screen stay visible
- * and open the standard work-in-progress dialog; nothing is a dead link.
+ * This is the one product-destination registry. Sidebar entries, the command
+ * palette, and future breadcrumb integration all consume the same typed
+ * labels, routes, icons, groups, and availability semantics.
  *
  * Everything here is presentation. Visibility comes from a projection the
  * authorization layer supplies; the server remains authoritative for access.
@@ -19,13 +18,12 @@ export type NavigationKey =
   | 'inventory'
   | 'cash'
   | 'settlements'
-  | 'customers'
   | 'suppliers'
   | 'reports'
   | 'settings';
 
 export type NavigationSectionKey =
-  'today' | 'operations' | 'finance' | 'customers' | 'suppliers' | 'reports' | 'settings';
+  'today' | 'operations' | 'finance' | 'suppliers' | 'reports' | 'settings';
 
 export type NavigationProjection = {
   key: NavigationKey;
@@ -44,8 +42,10 @@ type NavigationDestination =
 export type NavigationItem = {
   key: NavigationKey;
   label: string;
+  searchLabel: string;
   icon: IconName;
   destination: NavigationDestination;
+  availability: 'active' | 'station-context' | 'planned';
   /** Pathnames that count as "inside" this item, for current-route indication. */
   match: readonly RegExp[];
 };
@@ -68,8 +68,10 @@ export const navigationSections: readonly NavigationSection[] = [
       {
         key: 'today',
         label: 'Today',
+        searchLabel: 'Today',
         icon: 'today',
         destination: { kind: 'route', path: '/' },
+        availability: 'active',
         match: [/^\/$/],
       },
     ],
@@ -82,15 +84,19 @@ export const navigationSections: readonly NavigationSection[] = [
       {
         key: 'daily-operations',
         label: 'Daily operations',
+        searchLabel: 'Daily operations',
         icon: 'fuel',
         destination: { kind: 'route', path: '/operations/daily' },
+        availability: 'active',
         match: [/^\/operations\/daily(\/|$)/],
       },
       {
         key: 'reconciliations',
         label: 'Reconciliations',
+        searchLabel: 'Reconciliations',
         icon: 'check-circle',
         destination: { kind: 'station-route', segment: 'reconciliations' },
+        availability: 'station-context',
         match: [
           /^\/operations\/reconciliations(\/|$)/,
           /^\/stations\/[^/]+\/reconciliations(\/|$)/,
@@ -99,8 +105,10 @@ export const navigationSections: readonly NavigationSection[] = [
       {
         key: 'inventory',
         label: 'Inventory',
+        searchLabel: 'Inventory',
         icon: 'inbox',
         destination: { kind: 'route', path: '/inventory/valuation' },
+        availability: 'active',
         match: [/^\/inventory(\/|$)/],
       },
     ],
@@ -113,34 +121,20 @@ export const navigationSections: readonly NavigationSection[] = [
       {
         key: 'cash',
         label: 'Cash and banking',
+        searchLabel: 'Cash and banking',
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'cash' },
+        availability: 'station-context',
         match: [/^\/stations\/[^/]+\/cash(\/|$)/],
       },
       {
         key: 'settlements',
         label: 'Provider settlements',
+        searchLabel: 'Provider settlements',
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'settlements' },
+        availability: 'station-context',
         match: [/^\/stations\/[^/]+\/settlements(\/|$)/],
-      },
-    ],
-  },
-  {
-    key: 'customers',
-    label: 'Customers',
-    icon: 'users',
-    items: [
-      {
-        key: 'customers',
-        label: 'Customers',
-        icon: 'users',
-        destination: {
-          kind: 'wip',
-          message:
-            'Customer accounts, statements and credit are still being completed. This is where they will live. Nothing has been changed.',
-        },
-        match: [/^\/customers(\/|$)/],
       },
     ],
   },
@@ -152,8 +146,10 @@ export const navigationSections: readonly NavigationSection[] = [
       {
         key: 'suppliers',
         label: 'Suppliers',
+        searchLabel: 'Suppliers',
         icon: 'truck',
         destination: { kind: 'route', path: '/suppliers' },
+        availability: 'active',
         match: [/^\/suppliers(\/|$)/],
       },
     ],
@@ -166,8 +162,10 @@ export const navigationSections: readonly NavigationSection[] = [
       {
         key: 'reports',
         label: 'Reports',
+        searchLabel: 'Reports',
         icon: 'chart',
         destination: { kind: 'route', path: '/reports' },
+        availability: 'active',
         match: [/^\/reports(\/|$)/],
       },
     ],
@@ -181,8 +179,10 @@ export const navigationSections: readonly NavigationSection[] = [
       {
         key: 'settings',
         label: 'Settings',
+        searchLabel: 'Settings',
         icon: 'settings',
         destination: { kind: 'route', path: '/settings' },
+        availability: 'active',
         match: [/^\/settings(\/|$)/],
       },
     ],

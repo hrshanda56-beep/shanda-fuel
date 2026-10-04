@@ -1858,7 +1858,7 @@ tr:has(.row-link):active {
   border: var(--border-width) dashed var(--border-strong);
   border-radius: var(--radius-full);
   color: var(--text-tertiary);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   letter-spacing: var(--letter-spacing-normal);
   line-height: 1.25rem;
@@ -1969,7 +1969,24 @@ tr:has(.row-link):active {
   font-size: var(--font-size-md);
 }
 
-.state-block .state-action {
+.state-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.state-block .state-action,
+.state-block .state-action-secondary {
+  display: inline-flex;
+}
+
+.state-action-secondary {
+  color: var(--text-secondary);
+}
+
+.state-block .state-actions {
   margin-top: var(--space-2);
 }
 

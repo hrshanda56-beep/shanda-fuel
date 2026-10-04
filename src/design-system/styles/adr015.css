@@ -1220,3 +1220,454 @@ body {
     transition: none;
   }
 }
+
+/* Keep the ADR-015 composition while using the neutral dark token hierarchy. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg-canvas: var(--palette-neutral-950);
+    --bg-app: none;
+    --bg-sheet: var(--bg-canvas);
+    --bg-surface: var(--palette-neutral-900);
+    --bg-glass: rgb(255 255 255 / 4%);
+    --bg-surface-raised: var(--palette-neutral-850);
+    --bg-subtle: #171716;
+    --bg-muted: var(--palette-neutral-850);
+    --bg-hover: rgb(255 255 255 / 5%);
+    --bg-pressed: rgb(255 255 255 / 9%);
+    --bg-nav-active: rgb(95 195 163 / 12%);
+    --text-primary: #ededeb;
+    --text-secondary: #b5b5ae;
+    --text-tertiary: #c4c4bf;
+    --text-placeholder: #8e8e88;
+    --border-subtle: #262624;
+    --border-default: #2f2f2c;
+    --border-strong: #42423e;
+    --border-glass: rgb(255 255 255 / 10%);
+    --border-outline: #85857f;
+    --action-bg: var(--accent);
+    --action-hover: var(--accent-hover);
+    --action-text: var(--text-on-accent);
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-glass: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 24%);
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg-canvas: var(--palette-neutral-950);
+  --bg-app: none;
+  --bg-sheet: var(--bg-canvas);
+  --bg-surface: var(--palette-neutral-900);
+  --bg-glass: rgb(255 255 255 / 4%);
+  --bg-surface-raised: var(--palette-neutral-850);
+  --bg-subtle: #171716;
+  --bg-muted: var(--palette-neutral-850);
+  --bg-hover: rgb(255 255 255 / 5%);
+  --bg-pressed: rgb(255 255 255 / 9%);
+  --bg-nav-active: rgb(95 195 163 / 12%);
+  --text-primary: #ededeb;
+  --text-secondary: #b5b5ae;
+  --text-tertiary: #c4c4bf;
+  --text-placeholder: #8e8e88;
+  --border-subtle: #262624;
+  --border-default: #2f2f2c;
+  --border-strong: #42423e;
+  --border-glass: rgb(255 255 255 / 10%);
+  --border-outline: #85857f;
+  --action-bg: var(--accent);
+  --action-hover: var(--accent-hover);
+  --action-text: var(--text-on-accent);
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-glass: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+/* Shared shell consistency -------------------------------------------------
+ * The shell owns one responsive frame. The sidebar itself never scrolls: its
+ * navigation region does, while the footer remains in the viewport.
+ */
+
+.app-shell {
+  transition: grid-template-columns var(--duration-base) var(--ease-out);
+}
+
+.shell-sidebar {
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.shell-sidebar > .shell-brand {
+  flex: 0 0 auto;
+}
+
+.shell-sidebar-nav-region {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.shell-sidebar-nav-region > .shell-nav {
+  min-height: min-content;
+}
+
+.shell-sidebar-footer {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.shell-topbar {
+  height: 3.5rem;
+  padding-inline: var(--page-gutter);
+}
+
+.shell-topbar .shell-brand {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.shell-header {
+  min-height: 4rem;
+}
+
+.shell-header-account,
+.shell-account-menu {
+  position: relative;
+}
+
+.shell-account-trigger {
+  display: inline-flex;
+  min-height: var(--touch-target-min);
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 17rem;
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: var(--transition-colors);
+}
+
+.shell-account-trigger:hover,
+.shell-account-trigger[aria-expanded='true'] {
+  border-color: var(--accent-border);
+  background: var(--bg-selected);
+}
+
+.shell-account-trigger-text {
+  min-width: 0;
+}
+
+.shell-account-trigger .shell-account-name,
+.shell-account-trigger .shell-account-role {
+  display: block;
+}
+
+.shell-account-chevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-base) var(--ease-out);
+}
+
+.shell-account-trigger[aria-expanded='true'] .shell-account-chevron {
+  transform: rotate(180deg);
+}
+
+.account-menu-panel {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: grid;
+  min-width: min(18rem, calc(100vw - 2rem));
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-md);
+  animation: ds-shell-menu-in var(--duration-base) var(--ease-out);
+}
+
+.account-menu-identity {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.account-menu-identity strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+}
+
+.account-menu-identity span,
+.account-menu-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.account-menu-theme {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.account-menu-theme .theme-control {
+  justify-content: stretch;
+}
+
+.account-menu-theme .theme-option {
+  width: 2.75rem;
+  height: 2.5rem;
+  flex: 1 1 0;
+}
+
+.nav-group-items:not([hidden]) {
+  animation: ds-shell-disclosure-in var(--duration-base) var(--ease-out);
+}
+
+.shell-sheet {
+  min-height: calc(100dvh - 4rem);
+  border-radius: var(--radius-2xl);
+}
+
+.global-search kbd {
+  min-width: 3.25rem;
+  text-align: center;
+}
+
+@media (min-width: 40rem) {
+  .dialog-backdrop:has(.modal-command-palette) {
+    place-items: start center;
+    padding-top: clamp(4rem, 12vh, 7rem);
+  }
+
+  .modal-command-palette {
+    max-height: min(36rem, calc(100dvh - 8rem));
+  }
+}
+
+@keyframes ds-shell-disclosure-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ds-shell-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Tablet: the 768–1199px range is an icon rail, never a phone drawer. */
+@media (min-width: 48rem) and (max-width: 74.99rem) {
+  .app-shell {
+    grid-template-columns: var(--sidebar-width-collapsed) minmax(0, 1fr);
+  }
+
+  .shell-topbar {
+    display: none;
+  }
+
+  .shell-sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100dvh;
+    align-items: center;
+    padding: var(--space-4) var(--space-2);
+    border-right: var(--border-width) solid var(--border-subtle);
+    background: var(--bg-canvas);
+  }
+
+  .shell-sidebar > .shell-brand {
+    padding-inline: 0;
+  }
+
+  .shell-sidebar :is(.shell-brand-text, .shell-account-text) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .shell-sidebar-nav-region,
+  .shell-sidebar .shell-nav {
+    width: 100%;
+  }
+
+  .shell-sidebar .nav-row {
+    width: 2.75rem;
+    min-height: 2.75rem;
+    justify-content: center;
+    margin-inline: auto;
+    padding-inline: 0;
+  }
+
+  .shell-sidebar :is(.nav-chevron, .wip-badge, .nav-trailing-icon, .nav-group-items) {
+    display: none;
+  }
+
+  .shell-sidebar .nav-label {
+    position: absolute;
+    z-index: var(--z-dropdown);
+    top: 50%;
+    left: calc(100% + var(--space-2));
+    width: max-content;
+    max-width: 12rem;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-inverse);
+    color: var(--text-inverse);
+    font-size: var(--font-size-xs);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-0.25rem, -50%);
+    transition:
+      opacity var(--duration-fast) var(--ease-out),
+      transform var(--duration-fast) var(--ease-out);
+  }
+
+  .shell-sidebar .nav-row:is(:hover, :focus-visible) .nav-label {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+
+  .shell-sidebar-footer {
+    padding-inline: 0;
+  }
+
+  .shell-sidebar-controls {
+    justify-content: center;
+  }
+
+  .shell-sidebar-controls .shell-collapse-button {
+    display: inline-grid;
+  }
+
+  .shell-sheet {
+    border-radius: var(--radius-xl);
+  }
+}
+
+@media (min-width: 75rem) {
+  .app-shell {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  }
+
+  .shell-sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100dvh;
+    flex-direction: column;
+    padding: var(--space-5) var(--space-3) var(--space-4);
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .app-shell {
+    display: block;
+  }
+
+  .shell-topbar {
+    display: flex;
+    gap: var(--space-2);
+    padding-inline: var(--space-3);
+  }
+
+  .shell-sidebar {
+    display: none;
+  }
+
+  .shell-topbar .shell-brand-text {
+    display: none;
+  }
+
+  .shell-topbar .shell-brand {
+    flex: 1 1 auto;
+  }
+
+  .shell-topbar .global-search {
+    width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .shell-topbar .global-search > span,
+  .shell-topbar .global-search kbd {
+    display: none;
+  }
+
+  .shell-account-menu-desktop {
+    display: none;
+  }
+
+  .shell-account-menu-mobile .shell-account-trigger-text,
+  .shell-account-menu-mobile .shell-account-chevron {
+    display: none;
+  }
+
+  .shell-account-menu-mobile .shell-account-trigger {
+    width: var(--touch-target-min);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .shell-header {
+    min-height: 0;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--page-gutter) 0;
+  }
+
+  .shell-header-account,
+  .shell-header .global-search {
+    display: none;
+  }
+
+  .shell-header .shell-context-selector {
+    width: 100%;
+  }
+
+  .shell-sheet {
+    min-height: calc(100dvh - 3.5rem);
+    padding: var(--space-4) var(--page-gutter) var(--space-16);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .account-menu-panel {
+    position: fixed;
+    top: calc(3.5rem + var(--space-2));
+    right: var(--space-3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell,
+  .nav-group-items:not([hidden]),
+  .account-menu-panel,
+  .shell-account-chevron {
+    animation: none;
+    transition: none;
+  }
+}

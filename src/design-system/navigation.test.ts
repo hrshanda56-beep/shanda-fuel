@@ -19,7 +19,6 @@ describe('grouped navigation model', () => {
       'Today',
       'Operations',
       'Finance',
-      'Customers',
       'Suppliers',
       'Reports',
       'Settings',
@@ -68,12 +67,11 @@ describe('navigation destinations', () => {
     resolveNavigation(syntheticNavigationProjection, context).flatMap((section) => section.items);
   const find = (key: string, context = {}) => resolved(context).find((entry) => entry.key === key)!;
 
-  it('routes planned areas to the work-in-progress dialog and Settings to its page', () => {
-    expect(find('customers')).toMatchObject({
-      state: 'wip',
-      reason: 'planned',
-      feature: 'Customers',
-    });
+  it('keeps Customers out of the active registry and Settings as a real page', () => {
+    expect(allItems.some((entry) => String(entry.key) === 'customers')).toBe(false);
+    expect(syntheticNavigationProjection.some((entry) => String(entry.key) === 'customers')).toBe(
+      false,
+    );
     expect(find('settings')).toMatchObject({ state: 'link', href: '/settings' });
   });
 
@@ -100,6 +98,21 @@ describe('navigation destinations', () => {
       href: '/reports?tenantId=t-1&legalEntityId=le-1&stationId=s-1',
     });
     expect(find('today')).toMatchObject({ state: 'link', href: '/' });
+  });
+
+  it('uses one canonical label for navigation and page search', () => {
+    expect(allItems.every((entry) => entry.label === entry.searchLabel)).toBe(true);
+    expect(allItems.map((entry) => entry.searchLabel)).toEqual([
+      'Today',
+      'Daily operations',
+      'Reconciliations',
+      'Inventory',
+      'Cash and banking',
+      'Provider settlements',
+      'Suppliers',
+      'Reports',
+      'Settings',
+    ]);
   });
 });
 

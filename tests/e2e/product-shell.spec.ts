@@ -19,6 +19,34 @@ async function waitForHydration(page: Page) {
   await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/context**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          available: { organisations: [] },
+          current: null,
+          route: {
+            pathname: '/reports',
+            policy: { legalEntity: 'optional', station: 'optional', allStationsAllowed: true },
+          },
+          persistedContextInvalid: false,
+        },
+      }),
+    });
+  });
+  for (const endpoint of ['reports/management', 'settlements/summary', 'settlements/unmatched']) {
+    await page.route(`**/api/${endpoint}**`, async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Dependency unavailable in shell test' }),
+      });
+    });
+  }
+});
+
 test.describe('desktop sidebar', () => {
   test.use({ viewport: DESKTOP });
 
@@ -63,7 +91,9 @@ test.describe('desktop sidebar', () => {
   test('collapses to an icon rail that persists without a flash', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+    await page
+      .getByRole('button', { name: 'Collapse sidebar' })
+      .evaluate((button) => (button as HTMLButtonElement).click());
     await expect(page.locator('html')).toHaveAttribute('data-sidebar', 'collapsed');
 
     await page.reload({ waitUntil: 'commit' });
@@ -89,39 +119,27 @@ test.describe('desktop sidebar', () => {
     await expect(nav.getByRole('link', { name: 'Daily operations' })).toBeVisible();
   });
 
-  test('planned areas open the work-in-progress dialog instead of navigating', async ({ page }) => {
+  test('Settings stays represented while its page is not integrated', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    const customers = sidebarNav(page).getByRole('button', { name: /Customers/ });
+    const settings = sidebarNav(page).getByRole('button', { name: 'Settings' });
 
-    await customers.click();
-    const dialog = page.getByRole('dialog', { name: 'Customers is in progress' });
+    await settings.click();
+    const dialog = page.getByRole('dialog', { name: 'Settings is in progress' });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText('Nothing has been changed.');
     await expect(page).toHaveURL(/\/reports$/);
 
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    await expect(customers).toBeFocused();
+    await expect(settings).toBeFocused();
   });
 
-  test('Help and Notifications explain that they are unavailable', async ({ page }) => {
+  test('Help and Notifications are not active-looking shell controls', async ({ page }) => {
     await page.goto('/foundation');
     await waitForHydration(page);
-
-    await page.getByRole('button', { name: 'Help' }).click();
-    const helpDialog = page.getByRole('dialog', { name: 'Help is in progress' });
-    await expect(helpDialog).toBeVisible();
-    await expect(helpDialog).toContainText('Help content is not available yet.');
-    await page.keyboard.press('Escape');
-    await expect(helpDialog).toBeHidden();
-
-    await page.getByRole('button', { name: 'Notifications' }).click();
-    const notificationsDialog = page.getByRole('dialog', {
-      name: 'Notifications is in progress',
-    });
-    await expect(notificationsDialog).toBeVisible();
-    await expect(notificationsDialog).toContainText('Notifications are not available yet.');
+    await expect(page.getByRole('button', { name: 'Help' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Notifications' })).toHaveCount(0);
   });
 
   test('station areas open the shared context selector instead of a WIP dialog', async ({
@@ -159,7 +177,7 @@ test.describe('desktop sidebar', () => {
     const organisationId = '11111111-1111-4111-8111-111111111111';
     const legalEntityId = '22222222-2222-4222-8222-222222222222';
     const stationId = '33333333-3333-4333-8333-333333333333';
-    await page.route('**/api/context*', async (route) => {
+    await page.route('**/api/context**', async (route) => {
       if (route.request().method() === 'POST') {
         await route.fulfill({
           contentType: 'application/json',
@@ -224,7 +242,7 @@ test.describe('desktop sidebar', () => {
   });
 
   test('context selector remains usable at 320px without horizontal overflow', async ({ page }) => {
-    await page.route('**/api/context*', async (route) => {
+    await page.route('**/api/context**', async (route) => {
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
@@ -256,7 +274,10 @@ test.describe('desktop sidebar', () => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto('/reports');
     await waitForHydration(page);
-    const control = page.locator('.shell-sidebar').getByRole('group', { name: 'Theme' });
+    await page.getByRole('button', { name: 'Account' }).click();
+    const control = page.getByRole('menu', { name: 'Account menu' }).getByRole('group', {
+      name: 'Theme',
+    });
     await expect(control.getByRole('radio', { name: /System/ })).toBeChecked();
 
     await control.getByRole('radio', { name: 'Dark' }).check();
@@ -272,8 +293,9 @@ test.describe('desktop sidebar', () => {
     expect(results.violations).toEqual([]);
 
     await waitForHydration(page);
+    await page.getByRole('button', { name: 'Account' }).click();
     await page
-      .locator('.shell-sidebar')
+      .getByRole('menu', { name: 'Account menu' })
       .getByRole('group', { name: 'Theme' })
       .getByRole('radio', { name: /System/ })
       .check();

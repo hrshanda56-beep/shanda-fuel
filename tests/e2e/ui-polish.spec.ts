@@ -583,7 +583,13 @@ test.describe('click targets', () => {
     expect(await cursorOver(page, sidebar.getByRole('button', { name: 'Operations' }))).toBe(
       'pointer',
     );
-    expect(await cursorOver(page, sidebar.locator('.theme-option').first())).toBe('pointer');
+    await page.getByRole('button', { name: 'Account' }).click();
+    expect(
+      await cursorOver(
+        page,
+        page.getByRole('menu', { name: 'Account menu' }).locator('.theme-option').first(),
+      ),
+    ).toBe('pointer');
     expect(await cursorOver(page, page.getByRole('button', { name: 'Open shift workflow' }))).toBe(
       'pointer',
     );
