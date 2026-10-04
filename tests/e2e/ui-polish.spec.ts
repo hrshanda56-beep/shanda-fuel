@@ -275,52 +275,60 @@ async function mockApis(page: Page) {
     contentType: 'application/json',
     body: JSON.stringify(body),
   });
-  await page.route('**/api/context*', (route) =>
-    route.fulfill(
-      json({
-        data: {
-          available: {
-            organisations: [
-              {
-                id: 'tenant-1',
-                name: 'Test organisation',
-                legalEntities: [
-                  {
-                    id: 'entity-1',
-                    name: 'Test legal entity',
-                    stations: [
-                      {
-                        id: 'station-1',
-                        code: 'TEST-01',
-                        name: 'Test station',
-                        timezone: 'Africa/Harare',
-                      },
-                    ],
+  await page.route('**/api/context*', (route) => {
+    const pathname = new URL(route.request().url()).searchParams.get('pathname');
+    return route.fulfill(
+      json(
+        pathname?.startsWith('/suppliers')
+          ? supplierContext
+          : {
+              data: {
+                available: {
+                  organisations: [
+                    {
+                      id: 'tenant-1',
+                      name: 'Test organisation',
+                      legalEntities: [
+                        {
+                          id: 'entity-1',
+                          name: 'Test legal entity',
+                          stations: [
+                            {
+                              id: 'station-1',
+                              code: 'TEST-01',
+                              name: 'Test station',
+                              timezone: 'Africa/Harare',
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                current: {
+                  organisationId: 'tenant-1',
+                  legalEntityId: 'entity-1',
+                  stationId: 'station-1',
+                  allStations: false,
+                },
+                route: {
+                  pathname: '/stations/station-1/settlements',
+                  policy: {
+                    legalEntity: 'required',
+                    station: 'required',
+                    allStationsAllowed: false,
                   },
-                ],
+                },
+                persistedContextInvalid: false,
               },
-            ],
-          },
-          current: {
-            organisationId: 'tenant-1',
-            legalEntityId: 'entity-1',
-            stationId: 'station-1',
-            allStations: false,
-          },
-          route: {
-            pathname: '/stations/station-1/settlements',
-            policy: { legalEntity: 'required', station: 'required', allStationsAllowed: false },
-          },
-          persistedContextInvalid: false,
-        },
-      }),
-    ),
-  );
+            },
+      ),
+    );
+  });
   await page.route('**/api/reports/management**', (route) => route.fulfill(json(report)));
   await page.route('**/api/settlements/summary**', (route) => route.fulfill(json(settlements)));
   await page.route('**/api/settlements/unmatched**', (route) => route.fulfill(json(unmatched)));
   await page.route('**/api/cash/summary**', (route) => route.fulfill(json(cashSummary)));
-  await page.route('**/api/context**', (route) => route.fulfill(json(supplierContext)));
   await page.route('**/api/suppliers/summary**', (route) => route.fulfill(json(suppliers)));
   await page.route('**/api/inventory/valuation?**', (route) => route.fulfill(json(valuation)));
 }
