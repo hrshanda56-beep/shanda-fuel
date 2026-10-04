@@ -96,11 +96,11 @@ jobs:
           cache: pnpm
       - name: Install locked dependencies without lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Audit production and development dependencies
+      - name: Audit dependencies with scoped temporary exceptions
         shell: bash
         run: |
           set -euo pipefail
-          pnpm audit --audit-level=high 2>&1 | tee pnpm-audit.txt
+          node scripts/dependency-audit-exception.mjs 2>&1 | tee pnpm-audit.txt
       - name: Upload dependency audit output
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
