@@ -1,0 +1,1409 @@
+import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+
+import type { Sql, TransactionSql } from 'postgres';
+
+import {
+  signSecurityEvent,
+  type SignedSecurityEvent,
+} from '../src/platform/security/audit-signing';
+
+/**
+ * Operator-only local tool. This file is deliberately outside `src/app` and
+ * is not imported by the application runtime.
+ */
+export const TOOL_NAME = 'first-production-user-provisioning';
+export const PROVISIONING_REASON = TOOL_NAME;
+export const ACCEPTED_PROVISIONING_DB_ROLE = 'first_user_provisioner';
+export const MAX_GRANT_TTL_MS = 2 * 60 * 60 * 1000;
+export const CREDENTIAL_PROVIDER_ID = 'credential';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_MIN_LENGTH = 12;
+
+export type ReadOnlyGrantScope = 'TENANT' | 'LEGAL_ENTITY' | 'STATION';
+
+export type ReadOnlyGrantPlan = Readonly<{
+  permissionCode: string;
+  scopeType: ReadOnlyGrantScope;
+}>;
+
+/**
+ * These are the only permissions this tool can create. They are deliberately
+ * explicit rather than derived from a role so a role change cannot broaden
+ * the first account's access.
+ */
+export const READ_ONLY_GRANT_PLAN = [
+  { permissionCode: 'tenant.context.select', scopeType: 'TENANT' },
+  { permissionCode: 'tenant.view', scopeType: 'TENANT' },
+  { permissionCode: 'legal_entity.view', scopeType: 'LEGAL_ENTITY' },
+  { permissionCode: 'station.view', scopeType: 'STATION' },
+  { permissionCode: 'business_day.view', scopeType: 'STATION' },
+  { permissionCode: 'shift.view', scopeType: 'STATION' },
+  { permissionCode: 'supplier.view', scopeType: 'LEGAL_ENTITY' },
+  { permissionCode: 'supplier.creditor.review', scopeType: 'LEGAL_ENTITY' },
+  { permissionCode: 'inventory.view', scopeType: 'STATION' },
+  { permissionCode: 'provider.settlement.view', scopeType: 'STATION' },
+  { permissionCode: 'cash.collection.view', scopeType: 'STATION' },
+  { permissionCode: 'cash.deposit.view', scopeType: 'STATION' },
+] as const satisfies readonly ReadOnlyGrantPlan[];
+
+export type ScopeIds = Readonly<{
+  tenantId: string;
+  legalEntityId: string;
+  stationId: string;
+}>;
+
+export type ScopeSnapshot = Readonly<{
+  tenant: { id: string; name: string; status: string };
+  legalEntity: { id: string; tenantId: string; name: string; status: string };
+  station: {
+    id: string;
+    tenantId: string;
+    legalEntityId: string;
+    code: string;
+    name: string;
+    status: string;
+  };
+}>;
+
+export type IdentitySnapshot = Readonly<{
+  id: string;
+  name: string;
+  email: string;
+  accounts: readonly {
+    id: string;
+    accountId: string;
+    providerId: string;
+    userId: string;
+    hasPassword: boolean;
+  }[];
+  memberships: readonly {
+    id: string;
+    tenantId: string;
+    identityId: string;
+    status: string;
+    roleAssignmentCount: number;
+  }[];
+}>;
+
+export type ProvisioningInput = Readonly<{
+  email: string;
+  displayName: string;
+  scope: ScopeIds;
+  expiresAt: Date;
+  lockScope?: boolean;
+}>;
+
+export type ProvisioningPlan = Readonly<{
+  now: Date;
+  expiresAt: Date;
+  operationId: string;
+  userId: string;
+  membershipId: string;
+  scope: ScopeSnapshot;
+  grants: readonly ReadOnlyGrantPlan[];
+}>;
+
+export type ProvisioningResult = Readonly<{
+  operationId: string;
+  userId: string;
+  membershipId: string;
+  expiresAt: Date;
+  permissionCodes: readonly string[];
+  auditEventIds: readonly string[];
+}>;
+
+export type RevokeResult = Readonly<{
+  operationId: string;
+  userId: string;
+  membershipId: string;
+  revokedGrantCount: number;
+  revokedSessionCount: number;
+  membershipDisabled: boolean;
+  auditEventId?: string;
+}>;
+
+export type ProvisioningRepository = Readonly<{
+  now: () => Promise<Date>;
+  lockEmail: (email: string) => Promise<void>;
+  loadScope: (scope: ScopeIds, options?: { lock?: boolean }) => Promise<ScopeSnapshot>;
+  findIdentityByEmail: (email: string) => Promise<IdentitySnapshot | null>;
+  listPermissionDefinitions: (codes: readonly string[]) => Promise<readonly string[]>;
+  setTenantContext: (scope: ScopeIds & { actorId: string; membershipId: string }) => Promise<void>;
+  insertUser: (input: { id: string; name: string; email: string }) => Promise<void>;
+  insertCredentialAccount: (input: {
+    userId: string;
+    accountId: string;
+    providerId: string;
+    passwordHash: string;
+  }) => Promise<void>;
+  insertMembership: (input: { id: string; tenantId: string; identityId: string }) => Promise<void>;
+  insertGrant: (input: {
+    tenantId: string;
+    membershipId: string;
+    permissionCode: string;
+    scopeType: ReadOnlyGrantScope;
+    legalEntityId?: string;
+    stationId?: string;
+    expiresAt: Date;
+    reason: string;
+  }) => Promise<void>;
+  appendAuditEvent: (event: SignedSecurityEvent) => Promise<void>;
+  listUnrevokedTemporaryGrants: (input: {
+    tenantId: string;
+    membershipId: string;
+  }) => Promise<readonly TemporaryGrantSnapshot[]>;
+  revokeTemporaryGrants: (input: {
+    tenantId: string;
+    membershipId: string;
+    grantIds: readonly string[];
+    reason: string;
+  }) => Promise<number>;
+  revokeSessions: (userId: string) => Promise<number>;
+  disableMembership: (input: {
+    tenantId: string;
+    membershipId: string;
+    identityId: string;
+  }) => Promise<boolean>;
+}>;
+
+export type TemporaryGrantSnapshot = Readonly<{
+  id: string;
+  tenantId: string;
+  membershipId: string;
+  permissionCode: string;
+  scopeType: ReadOnlyGrantScope;
+  legalEntityId: string | null;
+  stationId: string | null;
+  reason: string;
+}>;
+
+export class ProvisioningError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProvisioningError';
+  }
+}
+
+export class DuplicateProvisioningError extends ProvisioningError {}
+export class ScopeValidationError extends ProvisioningError {}
+
+async function defaultPasswordHasher(password: string): Promise<string> {
+  const { hashPassword } = await import('better-auth/crypto');
+  return hashPassword(password);
+}
+
+function assertUuid(name: string, value: string): void {
+  if (!UUID_PATTERN.test(value)) throw new ScopeValidationError(`${name} must be a UUID`);
+}
+
+export function normalizeEmail(input: string): string {
+  const email = input.trim().toLowerCase();
+  if (email.length > 320 || !EMAIL_PATTERN.test(email)) {
+    throw new ProvisioningError('A valid operator email is required');
+  }
+  return email;
+}
+
+export function validateDisplayName(input: string): string {
+  const displayName = input.trim();
+  if (displayName.length < 1 || displayName.length > 160) {
+    throw new ProvisioningError('Display name must contain 1 to 160 characters');
+  }
+  return displayName;
+}
+
+export function validatePassword(password: string): void {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    throw new ProvisioningError(`Password must contain at least ${PASSWORD_MIN_LENGTH} characters`);
+  }
+}
+
+export function validateExpiry(expiresAt: Date, now: Date): Date {
+  if (!Number.isFinite(expiresAt.getTime())) {
+    throw new ProvisioningError('Grant expiry must be a valid timestamp');
+  }
+  if (expiresAt.getTime() <= now.getTime()) {
+    throw new ProvisioningError('Grant expiry must be in the future');
+  }
+  if (expiresAt.getTime() > now.getTime() + MAX_GRANT_TTL_MS) {
+    throw new ProvisioningError('Grant expiry cannot be more than two hours from database time');
+  }
+  return expiresAt;
+}
+
+export function scopeForGrant(
+  grant: ReadOnlyGrantPlan,
+  scope: ScopeIds,
+): { scopeType: ReadOnlyGrantScope; legalEntityId?: string; stationId?: string } {
+  if (grant.scopeType === 'TENANT') return { scopeType: 'TENANT' };
+  if (grant.scopeType === 'LEGAL_ENTITY') {
+    return { scopeType: 'LEGAL_ENTITY', legalEntityId: scope.legalEntityId };
+  }
+  return {
+    scopeType: 'STATION',
+    legalEntityId: scope.legalEntityId,
+    stationId: scope.stationId,
+  };
+}
+
+export function provisioningReason(operationId: string): string {
+  return `${PROVISIONING_REASON}:${operationId}`;
+}
+
+function assertActiveScope(scope: ScopeSnapshot, ids: ScopeIds): void {
+  assertUuid('tenant ID', ids.tenantId);
+  assertUuid('legal-entity ID', ids.legalEntityId);
+  assertUuid('station ID', ids.stationId);
+
+  if (scope.tenant.id !== ids.tenantId || scope.tenant.status !== 'ACTIVE') {
+    throw new ScopeValidationError('The selected tenant is missing or inactive');
+  }
+  if (
+    scope.legalEntity.id !== ids.legalEntityId ||
+    scope.legalEntity.tenantId !== ids.tenantId ||
+    scope.legalEntity.status !== 'ACTIVE'
+  ) {
+    throw new ScopeValidationError(
+      'The selected legal entity is outside the selected tenant or inactive',
+    );
+  }
+  if (
+    scope.station.id !== ids.stationId ||
+    scope.station.tenantId !== ids.tenantId ||
+    scope.station.legalEntityId !== ids.legalEntityId ||
+    scope.station.status !== 'ACTIVE'
+  ) {
+    throw new ScopeValidationError(
+      'The selected station is outside the selected legal entity or inactive',
+    );
+  }
+}
+
+function assertRequiredPermissions(
+  available: readonly string[],
+  required: readonly ReadOnlyGrantPlan[],
+): void {
+  const availableSet = new Set(available);
+  const missing = required
+    .map((grant) => grant.permissionCode)
+    .filter((permissionCode) => !availableSet.has(permissionCode));
+  if (missing.length > 0) {
+    throw new ProvisioningError(
+      `Required permission definitions are missing: ${missing.join(', ')}`,
+    );
+  }
+}
+
+export async function preparePlan(
+  repository: ProvisioningRepository,
+  input: ProvisioningInput,
+): Promise<ProvisioningPlan> {
+  const email = normalizeEmail(input.email);
+  const displayName = validateDisplayName(input.displayName);
+  if (!displayName) throw new ProvisioningError('Display name is required');
+  await repository.lockEmail(email);
+  const now = await repository.now();
+  const expiresAt = validateExpiry(input.expiresAt, now);
+  const scope = await repository.loadScope(input.scope, { lock: input.lockScope !== false });
+  assertActiveScope(scope, input.scope);
+  const existing = await repository.findIdentityByEmail(email);
+  if (existing) {
+    throw new DuplicateProvisioningError(
+      'An identity already exists for this email; duplicate provisioning is refused',
+    );
+  }
+  const availablePermissions = await repository.listPermissionDefinitions(
+    READ_ONLY_GRANT_PLAN.map((grant) => grant.permissionCode),
+  );
+  assertRequiredPermissions(availablePermissions, READ_ONLY_GRANT_PLAN);
+
+  return {
+    now,
+    expiresAt,
+    operationId: randomUUID(),
+    userId: randomUUID(),
+    membershipId: randomUUID(),
+    scope,
+    grants: READ_ONLY_GRANT_PLAN,
+  };
+}
+
+function auditEvent(input: {
+  actionCode: string;
+  plan: ProvisioningPlan;
+  actorId?: string;
+  subjectId: string;
+  membershipId: string;
+  key: { keyId: string; secret: string };
+  metadata: Record<string, unknown>;
+}): SignedSecurityEvent {
+  return signSecurityEvent(
+    {
+      eventId: randomUUID(),
+      tenantId: input.plan.scope.tenant.id,
+      membershipId: input.membershipId,
+      actorId: input.actorId,
+      eventCode: input.actionCode,
+      requestId: randomUUID(),
+      occurredAt: input.plan.now.toISOString(),
+      details: {
+        actorType: 'SUPPORT',
+        initiatedBy: TOOL_NAME,
+        subjectType: 'auth.user',
+        subjectId: input.subjectId,
+        metadata: {
+          legalEntityId: input.plan.scope.legalEntity.id,
+          stationId: input.plan.scope.station.id,
+          membershipId: input.membershipId,
+          operationId: input.plan.operationId,
+          ...input.metadata,
+        },
+      },
+    },
+    input.key,
+  );
+}
+
+export async function provisionFirstUser(input: {
+  repository: ProvisioningRepository;
+  request: ProvisioningInput;
+  password: string;
+  auditKey: { keyId: string; secret: string };
+  hasher?: (password: string) => Promise<string>;
+}): Promise<ProvisioningResult> {
+  validatePassword(input.password);
+  const email = normalizeEmail(input.request.email);
+  const displayName = validateDisplayName(input.request.displayName);
+  const plan = await preparePlan(input.repository, { ...input.request, email, displayName });
+  const passwordHash = await (input.hasher ?? defaultPasswordHasher)(input.password);
+  if (!passwordHash || passwordHash === input.password) {
+    throw new ProvisioningError('Better Auth did not return a valid password hash');
+  }
+
+  await input.repository.insertUser({ id: plan.userId, name: displayName, email });
+  await input.repository.insertCredentialAccount({
+    userId: plan.userId,
+    accountId: plan.userId,
+    providerId: CREDENTIAL_PROVIDER_ID,
+    passwordHash,
+  });
+  await input.repository.insertMembership({
+    id: plan.membershipId,
+    tenantId: plan.scope.tenant.id,
+    identityId: plan.userId,
+  });
+  await input.repository.setTenantContext({
+    tenantId: plan.scope.tenant.id,
+    legalEntityId: plan.scope.legalEntity.id,
+    stationId: plan.scope.station.id,
+    actorId: plan.userId,
+    membershipId: plan.membershipId,
+  });
+
+  const initiated = auditEvent({
+    actionCode: 'ACCESS.PROVISIONING_INITIATED',
+    plan,
+    subjectId: plan.userId,
+    membershipId: plan.membershipId,
+    key: input.auditKey,
+    metadata: {
+      permissionCodes: plan.grants.map((grant) => grant.permissionCode),
+      expiresAt: plan.expiresAt.toISOString(),
+      outcome: 'initiated',
+    },
+  });
+  await input.repository.appendAuditEvent(initiated);
+
+  for (const grant of plan.grants) {
+    const scope = scopeForGrant(grant, {
+      tenantId: plan.scope.tenant.id,
+      legalEntityId: plan.scope.legalEntity.id,
+      stationId: plan.scope.station.id,
+    });
+    await input.repository.insertGrant({
+      tenantId: plan.scope.tenant.id,
+      membershipId: plan.membershipId,
+      permissionCode: grant.permissionCode,
+      ...scope,
+      expiresAt: plan.expiresAt,
+      reason: provisioningReason(plan.operationId),
+    });
+  }
+
+  const completed = auditEvent({
+    actionCode: 'ACCESS.PROVISIONING_COMPLETED',
+    plan,
+    subjectId: plan.userId,
+    membershipId: plan.membershipId,
+    key: input.auditKey,
+    metadata: {
+      permissionCodes: plan.grants.map((grant) => grant.permissionCode),
+      expiresAt: plan.expiresAt.toISOString(),
+      outcome: 'success',
+    },
+  });
+  await input.repository.appendAuditEvent(completed);
+
+  return {
+    operationId: plan.operationId,
+    userId: plan.userId,
+    membershipId: plan.membershipId,
+    expiresAt: plan.expiresAt,
+    permissionCodes: plan.grants.map((grant) => grant.permissionCode),
+    auditEventIds: [initiated.eventId, completed.eventId],
+  };
+}
+
+export async function revokeFirstUserAccess(input: {
+  repository: ProvisioningRepository;
+  email: string;
+  userId: string;
+  operationId: string;
+  scope: ScopeIds;
+  auditKey: { keyId: string; secret: string };
+}): Promise<RevokeResult | { status: 'absent' | 'already-disabled' }> {
+  const email = normalizeEmail(input.email);
+  assertUuid('user ID', input.userId);
+  assertUuid('operation ID', input.operationId);
+  await input.repository.lockEmail(email);
+  const scope = await input.repository.loadScope(input.scope);
+  assertActiveScope(scope, input.scope);
+  const existing = await input.repository.findIdentityByEmail(email);
+  if (!existing) return { status: 'absent' };
+  if (existing.id !== input.userId) {
+    throw new ProvisioningError('The target email does not match the requested user identity');
+  }
+  const membership = existing.memberships.find(
+    (candidate) => candidate.tenantId === input.scope.tenantId,
+  );
+  if (!membership) return { status: 'absent' };
+  if (membership.identityId !== existing.id) {
+    throw new ProvisioningError('The target membership is linked to a different identity');
+  }
+  if (membership.status === 'DISABLED') return { status: 'already-disabled' };
+  if (membership.status !== 'ACTIVE') {
+    throw new ProvisioningError(
+      'Cleanup refuses a target membership that is not ACTIVE or DISABLED',
+    );
+  }
+  if (membership.roleAssignmentCount > 0) {
+    throw new ProvisioningError(
+      'Cleanup refuses to disable a membership that has role assignments; revoke only the named temporary grants through an approved operator procedure',
+    );
+  }
+
+  if (existing.memberships.length !== 1) {
+    throw new ProvisioningError(
+      'Cleanup refuses an identity with memberships outside the temporary release account',
+    );
+  }
+
+  const operationReason = provisioningReason(input.operationId);
+  const unrevokedGrants = await input.repository.listUnrevokedTemporaryGrants({
+    tenantId: input.scope.tenantId,
+    membershipId: membership.id,
+  });
+  const matchingGrantIds: string[] = [];
+  for (const grant of READ_ONLY_GRANT_PLAN) {
+    const expectedScope = scopeForGrant(grant, input.scope);
+    const matches = unrevokedGrants.filter(
+      (candidate) =>
+        candidate.reason === operationReason &&
+        candidate.permissionCode === grant.permissionCode &&
+        candidate.scopeType === expectedScope.scopeType &&
+        candidate.legalEntityId === (expectedScope.legalEntityId ?? null) &&
+        candidate.stationId === (expectedScope.stationId ?? null),
+    );
+    if (matches.length !== 1) {
+      throw new ProvisioningError(
+        'Cleanup requires exactly one unrevoked grant for every grant created by this operation',
+      );
+    }
+    matchingGrantIds.push(matches[0]!.id);
+  }
+  if (unrevokedGrants.some((grant) => !matchingGrantIds.includes(grant.id))) {
+    throw new ProvisioningError(
+      'Cleanup refuses to disable a membership with unrelated unrevoked temporary grants',
+    );
+  }
+
+  const now = await input.repository.now();
+  const expiry = new Date(now.getTime() + 1);
+  const plan: ProvisioningPlan = {
+    now,
+    expiresAt: expiry,
+    operationId: input.operationId,
+    userId: existing.id,
+    membershipId: membership.id,
+    scope,
+    grants: READ_ONLY_GRANT_PLAN,
+  };
+  await input.repository.setTenantContext({
+    tenantId: scope.tenant.id,
+    legalEntityId: scope.legalEntity.id,
+    stationId: scope.station.id,
+    actorId: existing.id,
+    membershipId: membership.id,
+  });
+  const revokedGrantCount = await input.repository.revokeTemporaryGrants({
+    tenantId: input.scope.tenantId,
+    membershipId: membership.id,
+    grantIds: matchingGrantIds,
+    reason: operationReason,
+  });
+  if (revokedGrantCount !== matchingGrantIds.length) {
+    throw new ProvisioningError('Cleanup could not revoke the exact operation grant set');
+  }
+  const revokedSessionCount = await input.repository.revokeSessions(existing.id);
+  const event = auditEvent({
+    actionCode: 'ACCESS.PROVISIONING_REVOKED',
+    plan,
+    subjectId: existing.id,
+    membershipId: membership.id,
+    key: input.auditKey,
+    metadata: {
+      permissionCodes: READ_ONLY_GRANT_PLAN.map((grant) => grant.permissionCode),
+      revokedGrantCount,
+      revokedSessionCount,
+      membershipDisabled: true,
+      outcome: 'success',
+    },
+  });
+  await input.repository.appendAuditEvent(event);
+  const membershipDisabled = await input.repository.disableMembership({
+    tenantId: input.scope.tenantId,
+    membershipId: membership.id,
+    identityId: existing.id,
+  });
+  if (!membershipDisabled)
+    throw new ProvisioningError('Target membership disappeared during cleanup');
+
+  return {
+    operationId: input.operationId,
+    userId: existing.id,
+    membershipId: membership.id,
+    revokedGrantCount,
+    revokedSessionCount,
+    membershipDisabled,
+    auditEventId: event.eventId,
+  };
+}
+
+type Query = Sql | TransactionSql;
+
+type ScopeRow = {
+  id: string;
+  name: string;
+  status: string;
+  tenant_id?: string;
+  legal_entity_id?: string;
+  code?: string;
+};
+
+type UserRow = { id: string; name: string; email: string };
+type AccountRow = {
+  id: string;
+  account_id: string;
+  provider_id: string;
+  user_id: string;
+  password: string | null;
+};
+type MembershipRow = {
+  id: string;
+  tenant_id: string;
+  identity_id: string;
+  status: string;
+  role_assignment_count: number;
+};
+
+function one<T>(rows: readonly T[], message: string): T {
+  const row = rows[0];
+  if (!row) throw new ProvisioningError(message);
+  return row;
+}
+
+export function createPostgresRepository(query: Query): ProvisioningRepository {
+  return {
+    async now() {
+      const rows = await query<{ now: Date }[]>`select clock_timestamp() as now`;
+      return one(rows, 'Database returned no clock value').now;
+    },
+    async lockEmail(email) {
+      await query`select pg_advisory_xact_lock(hashtextextended(${email}, 0))`;
+    },
+    async loadScope(ids, options = {}) {
+      const tenantRows =
+        options.lock === false
+          ? await query<ScopeRow[]>`
+              select id::text, name, status
+              from app.tenants
+              where id = ${ids.tenantId}
+              limit 1
+            `
+          : await query<ScopeRow[]>`
+              select id::text, name, status
+              from app.tenants
+              where id = ${ids.tenantId}
+              limit 1
+              for update
+            `;
+      const legalEntityRows =
+        options.lock === false
+          ? await query<ScopeRow[]>`
+              select id::text, tenant_id::text, legal_name as name, status
+              from app.legal_entities
+              where id = ${ids.legalEntityId}
+              limit 1
+            `
+          : await query<ScopeRow[]>`
+              select id::text, tenant_id::text, legal_name as name, status
+              from app.legal_entities
+              where id = ${ids.legalEntityId}
+              limit 1
+              for update
+            `;
+      const stationRows =
+        options.lock === false
+          ? await query<ScopeRow[]>`
+              select id::text, tenant_id::text, legal_entity_id::text, code, name, status
+              from app.stations
+              where id = ${ids.stationId}
+              limit 1
+            `
+          : await query<ScopeRow[]>`
+              select id::text, tenant_id::text, legal_entity_id::text, code, name, status
+              from app.stations
+              where id = ${ids.stationId}
+              limit 1
+              for update
+            `;
+      const tenant = one(tenantRows, 'Selected tenant was not found');
+      const legalEntity = one(legalEntityRows, 'Selected legal entity was not found');
+      const station = one(stationRows, 'Selected station was not found');
+      return {
+        tenant: { id: tenant.id, name: tenant.name, status: tenant.status },
+        legalEntity: {
+          id: legalEntity.id,
+          tenantId: legalEntity.tenant_id!,
+          name: legalEntity.name,
+          status: legalEntity.status,
+        },
+        station: {
+          id: station.id,
+          tenantId: station.tenant_id!,
+          legalEntityId: station.legal_entity_id!,
+          code: station.code!,
+          name: station.name,
+          status: station.status,
+        },
+      };
+    },
+    async findIdentityByEmail(email) {
+      const users = await query<UserRow[]>`
+        select id::text, name, email
+        from auth."user"
+        where email = ${email}
+        limit 1
+      `;
+      const user = users[0];
+      if (!user) return null;
+      const accounts = await query<AccountRow[]>`
+        select id::text, account_id, provider_id, user_id::text, password
+        from auth.account
+        where user_id = ${user.id}
+        order by id
+      `;
+      const memberships = await query<MembershipRow[]>`
+        select m.id::text, m.tenant_id::text, m.identity_id::text, m.status,
+          (select count(*)::int from app.membership_role_assignments a
+           where a.tenant_id = m.tenant_id and a.membership_id = m.id) as role_assignment_count
+        from app.memberships m
+        where m.identity_id = ${user.id}
+        order by m.tenant_id, m.id
+      `;
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        accounts: accounts.map((account) => ({
+          id: account.id,
+          accountId: account.account_id,
+          providerId: account.provider_id,
+          userId: account.user_id,
+          hasPassword: Boolean(account.password),
+        })),
+        memberships: memberships.map((membership) => ({
+          id: membership.id,
+          tenantId: membership.tenant_id,
+          identityId: membership.identity_id,
+          status: membership.status,
+          roleAssignmentCount: membership.role_assignment_count,
+        })),
+      };
+    },
+    async listPermissionDefinitions(codes) {
+      const rows = await query<{ code: string }[]>`
+        select code
+        from platform.permission_definitions
+        where code = any(${codes})
+      `;
+      return rows.map((row) => row.code);
+    },
+    async setTenantContext(context) {
+      await query`
+        select
+          set_config('app.tenant_id', ${context.tenantId}, true),
+          set_config('app.actor_id', ${context.actorId}, true),
+          set_config('app.membership_id', ${context.membershipId}, true),
+          set_config('app.legal_entity_id', ${context.legalEntityId}, true),
+          set_config('app.station_id', ${context.stationId}, true)
+      `;
+    },
+    async insertUser(input) {
+      await query`
+        insert into auth."user" (id, name, email, email_verified)
+        values (${input.id}, ${input.name}, ${input.email}, false)
+      `;
+    },
+    async insertCredentialAccount(input) {
+      await query`
+        insert into auth.account (account_id, provider_id, user_id, password)
+        values (${input.accountId}, ${input.providerId}, ${input.userId}, ${input.passwordHash})
+      `;
+    },
+    async insertMembership(input) {
+      await query`
+        insert into app.memberships (id, tenant_id, identity_id, status)
+        values (${input.id}, ${input.tenantId}, ${input.identityId}, 'ACTIVE')
+      `;
+    },
+    async insertGrant(input) {
+      await query`
+        insert into app.temporary_permission_grants
+          (tenant_id, membership_id, permission_code, scope_type,
+           legal_entity_id, station_id, expires_at, reason)
+        values (
+          ${input.tenantId}, ${input.membershipId}, ${input.permissionCode}, ${input.scopeType},
+          ${input.legalEntityId ?? null}, ${input.stationId ?? null}, ${input.expiresAt}, ${input.reason}
+        )
+      `;
+    },
+    async appendAuditEvent(event) {
+      await query`
+        insert into platform.security_events
+          (id, tenant_id, membership_id, actor_id, event_code,
+           request_id, occurred_at, details, key_id, algorithm, signature)
+        values (
+          ${event.eventId}, ${event.tenantId}, ${event.membershipId ?? null}, ${event.actorId ?? null},
+          ${event.eventCode}, ${event.requestId}, ${event.occurredAt},
+          ${JSON.stringify(event.details)}::jsonb, ${event.keyId}, ${event.algorithm}, ${event.signature}
+        )
+      `;
+    },
+    async listUnrevokedTemporaryGrants(input) {
+      const rows = await query<TemporaryGrantSnapshot[]>`
+        select id::text, tenant_id::text as "tenantId", membership_id::text as "membershipId",
+          permission_code as "permissionCode", scope_type as "scopeType",
+          legal_entity_id::text as "legalEntityId", station_id::text as "stationId", reason
+        from app.temporary_permission_grants
+        where tenant_id = ${input.tenantId}
+          and membership_id = ${input.membershipId}
+          and revoked_at is null
+        order by id
+      `;
+      return rows;
+    },
+    async revokeTemporaryGrants(input) {
+      const rows = await query<{ id: string }[]>`
+        update app.temporary_permission_grants
+        set revoked_at = coalesce(revoked_at, now())
+        where tenant_id = ${input.tenantId}
+          and membership_id = ${input.membershipId}
+          and reason = ${input.reason}
+          and id = any(${input.grantIds})
+          and revoked_at is null
+        returning id::text
+      `;
+      return rows.length;
+    },
+    async revokeSessions(userId) {
+      const rows = await query<{ id: string }[]>`
+        update auth.session
+        set revoked_at = coalesce(revoked_at, now()), updated_at = now()
+        where user_id = ${userId} and revoked_at is null
+        returning id::text
+      `;
+      return rows.length;
+    },
+    async disableMembership(input) {
+      const rows = await query<{ id: string }[]>`
+        update app.memberships
+        set status = 'DISABLED', disabled_at = coalesce(disabled_at, now()), updated_at = now()
+        where tenant_id = ${input.tenantId}
+          and id = ${input.membershipId}
+          and identity_id = ${input.identityId}
+          and status = 'ACTIVE'
+        returning id::text
+      `;
+      return rows.length === 1;
+    },
+  };
+}
+
+export type ScopeListing = Readonly<{
+  tenants: readonly { id: string; name: string; status: string }[];
+  legalEntities: readonly { id: string; tenantId: string; name: string; status: string }[];
+  stations: readonly {
+    id: string;
+    tenantId: string;
+    legalEntityId: string;
+    code: string;
+    name: string;
+    status: string;
+  }[];
+}>;
+
+export async function listScopeOptions(
+  query: Query,
+  filters: Partial<ScopeIds> = {},
+): Promise<ScopeListing> {
+  const tenants = filters.tenantId
+    ? await query<{ id: string; name: string; status: string }[]>`
+        select id::text, name, status
+        from app.tenants
+        where status = 'ACTIVE' and id = ${filters.tenantId}
+        order by name, id
+      `
+    : await query<{ id: string; name: string; status: string }[]>`
+        select id::text, name, status
+        from app.tenants
+        where status = 'ACTIVE'
+        order by name, id
+      `;
+  const legalEntities = filters.tenantId
+    ? filters.legalEntityId
+      ? await query<{ id: string; tenant_id: string; name: string; status: string }[]>`
+          select id::text, tenant_id::text, legal_name as name, status
+          from app.legal_entities
+          where tenant_id = ${filters.tenantId}
+            and status = 'ACTIVE'
+            and id = ${filters.legalEntityId}
+          order by legal_name, id
+        `
+      : await query<{ id: string; tenant_id: string; name: string; status: string }[]>`
+          select id::text, tenant_id::text, legal_name as name, status
+          from app.legal_entities
+          where tenant_id = ${filters.tenantId} and status = 'ACTIVE'
+          order by legal_name, id
+        `
+    : [];
+  const stations =
+    filters.tenantId && filters.legalEntityId
+      ? filters.stationId
+        ? await query<
+            {
+              id: string;
+              tenant_id: string;
+              legal_entity_id: string;
+              code: string;
+              name: string;
+              status: string;
+            }[]
+          >`
+          select id::text, tenant_id::text, legal_entity_id::text, code, name, status
+          from app.stations
+          where tenant_id = ${filters.tenantId}
+            and legal_entity_id = ${filters.legalEntityId}
+            and status = 'ACTIVE'
+            and id = ${filters.stationId}
+          order by code, id
+        `
+        : await query<
+            {
+              id: string;
+              tenant_id: string;
+              legal_entity_id: string;
+              code: string;
+              name: string;
+              status: string;
+            }[]
+          >`
+          select id::text, tenant_id::text, legal_entity_id::text, code, name, status
+          from app.stations
+          where tenant_id = ${filters.tenantId}
+            and legal_entity_id = ${filters.legalEntityId}
+            and status = 'ACTIVE'
+          order by code, id
+        `
+      : [];
+  return {
+    tenants,
+    legalEntities: legalEntities.map((row) => ({
+      id: row.id,
+      tenantId: row.tenant_id,
+      name: row.name,
+      status: row.status,
+    })),
+    stations: stations.map((row) => ({
+      id: row.id,
+      tenantId: row.tenant_id,
+      legalEntityId: row.legal_entity_id,
+      code: row.code,
+      name: row.name,
+      status: row.status,
+    })),
+  };
+}
+
+function databaseUrlFromEnvironment(environment: NodeJS.ProcessEnv = process.env): string {
+  if (environment.APP_ENV !== 'local') {
+    throw new ProvisioningError('This local-only tool requires APP_ENV=local');
+  }
+  const url = environment.DATABASE_DIRECT_URL ?? environment.DATABASE_URL;
+  if (!url)
+    throw new ProvisioningError('DATABASE_DIRECT_URL or DATABASE_URL must be supplied locally');
+  return url;
+}
+
+export type DatabaseRoleSnapshot = Readonly<{
+  currentUser: string;
+  rolsuper: boolean;
+  rolbypassrls: boolean;
+}>;
+
+export function assertAcceptedProvisioningRole(row: DatabaseRoleSnapshot): void {
+  if (row.rolsuper || row.rolbypassrls) {
+    throw new ProvisioningError(
+      'Provisioning requires a non-superuser, NOBYPASSRLS operator database role',
+    );
+  }
+  if (row.currentUser !== ACCEPTED_PROVISIONING_DB_ROLE) {
+    throw new ProvisioningError(
+      `Provisioning requires the approved ${ACCEPTED_PROVISIONING_DB_ROLE} database role`,
+    );
+  }
+}
+
+async function assertPrivilegedDirectConnection(client: Sql): Promise<void> {
+  const rows = await client<DatabaseRoleSnapshot[]>`
+    select current_user as "currentUser", r.rolsuper, r.rolbypassrls
+    from pg_roles r
+    where r.rolname = current_user
+  `;
+  const row = one(rows, 'Unable to validate database connection privileges');
+  assertAcceptedProvisioningRole(row);
+}
+
+export type HiddenPasswordInput = NodeJS.ReadableStream & {
+  isTTY?: boolean;
+  setRawMode?: (mode: boolean) => void;
+};
+
+export type HiddenPasswordOutput = NodeJS.WritableStream & { isTTY?: boolean };
+
+export function readHiddenPassword(
+  input: HiddenPasswordInput = process.stdin,
+  output: HiddenPasswordOutput = process.stdout,
+): Promise<string> {
+  if (!input.isTTY || !output.isTTY || !input.setRawMode) {
+    throw new ProvisioningError('Provisioning password input requires an interactive local TTY');
+  }
+  return new Promise<string>((resolve, reject) => {
+    let password = '';
+    const cleanup = () => {
+      input.off('data', onData);
+      input.setRawMode?.(false);
+      input.pause();
+    };
+    const onData = (chunk: Buffer | string) => {
+      const value = chunk.toString();
+      for (const character of value) {
+        if (character === '\u0003') {
+          cleanup();
+          reject(new ProvisioningError('Password input cancelled'));
+          return;
+        }
+        if (character === '\r' || character === '\n') {
+          cleanup();
+          output.write('\n');
+          resolve(password);
+          return;
+        }
+        if (character === '\u007f' || character === '\b') {
+          password = password.slice(0, -1);
+        } else {
+          password += character;
+        }
+      }
+    };
+    output.write('Password (hidden): ');
+    input.setRawMode!(true);
+    input.resume();
+    input.on('data', onData);
+  });
+}
+
+export function formatSafeError(error: unknown): string {
+  if (error instanceof ProvisioningError) return error.message;
+  return 'Provisioning tool failed; inspect the local audit event for the classified failure';
+}
+
+function takeValue(args: readonly string[], index: number, flag: string): [string, number] {
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) throw new ProvisioningError(`${flag} requires a value`);
+  return [value, index + 1];
+}
+
+type CliMode = 'inspect' | 'dry-run' | 'provision' | 'revoke';
+type CliOptions = {
+  mode: CliMode;
+  environment: 'production';
+  confirmProduction: boolean;
+  confirmCleanup: boolean;
+  email?: string;
+  userId?: string;
+  operationId?: string;
+  displayName?: string;
+  expiresAt?: string;
+  scope?: Partial<ScopeIds>;
+};
+
+export function parseCli(args: readonly string[]): CliOptions {
+  let mode: CliMode | undefined;
+  let environment: 'production' | undefined;
+  const options: CliOptions = {
+    mode: 'inspect',
+    environment: 'production',
+    confirmProduction: false,
+    confirmCleanup: false,
+  };
+  const selectMode = (nextMode: CliMode): void => {
+    if (mode && mode !== nextMode) {
+      throw new ProvisioningError(
+        'Select exactly one of --inspect, --dry-run, --provision, or --revoke',
+      );
+    }
+    mode = nextMode;
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--inspect') selectMode('inspect');
+    else if (arg === '--dry-run') selectMode('dry-run');
+    else if (arg === '--provision') selectMode('provision');
+    else if (arg === '--revoke') selectMode('revoke');
+    else if (arg === '--environment') {
+      const [value, next] = takeValue(args, index, arg);
+      index = next;
+      if (value !== 'production') throw new ProvisioningError('--environment must be production');
+      environment = 'production';
+    } else if (arg === '--confirm-production-provisioning') options.confirmProduction = true;
+    else if (arg === '--confirm-production-cleanup') options.confirmCleanup = true;
+    else if (arg === '--email') [options.email, index] = takeValue(args, index, arg);
+    else if (arg === '--user-id') [options.userId, index] = takeValue(args, index, arg);
+    else if (arg === '--operation-id') [options.operationId, index] = takeValue(args, index, arg);
+    else if (arg === '--display-name') [options.displayName, index] = takeValue(args, index, arg);
+    else if (arg === '--expires-at') [options.expiresAt, index] = takeValue(args, index, arg);
+    else if (arg === '--tenant-id') {
+      const [value, next] = takeValue(args, index, arg);
+      index = next;
+      options.scope = { ...options.scope, tenantId: value };
+    } else if (arg === '--legal-entity-id') {
+      const [value, next] = takeValue(args, index, arg);
+      index = next;
+      options.scope = { ...options.scope, legalEntityId: value };
+    } else if (arg === '--station-id') {
+      const [value, next] = takeValue(args, index, arg);
+      index = next;
+      options.scope = { ...options.scope, stationId: value };
+    } else if (arg === '--help') {
+      throw new ProvisioningError(usage());
+    } else {
+      throw new ProvisioningError('Unknown command-line option');
+    }
+  }
+  if (!environment) throw new ProvisioningError('--environment production is required');
+  options.mode = mode ?? 'inspect';
+  if (options.mode === 'provision' || options.mode === 'dry-run') {
+    if (!options.confirmProduction) {
+      throw new ProvisioningError(`${options.mode} requires --confirm-production-provisioning`);
+    }
+    if (!options.email || !options.displayName || !options.expiresAt) {
+      throw new ProvisioningError(
+        `${options.mode} requires --email, --display-name, and --expires-at`,
+      );
+    }
+  }
+  if (options.mode === 'revoke') {
+    if (!options.confirmCleanup)
+      throw new ProvisioningError('--revoke requires --confirm-production-cleanup');
+    if (!options.email || !options.userId || !options.operationId) {
+      throw new ProvisioningError('--revoke requires --email, --user-id, and --operation-id');
+    }
+  }
+  if (
+    options.mode !== 'inspect' &&
+    (!options.scope?.tenantId || !options.scope.legalEntityId || !options.scope.stationId)
+  ) {
+    throw new ProvisioningError(
+      `${options.mode} requires --tenant-id, --legal-entity-id, and --station-id`,
+    );
+  }
+  return options;
+}
+
+function usage(): string {
+  return [
+    'Local-only first production user provisioning tool',
+    '',
+    'Inspect scope labels:',
+    '  node --conditions=react-server --import tsx scripts/first-user-provisioning.ts --inspect --environment production',
+    '',
+    'Dry-run (zero writes):',
+    '  node --conditions=react-server --import tsx scripts/first-user-provisioning.ts --dry-run --environment production --confirm-production-provisioning --email <email> --display-name <name> --tenant-id <tenant-uuid> --legal-entity-id <legal-entity-uuid> --station-id <station-uuid> --expires-at <iso-timestamp>',
+    '',
+    'Provision (hidden TTY password; never a password argument):',
+    '  node --conditions=react-server --import tsx scripts/first-user-provisioning.ts --provision --environment production --confirm-production-provisioning --email <email> --display-name <name> --tenant-id <tenant-uuid> --legal-entity-id <legal-entity-uuid> --station-id <station-uuid> --expires-at <iso-timestamp>',
+    '',
+    'Cleanup:',
+    '  node --conditions=react-server --import tsx scripts/first-user-provisioning.ts --revoke --environment production --confirm-production-cleanup --email <email> --user-id <user-uuid> --operation-id <operation-uuid> --tenant-id <tenant-uuid> --legal-entity-id <legal-entity-uuid> --station-id <station-uuid>',
+  ].join('\n');
+}
+
+function requireFullScope(scope: Partial<ScopeIds> | undefined): ScopeIds {
+  if (!scope?.tenantId || !scope.legalEntityId || !scope.stationId) {
+    throw new ProvisioningError('A complete tenant/legal-entity/station scope is required');
+  }
+  return {
+    tenantId: scope.tenantId,
+    legalEntityId: scope.legalEntityId,
+    stationId: scope.stationId,
+  };
+}
+
+function parseExpiryText(value: string): Date {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime()))
+    throw new ProvisioningError('--expires-at must be an ISO timestamp');
+  return date;
+}
+
+function printScopeListing(listing: ScopeListing): void {
+  for (const tenant of listing.tenants) {
+    console.log(`tenant ${tenant.id} | ${tenant.name} | ${tenant.status}`);
+  }
+  for (const legalEntity of listing.legalEntities) {
+    console.log(`legal-entity ${legalEntity.id} | ${legalEntity.name} | ${legalEntity.status}`);
+  }
+  for (const station of listing.stations) {
+    console.log(`station ${station.id} | ${station.code} | ${station.name} | ${station.status}`);
+  }
+}
+
+function printRedactedPlan(plan: ProvisioningPlan): void {
+  console.log(
+    JSON.stringify({
+      mode: 'dry-run',
+      writes: {
+        authUser: 1,
+        credentialAccount: 1,
+        membership: 1,
+        temporaryPermissionGrants: plan.grants.length,
+        sessions: 0,
+      },
+      scope: {
+        tenantId: plan.scope.tenant.id,
+        tenantName: plan.scope.tenant.name,
+        legalEntityId: plan.scope.legalEntity.id,
+        legalEntityName: plan.scope.legalEntity.name,
+        stationId: plan.scope.station.id,
+        stationCode: plan.scope.station.code,
+        stationName: plan.scope.station.name,
+      },
+      permissions: plan.grants,
+      operationId: plan.operationId,
+      expiresAt: plan.expiresAt.toISOString(),
+      audit: ['ACCESS.PROVISIONING_INITIATED', 'ACCESS.PROVISIONING_COMPLETED'],
+      password: 'hidden',
+    }),
+  );
+}
+
+async function withDirectTransaction<T>(
+  client: Sql,
+  readOnly: boolean,
+  callback: (transaction: TransactionSql) => Promise<T>,
+): Promise<T> {
+  const result = await client.begin<T>(async (transaction): Promise<T> => {
+    if (readOnly) await transaction.unsafe('set transaction read only');
+    return await callback(transaction);
+  });
+  return result as T;
+}
+
+type FailureAuditContext = Readonly<{
+  mode: 'provision' | 'revoke';
+  scope: ScopeIds;
+  auditKey: { keyId: string; secret: string };
+}>;
+
+async function appendFailureAudit(
+  client: Sql,
+  context: FailureAuditContext,
+  errorType: string,
+): Promise<void> {
+  await withDirectTransaction(client, false, async (transaction) => {
+    const repository = createPostgresRepository(transaction);
+    const occurredAt = await repository.now();
+    const event = signSecurityEvent(
+      {
+        eventId: randomUUID(),
+        tenantId: context.scope.tenantId,
+        eventCode: 'ACCESS.PROVISIONING_FAILED',
+        requestId: randomUUID(),
+        occurredAt: occurredAt.toISOString(),
+        details: {
+          actorType: 'SUPPORT',
+          initiatedBy: TOOL_NAME,
+          subjectType: 'access.provisioning.request',
+          subjectId: context.mode,
+          metadata: {
+            mode: context.mode,
+            tenantId: context.scope.tenantId,
+            legalEntityId: context.scope.legalEntityId,
+            stationId: context.scope.stationId,
+            errorType,
+            outcome: 'failure',
+          },
+        },
+      },
+      context.auditKey,
+    );
+    await repository.appendAuditEvent(event);
+  });
+}
+
+async function main(): Promise<void> {
+  let client: Sql | undefined;
+  let failureAuditContext: FailureAuditContext | undefined;
+  try {
+    const options = parseCli(process.argv.slice(2));
+    const url = databaseUrlFromEnvironment();
+    const { default: postgres } = await import('postgres');
+    client = postgres(url, { max: 1, prepare: false });
+    await assertPrivilegedDirectConnection(client);
+
+    if (options.mode === 'inspect') {
+      const listing = await withDirectTransaction(client, true, (transaction) =>
+        listScopeOptions(transaction, options.scope),
+      );
+      printScopeListing(listing);
+      return;
+    }
+
+    const scope = requireFullScope(options.scope);
+
+    if (options.mode === 'dry-run') {
+      const plan = await withDirectTransaction(client, true, async (transaction) => {
+        const repository = createPostgresRepository(transaction);
+        return preparePlan(repository, {
+          email: options.email!,
+          displayName: options.displayName!,
+          scope,
+          expiresAt: parseExpiryText(options.expiresAt!),
+          lockScope: false,
+        });
+      });
+      printRedactedPlan(plan);
+      return;
+    }
+
+    if (options.mode === 'provision') {
+      const auditKey = {
+        keyId: process.env.AUDIT_SIGNING_KEY_ID ?? '',
+        secret: process.env.AUDIT_SIGNING_KEY ?? '',
+      };
+      if (!auditKey.keyId || !auditKey.secret) {
+        throw new ProvisioningError(
+          'AUDIT_SIGNING_KEY_ID and AUDIT_SIGNING_KEY are required locally',
+        );
+      }
+      failureAuditContext = { mode: 'provision', scope, auditKey };
+      let password = await readHiddenPassword();
+      try {
+        const result = await withDirectTransaction(client, false, async (transaction) =>
+          provisionFirstUser({
+            repository: createPostgresRepository(transaction),
+            request: {
+              email: options.email!,
+              displayName: options.displayName!,
+              scope,
+              expiresAt: parseExpiryText(options.expiresAt!),
+            },
+            password,
+            auditKey,
+          }),
+        );
+        console.log(
+          JSON.stringify({
+            status: 'provisioned',
+            operationId: result.operationId,
+            userId: result.userId,
+            membershipId: result.membershipId,
+            permissionCodes: result.permissionCodes,
+            expiresAt: result.expiresAt.toISOString(),
+            auditEventIds: result.auditEventIds,
+            password: 'hidden',
+          }),
+        );
+      } finally {
+        password = '';
+      }
+      return;
+    }
+
+    const auditKey = {
+      keyId: process.env.AUDIT_SIGNING_KEY_ID ?? '',
+      secret: process.env.AUDIT_SIGNING_KEY ?? '',
+    };
+    if (!auditKey.keyId || !auditKey.secret) {
+      throw new ProvisioningError(
+        'AUDIT_SIGNING_KEY_ID and AUDIT_SIGNING_KEY are required locally',
+      );
+    }
+    failureAuditContext = { mode: 'revoke', scope, auditKey };
+    const result = await withDirectTransaction(client, false, async (transaction) =>
+      revokeFirstUserAccess({
+        repository: createPostgresRepository(transaction),
+        email: options.email!,
+        userId: options.userId!,
+        operationId: options.operationId!,
+        scope,
+        auditKey,
+      }),
+    );
+    console.log(JSON.stringify({ status: 'cleanup-complete', ...result }));
+  } catch (error) {
+    if (client && failureAuditContext) {
+      try {
+        await appendFailureAudit(
+          client,
+          failureAuditContext,
+          error instanceof ProvisioningError ? error.name : 'DatabaseError',
+        );
+      } catch {
+        console.error('Provisioning failure audit could not be persisted');
+      }
+    }
+    console.error(formatSafeError(error));
+    process.exitCode = 1;
+  } finally {
+    if (client) await client.end({ timeout: 1 });
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main();
+}
