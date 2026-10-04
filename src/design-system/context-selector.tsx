@@ -128,7 +128,12 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
 
   return (
     <div className="shell-context-selector">
-      <p className="shell-context" role="group" aria-label="Work context">
+      <p
+        id="shell-context-current"
+        className="shell-context"
+        role="group"
+        aria-label="Work context"
+      >
         {currentLabel.map((part, index) => (
           <span key={`${part}-${index}`} className="shell-context-part">
             {part}
@@ -141,7 +146,8 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
         className="shell-context-trigger"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Change work context. Current: ${currentLabel.join(', ')}`}
+        aria-label="Change work context"
+        aria-describedby="shell-context-current"
         onClick={onOpen}
       >
         <span className="shell-context-trigger-label">Change</span>
