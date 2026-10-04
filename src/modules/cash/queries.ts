@@ -1,6 +1,6 @@
 import 'server-only';
 
-import type { ContextSelection } from '@/modules/context';
+import type { ContextSelection } from '../context';
 import { isAuthorized } from '../../platform/security/permissions';
 import { authorizeCashCommand, resolveCashCommandContext } from './application';
 import { databaseForecourtTransactionPort } from '../forecourt/application';

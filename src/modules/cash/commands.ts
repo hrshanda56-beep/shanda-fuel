@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { z } from 'zod';
-import type { ContextSelection } from '@/modules/context';
+import type { ContextSelection } from '../context';
 import { AppError } from '../../platform/errors';
 import { executeCashCommand, requestHash, resolveCashCommandContext } from './application';
 import {

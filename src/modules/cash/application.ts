@@ -1,8 +1,8 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
-import { contextRoutePolicy, type ContextSelection } from '@/modules/context';
-import { validateRequestedContext } from '@/modules/context/server';
+import { contextRoutePolicy, type ContextSelection } from '../context';
+import { validateRequestedContext } from '../context/server';
 import { AppError } from '../../platform/errors';
 import { authorize, type PermissionCode } from '../../platform/security/permissions';
 import {

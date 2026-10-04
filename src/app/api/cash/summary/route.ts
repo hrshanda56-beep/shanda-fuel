@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { contextRoutePolicy, readContextRoute } from '@/modules/context';
-import { resolveCurrentContext } from '@/modules/context/server';
+import { contextRoutePolicy, readContextRoute } from '../../../../modules/context';
+import { resolveCurrentContext } from '../../../../modules/context/server';
 import { getCashStationSummaryFromRequest } from '../../../../modules/cash/queries';
 import { AppError } from '../../../../platform/errors';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
