@@ -586,7 +586,11 @@ function AccountPill({ userName, role }: { userName?: string; role?: string }) {
   if (!userName) return null;
 
   return (
-    <div className="shell-account shell-account-pill" role="group" aria-label="Account">
+    <div
+      className="shell-account shell-account-pill"
+      role="group"
+      aria-label={`Account: ${userName}${role ? `, ${role}` : ''}`}
+    >
       <button
         type="button"
         className="shell-icon-button"
