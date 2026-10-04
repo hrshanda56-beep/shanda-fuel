@@ -1,6 +1,8 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
+import { contextRoutePolicy, type ContextSelection } from '@/modules/context';
+import { validateRequestedContext } from '@/modules/context/server';
 import { AppError } from '../../platform/errors';
 import { authorize, type PermissionCode } from '../../platform/security/permissions';
 import {
@@ -19,13 +21,45 @@ export type CashCommandContext = ForecourtCommandContext;
 
 export async function resolveCashCommandContext(input: {
   request: Request;
-  requestedTenantId: string;
-  stationId: string;
+  selection?: ContextSelection;
+  /** @deprecated Kept for existing server callers; it is still revalidated. */
+  requestedTenantId?: string;
+  /** @deprecated Kept for existing server callers; it is still revalidated. */
+  stationId?: string;
 }): Promise<CashCommandContext> {
+  const selection: ContextSelection =
+    input.selection ??
+    (input.requestedTenantId && input.stationId
+      ? {
+          organisationId: input.requestedTenantId,
+          stationId: input.stationId,
+          allStations: false,
+        }
+      : (() => {
+          throw new AppError('VALIDATION_FAILED', 'A station context is required for cash');
+        })());
+  if (!selection.stationId || selection.allStations) {
+    throw new AppError(
+      'FORBIDDEN',
+      'Cash commands and station summaries require one authorised station context',
+    );
+  }
+  const pathname = `/stations/${encodeURIComponent(selection.stationId)}/cash`;
+  const policy = contextRoutePolicy(pathname);
+  if (policy.station !== 'required' || policy.allStationsAllowed) {
+    throw new AppError('INVARIANT_VIOLATION', 'Cash must use the station-required context policy');
+  }
+  const validatedSelection = await validateRequestedContext(input.request, selection, {
+    pathname,
+    policy,
+  });
+  if (!validatedSelection.stationId || validatedSelection.allStations) {
+    throw new AppError('FORBIDDEN', 'The requested cash station context is not authorised');
+  }
   return resolveForecourtCommandContext({
     request: input.request,
-    requestedTenantId: input.requestedTenantId,
-    stationId: input.stationId,
+    requestedTenantId: validatedSelection.organisationId,
+    stationId: validatedSelection.stationId,
     loadStation: loadForecourtStation,
   });
 }

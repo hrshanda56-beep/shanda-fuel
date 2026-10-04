@@ -1,26 +1,14 @@
+import { Suspense } from 'react';
 import { AppShell } from '@/design-system/app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
 import { CashWorkspace } from '@/modules/cash/ui/cash-workspace';
 
-export default async function CashPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ stationId: string }>;
-  searchParams: Promise<{ tenantId?: string }>;
-}) {
-  const [{ stationId }, { tenantId }] = await Promise.all([params, searchParams]);
+export default async function CashPage({ params }: { params: Promise<{ stationId: string }> }) {
+  await params;
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      context={{
-        organisation: 'TEI Oils',
-        station: stationId,
-        businessDate: 'Active business date',
-      }}
-      role="Finance"
-      userName="Finance operator"
       breadcrumbs={[{ label: 'Cash and banking' }]}
     >
       <div className="page-header">
@@ -32,14 +20,16 @@ export default async function CashPage({
           </p>
         </div>
       </div>
-      {tenantId ? (
-        <CashWorkspace tenantId={tenantId} stationId={stationId} />
-      ) : (
-        <ContextRequiredState
-          title="Tenant context required"
-          message="Open this station from an authenticated tenant context before loading cash data."
-        />
-      )}
+      <Suspense
+        fallback={
+          <ContextRequiredState
+            title="Checking station context"
+            message="Cash loads only after the shared work context has confirmed one authorised station."
+          />
+        }
+      >
+        <CashWorkspace />
+      </Suspense>
     </AppShell>
   );
 }

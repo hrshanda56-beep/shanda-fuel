@@ -171,6 +171,44 @@ const cashSummary = {
   ],
 };
 
+const stationContext = {
+  data: {
+    available: {
+      organisations: [
+        {
+          id: 'tenant-1',
+          name: 'Test organisation',
+          legalEntities: [
+            {
+              id: 'entity-1',
+              name: 'Test legal entity',
+              stations: [
+                {
+                  id: 'station-1',
+                  code: 'HRE-01',
+                  name: 'Harare Road Service Station',
+                  timezone: 'Africa/Harare',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    current: {
+      organisationId: 'tenant-1',
+      legalEntityId: 'entity-1',
+      stationId: 'station-1',
+      allStations: false,
+    },
+    route: {
+      pathname: '/stations/station-1/cash',
+      policy: { legalEntity: 'required', station: 'required', allStationsAllowed: false },
+    },
+    persistedContextInvalid: false,
+  },
+};
+
 const suppliers = [
   {
     supplierId: 'supplier-1',
@@ -328,6 +366,7 @@ async function mockApis(page: Page) {
   await page.route('**/api/reports/management**', (route) => route.fulfill(json(report)));
   await page.route('**/api/settlements/summary**', (route) => route.fulfill(json(settlements)));
   await page.route('**/api/settlements/unmatched**', (route) => route.fulfill(json(unmatched)));
+  await page.route('**/api/context**', (route) => route.fulfill(json(stationContext)));
   await page.route('**/api/cash/summary**', (route) => route.fulfill(json(cashSummary)));
   await page.route('**/api/suppliers/summary**', (route) => route.fulfill(json(suppliers)));
   await page.route('**/api/inventory/valuation?**', (route) => route.fulfill(json(valuation)));
