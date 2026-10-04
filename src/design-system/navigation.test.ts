@@ -68,13 +68,13 @@ describe('navigation destinations', () => {
     resolveNavigation(syntheticNavigationProjection, context).flatMap((section) => section.items);
   const find = (key: string, context = {}) => resolved(context).find((entry) => entry.key === key)!;
 
-  it('routes planned areas to the work-in-progress dialog instead of dead links', () => {
+  it('routes planned areas to the work-in-progress dialog and Settings to its page', () => {
     expect(find('customers')).toMatchObject({
       state: 'wip',
       reason: 'planned',
       feature: 'Customers',
     });
-    expect(find('settings')).toMatchObject({ state: 'wip', feature: 'Settings' });
+    expect(find('settings')).toMatchObject({ state: 'link', href: '/settings' });
   });
 
   it('explains station selection when a station-scoped area has no station', () => {
