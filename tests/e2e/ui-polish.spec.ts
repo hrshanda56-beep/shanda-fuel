@@ -163,6 +163,30 @@ const suppliers = [
   },
 ];
 
+const supplierContext = {
+  data: {
+    available: {
+      organisations: [
+        {
+          id: 'tenant-1',
+          name: 'ShandaHR',
+          legalEntities: [{ id: 'entity-1', name: 'TEI Oils', stations: [] }],
+        },
+      ],
+    },
+    current: {
+      organisationId: 'tenant-1',
+      legalEntityId: 'entity-1',
+      allStations: true,
+    },
+    route: {
+      pathname: '/suppliers',
+      policy: { legalEntity: 'required', station: 'optional', allStationsAllowed: true },
+    },
+    persistedContextInvalid: false,
+  },
+};
+
 const valuation = {
   capabilities: { request: true, approve: false, post: false },
   streams: [
@@ -236,6 +260,7 @@ async function mockApis(page: Page) {
   await page.route('**/api/settlements/summary**', (route) => route.fulfill(json(settlements)));
   await page.route('**/api/settlements/unmatched**', (route) => route.fulfill(json(unmatched)));
   await page.route('**/api/cash/summary**', (route) => route.fulfill(json(cashSummary)));
+  await page.route('**/api/context**', (route) => route.fulfill(json(supplierContext)));
   await page.route('**/api/suppliers/summary**', (route) => route.fulfill(json(suppliers)));
   await page.route('**/api/inventory/valuation?**', (route) => route.fulfill(json(valuation)));
 }
