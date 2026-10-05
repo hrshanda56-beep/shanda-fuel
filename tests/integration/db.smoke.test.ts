@@ -236,6 +236,7 @@ describe('PostgreSQL integration harness', () => {
       order by policyname
     `;
     expect(policies.map((row) => row.policyname)).toEqual([
+      'first_user_provisioning_definer',
       'security_events_append',
       'security_events_context',
     ]);
