@@ -18,6 +18,7 @@ export type NavigationKey =
   | 'inventory'
   | 'cash'
   | 'settlements'
+  | 'customers'
   | 'suppliers'
   | 'reports'
   | 'settings';
@@ -135,6 +136,15 @@ export const navigationSections: readonly NavigationSection[] = [
         destination: { kind: 'station-route', segment: 'settlements' },
         availability: 'station-context',
         match: [/^\/stations\/[^/]+\/settlements(\/|$)/],
+      },
+      {
+        key: 'customers',
+        label: 'Customers',
+        searchLabel: 'Customers',
+        icon: 'users',
+        destination: { kind: 'route', path: '/customers' },
+        availability: 'active',
+        match: [/^\/customers(\/|$)/],
       },
     ],
   },
