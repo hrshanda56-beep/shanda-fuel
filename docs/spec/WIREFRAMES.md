@@ -1,3 +1,11 @@
+> **Supporting reference only.** This historical/detailed wireframe pack is
+> not the repository-wide authority. Use [`../../AGENTS.md`](../../AGENTS.md)
+> and the canonical knowledge base, especially
+> [`../../docs/PRODUCT_SPEC.md`](../../docs/PRODUCT_SPEC.md) and
+> [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md). Where this file
+> conflicts with those canonical documents, follow the canonical documents and
+> report the conflict.
+
 **Shanda Fuel**
 
 **V1 Mid-Fidelity Wireframe Pack**

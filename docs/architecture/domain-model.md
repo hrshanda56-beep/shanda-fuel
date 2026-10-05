@@ -2,7 +2,9 @@
 
 Reserved for the implementation domain model and aggregate-boundary notes.
 
-The authoritative domain meaning remains in [`../spec/MASTER_BLUEPRINT.md`](../spec/MASTER_BLUEPRINT.md). This artifact will document implementation decisions without replacing that source.
+The canonical product/domain meaning is in [`../PRODUCT_SPEC.md`](../PRODUCT_SPEC.md)
+and [`../ARCHITECTURE.md`](../ARCHITECTURE.md). This artifact documents
+implementation decisions without replacing the canonical knowledge base.
 
 ## A3 forecourt model
 
