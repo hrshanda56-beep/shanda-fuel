@@ -989,33 +989,201 @@ function databaseUrlFromEnvironment(environment: NodeJS.ProcessEnv = process.env
   return url;
 }
 
-export type DatabaseRoleSnapshot = Readonly<{
-  currentUser: string;
-  rolsuper: boolean;
-  rolbypassrls: boolean;
+export const ACCEPTED_PROVIDER_MEMBERSHIP = {
+  grantedRole: ACCEPTED_PROVISIONING_DB_ROLE,
+  member: 'migration_owner',
+  grantor: 'cloud_admin',
+  adminOption: true,
+  inheritOption: false,
+  setOption: false,
+} as const;
+
+export type DatabaseRoleMembershipSnapshot = Readonly<{
+  grantedRole: string;
+  member: string;
+  grantor: string;
+  adminOption: boolean;
+  inheritOption: boolean;
+  setOption: boolean;
 }>;
 
-export function assertAcceptedProvisioningRole(row: DatabaseRoleSnapshot): void {
-  if (row.rolsuper || row.rolbypassrls) {
-    throw new ProvisioningError(
-      'Provisioning requires a non-superuser, NOBYPASSRLS operator database role',
-    );
-  }
-  if (row.currentUser !== ACCEPTED_PROVISIONING_DB_ROLE) {
-    throw new ProvisioningError(
-      `Provisioning requires the approved ${ACCEPTED_PROVISIONING_DB_ROLE} database role`,
-    );
-  }
+export type DatabaseRoleSnapshot = Readonly<{
+  currentUser: string;
+  rolcanlogin: boolean;
+  rolsuper: boolean;
+  rolbypassrls: boolean;
+  rolcreatedb: boolean;
+  rolcreaterole: boolean;
+  rolinherit: boolean;
+  rolreplication: boolean;
+  rolconfig: readonly string[] | null;
+  memberships: readonly DatabaseRoleMembershipSnapshot[];
+  memberCapability: boolean;
+  usageCapability: boolean;
+  setCapability: boolean;
+  adminCapability: boolean;
+  databaseOwner: boolean;
+  schemaOwner: boolean;
+  applicationTableOwner: boolean;
+  unexpectedDirectTablePrivileges: boolean;
+  unexpectedFunctionPrivileges: boolean;
+  missingExpectedFunctionPrivileges: boolean;
+}>;
+
+function assertRoleCondition(condition: boolean, message: string): asserts condition {
+  if (!condition) throw new ProvisioningError(message);
 }
 
-async function assertPrivilegedDirectConnection(client: Sql): Promise<void> {
+export function assertAcceptedProvisioningRole(row: DatabaseRoleSnapshot): void {
+  assertRoleCondition(
+    row.currentUser === ACCEPTED_PROVISIONING_DB_ROLE,
+    `Provisioning requires the approved ${ACCEPTED_PROVISIONING_DB_ROLE} database role`,
+  );
+  assertRoleCondition(
+    row.rolcanlogin &&
+      !row.rolsuper &&
+      !row.rolbypassrls &&
+      !row.rolcreatedb &&
+      !row.rolcreaterole &&
+      !row.rolinherit &&
+      !row.rolreplication,
+    'Provisioning requires the approved non-superuser, NOBYPASSRLS role attributes',
+  );
+  assertRoleCondition(row.rolconfig === null, 'Provisioning role configuration is unexpected');
+
+  assertRoleCondition(
+    row.memberships.length === 1 &&
+      row.memberships[0]?.grantedRole === ACCEPTED_PROVIDER_MEMBERSHIP.grantedRole &&
+      row.memberships[0]?.member === ACCEPTED_PROVIDER_MEMBERSHIP.member &&
+      row.memberships[0]?.grantor === ACCEPTED_PROVIDER_MEMBERSHIP.grantor &&
+      row.memberships[0]?.adminOption === ACCEPTED_PROVIDER_MEMBERSHIP.adminOption &&
+      row.memberships[0]?.inheritOption === ACCEPTED_PROVIDER_MEMBERSHIP.inheritOption &&
+      row.memberships[0]?.setOption === ACCEPTED_PROVIDER_MEMBERSHIP.setOption,
+    'Provisioning role membership does not match the exact approved provider relationship',
+  );
+  assertRoleCondition(
+    row.memberCapability && !row.usageCapability && !row.setCapability && row.adminCapability,
+    'Provisioning role has unexpected effective membership capabilities',
+  );
+
+  assertRoleCondition(
+    !row.databaseOwner && !row.schemaOwner && !row.applicationTableOwner,
+    'Provisioning role has unexpected ownership',
+  );
+  assertRoleCondition(
+    !row.unexpectedDirectTablePrivileges,
+    'Provisioning role has an unexpected direct table privilege',
+  );
+  assertRoleCondition(
+    !row.unexpectedFunctionPrivileges && !row.missingExpectedFunctionPrivileges,
+    'Provisioning role has an unexpected function privilege',
+  );
+}
+
+export async function loadDatabaseRoleSnapshot(client: Sql): Promise<DatabaseRoleSnapshot> {
   const rows = await client<DatabaseRoleSnapshot[]>`
-    select current_user as "currentUser", r.rolsuper, r.rolbypassrls
+    with expected_functions(oid) as (
+      values
+        ('platform.first_user_provisioning_assert_runtime_role()'::regprocedure::oid),
+        ('platform.first_user_provisioning_scope_options(uuid,uuid,uuid)'::regprocedure::oid),
+        ('platform.first_user_provisioning_identity(text,uuid)'::regprocedure::oid),
+        ('platform.first_user_provisioning_permission_definitions()'::regprocedure::oid),
+        ('platform.first_user_provisioning_grants(uuid,uuid,uuid)'::regprocedure::oid),
+        ('platform.first_user_provisioning_provision(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,timestamptz,jsonb,jsonb)'::regprocedure::oid),
+        ('platform.first_user_provisioning_revoke(uuid,uuid,uuid,uuid,uuid,uuid,jsonb)'::regprocedure::oid),
+        ('platform.first_user_provisioning_append_failure(uuid,jsonb)'::regprocedure::oid)
+    )
+    select
+      current_user as "currentUser",
+      r.rolcanlogin,
+      r.rolsuper,
+      r.rolbypassrls,
+      r.rolcreatedb,
+      r.rolcreaterole,
+      r.rolinherit,
+      r.rolreplication,
+      r.rolconfig,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'grantedRole', granted_role.rolname,
+          'member', member_role.rolname,
+          'grantor', grantor_role.rolname,
+          'adminOption', membership.admin_option,
+          'inheritOption', membership.inherit_option,
+          'setOption', membership.set_option
+        ) order by granted_role.rolname, member_role.rolname, grantor_role.rolname)
+        from pg_auth_members membership
+        join pg_roles granted_role on granted_role.oid = membership.roleid
+        join pg_roles member_role on member_role.oid = membership.member
+        join pg_roles grantor_role on grantor_role.oid = membership.grantor
+        where granted_role.rolname = ${ACCEPTED_PROVISIONING_DB_ROLE}
+           or member_role.rolname = ${ACCEPTED_PROVISIONING_DB_ROLE}
+      ), '[]'::jsonb) as memberships,
+      pg_has_role('migration_owner', ${ACCEPTED_PROVISIONING_DB_ROLE}, 'MEMBER') as "memberCapability",
+      pg_has_role('migration_owner', ${ACCEPTED_PROVISIONING_DB_ROLE}, 'USAGE') as "usageCapability",
+      pg_has_role('migration_owner', ${ACCEPTED_PROVISIONING_DB_ROLE}, 'SET') as "setCapability",
+      exists (
+        select 1
+        from pg_auth_members membership
+        join pg_roles granted_role on granted_role.oid = membership.roleid
+        join pg_roles member_role on member_role.oid = membership.member
+        join pg_roles grantor_role on grantor_role.oid = membership.grantor
+        where granted_role.rolname = ${ACCEPTED_PROVISIONING_DB_ROLE}
+          and member_role.rolname = 'migration_owner'
+          and grantor_role.rolname = 'cloud_admin'
+          and membership.admin_option
+      ) as "adminCapability",
+      exists (
+        select 1 from pg_database d
+        where d.datname = current_database() and d.datdba = r.oid
+      ) as "databaseOwner",
+      exists (select 1 from pg_namespace n where n.nspowner = r.oid) as "schemaOwner",
+      exists (
+        select 1
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname in ('app', 'auth', 'platform') and c.relowner = r.oid
+      ) as "applicationTableOwner",
+      exists (
+        select 1
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) acl
+        where n.nspname in ('app', 'auth', 'platform') and acl.grantee = r.oid
+      ) as "unexpectedDirectTablePrivileges",
+      (
+        exists (
+          select 1
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+          cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+          where n.nspname in ('app', 'auth', 'platform')
+            and acl.grantee = r.oid
+            and p.oid not in (select oid from expected_functions)
+        ) or exists (
+          select 1
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'platform'
+            and p.oid not in (select oid from expected_functions)
+            and has_function_privilege(${ACCEPTED_PROVISIONING_DB_ROLE}, p.oid, 'EXECUTE')
+        )
+      ) as "unexpectedFunctionPrivileges",
+      exists (
+        select 1
+        from expected_functions expected
+        where not has_function_privilege(${ACCEPTED_PROVISIONING_DB_ROLE}, expected.oid, 'EXECUTE')
+      ) as "missingExpectedFunctionPrivileges"
     from pg_roles r
     where r.rolname = current_user
   `;
-  const row = one(rows, 'Unable to validate database connection privileges');
+  return one(rows, 'Unable to validate database connection privileges');
+}
+
+async function assertPrivilegedDirectConnection(client: Sql): Promise<void> {
+  const row = await loadDatabaseRoleSnapshot(client);
   assertAcceptedProvisioningRole(row);
+  await client`select platform.first_user_provisioning_assert_runtime_role()`;
 }
 
 export type HiddenPasswordInput = NodeJS.ReadableStream & {
