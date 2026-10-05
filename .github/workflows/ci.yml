@@ -58,6 +58,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm db:migrate:test
+      - name: Assert first-user provisioner role restrictions
+        run: bash scripts/db/assert-ci-first-user-provisioner.sh
       - name: Assign migration metadata ownership
         run: psql "$DATABASE_DIRECT_URL" --set ON_ERROR_STOP=1 --command "ALTER SCHEMA drizzle OWNER TO migration_owner; ALTER TABLE drizzle.__drizzle_migrations OWNER TO migration_owner;"
       - run: pnpm db:check
@@ -222,6 +224,8 @@ jobs:
         run: scripts/db/bootstrap-test.sh
       - name: Apply migrations with the privileged direct connection
         run: pnpm db:migrate:test
+      - name: Assert first-user provisioner role restrictions
+        run: bash scripts/db/assert-ci-first-user-provisioner.sh
       - name: Assign migration metadata ownership
         run: psql "$DATABASE_DIRECT_URL" --set ON_ERROR_STOP=1 --command "ALTER SCHEMA drizzle OWNER TO migration_owner; ALTER TABLE drizzle.__drizzle_migrations OWNER TO migration_owner;"
       - name: Configure disposable app_runtime login

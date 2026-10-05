@@ -148,6 +148,13 @@
       "when": 1790533600000,
       "tag": "0020_security_runtime_least_privilege_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790540000000,
+      "tag": "0021_security_first_user_provisioning",
+      "breakpoints": true
     }
   ]
 }

@@ -162,7 +162,7 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(21);
+    expect(migrations).toHaveLength(22);
 
     const stepUpBinding = await client<{ column_name: string }[]>`
       select column_name
@@ -236,6 +236,7 @@ describe('PostgreSQL integration harness', () => {
       order by policyname
     `;
     expect(policies.map((row) => row.policyname)).toEqual([
+      'first_user_provisioning_definer',
       'security_events_append',
       'security_events_context',
     ]);
