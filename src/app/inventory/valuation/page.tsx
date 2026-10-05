@@ -94,7 +94,6 @@ export default async function InventoryValuationPage({
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      role="Inventory control"
       breadcrumbs={[{ label: 'Inventory' }, { label: 'Valuation' }]}
     >
       {context ? (

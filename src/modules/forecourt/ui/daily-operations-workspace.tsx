@@ -1557,20 +1557,17 @@ export function DailyOperationsContextRequired() {
         <div>
           <p className="eyebrow">Station operations</p>
           <h1>Daily operations workspace</h1>
-          <p className="lede">Confirm an authorised station context to begin.</p>
+          <p className="lede">Choose an authorised station to begin.</p>
         </div>
       </div>
       <Card as="section" className="panel" aria-labelledby="operations-context-title">
         <SectionHeading
           eyebrow="Station context"
-          title="Select a station context"
+          title="Choose a station"
           headingId="operations-context-title"
-          detail="Open this workspace from an authorised station-day link. Master data is never invented in the browser."
+          detail="Use Change above to choose an authorised station, business date, and shift."
         />
-        <p>
-          A tenant, station, business date, and shift are required before the server can load the
-          operational workspace.
-        </p>
+        <p>The daily workspace will load once the selected work context is ready.</p>
       </Card>
     </>
   );

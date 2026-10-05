@@ -32,6 +32,8 @@ import {
 } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
 
+export const metadata = { title: 'Foundation preview' };
+
 /**
  * Pre-ADR-015 foundation preview: the synthetic Forecourt workspace and the
  * shared state, form, dialog and evidence patterns. Kept reachable (and under

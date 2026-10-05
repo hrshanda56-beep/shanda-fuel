@@ -96,8 +96,10 @@ const ShellContext = createContext<ShellContextValue | null>(null);
  *
  * - Desktop (≥ 64rem): persistent grouped sidebar; can collapse to an icon
  *   rail (remembered per device and applied before first paint).
- * - Tablet and phone: a slim top bar whose menu opens the same grouped
- *   navigation in a drawer. Content keeps the full width.
+ * - Tablet (768–1199px): a persistent icon rail keeps every destination
+ *   reachable without taking content width from the workspace.
+ * - Phone (<768px): a slim top bar opens the same grouped navigation in a
+ *   drawer. Content keeps the full width.
  *
  * Navigation is presentation: visibility comes from `navigationProjection`
  * and every destination re-validates access on the server.
