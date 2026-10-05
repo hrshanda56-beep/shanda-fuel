@@ -18,6 +18,7 @@ import {
   formatLitres,
   formatMoney,
   formatStatusLabel,
+  formatTimeInTimeZone,
 } from '../../../design-system/formatters';
 import {
   dailyOperationsStatusLabel,
@@ -818,15 +819,12 @@ export function DailyOperationsWorkspace({
                 <span className="metric-label">Shift</span>
                 <strong>{formatStatusLabel(operation.shift.state)}</strong>
                 <span className="metric-meta">
-                  {new Date(operation.shift.plannedStartAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
+                  {formatTimeInTimeZone(
+                    operation.shift.plannedStartAt,
+                    operation.station.timezone,
+                  )}{' '}
                   –{' '}
-                  {new Date(operation.shift.plannedEndAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {formatTimeInTimeZone(operation.shift.plannedEndAt, operation.station.timezone)}
                 </span>
               </div>
               <div>
