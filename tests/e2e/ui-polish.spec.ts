@@ -596,7 +596,7 @@ test.describe('data screens stay accessible', () => {
       '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
       'Choose a station to view inventory',
     ],
-    ['/stations/station-1/cash?tenantId=tenant-1', 'Station collections'],
+    ['/stations/station-1/cash?tenantId=tenant-1', 'Cash and banking'],
   ] as const;
 
   for (const width of [390, 1440]) {
