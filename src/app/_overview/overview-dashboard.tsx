@@ -8,15 +8,6 @@ import { EmptyState } from '@/design-system/primitives';
 export function ProductionSafeOverview() {
   return (
     <div className="overview">
-      <div className="overview-title">
-        <div>
-          <h1 id="page-title">Dashboard</h1>
-          <p className="overview-sample">
-            Live figures are not available for this work context yet.
-          </p>
-        </div>
-      </div>
-
       <section className="overview-section" aria-labelledby="today-heading">
         <h2 id="today-heading">Today at a glance</h2>
         <div className="card">

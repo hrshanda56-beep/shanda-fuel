@@ -8,6 +8,12 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1482, height: 900 },
 ] as const;
 
+const HEADER_VIEWPORTS = [
+  { name: 'phone', width: 390, height: 844 },
+  { name: 'tablet', width: 768, height: 800 },
+  { name: 'desktop', width: 1440, height: 900 },
+] as const;
+
 async function prepareShell(page: Page, viewport: { width: number; height: number }) {
   await page.setViewportSize(viewport);
   await page.goto('/reports');
@@ -216,4 +222,24 @@ test.describe('shared shell consistency', () => {
       .analyze();
     expect(results.violations).toEqual([]);
   });
+
+  for (const viewport of HEADER_VIEWPORTS) {
+    test(`${viewport.name} keeps page headings in the shared header`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      for (const [path, title] of [
+        ['/', 'Dashboard'],
+        ['/operations/daily', 'Daily operations'],
+        ['/reports', 'Reports'],
+        ['/inventory', 'Inventory'],
+      ] as const) {
+        await page.goto(path);
+        await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
+        await expect(page.locator('.shell-header h1')).toHaveText(title);
+        await expect(page.locator('.shell-sheet h1')).toHaveCount(0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          viewport.width,
+        );
+      }
+    });
+  }
 });

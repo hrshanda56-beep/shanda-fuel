@@ -95,10 +95,7 @@ export default async function InventoryValuationPage({
       })
     : '/inventory/valuation';
   return (
-    <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      breadcrumbs={[{ label: 'Inventory' }, { label: 'Valuation' }]}
-    >
+    <AppShell navigationProjection={syntheticNavigationProjection}>
       {context ? (
         <ValuationOverview context={context} contextHref={contextHref} />
       ) : (

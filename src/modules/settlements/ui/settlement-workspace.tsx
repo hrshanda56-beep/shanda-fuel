@@ -443,12 +443,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   if (workspaceState !== 'ready') {
     return (
       <div className="content-grid">
-        <Card as="section" className="panel" aria-labelledby="settlements-title">
+        <Card as="section" className="panel" aria-label="Provider settlements">
           <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Electronic payment control</p>
-              <h1 id="settlements-title">Provider settlements</h1>
-            </div>
             <StatusBadge tone="pending">Station context required</StatusBadge>
           </div>
           <p>
@@ -482,12 +478,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
 
   return (
     <div className="content-grid">
-      <Card as="section" className="panel" aria-labelledby="settlements-title">
+      <Card as="section" className="panel" aria-label="Provider settlements">
         <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Electronic payment control</p>
-            <h1 id="settlements-title">Provider settlements</h1>
-          </div>
           <Button
             variant="secondary"
             type="button"

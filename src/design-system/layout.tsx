@@ -13,6 +13,7 @@ export function PageHeader({
   description,
   actions,
   titleId = 'page-title',
+  headingLevel = 'h1',
 }: {
   title: string;
   /** Short context above the title, e.g. station or module. */
@@ -21,12 +22,14 @@ export function PageHeader({
   /** At most one primary action; secondary actions as secondary/quiet buttons. */
   actions?: ReactNode;
   titleId?: string;
+  headingLevel?: 'h1' | 'h2';
 }) {
+  const Heading = headingLevel;
   return (
     <header className="page-header">
       <div>
         {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
-        <h1 id={titleId}>{title}</h1>
+        <Heading id={titleId}>{title}</Heading>
         {description ? <p className="lede">{description}</p> : null}
       </div>
       {actions ? <div className="page-header-actions">{actions}</div> : null}
