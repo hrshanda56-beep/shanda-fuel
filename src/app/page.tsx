@@ -4,7 +4,7 @@ import { syntheticNavigationProjection } from '@/design-system/navigation';
 import { ProductionSafeOverview } from './_overview/overview-dashboard';
 
 export const metadata = {
-  title: 'Dashboard',
+  title: { absolute: 'Dashboard · Shanda Fuel' },
 };
 
 /** Owner/Finance overview. Live figures stay hidden until reporting data exists. */
