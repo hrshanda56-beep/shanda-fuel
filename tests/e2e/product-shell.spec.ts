@@ -59,6 +59,10 @@ test.describe('desktop sidebar', () => {
       'aria-expanded',
       'true',
     );
+    await expect(nav.getByRole('button', { name: 'Finance' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
     await expect(nav.getByRole('button', { name: 'Finance' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Suppliers' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Reports' })).toBeVisible();
@@ -69,12 +73,19 @@ test.describe('desktop sidebar', () => {
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   });
 
-  test('collapses a group accessibly and remembers it', async ({ page }) => {
+  test('groups start closed, toggle accessibly, and reset on reload', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
     const nav = sidebarNav(page);
     const finance = nav.getByRole('button', { name: 'Finance' });
 
+    await expect(nav.getByRole('button', { name: 'Operations' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await finance.click();
+    await expect(finance).toHaveAttribute('aria-expanded', 'true');
+    await expect(nav.getByRole('button', { name: 'Cash and banking' })).toBeVisible();
     await finance.click();
     await expect(finance).toHaveAttribute('aria-expanded', 'false');
     await expect(nav.getByRole('button', { name: 'Cash and banking' })).toBeHidden();
@@ -84,8 +95,51 @@ test.describe('desktop sidebar', () => {
       'aria-expanded',
       'false',
     );
-    await sidebarNav(page).getByRole('button', { name: 'Finance' }).click();
-    await expect(sidebarNav(page).getByRole('button', { name: 'Cash and banking' })).toBeVisible();
+    const hiddenChildren = sidebarNav(page).locator(
+      '.nav-group-items[hidden] a, .nav-group-items[hidden] button',
+    );
+    expect(
+      await hiddenChildren.evaluateAll((elements) =>
+        elements.every((element) => element.getAttribute('tabindex') === '-1'),
+      ),
+    ).toBe(true);
+  });
+
+  test('only the current navigation group opens and the shared header owns the page title', async ({
+    page,
+  }) => {
+    await page.goto('/reports');
+    await waitForHydration(page);
+    await expect(page.locator('.shell-header h1')).toHaveText('Reports');
+    await expect(page.locator('.shell-sheet h1')).toHaveCount(0);
+
+    await page.goto('/operations/daily');
+    await waitForHydration(page);
+    const operationsNav = sidebarNav(page);
+    await expect(operationsNav.getByRole('button', { name: 'Operations' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    await expect(operationsNav.getByRole('button', { name: 'Finance' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await expect(page.locator('.shell-header h1')).toHaveText('Daily operations');
+    await expect(page.locator('.shell-sheet h1')).toHaveCount(0);
+
+    await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
+    await waitForHydration(page);
+    const financeNav = sidebarNav(page);
+    await expect(financeNav.getByRole('button', { name: 'Operations' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await expect(financeNav.getByRole('button', { name: 'Finance' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    await expect(page.locator('.shell-header h1')).toHaveText('Provider settlements');
+    await expect(page.locator('.shell-sheet h1')).toHaveCount(0);
   });
 
   test('collapses to an icon rail that persists without a flash', async ({ page }) => {
@@ -142,7 +196,9 @@ test.describe('desktop sidebar', () => {
   }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    await sidebarNav(page).getByRole('button', { name: 'Cash and banking' }).click();
+    const reportsNav = sidebarNav(page);
+    await reportsNav.getByRole('button', { name: 'Finance' }).click();
+    await reportsNav.getByRole('button', { name: 'Cash and banking' }).click();
     await expect(page.getByRole('dialog', { name: 'Select work context' })).toBeVisible();
     await expect(
       page.getByRole('dialog', { name: 'Station selection is in progress' }),

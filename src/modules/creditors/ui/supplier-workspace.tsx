@@ -240,6 +240,8 @@ export function SupplierWorkspace() {
       <PageHeader
         eyebrow="Supplier creditors"
         title="Payables position"
+        headingLevel="h2"
+        titleId="supplier-payables-title"
         description="What each legal entity owes its suppliers, current and overdue."
         actions={
           hasRequiredContext ? (

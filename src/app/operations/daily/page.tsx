@@ -38,10 +38,7 @@ export default async function DailyOperationsPage({
   const hasStationContext = Boolean(search.tenantId && search.stationId);
 
   return (
-    <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      breadcrumbs={[{ label: 'Operations' }, { label: 'Daily workspace' }]}
-    >
+    <AppShell navigationProjection={syntheticNavigationProjection}>
       {context ? (
         <DailyOperationsWorkspace context={context} />
       ) : hasStationContext ? (

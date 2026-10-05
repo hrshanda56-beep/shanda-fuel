@@ -1639,12 +1639,21 @@ body {
     padding: var(--space-2) var(--page-gutter) 0;
   }
 
+  .shell-page-heading,
+  .shell-header-controls {
+    flex-basis: 100%;
+  }
+
+  .shell-header-controls {
+    justify-content: flex-start;
+  }
+
   .shell-header-account,
   .shell-header .global-search {
     display: none;
   }
 
-  .shell-header .shell-context-selector {
+  .shell-header-controls .shell-context-selector {
     width: 100%;
   }
 
