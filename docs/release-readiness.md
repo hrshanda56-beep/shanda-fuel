@@ -9,17 +9,18 @@
 This section is locked product and launch direction. It is not an implementation
 status claim and does not replace the evidence or gate statuses below.
 
-`docs/release-readiness.md` is the canonical source of truth for launch
-execution and product-experience decisions. Future developers and coding agents
-must read this section before redesigning navigation, creating a new visual
-pattern, redesigning a route or page, changing the theme system, implementing
-work-in-progress behavior, changing the golden-path UX, or making a
-launch-readiness decision.
+`docs/release-readiness.md` is the supporting launch-readiness record for
+execution and focused product-experience notes. Future developers and coding
+agents should read this section before redesigning navigation, creating a new
+visual pattern, redesigning a route or page, changing the theme system,
+implementing work-in-progress behavior, changing the golden-path UX, or making
+a launch-readiness decision. The canonical knowledge base remains authoritative
+for repository-wide requirements and decisions.
 
-If a future implementation conflicts with this section, this document wins
-unless the product owner explicitly changes the locked decision. Any material
-change must be recorded clearly; no implementation status may be inferred from
-the plan alone.
+If a future implementation conflicts with this section, follow the canonical
+knowledge base for repository-wide requirements and report the conflict. Any
+material change must be recorded clearly; no implementation status may be
+inferred from the plan alone.
 
 ### Fixed finish line
 
@@ -311,16 +312,18 @@ required; neither should be treated as proof of the other.
 
 ## Execution Control & Completion Ledger
 
-This document is the canonical source of truth for controlled production launch
-readiness, locked product/UX direction, execution phases, active implementation
-work, dependencies, completion state, verification evidence, and remaining
-launch blockers. Future developers and coding agents **must** read it before
-starting launch-related work.
+This document is a supporting launch-readiness ledger for controlled production
+launch execution, focused UX notes, dependencies, verification evidence, and
+remaining launch blockers. Future developers and coding agents should read it
+before starting launch-related work, but the canonical knowledge base remains
+authoritative for repository-wide product, architecture, decision, planning,
+and status questions.
 
-If an agent's assumptions conflict with this document, this document wins
-unless the product owner explicitly changes the decision. This ledger records
-execution control only; it does not replace the locked UX direction, the
-existing release gates, or the evidence and conclusions recorded below.
+If an agent's assumptions conflict with this document, follow the canonical
+knowledge base for repository-wide requirements and report the conflict. This
+ledger records launch execution control only; it does not replace the canonical
+knowledge base, existing release gates, or the evidence and conclusions
+recorded below.
 
 The purpose of this ledger is to prevent duplicated work, stale assumptions,
 premature completion claims, overlapping ownership of sensitive/shared files,
@@ -830,11 +833,11 @@ execution ledger or in adjacent handoff notes:
 
 ### Ownership source-of-truth rule
 
-`docs/release-readiness.md` remains the canonical source of truth. Future Codex
-or Claude sessions must read it before starting work. The ownership rules in
-this section override an agent's assumptions about who should implement
-something. If the product owner explicitly changes ownership later, update
-this document first.
+This section remains the supporting ownership record for launch-related work.
+Future Codex or Claude sessions should read it before starting such work. The
+ownership rules in this section do not override the canonical knowledge base.
+If the product owner explicitly changes ownership later, update this record and
+the appropriate canonical document when the change is material.
 
 ### Non-negotiable preservation rules
 
@@ -854,7 +857,7 @@ Do not:
 
 | Gate | Status | Evidence or owner action |
 | --- | --- | --- |
-| Merged implementation baseline | **RECORDED** | `docs/implementation-status.md`; R2 recovery implementation baseline `fc10d01`. |
+| Merged implementation baseline | **RECORDED** | `docs/CURRENT_STATUS.md`; R2 recovery implementation baseline `fc10d01`. |
 | Repository quality gate | **DEFINED** | `.github/workflows/ci.yml`; attach the CI run for the RC commit. |
 | Authenticated staging smoke | **COMPLETE / PASSED** | Completed authenticated staging operator flow using the normal sign-in path and the approved staging procedure. |
 | Cross-module staging journeys | **DEFERRED** | Exercise station/day/shift, reconciliation approval, inventory/costing evidence, cash/provider distinction, reporting, and permission-denial paths with synthetic data. |

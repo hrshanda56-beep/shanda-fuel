@@ -1,3 +1,11 @@
+> **Supporting reference only.** This historical/detailed blueprint is not the
+> repository-wide authority. Use [`../../AGENTS.md`](../../AGENTS.md) and the
+> canonical knowledge base in [`../../docs/PRODUCT_SPEC.md`](../../docs/PRODUCT_SPEC.md),
+> [`../../docs/DECISIONS.md`](../../docs/DECISIONS.md), and
+> [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md). Where this file
+> conflicts with those canonical documents, follow the canonical documents and
+> report the conflict.
+
 **SHANDA FUEL**
 
 **Master Product & Engineering Blueprint**
@@ -1467,7 +1475,7 @@ This visual edition embeds the architecture/process diagrams and primary mobile/
 
 # Appendix F. V1 Mid-Fidelity Wireframe Pack
 
-This appendix embeds the complete screen-flow boards used for V1 implementation. It replaces the earlier conceptual mockup gallery as the authoritative UX reference. For easier UX review, the same material is also delivered as a standalone Wireframe Pack v1.2.
+This appendix embeds the complete screen-flow boards used for V1 implementation. It is a supporting UX reference for the canonical product specification. For easier UX review, the same material is also delivered as a standalone Wireframe Pack v1.2.
 
 <img src="assets/master/image18.png" title="Wireframe board F.1: Authentication &amp; work context. Role: Identity &amp; tenancy." style="width:9.8in;height:11.01914in" alt="Wireframe board F.1: Authentication &amp; work context. Role: Identity &amp; tenancy." />
 

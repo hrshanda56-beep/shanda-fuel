@@ -1,0 +1,436 @@
+# Shanda Fuel — Decision Log
+
+This file records meaningful product, architecture, security, and delivery decisions that have already been made. It exists so future agents do not casually reverse established choices without understanding the context.
+
+Status values:
+
+- **ACCEPTED** — current decision.
+- **SUPERSEDED** — retained for history; replaced by a later decision.
+- **TEMPORARY EXCEPTION** — explicitly accepted short-term constraint, not a permanent architecture choice.
+- **PENDING REVIEW** — direction is known but not yet approved as final.
+
+---
+
+## DEC-001 — Use a tenant → legal entity → station organisational model
+
+**Status:** ACCEPTED
+
+**Context:** The product must support a fuel-station business with organisation-level separation and station-specific operations.
+
+**Chosen approach:** Model authorised operational scope around tenant/organisation, legal entity, and station.
+
+**Rationale:** This matches the business hierarchy used by Daily Operations, Customers, and access-control flows and provides a clear basis for tenant/station isolation.
+
+**Alternatives discussed:** No confirmed competing hierarchy was selected.
+
+**Consequences:** APIs, RLS, scope selection, tests, and UI context must preserve these boundaries. Scope IDs must not be guessed.
+
+---
+
+## DEC-002 — Treat PostgreSQL RLS as part of the security boundary
+
+**Status:** ACCEPTED
+
+**Context:** UI filtering alone is insufficient for multi-tenant data protection.
+
+**Chosen approach:** Use PostgreSQL Row-Level Security, including Force RLS where required, alongside application authorisation.
+
+**Rationale:** Tenant isolation remains enforced even when identifiers are manipulated outside normal UI flows.
+
+**Consequences:** RLS/policy changes are security-sensitive. Integration tests must verify positive and cross-tenant negative cases.
+
+---
+
+## DEC-003 — Host the web application on Vercel and production PostgreSQL on Neon
+
+**Status:** ACCEPTED
+
+**Context:** The project established a production deployment platform and database provider.
+
+**Chosen approach:** Vercel for the web application, Neon PostgreSQL for the production database, and Cloudflare R2 for private/recovery object storage.
+
+**Rationale:** This is the deployed architecture already in use and hardened by current release work.
+
+**Consequences:** Provider-specific PostgreSQL role behavior and hosting-plan limits must be treated as real operational constraints.
+
+---
+
+## DEC-004 — Production migrations are explicit release operations
+
+**Status:** ACCEPTED
+
+**Context:** A web deployment does not guarantee that a database migration has run safely or under the correct owner.
+
+**Chosen approach:** Run/verify production migrations as a separate controlled operation rather than assuming automatic execution during Vercel deploy.
+
+**Rationale:** Security-critical migrations require exact ownership, hash, and state evidence.
+
+**Consequences:** Release procedures must separately verify deployment SHA and migration state. Already-applied migrations must not be casually re-run.
+
+---
+
+## DEC-005 — First-user production provisioning uses a dedicated one-time bootstrap path
+
+**Status:** ACCEPTED
+
+**Context:** Production initially has no normal application user, but bootstrap must not require broad permanent privileges.
+
+**Chosen approach:** Migration 0021 provides a dedicated `first_user_provisioner`, security-definer functions, a one-time sentinel, fixed permission behavior, legitimate scope discovery, dry-run, and real provision operation.
+
+**Rationale:** It separates bootstrap authority from normal runtime authority and makes the release evidence explicit.
+
+**Consequences:** The real provision step must remain outside the dry-run scripts and requires explicit human approval.
+
+---
+
+## DEC-006 — First-user dry run is read-only and must prove zero writes
+
+**Status:** ACCEPTED
+
+**Context:** A production dry run should verify scope and permissions without consuming the one-time bootstrap or creating a user.
+
+**Chosen approach:** Run dry-run inside read-only semantics, assert the exact 12 reviewed read-only permissions, verify zero writes, and verify the bootstrap sentinel remains unchanged.
+
+**Rationale:** It makes approval evidence meaningful and prevents accidental provisioning while validating the path.
+
+**Consequences:** Any dry-run code that can provision, mutate the sentinel, or weaken the fixed permission assertion is a release blocker.
+
+---
+
+## DEC-007 — No application role assignment during first-user bootstrap dry run
+
+**Status:** ACCEPTED
+
+**Context:** Bootstrap access needs the smallest possible permission surface.
+
+**Chosen approach:** The reviewed bootstrap expects exactly 12 read-only permission grants and zero application role assignments.
+
+**Rationale:** Least privilege and easier evidence review.
+
+**Consequences:** Future role assignment behavior must not be smuggled into the bootstrap without an explicit product/security decision.
+
+---
+
+## DEC-008 — Accept only the exact Neon/PostgreSQL 18 provider membership shape
+
+**Status:** ACCEPTED
+
+**Context:** PostgreSQL 18/Neon provider behavior produced an unavoidable membership relationship between `first_user_provisioner` and `migration_owner`. Attempts to self-revoke or avoid it were unsafe or operationally unavailable.
+
+**Chosen approach:** Fail closed unless the exact reviewed provider membership/options are present. Do not attempt to remove the provider-managed relationship in production.
+
+**Rationale:** The exact relationship was reproduced locally and preflighted; workarounds would require unsupported/provider-admin behavior or new risk.
+
+**Alternatives discussed:** Self-revoke, provider-admin revoke, delegated helper repair, role recreation, elevated-provider shortcuts.
+
+**Consequences:** Drift from the reviewed membership shape is a hard stop. The relationship itself is not treated as an error.
+
+---
+
+## DEC-009 — Use an ephemeral provisioner password rather than a persistent credential
+
+**Status:** ACCEPTED
+
+**Context:** The SQL-created provisioner role is LOGIN-capable but has no usable password by default, and Neon did not provide a managed credential for it.
+
+**Chosen approach:** `migration_owner` temporarily assigns a generated password, the operator connects directly as `first_user_provisioner`, then cleanup restores `PASSWORD NULL`.
+
+**Rationale:** It enables the required direct session without creating a persistent bootstrap credential.
+
+**Consequences:** Cleanup is mandatory on normal completion and every abnormal exit. Post-cleanup authentication failure must be verified.
+
+---
+
+## DEC-010 — Keep production secrets out of argv, files, chat, and logs
+
+**Status:** ACCEPTED
+
+**Context:** Database URLs/passwords are sensitive and process argument lists or persistent files can expose them.
+
+**Chosen approach:** Human operator loads secrets through hidden terminal input; scripts use process-local environment variables; no `.env`, pgpass/service file, secret echo, or credential literal is created.
+
+**Rationale:** Minimizes secret exposure while still allowing controlled human-run production operations.
+
+**Consequences:** Convenience mechanisms that put credentials in command arguments or generated files are not acceptable substitutes.
+
+---
+
+## DEC-011 — Parse production database URIs into process-local libpq variables for psql 16
+
+**Status:** ACCEPTED
+
+**Context:** Homebrew `psql` 16 did not interpret a URI placed in `PGDATABASE`; it fell back to the local socket.
+
+**Chosen approach:** Parse the URL with a standard URL parser and populate approved process-local libpq environment variables, with strict fail-closed query validation.
+
+**Rationale:** Preserves secret-handling constraints while making the procedure compatible with the actual operator client.
+
+**Consequences:** Duplicate/unsupported query parameters, conflicting `ssl`/`sslmode`, and malformed ports must fail closed. URL/password must remain out of argv/files/logs.
+
+---
+
+## DEC-012 — Split security evidence across principals instead of broadening diagnostics access
+
+**Status:** ACCEPTED
+
+**Context:** `diagnostics_readonly` intentionally cannot read auth secrets or bootstrap sentinel internals.
+
+**Chosen approach:** Use `migration_owner` for catalog/ownership/ACL/sentinel evidence, `first_user_provisioner` for legitimate scope/identity/permission/dry-run behavior, normal runtime principals for negative checks, and diagnostics only as supplemental evidence.
+
+**Rationale:** Evidence collection should not weaken protection of password hashes, sessions, verification data, or bootstrap internals.
+
+**Consequences:** Do not grant diagnostics new auth/sentinel privileges simply to make an audit script easier.
+
+---
+
+## DEC-013 — Do not use cloud_admin, neon_superuser, role recreation, or persistent API credentials as bootstrap shortcuts
+
+**Status:** ACCEPTED
+
+**Context:** Several recovery/bypass ideas would require provider-managed or broad privileges.
+
+**Chosen approach:** Use the reviewed customer-controlled role path only.
+
+**Rationale:** Keeps bootstrap within least-privilege customer-managed boundaries and avoids dependence on non-connectable/provider-managed roles.
+
+**Consequences:** If preflight fails, stop and fix/review the designed path rather than escalating around it.
+
+---
+
+## DEC-014 — Owner handoff uses one production URL, not preview links
+
+**Status:** ACCEPTED
+
+**Context:** The owner needs a stable real product location rather than deployment-specific previews.
+
+**Chosen approach:** Handoff uses only `https://fuel.shandahr.com`.
+
+**Rationale:** Avoids confusion over which build is authoritative.
+
+**Consequences:** Preview URLs may be used internally but are not owner handoff links.
+
+---
+
+## DEC-015 — Do not use synthetic production figures
+
+**Status:** ACCEPTED
+
+**Context:** Placeholder dashboard/management numbers can be mistaken for real operational data.
+
+**Chosen approach:** Show real values when supported; otherwise show truthful empty/unavailable/context-required states.
+
+**Rationale:** Owner trust is more important than visual completeness.
+
+**Consequences:** Agents must not fabricate metrics to make a screen look finished.
+
+---
+
+## DEC-016 — Use the shared shell as the canonical page heading/navigation composition
+
+**Status:** ACCEPTED
+
+**Context:** Duplicate local page titles and inconsistent navigation reduced UI clarity.
+
+**Chosen approach:** Shared-shell headings/metadata own the page-level title; feature pages avoid duplicate body headings where the shell already provides one.
+
+**Rationale:** Consistent responsive composition and reduced duplication.
+
+**Consequences:** UI work should follow existing shell patterns rather than invent page-specific navigation/header structures.
+
+---
+
+## DEC-017 — Keep navigation groups closed by default and hidden children inert
+
+**Status:** ACCEPTED
+
+**Context:** Automatically expanded groups and interactive hidden items created clutter and inconsistent behavior.
+
+**Chosen approach:** Dashboard/navigation groups are closed by default; only the relevant operation group opens when appropriate; hidden children are not interactive.
+
+**Rationale:** Clearer hierarchy and predictable responsive navigation.
+
+**Consequences:** Regression tests should preserve these shell behaviors.
+
+---
+
+## DEC-018 — Customers Phase 0 is tenant-authorised and read-oriented
+
+**Status:** ACCEPTED
+
+**Context:** The owner needs customer visibility in Phase 0, but a full customer lifecycle would expand scope materially.
+
+**Chosen approach:** Provide navigation/search, list/detail, balances/status/types, prepaid litres, reservations, and recent ledger/activity using tenant-authorised reads. Do not add new write semantics, migrations, RLS, or auth behavior for Phase 0.
+
+**Rationale:** Delivers owner-visible value without destabilizing the data/security model.
+
+**Consequences:** Full customer lifecycle policies and write workflows remain Phase 1/later work.
+
+---
+
+## DEC-019 — Preserve four-decimal money serialization for NUMERIC(20,4) customer balances
+
+**Status:** ACCEPTED
+
+**Context:** A Customers summary integration test exposed `125.375` versus the established four-decimal monetary contract.
+
+**Chosen approach:** Quantize derived money balances using the existing money policy and return values such as `125.3750`.
+
+**Rationale:** Existing schema/test fixtures define four-decimal monetary precision; dropping scale changes the API contract.
+
+**Consequences:** Tests and APIs should preserve exact decimal strings and avoid lossy number conversion.
+
+---
+
+## DEC-020 — Daily Operations Phase 0 is composition/alignment, not a new accounting engine
+
+**Status:** ACCEPTED
+
+**Context:** The owner workflow includes many paper/Excel concepts, but the release must not invent unreviewed accounting/ledger behavior.
+
+**Chosen approach:** Align existing supported data and UI composition to the owner workflow, validate terminology/order/summary/mobile behavior, and defer unsupported adjacent-domain workflows.
+
+**Rationale:** Keeps Phase 0 safe and owner-reviewable while avoiding schema/business-rule expansion.
+
+**Consequences:** Genuine correctness issues can be fixed, but new approval/accounting semantics need explicit scope/decisions.
+
+---
+
+## DEC-021 — Station operational time must come from station timezone metadata
+
+**Status:** ACCEPTED
+
+**Context:** Daily Operations shift times were using browser-local formatting.
+
+**Chosen approach:** Format station operational times using the authoritative station timezone already present in station data. If missing/invalid, show a truthful unavailable value.
+
+**Rationale:** Browser timezone can differ from station timezone and would make operational records misleading.
+
+**Alternatives discussed:** Browser-local fallback or guessed/hard-coded timezone; rejected.
+
+**Consequences:** Adjacent station-time displays should use the same canonical timezone source.
+
+---
+
+## DEC-022 — Distinguish test-harness failures from product defects before changing code
+
+**Status:** ACCEPTED
+
+**Context:** A3 meter-exception tests initially returned HTTP 500 because migrations were applied under the wrong local owner. Candidate and exact main both passed when the expected PostgreSQL 18/UTC/role setup was restored.
+
+**Chosen approach:** Reproduce failures against exact main under equivalent environment prerequisites before classifying them as candidate regressions.
+
+**Rationale:** Security-definer and ownership-sensitive tests can fail for harness reasons.
+
+**Consequences:** Agents should not patch product code to compensate for an incorrectly configured integration environment.
+
+---
+
+## DEC-023 — Use isolated worktrees/branches for parallel agents
+
+**Status:** ACCEPTED
+
+**Context:** Multiple implementation/review streams run concurrently, and the primary repository may contain unrelated work.
+
+**Chosen approach:** Feature agents use isolated worktrees/branches, avoid direct changes to `main`, and avoid stashing/resetting/deleting unrelated work.
+
+**Rationale:** Prevents agents from overwriting one another and makes review/integration attributable.
+
+**Consequences:** Integration must be revalidated after combining parallel changes.
+
+---
+
+## DEC-024 — Separate implementation and review responsibilities
+
+**Status:** ACCEPTED
+
+**Context:** Security/release work benefits from independent verification.
+
+**Chosen approach:** Implementation agents produce scoped changes; independent review agents inspect actual files/diffs and do not merely trust implementation reports.
+
+**Rationale:** Catches composition, shell, security, and source-fidelity issues that implementation self-checks missed.
+
+**Consequences:** A green implementer report is not equivalent to an approved release gate when independent review is required.
+
+---
+
+## DEC-025 — Treat observability plan limits as a launch exception, not a pass
+
+**Status:** TEMPORARY EXCEPTION
+
+**Context:** Local observability definitions/panels/tests are green, but desired native production semantics are limited by the current Vercel plan. A paid alternative was declined.
+
+**Chosen approach:** Launch under a documented exception while retaining the technical status as blocked/exception.
+
+**Rationale:** Avoids falsely reporting unavailable production semantics as complete.
+
+**Consequences:** Future status reporting must preserve the exception until the limitation is resolved or requirements change.
+
+---
+
+## DEC-026 — Treat the rate-limit staging E2E gap as an evidence exception
+
+**Status:** TEMPORARY EXCEPTION
+
+**Context:** Rate-limit implementation passes, but an upstream provider intercepts the request before the application’s target threshold behavior can be observed in staging.
+
+**Chosen approach:** Preserve the implementation result and explicitly record the staging evidence limitation.
+
+**Rationale:** The missing observation is provider/environment behavior, not proof that the implementation failed or passed end-to-end.
+
+**Consequences:** Do not relabel this as a full E2E PASS.
+
+---
+
+## DEC-027 — Keep the dev-only transitive dependency advisory under a narrow time-bounded exception
+
+**Status:** TEMPORARY EXCEPTION
+
+**Context:** A reported advisory affects a dev-only transitive `braces` version with no available fixed upstream release at the documented snapshot.
+
+**Chosen approach:** Use a narrow CI exception with a review date while keeping production-only high/critical audit clean.
+
+**Rationale:** Avoids blocking release indefinitely on an unfixable dev-only transitive while preserving review pressure.
+
+**Consequences:** The exception must not be generalized to unrelated advisories and should be re-evaluated when an upstream fix becomes available.
+
+---
+
+## DEC-028 — Do not create a production role solely to satisfy an audit spot check
+
+**Status:** ACCEPTED
+
+**Context:** Production role discovery found zero existing roles matching the proposed unrelated-role negative-probe criteria.
+
+**Chosen approach:** Do not invent/create a production principal merely for testing. Preserve or strengthen the security evidence instead.
+
+**Rationale:** Production access control should reflect application/runtime needs, not the convenience of one diagnostic assertion.
+
+**Consequences:** The current single-role ACL probe cannot simply be removed if that weakens coverage; the preferred direction is exhaustive unexpected-grantee detection.
+
+---
+
+## DEC-029 — Replace spot-check ACL evidence with exhaustive grantee evidence before removing SF_UNRELATED_ROLE
+
+**Status:** PENDING REVIEW
+
+**Context:** A review proved that current function ACL checks cover PUBLIC, app_runtime, first_user_provisioner, and one supplied unrelated role but do not exhaustively reject every possible unexpected grantee.
+
+**Proposed approach:** Expand `pg_proc` ACL inspection to reject any explicit unexpected `EXECUTE` grantee, then remove the arbitrary unrelated-role prerequisite.
+
+**Rationale:** This is strictly stronger than checking one unrelated role and avoids creating a meaningless production role.
+
+**Consequences:** This is not yet an accepted production preflight change until implementation and Access Review are green. Stage 1 remains blocked until then.
+
+---
+
+## DEC-030 — Final owner handoff is blocked by any unresolved P0/P1 finding
+
+**Status:** ACCEPTED
+
+**Context:** Phase 0 aims for an owner-ready first version, not merely a deployable build.
+
+**Chosen approach:** Final owner review occurs after access, integration, deployment, and production verification; any confirmed P0/P1 is remediated before handoff.
+
+**Rationale:** Owner handoff should represent a trustworthy, usable product state.
+
+**Consequences:** Phase 1 work remains deferred, but P0/P1 correctness/usability issues found in final QA are not deferred merely to hit a date.

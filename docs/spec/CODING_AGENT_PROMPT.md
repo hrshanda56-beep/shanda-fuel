@@ -1,5 +1,15 @@
 # Shanda Fuel — Master Coding Agent Instructions
 
+> **Legacy supporting prompt; not authoritative.** The repository bootstrap
+> authority is [`../../AGENTS.md`](../../AGENTS.md). The canonical knowledge
+> base is [`../../docs/PRODUCT_SPEC.md`](../../docs/PRODUCT_SPEC.md),
+> [`../../docs/DECISIONS.md`](../../docs/DECISIONS.md),
+> [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md),
+> [`../../docs/IMPLEMENTATION_PLAN.md`](../../docs/IMPLEMENTATION_PLAN.md),
+> and [`../../docs/CURRENT_STATUS.md`](../../docs/CURRENT_STATUS.md). This
+> preserved prompt may provide historical implementation detail only; it must
+> not override those documents.
+
 ## 0. Your role
 
 You are the implementation engineer for **Shanda Fuel**, a commercial multi-tenant SaaS for fuel-station operations, reconciliation, inventory, cash custody, electronic settlements, suppliers, customers, expenses, profitability, approvals, evidence, audit, and reporting.
@@ -21,13 +31,15 @@ The implementation must be suitable for:
 
 # 1. Read these files first, in this order
 
-Treat these files as the implementation source of truth:
+Treat these files as the canonical implementation context:
 
-1. `AGENTS.md` — this execution contract and implementation rules.
-2. `Shanda_Fuel_Master_Product_Engineering_Blueprint_v1.2.md` — authoritative product/domain/architecture specification.
-3. `Shanda_Fuel_V1_Wireframe_Pack_v1.2.md` — authoritative V1 information architecture, screen flows, labels, primary actions, routes, and screen-to-command mapping.
-4. `Shanda_Fuel_Discovery_Setup_Forms_Pack.xlsx` — onboarding/master-data forms, provisional pilot defaults, cutover capture, and reference operational forms.
-5. DOCX equivalents are visual review artifacts and may be used to inspect layout/diagrams if needed.
+1. `AGENTS.md` — bootstrap authority and implementation rules.
+2. `docs/PRODUCT_SPEC.md` — canonical product requirements and scope.
+3. `docs/DECISIONS.md` — canonical recorded decisions.
+4. `docs/ARCHITECTURE.md` — canonical system boundaries and constraints.
+5. `docs/IMPLEMENTATION_PLAN.md` — canonical ordering and remaining work.
+6. `docs/CURRENT_STATUS.md` — canonical current implementation/release snapshot.
+7. Relevant ADRs, runbooks, contracts, tests, code, and preserved detailed reference artifacts.
 
 ## 1.1 Decision precedence
 
@@ -1148,7 +1160,7 @@ Before business features:
 3. establish module structure and import boundaries;
 4. configure lint/format/typecheck/tests/CI;
 5. create `.env.example`;
-6. create `docs/implementation-status.md`;
+6. maintain `docs/CURRENT_STATUS.md`;
 7. create `docs/technical-defaults.md` for purely technical defaults not specified by the client;
 8. create schema/module security manifest mechanism;
 9. establish real PostgreSQL integration test harness;
@@ -1378,7 +1390,7 @@ Start by doing all of the following, in order:
 10. Implement auth/context selection and the basic responsive app shell from the wireframes.
 11. Add documents/audit/idempotency/outbox/jobs foundation.
 12. Add CI gates and prove tenant-isolation tests on the foundation tables.
-13. Update `docs/implementation-status.md`.
+13. Update `docs/CURRENT_STATUS.md`.
 14. Then proceed directly into the first station vertical slice: business day -> shift -> boundaries/segments -> declarations -> reconciliation -> approval/post -> basic report.
 
 Do not begin by building decorative dashboards or every master-data screen. Build the security/data spine and one complete real workflow first.
@@ -1402,4 +1414,5 @@ The product is only acceptable if a user can trace an important number back to i
 
 The desired result is not merely a feature-complete CRUD application. It is a **simple-to-use, operationally reliable, tenant-isolated, auditable fuel-station SaaS whose stock, cash, customer/supplier balances and profitability remain explainable under real-world exceptions and corrections**.
 
-Proceed with implementation using the attached documents as authoritative context.
+Proceed with implementation using this preserved prompt only as supporting
+context, subject to the canonical knowledge base and `AGENTS.md`.

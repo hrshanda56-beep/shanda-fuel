@@ -2,30 +2,33 @@
 
 Shanda Fuel is a commercial, multi-tenant SaaS for fuel-station operations and financial control: forecourt readings, shifts, reconciliation, inventory, cash custody, electronic settlements, suppliers, customers, expenses, profitability, approvals, evidence, audit, and reporting.
 
-Status: **pre-implementation / architecture-approved**. This repository is the preparation baseline for the first engineering workstream, A0. No substantial application or business logic is intentionally included here.
+Status: See [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md) for the
+canonical implementation and release snapshot. This README is orientation
+material, not a source of truth.
 
 The initial operating context is TEI Oils / Triumph Energy Investments in Zimbabwe, while the product is designed as reusable SaaS for multiple fuel businesses. Product domain: `fuel.shandahr.com`. Tenant isolation and traceable source-of-truth ledgers are foundational requirements.
 
 ## Start here
 
 1. Read [`AGENTS.md`](AGENTS.md).
-2. Read the canonical [`docs/spec/MASTER_BLUEPRINT.md`](docs/spec/MASTER_BLUEPRINT.md) and [`docs/spec/WIREFRAMES.md`](docs/spec/WIREFRAMES.md).
+2. Read the canonical [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md), [`docs/DECISIONS.md`](docs/DECISIONS.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md), and [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
 3. Read [`docs/PARALLEL_EXECUTION.md`](docs/PARALLEL_EXECUTION.md), the relevant workstream, and shared contracts.
-4. Check [`docs/implementation-status.md`](docs/implementation-status.md) before making changes.
-5. Work in an isolated branch/worktree; do not work directly on `main`.
+4. Work in an isolated branch/worktree; do not work directly on `main`.
 
 ## Documentation map
 
-- [`docs/spec/`](docs/spec/) — authoritative Markdown product and UX specifications.
+- [`docs/`](docs/) — canonical knowledge base plus supporting documentation.
 - [`docs/onboarding/`](docs/onboarding/) — setup and cutover support material.
 - [`docs/contracts/`](docs/contracts/) — shared vocabulary and module/platform boundaries.
 - [`docs/workstreams/`](docs/workstreams/) — ownership, dependencies, and handoffs.
 - [`docs/decisions/`](docs/decisions/) — ADRs for material deviations or refinements.
-- [`docs/implementation-status.md`](docs/implementation-status.md) — current status.
+- [`docs/spec/`](docs/spec/) — supporting detailed product and UX references.
 
 The onboarding workbook contains real-world configuration placeholders. Blank or unknown station, bank, tank, supplier, customer, threshold, tax-policy, or opening-balance values are not software-development blockers and must not be fabricated into code. Tax treatment remains tax-ready but externally confirmed.
 
-The current repository state is **pre-A0 repository preparation**. A0 should establish the technical baseline before later agents implement product slices.
+The current repository state, implementation baseline, and remaining work are
+defined by [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md) and
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 ## Development foundation
 
