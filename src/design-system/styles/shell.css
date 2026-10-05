@@ -1,8 +1,9 @@
 /*
  * Product Shell: the permanent application frame.
  *
- *   phone / tablet (< 64rem)  slim sticky top bar; the menu opens the grouped
+ *   phone (< 48rem)           slim sticky top bar; the menu opens the grouped
  *                             navigation in a drawer. Content keeps full width.
+ *   tablet (48–74.99rem)      persistent icon rail beside the content.
  *   desktop (≥ 64rem)         persistent grouped sidebar beside the content;
  *                             collapsible to an icon rail. The rail state is
  *                             <html data-sidebar="collapsed">, set before first

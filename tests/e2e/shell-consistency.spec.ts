@@ -108,6 +108,62 @@ test.describe('shared shell consistency', () => {
     await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
   });
 
+  test('long work-context names wrap without creating horizontal overflow', async ({ page }) => {
+    await page.route('**/api/context**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            available: {
+              organisations: [
+                {
+                  id: 'tenant-long',
+                  name: 'A deliberately long authorised organisation name for mobile review',
+                  legalEntities: [
+                    {
+                      id: 'entity-long',
+                      name: 'A deliberately long legal entity name for mobile review',
+                      stations: [
+                        {
+                          id: 'station-long',
+                          code: 'HRE-LONG',
+                          name: 'A deliberately long station name for mobile review',
+                          timezone: 'Africa/Harare',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            current: {
+              organisationId: 'tenant-long',
+              legalEntityId: 'entity-long',
+              stationId: 'station-long',
+              allStations: false,
+            },
+            route: {
+              pathname: '/reports',
+              policy: { legalEntity: 'required', station: 'required', allStationsAllowed: false },
+            },
+            persistedContextInvalid: false,
+          },
+        }),
+      });
+    });
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto('/reports');
+
+    const context = page.getByRole('group', { name: 'Work context' });
+    await expect(context).toContainText('A deliberately long authorised organisation name');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      320,
+    );
+    const box = await context.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+  });
+
   test('Customers is absent while Settings remains represented', async ({ page }) => {
     await prepareShell(page, { width: 1482, height: 900 });
     const sidebar = page.locator('.shell-sidebar');
