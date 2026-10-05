@@ -644,36 +644,89 @@ integration('first-user provisioning PostgreSQL hardening', () => {
     }
   });
 
-  fixtureTest('writes failure audit evidence through the tenant-scoped capability', async () => {
-    const event = signSecurityEvent(
-      {
-        eventId: randomUUID(),
-        tenantId: scope!.tenantId,
-        eventCode: 'ACCESS.PROVISIONING_FAILED',
-        requestId: randomUUID(),
-        occurredAt: new Date().toISOString(),
-        details: {
+  fixtureTest(
+    'commits and persists failure audit evidence through the tenant-scoped capability',
+    async () => {
+      const eventId = randomUUID();
+      const requestId = randomUUID();
+      const event = signSecurityEvent(
+        {
+          eventId,
+          tenantId: scope!.tenantId,
+          eventCode: 'ACCESS.PROVISIONING_FAILED',
+          requestId,
+          occurredAt: new Date().toISOString(),
+          details: {
+            actorType: 'SUPPORT',
+            initiatedBy: 'first-production-user-provisioning',
+            subjectType: 'access.provisioning.request',
+            subjectId: 'provision',
+            metadata: { mode: 'provision', outcome: 'failure' },
+          },
+        },
+        { keyId: 'integration-first-user', secret: 'integration-only-secret' },
+      );
+
+      try {
+        await client!.begin(async (transaction) => {
+          await transaction`
+          select platform.first_user_provisioning_append_failure(
+            ${scope!.tenantId}::uuid, ${transaction.json(JSON.parse(JSON.stringify(event)))}::jsonb
+          )
+        `;
+        });
+
+        const persisted = await adminClient!<
+          {
+            id: string;
+            tenantId: string;
+            membershipId: string | null;
+            actorId: string | null;
+            eventCode: string;
+            requestId: string;
+            details: Record<string, unknown>;
+            keyId: string;
+            algorithm: string;
+          }[]
+        >`
+        select id::text as "id",
+               tenant_id::text as "tenantId",
+               membership_id::text as "membershipId",
+               actor_id::text as "actorId",
+               event_code as "eventCode",
+               request_id::text as "requestId",
+               details,
+               key_id as "keyId",
+               algorithm
+        from platform.security_events
+        where id = ${eventId}::uuid
+      `;
+        expect(persisted).toHaveLength(1);
+        expect(persisted[0]).toMatchObject({
+          id: eventId,
+          tenantId: scope!.tenantId,
+          membershipId: null,
+          actorId: null,
+          eventCode: 'ACCESS.PROVISIONING_FAILED',
+          requestId,
+          keyId: 'integration-first-user',
+          algorithm: 'hmac-sha256',
+        });
+        expect(persisted[0]?.details).toEqual({
           actorType: 'SUPPORT',
           initiatedBy: 'first-production-user-provisioning',
           subjectType: 'access.provisioning.request',
           subjectId: 'provision',
           metadata: { mode: 'provision', outcome: 'failure' },
-        },
-      },
-      { keyId: 'integration-first-user', secret: 'integration-only-secret' },
-    );
-
-    await expect(
-      client!.begin(async (transaction) => {
-        await transaction`
-          select platform.first_user_provisioning_append_failure(
-            ${scope!.tenantId}::uuid, ${transaction.json(JSON.parse(JSON.stringify(event)))}::jsonb
-          )
-        `;
-        throw new Error('expected failure-audit rollback');
-      }),
-    ).rejects.toThrow('expected failure-audit rollback');
-  });
+        });
+        expect(JSON.stringify(persisted[0])).not.toMatch(
+          /integration-only-secret|integration-only-password|password|secret|token|cookie/i,
+        );
+      } finally {
+        await adminClient!`delete from platform.security_events where id = ${eventId}::uuid`;
+      }
+    },
+  );
 
   rollbackTest(
     'rolls back the complete provisioning transaction after capability-only grant inspection',
