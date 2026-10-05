@@ -2,6 +2,8 @@ import { AppShell } from '@/design-system/app-shell';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
 import { SupplierDetailWorkspace } from '@/modules/creditors/ui/supplier-detail-workspace';
 
+export const metadata = { title: 'Supplier detail' };
+
 export default async function SupplierDetailPage({
   params,
 }: {
@@ -11,13 +13,6 @@ export default async function SupplierDetailPage({
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      context={{
-        organisation: 'ShandaHR',
-        station: 'Legal-entity scope',
-        businessDate: 'Current',
-        shift: 'Finance',
-      }}
-      role="Finance"
       breadcrumbs={[{ label: 'Suppliers', href: '/suppliers' }, { label: 'Supplier detail' }]}
     >
       <SupplierDetailWorkspace supplierId={supplierId} />

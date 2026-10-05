@@ -15,6 +15,8 @@ import {
   type InventoryContext,
 } from '@/modules/inventory/ui/inventory-workspace';
 
+export const metadata = { title: 'Inventory valuation stream' };
+
 type SearchParams = Record<string, string | string[] | undefined>;
 
 function first(value: string | string[] | undefined): string | undefined {
@@ -96,7 +98,6 @@ export default async function InventoryValuationStreamPage({
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      role="Inventory control"
       breadcrumbs={[
         {
           label: 'Inventory',

@@ -17,12 +17,14 @@ const ids = {
 const sessionToken = 'a10-e2e-management-session-token';
 
 test.describe('management reporting surface', () => {
-  test('unauthenticated shell explains the required tenant context', async ({ page }) => {
+  test('unauthenticated shell explains the required organisation context', async ({ page }) => {
     await page.goto('/reports');
     await expect(
       page.getByRole('heading', { name: 'Operational financial position' }),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Tenant context required' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Choose an organisation to view reports' }),
+    ).toBeVisible();
   });
 
   test.describe('authorized posted-facts report', () => {

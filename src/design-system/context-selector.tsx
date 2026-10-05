@@ -79,15 +79,15 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
     return () => controller.abort();
   }, [pathname, refresh, search]);
 
-  const currentLabel = useMemo(
-    () =>
-      contextDisplay(
-        state.status === 'ready' ? state.resolution.available : undefined,
-        state.status === 'ready' ? state.resolution.current : null,
-        fallback,
-      ),
-    [fallback, state],
-  );
+  const currentLabel = useMemo(() => {
+    if (state.status === 'loading' && !fallback) return ['Loading work context…'];
+    if (state.status === 'error' && !fallback) return ['Work context unavailable'];
+    return contextDisplay(
+      state.status === 'ready' ? state.resolution.available : undefined,
+      state.status === 'ready' ? state.resolution.current : null,
+      fallback,
+    );
+  }, [fallback, state]);
 
   function retry() {
     setState({ status: 'loading' });
@@ -158,7 +158,7 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
         open={open}
         onClose={onClose}
         title="Select work context"
-        description="Choose only an organisation, legal entity, and station you are authorised to use."
+        description="Choose an organisation, legal entity, and station you are authorised to use."
         size="md"
         returnFocus={() => triggerRef.current}
         dismissible={!submitting}
@@ -208,11 +208,8 @@ function ContextError({ message, onRetry }: { message: string; onRetry: () => vo
 function ContextEmpty() {
   return (
     <div className="context-selector-state" role="status">
-      <h3>No authorised context</h3>
-      <p>
-        No active organisation, legal entity, or station is available for this account. Nothing has
-        changed.
-      </p>
+      <h3>No authorised work areas</h3>
+      <p>No organisation, legal entity, or station is available for this account.</p>
     </div>
   );
 }
@@ -389,7 +386,7 @@ function contextDisplay(
   return [
     organisation?.name ?? 'Organisation',
     ...(legalEntity ? [legalEntity.name] : []),
-    current.allStations ? 'All stations' : (station?.name ?? 'Station not selected'),
+    current.allStations ? 'All stations' : (station?.name ?? 'No station selected'),
   ];
 }
 
