@@ -40,7 +40,9 @@ describe('grouped navigation model', () => {
 describe('navigation projection', () => {
   it('hides items that are not visible and drops empty sections', () => {
     const projection: NavigationProjection[] = syntheticNavigationProjection.map((entry) =>
-      entry.key === 'cash' || entry.key === 'settlements' ? { ...entry, visible: false } : entry,
+      entry.key === 'cash' || entry.key === 'settlements' || entry.key === 'customers'
+        ? { ...entry, visible: false }
+        : entry,
     );
     const sections = resolveNavigation(projection, {});
     expect(sections.map((section) => section.key)).not.toContain('finance');
@@ -67,11 +69,8 @@ describe('navigation destinations', () => {
     resolveNavigation(syntheticNavigationProjection, context).flatMap((section) => section.items);
   const find = (key: string, context = {}) => resolved(context).find((entry) => entry.key === key)!;
 
-  it('keeps Customers out of the active registry and Settings as a real page', () => {
-    expect(allItems.some((entry) => String(entry.key) === 'customers')).toBe(false);
-    expect(syntheticNavigationProjection.some((entry) => String(entry.key) === 'customers')).toBe(
-      false,
-    );
+  it('keeps Customers active in Finance and Settings as a real page', () => {
+    expect(find('customers')).toMatchObject({ state: 'link', href: '/customers' });
     expect(find('settings')).toMatchObject({ state: 'link', href: '/settings' });
   });
 
@@ -109,6 +108,7 @@ describe('navigation destinations', () => {
       'Inventory',
       'Cash and banking',
       'Provider settlements',
+      'Customers',
       'Suppliers',
       'Reports',
       'Settings',
@@ -140,6 +140,7 @@ describe('current-route indication', () => {
     ['/inventory/valuation/streams/t/p', 'inventory'],
     ['/stations/demo/cash', 'cash'],
     ['/stations/demo/settlements', 'settlements'],
+    ['/customers', 'customers'],
     ['/suppliers', 'suppliers'],
     ['/reports', 'reports'],
   ])('%s marks %s as current', (pathname, key) => {
