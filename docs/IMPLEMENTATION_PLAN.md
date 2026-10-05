@@ -38,8 +38,8 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 
 ## Current critical path
 
-The following is the current authoritative Phase 0 sequence, synchronized to
-main `1aacc3ea8910b7579069ce44d44ae9b5a0c4feb3`:
+The following is the current authoritative Phase 0 sequence, last synchronized
+against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
 
 1. Diagnose the latest production RLS/policy preflight failure.
 2. Determine drift versus assertion/normalization bug.
