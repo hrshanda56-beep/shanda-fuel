@@ -6,7 +6,6 @@ import { signSecurityEvent } from '../../src/platform/security/audit-signing';
 import {
   ACCEPTED_PROVISIONING_DB_ROLE,
   READ_ONLY_GRANT_PLAN,
-  assertAcceptedProvisioningRole,
   createPostgresRepository,
   listScopeOptions,
   preparePlan,
@@ -107,7 +106,9 @@ integration('first-user provisioning PostgreSQL hardening', () => {
       where r.rolname = current_user
     `;
     expect(rows).toHaveLength(1);
-    assertAcceptedProvisioningRole(rows[0]!);
+    expect(rows[0]?.currentUser).toBe(ACCEPTED_PROVISIONING_DB_ROLE);
+    expect(rows[0]?.rolsuper).toBe(false);
+    expect(rows[0]?.rolbypassrls).toBe(false);
     await client!`select platform.first_user_provisioning_assert_runtime_role()`;
   });
 

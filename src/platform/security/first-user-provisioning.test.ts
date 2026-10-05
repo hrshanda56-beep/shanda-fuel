@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { hashPassword, verifyPassword } from 'better-auth/crypto';
 
 import {
+  ACCEPTED_PROVIDER_MEMBERSHIP,
   DuplicateProvisioningError,
   ACCEPTED_PROVISIONING_DB_ROLE,
   PROVISIONING_REASON,
@@ -17,6 +18,7 @@ import {
   readHiddenPassword,
   scopeForGrant,
   type IdentitySnapshot,
+  type DatabaseRoleSnapshot,
   type ProvisioningRepository,
   type ScopeIds,
   type ScopeSnapshot,
@@ -224,6 +226,41 @@ function existingIdentity(status: string = 'ACTIVE'): IdentitySnapshot {
 
 const temporaryUserId = '00000000-0000-4000-8000-000000000010';
 const temporaryOperationId = '00000000-0000-4000-8000-000000000020';
+
+function acceptedRoleSnapshot(overrides: Partial<DatabaseRoleSnapshot> = {}): DatabaseRoleSnapshot {
+  return {
+    currentUser: ACCEPTED_PROVISIONING_DB_ROLE,
+    rolcanlogin: true,
+    rolsuper: false,
+    rolbypassrls: false,
+    rolcreatedb: false,
+    rolcreaterole: false,
+    rolinherit: false,
+    rolreplication: false,
+    rolconfig: null,
+    memberships: [
+      {
+        grantedRole: ACCEPTED_PROVIDER_MEMBERSHIP.grantedRole,
+        member: ACCEPTED_PROVIDER_MEMBERSHIP.member,
+        grantor: ACCEPTED_PROVIDER_MEMBERSHIP.grantor,
+        adminOption: ACCEPTED_PROVIDER_MEMBERSHIP.adminOption,
+        inheritOption: ACCEPTED_PROVIDER_MEMBERSHIP.inheritOption,
+        setOption: ACCEPTED_PROVIDER_MEMBERSHIP.setOption,
+      },
+    ],
+    memberCapability: true,
+    usageCapability: false,
+    setCapability: false,
+    adminCapability: true,
+    databaseOwner: false,
+    schemaOwner: false,
+    applicationTableOwner: false,
+    unexpectedDirectTablePrivileges: false,
+    unexpectedFunctionPrivileges: false,
+    missingExpectedFunctionPrivileges: false,
+    ...overrides,
+  };
+}
 
 function seedProvisionedGrants(
   repository: FakeRepository,
@@ -454,28 +491,110 @@ describe('first production user provisioning', () => {
     expect(repository.writes.revokedGrants).toHaveLength(0);
   });
 
+  it('accepts the exact provider membership and effective capability contract', () => {
+    expect(() => assertAcceptedProvisioningRole(acceptedRoleSnapshot())).not.toThrow();
+  });
+
   it('fails closed for unsafe or unapproved database roles', () => {
+    expect(() => assertAcceptedProvisioningRole(acceptedRoleSnapshot({ rolsuper: true }))).toThrow(
+      'non-superuser',
+    );
     expect(() =>
-      assertAcceptedProvisioningRole({
-        currentUser: ACCEPTED_PROVISIONING_DB_ROLE,
-        rolsuper: true,
-        rolbypassrls: false,
-      }),
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ rolbypassrls: true })),
     ).toThrow('non-superuser');
     expect(() =>
-      assertAcceptedProvisioningRole({
-        currentUser: ACCEPTED_PROVISIONING_DB_ROLE,
-        rolsuper: false,
-        rolbypassrls: true,
-      }),
-    ).toThrow('non-superuser');
-    expect(() =>
-      assertAcceptedProvisioningRole({
-        currentUser: 'app_runtime',
-        rolsuper: false,
-        rolbypassrls: false,
-      }),
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ currentUser: 'app_runtime' })),
     ).toThrow(ACCEPTED_PROVISIONING_DB_ROLE);
+  });
+
+  it.each([
+    ['wrong granted role', { grantedRole: 'unexpected_role' }],
+    ['wrong member', { member: 'unexpected_member' }],
+    ['wrong grantor', { grantor: 'unexpected_grantor' }],
+    ['ADMIN=false', { adminOption: false }],
+    ['INHERIT=true', { inheritOption: true }],
+    ['SET=true', { setOption: true }],
+  ])('rejects provider membership drift: %s', (_label, change) => {
+    expect(() =>
+      assertAcceptedProvisioningRole(
+        acceptedRoleSnapshot({
+          memberships: [{ ...acceptedRoleSnapshot().memberships[0]!, ...change }],
+        }),
+      ),
+    ).toThrow('exact approved provider relationship');
+  });
+
+  it('rejects additional, reverse, and unrelated memberships', () => {
+    const exact = acceptedRoleSnapshot().memberships[0]!;
+    expect(() =>
+      assertAcceptedProvisioningRole(
+        acceptedRoleSnapshot({
+          memberships: [exact, { ...exact, member: 'another_role' }],
+        }),
+      ),
+    ).toThrow('exact approved provider relationship');
+    expect(() =>
+      assertAcceptedProvisioningRole(
+        acceptedRoleSnapshot({
+          memberships: [
+            { ...exact, grantedRole: 'another_role', member: ACCEPTED_PROVISIONING_DB_ROLE },
+          ],
+        }),
+      ),
+    ).toThrow('exact approved provider relationship');
+    expect(() =>
+      assertAcceptedProvisioningRole(
+        acceptedRoleSnapshot({
+          memberships: [exact, { ...exact, member: 'unrelated_role' }],
+        }),
+      ),
+    ).toThrow('exact approved provider relationship');
+  });
+
+  it('accepts MEMBER=true only with USAGE=false, SET=false, and ADMIN=true', () => {
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ memberCapability: true })),
+    ).not.toThrow();
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ memberCapability: false })),
+    ).toThrow('effective membership capabilities');
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ usageCapability: true })),
+    ).toThrow('effective membership capabilities');
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ setCapability: true })),
+    ).toThrow('effective membership capabilities');
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ adminCapability: false })),
+    ).toThrow('effective membership capabilities');
+  });
+
+  it('rejects role configuration, ownership, table, and function privilege drift', () => {
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ rolconfig: ['search_path=public'] })),
+    ).toThrow('role configuration');
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ databaseOwner: true })),
+    ).toThrow('ownership');
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ schemaOwner: true })),
+    ).toThrow('ownership');
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ applicationTableOwner: true })),
+    ).toThrow('ownership');
+    expect(() =>
+      assertAcceptedProvisioningRole(
+        acceptedRoleSnapshot({ unexpectedDirectTablePrivileges: true }),
+      ),
+    ).toThrow('direct table privilege');
+    expect(() =>
+      assertAcceptedProvisioningRole(acceptedRoleSnapshot({ unexpectedFunctionPrivileges: true })),
+    ).toThrow('function privilege');
+    expect(() =>
+      assertAcceptedProvisioningRole(
+        acceptedRoleSnapshot({ missingExpectedFunctionPrivileges: true }),
+      ),
+    ).toThrow('function privilege');
   });
 
   it('reads a password with raw TTY input without echoing it', async () => {
