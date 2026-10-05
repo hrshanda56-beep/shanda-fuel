@@ -90,6 +90,12 @@ test.describe('shared shell consistency', () => {
       '0',
     );
     await expect(sidebar.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
+
+    const account = page.locator('.shell-account-trigger:visible');
+    await expect(account).toHaveAttribute('aria-label', 'Account');
+    await expect(account).toHaveCSS('width', '44px');
+    await expect(account.locator('.shell-account-trigger-text')).toBeHidden();
+    await expect(account.locator('.shell-account-chevron')).toBeHidden();
   });
 
   test('mobile has one compact header and a working navigation drawer', async ({ page }) => {
