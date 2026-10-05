@@ -90,6 +90,12 @@ The actual operator client is Homebrew `psql 16.15`. Human local validation
 against PostgreSQL 18.6 verified success exit code 0, deliberate failure exit
 code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
 
+The Stage 1 safety-hardening diagnostic is locally safety-verified: its
+process-local DEC-011 bootstrap handling, secret safeguards, read-only guard,
+and psql 16.15 intentional-refusal path were validated without contacting
+production. This is local evidence only; the diagnostic has not been executed
+against production.
+
 ### BLOCKED / IN PROGRESS
 
 - The latest Stage 1 production run passed exact checkout/SHA and local
@@ -108,8 +114,18 @@ code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
   the committed migration, helper, and policy tests contain no corresponding
   division operation. A local-only read-only diagnostic procedure was prepared
   in `docs/runbooks/stage1-rls-policy-diagnostic.md` to capture the missing
-  SQLSTATE/statement context and policy catalog. This does not establish the
-  production root cause or make Stage 1 pass.
+  SQLSTATE/statement context and policy catalog. The Stage 1 root cause remains
+  unknown; this does not establish production drift or an assertion/tooling
+  defect and does not make Stage 1 pass.
+- Diagnostic execution remains blocked because authoritative repository
+  sources contain no independent non-secret production database target
+  invariant. `APP_ENV`, `PGHOST`, `PGDATABASE`, `PGPORT`, the migration hash,
+  role membership, and server version are not sufficient production identity
+  evidence by themselves. Human review must establish the invariant before
+  the diagnostic can be enabled.
+- The diagnostic safety procedure and its psql 16.15 fail-closed behavior were
+  verified locally. No production database was contacted by this diagnostic
+  investigation, and Stage 1 has not been rerun.
 - The failed run stopped before temporary provisioner password assignment.
   No cleanup is required from that run, no first user exists, Stage 2 has not
   run, real-provisioning approval has not been given, and authenticated
@@ -378,7 +394,9 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 ### Active
 
 1. **Production Stage 1 fails closed in the RLS/policy preflight** with a
-   division-by-zero error; cause remains under investigation.
+   division-by-zero error; the root cause remains unknown. The reviewed
+   diagnostic is locally safety-verified but blocked from execution until an
+   independent non-secret production target invariant is established.
 2. **Daily Operations timezone fix is not yet cleanly integrated into the final candidate** even though the scoped implementation/tests are green.
 3. **A8 decimal fix is verified but still needs final clean release-candidate integration.**
 
@@ -394,8 +412,9 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - Local integration harness setup is ownership-sensitive and should be documented clearly to avoid future false regressions.
 - The latest Stage 1 RLS/policy preflight failure needs a reviewed diagnosis and
   rerun; the exhaustive function ACL-grantee validation is already Access
-  Review GREEN. A local-only diagnostic procedure is now prepared, but its
-  execution requires an approved human production read-only operation.
+  Review GREEN. A local-only diagnostic procedure is safety-verified, but its
+  execution is blocked until human review establishes an authoritative,
+  independent, non-secret production target invariant.
 
 ## 17. Open product questions
 
