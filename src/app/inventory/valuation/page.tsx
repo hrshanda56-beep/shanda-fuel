@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
 import { AppShell } from '@/design-system/app-shell';
@@ -14,6 +15,8 @@ import {
   InventoryContextRequired,
   type InventoryContext,
 } from '@/modules/inventory/ui/inventory-workspace';
+
+export const metadata: Metadata = { title: 'Inventory valuation' };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
