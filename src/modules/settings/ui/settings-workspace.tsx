@@ -4,7 +4,7 @@ import {
   ContextRequiredState,
   StatusBadge,
 } from '@/design-system/primitives';
-import { PageContainer, PageHeader, Section } from '@/design-system/layout';
+import { PageContainer, Section } from '@/design-system/layout';
 
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
@@ -16,12 +16,6 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
   return (
     <PageContainer width="wide">
       <div className={styles.workspace}>
-        <PageHeader
-          eyebrow="Settings"
-          title="Settings"
-          description="Review the organisation, legal entities, stations, and account available to you."
-        />
-
         {hasContext ? (
           <nav className={styles.sectionNav} aria-label="Settings sections">
             <a href="#organisation">Organisation</a>

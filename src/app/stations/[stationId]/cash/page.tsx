@@ -11,17 +11,8 @@ export default async function CashPage({ params }: { params: Promise<{ stationId
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      breadcrumbs={[{ label: 'Cash and banking' }]}
+      pageSubtitle="Track custody, collection allocation, and distinct bank confirmation."
     >
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">Cash and banking</p>
-          <h1>Station collections</h1>
-          <p className="lede">
-            Track custody, collection allocation, and distinct bank confirmation.
-          </p>
-        </div>
-      </div>
       <Suspense
         fallback={
           <ContextRequiredState

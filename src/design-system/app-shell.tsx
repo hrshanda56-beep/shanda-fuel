@@ -31,13 +31,9 @@ import {
 } from './navigation';
 import { IconButton } from './primitives';
 import {
-  parseClosedGroups,
-  readClosedGroupsRaw,
   readSidebarCollapsed,
-  setClosedGroupsRaw,
   setSidebarCollapsed,
   subscribeShellPreferences,
-  toggleClosedGroup,
 } from './shell-preferences';
 import { ThemeControl } from './theme-control';
 import { applyThemePreference, readStoredThemePreference } from './theme';
@@ -70,6 +66,8 @@ type AppShellProps = {
   role?: string;
   userName?: string;
   breadcrumbs?: readonly ShellBreadcrumb[];
+  pageTitle?: string;
+  pageSubtitle?: ReactNode;
   /** Synthetic or server-projected tasks assigned to the signed-in user. */
   openTasks?: readonly ShellTask[];
   /**
@@ -88,6 +86,38 @@ type WipRequest = {
 };
 type ShellContextValue = { openSearch: () => void };
 const ShellContext = createContext<ShellContextValue | null>(null);
+
+function closedGroupsForRoute(
+  sections: readonly ResolvedNavigationSection[],
+  pathname: string | null,
+): ReadonlySet<string> {
+  return new Set(
+    sections
+      .filter(
+        (section) =>
+          !isSingleDestinationSection(section) &&
+          !section.items.some((item) => isNavigationItemActive(item, pathname)),
+      )
+      .map((section) => section.key),
+  );
+}
+
+function pageTitleForRoute(
+  sections: readonly ResolvedNavigationSection[],
+  pathname: string | null,
+): string | undefined {
+  const current = sections
+    .flatMap((section) => section.items)
+    .find((item) => isNavigationItemActive(item, pathname));
+  if (!current) return undefined;
+  return current.key === 'today' ? 'Dashboard' : current.label;
+}
+
+type ClosedGroupState = {
+  pathname: string | null;
+  sections: readonly ResolvedNavigationSection[];
+  closedGroups: ReadonlySet<string>;
+};
 
 /* Shell -------------------------------------------------------------------- */
 
@@ -111,6 +141,8 @@ export function AppShell({
   role,
   userName,
   breadcrumbs = [],
+  pageTitle: pageTitleOverride,
+  pageSubtitle,
   openTasks,
   attention,
   searchPlacement = 'header',
@@ -133,13 +165,17 @@ export function AppShell({
     readSidebarCollapsed,
     () => false,
   );
-  const closedGroupsRaw = useSyncExternalStore(
-    subscribeShellPreferences,
-    readClosedGroupsRaw,
-    () => '',
-  );
-  const closedGroups = useMemo(() => parseClosedGroups(closedGroupsRaw), [closedGroupsRaw]);
+  const [closedGroupState, setClosedGroupState] = useState<ClosedGroupState>(() => ({
+    pathname,
+    sections,
+    closedGroups: closedGroupsForRoute(sections, pathname),
+  }));
+  const closedGroups =
+    closedGroupState.pathname === pathname && closedGroupState.sections === sections
+      ? closedGroupState.closedGroups
+      : closedGroupsForRoute(sections, pathname);
   const rail = shellMode === 'tablet' || (shellMode === 'desktop' && collapsed);
+  const resolvedPageTitle = pageTitleOverride ?? pageTitleForRoute(sections, pathname);
 
   // False during server render and hydration, true once client handlers are live.
   const hydrated = useSyncExternalStore(
@@ -174,8 +210,18 @@ export function AppShell({
   }, []);
 
   const toggleGroup = useCallback(
-    (key: string) => setClosedGroupsRaw(toggleClosedGroup(readClosedGroupsRaw(), key)),
-    [],
+    (key: string) =>
+      setClosedGroupState((current) => {
+        const base =
+          current.pathname === pathname && current.sections === sections
+            ? current.closedGroups
+            : closedGroupsForRoute(sections, pathname);
+        const next = new Set(base);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return { pathname, sections, closedGroups: next };
+      }),
+    [pathname, sections],
   );
 
   // From the rail, a group opens the full sidebar with that group expanded.
@@ -269,17 +315,30 @@ export function AppShell({
 
         <div className="shell-body">
           <div className="shell-main">
-            <div className="shell-header" role="region" aria-label="Work context and account">
-              <ContextSelector
-                fallback={context}
-                open={contextSelectorOpen}
-                onOpen={() => setContextSelectorOpen(true)}
-                onClose={() => setContextSelectorOpen(false)}
-              />
-              {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
-              <AccountMenu userName={userName} role={role} placement="desktop" />
+            <div className="shell-header" role="region" aria-label="Page header and work context">
+              {resolvedPageTitle ? (
+                <div className="shell-page-heading">
+                  <h1 id="page-title">{resolvedPageTitle}</h1>
+                  {pageSubtitle ? <p className="shell-page-subtitle">{pageSubtitle}</p> : null}
+                </div>
+              ) : null}
+              <div className="shell-header-controls">
+                <ContextSelector
+                  fallback={context}
+                  open={contextSelectorOpen}
+                  onOpen={() => setContextSelectorOpen(true)}
+                  onClose={() => setContextSelectorOpen(false)}
+                />
+                {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
+                <AccountMenu userName={userName} role={role} placement="desktop" />
+              </div>
             </div>
-            <main className="shell-sheet" id="main-content" tabIndex={-1}>
+            <main
+              className="shell-sheet"
+              id="main-content"
+              aria-labelledby={resolvedPageTitle ? 'page-title' : undefined}
+              tabIndex={-1}
+            >
               {breadcrumbs.length > 0 || attention ? (
                 <div className="shell-sheet-header">
                   {breadcrumbs.length > 0 ? <Breadcrumbs items={breadcrumbs} /> : <span />}
@@ -435,6 +494,7 @@ function NavigationSectionEntry({
             <NavigationEntry
               item={item}
               pathname={pathname}
+              tabIndex={open ? undefined : -1}
               onWip={onWip}
               onContextRequired={onContextRequired}
               onNavigate={onNavigate}
@@ -453,6 +513,7 @@ function NavigationEntry({
   onContextRequired,
   onNavigate,
   withIcon = false,
+  tabIndex,
 }: {
   item: ResolvedNavigationItem;
   pathname: string | null;
@@ -460,6 +521,7 @@ function NavigationEntry({
   onContextRequired: () => void;
   onNavigate?: () => void;
   withIcon?: boolean;
+  tabIndex?: number;
 }) {
   const icon = withIcon ? <Icon name={item.icon} className="nav-icon" /> : null;
 
@@ -470,6 +532,7 @@ function NavigationEntry({
         className="nav-row nav-link"
         href={item.href}
         aria-current={active ? 'page' : undefined}
+        tabIndex={tabIndex}
         onClick={onNavigate}
       >
         {icon}
@@ -485,6 +548,7 @@ function NavigationEntry({
           type="button"
           className="nav-row nav-link"
           aria-haspopup="dialog"
+          tabIndex={tabIndex}
           onClick={onContextRequired}
         >
           {icon}
@@ -497,6 +561,7 @@ function NavigationEntry({
         type="button"
         className="nav-row nav-link"
         aria-haspopup="dialog"
+        tabIndex={tabIndex}
         onClick={() => onWip({ feature: item.feature, message: item.message })}
       >
         {icon}
