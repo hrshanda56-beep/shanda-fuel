@@ -208,7 +208,8 @@ Production operator credentials are supplied by the human operator through a hid
 
 **CONFIRMED:** Homebrew `psql` 16 does not treat a URI stored in `PGDATABASE` as a connection URI. The initial reviewed operator approach therefore fell back to the local socket.
 
-The corrected design parses the URL using a standard URL parser and maps approved values into process-local libpq environment variables such as:
+The corrected design parses the URL using a standard URL parser and maps
+approved decoded values into process-local libpq environment variables such as:
 
 - `PGHOST`,
 - `PGPORT`,
@@ -217,7 +218,9 @@ The corrected design parses the URL using a standard URL parser and maps approve
 - `PGPASSWORD`,
 - explicitly allowlisted TLS/query-derived variables.
 
-The connection URI/password remains out of `psql` argv and is not persisted.
+`PGDATABASE` receives only the decoded database name; a full URI is never
+placed in `PGDATABASE`. The connection URI/password remains out of `psql`
+argv and is not persisted.
 
 ### 7.3 Fail-closed connection parsing
 
@@ -234,11 +237,12 @@ The parser has been reviewed to reject:
 
 Percent-decoding and valid host/port propagation are preserved.
 
-## 8. First-user helper ACL verification — current design edge
+## 8. First-user helper ACL verification
 
-**CURRENT / UNRESOLVED:** Production role discovery found zero existing roles that satisfy the earlier `SF_UNRELATED_ROLE` spot-check criteria. A review determined that simply removing that spot check would weaken current function ACL coverage because existing checks are not yet exhaustive for every possible grantee.
-
-The current architectural direction is to replace the single arbitrary-role probe with an exhaustive `pg_proc` ACL-grantee assertion that rejects every unexpected `EXECUTE` grantee. That change is not to be treated as complete until implemented and Access Review approves it.
+**CONFIRMED:** First-user helper function ACL verification uses exhaustive
+`pg_proc` ACL-grantee validation that rejects unexpected `EXECUTE` grantees.
+The independent Access Review is GREEN, and the production flow does not
+require an arbitrary unrelated-role diagnostic principal.
 
 No production role should be created merely to satisfy a diagnostic spot check.
 

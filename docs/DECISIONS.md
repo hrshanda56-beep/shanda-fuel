@@ -405,21 +405,30 @@ Status values:
 
 **Rationale:** Production access control should reflect application/runtime needs, not the convenience of one diagnostic assertion.
 
-**Consequences:** The current single-role ACL probe cannot simply be removed if that weakens coverage; the preferred direction is exhaustive unexpected-grantee detection.
+**Consequences:** The former single-role probe must be replaced by stronger
+exhaustive evidence before the production flow relies on the revised check.
 
 ---
 
-## DEC-029 — Replace spot-check ACL evidence with exhaustive grantee evidence before removing SF_UNRELATED_ROLE
+## DEC-029 — Replace unrelated-role spot-check ACL evidence with exhaustive grantee evidence
 
-**Status:** PENDING REVIEW
+**Status:** ACCEPTED
 
-**Context:** A review proved that current function ACL checks cover PUBLIC, app_runtime, first_user_provisioner, and one supplied unrelated role but do not exhaustively reject every possible unexpected grantee.
+**Context:** A review proved that the former function ACL checks covered
+PUBLIC, app_runtime, first_user_provisioner, and one supplied unrelated role
+but did not exhaustively reject every possible unexpected grantee.
 
-**Proposed approach:** Expand `pg_proc` ACL inspection to reject any explicit unexpected `EXECUTE` grantee, then remove the arbitrary unrelated-role prerequisite.
+**Chosen approach:** Use exhaustive `pg_proc` ACL inspection to reject any
+explicit unexpected `EXECUTE` grantee and remove the arbitrary unrelated-role
+prerequisite.
 
-**Rationale:** This is strictly stronger than checking one unrelated role and avoids creating a meaningless production role.
+**Rationale:** This is strictly stronger than checking one unrelated role and
+avoids creating a meaningless production role.
 
-**Consequences:** This is not yet an accepted production preflight change until implementation and Access Review are green. Stage 1 remains blocked until then.
+**Consequences:** The exhaustive validation and independent Access Review are
+GREEN. The current Stage 1 blocker is separate: the latest RLS/policy
+preflight failed closed with a division-by-zero error and remains under
+investigation.
 
 ---
 
