@@ -5,7 +5,7 @@ import { isDesignSystemReferenceAvailable } from '@/design-system/reference/avai
 import { DesignSystemReference } from '@/design-system/reference/design-system-reference';
 
 export const metadata: Metadata = {
-  title: 'Design system · Shanda Fuel',
+  title: 'Design system',
   robots: { index: false, follow: false },
 };
 
