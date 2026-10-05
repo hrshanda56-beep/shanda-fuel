@@ -187,6 +187,11 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - Treat the cause as under investigation: production drift, assertion defect,
   catalog normalization mismatch, or another policy-property mismatch remain
   possible.
+- Repository inspection found no committed operator-side policy assertion or
+  division operation corresponding to the reported error. The local-only
+  diagnostic procedure at `docs/runbooks/stage1-rls-policy-diagnostic.md`
+  captures the exact missing SQLSTATE/statement context and policy catalog;
+  human execution is required before the cause can be classified.
 - The failure occurred before temporary provisioner password assignment; no
   cleanup is required from that failed run and no scope was selected.
 - Do not guess tenant/legal-entity/station IDs.

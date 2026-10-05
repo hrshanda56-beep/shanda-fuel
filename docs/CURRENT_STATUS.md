@@ -103,6 +103,13 @@ code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
   production security drift; possible causes include production drift, a
   preflight assertion bug, catalog normalization mismatch, or another policy
   property mismatch.
+- Repository inspection established that the operator-side Stage 1 policy
+  assertion that raised `division by zero` is not committed in this checkout;
+  the committed migration, helper, and policy tests contain no corresponding
+  division operation. A local-only read-only diagnostic procedure was prepared
+  in `docs/runbooks/stage1-rls-policy-diagnostic.md` to capture the missing
+  SQLSTATE/statement context and policy catalog. This does not establish the
+  production root cause or make Stage 1 pass.
 - The failed run stopped before temporary provisioner password assignment.
   No cleanup is required from that run, no first user exists, Stage 2 has not
   run, real-provisioning approval has not been given, and authenticated
@@ -387,7 +394,8 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - Local integration harness setup is ownership-sensitive and should be documented clearly to avoid future false regressions.
 - The latest Stage 1 RLS/policy preflight failure needs a reviewed diagnosis and
   rerun; the exhaustive function ACL-grantee validation is already Access
-  Review GREEN.
+  Review GREEN. A local-only diagnostic procedure is now prepared, but its
+  execution requires an approved human production read-only operation.
 
 ## 17. Open product questions
 
