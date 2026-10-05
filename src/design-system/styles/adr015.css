@@ -1564,6 +1564,17 @@ body {
   .shell-sheet {
     border-radius: var(--radius-xl);
   }
+
+  .shell-account-menu-desktop .shell-account-trigger-text,
+  .shell-account-menu-desktop .shell-account-chevron {
+    display: none;
+  }
+
+  .shell-account-menu-desktop .shell-account-trigger {
+    width: var(--touch-target-min);
+    justify-content: center;
+    padding: 0;
+  }
 }
 
 @media (min-width: 75rem) {
