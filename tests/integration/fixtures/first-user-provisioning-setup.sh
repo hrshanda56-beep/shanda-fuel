@@ -35,48 +35,33 @@ fi
   --file "$repo_root/ops/db/bootstrap.sql"
 
 "$pg_bin/psql" --no-password -X -v ON_ERROR_STOP=1 \
+  --host "$pg_host" --port "$pg_port" --username "$pg_user" --dbname "$test_db" \
+  --file "$repo_root/scripts/db/bootstrap-first-user-provisioner.sql"
+
+"$pg_bin/psql" --no-password -X -v ON_ERROR_STOP=1 \
   --host "$pg_host" --port "$pg_port" --username "$pg_user" --dbname "$test_db" <<'SQL'
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_user_provisioner') THEN
-    EXECUTE 'CREATE ROLE first_user_provisioner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_user_unrelated') THEN
     EXECUTE 'CREATE ROLE first_user_unrelated LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
   END IF;
 END
 $$;
 
-ALTER ROLE first_user_provisioner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
-  NOINHERIT NOREPLICATION NOBYPASSRLS;
-ALTER ROLE first_user_provisioner RESET ALL;
 ALTER ROLE first_user_unrelated LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
   NOINHERIT NOREPLICATION NOBYPASSRLS;
 ALTER ROLE first_user_unrelated RESET ALL;
 ALTER ROLE app_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
   NOINHERIT NOREPLICATION NOBYPASSRLS;
 ALTER ROLE app_runtime RESET ALL;
-
-DO $$
-DECLARE
-  granted_role name;
-BEGIN
-  FOR granted_role IN
-    SELECT parent.rolname
-    FROM pg_auth_members membership
-    JOIN pg_roles parent ON parent.oid = membership.roleid
-    JOIN pg_roles member ON member.oid = membership.member
-    WHERE member.rolname = 'first_user_provisioner'
-  LOOP
-    EXECUTE format('REVOKE %I FROM first_user_provisioner', granted_role);
-  END LOOP;
-END
-$$;
 SQL
 
 (cd "$repo_root" && \
   DATABASE_DIRECT_URL="postgresql://${pg_user}@${pg_host}:${pg_port}/${test_db}" \
   pnpm exec drizzle-kit migrate --config drizzle.config.ts)
+
+DATABASE_DIRECT_URL="postgresql://${pg_user}@${pg_host}:${pg_port}/${test_db}" \
+  bash "$repo_root/scripts/db/assert-ci-first-user-provisioner.sh"
 
 "$pg_bin/psql" --no-password -X -v ON_ERROR_STOP=1 \
   --host "$pg_host" --port "$pg_port" --username "$pg_user" --dbname "$test_db" <<'SQL'
