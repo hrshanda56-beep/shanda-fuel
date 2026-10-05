@@ -1,13 +1,13 @@
 # First production user provisioning hardening review
 
-Status: **CAPABILITY IMPLEMENTED / READY FOR DATABASE REVIEW**. The local tool
-and narrow database capability are implemented on the isolated branch below.
-The tool was not run against any database, has not created or revoked a user,
-and has not been deployed.
+Status: **POSTGRESQL VERIFIED**. The local tool and narrow database capability
+were exercised against a disposable PostgreSQL 16.15 database on the isolated
+branch below. No production or Neon database was contacted, and no production
+user was created.
 
 - Branch: `plan/first-production-user`
 - Base SHA: `3a6935af5d4d79cf806e3b69e24ab910ffcf562a`
-- Local commit SHA: `70b5ca9`
+- Local commit SHA: reported from `git rev-parse HEAD` after commit creation; intentionally not embedded here because that would make the commit hash self-referential.
 - Production `main` changed: **NO**
 - Production/staging/Neon contacted: **NO**
 - Migration: `0021_security_first_user_provisioning.sql`
@@ -71,7 +71,8 @@ environment-variable role override.
 
 The write transaction locks the tenant, legal entity, and station rows in
 deterministic hierarchy order with `FOR UPDATE`, then revalidates active
-status and exact relationships before mutation. Dry-run retains
+status and exact relationships before mutation. The migration adds only
+capability-scoped update policies needed for those row locks. Dry-run retains
 `SET TRANSACTION READ ONLY` and uses unlocked reads; it cannot write.
 
 ## Password, Better Auth, and CLI safety
@@ -157,19 +158,25 @@ Validation state for this checkout:
 - Focused unit tests: **13 passed** using the existing shared dependency
   installation through a temporary, non-repository module-resolution harness;
   the isolated worktree itself was not modified with dependencies.
-- PostgreSQL integration suite: **6 authored / 0 executed**. Its explicit
-  safety gate was closed because no local PostgreSQL 16 service or Docker
-  daemon was present, and no `DATABASE_URL`, `APP_ENV`, or safe synthetic test
-  database was available. No database contact was attempted.
+- PostgreSQL integration suite: **7 passed** against
+  `shanda_fuel_first_user_test` on PostgreSQL 16.15 at `127.0.0.1:55432`.
+  The suite used only synthetic Tenant A/B fixtures and the restricted
+  `first_user_provisioner` connection for provisioning.
+- PostgreSQL adversarial probes: **passed**. Unknown/write permission
+  requests, cross-tenant/entity scopes, helper calls as `app_runtime` and an
+  unrelated role, direct provisioner writes, and runtime writes were rejected
+  or returned zero rows; catalog checks confirmed no forbidden row changes.
+- PostgreSQL catalog verification: **passed**. Migration 0021 is recorded,
+  all seven touched tables remain RLS-enabled and FORCE-RLS, the provisioner
+  is not a database/schema/relation owner, and SECURITY DEFINER functions have
+  `migration_owner` ownership, explicit safe search paths, and no PUBLIC,
+  `app_runtime`, or unrelated-role EXECUTE privilege.
 - `pnpm lint`: **not executed** in the isolated worktree because its ESLint
   config dependencies are absent. No offline installation was attempted.
-- Targeted TypeScript check for the hardened tool and tests: **passed** using
-  the existing shared dependency type declarations through a temporary,
-  non-repository config. Repository-wide TypeScript remains unverified.
+- Targeted TypeScript check for the hardened tool and tests: **passed**.
+- Drizzle migration validation: **passed**.
 
-No signup, bootstrap, deployment, push, production user action, or independent
-re-review was performed. The next implementation owner remains A0. Actual
-execution still requires an approved non-superuser/NOBYPASSRLS operator role,
-synthetic local test fixtures for integration validation, and separately
-approved client tenant/legal-entity/station, operator, expiry, database, and
-audit-key values.
+No signup, deployment, push, production user action, or independent re-review
+was performed. The next implementation owner remains A0. Production use still
+requires separate approval and client-provided tenant/legal-entity/station,
+operator, expiry, database, and audit-key values.

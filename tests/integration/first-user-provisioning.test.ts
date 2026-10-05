@@ -40,6 +40,18 @@ const scope: ScopeIds | undefined =
       }
     : undefined;
 const fixtureTest = scope ? it : it.skip;
+const crossTenantScope: ScopeIds | undefined =
+  process.env.FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_ID &&
+  process.env.FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_LEGAL_ENTITY_ID &&
+  process.env.FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_STATION_ID
+    ? {
+        tenantId: process.env.FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_ID,
+        legalEntityId: process.env.FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_LEGAL_ENTITY_ID,
+        stationId: process.env.FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_STATION_ID,
+      }
+    : undefined;
+const crossEntityStationId = process.env.FIRST_USER_PROVISIONING_TEST_CROSS_ENTITY_STATION_ID;
+const hierarchyTest = scope && crossTenantScope && crossEntityStationId ? it : it.skip;
 let client: ReturnType<typeof postgres> | undefined;
 let adminClient: ReturnType<typeof postgres> | undefined;
 let appRuntimeClient: ReturnType<typeof postgres> | undefined;
@@ -87,9 +99,11 @@ integration('first-user provisioning PostgreSQL hardening', () => {
     await expect(
       client!`select platform.first_user_provisioning_set_context('scope_read')`,
     ).rejects.toThrow();
-    await expect(
-      client!`select platform.first_user_provisioning_permission_definitions(${['tenant.manage']}::text[])`,
-    ).rejects.toThrow();
+    for (const requestedPermission of ['tenant.manage', 'tenant.view.unknown']) {
+      await expect(
+        client!`select platform.first_user_provisioning_permission_definitions(${[requestedPermission]}::text[])`,
+      ).rejects.toThrow();
+    }
     await expect(
       appRuntimeClient!`select platform.first_user_provisioning_scope_options(
         ${scope!.tenantId}::uuid, ${scope!.legalEntityId}::uuid, ${scope!.stationId}::uuid
@@ -120,11 +134,66 @@ integration('first-user provisioning PostgreSQL hardening', () => {
     });
   });
 
+  hierarchyTest('rejects cross-tenant and cross-legal-entity station scopes', async () => {
+    const auditKey = { keyId: 'integration-first-user', secret: 'integration-only-secret' };
+    const attempt = (requestScope: ScopeIds, email: string) =>
+      client!.begin(async (transaction) =>
+        provisionFirstUser({
+          repository: createPostgresRepository(transaction),
+          request: {
+            email,
+            displayName: 'Invalid Synthetic Scope',
+            scope: requestScope,
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+          },
+          password: 'integration-only-password',
+          auditKey,
+          hasher: async () => 'integration-password-hash',
+        }),
+      );
+
+    await expect(
+      attempt(
+        {
+          tenantId: scope!.tenantId,
+          legalEntityId: crossTenantScope!.legalEntityId,
+          stationId: crossTenantScope!.stationId,
+        },
+        `cross-tenant-${Date.now()}@example.test`,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      attempt(
+        {
+          tenantId: scope!.tenantId,
+          legalEntityId: scope!.legalEntityId,
+          stationId: crossEntityStationId!,
+        },
+        `cross-entity-${Date.now()}@example.test`,
+      ),
+    ).rejects.toThrow();
+  });
+
   fixtureTest('creates one exact operation and safely refuses a duplicate', async () => {
     const email = `first-user-success-${Date.now()}@example.test`;
     const auditKey = { keyId: 'integration-first-user', secret: 'integration-only-secret' };
+    const unrelatedUserId = randomUUID();
+    const unrelatedSessionId = randomUUID();
+    const unrelatedSessionToken = `synthetic-unrelated-session-${Date.now()}`;
+    const unrelatedGrantId = randomUUID();
     let result: Awaited<ReturnType<typeof provisionFirstUser>> | undefined;
     let revoked = false;
+
+    await adminClient!`
+      insert into auth."user" (id, name, email, email_verified)
+      values (${unrelatedUserId}::uuid, 'Synthetic Unrelated User',
+        ${`unrelated-${Date.now()}@example.test`}, false)
+    `;
+    await adminClient!`
+      insert into auth.session (id, expires_at, token, user_id)
+      values (${unrelatedSessionId}::uuid, now() + interval '1 hour',
+        ${unrelatedSessionToken}, ${unrelatedUserId}::uuid)
+    `;
 
     try {
       result = await client!.begin(async (transaction) =>
@@ -151,6 +220,114 @@ integration('first-user provisioning PostgreSQL hardening', () => {
       );
       expect(identity?.memberships).toHaveLength(1);
       expect(identity?.memberships[0]?.status).toBe('ACTIVE');
+
+      const grants = await adminClient!<
+        { permissionCode: string; scopeType: string; reason: string; revokedAt: Date | null }[]
+      >`
+        select permission_code as "permissionCode", scope_type as "scopeType",
+               reason, revoked_at as "revokedAt"
+        from app.temporary_permission_grants
+        where tenant_id = ${scope!.tenantId}::uuid and membership_id = ${result.membershipId}::uuid
+        order by permission_code
+      `;
+      expect(grants).toHaveLength(READ_ONLY_GRANT_PLAN.length);
+      expect(grants.some((grant) => grant.permissionCode === 'provider.view')).toBe(false);
+      expect(grants.every((grant) => grant.revokedAt === null)).toBe(true);
+      expect(
+        grants.every(
+          (grant) => grant.reason === `first-production-user-provisioning:${result!.operationId}`,
+        ),
+      ).toBe(true);
+
+      const events = await adminClient!<
+        { eventCode: string; actorId: string | null; details: { subjectId?: string } }[]
+      >`
+        select event_code as "eventCode", actor_id as "actorId", details
+        from platform.security_events
+        where tenant_id = ${scope!.tenantId}::uuid and membership_id = ${result.membershipId}::uuid
+        order by occurred_at
+      `;
+      expect(events.map((event) => event.eventCode)).toEqual([
+        'ACCESS.PROVISIONING_INITIATED',
+        'ACCESS.PROVISIONING_COMPLETED',
+      ]);
+      expect(events.every((event) => event.actorId === null)).toBe(true);
+      expect(events.every((event) => event.details.subjectId === result!.userId)).toBe(true);
+
+      const activeOperationGrants = await appRuntimeClient!.begin(async (transaction) => {
+        await transaction`
+          select
+            set_config('app.tenant_id', ${scope!.tenantId}, true),
+            set_config('app.actor_id', ${result!.userId}, true),
+            set_config('app.membership_id', ${result!.membershipId}, true)
+        `;
+        return transaction<{ count: number }[]>`
+          select count(*)::integer as count
+          from app.temporary_permission_grants
+          where tenant_id = ${scope!.tenantId}::uuid
+            and membership_id = ${result!.membershipId}::uuid
+            and reason = ${`first-production-user-provisioning:${result!.operationId}`}
+            and revoked_at is null
+            and expires_at > now()
+        `;
+      });
+      expect(activeOperationGrants[0]?.count).toBe(READ_ONLY_GRANT_PLAN.length);
+
+      await adminClient!`
+        insert into app.temporary_permission_grants
+          (id, tenant_id, membership_id, permission_code, scope_type, expires_at, reason)
+        values (
+          ${unrelatedGrantId}::uuid, ${scope!.tenantId}::uuid, ${result.membershipId}::uuid,
+          'tenant.view', 'TENANT', now() + interval '1 hour', 'synthetic-unrelated-grant'
+        )
+      `;
+      await expect(
+        client!.begin(async (transaction) =>
+          revokeFirstUserAccess({
+            repository: createPostgresRepository(transaction),
+            email,
+            userId: result!.userId,
+            operationId: result!.operationId,
+            scope: scope!,
+            auditKey,
+          }),
+        ),
+      ).rejects.toThrow('unrelated unrevoked temporary grants');
+      const unrelatedGrants = await adminClient!<{ revokedAt: Date | null }[]>`
+        select revoked_at as "revokedAt"
+        from app.temporary_permission_grants
+        where id = ${unrelatedGrantId}::uuid
+      `;
+      expect(unrelatedGrants).toHaveLength(1);
+      expect(unrelatedGrants[0]?.revokedAt).toBeNull();
+      await adminClient!`
+        delete from app.temporary_permission_grants where id = ${unrelatedGrantId}::uuid
+      `;
+
+      await adminClient!`
+        update app.temporary_permission_grants
+        set expires_at = now() - interval '1 second'
+        where membership_id = ${result.membershipId}::uuid
+          and reason = ${`first-production-user-provisioning:${result.operationId}`}
+      `;
+      const expiredOperationGrants = await appRuntimeClient!.begin(async (transaction) => {
+        await transaction`
+          select
+            set_config('app.tenant_id', ${scope!.tenantId}, true),
+            set_config('app.actor_id', ${result!.userId}, true),
+            set_config('app.membership_id', ${result!.membershipId}, true)
+        `;
+        return transaction<{ count: number }[]>`
+          select count(*)::integer as count
+          from app.temporary_permission_grants
+          where tenant_id = ${scope!.tenantId}::uuid
+            and membership_id = ${result!.membershipId}::uuid
+            and reason = ${`first-production-user-provisioning:${result!.operationId}`}
+            and revoked_at is null
+            and expires_at > now()
+        `;
+      });
+      expect(expiredOperationGrants[0]?.count).toBe(0);
 
       await expect(
         client!.begin(async (transaction) =>
@@ -183,8 +360,18 @@ integration('first-user provisioning PostgreSQL hardening', () => {
         revokedGrantCount: READ_ONLY_GRANT_PLAN.length,
         membershipDisabled: true,
       });
+      const unrelatedSessions = await adminClient!<{ revokedAt: Date | null }[]>`
+        select revoked_at as "revokedAt"
+        from auth.session
+        where id = ${unrelatedSessionId}::uuid
+      `;
+      expect(unrelatedSessions).toHaveLength(1);
+      expect(unrelatedSessions[0]?.revokedAt).toBeNull();
       revoked = true;
     } finally {
+      await adminClient!`
+        delete from app.temporary_permission_grants where id = ${unrelatedGrantId}::uuid
+      `;
       if (result && !revoked) {
         await client!
           .begin(async (transaction) =>
@@ -199,6 +386,7 @@ integration('first-user provisioning PostgreSQL hardening', () => {
           )
           .catch(() => undefined);
       }
+      await adminClient!`delete from auth."user" where id = ${unrelatedUserId}::uuid`;
     }
   });
 
@@ -225,7 +413,7 @@ integration('first-user provisioning PostgreSQL hardening', () => {
       client!.begin(async (transaction) => {
         await transaction`
           select platform.first_user_provisioning_append_failure(
-            ${scope!.tenantId}::uuid, ${JSON.stringify(event)}::jsonb
+            ${scope!.tenantId}::uuid, ${transaction.json(JSON.parse(JSON.stringify(event)))}::jsonb
           )
         `;
         throw new Error('expected failure-audit rollback');

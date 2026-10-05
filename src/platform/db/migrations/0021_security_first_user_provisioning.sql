@@ -666,6 +666,15 @@ CREATE POLICY first_user_provisioning_scope_read ON app.tenants
     )
   );
 
+CREATE POLICY first_user_provisioning_scope_lock ON app.tenants
+  FOR UPDATE USING (
+    session_user = 'first_user_provisioner'
+    AND current_setting('app.first_user_provisioning_capability', true) IN ('provision', 'revoke')
+    AND id = nullif(current_setting('app.first_user_provisioning_tenant_id', true), '')::uuid
+  ) WITH CHECK (
+    id = nullif(current_setting('app.first_user_provisioning_tenant_id', true), '')::uuid
+  );
+
 CREATE POLICY first_user_provisioning_scope_read ON app.legal_entities
   FOR SELECT USING (
     session_user = 'first_user_provisioner'
@@ -673,6 +682,17 @@ CREATE POLICY first_user_provisioning_scope_read ON app.legal_entities
     AND tenant_id = nullif(current_setting('app.first_user_provisioning_tenant_id', true), '')::uuid
     AND (nullif(current_setting('app.first_user_provisioning_legal_entity_id', true), '') IS NULL
       OR id = nullif(current_setting('app.first_user_provisioning_legal_entity_id', true), '')::uuid)
+  );
+
+CREATE POLICY first_user_provisioning_scope_lock ON app.legal_entities
+  FOR UPDATE USING (
+    session_user = 'first_user_provisioner'
+    AND current_setting('app.first_user_provisioning_capability', true) IN ('provision', 'revoke')
+    AND tenant_id = nullif(current_setting('app.first_user_provisioning_tenant_id', true), '')::uuid
+    AND id = nullif(current_setting('app.first_user_provisioning_legal_entity_id', true), '')::uuid
+  ) WITH CHECK (
+    tenant_id = nullif(current_setting('app.first_user_provisioning_tenant_id', true), '')::uuid
+    AND id = nullif(current_setting('app.first_user_provisioning_legal_entity_id', true), '')::uuid
   );
 
 CREATE POLICY first_user_provisioning_scope_read ON app.stations
@@ -684,6 +704,19 @@ CREATE POLICY first_user_provisioning_scope_read ON app.stations
       OR legal_entity_id = nullif(current_setting('app.first_user_provisioning_legal_entity_id', true), '')::uuid)
     AND (nullif(current_setting('app.first_user_provisioning_station_id', true), '') IS NULL
       OR id = nullif(current_setting('app.first_user_provisioning_station_id', true), '')::uuid)
+  );
+
+CREATE POLICY first_user_provisioning_scope_lock ON app.stations
+  FOR UPDATE USING (
+    session_user = 'first_user_provisioner'
+    AND current_setting('app.first_user_provisioning_capability', true) IN ('provision', 'revoke')
+    AND tenant_id = nullif(current_setting('app.first_user_provisioning_tenant_id', true), '')::uuid
+    AND legal_entity_id = nullif(current_setting('app.first_user_provisioning_legal_entity_id', true), '')::uuid
+    AND id = nullif(current_setting('app.first_user_provisioning_station_id', true), '')::uuid
+  ) WITH CHECK (
+    tenant_id = nullif(current_setting('app.first_user_provisioning_tenant_id', true), '')::uuid
+    AND legal_entity_id = nullif(current_setting('app.first_user_provisioning_legal_entity_id', true), '')::uuid
+    AND id = nullif(current_setting('app.first_user_provisioning_station_id', true), '')::uuid
   );
 
 CREATE POLICY first_user_provisioning_membership_read ON app.memberships

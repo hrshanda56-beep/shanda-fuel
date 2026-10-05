@@ -618,6 +618,39 @@ export async function revokeFirstUserAccess(input: {
     scope,
     grants: READ_ONLY_GRANT_PLAN,
   };
+  if (input.repository.revokeAtomic) {
+    const event = auditEvent({
+      actionCode: 'ACCESS.PROVISIONING_REVOKED',
+      plan,
+      subjectId: existing.id,
+      membershipId: membership.id,
+      key: input.auditKey,
+      metadata: {
+        permissionCodes: READ_ONLY_GRANT_PLAN.map((grant) => grant.permissionCode),
+        revokedGrantCount: matchingGrantIds.length,
+        membershipDisabled: true,
+        outcome: 'success',
+      },
+    });
+    const result = await input.repository.revokeAtomic({
+      userId: existing.id,
+      membershipId: membership.id,
+      operationId: input.operationId,
+      tenantId: scope.tenant.id,
+      legalEntityId: scope.legalEntity.id,
+      stationId: scope.station.id,
+      grantIds: matchingGrantIds,
+      event,
+    });
+    return {
+      operationId: input.operationId,
+      userId: existing.id,
+      membershipId: membership.id,
+      ...result,
+      auditEventId: event.eventId,
+    };
+  }
+
   await input.repository.setTenantContext({
     tenantId: scope.tenant.id,
     legalEntityId: scope.legalEntity.id,
@@ -649,26 +682,6 @@ export async function revokeFirstUserAccess(input: {
       outcome: 'success',
     },
   });
-
-  if (input.repository.revokeAtomic) {
-    const result = await input.repository.revokeAtomic({
-      userId: existing.id,
-      membershipId: membership.id,
-      operationId: input.operationId,
-      tenantId: scope.tenant.id,
-      legalEntityId: scope.legalEntity.id,
-      stationId: scope.station.id,
-      grantIds: matchingGrantIds,
-      event,
-    });
-    return {
-      operationId: input.operationId,
-      userId: existing.id,
-      membershipId: membership.id,
-      ...result,
-      auditEventId: event.eventId,
-    };
-  }
 
   await input.repository.appendAuditEvent(event);
   const membershipDisabled = await input.repository.disableMembership({
@@ -861,7 +874,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
     async appendAuditEvent(event) {
       await query`
         select platform.first_user_provisioning_append_failure(
-          ${event.tenantId}::uuid, ${JSON.stringify(event)}::jsonb
+          ${event.tenantId}::uuid, ${query.json(JSON.parse(JSON.stringify(event)))}::jsonb
         )
       `;
     },
@@ -901,8 +914,8 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
           ${input.displayName},
           ${input.passwordHash},
           ${input.expiresAt}::timestamptz,
-          ${JSON.stringify(input.initiatedEvent)}::jsonb,
-          ${JSON.stringify(input.completedEvent)}::jsonb
+          ${query.json(JSON.parse(JSON.stringify(input.initiatedEvent)))}::jsonb,
+          ${query.json(JSON.parse(JSON.stringify(input.completedEvent)))}::jsonb
         )
       `;
     },
@@ -924,7 +937,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
           ${input.legalEntityId}::uuid,
           ${input.stationId}::uuid,
           ${input.grantIds}::uuid[],
-          ${JSON.stringify(input.event)}::jsonb
+          ${query.json(JSON.parse(JSON.stringify(input.event)))}::jsonb
         ) as value
       `;
       return parseJson<{
