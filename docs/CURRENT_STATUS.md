@@ -17,8 +17,8 @@ Status labels:
 ### VERIFIED COMPLETE
 
 - PR #95 merged the documentation-only canonical knowledge-base change.
-- Canonical repository main after that merge is
-  `1aacc3ea8910b7579069ce44d44ae9b5a0c4feb3`.
+- PR #96 merged the documentation-only canonical status synchronization at
+  main `8b9d163763cb4fab52b96aed225f7553f0069e65`.
 - The canonical knowledge base is `AGENTS.md`,
   `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,
   `docs/CURRENT_STATUS.md`, and `docs/IMPLEMENTATION_PLAN.md`.
