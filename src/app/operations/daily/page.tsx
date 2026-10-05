@@ -7,6 +7,10 @@ import {
 } from '@/modules/forecourt/ui/daily-operations-workspace';
 import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
 
+export const metadata = {
+  title: 'Daily operations',
+};
+
 export default async function DailyOperationsPage({
   searchParams,
 }: {
@@ -36,14 +40,6 @@ export default async function DailyOperationsPage({
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      context={{
-        organisation: 'Authorised organisation',
-        station: 'Select station context',
-        businessDate: 'Business date',
-        shift: 'Active shift',
-      }}
-      role="Station operations"
-      userName="Current user"
       breadcrumbs={[{ label: 'Operations' }, { label: 'Daily workspace' }]}
     >
       {context ? (

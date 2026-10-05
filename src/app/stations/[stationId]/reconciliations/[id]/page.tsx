@@ -6,6 +6,8 @@ import {
   type ProductionReconciliationContext,
 } from '@/modules/forecourt/ui/production-reconciliation-workflow';
 
+export const metadata = { title: 'Reconciliation' };
+
 export default async function ReconciliationPage({
   params,
   searchParams,
@@ -32,14 +34,6 @@ export default async function ReconciliationPage({
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      context={{
-        organisation: 'Authorised organisation',
-        station: 'Station context',
-        businessDate: 'Business date',
-        shift: 'Active shift',
-      }}
-      role="Station operations"
-      userName="Current user"
       breadcrumbs={[
         { label: 'Reconciliations', href: '/stations/demo/reconciliations' },
         { label: 'Morning shift' },

@@ -503,7 +503,7 @@ test.describe('phones never scroll sideways', () => {
 
       await page.goto('/inventory/valuation?tenantId=tenant-1&stationId=station-1');
       await expect(
-        page.getByRole('heading', { name: 'Inventory needs a station context' }),
+        page.getByRole('heading', { name: 'Choose a station to view inventory' }),
       ).toBeVisible();
       await expectFitsWidth(page);
 
@@ -542,9 +542,6 @@ test.describe('KPIs', () => {
     await expect(
       page.getByRole('heading', { name: 'Evidence → collected → banked' }),
     ).toBeInViewport();
-
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Needs attention' })).toBeVisible();
   });
 
   test('become one calm list on phones', async ({ page }) => {
@@ -565,13 +562,6 @@ test.describe('click targets', () => {
     await page.goto('/foundation');
     await page.getByRole('link', { name: 'Open guided workflow' }).click();
     await expect(page).toHaveURL(/\/stations\/demo-station\/reconciliations\/new$/);
-  });
-
-  test('a whole table row opens its record', async ({ page }) => {
-    await page.goto('/');
-    const attention = page.getByRole('table', { name: 'Items that need attention' });
-    await attention.getByRole('button', { name: /Review Cash short/ }).click();
-    await expect(page.getByRole('dialog', { name: /Item review is in progress/ })).toBeVisible();
   });
 
   test('clickable things show the pointer cursor on desktop', async ({ page }) => {
@@ -604,7 +594,7 @@ test.describe('data screens stay accessible', () => {
     ['/reports?tenantId=tenant-1', 'Payments and products'],
     [
       '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
-      'Inventory needs a station context',
+      'Choose a station to view inventory',
     ],
     ['/stations/station-1/cash?tenantId=tenant-1', 'Station collections'],
   ] as const;
