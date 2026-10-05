@@ -14,17 +14,13 @@ export default async function ReportsPage({
 }) {
   const { tenantId } = await searchParams;
   return (
-    <AppShell navigationProjection={syntheticNavigationProjection}>
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">Management reporting</p>
-          <h1>Operational financial position</h1>
-          <p className="lede">
-            A factual view across approved sales, custody, settlements, commercial exposure, and
-            stock.
-          </p>
-        </div>
-      </div>
+    <AppShell
+      navigationProjection={syntheticNavigationProjection}
+      pageSubtitle="Operational financial position"
+    >
+      <p className="lede">
+        A factual view across approved sales, custody, settlements, commercial exposure, and stock.
+      </p>
       {tenantId ? (
         <ManagementReportDashboard tenantId={tenantId} />
       ) : (

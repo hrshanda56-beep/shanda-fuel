@@ -10,7 +10,11 @@ export const metadata = {
 /** Owner/Finance overview. Live figures stay hidden until reporting data exists. */
 export default function OverviewPage() {
   return (
-    <AppShell navigationProjection={syntheticNavigationProjection} searchPlacement="header">
+    <AppShell
+      navigationProjection={syntheticNavigationProjection}
+      searchPlacement="header"
+      pageSubtitle="Live figures are not available for this work context yet."
+    >
       <ProductionSafeOverview />
     </AppShell>
   );

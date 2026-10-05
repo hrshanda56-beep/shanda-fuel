@@ -662,8 +662,6 @@ export function DailyOperationsWorkspace({
       <div className="daily-operations-workspace" aria-label="Daily station operations workspace">
         <div className="page-header">
           <div>
-            <p className="eyebrow">Station operations</p>
-            <h1>Daily operations workspace</h1>
             <p className="lede">
               {operation.station.name} · {formatBusinessDate(operation.businessDay.date)} ·{' '}
               {formatStatusLabel(operation.shift.state)} shift
@@ -731,8 +729,6 @@ export function DailyOperationsWorkspace({
     <div className="daily-operations-workspace" aria-label="Daily station operations workspace">
       <div className="page-header">
         <div>
-          <p className="eyebrow">Station operations · {operation.station.code}</p>
-          <h1>Daily operations workspace</h1>
           <p className="lede">
             {operation.station.name} · {formatBusinessDate(record.business_date)} · shift evidence
             in one place
@@ -1555,8 +1551,6 @@ export function DailyOperationsContextRequired() {
     <>
       <div className="page-header">
         <div>
-          <p className="eyebrow">Station operations</p>
-          <h1>Daily operations workspace</h1>
           <p className="lede">Choose an authorised station to begin.</p>
         </div>
       </div>
