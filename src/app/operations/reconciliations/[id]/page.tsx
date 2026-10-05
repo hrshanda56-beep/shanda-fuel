@@ -6,6 +6,8 @@ import {
   type DailyOperationsContext,
 } from '@/modules/forecourt/ui/daily-operations-workspace';
 
+export const metadata = { title: 'Reconciliation' };
+
 export default async function OperationsReconciliationPage({
   params,
   searchParams,
@@ -36,14 +38,6 @@ export default async function OperationsReconciliationPage({
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      context={{
-        organisation: 'Authorised organisation',
-        station: 'Station context',
-        businessDate: 'Business date',
-        shift: 'Active shift',
-      }}
-      role="Station operations"
-      userName="Current user"
       breadcrumbs={[
         { label: 'Operations', href: '/operations/daily' },
         { label: 'Reconciliation' },

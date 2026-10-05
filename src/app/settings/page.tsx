@@ -10,6 +10,10 @@ import { resolveSettings } from '@/modules/settings';
 import type { SettingsView } from '@/modules/settings';
 import { SettingsWorkspace } from '@/modules/settings/ui/settings-workspace';
 
+export const metadata = {
+  title: 'Settings',
+};
+
 const SETTINGS_ORIGIN = 'http://shanda-fuel.local';
 
 function buildSettingsRequest(
@@ -47,10 +51,7 @@ export default async function SettingsPage({
   }
   if (failure instanceof AppError && failure.code === 'FORBIDDEN') {
     return (
-      <AppShell
-        navigationProjection={syntheticNavigationProjection}
-        breadcrumbs={[{ label: 'Settings' }]}
-      >
+      <AppShell navigationProjection={syntheticNavigationProjection}>
         <PageContainer width="narrow">
           <PageHeader
             eyebrow="Settings"
@@ -66,11 +67,7 @@ export default async function SettingsPage({
   if (!view) throw new Error('Settings data was not loaded');
 
   return (
-    <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      userName={view.account.name}
-      breadcrumbs={[{ label: 'Settings' }]}
-    >
+    <AppShell navigationProjection={syntheticNavigationProjection} userName={view.account.name}>
       <SettingsWorkspace view={view} />
     </AppShell>
   );
