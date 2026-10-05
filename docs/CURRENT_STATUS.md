@@ -12,14 +12,33 @@ Status labels:
 - **NOT STARTED** — no implementation evidence.
 - **UNKNOWN** — insufficient evidence.
 
-## 2. Release identity and production baseline
+## 2. Repository and release identity
 
 ### VERIFIED COMPLETE
 
-- Production/main release baseline is `53cf4382487271bed68160386cc41c447ab542e2` at the documented snapshot.
-- The production Vercel deployment for that release was reported READY and the production alias `https://fuel.shandahr.com` was verified.
+- PR #95 merged the documentation-only canonical knowledge-base change.
+- Canonical repository main after that merge is
+  `1aacc3ea8910b7579069ce44d44ae9b5a0c4feb3`.
+- The canonical knowledge base is `AGENTS.md`,
+  `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,
+  `docs/CURRENT_STATUS.md`, and `docs/IMPLEMENTATION_PLAN.md`.
+- No competing active repository-wide source of truth remains, and the
+  temporary nested knowledge-base copy is absent.
+- The documentation merge did not change deployed application behavior.
+
+## 3. Production application baseline
+
+### VERIFIED COMPLETE
+
+- The production application release before the documentation-only merge was
+  `53cf4382487271bed68160386cc41c447ab542e2`.
+- The production Vercel deployment for that application release was reported
+  READY and the production alias `https://fuel.shandahr.com` was verified.
+- Do not treat the documentation merge SHA as a deployed application release.
 - PR #94, which added the PostgreSQL 18 provider-membership preflight recognition/tests, was merged before this release.
-- Production migration `0021_security_first_user_provisioning.sql` is applied exactly once with the reviewed hash.
+- Production migration `0021_security_first_user_provisioning.sql` is applied
+  exactly once with approved SHA-256
+  `a51bee68bbfec23cfeabaa7a54039aca3672b7e8b4e386a5d2c36b01bd5d7caa`.
 - Production PostgreSQL is Neon PostgreSQL 18.6.
 - Security checks after migration reported:
   - Force RLS checks passing,
@@ -34,7 +53,7 @@ Status labels:
 
 Production migrations are not automatic. A deployed web release must not be assumed to imply a database migration occurred.
 
-## 3. First-user production access
+## 4. First-user production access
 
 ### VERIFIED COMPLETE
 
@@ -53,20 +72,47 @@ Production migrations are not automatic. A deployed web release must not be assu
   - parser and secret handling received independent Access Review GREEN.
 - The read-only production role-discovery runner received Access Review GREEN.
 - Human role discovery was executed against production and returned zero eligible unrelated-role candidates.
+- The former unrelated-role spot check has been replaced by strictly stronger
+  exhaustive `pg_proc` ACL-grantee validation, and the final Access Review is
+  GREEN.
+
+Verified production role state before provisioning:
+
+- `first_user_provisioner` has LOGIN, NOSUPERUSER, NOINHERIT, NOCREATEROLE,
+  NOCREATEDB, NOREPLICATION, and NOBYPASSRLS; its password is NULL.
+- The approved Neon membership is `migration_owner` →
+  `first_user_provisioner`, granted by `cloud_admin`, with `admin=true`,
+  `inherit=false`, and `set=false`.
+- No temporary provisioner password was assigned by the latest failed Stage 1
+  run.
+
+The actual operator client is Homebrew `psql 16.15`. Human local validation
+against PostgreSQL 18.6 verified success exit code 0, deliberate failure exit
+code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
 
 ### BLOCKED / IN PROGRESS
 
-- The current Stage 1 preflight still requires `SF_UNRELATED_ROLE` for a single negative helper-EXECUTE spot check.
-- Production has no existing role that satisfies the reviewed unrelated-role criteria.
-- A review determined that simply removing this probe would weaken current function ACL coverage because current checks are not exhaustive for every possible grantee.
-- The current proposed resolution is to replace the spot check with an exhaustive `pg_proc` ACL-grantee assertion that rejects every unexpected `EXECUTE` grantee. This work is **PENDING REVIEW** and must not be treated as complete until implemented and Access Review is GREEN.
-- Stage 1 has therefore **not** completed.
+- The latest Stage 1 production run passed exact checkout/SHA and local
+  migration-hash checks, migration-owner identity, provisioner attributes,
+  password-NULL state, provider membership/capability checks, DB/schema
+  capability checks, runtime-role assertions, migration 0021 exactly once,
+  and nine expected relations with RLS plus FORCE RLS enabled.
+- The run printed the production policy catalog and then failed closed with
+  `FAIL: RLS/policy preflight failed` and `ERROR: division by zero`.
+- This failure is **UNDER INVESTIGATION**. Do not yet classify it as definite
+  production security drift; possible causes include production drift, a
+  preflight assertion bug, catalog normalization mismatch, or another policy
+  property mismatch.
+- The failed run stopped before temporary provisioner password assignment.
+  No cleanup is required from that run, no first user exists, Stage 2 has not
+  run, real-provisioning approval has not been given, and authenticated
+  production smoke has not happened.
 - Stage 2 has **not** been run against production.
 - No explicit human approval for real first-user provisioning has been recorded.
 - No real first production user has been created.
 - Authenticated production smoke (login/context/protected route/logout/re-login) has not been completed.
 
-## 4. UI shell / PR #92 work
+## 5. UI shell / PR #92 work
 
 ### REPORTED COMPLETE / PREPARED FOR INTEGRATION
 
@@ -87,7 +133,7 @@ Known test-only fixes from the earlier simulation were incorporated into local c
 
 PR #92 has not been treated as finally integrated/deployed in the latest production release state described here. Final integration must preserve current main’s first-user/security files and safeguards.
 
-## 5. Customers Phase 0
+## 6. Customers Phase 0
 
 ### VERIFIED FUNCTIONAL BEHAVIOR
 
@@ -137,7 +183,7 @@ Verification after the product fix reported:
 
 The A8 product fix exists in the clean candidate worktree but final release integration/commit/deploy evidence is still pending. An unrelated existing edit in `src/platform/db/client.ts` was observed and must not be accidentally included unless separately justified/reviewed.
 
-## 6. A3 meter-exception behavior
+## 7. A3 meter-exception behavior
 
 ### VERIFIED COMPLETE — no product defect
 
@@ -156,7 +202,7 @@ With the expected PostgreSQL 18.6, UTC, bootstrap-role, migration-owner, and fix
 
 Classification: **HARNESS/ENVIRONMENT**, not a candidate regression. No product fix is required.
 
-## 7. Daily Operations Phase 0
+## 8. Daily Operations Phase 0
 
 ### VERIFIED scope alignment
 
@@ -173,11 +219,12 @@ The owner-workflow crosswalk includes:
 - reconciliation/variance,
 - cash/banking/sign-off.
 
-### Timezone correctness P0 — REPORTED FIX READY
+### Timezone correctness P0 — FIX READY / VERIFIED IN ISOLATION
 
 A genuine P0 correctness issue was identified: shift times used browser-local `toLocaleTimeString` rather than station timezone.
 
-A scoped fix was implemented in an isolated worktree using the existing `operation.station.timezone` / `app.stations.timezone` source.
+A scoped fix was implemented and verified in isolation using the existing
+`operation.station.timezone` / `app.stations.timezone` source.
 
 Reported verification:
 
@@ -193,9 +240,11 @@ Reported verification:
 
 ### PARTIAL
 
-A clean timezone-only integration review/cherry-pick step is still required so unrelated worktree edits do not leak into the release candidate.
+A clean timezone-only integration review/cherry-pick step is still required so
+unrelated worktree edits do not leak into the release candidate. It is not
+merged or deployed.
 
-## 8. Clean Phase 0 integration candidate
+## 9. Clean Phase 0 integration candidate
 
 ### REPORTED COMPLETE / LOCAL CANDIDATE
 
@@ -230,7 +279,7 @@ Reported local checks at candidate creation:
 
 Subsequent verified A8 and timezone changes are newer than the clean candidate HEAD above unless/until they are deliberately integrated and committed. Do not assume that SHA alone contains every latest fix.
 
-## 9. Integration/browser validation
+## 10. Integration/browser validation
 
 ### VERIFIED
 
@@ -258,7 +307,7 @@ After the A8 fix and Daily Ops timezone patch are cleanly integrated together, t
 - responsive checks,
 - security/runtime-role checks as applicable.
 
-## 10. Owner readiness
+## 11. Owner readiness
 
 ### VERIFIED assessment
 
@@ -277,20 +326,20 @@ Covered areas include:
 
 Final owner handoff is not green because the following remain open:
 
-1. first-user production access/provisioning/login,
-2. exhaustive ACL preflight resolution and Stage 1/Stage 2 execution,
-3. clean integration of the verified A8 fix,
-4. clean integration/review of the Daily Ops timezone fix,
-5. final release integration/deploy and production SHA verification,
-6. authenticated production smoke,
-7. final 15–25 minute owner acceptance review,
-8. remediation of any P0/P1 found in that final review.
+1. diagnose the latest Stage 1 RLS/policy preflight failure and rerun Stage 1,
+2. choose legitimate production scope and complete the Stage 2 read-only dry run,
+3. obtain explicit approval and provision the real first user,
+4. run authenticated production smoke,
+5. integrate PR #92 and Customers plus the verified A8 fix,
+6. integrate and review the Daily Operations timezone fix,
+7. run final release gates, deploy, and verify the exact production SHA,
+8. complete owner acceptance and remediate any P0/P1 finding.
 
 Owner handoff must use only:
 
 `https://fuel.shandahr.com`
 
-## 11. Observability
+## 12. Observability
 
 ### PARTIAL / temporary release exception
 
@@ -299,7 +348,7 @@ Owner handoff must use only:
 - A paid alternative was declined.
 - Technical status remains blocked/exception, not PASS.
 
-## 12. Rate limiting
+## 13. Rate limiting
 
 ### PARTIAL / evidence exception
 
@@ -307,7 +356,7 @@ Owner handoff must use only:
 - A staging E2E path is blocked because an upstream provider intercepts the relevant request before the application’s target behavior can be observed.
 - This must remain an evidence exception, not be relabelled PASS.
 
-## 13. Dependency advisory
+## 14. Dependency advisory
 
 ### PARTIAL / time-bounded exception
 
@@ -317,11 +366,12 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - a narrow CI exception exists with a review date,
 - future agents should re-check whether an upstream fix is available rather than treating the exception as permanent.
 
-## 14. Known bugs/issues
+## 15. Known bugs/issues
 
 ### Active
 
-1. **Production first-user preflight cannot currently proceed past the unrelated-role requirement** because production has no eligible unrelated role and current ACL checks are not exhaustive enough to remove the probe without replacement.
+1. **Production Stage 1 fails closed in the RLS/policy preflight** with a
+   division-by-zero error; cause remains under investigation.
 2. **Daily Operations timezone fix is not yet cleanly integrated into the final candidate** even though the scoped implementation/tests are green.
 3. **A8 decimal fix is verified but still needs final clean release-candidate integration.**
 
@@ -330,14 +380,16 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - A3 meter-exception 500s — closed as harness/ownership issue.
 - psql 16 URI-via-PGDATABASE behavior — fixed by reviewed process-local libpq parsing.
 
-## 15. Technical debt / documentation debt
+## 16. Technical debt / documentation debt
 
 - Existing owner-readiness documents contain stale historical SHAs and pre-candidate status.
 - Some implementation-status/parallel-execution/traceability documentation references older base SHAs.
 - Local integration harness setup is ownership-sensitive and should be documented clearly to avoid future false regressions.
-- The first-user preflight should move from a single unrelated-role spot check to exhaustive function ACL-grantee verification if/when the pending patch is approved.
+- The latest Stage 1 RLS/policy preflight failure needs a reviewed diagnosis and
+  rerun; the exhaustive function ACL-grantee validation is already Access
+  Review GREEN.
 
-## 16. Open product questions
+## 17. Open product questions
 
 ### UNRESOLVED
 
@@ -350,17 +402,17 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 
 These must not be silently converted into requirements.
 
-## 17. Open technical questions
+## 18. Open technical questions
 
 ### UNRESOLVED / needs verification
 
-- Final reviewed implementation of exhaustive function ACL-grantee detection.
+- Cause of the Stage 1 RLS/policy preflight division-by-zero failure.
 - Exact current production release SHA after the next integrated release.
 - Whether the dev-only dependency advisory now has an upstream fix.
 - Whether hosting/plan changes alter the observability exception.
 - Full background-job topology and current production `job_runtime` presence.
 
-## 18. Not started / deferred Phase 1 work
+## 19. Not started / deferred Phase 1 work
 
 The following are explicitly not Phase 0 completion requirements unless promoted by a new human instruction:
 
@@ -377,31 +429,39 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 - general ledger,
 - tax treatment.
 
-## 19. Next recommended work
+## 20. Current critical path / next recommended work
 
 Use this order unless a current human instruction changes it:
 
-1. **Complete the exhaustive function ACL-grantee preflight change** and obtain independent Access Review GREEN.
-2. **Run production Stage 1** through legitimate scope discovery.
-3. **Select the legitimate tenant/legal-entity/station scope** from Stage 1 output.
-4. **Run production Stage 2 read-only dry run**, asserting exactly 12 permissions, zero writes, unchanged sentinel, and credential cleanup.
-5. **Obtain explicit human approval** for the real first user.
-6. **Provision the real first production user** using the separately reviewed real-provision procedure.
-7. **Run authenticated production smoke**: login, authorised context, protected route, logout, re-login.
-8. **Integrate the verified A8 fix** into the clean release candidate.
-9. **Integrate the reviewed timezone-only Daily Operations fix** without unrelated worktree changes.
-10. **Run final combined DB/CI/browser/accessibility/responsive/security gates.**
-11. **Land/deploy the integrated release** and verify exact production SHA/health.
-12. **Run the 15–25 minute owner acceptance checklist.**
-13. **Fix only genuine P0/P1 findings**, then hand off `https://fuel.shandahr.com`.
+1. Diagnose the latest production RLS/policy preflight failure.
+2. Determine drift versus assertion/normalization bug.
+3. Access Review any tooling-only correction.
+4. Rerun Stage 1 from the beginning.
+5. Select legitimate production scope.
+6. Run Stage 2 READ ONLY dry run.
+7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+8. Obtain explicit human approval.
+9. Provision the real first user.
+10. Run authenticated smoke.
+11. FINAL RELEASE GO.
+12. Integrate PR #92 plus Customers clean candidate.
+13. Integrate verified A8 fix.
+14. Integrate reviewed Daily Operations timezone fix.
+15. Run full DB/CI/browser/accessibility/responsive verification.
+16. Deploy.
+17. Verify exact production SHA.
+18. Final owner review.
+19. OWNER READY handoff.
 
-## 20. Things agents must not assume
+## 21. Things agents must not assume
 
 - Do not assume a discussed feature is implemented.
 - Do not assume the clean candidate HEAD includes later uncommitted A8/timezone fixes.
 - Do not assume an intentionally skipped provisioning suite is a passing provisioning suite.
 - Do not assume `job_runtime` exists in production.
-- Do not assume production has an unrelated role suitable for security probing; discovery proved zero candidates.
+- Do not assume the latest Stage 1 run passed; it failed closed at the RLS/policy preflight.
+- Do not assume a temporary provisioner password was set by the failed Stage 1 run.
+- Do not treat the earlier `\\quit 1`-ignored run as valid evidence.
 - Do not assume a Vercel deploy runs database migrations.
 - Do not assume environment-specific HTTP 500s are product defects without baseline/harness comparison.
 - Do not mark observability or rate-limit evidence exceptions as PASS.

@@ -36,20 +36,52 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 
 ---
 
+## Current critical path
+
+The following is the current authoritative Phase 0 sequence, synchronized to
+main `1aacc3ea8910b7579069ce44d44ae9b5a0c4feb3`:
+
+1. Diagnose the latest production RLS/policy preflight failure.
+2. Determine drift versus assertion/normalization bug.
+3. Access Review any tooling-only correction.
+4. Rerun Stage 1 from the beginning.
+5. Select legitimate production scope.
+6. Run Stage 2 READ ONLY dry run.
+7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+8. Obtain explicit human approval.
+9. Provision the real first user.
+10. Run authenticated smoke.
+11. FINAL RELEASE GO.
+12. Integrate PR #92 plus Customers clean candidate.
+13. Integrate verified A8 fix.
+14. Integrate reviewed Daily Operations timezone fix.
+15. Run full DB/CI/browser/accessibility/responsive verification.
+16. Deploy.
+17. Verify exact production SHA.
+18. Final owner review.
+19. OWNER READY handoff.
+
+The documentation merge did not change deployed application behavior. The
+production application baseline remains
+`53cf4382487271bed68160386cc41c447ab542e2` until a later application release
+is verified.
+
 # M0 — Production first-user access closure
 
-## M0-T01 — Implement exhaustive first-user function ACL-grantee preflight
+## M0-T01 — Implement exhaustive first-user function ACL-grantee preflight — VERIFIED COMPLETE
 
 **Objective**
 
-Replace the single `SF_UNRELATED_ROLE` spot check with an exhaustive PostgreSQL function ACL assertion that rejects any unexpected `EXECUTE` grantee.
+The former arbitrary unrelated-role spot check has been replaced with an
+exhaustive PostgreSQL function ACL assertion that rejects any unexpected
+`EXECUTE` grantee.
 
 **Relevant requirements/decisions**
 
 - DEC-002 — RLS/security boundary.
 - DEC-005/006 — first-user bootstrap and read-only dry run.
 - DEC-028 — do not create a production role merely for a diagnostic probe.
-- DEC-029 — exhaustive ACL direction pending review.
+- DEC-029 — exhaustive ACL validation replaces the former spot check.
 
 **Likely files/components affected**
 
@@ -69,14 +101,15 @@ Replace the single `SF_UNRELATED_ROLE` spot check with an exhaustive PostgreSQL 
 - Distinguish owner privilege semantics from explicit grantee ACL entries.
 - Preserve exact function ownership, `SECURITY DEFINER`, fixed search path, PUBLIC denial, app_runtime denial, and provisioner allowlist checks.
 - Reject unexpected grantee or grant-option drift if not part of the approved migration contract.
-- Remove `SF_UNRELATED_ROLE` only after the exhaustive assertion is at least as strong as the old spot check.
+- Preserve the approved exhaustive assertion and do not reintroduce an
+  arbitrary unrelated-role prerequisite.
 
 **Acceptance criteria**
 
 - Any explicit unexpected `EXECUTE` grantee fails preflight.
 - Approved migration-owner/provisioner semantics pass.
 - PUBLIC and app_runtime negative checks remain explicit.
-- Stage 1 no longer requires an invented/unavailable production role.
+- Stage 1 no longer requires an invented or unavailable production role.
 - No production role/ACL/migration is changed by the implementation.
 
 **Tests/verification**
@@ -93,7 +126,7 @@ Replace the single `SF_UNRELATED_ROLE` spot check with an exhaustive PostgreSQL 
 
 ---
 
-## M0-T02 — Independent Access Review of exhaustive ACL preflight
+## M0-T02 — Independent Access Review of exhaustive ACL preflight — VERIFIED COMPLETE
 
 **Objective**
 
@@ -110,7 +143,7 @@ Review actual files and SQL, not only the implementer report.
 **Acceptance criteria**
 
 - REVIEW GREEN.
-- Stage 1 safe for human production execution without `SF_UNRELATED_ROLE`.
+- Stage 1 no longer depends on an arbitrary unrelated-role spot check.
 - Stage 2 remains safe/read-only.
 - No migration, production ACL, role, or auth semantic changed.
 
@@ -124,7 +157,7 @@ Review actual files and SQL, not only the implementer report.
 
 ---
 
-## M0-T03 — Run production Stage 1 through scope discovery
+## M0-T03 — Run production Stage 1 through scope discovery — BLOCKED / IN PROGRESS
 
 **Objective**
 
@@ -148,15 +181,22 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 **Implementation notes**
 
 - Human operator executes the reviewed script; agents do not receive the credential.
-- Stop at scope discovery.
+- The latest run passed identity, provider-membership, schema-capability,
+  runtime-role, migration-0021, and RLS/Force-RLS relation checks, then failed
+  closed in the RLS/policy preflight with `ERROR: division by zero`.
+- Treat the cause as under investigation: production drift, assertion defect,
+  catalog normalization mismatch, or another policy-property mismatch remain
+  possible.
+- The failure occurred before temporary provisioner password assignment; no
+  cleanup is required from that failed run and no scope was selected.
 - Do not guess tenant/legal-entity/station IDs.
 
-**Acceptance criteria**
+**Current verified result**
 
-- All Stage 1 checks pass.
-- Legitimate non-secret scope choices are displayed.
-- Temporary provisioner credential is cleaned as designed when the stage exits.
-- No user is provisioned.
+- Stage 1 is not complete.
+- No legitimate scope choices were accepted for Stage 2.
+- No temporary provisioner credential was assigned by the failed run.
+- No user was provisioned.
 
 **Tests/verification**
 
