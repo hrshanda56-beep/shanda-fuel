@@ -130,7 +130,7 @@ export type ProvisioningRepository = Readonly<{
   lockEmail: (email: string) => Promise<void>;
   loadScope: (scope: ScopeIds, options?: { lock?: boolean }) => Promise<ScopeSnapshot>;
   findIdentityByEmail: (email: string, tenantId?: string) => Promise<IdentitySnapshot | null>;
-  listPermissionDefinitions: (codes: readonly string[]) => Promise<readonly string[]>;
+  listPermissionDefinitions: () => Promise<readonly string[]>;
   setTenantContext: (scope: ScopeIds & { actorId: string; membershipId: string }) => Promise<void>;
   insertUser: (input: { id: string; name: string; email: string }) => Promise<void>;
   insertCredentialAccount: (input: {
@@ -154,6 +154,7 @@ export type ProvisioningRepository = Readonly<{
   listUnrevokedTemporaryGrants: (input: {
     tenantId: string;
     membershipId: string;
+    operationId: string;
   }) => Promise<readonly TemporaryGrantSnapshot[]>;
   revokeTemporaryGrants: (input: {
     tenantId: string;
@@ -188,7 +189,6 @@ export type ProvisioningRepository = Readonly<{
     tenantId: string;
     legalEntityId: string;
     stationId: string;
-    grantIds: readonly string[];
     event: SignedSecurityEvent;
   }) => Promise<{
     revokedGrantCount: number;
@@ -343,9 +343,7 @@ export async function preparePlan(
       'An identity already exists for this email; duplicate provisioning is refused',
     );
   }
-  const availablePermissions = await repository.listPermissionDefinitions(
-    READ_ONLY_GRANT_PLAN.map((grant) => grant.permissionCode),
-  );
+  const availablePermissions = await repository.listPermissionDefinitions();
   assertRequiredPermissions(availablePermissions, READ_ONLY_GRANT_PLAN);
 
   return {
@@ -582,6 +580,7 @@ export async function revokeFirstUserAccess(input: {
   const unrevokedGrants = await input.repository.listUnrevokedTemporaryGrants({
     tenantId: input.scope.tenantId,
     membershipId: membership.id,
+    operationId: input.operationId,
   });
   const matchingGrantIds: string[] = [];
   for (const grant of READ_ONLY_GRANT_PLAN) {
@@ -639,7 +638,6 @@ export async function revokeFirstUserAccess(input: {
       tenantId: scope.tenant.id,
       legalEntityId: scope.legalEntity.id,
       stationId: scope.station.id,
-      grantIds: matchingGrantIds,
       event,
     });
     return {
@@ -836,9 +834,9 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
       const identity = parseJson<IdentityPayload>(value, 'Database returned invalid identity data');
       return identity;
     },
-    async listPermissionDefinitions(codes) {
+    async listPermissionDefinitions() {
       const rows = await query<{ codes: string[] }[]>`
-        select platform.first_user_provisioning_permission_definitions(${codes}::text[]) as codes
+        select platform.first_user_provisioning_permission_definitions() as codes
       `;
       return one(rows, 'Database returned no permission result').codes;
     },
@@ -881,7 +879,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
     async listUnrevokedTemporaryGrants(input) {
       const rows = await query<{ value: GrantPayload[] }[]>`
         select platform.first_user_provisioning_grants(
-          ${input.tenantId}::uuid, ${input.membershipId}::uuid
+          ${input.tenantId}::uuid, ${input.membershipId}::uuid, ${input.operationId}::uuid
         ) as value
       `;
       return parseJson<GrantPayload[]>(
@@ -936,7 +934,6 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
           ${input.tenantId}::uuid,
           ${input.legalEntityId}::uuid,
           ${input.stationId}::uuid,
-          ${input.grantIds}::uuid[],
           ${query.json(JSON.parse(JSON.stringify(input.event)))}::jsonb
         ) as value
       `;
