@@ -19,8 +19,10 @@ const sessionToken = 'a10-e2e-management-session-token';
 test.describe('management reporting surface', () => {
   test('unauthenticated shell explains the required organisation context', async ({ page }) => {
     await page.goto('/reports');
+    const pageHeader = page.getByRole('region', { name: 'Page header and work context' });
+    await expect(pageHeader.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible();
     await expect(
-      page.getByRole('heading', { name: 'Operational financial position' }),
+      pageHeader.getByText('Operational financial position', { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'Choose an organisation to view reports' }),
