@@ -239,9 +239,11 @@ test.describe('shared shell consistency', () => {
         ['/inventory', 'Inventory'],
       ] as const) {
         await page.goto(path);
-        await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
-        await expect(page.locator('.shell-header h1')).toHaveText(title);
-        await expect(page.locator('.shell-sheet h1')).toHaveCount(0);
+        const shell = page.locator('.app-shell');
+        await expect(shell).toHaveCount(1);
+        await expect(shell).toHaveAttribute('data-hydrated', 'true');
+        await expect(shell.locator('.shell-header h1')).toHaveText(title);
+        await expect(shell.locator('.shell-sheet h1')).toHaveCount(0);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           viewport.width,
         );
