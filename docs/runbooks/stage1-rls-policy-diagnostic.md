@@ -6,6 +6,15 @@ This is a diagnostic procedure for the unresolved Stage 1 production
 RLS/policy preflight failure. It is not Stage 1, Stage 2, provisioning,
 migration execution, or a repair procedure. It must not be run by an agent.
 
+This procedure is currently blocked before catalog diagnostics. The
+authoritative repository sources identify Neon as the production PostgreSQL
+provider and PostgreSQL 18.6 as the recorded production version, but they do
+not record an exact non-secret production database endpoint, host, project ID,
+or database identifier. `APP_ENV`, `PGHOST`, and `PGDATABASE` are therefore
+not independent production identity evidence. Human review is required before
+an exact approved target invariant is added to the canonical operator tooling
+and this procedure is re-reviewed.
+
 The repository contains the reviewed migration and first-user helper checks,
 but it does not contain the operator-side Stage 1 policy assertion that
 reported `ERROR: division by zero`. The missing evidence is therefore:
@@ -41,7 +50,13 @@ process-local variables, not opaque service indirection. `PGUSER` must be
 `migration_owner`; `PGPASSWORD` must already be present through the approved
 secret mechanism. `DATABASE_URL` and `DATABASE_DIRECT_URL` must be absent.
 
-## Read-only command
+Until an authoritative non-secret production target invariant exists, do not
+run the diagnostic command below. Its first SQL guard intentionally raises a
+read-only error and stops before any catalog query. Do not substitute the
+connection environment, `APP_ENV`, the migration hash, the provider
+membership, or the PostgreSQL version for that missing invariant.
+
+## Read-only command (currently blocked)
 
 Run the following from the reviewed checkout. The command emits only catalog
 metadata and error context; write its output, if retained, to an approved
@@ -102,8 +117,6 @@ export PGAPPNAME=shanda-fuel-stage1-rls-policy-diagnostic
 export PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=30000'
 
 psql --no-password -X \
-  --set=expected_database="$PGDATABASE" \
-  --set=expected_port="$PGPORT" \
   --set=ON_ERROR_STOP=1 \
   --set=VERBOSITY=verbose \
   --set=SHOW_CONTEXT=always \
@@ -113,53 +126,48 @@ BEGIN TRANSACTION READ ONLY;
 DO $$
 BEGIN
   IF current_user <> 'migration_owner' OR session_user <> 'migration_owner' THEN
-    RAISE EXCEPTION 'Stage 1 policy diagnostics require migration_owner as current and session user';
+    RAISE EXCEPTION USING
+      ERRCODE = 'P0001',
+      MESSAGE = 'Intentional diagnostic refusal: current_user and session_user must both be migration_owner',
+      HINT = 'This is not the original Stage 1 division-by-zero failure.';
   END IF;
+
+  RAISE EXCEPTION USING
+    ERRCODE = 'P0001',
+    MESSAGE = 'Intentional wrong-target refusal: no authoritative non-secret production database target invariant is recorded',
+    HINT = 'Human review must establish the approved target invariant before catalog diagnostics are enabled. This is not the original Stage 1 division-by-zero failure.';
 END
 $$;
 
-SELECT (
-  current_user = 'migration_owner'
-  AND session_user = 'migration_owner'
-  AND current_database() = :'expected_database'
-  AND inet_server_port() = (:'expected_port')::integer
-  AND current_setting('server_version') ~ '^18[.]6([.]|$)'
-  AND (
-    SELECT count(*) = 1
-      FROM drizzle.__drizzle_migrations
-     WHERE hash = 'a51bee68bbfec23cfeabaa7a54039aca3672b7e8b4e386a5d2c36b01bd5d7caa'
-  )
-  AND (
-    SELECT count(*) = 1
-      FROM pg_auth_members membership
-      JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
-      JOIN pg_roles member_role ON member_role.oid = membership.member
-     WHERE granted_role.rolname = 'first_user_provisioner'
-        OR member_role.rolname = 'first_user_provisioner'
-  )
-  AND EXISTS (
-    SELECT 1
-      FROM pg_auth_members membership
-      JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
-      JOIN pg_roles member_role ON member_role.oid = membership.member
-      JOIN pg_roles grantor_role ON grantor_role.oid = membership.grantor
-     WHERE granted_role.rolname = 'first_user_provisioner'
-       AND member_role.rolname = 'migration_owner'
-       AND grantor_role.rolname = 'cloud_admin'
-       AND membership.admin_option
-       AND NOT membership.inherit_option
-       AND NOT membership.set_option
-  )
-) AS approved_production_target \gset target_
-
-\if :target_approved_production_target
-\else
-\echo 'Refusing diagnostics: connection is not the approved production target.'
-\quit 3
-\endif
-
-SELECT current_user, session_user, current_database(), current_setting('server_version') AS server_version,
+-- The intentional guard above must be replaced only after an authoritative
+-- non-secret production target invariant is recorded and independently
+-- reviewed. The accepted fingerprint and policy catalog queries remain below
+-- as the diagnostic payload for that future, separately reviewed procedure;
+-- ON_ERROR_STOP=1 makes them unreachable while this guard is present. The
+-- future target guard must retain the exact production invariant
+-- server_version_num = 180006; the version is only defence in depth, not
+-- independent target identity.
+SELECT current_user, session_user, current_database(), current_setting('server_version_num') AS server_version_num,
+       current_setting('server_version') AS server_version,
        current_setting('transaction_read_only') AS transaction_read_only;
+
+SELECT count(*) = 1 AS migration_fingerprint_present
+  FROM drizzle.__drizzle_migrations
+ WHERE hash = 'a51bee68bbfec23cfeabaa7a54039aca3672b7e8b4e386a5d2c36b01bd5d7caa';
+
+SELECT EXISTS (
+  SELECT 1
+    FROM pg_auth_members membership
+    JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+    JOIN pg_roles member_role ON member_role.oid = membership.member
+    JOIN pg_roles grantor_role ON grantor_role.oid = membership.grantor
+   WHERE granted_role.rolname = 'first_user_provisioner'
+     AND member_role.rolname = 'migration_owner'
+     AND grantor_role.rolname = 'cloud_admin'
+     AND membership.admin_option
+     AND NOT membership.inherit_option
+     AND NOT membership.set_option
+) AS approved_provider_membership;
 
 WITH expected(schema_name, table_name) AS (
   VALUES
