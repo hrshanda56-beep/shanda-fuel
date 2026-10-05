@@ -1,17 +1,20 @@
-# First-user provisioning second security hardening review
+# First-user provisioning evidence and reproducibility review
 
 Status: **READY FOR FINAL REVIEW**
 
-This pass removes the review-blocked caller-controlled bootstrap authorization
-path. Verification used only disposable PostgreSQL 16.15 at
+The architecture review is accepted; this follow-up closes only the evidence
+and reproducibility gaps. Verification used only disposable PostgreSQL 16.15 at
 `127.0.0.1:55432`; no production, Neon, deployment, push, merge, or production
 user action occurred.
 
 - Release base: `3a6935af5d4d79cf806e3b69e24ab910ffcf562a`
 - Previous blocked commit: `552398175b840ce2a8149a8aaf211c0272b6b71e`
+- Implementation and reproducibility commit: `2062848143eb676e6f5a70c42b34d47775bdca3f`
 - Migration: `src/platform/db/migrations/0021_security_first_user_provisioning.sql`
 - Migration SHA-256: `a51bee68bbfec23cfeabaa7a54039aca3672b7e8b4e386a5d2c36b01bd5d7caa`
 - Evidence: `evidence/first-user-provisioning-postgres.md`
+- Deterministic setup: `tests/integration/fixtures/first-user-provisioning-setup.sh`
+- Deterministic runner: `tests/integration/fixtures/first-user-provisioning-run.sh`
 
 ## Hardened design
 
@@ -40,6 +43,12 @@ user action occurred.
 ## Verification result
 
 - PostgreSQL integration/adversarial suite: **9 passed, 0 skipped**.
+- Success audit persistence after commit: **PASS**.
+- Failure audit persistence after commit, with actor/subject/tenant/scope and
+  secret-absence assertions: **PASS**.
+- The committed fixture recreates the disposable database, role attributes,
+  grants, canonical migrations, synthetic A/B/C hierarchy, and permission
+  prerequisites without undocumented terminal SQL.
 - Covered security properties: role membership drift, SET ROLE path, direct
   table privilege drift, old-GUC attempts, direct membership/grant/audit and
   unrelated application writes, PUBLIC/app-runtime/unrelated helper denial,
@@ -51,7 +60,7 @@ user action occurred.
 - Focused unit tests: **13 passed**.
 - TypeScript: **passed**.
 - Drizzle migration validation: **passed**.
-- Prettier and `git diff --check`: run before commit.
+- ESLint, Prettier, and `git diff --check`: **passed**.
 - Security-critical skipped tests: **0**.
 
 The test database contained only synthetic tenants, legal entities, stations,

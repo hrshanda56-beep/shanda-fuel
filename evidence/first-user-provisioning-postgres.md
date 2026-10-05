@@ -4,15 +4,18 @@ Result: **PASS**
 
 This is non-secret evidence from the disposable local PostgreSQL 16.15 cluster
 at `127.0.0.1:55432`, database `shanda_fuel_first_user_test`. The cluster was
-reset before the run. No production or Neon database was contacted.
+reset by the committed fixture before the run. No production or Neon database
+was contacted.
 
 ## Source and migration
 
 - Release base: `3a6935af5d4d79cf806e3b69e24ab910ffcf562a`
 - Previous bootstrap commit under review: `552398175b840ce2a8149a8aaf211c0272b6b71e`
+- Implementation and reproducibility commit: `2062848143eb676e6f5a70c42b34d47775bdca3f`
 - Migration: `src/platform/db/migrations/0021_security_first_user_provisioning.sql`
 - Migration SHA-256: `a51bee68bbfec23cfeabaa7a54039aca3672b7e8b4e386a5d2c36b01bd5d7caa`
 - Migration history: 0021 applied successfully through `drizzle-kit migrate`.
+- Migration 0021 was unchanged in this evidence pass.
 
 ## Role and catalog evidence
 
@@ -34,31 +37,23 @@ reset before the run. No production or Neon database was contacted.
 - Bootstrap policies are fixed to `current_user = 'migration_owner'`; no
   caller-set GUC or `session_user` policy path exists.
 
-## Reproducible command
+## Reproducible commands
 
-After applying `ops/db/bootstrap.sql`, creating the disposable roles, applying
-the canonical migrations, and inserting only synthetic fixture IDs, a reviewer
-can reproduce the security suite with this single command. All URLs are local,
-passwordless test URLs; no secret is included.
+From a clean local PostgreSQL 16 instance at the endpoint above, the setup
+command recreates the named disposable database, applies `ops/db/bootstrap.sql`
+and all canonical migrations, creates the restricted test roles, and inserts
+only synthetic Tenant A/B/C, Legal Entity, and Station fixtures. It also checks
+the required permission definitions and function grants.
 
 ```sh
-APP_ENV=local \
-FIRST_USER_PROVISIONING_TEST_DATABASE=true \
-DATABASE_URL='postgresql://first_user_provisioner@127.0.0.1:55432/shanda_fuel_first_user_test' \
-FIRST_USER_PROVISIONING_TEST_ADMIN_DATABASE_URL='postgresql://wolftech@127.0.0.1:55432/shanda_fuel_first_user_test' \
-FIRST_USER_PROVISIONING_TEST_APP_RUNTIME_DATABASE_URL='postgresql://app_runtime@127.0.0.1:55432/shanda_fuel_first_user_test' \
-FIRST_USER_PROVISIONING_TEST_UNRELATED_DATABASE_URL='postgresql://first_user_unrelated@127.0.0.1:55432/shanda_fuel_first_user_test' \
-FIRST_USER_PROVISIONING_TEST_TENANT_ID='11111111-1111-4111-8111-111111111111' \
-FIRST_USER_PROVISIONING_TEST_LEGAL_ENTITY_ID='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' \
-FIRST_USER_PROVISIONING_TEST_STATION_ID='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1' \
-FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_ID='22222222-2222-4222-8222-222222222222' \
-FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_LEGAL_ENTITY_ID='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' \
-FIRST_USER_PROVISIONING_TEST_CROSS_TENANT_STATION_ID='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1' \
-FIRST_USER_PROVISIONING_TEST_CROSS_ENTITY_STATION_ID='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2' \
-FIRST_USER_PROVISIONING_TEST_ROLLBACK_TENANT_ID='33333333-3333-4333-8333-333333333333' \
-FIRST_USER_PROVISIONING_TEST_ROLLBACK_LEGAL_ENTITY_ID='cccccccc-cccc-4ccc-8ccc-cccccccccccc' \
-FIRST_USER_PROVISIONING_TEST_ROLLBACK_STATION_ID='cccccccc-cccc-4ccc-8ccc-ccccccccccc1' \
-./node_modules/.bin/vitest run --config vitest.integration.config.ts tests/integration/first-user-provisioning.test.ts --reporter verbose
+bash tests/integration/fixtures/first-user-provisioning-setup.sh
+```
+
+The test command derives all local connection settings and synthetic fixture
+IDs from the committed runner; it contains no password or external endpoint.
+
+```sh
+bash tests/integration/fixtures/first-user-provisioning-run.sh
 ```
 
 ## Required security properties
@@ -83,11 +78,16 @@ FIRST_USER_PROVISIONING_TEST_ROLLBACK_STATION_ID='cccccccc-cccc-4ccc-8ccc-cccccc
 | Unrelated grants and sessions preserved                          | PASS   |
 | Grant expiry enforced                                            | PASS   |
 | Success audit persisted                                          | PASS   |
-| Failure audit persisted                                          | PASS   |
+| Failure audit persisted after a committed transaction            | PASS   |
 | Full transaction rollback leaves no user                         | PASS   |
 | FORCE RLS preserved                                              | PASS   |
 | Security-critical skipped tests                                  | 0      |
 
-Final integration result: **9 tests passed**. Focused unit result: **13 tests
-passed**. TypeScript and Drizzle migration validation: **passed**. No
-production user was created and nothing was pushed, merged, or deployed.
+Final integration/adversarial result: **9 tests passed, 0 skipped**. The
+success-audit test and the committed failure-audit persistence test both passed.
+Focused unit result: **13 tests passed**. TypeScript, ESLint, Prettier, and
+Drizzle migration validation: **passed**. No production user was created and
+nothing was pushed, merged, or deployed.
+
+Evidence is non-secret and contains no credential material, production IDs, or
+real user data.

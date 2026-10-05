@@ -56,7 +56,22 @@ ALTER ROLE first_user_unrelated RESET ALL;
 ALTER ROLE app_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
   NOINHERIT NOREPLICATION NOBYPASSRLS;
 ALTER ROLE app_runtime RESET ALL;
-REVOKE first_user_unrelated FROM first_user_provisioner;
+
+DO $$
+DECLARE
+  granted_role name;
+BEGIN
+  FOR granted_role IN
+    SELECT parent.rolname
+    FROM pg_auth_members membership
+    JOIN pg_roles parent ON parent.oid = membership.roleid
+    JOIN pg_roles member ON member.oid = membership.member
+    WHERE member.rolname = 'first_user_provisioner'
+  LOOP
+    EXECUTE format('REVOKE %I FROM first_user_provisioner', granted_role);
+  END LOOP;
+END
+$$;
 SQL
 
 (cd "$repo_root" && \
