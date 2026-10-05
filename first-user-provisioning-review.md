@@ -1,14 +1,16 @@
 # First production user provisioning hardening review
 
-Status: **SCRIPT HARDENED / BLOCKED**. The local tool and focused tests were
-hardened on the isolated branch below. The tool was not run against any
-database, has not created or revoked a user, and has not been deployed.
+Status: **CAPABILITY IMPLEMENTED / READY FOR DATABASE REVIEW**. The local tool
+and narrow database capability are implemented on the isolated branch below.
+The tool was not run against any database, has not created or revoked a user,
+and has not been deployed.
 
 - Branch: `plan/first-production-user`
 - Base SHA: `3a6935af5d4d79cf806e3b69e24ab910ffcf562a`
-- Local commit SHA: `9d4eeac` (the local commit object created for this handoff)
+- Local commit SHA: `70b5ca9`
 - Production `main` changed: **NO**
 - Production/staging/Neon contacted: **NO**
+- Migration: `0021_security_first_user_provisioning.sql`
 
 ## Authorization and exact grant set
 
@@ -46,11 +48,26 @@ the separately reviewed grants/capability needed for this operation, and be
 used only from an approved local connection. The repository's bootstrap roles
 (`app_runtime`, `job_runtime`, and `diagnostics_readonly`) are not accepted.
 
-This repository does not create that operator role or solve the first-member
-RLS bootstrap capability. That missing external role/capability is an
-operational prerequisite and is why this task remains blocked. The hardening
-does not use a superuser, `BYPASSRLS`, `row_security=off`, policy changes, or
-an environment-variable role override.
+Migration `0021_security_first_user_provisioning.sql` now provides the missing
+capability without weakening `FORCE ROW LEVEL SECURITY`. It adds fixed
+`SECURITY DEFINER` helpers owned by `migration_owner`, validates
+`session_user = first_user_provisioner`, and grants the dedicated role only
+`platform` schema usage plus execute on scope discovery, identity/permission
+inspection, atomic provision, atomic revoke, and constrained failure-audit
+helpers. The role receives no table privileges, and the helper functions
+revalidate the active tenant → legal entity → station hierarchy, refuse any
+existing non-disabled tenant membership, create exactly the twelve fixed
+read-only grants, and reject arbitrary direct table writes.
+
+The role itself remains an environment-bootstrap responsibility. Before the
+migration is applied, a disposable/local PostgreSQL owner must create
+`first_user_provisioner` as `LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB
+NOCREATEROLE NOINHERIT NOREPLICATION`, with no schema/table ownership and no
+privileges beyond the migration's execute grants and database/schema access.
+The migration verifies the role attributes when the role exists; it never uses
+the operator role to manage roles. The hardening does not use a superuser,
+`BYPASSRLS`, `row_security=off`, policy changes at runtime, or an
+environment-variable role override.
 
 The write transaction locks the tenant, legal entity, and station rows in
 deterministic hierarchy order with `FOR UPDATE`, then revalidates active
@@ -106,6 +123,14 @@ outcome. Failure events contain only the mode, requested scope, and classified
 error type. No password, hash, database URL, session, cookie, or secret is
 included.
 
+The previous failure-audit path attempted a normal tenant-context insert before
+an active membership existed, so `security_events_context` rejected it under
+`FORCE ROW LEVEL SECURITY`. The new failure helper accepts only a known active
+tenant, writes only `ACCESS.PROVISIONING_FAILED`, uses `SUPPORT` attribution
+with a null actor and no membership, and is itself callable only by the
+dedicated role. If tenant selection is not known or the tenant is not active,
+the tool records no fabricated tenant event and reports the failure locally.
+
 ## Tests and validation
 
 Added coverage includes:
@@ -117,22 +142,25 @@ Added coverage includes:
   no-TTY refusal, argv/error redaction, confirmation parsing, and Better Auth
   hash/verify semantics;
 - an opt-in PostgreSQL integration suite for role metadata, read-only dry-run,
-  transactional rollback, exact grant/expiry evidence, absence of
-  `provider.view`, and audit actor/subject evidence. It requires
-  `APP_ENV=local`, `FIRST_USER_PROVISIONING_TEST_DATABASE=true`,
-  `DATABASE_URL`, and explicit synthetic fixture IDs; it never runs against
-  production.
+  filtered capability reads, fixed-allowlist rejection, app-runtime denial,
+  FORCE-RLS verification, successful first-user creation, duplicate refusal,
+  exact grant inspection, transactional rollback, and tenant-scoped failure
+  audit insertion. It requires
+  `APP_ENV=local`, `FIRST_USER_PROVISIONING_TEST_DATABASE=true`, the operator
+  `DATABASE_URL`, explicit non-production admin and `app_runtime` test URLs,
+  and synthetic fixture IDs; it never runs against production.
 
 Validation state for this checkout:
 
-- Prettier: **passed repository-wide** with `prettier --check .` using the
-  existing shared dependency binary.
+- Prettier: **passed** for all changed TypeScript, JSON, and Markdown files
+  using the existing shared dependency binary.
 - Focused unit tests: **13 passed** using the existing shared dependency
   installation through a temporary, non-repository module-resolution harness;
   the isolated worktree itself was not modified with dependencies.
-- PostgreSQL integration suite: **3 skipped** by its explicit safety gate; no
-  `DATABASE_URL`, no `APP_ENV`, and no safe test database were present. No
-  database contact was attempted.
+- PostgreSQL integration suite: **6 authored / 0 executed**. Its explicit
+  safety gate was closed because no local PostgreSQL 16 service or Docker
+  daemon was present, and no `DATABASE_URL`, `APP_ENV`, or safe synthetic test
+  database was available. No database contact was attempted.
 - `pnpm lint`: **not executed** in the isolated worktree because its ESLint
   config dependencies are absent. No offline installation was attempted.
 - Targeted TypeScript check for the hardened tool and tests: **passed** using

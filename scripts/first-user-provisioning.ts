@@ -129,7 +129,7 @@ export type ProvisioningRepository = Readonly<{
   now: () => Promise<Date>;
   lockEmail: (email: string) => Promise<void>;
   loadScope: (scope: ScopeIds, options?: { lock?: boolean }) => Promise<ScopeSnapshot>;
-  findIdentityByEmail: (email: string) => Promise<IdentitySnapshot | null>;
+  findIdentityByEmail: (email: string, tenantId?: string) => Promise<IdentitySnapshot | null>;
   listPermissionDefinitions: (codes: readonly string[]) => Promise<readonly string[]>;
   setTenantContext: (scope: ScopeIds & { actorId: string; membershipId: string }) => Promise<void>;
   insertUser: (input: { id: string; name: string; email: string }) => Promise<void>;
@@ -167,6 +167,34 @@ export type ProvisioningRepository = Readonly<{
     membershipId: string;
     identityId: string;
   }) => Promise<boolean>;
+  provisionAtomic?: (input: {
+    userId: string;
+    membershipId: string;
+    operationId: string;
+    tenantId: string;
+    legalEntityId: string;
+    stationId: string;
+    email: string;
+    displayName: string;
+    passwordHash: string;
+    expiresAt: Date;
+    initiatedEvent: SignedSecurityEvent;
+    completedEvent: SignedSecurityEvent;
+  }) => Promise<void>;
+  revokeAtomic?: (input: {
+    userId: string;
+    membershipId: string;
+    operationId: string;
+    tenantId: string;
+    legalEntityId: string;
+    stationId: string;
+    grantIds: readonly string[];
+    event: SignedSecurityEvent;
+  }) => Promise<{
+    revokedGrantCount: number;
+    revokedSessionCount: number;
+    membershipDisabled: boolean;
+  }>;
 }>;
 
 export type TemporaryGrantSnapshot = Readonly<{
@@ -309,7 +337,7 @@ export async function preparePlan(
   const expiresAt = validateExpiry(input.expiresAt, now);
   const scope = await repository.loadScope(input.scope, { lock: input.lockScope !== false });
   assertActiveScope(scope, input.scope);
-  const existing = await repository.findIdentityByEmail(email);
+  const existing = await repository.findIdentityByEmail(email, input.scope.tenantId);
   if (existing) {
     throw new DuplicateProvisioningError(
       'An identity already exists for this email; duplicate provisioning is refused',
@@ -381,6 +409,55 @@ export async function provisionFirstUser(input: {
   const passwordHash = await (input.hasher ?? defaultPasswordHasher)(input.password);
   if (!passwordHash || passwordHash === input.password) {
     throw new ProvisioningError('Better Auth did not return a valid password hash');
+  }
+
+  if (input.repository.provisionAtomic) {
+    const initiated = auditEvent({
+      actionCode: 'ACCESS.PROVISIONING_INITIATED',
+      plan,
+      subjectId: plan.userId,
+      membershipId: plan.membershipId,
+      key: input.auditKey,
+      metadata: {
+        permissionCodes: plan.grants.map((grant) => grant.permissionCode),
+        expiresAt: plan.expiresAt.toISOString(),
+        outcome: 'initiated',
+      },
+    });
+    const completed = auditEvent({
+      actionCode: 'ACCESS.PROVISIONING_COMPLETED',
+      plan,
+      subjectId: plan.userId,
+      membershipId: plan.membershipId,
+      key: input.auditKey,
+      metadata: {
+        permissionCodes: plan.grants.map((grant) => grant.permissionCode),
+        expiresAt: plan.expiresAt.toISOString(),
+        outcome: 'success',
+      },
+    });
+    await input.repository.provisionAtomic({
+      userId: plan.userId,
+      membershipId: plan.membershipId,
+      operationId: plan.operationId,
+      tenantId: plan.scope.tenant.id,
+      legalEntityId: plan.scope.legalEntity.id,
+      stationId: plan.scope.station.id,
+      email,
+      displayName,
+      passwordHash,
+      expiresAt: plan.expiresAt,
+      initiatedEvent: initiated,
+      completedEvent: completed,
+    });
+    return {
+      operationId: plan.operationId,
+      userId: plan.userId,
+      membershipId: plan.membershipId,
+      expiresAt: plan.expiresAt,
+      permissionCodes: plan.grants.map((grant) => grant.permissionCode),
+      auditEventIds: [initiated.eventId, completed.eventId],
+    };
   }
 
   await input.repository.insertUser({ id: plan.userId, name: displayName, email });
@@ -471,7 +548,7 @@ export async function revokeFirstUserAccess(input: {
   await input.repository.lockEmail(email);
   const scope = await input.repository.loadScope(input.scope);
   assertActiveScope(scope, input.scope);
-  const existing = await input.repository.findIdentityByEmail(email);
+  const existing = await input.repository.findIdentityByEmail(email, input.scope.tenantId);
   if (!existing) return { status: 'absent' };
   if (existing.id !== input.userId) {
     throw new ProvisioningError('The target email does not match the requested user identity');
@@ -572,6 +649,27 @@ export async function revokeFirstUserAccess(input: {
       outcome: 'success',
     },
   });
+
+  if (input.repository.revokeAtomic) {
+    const result = await input.repository.revokeAtomic({
+      userId: existing.id,
+      membershipId: membership.id,
+      operationId: input.operationId,
+      tenantId: scope.tenant.id,
+      legalEntityId: scope.legalEntity.id,
+      stationId: scope.station.id,
+      grantIds: matchingGrantIds,
+      event,
+    });
+    return {
+      operationId: input.operationId,
+      userId: existing.id,
+      membershipId: membership.id,
+      ...result,
+      auditEventId: event.eventId,
+    };
+  }
+
   await input.repository.appendAuditEvent(event);
   const membershipDisabled = await input.repository.disableMembership({
     tenantId: input.scope.tenantId,
@@ -619,6 +717,55 @@ type MembershipRow = {
   role_assignment_count: number;
 };
 
+type ScopeOptionsPayload = {
+  tenants: ScopeRow[];
+  legalEntities: Array<{ id: string; tenantId: string; name: string; status: string }>;
+  stations: Array<{
+    id: string;
+    tenantId: string;
+    legalEntityId: string;
+    code: string;
+    name: string;
+    status: string;
+  }>;
+};
+
+type IdentityPayload = {
+  id: string;
+  name: string;
+  email: string;
+  accounts: Array<{
+    id: string;
+    accountId: string;
+    providerId: string;
+    userId: string;
+    hasPassword: boolean;
+  }>;
+  memberships: Array<{
+    id: string;
+    tenantId: string;
+    identityId: string;
+    status: string;
+    roleAssignmentCount: number;
+  }>;
+};
+
+type GrantPayload = {
+  id: string;
+  tenantId: string;
+  membershipId: string;
+  permissionCode: string;
+  scopeType: ReadOnlyGrantScope;
+  legalEntityId: string | null;
+  stationId: string | null;
+  reason: string;
+};
+
+function parseJson<T>(value: unknown, message: string): T {
+  if (!value || typeof value !== 'object') throw new ProvisioningError(message);
+  return value as T;
+}
+
 function one<T>(rows: readonly T[], message: string): T {
   const row = rows[0];
   if (!row) throw new ProvisioningError(message);
@@ -634,221 +781,160 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
     async lockEmail(email) {
       await query`select pg_advisory_xact_lock(hashtextextended(${email}, 0))`;
     },
-    async loadScope(ids, options = {}) {
-      const tenantRows =
-        options.lock === false
-          ? await query<ScopeRow[]>`
-              select id::text, name, status
-              from app.tenants
-              where id = ${ids.tenantId}
-              limit 1
-            `
-          : await query<ScopeRow[]>`
-              select id::text, name, status
-              from app.tenants
-              where id = ${ids.tenantId}
-              limit 1
-              for update
-            `;
-      const legalEntityRows =
-        options.lock === false
-          ? await query<ScopeRow[]>`
-              select id::text, tenant_id::text, legal_name as name, status
-              from app.legal_entities
-              where id = ${ids.legalEntityId}
-              limit 1
-            `
-          : await query<ScopeRow[]>`
-              select id::text, tenant_id::text, legal_name as name, status
-              from app.legal_entities
-              where id = ${ids.legalEntityId}
-              limit 1
-              for update
-            `;
-      const stationRows =
-        options.lock === false
-          ? await query<ScopeRow[]>`
-              select id::text, tenant_id::text, legal_entity_id::text, code, name, status
-              from app.stations
-              where id = ${ids.stationId}
-              limit 1
-            `
-          : await query<ScopeRow[]>`
-              select id::text, tenant_id::text, legal_entity_id::text, code, name, status
-              from app.stations
-              where id = ${ids.stationId}
-              limit 1
-              for update
-            `;
-      const tenant = one(tenantRows, 'Selected tenant was not found');
-      const legalEntity = one(legalEntityRows, 'Selected legal entity was not found');
-      const station = one(stationRows, 'Selected station was not found');
+    async loadScope(ids) {
+      const rows = await query<{ value: ScopeOptionsPayload }[]>`
+        select platform.first_user_provisioning_scope_options(
+          ${ids.tenantId}::uuid, ${ids.legalEntityId}::uuid, ${ids.stationId}::uuid
+        ) as value
+      `;
+      const options = parseJson<ScopeOptionsPayload>(
+        one(rows, 'Database returned no scope options').value,
+        'Database returned invalid scope options',
+      );
+      const tenant = one(options.tenants, 'Selected tenant was not found');
+      const legalEntity = one(options.legalEntities, 'Selected legal entity was not found');
+      const station = one(options.stations, 'Selected station was not found');
       return {
         tenant: { id: tenant.id, name: tenant.name, status: tenant.status },
         legalEntity: {
           id: legalEntity.id,
-          tenantId: legalEntity.tenant_id!,
+          tenantId: legalEntity.tenantId,
           name: legalEntity.name,
           status: legalEntity.status,
         },
         station: {
           id: station.id,
-          tenantId: station.tenant_id!,
-          legalEntityId: station.legal_entity_id!,
+          tenantId: station.tenantId,
+          legalEntityId: station.legalEntityId,
           code: station.code!,
           name: station.name,
           status: station.status,
         },
       };
     },
-    async findIdentityByEmail(email) {
-      const users = await query<UserRow[]>`
-        select id::text, name, email
-        from auth."user"
-        where email = ${email}
-        limit 1
+    async findIdentityByEmail(email, tenantId) {
+      const rows = await query<{ value: IdentityPayload | null }[]>`
+        select platform.first_user_provisioning_identity(
+          ${email}, ${tenantId ?? null}::uuid
+        ) as value
       `;
-      const user = users[0];
-      if (!user) return null;
-      const accounts = await query<AccountRow[]>`
-        select id::text, account_id, provider_id, user_id::text, password
-        from auth.account
-        where user_id = ${user.id}
-        order by id
-      `;
-      const memberships = await query<MembershipRow[]>`
-        select m.id::text, m.tenant_id::text, m.identity_id::text, m.status,
-          (select count(*)::int from app.membership_role_assignments a
-           where a.tenant_id = m.tenant_id and a.membership_id = m.id) as role_assignment_count
-        from app.memberships m
-        where m.identity_id = ${user.id}
-        order by m.tenant_id, m.id
-      `;
-      return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        accounts: accounts.map((account) => ({
-          id: account.id,
-          accountId: account.account_id,
-          providerId: account.provider_id,
-          userId: account.user_id,
-          hasPassword: Boolean(account.password),
-        })),
-        memberships: memberships.map((membership) => ({
-          id: membership.id,
-          tenantId: membership.tenant_id,
-          identityId: membership.identity_id,
-          status: membership.status,
-          roleAssignmentCount: membership.role_assignment_count,
-        })),
-      };
+      const value = one(rows, 'Database returned no identity result').value;
+      if (value === null) return null;
+      const identity = parseJson<IdentityPayload>(value, 'Database returned invalid identity data');
+      return identity;
     },
     async listPermissionDefinitions(codes) {
-      const rows = await query<{ code: string }[]>`
-        select code
-        from platform.permission_definitions
-        where code = any(${codes})
+      const rows = await query<{ codes: string[] }[]>`
+        select platform.first_user_provisioning_permission_definitions(${codes}::text[]) as codes
       `;
-      return rows.map((row) => row.code);
+      return one(rows, 'Database returned no permission result').codes;
     },
-    async setTenantContext(context) {
-      await query`
-        select
-          set_config('app.tenant_id', ${context.tenantId}, true),
-          set_config('app.actor_id', ${context.actorId}, true),
-          set_config('app.membership_id', ${context.membershipId}, true),
-          set_config('app.legal_entity_id', ${context.legalEntityId}, true),
-          set_config('app.station_id', ${context.stationId}, true)
-      `;
+    async setTenantContext() {
+      // The database capability sets and validates its own context. Keeping
+      // this method a no-op prevents the local tool from manufacturing an
+      // application membership context for direct table writes.
     },
     async insertUser(input) {
-      await query`
-        insert into auth."user" (id, name, email, email_verified)
-        values (${input.id}, ${input.name}, ${input.email}, false)
-      `;
+      void input;
+      throw new ProvisioningError(
+        'PostgreSQL provisioning requires the atomic database capability',
+      );
     },
     async insertCredentialAccount(input) {
-      await query`
-        insert into auth.account (account_id, provider_id, user_id, password)
-        values (${input.accountId}, ${input.providerId}, ${input.userId}, ${input.passwordHash})
-      `;
+      void input;
+      throw new ProvisioningError(
+        'PostgreSQL provisioning requires the atomic database capability',
+      );
     },
     async insertMembership(input) {
-      await query`
-        insert into app.memberships (id, tenant_id, identity_id, status)
-        values (${input.id}, ${input.tenantId}, ${input.identityId}, 'ACTIVE')
-      `;
+      void input;
+      throw new ProvisioningError(
+        'PostgreSQL provisioning requires the atomic database capability',
+      );
     },
     async insertGrant(input) {
-      await query`
-        insert into app.temporary_permission_grants
-          (tenant_id, membership_id, permission_code, scope_type,
-           legal_entity_id, station_id, expires_at, reason)
-        values (
-          ${input.tenantId}, ${input.membershipId}, ${input.permissionCode}, ${input.scopeType},
-          ${input.legalEntityId ?? null}, ${input.stationId ?? null}, ${input.expiresAt}, ${input.reason}
-        )
-      `;
+      void input;
+      throw new ProvisioningError(
+        'PostgreSQL provisioning requires the atomic database capability',
+      );
     },
     async appendAuditEvent(event) {
       await query`
-        insert into platform.security_events
-          (id, tenant_id, membership_id, actor_id, event_code,
-           request_id, occurred_at, details, key_id, algorithm, signature)
-        values (
-          ${event.eventId}, ${event.tenantId}, ${event.membershipId ?? null}, ${event.actorId ?? null},
-          ${event.eventCode}, ${event.requestId}, ${event.occurredAt},
-          ${JSON.stringify(event.details)}::jsonb, ${event.keyId}, ${event.algorithm}, ${event.signature}
+        select platform.first_user_provisioning_append_failure(
+          ${event.tenantId}::uuid, ${JSON.stringify(event)}::jsonb
         )
       `;
     },
     async listUnrevokedTemporaryGrants(input) {
-      const rows = await query<TemporaryGrantSnapshot[]>`
-        select id::text, tenant_id::text as "tenantId", membership_id::text as "membershipId",
-          permission_code as "permissionCode", scope_type as "scopeType",
-          legal_entity_id::text as "legalEntityId", station_id::text as "stationId", reason
-        from app.temporary_permission_grants
-        where tenant_id = ${input.tenantId}
-          and membership_id = ${input.membershipId}
-          and revoked_at is null
-        order by id
+      const rows = await query<{ value: GrantPayload[] }[]>`
+        select platform.first_user_provisioning_grants(
+          ${input.tenantId}::uuid, ${input.membershipId}::uuid
+        ) as value
       `;
-      return rows;
+      return parseJson<GrantPayload[]>(
+        one(rows, 'Database returned no grant result').value,
+        'Database returned invalid grant data',
+      );
     },
     async revokeTemporaryGrants(input) {
-      const rows = await query<{ id: string }[]>`
-        update app.temporary_permission_grants
-        set revoked_at = coalesce(revoked_at, now())
-        where tenant_id = ${input.tenantId}
-          and membership_id = ${input.membershipId}
-          and reason = ${input.reason}
-          and id = any(${input.grantIds})
-          and revoked_at is null
-        returning id::text
-      `;
-      return rows.length;
+      void input;
+      throw new ProvisioningError('PostgreSQL revoke requires the atomic database capability');
     },
     async revokeSessions(userId) {
-      const rows = await query<{ id: string }[]>`
-        update auth.session
-        set revoked_at = coalesce(revoked_at, now()), updated_at = now()
-        where user_id = ${userId} and revoked_at is null
-        returning id::text
-      `;
-      return rows.length;
+      void userId;
+      throw new ProvisioningError('PostgreSQL revoke requires the atomic database capability');
     },
     async disableMembership(input) {
-      const rows = await query<{ id: string }[]>`
-        update app.memberships
-        set status = 'DISABLED', disabled_at = coalesce(disabled_at, now()), updated_at = now()
-        where tenant_id = ${input.tenantId}
-          and id = ${input.membershipId}
-          and identity_id = ${input.identityId}
-          and status = 'ACTIVE'
-        returning id::text
+      void input;
+      throw new ProvisioningError('PostgreSQL revoke requires the atomic database capability');
+    },
+    async provisionAtomic(input) {
+      await query`
+        select platform.first_user_provisioning_provision(
+          ${input.userId}::uuid,
+          ${input.membershipId}::uuid,
+          ${input.operationId}::uuid,
+          ${input.tenantId}::uuid,
+          ${input.legalEntityId}::uuid,
+          ${input.stationId}::uuid,
+          ${input.email},
+          ${input.displayName},
+          ${input.passwordHash},
+          ${input.expiresAt}::timestamptz,
+          ${JSON.stringify(input.initiatedEvent)}::jsonb,
+          ${JSON.stringify(input.completedEvent)}::jsonb
+        )
       `;
-      return rows.length === 1;
+    },
+    async revokeAtomic(input) {
+      const rows = await query<
+        {
+          value: {
+            revokedGrantCount: number;
+            revokedSessionCount: number;
+            membershipDisabled: boolean;
+          };
+        }[]
+      >`
+        select platform.first_user_provisioning_revoke(
+          ${input.userId}::uuid,
+          ${input.membershipId}::uuid,
+          ${input.operationId}::uuid,
+          ${input.tenantId}::uuid,
+          ${input.legalEntityId}::uuid,
+          ${input.stationId}::uuid,
+          ${input.grantIds}::uuid[],
+          ${JSON.stringify(input.event)}::jsonb
+        ) as value
+      `;
+      return parseJson<{
+        revokedGrantCount: number;
+        revokedSessionCount: number;
+        membershipDisabled: boolean;
+      }>(
+        one(rows, 'Database returned no revoke result').value,
+        'Database returned invalid revoke data',
+      );
     },
   };
 }
@@ -870,92 +956,17 @@ export async function listScopeOptions(
   query: Query,
   filters: Partial<ScopeIds> = {},
 ): Promise<ScopeListing> {
-  const tenants = filters.tenantId
-    ? await query<{ id: string; name: string; status: string }[]>`
-        select id::text, name, status
-        from app.tenants
-        where status = 'ACTIVE' and id = ${filters.tenantId}
-        order by name, id
-      `
-    : await query<{ id: string; name: string; status: string }[]>`
-        select id::text, name, status
-        from app.tenants
-        where status = 'ACTIVE'
-        order by name, id
-      `;
-  const legalEntities = filters.tenantId
-    ? filters.legalEntityId
-      ? await query<{ id: string; tenant_id: string; name: string; status: string }[]>`
-          select id::text, tenant_id::text, legal_name as name, status
-          from app.legal_entities
-          where tenant_id = ${filters.tenantId}
-            and status = 'ACTIVE'
-            and id = ${filters.legalEntityId}
-          order by legal_name, id
-        `
-      : await query<{ id: string; tenant_id: string; name: string; status: string }[]>`
-          select id::text, tenant_id::text, legal_name as name, status
-          from app.legal_entities
-          where tenant_id = ${filters.tenantId} and status = 'ACTIVE'
-          order by legal_name, id
-        `
-    : [];
-  const stations =
-    filters.tenantId && filters.legalEntityId
-      ? filters.stationId
-        ? await query<
-            {
-              id: string;
-              tenant_id: string;
-              legal_entity_id: string;
-              code: string;
-              name: string;
-              status: string;
-            }[]
-          >`
-          select id::text, tenant_id::text, legal_entity_id::text, code, name, status
-          from app.stations
-          where tenant_id = ${filters.tenantId}
-            and legal_entity_id = ${filters.legalEntityId}
-            and status = 'ACTIVE'
-            and id = ${filters.stationId}
-          order by code, id
-        `
-        : await query<
-            {
-              id: string;
-              tenant_id: string;
-              legal_entity_id: string;
-              code: string;
-              name: string;
-              status: string;
-            }[]
-          >`
-          select id::text, tenant_id::text, legal_entity_id::text, code, name, status
-          from app.stations
-          where tenant_id = ${filters.tenantId}
-            and legal_entity_id = ${filters.legalEntityId}
-            and status = 'ACTIVE'
-          order by code, id
-        `
-      : [];
-  return {
-    tenants,
-    legalEntities: legalEntities.map((row) => ({
-      id: row.id,
-      tenantId: row.tenant_id,
-      name: row.name,
-      status: row.status,
-    })),
-    stations: stations.map((row) => ({
-      id: row.id,
-      tenantId: row.tenant_id,
-      legalEntityId: row.legal_entity_id,
-      code: row.code,
-      name: row.name,
-      status: row.status,
-    })),
-  };
+  const rows = await query<{ value: ScopeOptionsPayload }[]>`
+    select platform.first_user_provisioning_scope_options(
+      ${filters.tenantId ?? null}::uuid,
+      ${filters.legalEntityId ?? null}::uuid,
+      ${filters.stationId ?? null}::uuid
+    ) as value
+  `;
+  return parseJson<ScopeListing>(
+    one(rows, 'Database returned no scope options').value,
+    'Database returned invalid scope options',
+  );
 }
 
 function databaseUrlFromEnvironment(environment: NodeJS.ProcessEnv = process.env): string {
