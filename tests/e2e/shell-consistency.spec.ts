@@ -115,7 +115,11 @@ test.describe('shared shell consistency', () => {
       'href',
       '/settings',
     );
-    await expect(drawer.getByText('Customers', { exact: true })).toHaveCount(0);
+    await drawer.getByRole('button', { name: 'Finance' }).click();
+    await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toHaveAttribute(
+      'href',
+      '/customers',
+    );
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
   });
@@ -176,10 +180,14 @@ test.describe('shared shell consistency', () => {
     expect(box!.x + box!.width).toBeLessThanOrEqual(320);
   });
 
-  test('Customers is absent while Settings remains represented', async ({ page }) => {
+  test('Customers is represented while Settings remains represented', async ({ page }) => {
     await prepareShell(page, { width: 1482, height: 900 });
     const sidebar = page.locator('.shell-sidebar');
-    await expect(sidebar.getByText('Customers', { exact: true })).toHaveCount(0);
+    await sidebar.getByRole('button', { name: 'Finance' }).click();
+    await expect(sidebar.getByRole('link', { name: 'Customers', exact: true })).toHaveAttribute(
+      'href',
+      '/customers',
+    );
     await expect(sidebar.getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/settings',
@@ -189,7 +197,7 @@ test.describe('shared shell consistency', () => {
     const palette = page.getByRole('dialog', { name: 'Search' });
     await expect(palette.getByRole('combobox', { name: 'Search pages' })).toBeFocused();
     await expect(palette).toContainText('Settings');
-    await expect(palette.getByText('Customers', { exact: true })).toHaveCount(0);
+    await expect(palette).toContainText('Customers');
     await expect(page.getByText('Search anything', { exact: false })).toHaveCount(0);
   });
 
