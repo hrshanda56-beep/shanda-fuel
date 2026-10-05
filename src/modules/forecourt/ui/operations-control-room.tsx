@@ -385,8 +385,6 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     <div className="operations-control-room" aria-label="Operations control room">
       <div className="page-header">
         <div>
-          <p className="eyebrow">Operations control room · {overview.station.code}</p>
-          <h1>Business day, shifts and reconciliation</h1>
           <p className="lede">
             {overview.organisation.name} · {overview.station.name} · {overview.station.timezone}
           </p>

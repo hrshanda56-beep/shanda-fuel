@@ -710,7 +710,7 @@ export function InventoryContextRequired() {
   return (
     <Card className="panel">
       <ContextRequiredState
-        headingLevel={1}
+        headingLevel={2}
         title="Choose a station to view inventory"
         message="Use Change above to choose an authorised organisation, legal entity, and station. Inventory is available for one station at a time."
       />

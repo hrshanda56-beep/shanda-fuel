@@ -11,10 +11,7 @@ export default async function SettlementsPage({
 }) {
   const { stationId } = await params;
   return (
-    <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      breadcrumbs={[{ label: 'Provider settlements' }]}
-    >
+    <AppShell navigationProjection={syntheticNavigationProjection}>
       <SettlementWorkspace stationId={stationId} />
     </AppShell>
   );

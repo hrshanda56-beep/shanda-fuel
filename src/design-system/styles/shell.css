@@ -133,6 +133,31 @@
   margin-bottom: var(--space-6);
 }
 
+.shell-page-heading {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.shell-page-heading h1 {
+  margin: 0;
+}
+
+.shell-page-subtitle {
+  max-width: 46rem;
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.shell-header-controls {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
 .shell-header-trail {
   display: grid;
   min-width: 0;

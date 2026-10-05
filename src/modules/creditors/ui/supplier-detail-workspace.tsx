@@ -310,6 +310,8 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       <PageHeader
         eyebrow={contextLabel ?? 'Supplier creditors'}
         title={supplier ? supplier.legalName : 'Supplier detail'}
+        headingLevel="h2"
+        titleId="supplier-detail-title"
         description={
           supplier ? `Supplier code ${supplier.code}` : 'Review the authorised supplier position.'
         }

@@ -259,8 +259,6 @@ export function ValuationOverview({
     <div className="valuation-workspace">
       <div className="page-heading">
         <div>
-          <span className="eyebrow">Inventory control</span>
-          <h1>Inventory valuation</h1>
           <p>
             See which cost streams are valued, what is blocking an unvalued stream, and how
             revaluation evidence changes historical COGS.
