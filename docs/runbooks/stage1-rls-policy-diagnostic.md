@@ -34,9 +34,10 @@ queried the normalized `pg_policies.cmd` column but compared it with the raw
 therefore the same predicate with `pg_policies.cmd = 'ALL'`; its exact
 qualifying expression, with-check expression, target relation set, and global
 unexpected-name check are unchanged. The repository-local diagnostic uses this
-corrected normalized comparison. The immutable external helper is not modified
-by this branch; its approved operator-tool owner must apply this one-line
-correction before a human rerun.
+corrected normalized comparison. The reviewed external helper now uses the same
+comparison and requires the post-reset `rolpassword IS NOT NULL` state before
+direct provisioner authentication. The human must complete the Neon
+control-plane reset before starting it.
 
 The updated diagnostic returns each predicate, the final `policy_checks_ok`
 conjunction, all globally matching policy rows, complete target rows, and
@@ -175,7 +176,10 @@ with tracing disabled:
 
 ```sh
 set +x
-exec /Users/wolftech/.codex/phase0/production-dry-run-stage1.sh
+set +e
+/Users/wolftech/.codex/phase0/production-dry-run-stage1.sh
+stage1_run_status=$?
+printf 'STAGE1_EXIT_STATUS=%s\n' "$stage1_run_status"
 ```
 
 This is a human-controlled Stage 1 rerun procedure, not an instruction for an

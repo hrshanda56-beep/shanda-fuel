@@ -45,10 +45,12 @@ against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
    `first_user_provisioner`; no database-admin connection or new privilege is
    authorized.
 2. Update and independently review the external Stage 1 helper so the
-   provisioner performs only its fixed `PASSWORD NULL` self-cleanup; preserve
-   `migration_owner` as `NOCREATEROLE`, DEC-011 secret handling, all preflight
-   predicates, and fail-closed behavior.
-3. Have the approved human operator rerun Stage 1 through the reviewed
+   post-reset state is required before direct provisioner authentication and
+   the provisioner performs only its fixed `PASSWORD NULL` self-cleanup;
+   preserve `migration_owner` as `NOCREATEROLE`, DEC-011 secret handling, all
+   preflight predicates, and fail-closed behavior.
+3. Have the approved human operator verify the final helper SHA, complete the
+   Neon control-plane reset, and rerun Stage 1 through the reviewed
    human-controlled procedure, stopping at its scope-discovery hard stop.
 4. Classify the rerun result and scope discovery; do not continue to Stage 2
    or provisioning from this task.
@@ -215,10 +217,11 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - The repository-local diagnostic uses `pg_policies.cmd = 'ALL'`, with
   regression coverage preventing the raw `'*'` comparison from returning.
   The external helper now contains the DEC-040 control-plane reset/self-cleanup
-  path. Local PostgreSQL 18.6 validation and independent final security review
-  are GREEN. Only the human may execute the reviewed procedure and stop at its
-  existing scope-discovery hard stop. Do not continue to Stage 2, provisioning,
-  or remediation.
+  path and requires the post-reset non-NULL password state before it proceeds.
+  Local PostgreSQL 18.6 validation is GREEN; a fresh independent review is
+  required after this final state-machine repair. Only the human may execute
+  the reviewed procedure and stop at its existing scope-discovery hard stop.
+  Do not continue to Stage 2, provisioning, or remediation.
 - The original policy-assertion failure occurred before temporary provisioner
   password assignment; the later corrected rerun reached that step but could
   not assign the password under the existing role authority, so no scope was
@@ -246,11 +249,14 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - The read-only diagnostic completed successfully; its zero exit status is
   evidence-collection success only and is not a Stage 1 pass.
 - No legitimate scope choices were accepted for Stage 2.
-- No temporary provisioner credential was assigned by the failed run.
+- The human recovery verification confirmed the provisioner password is NULL
+  and role, membership, ownership, and ACL invariants are safe. No cleanup
+  remains required before a fresh control-plane reset.
 - No user was provisioned.
-- The final external helper diff is independently GREEN-reviewed. The human
-  must complete the control-plane reset and hidden credential entry before
-  execution.
+- The final external helper diff awaits the fresh independent review required
+  after the state-machine repair. After GREEN review, the human must verify
+  the helper SHA, complete the control-plane reset, and enter the temporary
+  credential through the hidden prompt before execution.
 
 **Tests/verification**
 

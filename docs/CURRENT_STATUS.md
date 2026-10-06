@@ -83,8 +83,9 @@ Verified production role state before provisioning:
 - The approved Neon membership is `migration_owner` →
   `first_user_provisioner`, granted by `cloud_admin`, with `admin=true`,
   `inherit=false`, and `set=false`.
-- No temporary provisioner password was assigned by the latest failed Stage 1
-  run.
+- The latest human recovery verification confirmed `first_user_provisioner`
+  is again `PASSWORD NULL`; role attributes, exact membership, ownership, and
+  ACL invariants passed. No cleanup remains required from that recovery path.
 
 The actual operator client is Homebrew `psql 16.15`. Human local validation
 against PostgreSQL 18.6 verified success exit code 0, deliberate failure exit
@@ -150,9 +151,13 @@ rerun and no production mutation was performed.
   diagnostic and regression test now use the corrected normalized comparison.
 - The reviewed external operator helper now contains the corrected normalized
   `pg_policies.cmd = 'ALL'` predicate and the approved control-plane/self-
-  cleanup password path. Its current SHA-256 is recorded with the final
-  handoff. Stage 1 has not been rerun; Stage 2, provisioning, and production
-  remediation remain blocked.
+  cleanup password path. A stale precondition that required `PASSWORD NULL`
+  before the helper could proceed was corrected: after the human control-plane
+  reset, the helper now requires `rolpassword IS NOT NULL`, authenticates
+  directly as the provisioner, and preserves the fixed self-cleanup path. Its
+  current SHA-256 is recorded with the final handoff. Stage 1 has not been
+  rerun after this repair; Stage 2, provisioning, and production remediation
+  remain blocked.
 - The independent production target invariant is now established and recorded
   in DEC-031. The diagnostic must compare the decoded process-local `PGHOST`
   against the exact approved endpoint before `psql` executes; `APP_ENV`,
@@ -165,10 +170,10 @@ rerun and no production mutation was performed.
   verified locally. The approved human operator has now contacted production
   only through that read-only diagnostic; no agent has contacted production,
   Stage 1 has not been rerun, and no production mutation was performed.
-- The failed run stopped before temporary provisioner password assignment.
-  No cleanup is required from that run, no first user exists, Stage 2 has not
-  run, real-provisioning approval has not been given, and authenticated
-  production smoke has not happened.
+- The original policy-failure run stopped before temporary provisioner password
+  assignment. No cleanup is required from that run, no first user exists,
+  Stage 2 has not run, real-provisioning approval has not been given, and
+  authenticated production smoke has not happened.
 - The later corrected Stage 1 run reached the temporary password-assignment
   step but failed because `migration_owner` is intentionally `NOCREATEROLE`.
   PostgreSQL 18.6 rejects its `ALTER ROLE first_user_provisioner PASSWORD`
@@ -181,11 +186,12 @@ rerun and no production mutation was performed.
   privileged password assignment, and the provisioner clears its own password
   to `NULL`. `migration_owner` remains `NOCREATEROLE`; no role, grant,
   function, or persistent application credential was introduced.
-- M0-T03 is **READY FOR FINAL HUMAN RERUN**. The final helper uses the
-  approved control-plane reset plus provisioner self-cleanup; local PostgreSQL
-  18.6 validation and independent final security review are GREEN. Production
-  has not been contacted by agents, and no Stage 2 or provisioning action is
-  authorized from this task.
+- M0-T03 is **READY FOR FINAL HUMAN RERUN AFTER FINAL REVIEW**. The final
+  helper uses the approved control-plane reset plus provisioner self-cleanup;
+  local PostgreSQL 18.6 lifecycle validation is GREEN. A fresh independent
+  review of this final helper/test/documentation state is required before the
+  human rerun. Production has not been contacted by agents, and no Stage 2 or
+  provisioning action is authorized from this task.
 - Stage 2 has **not** been run against production.
 - No production first-user provisioning has occurred; downstream production
   actions remain separate human-gated procedures.
@@ -450,11 +456,11 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 
 ### Active
 
-1. **Production Stage 1 failed closed in the RLS/policy preflight** with a
-   division-by-zero error caused by comparing `pg_policies.cmd` to raw
+1. **Production Stage 1 previously failed closed in the RLS/policy preflight**
+   with a division-by-zero error caused by comparing `pg_policies.cmd` to raw
    `pg_policy.polcmd` notation. The corrected normalized comparison is
-   implemented and locally tested; the immutable external helper still needs
-   its one-line operator-tool correction before human rerun.
+   implemented and locally tested in the external helper; its final repaired
+   state-machine review remains the last pre-rerun gate.
 2. **Daily Operations timezone fix is not yet cleanly integrated into the final candidate** even though the scoped implementation/tests are green.
 3. **A8 decimal fix is verified but still needs final clean release-candidate integration.**
 
@@ -473,9 +479,9 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
   validation is already Access Review GREEN. The local-only diagnostic
   procedure contains the exact human-approved endpoint guard, its predicate-
   level production evidence was collected successfully, and the corrected
-  normalized policy comparison is covered by regression tests. The human
-  rerun remains pending application and review of the one-line correction in
-  the immutable external helper.
+  normalized policy comparison is covered by regression tests. The external
+  helper now includes that correction and the post-reset non-NULL precondition;
+  a fresh final review remains pending before human rerun.
 
 ## 17. Owner-resolved product decisions
 
@@ -526,8 +532,8 @@ These decisions do not alter the M0-T03 production diagnostic gate.
 
 ### UNRESOLVED / needs verification
 
-- Cause of the Stage 1 RLS/policy preflight division-by-zero failure and the
-  exact predicate result that selected its intentional failure branch.
+- Final independent review of the repaired external helper and its exact SHA
+  before the human Stage 1 rerun.
 - Exact current production release SHA after the next integrated release.
 - Whether the dev-only dependency advisory now has an upstream fix.
 - Whether hosting/plan changes alter the observability exception.
@@ -554,10 +560,10 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 
 Use this order unless a current human instruction changes it:
 
-1. Apply and independently review the one-line `pg_policies.cmd = 'ALL'`
-   correction in the immutable external Stage 1 helper.
-2. Rerun Stage 1 from the beginning only after that correction is reviewed and
-   human-approved.
+1. Complete the fresh independent review and record the final external-helper
+   SHA.
+2. Human verifies that SHA, completes the Neon control-plane reset, and runs
+   Stage 1 without `exec`, stopping at the scope-discovery hard stop.
 3. Select legitimate production scope and stop before Stage 2 or provisioning.
 4. Run Stage 2 READ ONLY dry run.
 5. Verify zero writes, sentinel unchanged, and password-NULL cleanup.

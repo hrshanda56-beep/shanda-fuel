@@ -36,9 +36,10 @@ provisioner's direct session and fixed self-cleanup.
 
 The human-only sequence is:
 
-1. Run the reviewed Stage 1 migration-owner preflight and stop before any
-   provisioner session. Confirm the role is still `PASSWORD NULL` and all
-   security checks pass.
+1. Confirm the previously verified safe baseline through an approved
+   read-only check: `first_user_provisioner` is still `PASSWORD NULL` and its
+   security invariants pass. Do not start the Stage 1 helper while the role is
+   still `PASSWORD NULL`; its preflight requires the post-reset non-NULL state.
 2. In Neon control-plane Role Actions, use **Reset password** only for
    `first_user_provisioner`. Enter the resulting temporary password through
    the reviewed hidden operator prompt. The password must stay out of argv,
