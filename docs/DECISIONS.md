@@ -133,7 +133,7 @@ Status values:
 
 **Context:** The SQL-created provisioner role is LOGIN-capable but has no usable password by default, and Neon did not provide a managed credential for it.
 
-**Chosen approach:** `migration_owner` temporarily assigns a generated password, the operator connects directly as `first_user_provisioner`, then cleanup restores `PASSWORD NULL`.
+**Chosen approach:** A human uses the narrowly scoped authority boundary recorded in DEC-040 to temporarily assign a generated password, the operator connects directly as `first_user_provisioner`, then the same boundary restores `PASSWORD NULL`. `migration_owner` remains `NOCREATEROLE`.
 
 **Rationale:** It enables the required direct session without creating a persistent bootstrap credential.
 
@@ -197,9 +197,9 @@ Status values:
 
 ---
 
-## DEC-040 — Keep ephemeral provisioner password assignment at the existing deployment-admin boundary
+## DEC-040 — Establish a human-only deployment-admin transport for ephemeral provisioner credentials
 
-**Status:** PROPOSED — HUMAN AUTHORITY REVIEW REQUIRED
+**Status:** ACCEPTED — HUMAN AUTHORITY APPROVED
 
 **Context:** The accepted DEC-009 procedure assigns a temporary password to
 `first_user_provisioner` through `migration_owner`. The repository bootstrap
@@ -209,22 +209,30 @@ even when the reviewed `ADMIN` membership relationship exists. This is a
 credential-assignment authority defect, not permission to weaken the role
 contract.
 
-**Recommended approach:** Keep `migration_owner` `NOCREATEROLE` and use the
-already documented Neon/provider-owner or deployment-admin boundary from the
-deployment runbook for the single human-controlled temporary password
-assignment and the matching `PASSWORD NULL` cleanup. Keep all Stage 1
-catalog/security checks and all first-user operations on their existing
-reviewed principals. The privileged connection is not stored, passed in
-argv, committed, or made a durable application/runtime credential.
+**Decision:** The repository audit found no concrete, reusable provider-owner or
+deployment-admin invocation. Establish a new human-only credential transport,
+not a new database authority: the operator supplies a provider-approved admin
+database URL through hidden process-local input as
+`SF_DEPLOYMENT_ADMIN_DB_URL`, and supplies the exact approved admin role name
+from the provider control plane as the non-secret
+`SF_DEPLOYMENT_ADMIN_ROLE`. The reviewed helper parses the URL with the
+DEC-011 model, requires the approved production host and `shanda_fuel`,
+requires the URI user to equal the supplied admin role, and never persists,
+prints, logs, or places the URL/password in argv.
 
-**Why this is the least-risk available option:** It reuses the existing
-bootstrap authority that is already documented for role credential and
-ownership operations, changes no production role attributes, adds no
-`SECURITY DEFINER` surface, and leaves the temporary credential reversible by
-clearing it immediately after the human-controlled operation. The external
-Stage 1 helper must be separately reviewed before it can invoke this boundary;
-the current helper still attempts the assignment as `migration_owner` and is
-not ready for another production run.
+The helper exposes no generic SQL surface through this credential. Its fixed
+deployment-admin path permits only `ALTER ROLE first_user_provisioner PASSWORD
+<temporary>` and `ALTER ROLE first_user_provisioner PASSWORD NULL`, with the
+same path used for cleanup and narrowly necessary read-only verification. All
+other Stage 1 checks remain on their existing reviewed principals.
+
+**Why this is the least-risk available option:** It introduces only the
+operator transport required after the audit proved no concrete workflow was
+documented. It changes no production role attributes, adds no database role,
+grant, `SECURITY DEFINER` function, or persistent application credential, and
+leaves the temporary credential reversible by clearing it immediately through
+the same authority path. The exact admin role is a human/provider-control-plane
+input; agents must not guess or receive it.
 
 **Rejected alternatives:** Granting `CREATEROLE` to `migration_owner` would
 weaken its locked least-privilege contract. A provider-managed
@@ -234,10 +242,12 @@ durable privileged surface and conflict with DEC-008, DEC-013, and the
 security-definer restrictions. A second ad-hoc parser or secret path is
 forbidden by DEC-010 and DEC-011.
 
-**Consequence:** M0-T03 remains blocked until the human approves this
-authority boundary and the actual Stage 1 operator helper is changed or
-replaced by a separately reviewed procedure that uses it without exposing
-credentials. No production rerun is authorized by this proposal.
+**Consequence:** The external helper requires a separate independent review of
+its actual final diff before a human rerun. The human must obtain the exact
+approved admin role name and approved hidden admin URL from the Neon/provider
+control plane, run the reviewed helper, and ensure both URL variables and the
+role input are removed from the operator environment afterward. No production
+rerun is authorized for an agent; no Stage 2 or provisioning follows.
 
 ---
 

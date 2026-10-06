@@ -145,21 +145,33 @@ No role, ACL, policy, RLS flag, migration, schema, data, password, or
 configuration may be changed as part of this procedure. A successful
 diagnostic does not make Stage 1 pass and does not authorise a rerun or Stage 2.
 
-## Human-approved Stage 1 rerun procedure after required correction
+## Human-approved Stage 1 rerun procedure after required review
 
-The root cause is verified, but the rerun is not currently safe. The immutable
-external helper must first contain this exact correction in its historical
-`pg_policies` assertion:
+The root cause is verified and the actual final external helper diff has
+received independent GREEN security review. A rerun remains human-only. The
+helper must contain this exact correction in its historical `pg_policies`
+assertion:
 
 ```sql
 -- corrected normalized representation
 AND cmd = 'ALL'
 ```
 
-Do not run the unchanged helper: its `AND cmd = '*'` comparison is the defect
-that caused the false policy failure. After the operator-tool owner has applied
-and independently reviewed that one-line change, the human operator may use
-the existing approved DEC-011 bootstrap and run the helper from its reviewed
+Do not run an unchanged helper: its `AND cmd = '*'` comparison is the defect
+that caused the false policy failure. DEC-040 now establishes the explicit
+human-only deployment-admin transport because the repository audit found no
+concrete provider-owner/deployment-admin invocation. Before execution, the
+human must obtain from the provider control plane the exact approved admin role
+name and approved hidden admin database URL. Load them only in the operator's
+process environment as `SF_DEPLOYMENT_ADMIN_ROLE` and
+`SF_DEPLOYMENT_ADMIN_DB_URL`; do not place the URL in argv, files, logs, chat,
+or returned evidence. The helper reuses DEC-011 parsing, independently checks
+the approved production host/database and URI user/admin-role match, rejects
+all admin SQL/psql arguments, and permits only the fixed password assignment
+and matching `PASSWORD NULL` cleanup.
+
+With `SF_MIGRATION_OWNER_DB_URL` also loaded through its existing approved
+hidden bootstrap, the human operator may run the helper from its reviewed
 location with tracing disabled:
 
 ```sh
@@ -169,6 +181,8 @@ exec /Users/wolftech/.codex/phase0/production-dry-run-stage1.sh
 
 This is a human-controlled Stage 1 rerun procedure, not an instruction for an
 agent. The human must stop at the helper's existing scope-discovery hard stop;
-do not continue to Stage 2, real provisioning, or any remediation. The
-existing helper owns its temporary credential cleanup. No URI, password, or
-other secret may be placed in argv, files, logs, chat, or returned evidence.
+do not continue to Stage 2, real provisioning, or any remediation. The helper
+uses the same admin path for assignment and cleanup and fail-closed post-cleanup
+verification. After the process exits, unset the two URL variables and the
+role input. No URI, password, or other secret may be placed in argv, files,
+logs, chat, or returned evidence.

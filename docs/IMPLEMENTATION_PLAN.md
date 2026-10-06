@@ -189,8 +189,9 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   invariant has been established and reviewed.
 - That invariant has been incorporated into the diagnostic and received an
   independent final procedure review.
-- Human operator has the production `migration_owner` connection URL loaded
-  securely in the same terminal.
+- DEC-040 is accepted; the human must obtain the exact provider-approved admin
+  role name and load the approved admin URL through the hidden process-local
+  workflow.
 
 **Implementation notes**
 
@@ -213,16 +214,13 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   `pg_policy.polcmd='*'` to `'ALL'`. The historical `cmd='*'` comparison was
   therefore a tooling assertion bug; the unexpected-prefixed-policy predicate
   passed.
-- The repository-local diagnostic now uses `pg_policies.cmd = 'ALL'`, with
+- The repository-local diagnostic uses `pg_policies.cmd = 'ALL'`, with
   regression coverage preventing the raw `'*'` comparison from returning.
-  The external helper remains immutable in this task; its owner must apply and
-  independently review the same one-line correction before rerun.
-- Do not rerun Stage 1 from the unchanged helper. The policy correction alone
-  is insufficient: the helper must also receive the separately reviewed
-  password-authority handoff recorded in DEC-040. Only then may the human
-  execute the reviewed Stage 1 procedure and stop at its existing
-  scope-discovery hard stop. Do not continue to Stage 2, provisioning, or
-  remediation.
+  The external helper now also contains the explicit DEC-040 fixed admin
+  handoff, and its actual final diff has received independent GREEN security
+  review. Only the human may execute the reviewed procedure and stop at its
+  existing scope-discovery hard stop. Do not continue to Stage 2, provisioning,
+  or remediation.
 - The original policy-assertion failure occurred before temporary provisioner
   password assignment; the later corrected rerun reached that step but could
   not assign the password under the existing role authority, so no scope was
@@ -233,12 +231,11 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   18.6 correctly rejects `ALTER ROLE first_user_provisioner PASSWORD` from
   `migration_owner` while that role is `NOCREATEROLE`. The existing
   `ADMIN=true` membership is not sufficient authority for this operation.
-- DEC-040 recommends a one-time human/provider-owner or deployment-admin
-  authority boundary already documented for managed-PostgreSQL role
-  operations. This preserves the `migration_owner NOCREATEROLE` contract and
-  avoids a durable SECURITY DEFINER or elevated application credential. The
-  proposal still requires human authority review and a separately reviewed
-  helper/procedure handoff before any production rerun.
+- DEC-040 establishes a human-only transport because the repository audit
+  found no concrete provider-owner/deployment-admin invocation. It preserves
+  the `migration_owner NOCREATEROLE` contract and avoids a durable
+  `SECURITY DEFINER` or elevated application credential. The exact admin role
+  name must come from the provider control plane; agents must not guess it.
 - The local PostgreSQL 18.6 regression suite adds coverage for the intended
   boundary: a `SET ROLE migration_owner` attempt to assign the password must
   be rejected with SQLSTATE `42501`, while the disposable local owner/admin
@@ -247,21 +244,21 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 
 **Current verified result**
 
-- Stage 1 is not complete and is blocked on password-assignment authority.
+- Stage 1 is not complete; the reviewed procedure is ready for the final human
+  rerun using the approved admin URL and exact provider-control-plane role name.
 - The read-only diagnostic completed successfully; its zero exit status is
   evidence-collection success only and is not a Stage 1 pass.
 - No legitimate scope choices were accepted for Stage 2.
 - No temporary provisioner credential was assigned by the failed run.
 - No user was provisioned.
-- Do not rerun Stage 1 until DEC-040 is approved and the actual helper/procedure
-  uses the reviewed existing admin boundary for both temporary assignment and
-  cleanup.
+- The final external helper diff is independently GREEN-reviewed. The human
+  must obtain the exact approved admin role/URL inputs before execution.
 
 **Tests/verification**
 
 - Confirm the recorded target invariant is present in the final procedure.
-- Independent security review of the initial read-only diagnostic is GREEN;
-  the later password-authority procedure still requires its own review.
+- Independent security review of the initial read-only diagnostic and the
+  final password-authority procedure is GREEN.
 - The initial human diagnostic evidence is collected and reviewed against
   migrations and the historical assertion.
 - Human confirms the reviewed external helper contains the corrected

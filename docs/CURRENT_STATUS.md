@@ -175,19 +175,19 @@ rerun and no production mutation was performed.
   attempt despite the reviewed `ADMIN` membership relationship. This is a
   verified authority-model defect in the operator path; it does not justify
   granting `CREATEROLE` or weakening the migration-owner contract.
-- The existing repository bootstrap/deployment runbook already reserves role
-  credential and ownership operations for the Neon/provider-owner or
-  deployment-admin boundary. DEC-040 records the recommended one-time,
-  human-controlled use of that boundary for the temporary password assignment
-  and matching `PASSWORD NULL` cleanup. DEC-040 remains proposed pending
-  human authority review; no new privileged database function or persistent
-  elevated credential is approved.
-- M0-T03 is therefore **BLOCKED — PASSWORD ASSIGNMENT AUTHORITY REQUIRED**.
-  The external Stage 1 helper still attempts the password assignment through
-  `migration_owner` and must not be rerun until a separately reviewed helper
-  handoff to the existing admin boundary is available. Production has not
-  been contacted by agents, Stage 1 has not been rerun after this finding, and
-  no Stage 2 or provisioning action is authorized.
+- The repository audit found no concrete provider-owner/deployment-admin
+  invocation. DEC-040 is now accepted and establishes a human-only
+  process-local deployment-admin transport for the existing provider/admin
+  database authority. The reviewed helper limits that path to temporary
+  `PASSWORD` assignment and matching `PASSWORD NULL` cleanup, keeps
+  `migration_owner` `NOCREATEROLE`, and introduces no role, grant, function, or
+  persistent application credential.
+- M0-T03 is **READY FOR FINAL HUMAN RERUN**. The actual final external helper
+  diff has received independent GREEN security review. The human must obtain
+  the exact approved admin role name and hidden admin URL from the provider
+  control plane; agents must not guess or receive either credential. Production
+  has not been contacted by agents, and no Stage 2 or provisioning action is
+  authorized.
 - Stage 2 has **not** been run against production.
 - No explicit human approval for real first-user provisioning has been recorded.
 - No real first production user has been created.
