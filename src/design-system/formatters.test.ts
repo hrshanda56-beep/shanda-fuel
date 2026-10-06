@@ -56,9 +56,7 @@ describe('presentation formatters', () => {
     try {
       for (const timezone of ['UTC', 'America/Los_Angeles', 'Pacific/Kiritimati']) {
         process.env.TZ = timezone;
-        expect(
-          formatTimeInTimeZone('2026-09-23T06:00:00.000Z', 'Africa/Harare'),
-        ).toBe('08:00');
+        expect(formatTimeInTimeZone('2026-09-23T06:00:00.000Z', 'Africa/Harare')).toBe('08:00');
       }
     } finally {
       if (originalTimezone === undefined) delete process.env.TZ;

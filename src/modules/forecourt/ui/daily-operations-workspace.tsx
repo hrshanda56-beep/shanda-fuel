@@ -819,12 +819,8 @@ export function DailyOperationsWorkspace({
                 <span className="metric-label">Shift</span>
                 <strong>{formatStatusLabel(operation.shift.state)}</strong>
                 <span className="metric-meta">
-                  {formatTimeInTimeZone(
-                    operation.shift.plannedStartAt,
-                    operation.station.timezone,
-                  )}{' '}
-                  –{' '}
-                  {formatTimeInTimeZone(operation.shift.plannedEndAt, operation.station.timezone)}
+                  {formatTimeInTimeZone(operation.shift.plannedStartAt, operation.station.timezone)}{' '}
+                  – {formatTimeInTimeZone(operation.shift.plannedEndAt, operation.station.timezone)}
                 </span>
               </div>
               <div>
