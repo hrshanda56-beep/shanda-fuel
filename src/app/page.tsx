@@ -1,21 +1,25 @@
 import { AppShell } from '@/design-system/app-shell';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
-
-import { ProductionSafeOverview } from './_overview/overview-dashboard';
+import { OperationsDashboard } from '@/modules/reporting/ui/operations-dashboard';
 
 export const metadata = {
   title: { absolute: 'Dashboard · Shanda Fuel' },
 };
 
-/** Owner/Finance overview. Live figures stay hidden until reporting data exists. */
-export default function OverviewPage() {
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tenantId?: string; stationId?: string }>;
+}) {
+  const { tenantId, stationId } = await searchParams;
+
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
       searchPlacement="header"
-      pageSubtitle="Live figures are not available for this work context yet."
+      pageSubtitle="Operational facts for the current authorised work context."
     >
-      <ProductionSafeOverview />
+      <OperationsDashboard tenantId={tenantId} stationId={stationId} />
     </AppShell>
   );
 }
