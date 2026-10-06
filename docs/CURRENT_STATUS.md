@@ -176,20 +176,19 @@ rerun and no production mutation was performed.
   verified authority-model defect in the operator path; it does not justify
   granting `CREATEROLE` or weakening the migration-owner contract.
 - The repository audit found no concrete provider-owner/deployment-admin
-  invocation. DEC-040 is now accepted and establishes a human-only
-  process-local deployment-admin transport for the existing provider/admin
-  database authority. The reviewed helper limits that path to temporary
-  `PASSWORD` assignment and matching `PASSWORD NULL` cleanup, keeps
-  `migration_owner` `NOCREATEROLE`, and introduces no role, grant, function, or
-  persistent application credential.
-- M0-T03 is **READY FOR FINAL HUMAN RERUN**. The actual final external helper
-  diff has received independent GREEN security review. The human must obtain
-  the exact approved admin role name and hidden admin URL from the provider
-  control plane; agents must not guess or receive either credential. Production
+  invocation. DEC-040 now uses the existing human-only Neon control-plane
+  Role Actions reset for `first_user_provisioner`; the helper performs no
+  privileged password assignment, and the provisioner clears its own password
+  to `NULL`. `migration_owner` remains `NOCREATEROLE`; no role, grant,
+  function, or persistent application credential was introduced.
+- M0-T03 is **READY FOR FINAL HUMAN RERUN**. The final helper uses the
+  approved control-plane reset plus provisioner self-cleanup; local PostgreSQL
+  18.6 validation and independent final security review are GREEN. Production
   has not been contacted by agents, and no Stage 2 or provisioning action is
-  authorized.
+  authorized from this task.
 - Stage 2 has **not** been run against production.
-- No explicit human approval for real first-user provisioning has been recorded.
+- No production first-user provisioning has occurred; downstream production
+  actions remain separate human-gated procedures.
 - No real first production user has been created.
 - Authenticated production smoke (login/context/protected route/logout/re-login) has not been completed.
 

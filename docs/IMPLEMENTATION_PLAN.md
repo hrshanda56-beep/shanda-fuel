@@ -41,15 +41,13 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 The following is the current authoritative Phase 0 sequence, last synchronized
 against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
 
-1. Obtain human authority review of DEC-040 and confirm that the existing
-   Neon/provider-owner or deployment-admin boundary is the approved one-time
-   authority for assigning and clearing the temporary
-   `first_user_provisioner` password.
-2. Update or replace the external Stage 1 helper so only that reviewed
-   authority boundary performs the password assignment/cleanup; preserve
-   `migration_owner` as `NOCREATEROLE`, the existing DEC-011 secret handling,
-   all preflight predicates, and all fail-closed behavior. Independently
-   review the actual final helper/procedure.
+1. Use the human-approved Neon control-plane Role Actions reset for
+   `first_user_provisioner`; no database-admin connection or new privilege is
+   authorized.
+2. Update and independently review the external Stage 1 helper so the
+   provisioner performs only its fixed `PASSWORD NULL` self-cleanup; preserve
+   `migration_owner` as `NOCREATEROLE`, DEC-011 secret handling, all preflight
+   predicates, and fail-closed behavior.
 3. Have the approved human operator rerun Stage 1 through the reviewed
    human-controlled procedure, stopping at its scope-discovery hard stop.
 4. Classify the rerun result and scope discovery; do not continue to Stage 2
@@ -189,9 +187,9 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   invariant has been established and reviewed.
 - That invariant has been incorporated into the diagnostic and received an
   independent final procedure review.
-- DEC-040 is accepted; the human must obtain the exact provider-approved admin
-  role name and load the approved admin URL through the hidden process-local
-  workflow.
+- DEC-040 is accepted; the human must use Neon Role Actions to reset only
+  `first_user_provisioner` and enter the resulting temporary credential through
+  the hidden prompt.
 
 **Implementation notes**
 
@@ -216,9 +214,9 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   passed.
 - The repository-local diagnostic uses `pg_policies.cmd = 'ALL'`, with
   regression coverage preventing the raw `'*'` comparison from returning.
-  The external helper now also contains the explicit DEC-040 fixed admin
-  handoff, and its actual final diff has received independent GREEN security
-  review. Only the human may execute the reviewed procedure and stop at its
+  The external helper now contains the DEC-040 control-plane reset/self-cleanup
+  path. Local PostgreSQL 18.6 validation and independent final security review
+  are GREEN. Only the human may execute the reviewed procedure and stop at its
   existing scope-discovery hard stop. Do not continue to Stage 2, provisioning,
   or remediation.
 - The original policy-assertion failure occurred before temporary provisioner
@@ -231,11 +229,10 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   18.6 correctly rejects `ALTER ROLE first_user_provisioner PASSWORD` from
   `migration_owner` while that role is `NOCREATEROLE`. The existing
   `ADMIN=true` membership is not sufficient authority for this operation.
-- DEC-040 establishes a human-only transport because the repository audit
-  found no concrete provider-owner/deployment-admin invocation. It preserves
-  the `migration_owner NOCREATEROLE` contract and avoids a durable
-  `SECURITY DEFINER` or elevated application credential. The exact admin role
-  name must come from the provider control plane; agents must not guess it.
+- DEC-040 uses the existing human-only Neon control-plane reset because the
+  repository audit found no concrete provider-owner/deployment-admin
+  invocation. It preserves the `migration_owner NOCREATEROLE` contract and
+  avoids a durable `SECURITY DEFINER` or elevated application credential.
 - The local PostgreSQL 18.6 regression suite adds coverage for the intended
   boundary: a `SET ROLE migration_owner` attempt to assign the password must
   be rejected with SQLSTATE `42501`, while the disposable local owner/admin
@@ -245,14 +242,15 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 **Current verified result**
 
 - Stage 1 is not complete; the reviewed procedure is ready for the final human
-  rerun using the approved admin URL and exact provider-control-plane role name.
+  rerun after the control-plane reset and hidden credential entry.
 - The read-only diagnostic completed successfully; its zero exit status is
   evidence-collection success only and is not a Stage 1 pass.
 - No legitimate scope choices were accepted for Stage 2.
 - No temporary provisioner credential was assigned by the failed run.
 - No user was provisioned.
 - The final external helper diff is independently GREEN-reviewed. The human
-  must obtain the exact approved admin role/URL inputs before execution.
+  must complete the control-plane reset and hidden credential entry before
+  execution.
 
 **Tests/verification**
 

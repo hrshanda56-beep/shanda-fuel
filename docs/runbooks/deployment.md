@@ -28,35 +28,34 @@ The bootstrap contract intentionally leaves `migration_owner` as
 `first_user_provisioner` does not authorize `ALTER ROLE ... PASSWORD`.
 
 The repository audit found no concrete provider-owner/deployment-admin
-invocation to reuse. DEC-040 therefore establishes an explicit human-only
-transport for the existing provider/admin database authority: the human loads
-the approved hidden admin URL into process-local `SF_DEPLOYMENT_ADMIN_DB_URL`
-and supplies the exact provider-control-plane role name in
-`SF_DEPLOYMENT_ADMIN_ROLE`. This creates no new database role, grant,
-function, application credential, or generic SQL hook.
+invocation to reuse. Do not invent one. DEC-040 therefore uses the existing
+Neon control-plane Role Actions workflow to reset the
+`first_user_provisioner` password once. The reviewed helper does not accept a
+privileged admin URL; it uses the resulting temporary credential only for the
+provisioner's direct session and fixed self-cleanup.
 
 The human-only sequence is:
 
 1. Run the reviewed Stage 1 migration-owner preflight and stop before any
    provisioner session. Confirm the role is still `PASSWORD NULL` and all
    security checks pass.
-2. Through the approved hidden human workflow, load the admin URL and exact
-   admin role name, enter the temporary password, and execute only the
-   reviewed helper's fixed role-password assignment for
-   `first_user_provisioner`. The URL, password, and any provider secret must
-   stay out of argv, files, chat, and logs.
+2. In Neon control-plane Role Actions, use **Reset password** only for
+   `first_user_provisioner`. Enter the resulting temporary password through
+   the reviewed hidden operator prompt. The password must stay out of argv,
+   files, chat, logs, and evidence.
 3. Run the reviewed direct `first_user_provisioner` read-only scope checks.
    Do not run Stage 2 or provisioning from this sequence.
-4. Through the same approved admin URL/role path, execute only
-   `ALTER ROLE first_user_provisioner PASSWORD NULL;`, then verify the
-   password is unusable and the role attributes, membership, ownership, and
-   ACL invariants remain exact.
+4. The provisioner session executes only the reviewed fixed self-cleanup
+   `ALTER ROLE first_user_provisioner PASSWORD NULL;`, then the migration-owner
+   verification proves the password is unusable and the role attributes,
+   membership, ownership, and ACL invariants remain exact.
 
 Do not grant `CREATEROLE` to `migration_owner`, use `cloud_admin` or
 `neon_superuser` as an application/bootstrap shortcut, add a persistent
 privileged credential, or create a new SECURITY DEFINER password function.
-The helper's admin path rejects all SQL/psql arguments and allows only the two
-fixed password operations. Unset the URL and role inputs after the run.
+The helper has no deployment-admin database path; any attempt to use one is
+rejected before `psql` starts. Do not use `cloud_admin`, `neon_superuser`, or a
+new privileged connection to work around the control-plane workflow.
 
 ## Deploy and verify
 
