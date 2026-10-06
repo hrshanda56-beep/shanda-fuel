@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${APP_ENV:-}" == 'demo' ]]; then
+  : "${DATABASE_URL:?Set DATABASE_URL through the approved hidden environment}"
+  : "${BETTER_AUTH_SECRET:?Set the demo Better Auth secret through the approved secret store}"
+  : "${AUDIT_SIGNING_KEY_ID:?Set the demo audit key id through the approved secret store}"
+  : "${AUDIT_SIGNING_KEY:?Set the demo audit signing key through the approved secret store}"
+  DEMO_RESET=1 bash scripts/demo/setup-owner-demo.sh
+  exit 0
+fi
+
+if [[ "${APP_ENV:-}" != 'local' && "${APP_ENV:-}" != 'test' ]]; then
+  printf '%s\n' 'Refusing reset unless APP_ENV=local or APP_ENV=test.' >&2
+  exit 2
+fi
+
 : "${DEMO_DB_NAME:?Set DEMO_DB_NAME to the disposable local database name}"
 : "${PG_BIN:?Set PG_BIN to the local PostgreSQL bin directory}"
 : "${PGHOST:?Set PGHOST to the local PostgreSQL host}"

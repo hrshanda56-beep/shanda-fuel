@@ -210,4 +210,17 @@ describe('server environment validation', () => {
       }).APP_ENV,
     ).toBe('staging');
   });
+
+  it('allows the explicitly configured hosted demo environment with deployed safeguards', () => {
+    expect(
+      getServerEnv({
+        APP_ENV: 'demo',
+        APP_URL: 'https://owner-demo.example.test',
+        DATABASE_URL: 'postgresql://demo-runtime/neondb',
+        BETTER_AUTH_SECRET: 'x'.repeat(32),
+        AUDIT_SIGNING_KEY_ID: 'owner-demo',
+        AUDIT_SIGNING_KEY: 'x'.repeat(32),
+      }),
+    ).toMatchObject({ APP_ENV: 'demo' });
+  });
 });

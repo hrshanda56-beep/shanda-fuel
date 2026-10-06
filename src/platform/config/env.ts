@@ -6,7 +6,7 @@ const r2AccountIdPattern = /^[a-f0-9]{32}$/i;
 const r2BucketNamePattern = /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/;
 
 function isDeployedEnvironment(value: ServerEnv['APP_ENV']): boolean {
-  return value === 'staging' || value === 'production';
+  return value === 'demo' || value === 'staging' || value === 'production';
 }
 
 function isLoopbackHost(value: string): boolean {
@@ -24,7 +24,7 @@ export function isValidR2BucketName(value: string): boolean {
 
 const envSchema = z
   .object({
-    APP_ENV: z.enum(['local', 'test', 'staging', 'production']).default('local'),
+    APP_ENV: z.enum(['local', 'test', 'demo', 'staging', 'production']).default('local'),
     APP_URL: z.string().url().default('http://localhost:3000'),
     DATABASE_URL: z.string().min(1).optional(),
     DATABASE_DIRECT_URL: z.string().min(1).optional(),

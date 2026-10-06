@@ -63,7 +63,8 @@ export function getAuth() {
     },
     advanced: {
       cookiePrefix: 'shanda-fuel',
-      useSecureCookies: env.APP_ENV === 'production',
+      useSecureCookies:
+        env.APP_ENV === 'demo' || env.APP_ENV === 'staging' || env.APP_ENV === 'production',
       database: {
         generateId: 'uuid',
       },

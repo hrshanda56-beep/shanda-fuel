@@ -18,6 +18,43 @@ credentials or create production demo data.
   entering invented figures.
 - A browser viewport pass at approximately 390px, 768px, 1024px, and 1440px.
 
+## Hosted synthetic setup
+
+The hosted demo uses the same normal migrations and fixture, but with the
+explicit non-production `APP_ENV=demo`. The operator supplies the hosted Neon
+`DATABASE_URL` through the approved private secret workflow; it is never put
+in argv, committed files, logs, or chat. The setup refuses `APP_ENV=production`
+and refuses any database name other than `neondb` before migration or seed
+writes.
+
+From the repository root, with the private environment values already loaded:
+
+```bash
+export APP_ENV=demo
+export APP_URL='<approved non-production HTTPS demo URL>'
+export DATABASE_URL='<enter through the approved private secret workflow>'
+export BETTER_AUTH_SECRET='<demo secret from the approved secret store>'
+export AUDIT_SIGNING_KEY_ID=owner-demo
+export AUDIT_SIGNING_KEY='<demo signing secret from the approved secret store>'
+bash scripts/demo/setup-owner-demo.sh
+```
+
+The setup runs `drizzle-kit migrate`, then asks for the synthetic owner
+password through hidden terminal input. It prints only non-secret identifiers
+and the email `demo-owner@tei-oils.example.test`. The hosted seed is
+idempotent: a completed `tei-oils-owner-demo` tenant is reused; it does not
+create another tenant or sale. To re-seed/reset the demo password while
+preserving the same synthetic dataset, run:
+
+```bash
+APP_ENV=demo DATABASE_URL="$DATABASE_URL" BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET" \
+  AUDIT_SIGNING_KEY_ID="$AUDIT_SIGNING_KEY_ID" AUDIT_SIGNING_KEY="$AUDIT_SIGNING_KEY" \
+  bash scripts/demo/reset-owner-demo.sh
+```
+
+This remains a demo-only operation and refuses production. It does not touch
+production DNS, production credentials, or production data.
+
 ## Local synthetic setup
 
 The repository includes a local-only fixture path. It uses the normal
