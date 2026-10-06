@@ -415,6 +415,9 @@ export function parseDiagnosticConnectionUri(source) {
 }
 
 export function buildDiagnosticChildEnvironment(source, parentEnvironment = process.env) {
+  if (parentEnvironment.PGHOSTADDR !== undefined) {
+    reject('inherited PGHOSTADDR is not permitted for this diagnostic');
+  }
   const parsed = parseDiagnosticConnectionUri(source);
   const env = { ...parentEnvironment };
   for (const key of LIBPQ_ENV_KEYS) delete env[key];

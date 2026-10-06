@@ -41,9 +41,11 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 The following is the current authoritative Phase 0 sequence, last synchronized
 against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
 
-1. Obtain the missing predicate-level, read-only policy evidence and original
-   SQLSTATE/statement context without rerunning Stage 1.
-2. Classify production drift versus assertion/normalization/tooling defect.
+1. Have the approved human operator execute the updated predicate-level,
+   read-only policy diagnostic without rerunning Stage 1.
+2. Obtain the missing predicate-level evidence and original SQLSTATE/statement
+   context, then classify production drift versus assertion/normalization/
+   tooling defect.
 3. Access Review any tooling-only correction.
 4. Continue M0-T03 through the reviewed Stage 1 rerun and scope discovery only
    after the correction is reviewed and human-approved.
@@ -232,8 +234,8 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 
 - Confirm the recorded target invariant is present in the final procedure.
 - Independent security review is GREEN.
-- Human diagnostic evidence is collected and reviewed against migrations and
-  the historical assertion.
+- The initial human diagnostic evidence is collected and reviewed against
+  migrations and the historical assertion.
 - Human executes the updated predicate-level diagnostic and returns its
   redacted policy evidence plus any retained original SQLSTATE/statement
   context, without rerunning Stage 1.
@@ -270,8 +272,9 @@ are recorded in DEC-031.
 
 Do not treat `APP_ENV`, `PGDATABASE`, `PGPORT`, the migration hash, role
 membership, or PostgreSQL server version alone as production identity. The
-independent security review is GREEN; the approved human operator has executed
-the read-only procedure, and its evidence is now being classified.
+independent security review is GREEN for the initial procedure; the approved
+human operator has executed that initial read-only procedure, and the updated
+predicate-level evidence procedure remains pending human execution.
 
 ---
 

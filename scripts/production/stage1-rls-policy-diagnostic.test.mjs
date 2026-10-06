@@ -96,7 +96,6 @@ test('parent libpq and URI variables are removed from the child except decoded P
     SF_MIGRATION_OWNER_DB_URL: validUri,
     DATABASE_URL: 'postgresql://secret.example/hidden',
     PGHOST: 'wrong-parent-host',
-    PGHOSTADDR: '127.0.0.1',
     PGOPTIONS: '-c default_transaction_read_only=off',
     PGPASSWORD: 'wrong-parent-password',
     SAFE_OPERATOR_VALUE: 'retained',
@@ -106,6 +105,22 @@ test('parent libpq and URI variables are removed from the child except decoded P
   assert.equal('DATABASE_URL' in env, false);
   assert.equal('PGHOSTADDR' in env, false);
   assert.equal(env.PGPASSWORD, 'p@ss');
+});
+
+test('inherited PGHOSTADDR is rejected before psql', () => {
+  assert.throws(
+    () =>
+      runDiagnostic({
+        source: validUri,
+        parentEnvironment: { PGHOSTADDR: '127.0.0.1' },
+        spawnSyncImpl: () => {
+          throw new Error('psql must not spawn');
+        },
+      }),
+    (error) =>
+      error instanceof DiagnosticInputError &&
+      error.message === 'inherited PGHOSTADDR is not permitted for this diagnostic',
+  );
 });
 
 test('diagnostic reproduces both historical policy subconditions and their conjunction', () => {

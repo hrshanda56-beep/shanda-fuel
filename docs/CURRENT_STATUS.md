@@ -92,9 +92,10 @@ code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
 
 The Stage 1 safety-hardening diagnostic is locally safety-verified: its
 process-local DEC-011 bootstrap handling, secret safeguards, read-only guard,
-and psql 16.15 intentional-refusal path were validated without contacting
-production. This is local evidence only; the diagnostic has not been executed
-against production.
+and psql 16.15 intentional-refusal path were validated without agent contact
+with production. The initial version was subsequently executed by the
+approved human operator as the read-only production evidence run described
+below.
 
 The human has now established the authoritative independent non-secret
 production target invariant in DEC-031 from authenticated Neon control-plane
@@ -139,7 +140,8 @@ rerun and no production mutation was performed.
   subconditions, returns their derived boolean separately, searches globally
   for every `first_user_provisioning_%` policy, and exposes normalized plus
   underlying catalog policy representations. It is prepared for human
-  execution only; Stage 1 must not be rerun until its evidence is reviewed.
+  execution only; it has not yet been executed, and Stage 1 must not be rerun
+  until its evidence is reviewed.
 - Repository inspection established that the operator-side Stage 1 policy
   assertion that raised `division by zero` is not committed in this checkout;
   the committed migration, helper, and policy tests contain no corresponding
@@ -153,8 +155,9 @@ rerun and no production mutation was performed.
   `PGDATABASE`, `PGPORT`, the migration hash, role membership, and server
   version remain defence-in-depth only.
 - Diagnostic incorporation is complete locally and the final independent
-  security review is GREEN. The approved human operator executed the read-only
-  diagnostic; agents must not execute production procedures.
+  security review is GREEN. The initial read-only diagnostic was executed by
+  the approved human operator; the updated predicate-level follow-up remains
+  human-execution-only. Agents must not execute production procedures.
 - The diagnostic safety procedure and its psql 16.15 fail-closed behavior were
   verified locally. The approved human operator has now contacted production
   only through that read-only diagnostic; no agent has contacted production,
