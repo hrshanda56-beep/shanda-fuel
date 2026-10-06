@@ -66,6 +66,20 @@ Expected behavior:
 
 **CONFIRMED:** The product must not fabricate or synthesize production figures to make the dashboard appear complete. When reliable data is not available, the UI must show a truthful empty/unavailable state.
 
+**CONFIRMED owner home-dashboard purpose:** The default home dashboard answers
+“How is the operation performing today, and what needs my attention?” It is an
+operational-control and exception-visibility surface, not a broad accounting or
+reporting dashboard. Its primary headline metrics/status areas are today’s
+total sales, expected cash, actual cash, cash variance, fuel/stock variance,
+account/credit sales, unresolved exceptions, and shift approval/close status.
+
+The primary audience is the owner, manager, and Supervisor subject to existing
+permissions. The default scope is the user’s authorized/current operational
+scope under the existing tenant, legal-entity, and station authorization rules.
+When a user can access multiple stations or entities, existing product and
+navigation conventions determine selection or aggregation; the dashboard must
+not create a new authorization model or expose cross-tenant data.
+
 ### 6.3 Daily Operations
 
 **CONFIRMED:** Daily Operations is the operational workspace for a station/day/shift. The established owner workflow covers, at minimum, the following concepts where supported by current data and business logic:
@@ -247,7 +261,13 @@ isolation, accounting integrity, and actor attribution are fixed. A small set
 of explicit policy settings may control optional behavior such as whether
 Supervisor approval is required at a station, whether account references are
 required, available approved-fuel categories, whether deposit proof is
-mandatory, variance-alert thresholds, and optional close-summary sections.
+mandatory, variance-alert thresholds, optional close-summary sections, optional
+home-dashboard sections, display ordering, and station-specific cards.
+Required security, reconciliation, exception, and authorization behavior cannot
+be configured away. The home dashboard must use existing supported reporting
+contracts where possible and must show truthful unavailable states when a
+required source fact is not yet available; it must not add tax, GL,
+profitability, or other accounting calculations merely for presentation.
 Do not introduce a generic arbitrary workflow/rules engine merely to support
 these settings.
 

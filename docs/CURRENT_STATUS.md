@@ -416,7 +416,9 @@ DEC-038 and integrated into `PRODUCT_SPEC.md` and `ARCHITECTURE.md`.
 The fixed semantics include distinct operator/submitter and Supervisor
 approver actors, required customer identity for account sales, auditable
 approved-fuel attribution, core cash custody evidence, exception-first close
-summaries, and the stated Phase 1 customer-account priority order.
+summaries, the stated Phase 1 customer-account priority order, and the
+operational-control purpose and authorized scope of the home dashboard. The
+home-dashboard decision is recorded in DEC-039.
 
 ## 18. Remaining product and technical decisions
 
@@ -435,11 +437,13 @@ The following remain unresolved and must not be silently invented:
 ### Newly unblocked planning work
 
 - M3-T03 owner-decision documentation is VERIFIED COMPLETE.
-- M4-T02 remains WAITING_HUMAN_PRODUCT_DECISION: the repository has an
-  established A10 reporting contract, but no authoritative home-dashboard
-  metric set, default scope, period/date basis, comparison behavior, or
-  attention-section contract. Dashboard implementation must not infer these
-  choices from `/reports` or sample UI data.
+- M4-T02 is READY FOR A BOUNDED FIRST SLICE: DEC-039 fixes the operational
+  headline/status areas, audience, authorized scope, and bounded
+  configurability. Existing A10 contracts support the initial read-only sales,
+  cash-evidence/variance, account-credit, and fuel/stock variance facts.
+  Unresolved-exception and shift approval/close presentation must use
+  authoritative source state or remain truthfully unavailable until a reviewed
+  read-model extension exists.
 - M4-T03 is READY FOR SCOPED CONTRACT DECOMPOSITION; implementation still
   requires the relevant approval and accounting/security contracts.
 - M5-T01 is READY FOR SPECIFICATION ONLY; M5-T02 customer writes remain
