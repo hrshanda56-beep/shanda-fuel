@@ -406,20 +406,43 @@ open.
   and human rerun remain open. The exhaustive function ACL-grantee validation
   is already Access Review GREEN.
 
-## 17. Open product questions
+## 17. Owner-resolved product decisions
 
-### UNRESOLVED
+The owner has resolved the previously open Daily Operations, account-sale,
+approved-fuel, cash-custody, customer-account sequencing, workflow, and
+close-summary questions. Durable decisions are recorded in DEC-032 through
+DEC-038 and integrated into `PRODUCT_SPEC.md` and `ARCHITECTURE.md`.
 
-- Exact meaning of “supervisor” in Daily Operations accountability.
-- Required customer/account reference for account sales and when it is selected.
-- Approved-fuel authorization/reference/recipient rules and terminology.
-- Minimum cash handover/deposit/bank-reference requirements.
-- Priority/order for the fuller customer lifecycle: credit, prepaid value, prepaid litres, benefits, limits, vehicles/drivers, statements.
-- Final human application role/permission matrix.
+The fixed semantics include distinct operator/submitter and Supervisor
+approver actors, required customer identity for account sales, auditable
+approved-fuel attribution, core cash custody evidence, exception-first close
+summaries, and the stated Phase 1 customer-account priority order.
 
-These must not be silently converted into requirements.
+## 18. Remaining product and technical decisions
 
-## 18. Open technical questions
+The following remain unresolved and must not be silently invented:
+
+- complete human application role/permission matrix;
+- detailed accounting, ledger, tax, credit-control, and authorization policies
+  for customer, approved-fuel, cash, and close workflows;
+- formal performance/SLO targets;
+- which Phase 1 provider integrations are required first and their exact
+  contracts;
+- cause of the Stage 1 RLS/policy preflight division-by-zero failure and the
+  exact predicate result that selected its intentional failure branch;
+- exact current production release SHA after the next integrated release.
+
+### Newly unblocked planning work
+
+- M3-T03 owner-decision documentation is VERIFIED COMPLETE.
+- M4-T03 is READY FOR SCOPED CONTRACT DECOMPOSITION; implementation still
+  requires the relevant approval and accounting/security contracts.
+- M5-T01 is READY FOR SPECIFICATION ONLY; M5-T02 customer writes remain
+  blocked pending reviewed accounting and security contracts.
+
+These decisions do not alter the M0-T03 production diagnostic gate.
+
+## 19. Open technical questions
 
 ### UNRESOLVED / needs verification
 
@@ -429,7 +452,7 @@ These must not be silently converted into requirements.
 - Whether hosting/plan changes alter the observability exception.
 - Full background-job topology and current production `job_runtime` presence.
 
-## 19. Not started / deferred Phase 1 work
+## 20. Not started / deferred Phase 1 work
 
 The following are explicitly not Phase 0 completion requirements unless promoted by a new human instruction:
 
@@ -446,7 +469,7 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 - general ledger,
 - tax treatment.
 
-## 20. Current critical path / next recommended work
+## 21. Current critical path / next recommended work
 
 Use this order unless a current human instruction changes it:
 
@@ -466,7 +489,7 @@ Use this order unless a current human instruction changes it:
 9. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
    exact production SHA, and complete owner handoff.
 
-## 21. Things agents must not assume
+## 22. Things agents must not assume
 
 - Do not assume a discussed feature is implemented.
 - Do not assume the clean candidate HEAD includes later uncommitted A8/timezone fixes.

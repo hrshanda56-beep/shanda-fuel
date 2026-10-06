@@ -479,3 +479,155 @@ failure and cannot reach catalog diagnostics. Endpoint replacement, project or
 branch migration, or provider-region change requires a new reviewed canonical
 decision before any future production diagnostic. These identifiers are
 non-secret metadata; no API token, password, or connection string is recorded.
+
+---
+
+## DEC-032 — Fix Daily Operations accountability and close workflow semantics
+
+**Status:** ACCEPTED
+
+**Context:** “Supervisor” had been ambiguous between assigned shift personnel,
+the person submitting records, and the person approving a close.
+
+**Chosen approach:** The fixed workflow is Open Shift, Record Activity,
+Reconcile, Supervisor Review, and Close Shift. The operator/cashier records
+activity and submits the initial reconciliation. The Supervisor reviews,
+investigates or resolves ordinary discrepancies where authorised, and approves
+the shift/day close. Manager/admin users handle authorised exceptions and
+overrides. Submitter/operator and approving Supervisor are distinct actors.
+
+**Rationale:** Close accountability and audit evidence require the person who
+entered or submitted operational data to remain distinguishable from the
+person who approved the close.
+
+**Consequences:** “Supervisor” has this fixed meaning and is not a generic
+configurable role label. A future organisation/station policy may control
+whether Supervisor approval is required before close, without changing the
+meaning of the actor or weakening approval evidence.
+
+---
+
+## DEC-033 — Require customer identity before finalizing account sales
+
+**Status:** ACCEPTED
+
+**Context:** Account-sale customer identity and external references were not
+previously fixed.
+
+**Chosen approach:** A customer/account must be selected before an account sale
+is finalized. An external/customer reference is optional by default and must be
+captured before finalization when policy requires it. The customer/account
+relationship is never optional.
+
+**Rationale:** Account sales must remain attributable to an account while
+allowing organisations to introduce reference requirements without rewriting
+finalized records.
+
+**Consequences:** Reference-required policy is configurable at bounded
+organisation, station, customer, or account scope as supported by the domain.
+Detailed accounting, credit-control, and tax treatment remain separate
+decisions.
+
+---
+
+## DEC-034 — Preserve auditable approved-fuel authorization attribution
+
+**Status:** ACCEPTED
+
+**Context:** Approved-fuel transactions need a clear, reviewable reason and
+authorization trail without freezing business category wording prematurely.
+
+**Chosen approach:** Capture recipient, authorizer, reason/category, and
+authorization/reference where applicable. Support bounded categories such as
+staff benefit, customer authorization, company/internal use, and other
+authorized use. Category labels may be administrator-configurable.
+
+**Rationale:** Configurable categories support future business terminology, but
+recipient and authorizer attribution are core audit facts and must not disappear.
+
+**Consequences:** Authorization evidence is mandatory where the workflow
+requires it. Detailed benefit, accounting, and tax policy remains unresolved
+until separately specified.
+
+---
+
+## DEC-035 — Require core cash custody and bank-deposit evidence
+
+**Status:** ACCEPTED
+
+**Context:** Cash handover and bank deposit workflows lacked a fixed minimum
+audit record.
+
+**Chosen approach:** Record amount, handing-over/depositing person,
+receiving/verifying person where applicable, date/time, and reference. A bank
+deposit requires a bank/deposit reference. Supporting proof or attachment is
+optional by default.
+
+**Rationale:** These facts provide the minimum useful custody trail without
+making optional evidence a prerequisite for every handover.
+
+**Consequences:** An administrator may later require supporting proof or add
+bounded reference fields, but core amount, actor attribution, timestamp, and
+bank reference controls cannot be disabled where required by the workflow.
+
+---
+
+## DEC-036 — Sequence Phase 1 customer-account capability by owner priority
+
+**Status:** ACCEPTED
+
+**Context:** Phase 1 customer-account capability needed an explicit delivery
+order.
+
+**Chosen approach:** Prioritize credit and enforceable limits, prepaid monetary
+value, statements, vehicles/drivers, prepaid litres, and benefits, in that
+order.
+
+**Rationale:** The sequence establishes the core monetary account model before
+dependent quantity, relationship, and benefit features.
+
+**Consequences:** This is implementation sequencing, not a complete accounting,
+ledger, tax, credit-control, or authorization policy. Those details must still
+be specified before write behavior is implemented.
+
+---
+
+## DEC-037 — Use fixed semantics with bounded configurable policy
+
+**Status:** ACCEPTED
+
+**Context:** The owner approved limited configurability while rejecting a
+generic arbitrary workflow engine.
+
+**Chosen approach:** Keep workflow semantics, tenant isolation, security,
+audit integrity, accounting integrity, reconciliation evidence, and actor
+attribution fixed. Allow only explicit bounded settings such as approval
+requiredness, account-reference requiredness, approved-fuel categories, deposit
+proof requiredness, variance thresholds, and optional close-summary sections.
+
+**Rationale:** Small explicit settings preserve control integrity while allowing
+station and organisation policy differences.
+
+**Consequences:** Configuration must never weaken authorization, RLS, audit,
+accounting, reconciliation, or core actor attribution. Do not add a generic
+rules/workflow engine merely for configurability.
+
+---
+
+## DEC-038 — Make the close summary exception-first and approval-aware
+
+**Status:** ACCEPTED
+
+**Context:** The close summary should help an operator determine whether a
+shift is clean rather than become an unprioritized reporting dashboard.
+
+**Chosen approach:** Surface total sales, payment-method sales, account/credit
+sales, expected and actual cash, cash variance, expenses, fuel/stock variance,
+unresolved exceptions, and Supervisor approval/sign-off state where applicable.
+
+**Rationale:** The summary should make balance, variance, unresolved work, and
+approval state immediately understandable.
+
+**Consequences:** Required reconciliation and audit sections cannot be hidden
+by configuration. Optional sections and variance thresholds may be bounded
+policy settings.

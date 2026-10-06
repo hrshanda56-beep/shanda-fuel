@@ -96,6 +96,22 @@ Agents should not introduce lossy `Number` conversions for precision-sensitive v
 
 Examples referenced in project work include tenant-authorised Customers APIs and server-side Daily Operations logic.
 
+### 4.1.1 Operational actors and bounded policy configuration
+
+**CONFIRMED:** Daily Operations must represent the operator/submitter and the
+Supervisor approver as distinct actors. The Supervisor has fixed review and
+close-approval semantics; manager/admin exception handling is a separate
+authorised responsibility. Account-sale customer identity, approved-fuel
+recipient/authorizer attribution, cash custody attribution, and required audit
+evidence are not optional tenant settings.
+
+Configuration may control bounded policy choices such as whether approval is
+required before close, whether an account reference or deposit proof is
+mandatory, available approved-fuel categories, variance thresholds, and
+optional close-summary sections. These settings must not weaken tenant
+isolation, authorization, audit, accounting, reconciliation, or actor
+attribution, and do not justify a generic workflow engine.
+
 ### 4.2 API approach
 
 **CONFIRMED:** APIs are expected to enforce authorisation at the server/database boundary. Browser route parameters or IDs are not trusted as sufficient authorisation.
