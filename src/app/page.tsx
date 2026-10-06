@@ -1,5 +1,6 @@
 import { AppShell } from '@/design-system/app-shell';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { ManagementReportDashboard } from '@/modules/reporting/ui/management-report-dashboard';
 
 import { ProductionSafeOverview } from './_overview/overview-dashboard';
 
@@ -8,14 +9,19 @@ export const metadata = {
 };
 
 /** Owner/Finance overview. Live figures stay hidden until reporting data exists. */
-export default function OverviewPage() {
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tenantId?: string }>;
+}) {
+  const { tenantId } = await searchParams;
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
       searchPlacement="header"
-      pageSubtitle="Live figures are not available for this work context yet."
+      pageSubtitle={tenantId ? 'Operational control and exception visibility' : undefined}
     >
-      <ProductionSafeOverview />
+      {tenantId ? <ManagementReportDashboard tenantId={tenantId} /> : <ProductionSafeOverview />}
     </AppShell>
   );
 }

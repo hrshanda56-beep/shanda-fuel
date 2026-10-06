@@ -18,6 +18,54 @@ credentials or create production demo data.
   entering invented figures.
 - A browser viewport pass at approximately 390px, 768px, 1024px, and 1440px.
 
+## Local synthetic setup
+
+The repository includes a local-only fixture path. It uses the normal
+PostgreSQL migrations, Better Auth credential account, tenant authorisation,
+RLS, and reporting API; it does not enable a demo bypass and refuses
+non-loopback database hosts.
+
+From the repository root, with the disposable PostgreSQL server already
+running, use a shell with no production variables loaded:
+
+```bash
+export DEMO_DB_NAME=shanda_fuel_first_user_test
+export PGHOST=127.0.0.1 PGPORT=55432 PGUSER=wolftech
+export PG_BIN=/opt/homebrew/opt/postgresql@16/bin
+bash scripts/demo/reset-owner-demo.sh
+export DATABASE_URL=postgresql://postgres@127.0.0.1:55432/$DEMO_DB_NAME
+export APP_ENV=local APP_URL=http://127.0.0.1:3101
+export BETTER_AUTH_SECRET='<local-only 32+ character secret>'
+export AUDIT_SIGNING_KEY_ID=owner-demo-local
+export AUDIT_SIGNING_KEY='<local-only signing secret>'
+bash scripts/demo/seed-owner-demo.sh
+```
+
+`seed-owner-demo.sh` asks for the synthetic password through hidden terminal
+input, requires at least 12 characters, keeps it process-local, and unsets it
+on exit. The account email is `demo-owner@tei-oils.example.test`; the operator
+must provide the hidden password to the owner separately. No password is
+committed or printed.
+
+Start the app against that same local database:
+
+```bash
+APP_ENV=local APP_URL=http://127.0.0.1:3101 \
+DATABASE_URL="$DATABASE_URL" BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET" \
+AUDIT_SIGNING_KEY_ID="$AUDIT_SIGNING_KEY_ID" AUDIT_SIGNING_KEY="$AUDIT_SIGNING_KEY" \
+pnpm dev -- --hostname 127.0.0.1 --port 3101
+```
+
+Open `http://127.0.0.1:3101/login`, sign in with the synthetic email and the
+hidden password just entered, then append the `dashboardPath` query printed by
+the seed command to the local URL. The seed output contains only non-secret
+tenant, legal entity, station, date, and sale identifiers.
+
+To reset the local demo, stop the local app and run the same
+`bash scripts/demo/reset-owner-demo.sh` command again, then reseed. The reset
+script refuses non-loopback hosts and database names outside the named
+disposable demo databases.
+
 ## Exact demo sequence
 
 1. **Login and authenticated shell**
