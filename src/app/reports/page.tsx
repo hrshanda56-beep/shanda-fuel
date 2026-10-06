@@ -10,9 +10,9 @@ export const metadata = {
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tenantId?: string }>;
+  searchParams: Promise<{ tenantId?: string; stationId?: string }>;
 }) {
-  const { tenantId } = await searchParams;
+  const { tenantId, stationId } = await searchParams;
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
@@ -22,7 +22,7 @@ export default async function ReportsPage({
         A factual view across approved sales, custody, settlements, commercial exposure, and stock.
       </p>
       {tenantId ? (
-        <ManagementReportDashboard tenantId={tenantId} />
+        <ManagementReportDashboard tenantId={tenantId} initialStationId={stationId} />
       ) : (
         <ContextRequiredState
           title="Choose an organisation to view reports"
