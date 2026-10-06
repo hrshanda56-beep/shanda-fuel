@@ -77,6 +77,10 @@ type AppShellProps = {
   attention?: { items: readonly AttentionItem[]; viewAll?: ReactNode };
   /** Render the redesign search control beside page content instead of the shell header. */
   searchPlacement?: 'header' | 'page' | 'none';
+  /** Use a non-networked context label for isolated synthetic surfaces. */
+  contextSelectorMode?: 'live' | 'static';
+  /** Keep isolated surfaces inside their own route instead of linking to Today. */
+  brandHref?: string;
 };
 
 type WipRequest = {
@@ -146,6 +150,8 @@ export function AppShell({
   openTasks,
   attention,
   searchPlacement = 'header',
+  contextSelectorMode = 'live',
+  brandHref,
 }: AppShellProps) {
   const pathname = usePathname();
   const search = useLocationSearch();
@@ -157,7 +163,7 @@ export function AppShell({
     () => resolveNavigation(navigationProjection, workContext),
     [navigationProjection, workContext],
   );
-  const todayHref = findHref(sections, 'today') ?? '/';
+  const todayHref = brandHref ?? findHref(sections, 'today') ?? '/';
   const shellMode = useShellMode();
 
   const collapsed = useSyncExternalStore(
@@ -323,12 +329,16 @@ export function AppShell({
                 </div>
               ) : null}
               <div className="shell-header-controls">
-                <ContextSelector
-                  fallback={context}
-                  open={contextSelectorOpen}
-                  onOpen={() => setContextSelectorOpen(true)}
-                  onClose={() => setContextSelectorOpen(false)}
-                />
+                {contextSelectorMode === 'static' ? (
+                  <StaticContextLabel context={context} />
+                ) : (
+                  <ContextSelector
+                    fallback={context}
+                    open={contextSelectorOpen}
+                    onOpen={() => setContextSelectorOpen(true)}
+                    onClose={() => setContextSelectorOpen(false)}
+                  />
+                )}
                 {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
                 <AccountMenu userName={userName} role={role} placement="desktop" />
               </div>
@@ -670,6 +680,17 @@ function BrandLink({ href }: { href: string }) {
       </span>
       <span className="visually-hidden">, go to Today</span>
     </Link>
+  );
+}
+
+function StaticContextLabel({ context }: { context?: ShellContext }) {
+  if (!context) return null;
+  return (
+    <p className="shell-context" role="group" aria-label="Work context">
+      <span className="shell-context-part">{context.organisation}</span>
+      <span className="shell-context-part">{context.station}</span>
+      <span className="shell-context-part">{context.businessDate}</span>
+    </p>
   );
 }
 

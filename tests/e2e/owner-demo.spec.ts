@@ -4,6 +4,11 @@ import { expect, test } from '@playwright/test';
 test.skip(process.env.APP_ENV !== 'demo', 'The owner-demo surface is demo-environment only.');
 
 test('owner can complete the synthetic operational walkthrough', async ({ page }) => {
+  const contextRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/context')) contextRequests.push(request.url());
+  });
+
   await page.goto('/owner-demo');
   await expect(page.getByRole('heading', { name: 'Sign in to the owner demo' })).toBeVisible();
 
@@ -11,6 +16,7 @@ test('owner can complete the synthetic operational walkthrough', async ({ page }
   await page.getByRole('button', { name: 'Open owner demo' }).click();
 
   await expect(page.getByTestId('owner-demo-workspace')).toBeVisible();
+  expect(contextRequests).toEqual([]);
   await expect(
     page.getByRole('heading', { name: 'How is the operation performing today?' }),
   ).toBeVisible();

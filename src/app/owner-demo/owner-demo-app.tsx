@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore, type FormEvent } from 'react';
 
 import { AppShell } from '@/design-system/app-shell';
+import type { NavigationProjection } from '@/design-system/navigation';
 import { Card, StatusBadge } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
 
@@ -64,7 +65,7 @@ const stations = [
 type Station = (typeof stations)[number];
 type View = 'dashboard' | 'sales' | 'reconciliation' | 'reports';
 
-const demoNavigation = [{ key: 'today' as const, visible: true, enabled: true }];
+const demoNavigation: readonly NavigationProjection[] = [];
 
 export function OwnerDemoApp() {
   const authenticated = useSyncExternalStore(
@@ -187,6 +188,8 @@ function OwnerDemoWorkspace({ onSignOut }: { onSignOut: () => void }) {
       userName="Demo owner"
       searchPlacement="none"
       pageSubtitle="Operational control and exception visibility"
+      contextSelectorMode="static"
+      brandHref="/owner-demo"
     >
       <div className="page-header">
         <div>
