@@ -6,9 +6,9 @@ import { ManagementReportDashboard } from '@/modules/reporting/ui/management-rep
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tenantId?: string }>;
+  searchParams: Promise<{ tenantId?: string; stationId?: string }>;
 }) {
-  const { tenantId } = await searchParams;
+  const { tenantId, stationId } = await searchParams;
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
@@ -32,7 +32,7 @@ export default async function ReportsPage({
         </div>
       </div>
       {tenantId ? (
-        <ManagementReportDashboard tenantId={tenantId} />
+        <ManagementReportDashboard tenantId={tenantId} initialStationId={stationId} />
       ) : (
         <ContextRequiredState
           title="Tenant context required"

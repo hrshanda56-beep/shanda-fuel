@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ManagementReport } from '../contracts';
-import { selectOperationsDashboardMetrics } from './operations-dashboard';
+import {
+  isCurrentDashboardContext,
+  selectOperationsDashboardMetrics,
+} from './operations-dashboard';
 
 const report = {
   sales: {
@@ -33,5 +36,11 @@ describe('operations dashboard metric projection', () => {
     } as unknown as ManagementReport;
 
     expect(selectOperationsDashboardMetrics(noCredit).accountCreditSales).toBe('USD 0');
+  });
+
+  it('does not treat a previous tenant or station report as current context', () => {
+    expect(isCurrentDashboardContext('tenant-a:station-1', 'tenant-b:station-1')).toBe(false);
+    expect(isCurrentDashboardContext('tenant-a:station-1', 'tenant-a:station-2')).toBe(false);
+    expect(isCurrentDashboardContext('tenant-a:station-1', 'tenant-a:station-1')).toBe(true);
   });
 });

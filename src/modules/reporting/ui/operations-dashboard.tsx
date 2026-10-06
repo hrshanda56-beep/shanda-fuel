@@ -56,6 +56,10 @@ function contextKey(tenantId?: string, stationId?: string): string {
   return `${tenantId ?? ''}:${stationId ?? ''}`;
 }
 
+export function isCurrentDashboardContext(loadedContextKey: string, currentContextKey: string) {
+  return loadedContextKey === currentContextKey;
+}
+
 export function OperationsDashboard({
   tenantId,
   stationId,
@@ -67,7 +71,6 @@ export function OperationsDashboard({
   const currentContextKey = contextKey(tenantId, stationId);
 
   useEffect(() => {
-    setState({ status: 'loading' });
     if (!tenantId) return;
 
     const controller = new AbortController();
@@ -118,7 +121,7 @@ export function OperationsDashboard({
   if (state.status === 'error') {
     return <ErrorState title="Today’s dashboard unavailable" message={state.message} />;
   }
-  if (state.contextKey !== currentContextKey) {
+  if (!isCurrentDashboardContext(state.contextKey, currentContextKey)) {
     return <LoadingState label="Loading today’s operations" />;
   }
 

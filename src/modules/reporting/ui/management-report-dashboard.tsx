@@ -24,10 +24,16 @@ function customerMoney(value: string | null): string {
 
 const managementReportState: ManagementReport['state'] = 'POSTED';
 
-export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
+export function ManagementReportDashboard({
+  tenantId,
+  initialStationId,
+}: {
+  tenantId: string;
+  initialStationId?: string;
+}) {
   const [fromDate, setFromDate] = useState(today());
   const [toDate, setToDate] = useState(today());
-  const [stationId, setStationId] = useState('');
+  const [stationId, setStationId] = useState(initialStationId ?? '');
   const [report, setReport] = useState<ManagementReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
