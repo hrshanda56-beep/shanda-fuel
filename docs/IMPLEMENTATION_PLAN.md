@@ -207,9 +207,14 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   out obvious drift in the inspected nine-relation policy set but does not
   yet distinguish a hidden policy/predicate mismatch from an assertion or
   normalization defect.
-- Do not rerun Stage 1 speculatively. Obtain only the missing read-only
-  predicate-level evidence and original error context, then review any narrow
-  tooling correction before a human-approved rerun.
+- A follow-up repo-local diagnostic has been prepared to reproduce those exact
+  two historical subconditions, return the final boolean and each component,
+  search globally for matching policy names, and expose normalized/raw policy
+  representations. It uses the existing DEC-011 child-only bootstrap and is
+  still human-execution-only.
+- Do not rerun Stage 1 speculatively. Have the human execute only this
+  read-only predicate-level diagnostic, then review any narrow tooling
+  correction before a human-approved Stage 1 rerun.
 - The failure occurred before temporary provisioner password assignment; no
   cleanup is required from that failed run and no scope was selected.
 - Do not guess tenant/legal-entity/station IDs.
@@ -229,8 +234,9 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - Independent security review is GREEN.
 - Human diagnostic evidence is collected and reviewed against migrations and
   the historical assertion.
-- Obtain the missing predicate-level evidence and original SQLSTATE/statement
-  context without rerunning Stage 1.
+- Human executes the updated predicate-level diagnostic and returns its
+  redacted policy evidence plus any retained original SQLSTATE/statement
+  context, without rerunning Stage 1.
 - Classify production drift versus assertion/normalization/tooling defect.
 
 **Parallel safety**

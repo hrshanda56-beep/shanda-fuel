@@ -91,6 +91,88 @@ SELECT p.schemaname,
   JOIN expected e ON e.schema_name = p.schemaname AND e.table_name = p.tablename
  ORDER BY p.schemaname, p.tablename, p.policyname;
 
+SELECT p.schemaname,
+       p.tablename,
+       p.policyname,
+       p.permissive,
+       p.roles,
+       p.cmd,
+       p.qual,
+       p.with_check
+  FROM pg_policies p
+ WHERE p.policyname LIKE 'first_user_provisioning_%'
+ ORDER BY p.schemaname, p.tablename, p.policyname;
+
+SELECT n.nspname AS schema_name,
+       c.relname AS table_name,
+       policy.polname AS policy_name,
+       policy.polpermissive AS raw_permissive,
+       policy.polroles::text AS raw_role_oids,
+       policy.polcmd AS raw_command,
+       policy.polqual::text AS raw_qual,
+       policy.polwithcheck::text AS raw_with_check,
+       view_policy.permissive,
+       view_policy.roles,
+       view_policy.cmd,
+       view_policy.qual,
+       view_policy.with_check
+  FROM pg_catalog.pg_policy policy
+  JOIN pg_catalog.pg_class c ON c.oid = policy.polrelid
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  LEFT JOIN pg_policies view_policy
+    ON view_policy.schemaname = n.nspname
+   AND view_policy.tablename = c.relname
+   AND view_policy.policyname = policy.polname
+ WHERE (n.nspname, c.relname) IN (
+    ('app', 'tenants'),
+    ('app', 'legal_entities'),
+    ('app', 'stations'),
+    ('app', 'memberships'),
+    ('app', 'membership_role_assignments'),
+    ('app', 'temporary_permission_grants'),
+    ('platform', 'security_events'),
+    ('platform', 'first_user_provisioning_operations'),
+    ('platform', 'first_user_provisioning_operation_grants')
+  )
+    OR policy.polname LIKE 'first_user_provisioning_%'
+ ORDER BY n.nspname, c.relname, policy.polname;
+
+WITH expected(schema_name, table_name) AS (
+  VALUES
+    ('app', 'tenants'),
+    ('app', 'legal_entities'),
+    ('app', 'stations'),
+    ('app', 'memberships'),
+    ('app', 'membership_role_assignments'),
+    ('app', 'temporary_permission_grants'),
+    ('platform', 'security_events'),
+    ('platform', 'first_user_provisioning_operations'),
+    ('platform', 'first_user_provisioning_operation_grants')
+), exact_definer AS (
+  SELECT p.schemaname, p.tablename
+    FROM pg_policies p
+    JOIN expected e ON e.schema_name = p.schemaname AND e.table_name = p.tablename
+   WHERE p.policyname = 'first_user_provisioning_definer'
+     AND p.cmd = '*'
+     AND p.qual = '(CURRENT_USER = ''migration_owner''::name)'
+     AND p.with_check = '(CURRENT_USER = ''migration_owner''::name)'
+), unexpected_prefixed AS (
+  SELECT p.schemaname, p.tablename, p.policyname
+    FROM pg_policies p
+   WHERE p.policyname LIKE 'first_user_provisioning_%'
+     AND p.policyname <> 'first_user_provisioning_definer'
+)
+SELECT
+  (SELECT count(*) FROM exact_definer) AS exact_definer_policy_count,
+  9 AS expected_definer_policy_count,
+  (SELECT count(*) FROM exact_definer) = 9 AS exact_definer_policy_count_ok,
+  (SELECT count(*) FROM unexpected_prefixed) AS unexpected_prefixed_policy_count,
+  NOT EXISTS (SELECT 1 FROM unexpected_prefixed) AS no_unexpected_prefixed_policy_ok,
+  (
+    (SELECT count(*) FROM exact_definer) = 9
+    AND NOT EXISTS (SELECT 1 FROM unexpected_prefixed)
+  ) AS policy_checks_ok;
+
 ROLLBACK;`;
 
 const LIBPQ_ENV_KEYS = [

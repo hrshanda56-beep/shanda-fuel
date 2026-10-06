@@ -107,3 +107,17 @@ test('parent libpq and URI variables are removed from the child except decoded P
   assert.equal('PGHOSTADDR' in env, false);
   assert.equal(env.PGPASSWORD, 'p@ss');
 });
+
+test('diagnostic reproduces both historical policy subconditions and their conjunction', () => {
+  assert.match(DIAGNOSTIC_SQL, /exact_definer_policy_count_ok/);
+  assert.match(DIAGNOSTIC_SQL, /no_unexpected_prefixed_policy_ok/);
+  assert.match(DIAGNOSTIC_SQL, /AS policy_checks_ok/);
+  assert.match(
+    DIAGNOSTIC_SQL,
+    /p\.policyname LIKE 'first_user_provisioning_%'[\s\S]+p\.policyname <> 'first_user_provisioning_definer'/,
+  );
+  assert.match(DIAGNOSTIC_SQL, /p\.qual = '\(CURRENT_USER = ''migration_owner''::name\)'/);
+  assert.match(DIAGNOSTIC_SQL, /p\.with_check = '\(CURRENT_USER = ''migration_owner''::name\)'/);
+  assert.match(DIAGNOSTIC_SQL, /policy\.polqual::text AS raw_qual/);
+  assert.match(DIAGNOSTIC_SQL, /policy\.polwithcheck::text AS raw_with_check/);
+});

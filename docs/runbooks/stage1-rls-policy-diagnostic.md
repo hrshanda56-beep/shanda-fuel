@@ -12,19 +12,25 @@ DEC-031 and incorporated below. The approved endpoint is the exact host
 project, branch, endpoint, and region identifiers are recorded as provenance.
 The repository-local runner compares the decoded host inside the reviewed
 DEC-011 parsing path against that repository-controlled value before `psql`
-can execute. This procedure remains a human-run, read-only diagnostic and has
-not been executed against production.
+can execute. This procedure remains a human-run, read-only diagnostic. The
+earlier version was executed by the approved human operator; this updated
+predicate-level evidence procedure has not been executed against production.
 
-The repository contains the reviewed migration and first-user helper checks,
-but it does not contain the operator-side Stage 1 policy assertion that
-reported `ERROR: division by zero`. The missing evidence is therefore:
+The exact historical policy assertion is reconstructed from the approved local
+operator tooling at `/Users/wolftech/.codex/phase0/production-dry-run-stage1.sh`,
+around lines 485–513. Its two predicates are:
 
-1. the exact operator-side SQL statement or script line that raised the error;
-2. its PostgreSQL SQLSTATE, detail, hint, and context with `VERBOSITY=verbose`;
-3. the non-secret policy-catalog result used by that assertion.
+1. exactly nine target-relation rows named
+   `first_user_provisioning_definer` with `cmd='*'` and exact
+   `qual`/`with_check` text `(CURRENT_USER = 'migration_owner'::name)`;
+2. no policy anywhere in `pg_policies` whose name matches
+   `first_user_provisioning_%`, other than that expected policy name.
 
-Until those three items are available, production drift and a tooling/assertion
-defect cannot be distinguished safely.
+The updated diagnostic returns each predicate, the final `policy_checks_ok`
+conjunction, all globally matching policy rows, complete target rows, and
+normalized `pg_policies` text alongside the underlying `pg_policy` node-tree
+representation. It does not rerun the historical assertion or execute its
+division-by-zero failure branch.
 
 ## Preconditions
 
@@ -100,9 +106,9 @@ The migration fingerprint and provider-membership queries are intentionally
 diagnostic observations, not additional SQL assertions. A `false` result is
 evidence to return and classify; it does not itself produce a nonzero exit or
 skip the catalog queries. The RLS/FORCE-RLS relation query and policy catalog
-query have the same observation-only semantics: missing, unexpected, or
-different rows are collected for diagnosis rather than converted into a new
-assertion by this procedure. A query error, the explicit identity/version
+queries have the same observation-only semantics. The policy evidence includes
+the historical subconditions and final boolean, but does not convert a false
+value into a new failure. A query error, the explicit identity/version
 refusal, or any shell pre-connect guard failure remains fail-closed and
 nonzero under `ON_ERROR_STOP=1` and `set -e`.
 
@@ -110,12 +116,13 @@ nonzero under `ON_ERROR_STOP=1` and `set -e`.
 
 The operator should return only the redacted command output and the exact
 failing Stage 1 statement/line, with secrets, connection details, tenant
-business data, and credentials removed. The operator must report false
-fingerprint or membership observations and unexpected RLS/FORCE-RLS or policy
-catalog contents as evidence; they are not immediate shell-stop conditions in
-this observation-only procedure. If the original Stage 1 assertion is not
-available, the policy catalog above is still useful but is insufficient to
-establish the root cause.
+business data, and credentials removed. Include the three policy booleans,
+their counts, every globally matching `first_user_provisioning_%` row, the
+complete relevant `pg_policies` rows, and the raw/normalized policy fields.
+The operator must report false fingerprint or membership observations and
+unexpected RLS/FORCE-RLS or policy-catalog contents as evidence; they are not
+immediate shell-stop conditions in this observation-only procedure. Do not
+rerun Stage 1, Stage 2, provisioning, or any mutation.
 
 Exit status zero means only that the guarded, read-only evidence collection
 completed without a shell or SQL error. It does not mean that every observed

@@ -135,6 +135,11 @@ rerun and no production mutation was performed.
   Therefore the inspected invariants show no obvious production drift, but
   the division-by-zero root cause remains unknown and is not yet classified
   as either drift or a tooling/normalization defect.
+- A follow-up repo-local diagnostic now reproduces those exact two historical
+  subconditions, returns their derived boolean separately, searches globally
+  for every `first_user_provisioning_%` policy, and exposes normalized plus
+  underlying catalog policy representations. It is prepared for human
+  execution only; Stage 1 must not be rerun until its evidence is reviewed.
 - Repository inspection established that the operator-side Stage 1 policy
   assertion that raised `division by zero` is not committed in this checkout;
   the committed migration, helper, and policy tests contain no corresponding
@@ -443,10 +448,11 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - The latest Stage 1 RLS/policy preflight failure needs final predicate-level
   classification before a reviewed rerun. The exhaustive function
   ACL-grantee validation is already Access Review GREEN. The local-only
-  diagnostic procedure contains the exact human-approved endpoint guard, its
-  independent review is GREEN, and its read-only production evidence was
-  collected successfully. The complete policy predicate results and original
-  SQLSTATE/statement context remain unavailable.
+  diagnostic procedure contains the exact human-approved endpoint guard and
+  its initial read-only production evidence was collected successfully. The
+  predicate-level follow-up is prepared but not yet human-executed; the
+  complete policy predicate results and original SQLSTATE/statement context
+  remain unavailable.
 
 ## 17. Open product questions
 
