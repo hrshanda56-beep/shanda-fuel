@@ -41,11 +41,12 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 The following is the current authoritative Phase 0 sequence, last synchronized
 against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
 
-1. Use the invariant-integrated diagnostic whose independent security review
-   is GREEN.
-2. Have the approved human operator execute the read-only diagnostic.
-3. Classify production drift versus assertion/normalization/tooling defect.
-4. Continue M0-T03 through the reviewed Stage 1 rerun and scope discovery.
+1. Obtain the missing predicate-level, read-only policy evidence and original
+   SQLSTATE/statement context without rerunning Stage 1.
+2. Classify production drift versus assertion/normalization/tooling defect.
+3. Access Review any tooling-only correction.
+4. Continue M0-T03 through the reviewed Stage 1 rerun and scope discovery only
+   after the correction is reviewed and human-approved.
 5. Select legitimate production scope.
 6. Run Stage 2 READ ONLY dry run.
 7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
@@ -190,17 +191,25 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - The diagnostic must remain blocked until the independent production target
   invariant is present; `APP_ENV`, `PGHOST`, `PGDATABASE`, `PGPORT`, the
   migration hash, role membership, and server version alone are insufficient.
-- The latest run passed identity, provider-membership, schema-capability,
-  runtime-role, migration-0021, and RLS/Force-RLS relation checks, then failed
-  closed in the RLS/policy preflight with `ERROR: division by zero`.
-- Treat the cause as under investigation: production drift, assertion defect,
-  catalog normalization mismatch, or another policy-property mismatch remain
-  possible.
-- Repository inspection found no committed operator-side policy assertion or
-  division operation corresponding to the reported error. The local-only
-  diagnostic procedure at `docs/runbooks/stage1-rls-policy-diagnostic.md`
-  captures the exact missing SQLSTATE/statement context and policy catalog;
-  human execution is required before the cause can be classified.
+- The approved human operator has executed the invariant-integrated diagnostic
+  from commit `6d436fe0dc35d31a8307de68aac683a22c3922e9`. It completed with
+  exit status `0`, passed identity, provider-membership, migration-fingerprint,
+  PostgreSQL-version, read-only, and nine-relation RLS/Force-RLS observations,
+  returned 19 policy rows including all nine expected provisioning policies,
+  and ended with `ROLLBACK` without SQL errors.
+- The exact historical operator assertion is recoverable in the approved local
+  tooling. It fails with `SELECT 1 / 0` when `policy_checks_ok` is false;
+  `policy_checks_ok` requires nine exact `qual` and `with_check` rows and no
+  other `first_user_provisioning_%` policy anywhere in `pg_policies`.
+- The supplied evidence does not include that derived boolean, the complete
+  raw rows needed to verify both predicate fields and the global stale-name
+  exclusion, or the original SQLSTATE/statement context. The evidence rules
+  out obvious drift in the inspected nine-relation policy set but does not
+  yet distinguish a hidden policy/predicate mismatch from an assertion or
+  normalization defect.
+- Do not rerun Stage 1 speculatively. Obtain only the missing read-only
+  predicate-level evidence and original error context, then review any narrow
+  tooling correction before a human-approved rerun.
 - The failure occurred before temporary provisioner password assignment; no
   cleanup is required from that failed run and no scope was selected.
 - Do not guess tenant/legal-entity/station IDs.
@@ -208,6 +217,8 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 **Current verified result**
 
 - Stage 1 is not complete.
+- The read-only diagnostic completed successfully; its zero exit status is
+  evidence-collection success only and is not a Stage 1 pass.
 - No legitimate scope choices were accepted for Stage 2.
 - No temporary provisioner credential was assigned by the failed run.
 - No user was provisioned.
@@ -216,8 +227,10 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 
 - Confirm the recorded target invariant is present in the final procedure.
 - Independent security review is GREEN.
-- Human executes the read-only diagnostic and reviews its PASS/STOP lines and
-  non-secret output.
+- Human diagnostic evidence is collected and reviewed against migrations and
+  the historical assertion.
+- Obtain the missing predicate-level evidence and original SQLSTATE/statement
+  context without rerunning Stage 1.
 - Classify production drift versus assertion/normalization/tooling defect.
 
 **Parallel safety**
@@ -251,8 +264,8 @@ are recorded in DEC-031.
 
 Do not treat `APP_ENV`, `PGDATABASE`, `PGPORT`, the migration hash, role
 membership, or PostgreSQL server version alone as production identity. The
-independent security review is GREEN; the approved human operator may now
-execute the read-only procedure.
+independent security review is GREEN; the approved human operator has executed
+the read-only procedure, and its evidence is now being classified.
 
 ---
 
