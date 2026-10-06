@@ -14,10 +14,6 @@ import {
 import { TableScrollRegion } from '../../../design-system/table';
 import type { ManagementReport } from '../contracts';
 
-function today(): string {
-  return new Intl.DateTimeFormat('en-CA').format(new Date());
-}
-
 function customerMoney(value: string | null): string {
   return value === null ? 'Unavailable' : formatMoney(value);
 }
@@ -31,8 +27,8 @@ export function ManagementReportDashboard({
   tenantId: string;
   initialStationId?: string;
 }) {
-  const [fromDate, setFromDate] = useState(today());
-  const [toDate, setToDate] = useState(today());
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [stationId, setStationId] = useState(initialStationId ?? '');
   const [report, setReport] = useState<ManagementReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +37,9 @@ export function ManagementReportDashboard({
   async function load(signal?: AbortSignal) {
     setLoading(true);
     setError(null);
-    const query = new URLSearchParams({ tenantId, fromDate, toDate });
+    const query = new URLSearchParams({ tenantId });
+    if (fromDate) query.set('fromDate', fromDate);
+    if (toDate) query.set('toDate', toDate);
     if (stationId) query.set('stationId', stationId);
     try {
       const response = await fetch(`/api/reports/management?${query.toString()}`, {
@@ -51,7 +49,10 @@ export function ManagementReportDashboard({
       const body = (await response.json()) as { message?: string } | ManagementReport;
       if (!response.ok)
         throw new Error('message' in body ? body.message : 'Report could not be loaded');
-      setReport(body as ManagementReport);
+      const nextReport = body as ManagementReport;
+      setReport(nextReport);
+      if (!fromDate) setFromDate(nextReport.filters.fromDate);
+      if (!toDate) setToDate(nextReport.filters.toDate);
     } catch (cause) {
       if (!signal?.aborted)
         setError(cause instanceof Error ? cause.message : 'Report could not be loaded');
