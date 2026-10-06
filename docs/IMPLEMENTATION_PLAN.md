@@ -298,9 +298,9 @@ Do not treat `APP_ENV`, `PGDATABASE`, `PGPORT`, the migration hash, role
 membership, or PostgreSQL server version alone as production identity. The
 independent security review is GREEN for the initial procedure; the approved
 human operator has executed both read-only procedures, and the corrected
-normalized comparison is locally ready. Stage 1 remains blocked until DEC-040
-is approved and the external helper receives a separately reviewed
-password-authority handoff.
+normalized comparison is locally ready. DEC-040 is approved and the external
+helper has received the separately reviewed password-authority handoff. Stage 1
+is ready for the final human rerun; agents must not execute it.
 
 ---
 

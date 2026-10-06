@@ -148,11 +148,11 @@ rerun and no production mutation was performed.
   exact relation set, policy name, `qual`, `with_check`, and global unexpected
   `first_user_provisioning_%` policy check unchanged. The repository-local
   diagnostic and regression test now use the corrected normalized comparison.
-- The immutable external operator helper was not modified by this branch. Its
-  historical assertion still requires the operator-tool owner to apply and
-  independently review the exact one-line predicate correction before Stage 1
-  is safe to rerun. Stage 1 has not been rerun; Stage 2, provisioning, and
-  production remediation remain blocked.
+- The reviewed external operator helper now contains the corrected normalized
+  `pg_policies.cmd = 'ALL'` predicate and the approved control-plane/self-
+  cleanup password path. Its current SHA-256 is recorded with the final
+  handoff. Stage 1 has not been rerun; Stage 2, provisioning, and production
+  remediation remain blocked.
 - The independent production target invariant is now established and recorded
   in DEC-031. The diagnostic must compare the decoded process-local `PGHOST`
   against the exact approved endpoint before `psql` executes; `APP_ENV`,
