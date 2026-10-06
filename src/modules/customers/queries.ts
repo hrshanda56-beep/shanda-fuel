@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ExactDecimal } from '../../platform/domain/primitives';
+import { DECIMAL_POLICIES, ExactDecimal } from '../../platform/domain/primitives';
 import type {
   CustomerAccountBalance,
   CustomerAccountState,
@@ -132,8 +132,13 @@ type CustomerTransactionRow = {
   note: string | null;
 };
 
-function subtractExact(left: string, right: string): string {
-  return new ExactDecimal(left).subtract(new ExactDecimal(right)).toString();
+function subtractExact(
+  left: string,
+  right: string,
+  policy?: (typeof DECIMAL_POLICIES)[keyof typeof DECIMAL_POLICIES],
+): string {
+  const result = new ExactDecimal(left).subtract(new ExactDecimal(right));
+  return policy ? result.quantize(policy).toString() : result.toString();
 }
 
 function contactMetadata(value: unknown): Readonly<Record<string, string>> {
@@ -170,10 +175,16 @@ function accountSummaryFromRow(
     creditLimit: row.credit_limit,
     balance: row.account_type === 'PREPAID_LITRES' ? null : balance,
     availableBalance:
-      row.account_type === 'PREPAID_VALUE' ? subtractExact(balance, reservedAmount) : null,
+      row.account_type === 'PREPAID_VALUE'
+        ? subtractExact(balance, reservedAmount, DECIMAL_POLICIES.money)
+        : null,
     availableCredit:
       row.account_type === 'CREDIT' && row.credit_limit !== null
-        ? subtractExact(subtractExact(row.credit_limit, balance), reservedAmount)
+        ? subtractExact(
+            subtractExact(row.credit_limit, balance, DECIMAL_POLICIES.money),
+            reservedAmount,
+            DECIMAL_POLICIES.money,
+          )
         : null,
     reservedAmount,
     productBalances: accountProducts,
