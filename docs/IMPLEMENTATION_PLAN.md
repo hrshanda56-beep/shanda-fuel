@@ -41,28 +41,34 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 The following is the current authoritative Phase 0 sequence, last synchronized
 against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
 
-1. Apply and independently review the one-line `pg_policies.cmd = 'ALL'`
-   correction in the immutable external Stage 1 operator helper; the
-   repository-local corrected diagnostic and regression coverage are complete.
-2. Have the approved human operator rerun Stage 1 through the existing
+1. Obtain human authority review of DEC-040 and confirm that the existing
+   Neon/provider-owner or deployment-admin boundary is the approved one-time
+   authority for assigning and clearing the temporary
+   `first_user_provisioner` password.
+2. Update or replace the external Stage 1 helper so only that reviewed
+   authority boundary performs the password assignment/cleanup; preserve
+   `migration_owner` as `NOCREATEROLE`, the existing DEC-011 secret handling,
+   all preflight predicates, and all fail-closed behavior. Independently
+   review the actual final helper/procedure.
+3. Have the approved human operator rerun Stage 1 through the reviewed
    human-controlled procedure, stopping at its scope-discovery hard stop.
-3. Classify the rerun result and scope discovery; do not continue to Stage 2
+4. Classify the rerun result and scope discovery; do not continue to Stage 2
    or provisioning from this task.
-4. Select legitimate production scope.
-5. Run Stage 2 READ ONLY dry run.
-6. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-7. Obtain explicit human approval.
-8. Provision the real first user.
-9. Run authenticated smoke.
-10. FINAL RELEASE GO.
-11. Integrate PR #92 plus Customers clean candidate.
-12. Integrate verified A8 fix.
-13. Integrate reviewed Daily Operations timezone fix.
-14. Run full DB/CI/browser/accessibility/responsive verification.
-15. Deploy.
-16. Verify exact production SHA.
-17. Final owner review.
-18. OWNER READY handoff.
+5. Select legitimate production scope.
+6. Run Stage 2 READ ONLY dry run.
+7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+8. Obtain explicit human approval.
+9. Provision the real first user.
+10. Run authenticated smoke.
+11. FINAL RELEASE GO.
+12. Integrate PR #92 plus Customers clean candidate.
+13. Integrate verified A8 fix.
+14. Integrate reviewed Daily Operations timezone fix.
+15. Run full DB/CI/browser/accessibility/responsive verification.
+16. Deploy.
+17. Verify exact production SHA.
+18. Final owner review.
+19. OWNER READY handoff.
 
 The documentation merge did not change deployed application behavior. The
 production application baseline remains
@@ -211,27 +217,51 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   regression coverage preventing the raw `'*'` comparison from returning.
   The external helper remains immutable in this task; its owner must apply and
   independently review the same one-line correction before rerun.
-- Do not rerun Stage 1 from the unchanged helper. After the operator-tool
-  correction is reviewed, the human may execute the reviewed Stage 1 procedure
-  and stop at its existing scope-discovery hard stop. Do not continue to Stage
-  2, provisioning, or remediation.
-- The failure occurred before temporary provisioner password assignment; no
-  cleanup is required from that failed run and no scope was selected.
+- Do not rerun Stage 1 from the unchanged helper. The policy correction alone
+  is insufficient: the helper must also receive the separately reviewed
+  password-authority handoff recorded in DEC-040. Only then may the human
+  execute the reviewed Stage 1 procedure and stop at its existing
+  scope-discovery hard stop. Do not continue to Stage 2, provisioning, or
+  remediation.
+- The original policy-assertion failure occurred before temporary provisioner
+  password assignment; the later corrected rerun reached that step but could
+  not assign the password under the existing role authority, so no scope was
+  selected.
 - Do not guess tenant/legal-entity/station IDs.
+- The corrected Stage 1 rerun passed the policy assertion and all preceding
+  checks, then failed at temporary password assignment because PostgreSQL
+  18.6 correctly rejects `ALTER ROLE first_user_provisioner PASSWORD` from
+  `migration_owner` while that role is `NOCREATEROLE`. The existing
+  `ADMIN=true` membership is not sufficient authority for this operation.
+- DEC-040 recommends a one-time human/provider-owner or deployment-admin
+  authority boundary already documented for managed-PostgreSQL role
+  operations. This preserves the `migration_owner NOCREATEROLE` contract and
+  avoids a durable SECURITY DEFINER or elevated application credential. The
+  proposal still requires human authority review and a separately reviewed
+  helper/procedure handoff before any production rerun.
+- The local PostgreSQL 18.6 regression suite adds coverage for the intended
+  boundary: a `SET ROLE migration_owner` attempt to assign the password must
+  be rejected with SQLSTATE `42501`, while the disposable local owner/admin
+  fixture can assign and immediately clear the password. No production
+  credentials or data are used.
 
 **Current verified result**
 
-- Stage 1 is not complete.
+- Stage 1 is not complete and is blocked on password-assignment authority.
 - The read-only diagnostic completed successfully; its zero exit status is
   evidence-collection success only and is not a Stage 1 pass.
 - No legitimate scope choices were accepted for Stage 2.
 - No temporary provisioner credential was assigned by the failed run.
 - No user was provisioned.
+- Do not rerun Stage 1 until DEC-040 is approved and the actual helper/procedure
+  uses the reviewed existing admin boundary for both temporary assignment and
+  cleanup.
 
 **Tests/verification**
 
 - Confirm the recorded target invariant is present in the final procedure.
-- Independent security review is GREEN.
+- Independent security review of the initial read-only diagnostic is GREEN;
+  the later password-authority procedure still requires its own review.
 - The initial human diagnostic evidence is collected and reviewed against
   migrations and the historical assertion.
 - Human confirms the reviewed external helper contains the corrected
@@ -273,8 +303,9 @@ Do not treat `APP_ENV`, `PGDATABASE`, `PGPORT`, the migration hash, role
 membership, or PostgreSQL server version alone as production identity. The
 independent security review is GREEN for the initial procedure; the approved
 human operator has executed both read-only procedures, and the corrected
-normalized comparison is ready for human-approved Stage 1 rerun after the
-immutable external helper receives the same one-line correction.
+normalized comparison is locally ready. Stage 1 remains blocked until DEC-040
+is approved and the external helper receives a separately reviewed
+password-authority handoff.
 
 ---
 

@@ -102,7 +102,8 @@ production target invariant in DEC-031 from authenticated Neon control-plane
 metadata. The diagnostic incorporates an exact pre-connect `PGHOST` assertion
 for the approved endpoint and preserves server-side identity, version,
 read-only, migration, membership, RLS, and policy checks. The final
-independent security review is GREEN. The approved human operator has now
+independent security review of that diagnostic procedure is GREEN; it did not
+approve the later Stage 1 password-authority path. The approved human operator has now
 executed the diagnostic read-only against production; Stage 1 has not been
 rerun and no production mutation was performed.
 
@@ -157,8 +158,8 @@ rerun and no production mutation was performed.
   against the exact approved endpoint before `psql` executes; `APP_ENV`,
   `PGDATABASE`, `PGPORT`, the migration hash, role membership, and server
   version remain defence-in-depth only.
-- Diagnostic incorporation is complete locally and the final independent
-  security review is GREEN. Both read-only diagnostics were executed by the
+- Diagnostic incorporation is complete locally and the independent review of
+  the diagnostic procedure is GREEN. Both read-only diagnostics were executed by the
   approved human operator; agents must not execute production procedures.
 - The diagnostic safety procedure and its psql 16.15 fail-closed behavior were
   verified locally. The approved human operator has now contacted production
@@ -168,6 +169,25 @@ rerun and no production mutation was performed.
   No cleanup is required from that run, no first user exists, Stage 2 has not
   run, real-provisioning approval has not been given, and authenticated
   production smoke has not happened.
+- The later corrected Stage 1 run reached the temporary password-assignment
+  step but failed because `migration_owner` is intentionally `NOCREATEROLE`.
+  PostgreSQL 18.6 rejects its `ALTER ROLE first_user_provisioner PASSWORD`
+  attempt despite the reviewed `ADMIN` membership relationship. This is a
+  verified authority-model defect in the operator path; it does not justify
+  granting `CREATEROLE` or weakening the migration-owner contract.
+- The existing repository bootstrap/deployment runbook already reserves role
+  credential and ownership operations for the Neon/provider-owner or
+  deployment-admin boundary. DEC-040 records the recommended one-time,
+  human-controlled use of that boundary for the temporary password assignment
+  and matching `PASSWORD NULL` cleanup. DEC-040 remains proposed pending
+  human authority review; no new privileged database function or persistent
+  elevated credential is approved.
+- M0-T03 is therefore **BLOCKED — PASSWORD ASSIGNMENT AUTHORITY REQUIRED**.
+  The external Stage 1 helper still attempts the password assignment through
+  `migration_owner` and must not be rerun until a separately reviewed helper
+  handoff to the existing admin boundary is available. Production has not
+  been contacted by agents, Stage 1 has not been rerun after this finding, and
+  no Stage 2 or provisioning action is authorized.
 - Stage 2 has **not** been run against production.
 - No explicit human approval for real first-user provisioning has been recorded.
 - No real first production user has been created.
