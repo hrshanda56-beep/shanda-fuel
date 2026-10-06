@@ -231,13 +231,31 @@ defence in depth. `ON_ERROR_STOP=1` makes any error—including a diagnostic
 query error—a hard stop; the procedure must not continue to Stage 1, Stage 2,
 credential assignment, or provisioning after a failure.
 
+The migration fingerprint and provider-membership queries are intentionally
+diagnostic observations, not additional SQL assertions. A `false` result is
+evidence to return and classify; it does not itself produce a nonzero exit or
+skip the catalog queries. The RLS/FORCE-RLS relation query and policy catalog
+query have the same observation-only semantics: missing, unexpected, or
+different rows are collected for diagnosis rather than converted into a new
+assertion by this procedure. A query error, the explicit identity/version
+refusal, or any shell pre-connect guard failure remains fail-closed and
+nonzero under `ON_ERROR_STOP=1` and `set -e`.
+
 ## Required evidence and stop rule
 
 The operator should return only the redacted command output and the exact
 failing Stage 1 statement/line, with secrets, connection details, tenant
-business data, and credentials removed. If the original Stage 1 assertion is
-not available, the policy catalog above is still useful but is insufficient to
+business data, and credentials removed. The operator must report false
+fingerprint or membership observations and unexpected RLS/FORCE-RLS or policy
+catalog contents as evidence; they are not immediate shell-stop conditions in
+this observation-only procedure. If the original Stage 1 assertion is not
+available, the policy catalog above is still useful but is insufficient to
 establish the root cause.
+
+Exit status zero means only that the guarded, read-only evidence collection
+completed without a shell or SQL error. It does not mean that every observed
+fingerprint, membership, RLS/FORCE-RLS, or policy result matched expectation,
+and it does not mean that Stage 1 passed.
 
 No role, ACL, policy, RLS flag, migration, schema, data, password, or
 configuration may be changed as part of this procedure. A successful
