@@ -1,6 +1,7 @@
 # Phase 1 contract decomposition
 
-Status: reviewed planning artifact; no implementation or migration is
+Status: reviewed planning artifact; implementation may proceed only for the
+bounded sub-contracts explicitly marked ready below. No migration is
 authorized by this document.
 
 This document decomposes the bounded Phase 1 work that is already supported by
@@ -66,28 +67,31 @@ references to immutable A5 evidence, idempotency, correction/reversal, and
 RLS-fail-closed behavior. M5-T01 must extend or clarify that contract rather
 than add a second ledger or recalculate A5 sales.
 
-The following policy decisions remain explicit gates before lifecycle writes:
+DEC-041 resolves the product semantics for credit caps, money-value prepaid,
+monthly reporting statements, default station pricing, optional vehicle/driver
+restrictions, deferred benefits, metadata/tax boundaries, single operational
+currency, lifecycle states, and the default customer authorization meaning.
+The following remain separate implementation gates rather than product
+questions to be inferred: exact accounting/ledger treatment where the existing
+A8 contract is insufficient, role-permission migration alignment, the monthly
+statement read-model contract, lifecycle transition command details, and the
+later vehicle/driver, customer-specific pricing, benefits, tax, and FX
+contracts.
 
-- credit limits, approval thresholds, and override authority;
-- billing cadence and statement cycle;
-- interest, late fees, and collections;
-- customer-specific pricing;
-- prepaid value versus litre funding/conversion rules;
-- tax invoice treatment;
-- multi-currency conversion;
-- vehicle/driver restrictions; and
-- benefit eligibility, approval, accounting, and tax treatment.
-
-These are not implementation gaps to be filled by inference. M5-T02 remains
-blocked until each write slice has a reviewed accounting, ledger, tax,
-credit-control, authorization, audit, idempotency, and tenant/RLS contract.
+The first M5-T02 slice is ready for positive CREDIT limit enforcement and
+active-customer/account transaction guards. It must preserve exact decimals,
+tenant/RLS boundaries, audit/idempotency, and the existing A8 ledger rather
+than introduce a second accounting model.
 
 ## Current outcome
 
 - M4-T03 is decomposed into bounded Daily Operations slices and is ready for
   an individual slice to receive a reviewed implementation contract.
-- M5-T01 has a bounded lifecycle sequence and an explicit policy-gate list;
-  it is ready for review as a specification, not for customer lifecycle write
-  implementation.
+- M5-T01 is accepted for the DEC-041 customer lifecycle semantics, with the
+  remaining accounting, permission-migration, read-model, and later-feature
+  gates recorded above.
+- M5-T02 is ready for the bounded positive-credit-limit and active-customer/
+  account transaction-guard slice; full lifecycle writes remain separately
+  gated by reviewed command, permission, audit, and migration contracts.
 - No production access, provisioning, Stage 1/Stage 2 execution, migration,
   or schema change is authorized by this artifact.

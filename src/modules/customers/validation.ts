@@ -32,14 +32,34 @@ export const createCustomerSchema = z.object({
   contactMetadata: z.record(z.string(), z.string().trim().max(200)).optional(),
 });
 
-export const createCustomerAccountSchema = z.object({
-  commandType: z.literal('CreateCustomerAccount'),
-  tenantId: uuid,
-  customerId: uuid,
-  accountType: customerAccountTypeSchema,
-  currency,
-  creditLimit: decimalText.optional(),
-});
+export const createCustomerAccountSchema = z
+  .object({
+    commandType: z.literal('CreateCustomerAccount'),
+    tenantId: uuid,
+    customerId: uuid,
+    accountType: customerAccountTypeSchema,
+    currency,
+    creditLimit: decimalText.optional(),
+  })
+  .superRefine((input, refinement) => {
+    if (
+      input.accountType === 'CREDIT' &&
+      (!input.creditLimit || !/[1-9]/.test(input.creditLimit))
+    ) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['creditLimit'],
+        message: 'Credit accounts require a positive credit limit',
+      });
+    }
+    if (input.accountType !== 'CREDIT' && input.creditLimit) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['creditLimit'],
+        message: 'Credit limits apply only to credit accounts',
+      });
+    }
+  });
 
 const fuelValueSchema = z.object({
   productId: uuid,

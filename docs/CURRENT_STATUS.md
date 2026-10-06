@@ -481,9 +481,10 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 ## 17. Owner-resolved product decisions
 
 The owner has resolved the previously open Daily Operations, account-sale,
-approved-fuel, cash-custody, customer-account sequencing, workflow, and
-close-summary questions. Durable decisions are recorded in DEC-032 through
-DEC-038 and integrated into `PRODUCT_SPEC.md` and `ARCHITECTURE.md`.
+approved-fuel, cash-custody, customer-account sequencing, workflow,
+close-summary, and Phase 1 customer-lifecycle questions. Durable decisions
+are recorded in DEC-032 through DEC-039 and DEC-041 and integrated into
+`PRODUCT_SPEC.md` and `ARCHITECTURE.md`.
 
 The fixed semantics include distinct operator/submitter and Supervisor
 approver actors, required customer identity for account sales, auditable
@@ -492,13 +493,22 @@ summaries, the stated Phase 1 customer-account priority order, and the
 operational-control purpose and authorized scope of the home dashboard. The
 home-dashboard decision is recorded in DEC-039.
 
+DEC-041 now fixes customer credit, prepaid-value, statement, pricing,
+vehicle/driver, benefits, tax-metadata, currency, lifecycle, and
+customer-specific authorization semantics. The initial implementation slice
+enforces positive hard-capped CREDIT accounts and blocks new account
+transactions for non-active customers/accounts. No new accounting, tax, FX,
+or broad role-grant behavior has been invented.
+
 ## 18. Remaining product and technical decisions
 
 The following remain unresolved and must not be silently invented:
 
 - complete human application role/permission matrix;
-- detailed accounting, ledger, tax, credit-control, and authorization policies
-  for customer, approved-fuel, cash, and close workflows;
+- detailed accounting/ledger behavior not already covered by the A8 customer
+  contract; exact customer permission-code and migration alignment; and
+  detailed authorization contracts for approved-fuel, cash, and close
+  workflows;
 - formal performance/SLO targets;
 - which Phase 1 provider integrations are required first and their exact
   contracts;
@@ -519,9 +529,15 @@ The following remain unresolved and must not be silently invented:
 - M4-T03 has a bounded contract decomposition in
   `docs/architecture/phase1-contract-decomposition.md`; individual slices
   still require reviewed command/read-model contracts before implementation.
-- M5-T01 has a bounded lifecycle specification packet with its unresolved
-  accounting, tax, credit-control, and authorization gates recorded; M5-T02
-  customer writes remain blocked pending those reviewed contracts.
+- M5-T01 is accepted for the DEC-041 customer lifecycle semantics. Its
+  remaining sub-contract gates are exact permission/migration alignment,
+  lifecycle transition commands, monthly statement read-model details, and
+  later pricing, vehicle/driver, benefits, tax, and FX contracts.
+- M5-T02 is IN PROGRESS for a bounded credit-guard slice: positive CREDIT
+  limits are required and treated as hard caps, and suspended/closed
+  customers or inactive accounts cannot initiate new account transactions.
+  Full lifecycle writes remain gated by reviewed command, audit, permission,
+  and migration contracts.
 
 These decisions do not alter the M0-T03 production diagnostic gate.
 
@@ -540,7 +556,7 @@ These decisions do not alter the M0-T03 production diagnostic gate.
 
 The following are explicitly not Phase 0 completion requirements unless promoted by a new human instruction:
 
-- full customer lifecycle/write policy,
+- full customer lifecycle/write command set and permission/migration alignment,
 - richer approved-fuel approval policy,
 - complete expense approval/allocation lifecycle,
 - full cash custody/banking workflow,
@@ -554,6 +570,13 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 - tax treatment.
 
 ## 21. Current critical path / next recommended work
+
+The Phase 1 customer lane may proceed in parallel with the parked M0-T03
+production gate. The next customer steps are to independently review the
+bounded credit/activity guard diff, integrate it through the A0 migration and
+permission ownership process if needed, then specify lifecycle transitions and
+the monthly statement read model separately. Do not invent accounting, tax, FX,
+or customer-specific pricing behavior.
 
 Use this order unless a current human instruction changes it:
 
