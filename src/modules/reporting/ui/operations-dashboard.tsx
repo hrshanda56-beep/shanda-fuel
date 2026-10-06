@@ -9,7 +9,7 @@ import type { ManagementReport } from '../contracts';
 
 type DashboardState =
   | { status: 'loading' }
-  | { status: 'ready'; report: ManagementReport }
+  | { status: 'ready'; report: ManagementReport; contextKey: string }
   | { status: 'error'; message: string };
 
 export type OperationsDashboardMetrics = Readonly<{
@@ -52,6 +52,10 @@ function reportHref(tenantId: string, stationId?: string): string {
   return `/reports?${query.toString()}`;
 }
 
+function contextKey(tenantId?: string, stationId?: string): string {
+  return `${tenantId ?? ''}:${stationId ?? ''}`;
+}
+
 export function OperationsDashboard({
   tenantId,
   stationId,
@@ -60,8 +64,10 @@ export function OperationsDashboard({
   stationId?: string;
 }) {
   const [state, setState] = useState<DashboardState>({ status: 'loading' });
+  const currentContextKey = contextKey(tenantId, stationId);
 
   useEffect(() => {
+    setState({ status: 'loading' });
     if (!tenantId) return;
 
     const controller = new AbortController();
@@ -86,7 +92,7 @@ export function OperationsDashboard({
         }
         return body;
       })
-      .then((report) => setState({ status: 'ready', report }))
+      .then((report) => setState({ status: 'ready', report, contextKey: currentContextKey }))
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) {
           setState({
@@ -97,7 +103,7 @@ export function OperationsDashboard({
       });
 
     return () => controller.abort();
-  }, [stationId, tenantId]);
+  }, [currentContextKey, stationId, tenantId]);
 
   if (!tenantId) {
     return (
@@ -111,6 +117,9 @@ export function OperationsDashboard({
   if (state.status === 'loading') return <LoadingState label="Loading today’s operations" />;
   if (state.status === 'error') {
     return <ErrorState title="Today’s dashboard unavailable" message={state.message} />;
+  }
+  if (state.contextKey !== currentContextKey) {
+    return <LoadingState label="Loading today’s operations" />;
   }
 
   const metrics = selectOperationsDashboardMetrics(state.report);
