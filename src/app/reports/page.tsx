@@ -22,7 +22,11 @@ export default async function ReportsPage({
         A factual view across approved sales, custody, settlements, commercial exposure, and stock.
       </p>
       {tenantId ? (
-        <ManagementReportDashboard tenantId={tenantId} initialStationId={stationId} />
+        <ManagementReportDashboard
+          key={`${tenantId}:${stationId ?? ''}`}
+          tenantId={tenantId}
+          initialStationId={stationId}
+        />
       ) : (
         <ContextRequiredState
           title="Choose an organisation to view reports"
