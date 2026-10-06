@@ -630,3 +630,43 @@ approval state immediately understandable.
 **Consequences:** Required reconciliation and audit sections cannot be hidden
 by configuration. Optional sections and variance thresholds may be bounded
 policy settings.
+
+---
+
+## DEC-039 — Make the default home dashboard operational-control and exception-first
+
+**Status:** ACCEPTED
+
+**Context:** The home dashboard needed a fixed purpose and audience without
+turning it into a broad accounting/reporting surface or inventing unsupported
+financial calculations.
+
+**Chosen approach:** The default owner/supervisor home dashboard answers “How is
+the operation performing today, and what needs my attention?” Its primary
+headline metrics/status areas are today’s total sales, expected cash, actual
+cash, cash variance, fuel/stock variance, account/credit sales, unresolved
+exceptions, and shift approval/close status. The primary audience is the
+owner, manager, and Supervisor subject to existing permissions.
+
+The dashboard uses the user’s authorized/current operational scope under the
+existing tenant, legal-entity, station, and navigation conventions. It must
+not introduce a new authorization model or expose cross-tenant or unauthorized
+data. Existing A10 reporting metrics and contracts are reused where they
+support the bounded first slice. Missing source facts remain truthful
+unavailable states until a reviewed read-model contract exists; no new tax,
+GL, profitability, or other accounting calculation is created solely for the
+dashboard.
+
+**Rationale:** The owner needs operational control and visible exceptions first,
+while the existing reporting model already provides supported read-only facts
+for sales, cash evidence/variance, account-credit evidence, and inventory
+variance. Approval/close and unresolved-exception presentation must remain
+grounded in authoritative source state rather than inferred from presentation
+data.
+
+**Consequences:** M4-T02 may proceed with a bounded first read-only slice using
+existing supported reporting contracts. A future administrator may configure
+optional dashboard sections, display ordering, relevant station-specific cards,
+and variance thresholds, but required security, reconciliation, exception, and
+authorization behavior cannot be disabled. A generic workflow/rules engine is
+not introduced for dashboard configuration.

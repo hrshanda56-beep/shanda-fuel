@@ -878,7 +878,7 @@ Map remaining owner requirements to existing schema/APIs/modules and identify tr
 
 ---
 
-## M4-T02 — Replace remaining dashboard placeholders/unavailable states with real supported metrics — WAITING_HUMAN_PRODUCT_DECISION
+## M4-T02 — Replace remaining dashboard placeholders/unavailable states with real supported metrics — READY FOR A BOUNDED FIRST SLICE
 
 **Objective**
 
@@ -892,16 +892,29 @@ Implement owner-useful dashboard metrics only where the data contract is establi
 **Dependencies**
 
 - M4-T01.
-- Owner confirmation for ambiguous metric definitions.
+- DEC-039 owner dashboard contract.
 
-**Current gate**
+**Resolved owner decision**
 
-The existing A10 reporting contract does not define the home-dashboard
-contract. Before implementation, the owner must confirm the headline metric
-set, default tenant/station scope, default period/date basis, comparison or
-trend behavior, whether the DEC-038 close-summary fields are reused, and any
-attention section plus its loading/empty/unavailable states. Do not infer these
-from the `/reports` surface or the design-review sample dashboard.
+DEC-039 defines the home dashboard as an operational-control and
+exception-visibility surface for today’s total sales, expected cash, actual
+cash, cash variance, fuel/stock variance, account/credit sales, unresolved
+exceptions, and shift approval/close status. The primary audience is the
+owner, manager, and Supervisor subject to existing permissions. The default
+scope follows existing authorized/current tenant, legal-entity, and station
+conventions; no new authorization model is introduced.
+
+**Bounded first-slice contract**
+
+Use existing A10 read-only reporting contracts for supported sales, cash,
+account-credit, and fuel/stock variance facts. Do not add tax, GL,
+profitability, or other accounting calculations for presentation. Unresolved
+exceptions and shift approval/close status must come from authoritative source
+state; if the current read model cannot provide them, show a truthful
+unavailable state and define the smallest reviewed read-model extension before
+implementation. Optional sections, display ordering, station-specific cards,
+and variance thresholds are bounded future settings, never a way to disable
+required security, reconciliation, exception, or authorization behavior.
 
 **Implementation notes**
 
@@ -911,6 +924,8 @@ from the `/reports` surface or the design-review sample dashboard.
 **Acceptance criteria**
 
 - Every displayed metric has a documented data source and scope.
+- The first slice uses existing A10 sources for supported facts and does not
+  fabricate unsupported exception or approval values.
 - Tenant/station isolation verified.
 - No fake fallback values.
 
