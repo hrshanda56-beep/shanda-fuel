@@ -31,11 +31,17 @@ async function post(
   key: string,
   token: string,
 ): Promise<Qa1CommandResult> {
+  const sessionCookieName =
+    process.env.APP_ENV === 'demo' ||
+    process.env.APP_ENV === 'staging' ||
+    process.env.APP_ENV === 'production'
+      ? '__Secure-shanda-fuel.session_token'
+      : 'shanda-fuel.session_token';
   const response = await route(
     new Request('http://127.0.0.1:3000/api/qa1-command', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie(token)}`,
+        cookie: `${sessionCookieName}=${await signedCookie(token)}`,
         'content-type': 'application/json',
         'idempotency-key': key,
       },

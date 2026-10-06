@@ -24,8 +24,12 @@ The hosted demo uses the same normal migrations and fixture, but with the
 explicit non-production `APP_ENV=demo`. The operator supplies the hosted Neon
 `DATABASE_URL` through the approved private secret workflow; it is never put
 in argv, committed files, logs, or chat. The setup refuses `APP_ENV=production`
-and refuses any database name other than `neondb` before migration or seed
-writes.
+and refuses any database name other than `shanda_fuel_demo` before any
+migration or seed writes. The setup first reuses the reviewed environment
+bootstrap SQL files to create only the five roles required by the migrations:
+`migration_owner`, `app_runtime`, `job_runtime`, `diagnostics_readonly`, and
+`first_user_provisioner`. Runtime roles remain `NOLOGIN` and least privilege;
+the first-user provisioner retains its canonical restricted `LOGIN` shape.
 
 From the repository root, with the private environment values already loaded:
 
@@ -39,8 +43,9 @@ export AUDIT_SIGNING_KEY='<demo signing secret from the approved secret store>'
 bash scripts/demo/setup-owner-demo.sh
 ```
 
-The setup runs `drizzle-kit migrate`, then asks for the synthetic owner
-password through hidden terminal input. It prints only non-secret identifiers
+The setup runs the role prerequisite bootstrap and then `drizzle-kit migrate`,
+then asks for the synthetic owner password through hidden terminal input. It
+prints only non-secret identifiers
 and the email `demo-owner@tei-oils.example.test`. The hosted seed is
 idempotent: a completed `tei-oils-owner-demo` tenant is reused; it does not
 create another tenant or sale. To re-seed/reset the demo password while

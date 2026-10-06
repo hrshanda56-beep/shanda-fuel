@@ -10,7 +10,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const appEnv = process.env.APP_ENV ?? 'local';
 const demoPassword = process.env.DEMO_PASSWORD;
 const resetExisting = process.env.DEMO_RESET === '1';
-const demoDatabaseName = 'neondb';
+const demoDatabaseName = 'shanda_fuel_demo';
 const demoTenantSlug = 'tei-oils-owner-demo';
 const demoEmail = 'demo-owner@tei-oils.example.test';
 
@@ -113,7 +113,7 @@ async function main() {
       join auth."user" u on u.id = m.identity_id
       left join app.stations s on s.tenant_id = t.id and s.legal_entity_id = le.id
       where t.slug = ${demoTenantSlug} and u.email = ${demoEmail}
-      group by t.id, le.id, u.id
+      group by t.id, le.id, u.id, m.id, m.status
     `) as Array<{
       tenant_id: string;
       legal_entity_id: string;

@@ -13,12 +13,18 @@ if [[ "$APP_ENV" != 'demo' ]]; then
 fi
 
 database_name="$(DATABASE_URL="$DATABASE_URL" node -e 'process.stdout.write(decodeURIComponent(new URL(process.env.DATABASE_URL).pathname.replace(/^\//, "")))')"
-if [[ "$database_name" != 'neondb' ]]; then
+if [[ "$database_name" != 'shanda_fuel_demo' ]]; then
   printf '%s\n' 'Refusing hosted owner-demo setup for an unexpected database name.' >&2
   exit 2
 fi
 
-DATABASE_DIRECT_URL="$DATABASE_URL" pnpm exec drizzle-kit migrate --config drizzle.config.ts
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+(
+  cd "$repo_root"
+  APP_ENV="$APP_ENV" DATABASE_URL="$DATABASE_URL" \
+    node --conditions=react-server --import tsx scripts/demo/bootstrap-owner-demo.ts
+  DATABASE_DIRECT_URL="$DATABASE_URL" pnpm exec drizzle-kit migrate --config drizzle.config.ts
+)
 APP_ENV="$APP_ENV" DATABASE_URL="$DATABASE_URL" BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET" \
   AUDIT_SIGNING_KEY_ID="$AUDIT_SIGNING_KEY_ID" AUDIT_SIGNING_KEY="$AUDIT_SIGNING_KEY" \
   DEMO_RESET="${DEMO_RESET:-0}" bash scripts/demo/seed-owner-demo.sh
