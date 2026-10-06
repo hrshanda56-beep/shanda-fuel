@@ -41,28 +41,26 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 The following is the current authoritative Phase 0 sequence, last synchronized
 against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
 
-1. Establish and review an authoritative, independent, non-secret production
-   database target invariant.
-2. Incorporate that invariant into the Stage 1 diagnostic.
-3. Independently review the final operator procedure.
-4. Have the approved human operator execute the read-only diagnostic.
-5. Classify production drift versus assertion/normalization/tooling defect.
-6. Continue M0-T03 through the reviewed Stage 1 rerun and scope discovery.
-7. Select legitimate production scope.
-8. Run Stage 2 READ ONLY dry run.
-9. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-10. Obtain explicit human approval.
-11. Provision the real first user.
-12. Run authenticated smoke.
-13. FINAL RELEASE GO.
-14. Integrate PR #92 plus Customers clean candidate.
-15. Integrate verified A8 fix.
-16. Integrate reviewed Daily Operations timezone fix.
-17. Run full DB/CI/browser/accessibility/responsive verification.
-18. Deploy.
-19. Verify exact production SHA.
-20. Final owner review.
-21. OWNER READY handoff.
+1. Use the invariant-integrated diagnostic whose independent security review
+   is GREEN.
+2. Have the approved human operator execute the read-only diagnostic.
+3. Classify production drift versus assertion/normalization/tooling defect.
+4. Continue M0-T03 through the reviewed Stage 1 rerun and scope discovery.
+5. Select legitimate production scope.
+6. Run Stage 2 READ ONLY dry run.
+7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+8. Obtain explicit human approval.
+9. Provision the real first user.
+10. Run authenticated smoke.
+11. FINAL RELEASE GO.
+12. Integrate PR #92 plus Customers clean candidate.
+13. Integrate verified A8 fix.
+14. Integrate reviewed Daily Operations timezone fix.
+15. Run full DB/CI/browser/accessibility/responsive verification.
+16. Deploy.
+17. Verify exact production SHA.
+18. Final owner review.
+19. OWNER READY handoff.
 
 The documentation merge did not change deployed application behavior. The
 production application baseline remains
@@ -216,8 +214,8 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 
 **Tests/verification**
 
-- Establish and review the target invariant.
-- Independently review the final diagnostic procedure.
+- Confirm the recorded target invariant is present in the final procedure.
+- Independent security review is GREEN.
 - Human executes the read-only diagnostic and reviews its PASS/STOP lines and
   non-secret output.
 - Classify production drift versus assertion/normalization/tooling defect.
@@ -226,11 +224,12 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 
 - Production execution is sequential and human-controlled.
 
-### HUMAN DECISION PACKET — independent production target invariant
+### HUMAN DECISION PACKET — independent production target invariant (RESOLVED)
 
-**Decision required:** Select a non-secret production identity that is
-authoritative independently of the connection environment being validated.
-Do not record credentials or invent a value in repository documentation.
+**Decision recorded in DEC-031:** The human selected a non-secret production
+identity authoritative independently of the connection environment being
+validated. Do not add credentials or connection strings to repository
+documentation.
 
 Suitable invariant categories:
 
@@ -242,22 +241,18 @@ Suitable invariant categories:
   or operator tooling that cannot simply be supplied by `PGHOST`, `PGDATABASE`,
   `PGPORT`, or `APP_ENV` itself.
 
-**Recommended category:** Use the exact approved endpoint hostname as the
-primary invariant, sourced from an authoritative provider/operator record and
-validated against the decoded `PGHOST` produced by the existing DEC-011
-bootstrap. This is the strongest and simplest single invariant for the
-current process-local libpq design because it adds no credential path, URI
-parsing, service indirection, or secret exposure. If the provider does not
-guarantee that the hostname uniquely identifies the approved project/branch,
-use the provider project/branch/endpoint identity with an independent
-verification method instead.
+**Selected category:** The exact approved endpoint hostname is the primary
+invariant, sourced from the authenticated Neon control plane and validated
+against the decoded `PGHOST` produced by the existing DEC-011 bootstrap. This
+is the strongest and simplest single invariant for the current process-local
+libpq design because it adds no credential path, URI parsing, service
+indirection, or secret exposure. Its approved value and provider provenance
+are recorded in DEC-031.
 
 Do not treat `APP_ENV`, `PGDATABASE`, `PGPORT`, the migration hash, role
-membership, or PostgreSQL server version alone as production identity. Once the
-human decision is recorded through the appropriate authoritative source, the
-next owner must add the exact non-secret assertion to the diagnostic, obtain
-independent review, and only then hand the read-only procedure to the human
-operator.
+membership, or PostgreSQL server version alone as production identity. The
+independent security review is GREEN; the approved human operator may now
+execute the read-only procedure.
 
 ---
 

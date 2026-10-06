@@ -96,6 +96,15 @@ and psql 16.15 intentional-refusal path were validated without contacting
 production. This is local evidence only; the diagnostic has not been executed
 against production.
 
+The human has now established the authoritative independent non-secret
+production target invariant in DEC-031 from authenticated Neon control-plane
+metadata. The diagnostic incorporates an exact pre-connect `PGHOST` assertion
+for the approved endpoint and preserves server-side identity, version,
+read-only, migration, membership, RLS, and policy checks. The final
+independent security review is GREEN. Production has still not been contacted
+and Stage 1 has not been rerun; execution remains reserved for the approved
+human operator.
+
 ### BLOCKED / IN PROGRESS
 
 - The latest Stage 1 production run passed exact checkout/SHA and local
@@ -117,12 +126,14 @@ against production.
   SQLSTATE/statement context and policy catalog. The Stage 1 root cause remains
   unknown; this does not establish production drift or an assertion/tooling
   defect and does not make Stage 1 pass.
-- Diagnostic execution remains blocked because authoritative repository
-  sources contain no independent non-secret production database target
-  invariant. `APP_ENV`, `PGHOST`, `PGDATABASE`, `PGPORT`, the migration hash,
-  role membership, and server version are not sufficient production identity
-  evidence by themselves. Human review must establish the invariant before
-  the diagnostic can be enabled.
+- The independent production target invariant is now established and recorded
+  in DEC-031. The diagnostic must compare the decoded process-local `PGHOST`
+  against the exact approved endpoint before `psql` executes; `APP_ENV`,
+  `PGDATABASE`, `PGPORT`, the migration hash, role membership, and server
+  version remain defence-in-depth only.
+- Diagnostic incorporation is complete locally and the final independent
+  security review is GREEN. The approved human operator must still execute the
+  read-only diagnostic; agents must not do so.
 - The diagnostic safety procedure and its psql 16.15 fail-closed behavior were
   verified locally. No production database was contacted by this diagnostic
   investigation, and Stage 1 has not been rerun.
@@ -395,8 +406,9 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 
 1. **Production Stage 1 fails closed in the RLS/policy preflight** with a
    division-by-zero error; the root cause remains unknown. The reviewed
-   diagnostic is locally safety-verified but blocked from execution until an
-   independent non-secret production target invariant is established.
+   diagnostic now incorporates the human-approved independent non-secret
+   production target invariant, and the final independent security review is
+   GREEN. Execution remains pending the approved human operator.
 2. **Daily Operations timezone fix is not yet cleanly integrated into the final candidate** even though the scoped implementation/tests are green.
 3. **A8 decimal fix is verified but still needs final clean release-candidate integration.**
 
@@ -412,9 +424,9 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - Local integration harness setup is ownership-sensitive and should be documented clearly to avoid future false regressions.
 - The latest Stage 1 RLS/policy preflight failure needs a reviewed diagnosis and
   rerun; the exhaustive function ACL-grantee validation is already Access
-  Review GREEN. A local-only diagnostic procedure is safety-verified, but its
-  execution is blocked until human review establishes an authoritative,
-  independent, non-secret production target invariant.
+  Review GREEN. The local-only diagnostic procedure now contains the exact
+  human-approved endpoint guard; its independent review is GREEN and its
+  execution remains pending the approved human operator.
 
 ## 17. Open product questions
 
@@ -460,25 +472,28 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 
 Use this order unless a current human instruction changes it:
 
-1. Diagnose the latest production RLS/policy preflight failure.
-2. Determine drift versus assertion/normalization bug.
-3. Access Review any tooling-only correction.
-4. Rerun Stage 1 from the beginning.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+1. Use the invariant-integrated diagnostic whose independent security review
+   is GREEN.
+2. Human executes the approved read-only diagnostic.
+3. Diagnose the latest production RLS/policy preflight failure.
+4. Determine drift versus assertion/normalization bug.
+5. Access Review any tooling-only correction.
+6. Rerun Stage 1 from the beginning.
+7. Select legitimate production scope.
+8. Run Stage 2 READ ONLY dry run.
+9. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+10. Obtain explicit human approval.
+11. Provision the real first user.
+12. Run authenticated smoke.
+13. FINAL RELEASE GO.
+14. Integrate PR #92 plus Customers clean candidate.
+15. Integrate verified A8 fix.
+16. Integrate reviewed Daily Operations timezone fix.
+17. Run full DB/CI/browser/accessibility/responsive verification.
+18. Deploy.
+19. Verify exact production SHA.
+20. Final owner review.
+21. OWNER READY handoff.
 
 ## 21. Things agents must not assume
 

@@ -6,14 +6,14 @@ This is a diagnostic procedure for the unresolved Stage 1 production
 RLS/policy preflight failure. It is not Stage 1, Stage 2, provisioning,
 migration execution, or a repair procedure. It must not be run by an agent.
 
-This procedure is currently blocked before catalog diagnostics. The
-authoritative repository sources identify Neon as the production PostgreSQL
-provider and PostgreSQL 18.6 as the recorded production version, but they do
-not record an exact non-secret production database endpoint, host, project ID,
-or database identifier. `APP_ENV`, `PGHOST`, and `PGDATABASE` are therefore
-not independent production identity evidence. Human review is required before
-an exact approved target invariant is added to the canonical operator tooling
-and this procedure is re-reviewed.
+The human-approved independent production target invariant is now recorded in
+DEC-031 and incorporated below. The approved endpoint is the exact host
+`ep-polished-haze-b29kd207.c-6.eu-central-1.aws.neon.tech`; the provider
+project, branch, endpoint, and region identifiers are recorded as provenance.
+The shell guard compares the decoded process-local `PGHOST` from the reviewed
+DEC-011 bootstrap against that repository-controlled value before `psql` can
+execute. This procedure remains a human-run, read-only diagnostic and has not
+been executed against production.
 
 The repository contains the reviewed migration and first-user helper checks,
 but it does not contain the operator-side Stage 1 policy assertion that
@@ -50,13 +50,18 @@ process-local variables, not opaque service indirection. `PGUSER` must be
 `migration_owner`; `PGPASSWORD` must already be present through the approved
 secret mechanism. `DATABASE_URL` and `DATABASE_DIRECT_URL` must be absent.
 
-Until an authoritative non-secret production target invariant exists, do not
-run the diagnostic command below. Its first SQL guard intentionally raises a
-read-only error and stops before any catalog query. Do not substitute the
-connection environment, `APP_ENV`, the migration hash, the provider
-membership, or the PostgreSQL version for that missing invariant.
+The shell guard rejects any empty or non-exact `PGHOST` before `psql` starts.
+Do not substitute `APP_ENV`, `PGDATABASE`, the migration hash, the provider
+membership, or the PostgreSQL version for the independent endpoint invariant.
 
-## Read-only command (currently blocked)
+The approved non-secret provider provenance is recorded in DEC-031:
+
+- Neon project `shanda-fuel-production` / `plain-paper-48449309`;
+- primary branch `main` / `br-morning-dust-b270y3ry`;
+- endpoint `ep-polished-haze-b29kd207`;
+- region `aws-eu-central-1`.
+
+## Read-only command (human execution only)
 
 Run the following from the reviewed checkout. The command emits only catalog
 metadata and error context; write its output, if retained, to an approved
@@ -75,6 +80,10 @@ set -euo pipefail
   echo 'Refusing opaque libpq service indirection; rerun the reviewed Stage 1 bootstrap.' >&2
   exit 1
 }
+[[ -z "${PGHOSTADDR+x}" ]] || {
+  echo 'Refusing PGHOSTADDR override; rerun the reviewed Stage 1 bootstrap.' >&2
+  exit 1
+}
 : "${PGHOST:?PGHOST must already be set by the reviewed Stage 1 bootstrap}"
 : "${PGPORT:?PGPORT must already be set by the reviewed Stage 1 bootstrap}"
 : "${PGDATABASE:?PGDATABASE must already be set by the reviewed Stage 1 bootstrap}"
@@ -89,6 +98,11 @@ set -euo pipefail
 }
 [[ "$PGUSER" == migration_owner ]] || {
   echo 'Refusing diagnostics unless PGUSER=migration_owner.' >&2
+  exit 1
+}
+readonly APPROVED_PRODUCTION_HOST='ep-polished-haze-b29kd207.c-6.eu-central-1.aws.neon.tech'
+[[ "$PGHOST" == "$APPROVED_PRODUCTION_HOST" ]] || {
+  echo 'Refusing diagnostics: PGHOST is not the approved production endpoint.' >&2
   exit 1
 }
 [[ "$PGPORT" =~ ^[0-9]+$ && "$PGPORT" -ge 1 && "$PGPORT" -le 65535 ]] || {
@@ -132,21 +146,15 @@ BEGIN
       HINT = 'This is not the original Stage 1 division-by-zero failure.';
   END IF;
 
-  RAISE EXCEPTION USING
-    ERRCODE = 'P0001',
-    MESSAGE = 'Intentional wrong-target refusal: no authoritative non-secret production database target invariant is recorded',
-    HINT = 'Human review must establish the approved target invariant before catalog diagnostics are enabled. This is not the original Stage 1 division-by-zero failure.';
+  IF current_setting('server_version_num') <> '180006' THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'P0001',
+      MESSAGE = 'Intentional diagnostic refusal: server_version_num is not the approved PostgreSQL 18.6 value',
+      HINT = 'This is not the original Stage 1 division-by-zero failure.';
+  END IF;
 END
 $$;
 
--- The intentional guard above must be replaced only after an authoritative
--- non-secret production target invariant is recorded and independently
--- reviewed. The accepted fingerprint and policy catalog queries remain below
--- as the diagnostic payload for that future, separately reviewed procedure;
--- ON_ERROR_STOP=1 makes them unreachable while this guard is present. The
--- future target guard must retain the exact production invariant
--- server_version_num = 180006; the version is only defence in depth, not
--- independent target identity.
 SELECT current_user, session_user, current_database(), current_setting('server_version_num') AS server_version_num,
        current_setting('server_version') AS server_version,
        current_setting('transaction_read_only') AS transaction_read_only;

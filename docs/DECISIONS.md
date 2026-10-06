@@ -443,3 +443,38 @@ investigation.
 **Rationale:** Owner handoff should represent a trustworthy, usable product state.
 
 **Consequences:** Phase 1 work remains deferred, but P0/P1 correctness/usability issues found in final QA are not deferred merely to hit a date.
+
+---
+
+## DEC-031 — Use the authenticated Neon production endpoint as the Stage 1 target invariant
+
+**Status:** ACCEPTED
+
+**Context:** The Stage 1 RLS/policy diagnostic could not previously prove that
+the connection was the approved production database. Connection-supplied
+`PGHOST`, `PGDATABASE`, `PGPORT`, `APP_ENV`, migration fingerprints, role
+membership, and server version were not independent production identity
+evidence. The human authenticated to the Neon control plane and established
+the approved production project, branch, endpoint, and region metadata.
+
+**Chosen approach:** Before `psql` executes, the diagnostic compares the
+decoded process-local `PGHOST` from the existing DEC-011 bootstrap against the
+exact approved endpoint host:
+`ep-polished-haze-b29kd207.c-6.eu-central-1.aws.neon.tech`.
+
+Approved non-secret provider provenance:
+
+- project: `shanda-fuel-production` (`plain-paper-48449309`)
+- branch: `main` (`br-morning-dust-b270y3ry`)
+- endpoint: `ep-polished-haze-b29kd207`
+- region: `aws-eu-central-1`
+
+**Rationale:** The exact endpoint host is the smallest independent invariant
+that fits the reviewed process-local DEC-011 libpq bootstrap without adding a
+second credential path, URI in argv, service indirection, or secret storage.
+
+**Consequences:** A missing or different `PGHOST` is a pre-connect nonzero
+failure and cannot reach catalog diagnostics. Endpoint replacement, project or
+branch migration, or provider-region change requires a new reviewed canonical
+decision before any future production diagnostic. These identifiers are
+non-secret metadata; no API token, password, or connection string is recorded.
