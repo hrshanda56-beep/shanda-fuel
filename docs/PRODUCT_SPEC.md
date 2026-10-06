@@ -86,6 +86,16 @@ Expected behavior:
 - cash/banking evidence;
 - sign-off / close-out context.
 
+**CONFIRMED owner workflow:** Daily Operations uses the sequence Open Shift,
+Record Activity, Reconcile, Supervisor Review, and Close Shift. An operator or
+cashier records activity and submits the initial reconciliation. A Supervisor
+is the person accountable for reviewing the reconciliation, investigating or
+resolving ordinary discrepancies where authorised, and approving the close.
+The submitter/operator and approving Supervisor must remain distinguishable in
+the data model and UI. A manager/admin handles authorised exceptions and
+overrides. “Supervisor” has this fixed meaning; only whether approval is
+required before close may later be configured by organisation/station policy.
+
 **CONFIRMED Phase 0 constraint:** Daily Operations Phase 0 is primarily a UI/composition and workflow-alignment exercise. It must not invent new accounting, ledger, schema, approval, or write semantics merely to mirror the paper process.
 
 **CONFIRMED:** Operational timestamps that are presented as station times must use the station’s authoritative timezone when one exists. Missing/invalid station timezone data must not silently fall back to a browser-local or guessed timezone.
@@ -185,23 +195,61 @@ The UI must avoid:
 
 ### 8.1 Daily Operations accountability
 
-**UNRESOLVED:** The exact business meaning of “supervisor” still requires owner confirmation. It may mean assigned supervisor, submitting supervisor, accountable supervisor, approving supervisor, or some combination. Agents must not hard-code a new semantic interpretation without confirmation.
+**CONFIRMED:** “Supervisor” means the person accountable for reviewing and
+approving the shift/day close. The operator/cashier who records or submits the
+close is tracked separately. The fixed workflow is Open Shift, Record Activity,
+Reconcile, Supervisor Review, and Close Shift. Manager/admin users handle
+authorised exceptions and overrides.
 
 ### 8.2 Account/customer reference
 
-**UNRESOLVED:** The required reference for account sales, when it is selected, and whether it represents a customer, account, vehicle, driver, purchase order, or another entity requires owner confirmation.
+**CONFIRMED:** A customer/account is required before an account sale can be
+finalized. An external/customer reference is optional by default but must be
+captured before finalization when organisation, station, customer, or account
+policy requires it. The customer/account relationship itself is never optional.
 
 ### 8.3 Approved fuel
 
-**UNRESOLVED:** Approved-fuel authorization rules, recipient/reference requirements, and staff-benefit terminology require owner confirmation. Phase 0 must not invent approval policy.
+**CONFIRMED:** Approved-fuel transactions require an auditable trail including,
+where applicable, recipient, authorizer, reason/category, and
+authorization/reference. Categories may include staff benefit,
+customer-authorized, company/internal use, and other authorized use. Category
+labels may be administrator-configurable, but core recipient and authorizer
+attribution is mandatory where applicable.
 
 ### 8.4 Cash handover/banking
 
-**UNRESOLVED:** Minimum required cash handover, deposit, and bank-reference information requires owner confirmation. Phase 0 should not present stronger banking/custody assertions than current data supports.
+**CONFIRMED:** Cash handover/deposit evidence includes amount, handing-over or
+depositing person, receiving/verifying person where applicable, date/time, and
+reference. A bank deposit requires a bank/deposit reference. Supporting proof
+or attachment is optional by default but may later be made mandatory by policy.
 
 ### 8.5 Customer account priorities
 
-**UNRESOLVED:** Owner priority among credit, prepaid value, prepaid litres, benefits, limits, vehicles/drivers, and statement content still requires confirmation for the fuller customer lifecycle.
+**CONFIRMED Phase 1 sequencing:** Customer-account work is prioritized as:
+credit and enforceable limits; prepaid monetary value; statements; vehicles
+and drivers; prepaid litres; then benefits. This ordering does not decide
+unresolved accounting, tax, ledger, credit-control, or authorization policy.
+
+### 8.6 Shift/day close summary
+
+**CONFIRMED:** The close summary answers “Is this shift clean, and if not, what
+needs attention?” It surfaces, where applicable, total sales, sales by payment
+method, account/credit sales, expected and actual cash, cash variance,
+expenses, fuel/stock variance, unresolved exceptions, and Supervisor
+approval/sign-off state. Required reconciliation and audit information cannot
+be hidden by configuration.
+
+### 8.7 Fixed semantics, configurable policy
+
+**CONFIRMED:** Core workflow semantics, security, audit integrity, tenant
+isolation, accounting integrity, and actor attribution are fixed. A small set
+of explicit policy settings may control optional behavior such as whether
+Supervisor approval is required at a station, whether account references are
+required, available approved-fuel categories, whether deposit proof is
+mandatory, variance-alert thresholds, and optional close-summary sections.
+Do not introduce a generic arbitrary workflow/rules engine merely to support
+these settings.
 
 ## 9. Permissions and roles
 
@@ -380,13 +428,16 @@ A release is acceptable only when, where applicable:
 
 ## 18. TODO — requires confirmation
 
-The following remain genuine product questions rather than hidden assumptions:
+The following remain genuine product or technical questions rather than hidden
+assumptions:
 
-- final semantic definition of Daily Operations supervisor/accountability;
-- account-sale/customer reference requirements;
-- approved-fuel policy and terminology;
-- minimum cash handover/deposit/bank-reference requirements;
-- priority and scope of the full customer account lifecycle;
 - complete human application role/permission matrix;
+- detailed accounting, ledger, tax, credit-control, and authorization policies
+  for the customer, approved-fuel, cash, and close workflows;
 - formal performance/SLO targets;
-- which Phase 1 provider integrations are required first and their exact contracts.
+- which Phase 1 provider integrations are required first and their exact
+  contracts.
+
+The owner decisions for Supervisor accountability, account-sale references,
+approved-fuel auditability, cash custody minimums, customer-account sequencing,
+and close-summary content are recorded above and are no longer unresolved.

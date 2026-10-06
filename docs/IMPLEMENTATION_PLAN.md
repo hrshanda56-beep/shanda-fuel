@@ -780,24 +780,33 @@ Fix release-blocking correctness/usability findings without reopening Phase 1 sc
 
 ---
 
-## M3-T03 — Record owner decisions on unresolved domain semantics
+## M3-T03 — Record owner decisions on unresolved domain semantics — VERIFIED COMPLETE
 
 **Objective**
 
 Convert owner feedback into explicit decisions without mixing it into ad-hoc code changes.
 
-**Questions to resolve where possible**
+**Resolved owner decisions**
 
-- supervisor/accountability meaning,
-- account-sale reference,
-- approved-fuel terminology/authorization,
-- cash handover/deposit reference minimum,
-- customer account priorities.
+- Supervisor means the accountable reviewer/approver, distinct from the
+  operator/submitter.
+- Account sales require a customer/account before finalization; references are
+  optional by default and must precede finalization when required by policy.
+- Approved-fuel activity carries auditable recipient, authorizer,
+  reason/category, and authorization/reference evidence where applicable.
+- Cash handover/deposit records preserve amount, actor attribution, date/time,
+  and reference; bank deposits require a bank/deposit reference.
+- Customer-account Phase 1 priority is credit/limits, prepaid value,
+  statements, vehicles/drivers, prepaid litres, then benefits.
+- Close summaries are exception-first and include required reconciliation and
+  approval/sign-off information.
 
 **Acceptance criteria**
 
-- Decisions are recorded in product/decision docs.
-- Any resulting Phase 1 tasks are added to the plan.
+- Decisions are recorded in `docs/PRODUCT_SPEC.md`, `docs/DECISIONS.md`, and
+  the bounded configuration rule is reflected in `docs/ARCHITECTURE.md`.
+- Resulting Phase 1 specification work and remaining accounting/security gates
+  are explicit below.
 
 **Parallel safety**
 
@@ -907,7 +916,7 @@ Implement owner-useful dashboard metrics only where the data contract is establi
 
 ---
 
-## M4-T03 — Expand Daily Operations workflow where owner semantics are confirmed
+## M4-T03 — Expand Daily Operations workflow where owner semantics are confirmed — READY FOR SCOPED CONTRACT DECOMPOSITION
 
 **Objective**
 
@@ -923,12 +932,15 @@ Move beyond Phase 0 composition into approved workflow depth.
 
 **Dependencies**
 
-- Owner decisions from M3-T03.
-- Approval infrastructure where required.
+- M3-T03 owner decisions are complete.
+- Approval infrastructure where required for a specific workflow slice.
+- M4-T01 gap audit before implementation claims are made.
 
 **Implementation notes**
 
-Do not create accounting/approval semantics before the owner/domain contract is recorded.
+The owner/domain contract is now recorded. Decompose Daily Operations into
+bounded contract slices before implementation; do not invent unresolved
+accounting, ledger, tax, or approval details.
 
 **Acceptance criteria**
 
@@ -942,7 +954,7 @@ Do not create accounting/approval semantics before the owner/domain contract is 
 
 # M5 — Phase 1: Customers, finance, expenses, and approvals
 
-## M5-T01 — Define full customer lifecycle contract
+## M5-T01 — Define full customer lifecycle contract — READY FOR SPECIFICATION ONLY
 
 **Objective**
 
@@ -960,9 +972,13 @@ Turn the Phase 0 read-oriented Customers surface into a reviewed lifecycle speci
 - account status transitions,
 - permissions and approval requirements.
 
+The owner has fixed the delivery priority but has not supplied detailed
+accounting, ledger, tax, credit-control, or authorization policy. The
+specification must preserve those as explicit gates rather than guessing.
+
 **Dependencies**
 
-- Owner decisions.
+- Owner decisions are recorded in DEC-033, DEC-036, and DEC-037.
 
 **Acceptance criteria**
 
@@ -975,7 +991,7 @@ Turn the Phase 0 read-oriented Customers surface into a reviewed lifecycle speci
 
 ---
 
-## M5-T02 — Implement approved customer lifecycle writes
+## M5-T02 — Implement approved customer lifecycle writes — BLOCKED PENDING REVIEWED CONTRACT
 
 **Objective**
 
@@ -983,7 +999,8 @@ Add only the lifecycle writes approved in M5-T01.
 
 **Dependencies**
 
-- M5-T01.
+- M5-T01 reviewed specification.
+- Explicit accounting/ledger/tax/credit-control/authorization contracts.
 - Security/RLS review.
 
 **Acceptance criteria**
@@ -1154,6 +1171,10 @@ Expand reporting/export behavior around confirmed owner needs and established ca
 
 - M0-T01/M0-T02 access-preflight work can run separately from M1 application candidate work.
 - M1-T01 Customers precision integration can run separately from M1-T02 Daily Ops timezone review when isolated worktrees are used.
+- M4-T03 scoped Daily Operations contract decomposition and M5-T01 customer
+  lifecycle specification can proceed in isolated workstreams while M0-T03
+  remains gated; neither authorizes production access or write implementation
+  before its remaining contracts are reviewed.
 - Once M1-T03 freezes a candidate, M1-T04 database verification and M1-T05 browser verification can run in parallel.
 
 ### Avoid parallel edits
