@@ -42,10 +42,6 @@ export function selectOperationsDashboardMetrics(
   };
 }
 
-function todayInHarare(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Harare' }).format(new Date());
-}
-
 function reportHref(tenantId: string, stationId?: string): string {
   const query = new URLSearchParams({ tenantId });
   if (stationId) query.set('stationId', stationId);
@@ -71,12 +67,10 @@ export function OperationsDashboard({
   const currentContextKey = contextKey(tenantId, stationId);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !stationId) return;
 
     const controller = new AbortController();
-    const today = todayInHarare();
-    const query = new URLSearchParams({ tenantId, fromDate: today, toDate: today });
-    if (stationId) query.set('stationId', stationId);
+    const query = new URLSearchParams({ tenantId, stationId });
 
     fetch(`/api/reports/management?${query.toString()}`, {
       cache: 'no-store',
@@ -113,6 +107,15 @@ export function OperationsDashboard({
       <ContextRequiredState
         title="Tenant context required"
         message="Choose an authorised organisation or station from the shared work-context selector before loading today’s operational facts."
+      />
+    );
+  }
+
+  if (!stationId) {
+    return (
+      <ContextRequiredState
+        title="Station context required"
+        message="Choose an authorised station to load today’s operational facts. An all-stations view remains unavailable until each station’s business date can be represented safely."
       />
     );
   }

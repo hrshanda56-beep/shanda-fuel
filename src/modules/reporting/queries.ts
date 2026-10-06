@@ -6,6 +6,7 @@ import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { authorize } from '../../platform/security/permissions';
 import { AppError } from '../../platform/errors';
+import { deriveBusinessDate } from '../../platform/domain/business-time';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
 import { calculateGrossMargin, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
@@ -40,9 +41,12 @@ function dateInHarare(now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Harare' }).format(now);
 }
 
-export function parseManagementReportQuery(input: unknown): ManagementReportQuery {
+export function parseManagementReportQuery(
+  input: unknown,
+  defaultDate?: string,
+): ManagementReportQuery {
   const parsed = managementReportQuerySchema.parse(input);
-  const today = dateInHarare();
+  const today = defaultDate ?? dateInHarare();
   return {
     ...parsed,
     fromDate: parsed.fromDate ?? today,
@@ -88,10 +92,14 @@ function approvedReconciliations(filters: ManagementReportQuery) {
 async function selectedStation(
   transaction: ReportingTransaction,
   filters: ManagementReportQuery,
-): Promise<{ id: string; legalEntityId: string } | null> {
+): Promise<{ id: string; legalEntityId: string; timezone: string } | null> {
   if (!filters.stationId) return null;
-  const rows = await transaction.execute<{ id: string; legal_entity_id: string }>(sql`
-    select id, legal_entity_id
+  const rows = await transaction.execute<{
+    id: string;
+    legal_entity_id: string;
+    timezone: string;
+  }>(sql`
+    select id, legal_entity_id, timezone
     from app.stations
     where tenant_id = ${filters.tenantId}
       and id = ${filters.stationId}
@@ -100,7 +108,7 @@ async function selectedStation(
   `);
   const station = rows[0];
   if (!station) throw new AppError('NOT_FOUND', 'The requested reporting station was not found');
-  return { id: station.id, legalEntityId: station.legal_entity_id };
+  return { id: station.id, legalEntityId: station.legal_entity_id, timezone: station.timezone };
 }
 
 async function listStations(
@@ -821,13 +829,18 @@ export async function getManagementReportFromRequest(
   request: Request,
   input: unknown,
 ): Promise<ManagementReport> {
-  const filters = parseManagementReportQuery(input);
+  const parsedInput = managementReportQuerySchema.parse(input);
   const authority = await resolveTenantExecutionContext({
     request,
-    requestedTenantId: filters.tenantId,
+    requestedTenantId: parsedInput.tenantId,
   });
+  const initialFilters = parseManagementReportQuery(parsedInput);
   const station = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStation(transaction, filters),
+    selectedStation(transaction, initialFilters),
+  );
+  const filters = parseManagementReportQuery(
+    parsedInput,
+    station ? deriveBusinessDate(new Date(), station.timezone) : undefined,
   );
   const requestedScope = station
     ? {
@@ -909,13 +922,18 @@ export async function getDailyOperationsFromRequest(
   dateBasis: ReportDateBasis;
   rows: readonly DailyOperationsRow[];
 }> {
-  const filters = parseManagementReportQuery(input);
+  const parsedInput = managementReportQuerySchema.parse(input);
   const authority = await resolveTenantExecutionContext({
     request,
-    requestedTenantId: filters.tenantId,
+    requestedTenantId: parsedInput.tenantId,
   });
+  const initialFilters = parseManagementReportQuery(parsedInput);
   const station = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStation(transaction, filters),
+    selectedStation(transaction, initialFilters),
+  );
+  const filters = parseManagementReportQuery(
+    parsedInput,
+    station ? deriveBusinessDate(new Date(), station.timezone) : undefined,
   );
   authorize({
     actor: authority.authorization,
