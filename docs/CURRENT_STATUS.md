@@ -502,9 +502,11 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 
 Use this order unless a current human instruction changes it:
 
-1. Obtain the missing predicate-level, read-only policy evidence and original
-   SQLSTATE/statement context without rerunning Stage 1.
-2. Determine production drift versus assertion/normalization/tooling defect.
+1. Have the approved human operator execute the updated predicate-level,
+   read-only policy diagnostic without rerunning Stage 1.
+2. Obtain the missing predicate-level evidence and original SQLSTATE/statement
+   context, then determine production drift versus assertion/normalization/
+   tooling defect.
 3. Access Review any tooling-only correction.
 4. Rerun Stage 1 from the beginning only after the correction is reviewed and
    human-approved.
