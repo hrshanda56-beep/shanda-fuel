@@ -138,7 +138,7 @@ function subtractExact(
   policy?: (typeof DECIMAL_POLICIES)[keyof typeof DECIMAL_POLICIES],
 ): string {
   const result = new ExactDecimal(left).subtract(new ExactDecimal(right));
-  return policy ? result.quantize(policy).toString() : result.toString();
+  return policy ? result.quantize(policy).value.toFixed(policy.scale) : result.toString();
 }
 
 function contactMetadata(value: unknown): Readonly<Record<string, string>> {
