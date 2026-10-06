@@ -444,10 +444,12 @@ The following remain unresolved and must not be silently invented:
   Unresolved-exception and shift approval/close presentation must use
   authoritative source state or remain truthfully unavailable until a reviewed
   read-model extension exists.
-- M4-T03 is READY FOR SCOPED CONTRACT DECOMPOSITION; implementation still
-  requires the relevant approval and accounting/security contracts.
-- M5-T01 is READY FOR SPECIFICATION ONLY; M5-T02 customer writes remain
-  blocked pending reviewed accounting and security contracts.
+- M4-T03 has a bounded contract decomposition in
+  `docs/architecture/phase1-contract-decomposition.md`; individual slices
+  still require reviewed command/read-model contracts before implementation.
+- M5-T01 has a bounded lifecycle specification packet with its unresolved
+  accounting, tax, credit-control, and authorization gates recorded; M5-T02
+  customer writes remain blocked pending those reviewed contracts.
 
 These decisions do not alter the M0-T03 production diagnostic gate.
 
