@@ -14,17 +14,29 @@ The repository-local runner compares the decoded host inside the reviewed
 DEC-011 parsing path against that repository-controlled value before `psql`
 can execute. This procedure remains a human-run, read-only diagnostic. The
 earlier version was executed by the approved human operator; this updated
-predicate-level evidence procedure has not been executed against production.
+predicate-level evidence procedure has now been executed against production by
+the approved human operator; agents must not execute it.
 
 The exact historical policy assertion is reconstructed from the approved local
 operator tooling at `/Users/wolftech/.codex/phase0/production-dry-run-stage1.sh`,
-around lines 485–513. Its two predicates are:
+around lines 485–513. Its two predicates were:
 
 1. exactly nine target-relation rows named
    `first_user_provisioning_definer` with `cmd='*'` and exact
    `qual`/`with_check` text `(CURRENT_USER = 'migration_owner'::name)`;
 2. no policy anywhere in `pg_policies` whose name matches
    `first_user_provisioning_%`, other than that expected policy name.
+
+The first predicate contained the confirmed operator/preflight defect. It
+queried the normalized `pg_policies.cmd` column but compared it with the raw
+`pg_policy.polcmd` representation `'*'`. PostgreSQL exposes an ALL policy as
+`pg_policy.polcmd='*'` and `pg_policies.cmd='ALL'`. The corrected predicate is
+therefore the same predicate with `pg_policies.cmd = 'ALL'`; its exact
+qualifying expression, with-check expression, target relation set, and global
+unexpected-name check are unchanged. The repository-local diagnostic uses this
+corrected normalized comparison. The immutable external helper is not modified
+by this branch; its approved operator-tool owner must apply this one-line
+correction before a human rerun.
 
 The updated diagnostic returns each predicate, the final `policy_checks_ok`
 conjunction, all globally matching policy rows, complete target rows, and
@@ -132,3 +144,31 @@ and it does not mean that Stage 1 passed.
 No role, ACL, policy, RLS flag, migration, schema, data, password, or
 configuration may be changed as part of this procedure. A successful
 diagnostic does not make Stage 1 pass and does not authorise a rerun or Stage 2.
+
+## Human-approved Stage 1 rerun procedure after required correction
+
+The root cause is verified, but the rerun is not currently safe. The immutable
+external helper must first contain this exact correction in its historical
+`pg_policies` assertion:
+
+```sql
+-- corrected normalized representation
+AND cmd = 'ALL'
+```
+
+Do not run the unchanged helper: its `AND cmd = '*'` comparison is the defect
+that caused the false policy failure. After the operator-tool owner has applied
+and independently reviewed that one-line change, the human operator may use
+the existing approved DEC-011 bootstrap and run the helper from its reviewed
+location with tracing disabled:
+
+```sh
+set +x
+exec /Users/wolftech/.codex/phase0/production-dry-run-stage1.sh
+```
+
+This is a human-controlled Stage 1 rerun procedure, not an instruction for an
+agent. The human must stop at the helper's existing scope-discovery hard stop;
+do not continue to Stage 2, real provisioning, or any remediation. The
+existing helper owns its temporary credential cleanup. No URI, password, or
+other secret may be placed in argv, files, logs, chat, or returned evidence.

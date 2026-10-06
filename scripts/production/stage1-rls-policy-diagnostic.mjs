@@ -153,7 +153,8 @@ WITH expected(schema_name, table_name) AS (
     FROM pg_policies p
     JOIN expected e ON e.schema_name = p.schemaname AND e.table_name = p.tablename
    WHERE p.policyname = 'first_user_provisioning_definer'
-     AND p.cmd = '*'
+     -- pg_policies.cmd is normalized text; raw pg_policy.polcmd '*' is exposed as 'ALL'.
+     AND p.cmd = 'ALL'
      AND p.qual = '(CURRENT_USER = ''migration_owner''::name)'
      AND p.with_check = '(CURRENT_USER = ''migration_owner''::name)'
 ), unexpected_prefixed AS (

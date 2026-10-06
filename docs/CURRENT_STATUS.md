@@ -106,7 +106,7 @@ independent security review is GREEN. The approved human operator has now
 executed the diagnostic read-only against production; Stage 1 has not been
 rerun and no production mutation was performed.
 
-### BLOCKED / IN PROGRESS
+### ROOT CAUSE VERIFIED — REMEDIATION REQUIRED
 
 - The latest Stage 1 production run passed exact checkout/SHA and local
   migration-hash checks, migration-owner identity, provisioner attributes,
@@ -131,33 +131,35 @@ rerun and no production mutation was performed.
   nine exact rows (including exact `qual` and `with_check` text) and the
   absence of any other `first_user_provisioning_%` policy anywhere in
   `pg_policies`; its false branch intentionally executes `SELECT 1 / 0`.
-  The supplied diagnostic summary does not include the derived boolean, the
-  complete raw policy rows, or the original SQLSTATE/statement context.
-  Therefore the inspected invariants show no obvious production drift, but
-  the division-by-zero root cause remains unknown and is not yet classified
-  as either drift or a tooling/normalization defect.
-- A follow-up repo-local diagnostic now reproduces those exact two historical
-  subconditions, returns their derived boolean separately, searches globally
-  for every `first_user_provisioning_%` policy, and exposes normalized plus
-  underlying catalog policy representations. It is prepared for human
-  execution only; it has not yet been executed, and Stage 1 must not be rerun
-  until its evidence is reviewed.
-- Repository inspection established that the operator-side Stage 1 policy
-  assertion that raised `division by zero` is not committed in this checkout;
-  the committed migration, helper, and policy tests contain no corresponding
-  division operation. The approved diagnostic captured the policy catalog but
-  not the original failing statement context or the derived assertion boolean.
-  The Stage 1 root cause remains unknown; this does not establish production
-  drift or an assertion/tooling defect and does not make Stage 1 pass.
+  The approved human predicate-level diagnostic returned
+  `exact_definer_policy_count=0`, `expected_definer_policy_count=9`,
+  `exact_definer_policy_count_ok=false`,
+  `unexpected_prefixed_policy_count=0`,
+  `no_unexpected_prefixed_policy_ok=true`, and `policy_checks_ok=false`.
+  The transaction ended with `ROLLBACK` and the diagnostic exited `0`.
+- The nine expected policies are present and have the required qualifying and
+  check expressions. Their raw `pg_policy.polcmd` is `'*'`, while the
+  normalized `pg_policies.cmd` value is `'ALL'`. The historical assertion
+  compared the normalized column to `'*'`, excluding every valid policy from
+  the exact count. This is a verified operator/preflight normalization bug,
+  not production policy drift for the inspected invariants.
+- The corrected predicate compares `pg_policies.cmd = 'ALL'` and leaves the
+  exact relation set, policy name, `qual`, `with_check`, and global unexpected
+  `first_user_provisioning_%` policy check unchanged. The repository-local
+  diagnostic and regression test now use the corrected normalized comparison.
+- The immutable external operator helper was not modified by this branch. Its
+  historical assertion still requires the operator-tool owner to apply and
+  independently review the exact one-line predicate correction before Stage 1
+  is safe to rerun. Stage 1 has not been rerun; Stage 2, provisioning, and
+  production remediation remain blocked.
 - The independent production target invariant is now established and recorded
   in DEC-031. The diagnostic must compare the decoded process-local `PGHOST`
   against the exact approved endpoint before `psql` executes; `APP_ENV`,
   `PGDATABASE`, `PGPORT`, the migration hash, role membership, and server
   version remain defence-in-depth only.
 - Diagnostic incorporation is complete locally and the final independent
-  security review is GREEN. The initial read-only diagnostic was executed by
-  the approved human operator; the updated predicate-level follow-up remains
-  human-execution-only. Agents must not execute production procedures.
+  security review is GREEN. Both read-only diagnostics were executed by the
+  approved human operator; agents must not execute production procedures.
 - The diagnostic safety procedure and its psql 16.15 fail-closed behavior were
   verified locally. The approved human operator has now contacted production
   only through that read-only diagnostic; no agent has contacted production,
@@ -429,12 +431,11 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 
 ### Active
 
-1. **Production Stage 1 fails closed in the RLS/policy preflight** with a
-   division-by-zero error; the root cause remains unknown. The reviewed
-   diagnostic has now been executed by the approved human operator and
-   collected read-only evidence. The inspected production invariants show no
-   obvious drift, but the exact failing predicate and original SQLSTATE/
-   statement context are still missing, so Stage 1 must not be rerun yet.
+1. **Production Stage 1 failed closed in the RLS/policy preflight** with a
+   division-by-zero error caused by comparing `pg_policies.cmd` to raw
+   `pg_policy.polcmd` notation. The corrected normalized comparison is
+   implemented and locally tested; the immutable external helper still needs
+   its one-line operator-tool correction before human rerun.
 2. **Daily Operations timezone fix is not yet cleanly integrated into the final candidate** even though the scoped implementation/tests are green.
 3. **A8 decimal fix is verified but still needs final clean release-candidate integration.**
 
@@ -448,14 +449,14 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - Existing owner-readiness documents contain stale historical SHAs and pre-candidate status.
 - Some implementation-status/parallel-execution/traceability documentation references older base SHAs.
 - Local integration harness setup is ownership-sensitive and should be documented clearly to avoid future false regressions.
-- The latest Stage 1 RLS/policy preflight failure needs final predicate-level
-  classification before a reviewed rerun. The exhaustive function
-  ACL-grantee validation is already Access Review GREEN. The local-only
-  diagnostic procedure contains the exact human-approved endpoint guard and
-  its initial read-only production evidence was collected successfully. The
-  predicate-level follow-up is prepared but not yet human-executed; the
-  complete policy predicate results and original SQLSTATE/statement context
-  remain unavailable.
+- The latest Stage 1 RLS/policy preflight failure is classified as an
+  operator/preflight normalization defect. The exhaustive function ACL-grantee
+  validation is already Access Review GREEN. The local-only diagnostic
+  procedure contains the exact human-approved endpoint guard, its predicate-
+  level production evidence was collected successfully, and the corrected
+  normalized policy comparison is covered by regression tests. The human
+  rerun remains pending application and review of the one-line correction in
+  the immutable external helper.
 
 ## 17. Owner-resolved product decisions
 
@@ -534,29 +535,25 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 
 Use this order unless a current human instruction changes it:
 
-1. Have the approved human operator execute the updated predicate-level,
-   read-only policy diagnostic without rerunning Stage 1.
-2. Obtain the missing predicate-level evidence and original SQLSTATE/statement
-   context, then determine production drift versus assertion/normalization/
-   tooling defect.
-3. Access Review any tooling-only correction.
-4. Rerun Stage 1 from the beginning only after the correction is reviewed and
+1. Apply and independently review the one-line `pg_policies.cmd = 'ALL'`
+   correction in the immutable external Stage 1 helper.
+2. Rerun Stage 1 from the beginning only after that correction is reviewed and
    human-approved.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+3. Select legitimate production scope and stop before Stage 2 or provisioning.
+4. Run Stage 2 READ ONLY dry run.
+5. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+6. Obtain explicit human approval.
+7. Provision the real first user.
+8. Run authenticated smoke.
+9. FINAL RELEASE GO.
+10. Integrate PR #92 plus Customers clean candidate.
+11. Integrate verified A8 fix.
+12. Integrate reviewed Daily Operations timezone fix.
+13. Run full DB/CI/browser/accessibility/responsive verification.
+14. Deploy.
+15. Verify exact production SHA.
+16. Final owner review.
+17. OWNER READY handoff.
 
 ## 22. Things agents must not assume
 

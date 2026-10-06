@@ -133,6 +133,8 @@ test('diagnostic reproduces both historical policy subconditions and their conju
   );
   assert.match(DIAGNOSTIC_SQL, /p\.qual = '\(CURRENT_USER = ''migration_owner''::name\)'/);
   assert.match(DIAGNOSTIC_SQL, /p\.with_check = '\(CURRENT_USER = ''migration_owner''::name\)'/);
+  assert.match(DIAGNOSTIC_SQL, /p\.cmd = 'ALL'/);
+  assert.doesNotMatch(DIAGNOSTIC_SQL, /p\.cmd = '\*'/);
   assert.match(DIAGNOSTIC_SQL, /policy\.polqual::text AS raw_qual/);
   assert.match(DIAGNOSTIC_SQL, /policy\.polwithcheck::text AS raw_with_check/);
 });

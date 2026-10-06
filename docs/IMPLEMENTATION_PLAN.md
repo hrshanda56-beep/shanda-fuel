@@ -41,29 +41,28 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 The following is the current authoritative Phase 0 sequence, last synchronized
 against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
 
-1. Have the approved human operator execute the updated predicate-level,
-   read-only policy diagnostic without rerunning Stage 1.
-2. Obtain the missing predicate-level evidence and original SQLSTATE/statement
-   context, then classify production drift versus assertion/normalization/
-   tooling defect.
-3. Access Review any tooling-only correction.
-4. Continue M0-T03 through the reviewed Stage 1 rerun and scope discovery only
-   after the correction is reviewed and human-approved.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+1. Apply and independently review the one-line `pg_policies.cmd = 'ALL'`
+   correction in the immutable external Stage 1 operator helper; the
+   repository-local corrected diagnostic and regression coverage are complete.
+2. Have the approved human operator rerun Stage 1 through the existing
+   human-controlled procedure, stopping at its scope-discovery hard stop.
+3. Classify the rerun result and scope discovery; do not continue to Stage 2
+   or provisioning from this task.
+4. Select legitimate production scope.
+5. Run Stage 2 READ ONLY dry run.
+6. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+7. Obtain explicit human approval.
+8. Provision the real first user.
+9. Run authenticated smoke.
+10. FINAL RELEASE GO.
+11. Integrate PR #92 plus Customers clean candidate.
+12. Integrate verified A8 fix.
+13. Integrate reviewed Daily Operations timezone fix.
+14. Run full DB/CI/browser/accessibility/responsive verification.
+15. Deploy.
+16. Verify exact production SHA.
+17. Final owner review.
+18. OWNER READY handoff.
 
 The documentation merge did not change deployed application behavior. The
 production application baseline remains
@@ -203,20 +202,19 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   tooling. It fails with `SELECT 1 / 0` when `policy_checks_ok` is false;
   `policy_checks_ok` requires nine exact `qual` and `with_check` rows and no
   other `first_user_provisioning_%` policy anywhere in `pg_policies`.
-- The supplied evidence does not include that derived boolean, the complete
-  raw rows needed to verify both predicate fields and the global stale-name
-  exclusion, or the original SQLSTATE/statement context. The evidence rules
-  out obvious drift in the inspected nine-relation policy set but does not
-  yet distinguish a hidden policy/predicate mismatch from an assertion or
-  normalization defect.
-- A follow-up repo-local diagnostic has been prepared to reproduce those exact
-  two historical subconditions, return the final boolean and each component,
-  search globally for matching policy names, and expose normalized/raw policy
-  representations. It uses the existing DEC-011 child-only bootstrap and is
-  still human-execution-only.
-- Do not rerun Stage 1 speculatively. Have the human execute only this
-  read-only predicate-level diagnostic, then review any narrow tooling
-  correction before a human-approved Stage 1 rerun.
+- The approved predicate-level diagnostic established that the nine policies
+  are present and correct, but `pg_policies.cmd` normalizes raw
+  `pg_policy.polcmd='*'` to `'ALL'`. The historical `cmd='*'` comparison was
+  therefore a tooling assertion bug; the unexpected-prefixed-policy predicate
+  passed.
+- The repository-local diagnostic now uses `pg_policies.cmd = 'ALL'`, with
+  regression coverage preventing the raw `'*'` comparison from returning.
+  The external helper remains immutable in this task; its owner must apply and
+  independently review the same one-line correction before rerun.
+- Do not rerun Stage 1 from the unchanged helper. After the operator-tool
+  correction is reviewed, the human may execute the reviewed Stage 1 procedure
+  and stop at its existing scope-discovery hard stop. Do not continue to Stage
+  2, provisioning, or remediation.
 - The failure occurred before temporary provisioner password assignment; no
   cleanup is required from that failed run and no scope was selected.
 - Do not guess tenant/legal-entity/station IDs.
@@ -236,10 +234,11 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - Independent security review is GREEN.
 - The initial human diagnostic evidence is collected and reviewed against
   migrations and the historical assertion.
-- Human executes the updated predicate-level diagnostic and returns its
-  redacted policy evidence plus any retained original SQLSTATE/statement
-  context, without rerunning Stage 1.
-- Classify production drift versus assertion/normalization/tooling defect.
+- Human confirms the reviewed external helper contains the corrected
+  normalized `cmd = 'ALL'` predicate, executes the reviewed Stage 1 procedure,
+  and returns redacted output only. Agents do not execute production.
+- Classify the corrected rerun and scope-discovery result; no Stage 2 or
+  provisioning follows from this task.
 
 **Parallel safety**
 
@@ -273,8 +272,9 @@ are recorded in DEC-031.
 Do not treat `APP_ENV`, `PGDATABASE`, `PGPORT`, the migration hash, role
 membership, or PostgreSQL server version alone as production identity. The
 independent security review is GREEN for the initial procedure; the approved
-human operator has executed that initial read-only procedure, and the updated
-predicate-level evidence procedure remains pending human execution.
+human operator has executed both read-only procedures, and the corrected
+normalized comparison is ready for human-approved Stage 1 rerun after the
+immutable external helper receives the same one-line correction.
 
 ---
 
