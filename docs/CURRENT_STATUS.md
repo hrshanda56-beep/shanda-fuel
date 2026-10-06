@@ -435,6 +435,11 @@ The following remain unresolved and must not be silently invented:
 ### Newly unblocked planning work
 
 - M3-T03 owner-decision documentation is VERIFIED COMPLETE.
+- M4-T02 remains WAITING_HUMAN_PRODUCT_DECISION: the repository has an
+  established A10 reporting contract, but no authoritative home-dashboard
+  metric set, default scope, period/date basis, comparison behavior, or
+  attention-section contract. Dashboard implementation must not infer these
+  choices from `/reports` or sample UI data.
 - M4-T03 is READY FOR SCOPED CONTRACT DECOMPOSITION; implementation still
   requires the relevant approval and accounting/security contracts.
 - M5-T01 is READY FOR SPECIFICATION ONLY; M5-T02 customer writes remain

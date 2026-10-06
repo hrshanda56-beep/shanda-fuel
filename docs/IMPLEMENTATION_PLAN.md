@@ -811,7 +811,7 @@ Map remaining owner requirements to existing schema/APIs/modules and identify tr
 
 ---
 
-## M4-T02 — Replace remaining dashboard placeholders/unavailable states with real supported metrics
+## M4-T02 — Replace remaining dashboard placeholders/unavailable states with real supported metrics — WAITING_HUMAN_PRODUCT_DECISION
 
 **Objective**
 
@@ -826,6 +826,15 @@ Implement owner-useful dashboard metrics only where the data contract is establi
 
 - M4-T01.
 - Owner confirmation for ambiguous metric definitions.
+
+**Current gate**
+
+The existing A10 reporting contract does not define the home-dashboard
+contract. Before implementation, the owner must confirm the headline metric
+set, default tenant/station scope, default period/date basis, comparison or
+trend behavior, whether the DEC-038 close-summary fields are reused, and any
+attention section plus its loading/empty/unavailable states. Do not infer these
+from the `/reports` surface or the design-review sample dashboard.
 
 **Implementation notes**
 
