@@ -971,7 +971,7 @@ required security, reconciliation, exception, or authorization behavior.
 
 ---
 
-## M4-T03 — Expand Daily Operations workflow where owner semantics are confirmed — READY FOR SCOPED CONTRACT DECOMPOSITION
+## M4-T03 — Expand Daily Operations workflow where owner semantics are confirmed — DECOMPOSED / READY FOR SCOPED IMPLEMENTATION REVIEW
 
 **Objective**
 
@@ -997,6 +997,13 @@ The owner/domain contract is now recorded. Decompose Daily Operations into
 bounded contract slices before implementation; do not invent unresolved
 accounting, ledger, tax, or approval details.
 
+The bounded decomposition is recorded in
+`docs/architecture/phase1-contract-decomposition.md`. It covers
+accountability/close approval, approved-fuel attribution, cash custody and
+deposit evidence, exception-first close projection, and the separate A4
+delivery/calibration boundary. Each slice still requires its own reviewed
+command/read-model contract before implementation.
+
 **Acceptance criteria**
 
 - Each new write transition has authorization, audit, idempotency/error behavior, and tests.
@@ -1009,7 +1016,7 @@ accounting, ledger, tax, or approval details.
 
 # M5 — Phase 1: Customers, finance, expenses, and approvals
 
-## M5-T01 — Define full customer lifecycle contract — READY FOR SPECIFICATION ONLY
+## M5-T01 — Define full customer lifecycle contract — SPECIFICATION PACKET PREPARED / READY FOR REVIEW
 
 **Objective**
 
@@ -1030,6 +1037,11 @@ Turn the Phase 0 read-oriented Customers surface into a reviewed lifecycle speci
 The owner has fixed the delivery priority but has not supplied detailed
 accounting, ledger, tax, credit-control, or authorization policy. The
 specification must preserve those as explicit gates rather than guessing.
+
+The bounded lifecycle sequence and the explicit unresolved-policy gate list are
+recorded in `docs/architecture/phase1-contract-decomposition.md`, using the
+existing A8 customer-account boundary as the starting contract. This does not
+authorize M5-T02 writes.
 
 **Dependencies**
 
