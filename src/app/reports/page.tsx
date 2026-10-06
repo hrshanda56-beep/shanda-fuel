@@ -32,7 +32,11 @@ export default async function ReportsPage({
         </div>
       </div>
       {tenantId ? (
-        <ManagementReportDashboard tenantId={tenantId} initialStationId={stationId} />
+        <ManagementReportDashboard
+          key={`${tenantId}:${stationId ?? ''}`}
+          tenantId={tenantId}
+          initialStationId={stationId}
+        />
       ) : (
         <ContextRequiredState
           title="Tenant context required"
