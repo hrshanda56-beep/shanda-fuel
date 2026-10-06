@@ -1,26 +1,25 @@
 import { AppShell } from '@/design-system/app-shell';
 import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { OperationsDashboard } from '@/modules/reporting/ui/operations-dashboard';
 
-import { OverviewDashboard, ProductionSafeOverview } from './_overview/overview-dashboard';
-import { sampleContext, sampleTasks } from './_overview/sample-overview';
+export const metadata = {
+  title: { absolute: 'Dashboard · Shanda Fuel' },
+};
 
-/**
- * Owner/Finance overview. The sample presentation is available for local
- * design review only; production never renders synthetic figures.
- */
-export default function OverviewPage() {
-  const isProduction = process.env.NODE_ENV === 'production';
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tenantId?: string; stationId?: string }>;
+}) {
+  const { tenantId, stationId } = await searchParams;
 
   return (
     <AppShell
       navigationProjection={syntheticNavigationProjection}
-      context={isProduction ? undefined : sampleContext}
-      role={isProduction ? undefined : 'Owner'}
-      userName={isProduction ? undefined : 'Demo owner'}
-      openTasks={isProduction ? undefined : sampleTasks}
       searchPlacement="header"
+      pageSubtitle="Operational facts for the current authorised work context."
     >
-      {isProduction ? <ProductionSafeOverview /> : <OverviewDashboard />}
+      <OperationsDashboard tenantId={tenantId} stationId={stationId} />
     </AppShell>
   );
 }
