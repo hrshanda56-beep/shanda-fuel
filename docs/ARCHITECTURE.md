@@ -118,6 +118,30 @@ attribution, and do not justify a generic workflow engine.
 
 Customers Phase 0 includes a read-oriented API surface such as the customer summary route. The real PostgreSQL integration coverage verifies that summary behavior against database data rather than relying only on browser mocks.
 
+### 4.2.1 Customer lifecycle boundary
+
+**CONFIRMED:** Phase 1 customer lifecycle behavior reuses the existing A8
+tenant-scoped customer/account, exact-decimal append-oriented ledger, and
+reservation boundaries. A CREDIT account is disabled unless it has an
+explicitly positive limit; the limit is a hard cap by default. Suspended or
+closed customers, and non-active accounts, cannot initiate new account
+transactions. Customer history is retained rather than hard-deleted.
+
+Statements are reporting artifacts with a monthly calendar-month default in the
+applicable tenant/station timezone; they do not post, pay, or mutate balances.
+Money-value prepaid is the initial supported model; prepaid litres remain a
+separate later balance model with no automatic conversion. Phase 1 does not
+add customer-specific pricing, new tax calculations, FX conversion, or mixed-
+currency balances. Those boundaries remain fixed even where later policy
+configuration is introduced.
+
+The customer-specific authorization meaning is Owner/Admin configuration and
+lifecycle control, Supervisor operational review/use, and Operator selection/
+use in authorized workflows. Existing tenant authorization and RLS remain the
+security boundary. Exact permission-code and migration alignment is a separate
+reviewed change; this architecture note does not authorize broadening existing
+database grants.
+
 ### 4.3 Domain/module organisation
 
 **INFERRED from paths discussed:** Feature code is grouped into domain modules under `src/modules/...`, while platform/security/database behavior sits under `src/platform/...`.

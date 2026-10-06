@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertSourceReferenceUnused,
+  assertCustomerAccountTransactionAllowed,
+  assertCreditAccountHasPositiveLimit,
   cancelCustomerFuelAuthorization,
   createCustomerPaymentEntry,
   createPrepaidTopUpEntry,
@@ -33,6 +35,7 @@ function account(accountType: CustomerAccount['accountType'], id?: string): Cust
     customerId: ids.customer,
     accountType,
     currency: 'USD',
+    ...(accountType === 'CREDIT' ? { creditLimit: money('100.0000') } : {}),
   });
 }
 
@@ -73,6 +76,84 @@ function authorization(target: CustomerAccount, requested: CustomerFuelValue) {
 }
 
 describe('customer account domain', () => {
+  it('requires a positive limit before a credit account can be enabled', () => {
+    expect(() =>
+      newCustomerAccount({
+        id: ids.credit,
+        tenantId: ids.tenant,
+        customerId: ids.customer,
+        accountType: 'CREDIT',
+        currency: 'USD',
+      }),
+    ).toThrow('Credit accounts require a positive credit limit');
+
+    expect(() =>
+      newCustomerAccount({
+        id: ids.credit,
+        tenantId: ids.tenant,
+        customerId: ids.customer,
+        accountType: 'CREDIT',
+        currency: 'USD',
+        creditLimit: money('0.0000'),
+      }),
+    ).toThrow('Credit limit must be positive');
+  });
+
+  it('fails closed when a legacy credit account has no positive limit', () => {
+    const legacyAccount: CustomerAccount = { ...account('CREDIT'), creditLimit: undefined };
+    expect(() => assertCreditAccountHasPositiveLimit(legacyAccount)).toThrow(
+      'Credit account is disabled without a positive credit limit',
+    );
+    expect(() =>
+      requestCustomerFuelAuthorization({
+        id: 'legacy-authorization',
+        account: legacyAccount,
+        stationId: 'station-a',
+        requested: fuel(ids.diesel, '1.0000', '1.000'),
+        requestedBy: 'membership-a',
+        requestedAt: '2026-09-23T07:00:00Z',
+        source: source('legacy-authorization'),
+      }),
+    ).toThrow('Credit account is disabled without a positive credit limit');
+    expect(() =>
+      reserveCustomerFuelAuthorization({
+        authorization: authorization(legacyAccount, fuel(ids.diesel, '1.0000', '1.000')),
+        account: legacyAccount,
+        entries: [],
+        activeReservations: [],
+      }),
+    ).toThrow('Credit account is disabled without a positive credit limit');
+  });
+
+  it('blocks credit authorization above the configured hard cap', () => {
+    const target = newCustomerAccount({
+      id: ids.credit,
+      tenantId: ids.tenant,
+      customerId: ids.customer,
+      accountType: 'CREDIT',
+      currency: 'USD',
+      creditLimit: money('10.0000'),
+    });
+    expect(() =>
+      reserveCustomerFuelAuthorization({
+        authorization: authorization(target, fuel(ids.diesel, '10.0001', '1.000')),
+        account: target,
+        entries: [],
+        activeReservations: [],
+      }),
+    ).toThrow('Credit authorization exceeds the configured credit limit');
+  });
+
+  it('allows account transactions only for active customers and accounts', () => {
+    expect(() => assertCustomerAccountTransactionAllowed('SUSPENDED', 'ACTIVE')).toThrow(
+      'require an active customer and customer account',
+    );
+    expect(() => assertCustomerAccountTransactionAllowed('ACTIVE', 'CLOSED')).toThrow(
+      'require an active customer and customer account',
+    );
+    expect(() => assertCustomerAccountTransactionAllowed('ACTIVE', 'ACTIVE')).not.toThrow();
+  });
+
   it('derives a credit receivable from charges and payments without mutable balance state', () => {
     const target = account('CREDIT', ids.credit);
     const charge = recordCustomerFuelUse({

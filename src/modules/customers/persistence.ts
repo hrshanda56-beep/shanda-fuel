@@ -15,6 +15,7 @@ import {
   createCustomerPaymentEntry,
   createPrepaidTopUpEntry,
   assertSourceReferenceUnused,
+  assertCustomerAccountTransactionAllowed,
   customerLedgerSourceKey,
   deriveAccountBalance,
   recordCustomerFuelUse,
@@ -275,6 +276,13 @@ export async function createCustomerAccountInTransaction(
     throw new AppError('CONFLICT', 'Accounts may only be opened for active customers');
   const accountId = randomUUID();
   const limit = input.creditLimit ?? null;
+  const parsedLimit = limit ? new ExactDecimal(limit).value : null;
+  if (
+    input.accountType === 'CREDIT' &&
+    (!parsedLimit || parsedLimit.isNegative() || parsedLimit.isZero())
+  ) {
+    throw new AppError('VALIDATION_FAILED', 'Credit accounts require a positive credit limit');
+  }
   if (input.accountType !== 'CREDIT' && limit)
     throw new AppError('VALIDATION_FAILED', 'Credit limits apply only to credit accounts');
   await transaction.execute(sql`
@@ -290,8 +298,7 @@ export async function recordCustomerPaymentInTransaction(
   input: RecordCustomerPaymentInput,
 ) {
   const loaded = await loadAccount(transaction, context, input.accountId);
-  if (loaded.account.status !== 'ACTIVE' || loaded.customer.status !== 'ACTIVE')
-    throw new AppError('CONFLICT', 'Payments require an active customer account and customer');
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   assertSourceReferenceUnused(loaded.entries, input.source);
   const entry = createCustomerPaymentEntry({
     id: randomUUID(),
@@ -315,11 +322,7 @@ export async function recordPrepaidTopUpInTransaction(
   input: RecordPrepaidTopUpInput,
 ) {
   const loaded = await loadAccount(transaction, context, input.accountId);
-  if (loaded.account.status !== 'ACTIVE' || loaded.customer.status !== 'ACTIVE')
-    throw new AppError(
-      'CONFLICT',
-      'Prepaid top-ups require an active customer account and customer',
-    );
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   assertSourceReferenceUnused(loaded.entries, input.source);
   if (loaded.account.accountType !== input.accountType)
     throw new AppError(
@@ -353,6 +356,7 @@ export async function requestCustomerFuelAuthorizationInTransaction(
   if (!context.stationId)
     throw new AppError('FORBIDDEN', 'A station context is required for fuel authorization');
   const loaded = await loadAccount(transaction, context, input.accountId);
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   const authorization = requestCustomerFuelAuthorization({
     id: input.authorizationId,
     account: loaded.account,
@@ -442,6 +446,7 @@ export async function authorizeCustomerFuelInTransaction(
 ) {
   const initial = await loadAuthorization(transaction, context, input.authorizationId, false);
   const loaded = await loadAccount(transaction, context, initial.accountId);
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   const next = reserveCustomerFuelAuthorization({
     authorization,
@@ -500,6 +505,7 @@ export async function completeCustomerFuelTransactionInTransaction(
   if (initial.accountId !== input.accountId)
     throw new AppError('FORBIDDEN', 'The authorization does not belong to the requested account');
   const loaded = await loadAccount(transaction, context, input.accountId);
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   await assertPostedA5Evidence(
     transaction,

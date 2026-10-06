@@ -242,8 +242,33 @@ or attachment is optional by default but may later be made mandatory by policy.
 
 **CONFIRMED Phase 1 sequencing:** Customer-account work is prioritized as:
 credit and enforceable limits; prepaid monetary value; statements; vehicles
-and drivers; prepaid litres; then benefits. This ordering does not decide
-unresolved accounting, tax, ledger, credit-control, or authorization policy.
+and drivers; prepaid litres; then benefits. The detailed fixed semantics are
+recorded in DEC-041.
+
+Credit is disabled unless an explicit positive limit exists. The configured
+limit is a hard cap by default and over-limit transactions are blocked. A
+future manager/admin override must be explicit, authorized, and audited.
+Operators and Supervisors cannot silently change credit limits or policy.
+
+Money-value prepaid is the initial prepaid model. Prepaid litres remain a
+separate later balance model, with no automatic conversion. Statements default
+to monthly calendar periods in the applicable tenant/station timezone and are
+reporting artifacts only: they do not post accounting entries, record
+payments, or mutate balances. Customer transactions use the normal applicable
+station selling price; customer-specific pricing is a later bounded contract.
+
+Vehicle/driver restrictions are optional and disabled by default. If enabled,
+eligibility is required before finalization and any exception is an explicitly
+authorized, audited manager/admin action. Benefits are disabled by default and
+remain lowest priority; they cannot block the core customer capabilities and
+cannot be redeemed as cash when later implemented.
+
+Customer records may contain invoicing/contact/reference metadata, but no new
+tax calculation or policy is introduced. Phase 1 uses one operational currency
+per tenant, persists currency identifiers where needed, and does not implement
+FX or mixed-currency balances. Customer states are `ACTIVE`, `SUSPENDED`, and
+`CLOSED`; historical customers are not hard-deleted, and suspended/closed
+customers cannot initiate new account transactions.
 
 ### 8.6 Shift/day close summary
 
@@ -285,6 +310,15 @@ Production first-user provisioning is intentionally restrictive:
 ### 9.2 Application role model
 
 **UNRESOLVED:** The complete end-state human role/permission matrix is not fully specified in the available conversation. Existing code and database permission definitions must be inspected before extending it.
+
+**CONFIRMED customer-account authorization:** Within the customer lifecycle
+boundary, Owner/Admin manage customer configuration, credit limits, prepaid
+configuration, and lifecycle transitions subject to audit. Supervisors may
+review/use eligible accounts but may not alter credit/prepaid policy without a
+separate explicit permission. Operators may select/use eligible customers in
+authorized operational workflows but may not modify financial/account
+configuration. This does not silently resolve the broader application role
+matrix or authorize a permission/migration change without that review.
 
 Do not infer human product roles from PostgreSQL service principals.
 

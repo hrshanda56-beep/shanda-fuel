@@ -715,3 +715,61 @@ optional dashboard sections, display ordering, relevant station-specific cards,
 and variance thresholds, but required security, reconciliation, exception, and
 authorization behavior cannot be disabled. A generic workflow/rules engine is
 not introduced for dashboard configuration.
+
+## DEC-041 — Lock the Phase 1 customer lifecycle semantics
+
+**Status:** ACCEPTED
+
+**Context:** Phase 1 customer lifecycle work needed explicit product
+semantics before bounded implementation could proceed. The owner resolved the
+customer policy questions without selecting new accounting, tax, or FX rules.
+
+**Chosen approach:**
+
+- Credit is disabled unless a positive credit limit is explicitly configured;
+  the limit is a hard cap by default and over-limit transactions are blocked.
+  Any future manager/admin over-limit override must be explicit, authorized,
+  and audited. Operators and Supervisors cannot silently change credit policy
+  or limits.
+- Money-value prepaid is the first prepaid model. Prepaid litres are a later,
+  separate balance model, with no automatic conversion between them.
+- Statements default to monthly calendar periods in the applicable
+  tenant/station timezone. They are reporting artifacts and do not create
+  postings, payments, or balance mutations.
+- Customer transactions use the normal applicable station selling price.
+  Customer-specific pricing is a later bounded contract; no margin, tax,
+  discount, profitability, or new accounting calculation is invented here.
+- Vehicle/driver restrictions are optional and disabled by default. When
+  configured, eligibility is required before finalization; exceptions require
+  manager/admin authorization and audit.
+- Benefits are disabled by default, are the lowest lifecycle priority, and do
+  not block the other customer capabilities. Any later benefit must have
+  explicit eligibility/caps and cannot be redeemed as cash.
+- Customer records may hold invoicing/contact/reference metadata, while
+  existing approved tax behavior remains authoritative. Unresolved tax/
+  accounting behavior stays a separate gate.
+- Phase 1 uses one operational currency per tenant. Currency identifiers are
+  persisted where durable monetary records require them; FX, exchange-rate
+  management, and mixed-currency balances are out of scope.
+- Customer lifecycle states are `ACTIVE`, `SUSPENDED`, and `CLOSED`.
+  Customers with operational history are never hard-deleted. Suspended and
+  closed customers remain readable but cannot initiate new account
+  transactions.
+- Owner/Admin manage customer configuration, credit limits, prepaid
+  configuration, and lifecycle transitions subject to audit. Supervisors may
+  review/use accounts but cannot alter credit/prepaid policy without a later
+  explicit permission. Operators may select/use eligible customers in
+  authorized operational workflows but cannot modify financial/account
+  configuration. Every security-sensitive mutation has actor attribution and
+  auditability.
+
+**Rationale:** These rules establish fixed safety and lifecycle meaning while
+leaving accounting/ledger details, tax treatment, FX, and later bounded
+pricing/benefit contracts to their own reviewed scopes.
+
+**Consequences:** M5-T01 is accepted for these bounded sub-contracts. The
+existing A8 exact-decimal ledger and reservation boundary is reused. M5-T02
+may proceed with positive credit-limit enforcement and active-customer/account
+guards. Role-permission migration alignment, lifecycle transition commands,
+monthly statement read-model details, and the explicitly deferred pricing,
+vehicle/driver, benefits, tax, and FX contracts remain separately scoped.

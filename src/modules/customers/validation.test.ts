@@ -14,6 +14,25 @@ const source = {
 };
 
 describe('customer command validation contracts', () => {
+  it('requires a positive limit for credit accounts', () => {
+    const base = {
+      commandType: 'CreateCustomerAccount' as const,
+      tenantId: ids.tenantId,
+      customerId: ids.customerId,
+      accountType: 'CREDIT' as const,
+      currency: 'USD',
+    };
+    expect(() => createCustomerAccountSchema.parse(base)).toThrow(
+      'Credit accounts require a positive credit limit',
+    );
+    expect(() => createCustomerAccountSchema.parse({ ...base, creditLimit: '0.0000' })).toThrow(
+      'Credit accounts require a positive credit limit',
+    );
+    expect(createCustomerAccountSchema.parse({ ...base, creditLimit: '0.0001' }).creditLimit).toBe(
+      '0.0001',
+    );
+  });
+
   it('accepts an arbitrary uppercase currency code without inventing FX behavior', () => {
     const result = createCustomerAccountSchema.parse({
       commandType: 'CreateCustomerAccount',

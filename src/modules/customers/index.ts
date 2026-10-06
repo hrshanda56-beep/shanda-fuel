@@ -5,6 +5,8 @@ export {
   CUSTOMER_LEDGER_DIRECTIONS,
   CUSTOMER_LEDGER_ENTRY_TYPES,
   CUSTOMER_SOURCE_TYPES,
+  assertCustomerAccountTransactionAllowed,
+  assertCreditAccountHasPositiveLimit,
   assertSourceReferenceUnused,
   cancelCustomerFuelAuthorization,
   createCustomerPaymentEntry,

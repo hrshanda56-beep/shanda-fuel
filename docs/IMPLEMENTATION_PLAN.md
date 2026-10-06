@@ -918,7 +918,7 @@ command/read-model contract before implementation.
 
 # M5 — Phase 1: Customers, finance, expenses, and approvals
 
-## M5-T01 — Define full customer lifecycle contract — SPECIFICATION PACKET PREPARED / READY FOR REVIEW
+## M5-T01 — Define full customer lifecycle contract — ACCEPTED FOR BOUNDED SUB-CONTRACTS
 
 **Objective**
 
@@ -936,18 +936,27 @@ Turn the Phase 0 read-oriented Customers surface into a reviewed lifecycle speci
 - account status transitions,
 - permissions and approval requirements.
 
-The owner has fixed the delivery priority but has not supplied detailed
-accounting, ledger, tax, credit-control, or authorization policy. The
-specification must preserve those as explicit gates rather than guessing.
+DEC-041 now fixes the product semantics for positive hard-capped credit,
+money-value prepaid, monthly reporting statements, normal station pricing,
+optional vehicle/driver restrictions, deferred benefits, metadata/tax
+boundaries, one operational currency, the ACTIVE/SUSPENDED/CLOSED lifecycle,
+and the default customer authorization meaning. The existing A8 exact-decimal
+ledger/reservation boundary remains authoritative; unresolved accounting,
+ledger, tax, and FX details are not invented.
 
-The bounded lifecycle sequence and the explicit unresolved-policy gate list are
+The bounded lifecycle sequence and the remaining sub-contract gates are
 recorded in `docs/architecture/phase1-contract-decomposition.md`, using the
-existing A8 customer-account boundary as the starting contract. This does not
-authorize M5-T02 writes.
+existing A8 customer-account boundary as the starting contract.
 
-**Dependencies**
+**Remaining sub-contract dependencies**
 
-- Owner decisions are recorded in DEC-033, DEC-036, and DEC-037.
+- exact permission-code and migration alignment for the customer-specific role
+  split;
+- lifecycle transition command/audit/idempotency details;
+- monthly statement read-model and timezone-period contract;
+- any accounting/ledger detail not already covered by A8;
+- later customer-specific pricing, vehicle/driver, benefits, tax, and FX
+  contracts.
 
 **Acceptance criteria**
 
@@ -956,21 +965,28 @@ authorize M5-T02 writes.
 
 **Parallel safety**
 
-- Specification can run in parallel with unrelated dashboard work.
+- Positive credit-limit enforcement and active-customer/account guards may
+  proceed as a bounded M5-T02 slice. Other writes require their own reviewed
+  command and migration boundaries.
 
 ---
 
-## M5-T02 — Implement approved customer lifecycle writes — BLOCKED PENDING REVIEWED CONTRACT
+## M5-T02 — Implement approved customer lifecycle writes — IN PROGRESS / CREDIT GUARD SLICE
 
 **Objective**
 
-Add only the lifecycle writes approved in M5-T01.
+Add only the lifecycle behavior approved in M5-T01. The first ready slice
+enforces a positive CREDIT limit as a hard cap and blocks new account
+transactions for SUSPENDED/CLOSED customers or inactive accounts. It reuses
+the existing A8 ledger/reservation behavior and does not add a new accounting
+model or role grant.
 
 **Dependencies**
 
-- M5-T01 reviewed specification.
-- Explicit accounting/ledger/tax/credit-control/authorization contracts.
-- Security/RLS review.
+- DEC-041 and the existing A8 contract.
+- Independent security review of the final customer-domain diff.
+- A0-owned permission/migration alignment before lifecycle mutation commands
+  or broader operator-use authorization are implemented.
 
 **Acceptance criteria**
 
@@ -982,7 +998,8 @@ Add only the lifecycle writes approved in M5-T01.
 
 **Parallel safety**
 
-- Split by independent lifecycle capability only after schema/API contracts are stable.
+- Split by independent lifecycle capability only after its command, schema/API,
+  permission, audit, and migration contracts are stable.
 
 ---
 
