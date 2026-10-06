@@ -21,6 +21,42 @@
 
 Neon provisioning may require its project owner/admin connection for `CREATE ROLE`, `ALTER ROLE`, and ownership reassignment. Treat inability to establish the four-role topology as a deployment blocker; do not weaken the migration or grant model to accommodate a single shared application role.
 
+## Temporary first-user credential authority
+
+The bootstrap contract intentionally leaves `migration_owner` as
+`NOCREATEROLE`. On PostgreSQL 18.6, its reviewed `ADMIN` membership over
+`first_user_provisioner` does not authorize `ALTER ROLE ... PASSWORD`.
+
+Therefore the temporary `first_user_provisioner` password must remain at the
+existing human/provider-owner or deployment-admin boundary used for initial
+managed-PostgreSQL role operations. This is a one-time, operator-controlled
+assignment and matching cleanup only; it is not a new application connection
+class or a persistent elevated credential.
+
+The human-only sequence, once the operator helper has received a separate
+reviewed implementation, is:
+
+1. Run the reviewed Stage 1 migration-owner preflight and stop before any
+   provisioner session. Confirm the role is still `PASSWORD NULL` and all
+   security checks pass.
+2. Through the existing provider/deployment-admin secret-handling workflow,
+   enter the temporary password without putting its URL/password in argv,
+   files, chat, or logs, and execute only the approved role-password
+   assignment for `first_user_provisioner`.
+3. Run the reviewed direct `first_user_provisioner` read-only scope checks.
+   Do not run Stage 2 or provisioning from this sequence.
+4. Through the same approved authority boundary, execute only
+   `ALTER ROLE first_user_provisioner PASSWORD NULL;`, then verify the
+   password is unusable and the role attributes, membership, ownership, and
+   ACL invariants remain exact.
+
+Do not grant `CREATEROLE` to `migration_owner`, use `cloud_admin` or
+`neon_superuser` as an application/bootstrap shortcut, add a persistent
+privileged credential, or create a new SECURITY DEFINER password function.
+The current external Stage 1 helper still attempts assignment through
+`migration_owner`; it must not be rerun until its replacement or narrowly
+reviewed authority handoff is complete.
+
 ## Deploy and verify
 
 1. Deploy the immutable application build through the approved hosting control

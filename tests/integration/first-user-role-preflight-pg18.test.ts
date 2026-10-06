@@ -240,6 +240,44 @@ integration('first-user provisioning provider membership preflight on PostgreSQL
     expect(await runPatchedPreflight()).toBe('passed');
   });
 
+  it('preserves the NOCREATEROLE boundary for password assignment', async () => {
+    const passwordSql = "alter role first_user_provisioner password 'LocalDummyPassword12'";
+
+    await adminClient!`alter role first_user_provisioner password null`;
+    await adminClient!`set role migration_owner`;
+    try {
+      await expect(adminClient!.unsafe(passwordSql)).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await adminClient!`reset role`;
+    }
+
+    try {
+      await adminClient!.unsafe(passwordSql);
+
+      const assignedRoleState = await adminClient!<
+        { rolcreaterole: boolean; rolpassword: string | null }[]
+      >`
+        select rolcreaterole, rolpassword
+          from pg_authid
+         where rolname = 'first_user_provisioner'
+      `;
+      expect(assignedRoleState).toHaveLength(1);
+      expect(assignedRoleState[0]?.rolcreaterole).toBe(false);
+      expect(assignedRoleState[0]?.rolpassword).toEqual(expect.any(String));
+    } finally {
+      await adminClient!`alter role first_user_provisioner password null`;
+
+      const cleanedRoleState = await adminClient!<
+        { rolcreaterole: boolean; rolpassword: string | null }[]
+      >`
+        select rolcreaterole, rolpassword
+          from pg_authid
+         where rolname = 'first_user_provisioner'
+      `;
+      expect(cleanedRoleState).toEqual([{ rolcreaterole: false, rolpassword: null }]);
+    }
+  });
+
   it.each(driftCases)('rejects %s through the SQL-backed preflight', async (_label, mutate) => {
     await establishExactProviderMembership();
     await mutate(adminClient!);

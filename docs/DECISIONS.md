@@ -197,6 +197,50 @@ Status values:
 
 ---
 
+## DEC-040 — Keep ephemeral provisioner password assignment at the existing deployment-admin boundary
+
+**Status:** PROPOSED — HUMAN AUTHORITY REVIEW REQUIRED
+
+**Context:** The accepted DEC-009 procedure assigns a temporary password to
+`first_user_provisioner` through `migration_owner`. The repository bootstrap
+and migration contract intentionally keep `migration_owner` as
+`NOCREATEROLE`; PostgreSQL 18.6 therefore rejects that `ALTER ROLE` operation
+even when the reviewed `ADMIN` membership relationship exists. This is a
+credential-assignment authority defect, not permission to weaken the role
+contract.
+
+**Recommended approach:** Keep `migration_owner` `NOCREATEROLE` and use the
+already documented Neon/provider-owner or deployment-admin boundary from the
+deployment runbook for the single human-controlled temporary password
+assignment and the matching `PASSWORD NULL` cleanup. Keep all Stage 1
+catalog/security checks and all first-user operations on their existing
+reviewed principals. The privileged connection is not stored, passed in
+argv, committed, or made a durable application/runtime credential.
+
+**Why this is the least-risk available option:** It reuses the existing
+bootstrap authority that is already documented for role credential and
+ownership operations, changes no production role attributes, adds no
+`SECURITY DEFINER` surface, and leaves the temporary credential reversible by
+clearing it immediately after the human-controlled operation. The external
+Stage 1 helper must be separately reviewed before it can invoke this boundary;
+the current helper still attempts the assignment as `migration_owner` and is
+not ready for another production run.
+
+**Rejected alternatives:** Granting `CREATEROLE` to `migration_owner` would
+weaken its locked least-privilege contract. A provider-managed
+`cloud_admin`/`neon_superuser` database session, persistent elevated
+credential, or a new SECURITY DEFINER function would create a broader or
+durable privileged surface and conflict with DEC-008, DEC-013, and the
+security-definer restrictions. A second ad-hoc parser or secret path is
+forbidden by DEC-010 and DEC-011.
+
+**Consequence:** M0-T03 remains blocked until the human approves this
+authority boundary and the actual Stage 1 operator helper is changed or
+replaced by a separately reviewed procedure that uses it without exposing
+credentials. No production rerun is authorized by this proposal.
+
+---
+
 ## DEC-014 — Owner handoff uses one production URL, not preview links
 
 **Status:** ACCEPTED

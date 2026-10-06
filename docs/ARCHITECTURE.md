@@ -195,6 +195,17 @@ Key properties:
 - real provisioning requires explicit human approval;
 - the temporary provisioner credential must be cleared (`PASSWORD NULL`) on normal and abnormal exits.
 
+**Credential-assignment boundary:** `migration_owner` remains
+`NOCREATEROLE`. Its reviewed membership/admin relationship to
+`first_user_provisioner` is used for the catalog, ownership, policy, ACL, and
+sentinel evidence checks; it is not sufficient authority to change a role
+password on PostgreSQL 18.6. Until the authority decision in DEC-040 is
+approved and implemented in the operator procedure, temporary password
+assignment remains a human-only operation at the existing Neon/provider-owner
+or deployment-admin bootstrap boundary. No application/runtime role, durable
+provider credential, or new SECURITY DEFINER escape hatch may be introduced
+for this purpose.
+
 ### 6.4 Neon PostgreSQL 18 provider membership
 
 **CONFIRMED:** Neon/PostgreSQL 18 creates an exact provider-managed membership relationship involving `first_user_provisioner` and `migration_owner`. The project evaluated attempts to revoke/recreate/avoid this and selected a fail-closed preflight that accepts only the exact reviewed provider membership shape.
