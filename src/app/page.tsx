@@ -14,11 +14,7 @@ export default async function OverviewPage({
   const { tenantId, stationId } = await searchParams;
 
   return (
-    <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      searchPlacement="header"
-      pageSubtitle="Operational facts for the current authorised work context."
-    >
+    <AppShell navigationProjection={syntheticNavigationProjection} searchPlacement="header">
       <OperationsDashboard tenantId={tenantId} stationId={stationId} />
     </AppShell>
   );
