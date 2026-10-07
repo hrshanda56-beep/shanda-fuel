@@ -115,7 +115,7 @@ function accountFromRow(row: AccountRow): CustomerAccount {
   };
 }
 
-function ledgerFromRow(row: LedgerRow): CustomerLedgerEntry {
+function ledgerFromRow(row: LedgerRow, currency: CurrencyCode): CustomerLedgerEntry {
   const base = {
     id: row.id,
     tenantId: row.tenant_id,
@@ -152,7 +152,7 @@ function ledgerFromRow(row: LedgerRow): CustomerLedgerEntry {
   return {
     ...base,
     accountType: row.account_type,
-    amount: money(row.amount, 'USD'),
+    amount: money(row.amount, currency),
   } as CustomerLedgerEntry;
 }
 
@@ -225,7 +225,7 @@ export async function loadAccount(
       displayName: row.display_name,
       status: row.customer_status,
     },
-    entries: entries.map(ledgerFromRow),
+    entries: entries.map((entry) => ledgerFromRow(entry, row.currency)),
   };
 }
 

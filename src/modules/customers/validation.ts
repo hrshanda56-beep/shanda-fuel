@@ -10,6 +10,10 @@ const currency = z
   .trim()
   .regex(/^[A-Z]{3}$/, 'An uppercase ISO-style currency code is required');
 const instant = z.string().datetime({ offset: true });
+const statementPeriod = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'A statement period must use YYYY-MM');
 
 export const customerAccountTypeSchema = z.enum(['CREDIT', 'PREPAID_VALUE', 'PREPAID_LITRES']);
 export const customerSourceSchema = z.object({
@@ -168,13 +172,25 @@ export const recordPrepaidTopUpSchema = z
     }
   });
 
-export const customerStatementQuerySchema = z.object({
-  tenantId: uuid,
-  accountId: uuid,
-  asOf: instant.optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  cursor: z.string().trim().min(1).max(200).optional(),
-});
+export const customerStatementQuerySchema = z
+  .object({
+    tenantId: uuid,
+    accountId: uuid,
+    /** Business-date month used for a monthly statement read model. */
+    period: statementPeriod.optional(),
+    asOf: instant.optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    cursor: z.string().trim().min(1).max(200).optional(),
+  })
+  .superRefine((input, refinement) => {
+    if (input.period && input.asOf) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['period'],
+        message: 'A statement period cannot be combined with asOf',
+      });
+    }
+  });
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type CreateCustomerAccountInput = z.infer<typeof createCustomerAccountSchema>;

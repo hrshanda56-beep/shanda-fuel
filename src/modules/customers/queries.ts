@@ -23,6 +23,8 @@ export type CustomerAccountStatement = Readonly<{
   accountId: string;
   balance: CustomerAccountBalance;
   lines: readonly CustomerStatementLine[];
+  /** Present when the caller requested a monthly business-date period. */
+  period?: string;
   asOf?: string;
   nextCursor?: string;
 }>;
@@ -210,6 +212,21 @@ function transactionFromRow(row: CustomerTransactionRow): CustomerTransactionSum
   };
 }
 
+function statementPeriodBounds(period: string): {
+  fromBusinessDate: string;
+  toBusinessDateExclusive: string;
+} {
+  const [yearText, monthText] = period.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  return {
+    fromBusinessDate: `${yearText}-${monthText}-01`,
+    toBusinessDateExclusive: `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-01`,
+  };
+}
+
 /**
  * Read-only Phase 0 customer projection. All values are derived inside a
  * trusted tenant transaction from the existing A8 customer tables. The
@@ -366,27 +383,47 @@ export async function getCustomerAccountStatementFromRequest(
   authorizeCustomerCommand(context, 'customer.statement.view');
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const loaded = await loadAccount(transaction, context, query.accountId, false);
-    const asOfEntries = query.asOf
+    const entriesThroughAsOf = query.asOf
       ? loaded.entries.filter((entry) => entry.occurredAt <= query.asOf!)
       : loaded.entries;
+    const entriesForStatement = query.period
+      ? (() => {
+          const bounds = statementPeriodBounds(query.period);
+          return entriesThroughAsOf.filter(
+            (entry) =>
+              entry.businessDate >= bounds.fromBusinessDate &&
+              entry.businessDate < bounds.toBusinessDateExclusive,
+          );
+        })()
+      : entriesThroughAsOf;
+    const balanceEntries = query.period
+      ? (() => {
+          const bounds = statementPeriodBounds(query.period);
+          return loaded.entries.filter(
+            (entry) => entry.businessDate < bounds.toBusinessDateExclusive,
+          );
+        })()
+      : entriesThroughAsOf;
     const cursorIndex = query.cursor
-      ? asOfEntries.findIndex((entry) => entry.id === query.cursor)
+      ? entriesForStatement.findIndex((entry) => entry.id === query.cursor)
       : -1;
     const start = cursorIndex >= 0 ? cursorIndex + 1 : 0;
-    const page = asOfEntries.slice(start, start + query.limit);
-    const balance = deriveAccountBalance(loaded.account, asOfEntries);
+    const page = entriesForStatement.slice(start, start + query.limit);
+    const balance = deriveAccountBalance(loaded.account, balanceEntries);
     const lines = page.map((entry) => {
-      const index = asOfEntries.findIndex((candidate) => candidate.id === entry.id);
+      const index = balanceEntries.findIndex((candidate) => candidate.id === entry.id);
       return {
         entry,
-        runningBalance: deriveAccountBalance(loaded.account, asOfEntries.slice(0, index + 1)),
+        runningBalance: deriveAccountBalance(loaded.account, balanceEntries.slice(0, index + 1)),
       };
     });
-    const nextCursor = start + page.length < asOfEntries.length ? page.at(-1)?.id : undefined;
+    const nextCursor =
+      start + page.length < entriesForStatement.length ? page.at(-1)?.id : undefined;
     return {
       accountId: query.accountId,
       balance,
       lines,
+      ...(query.period ? { period: query.period } : {}),
       ...(query.asOf ? { asOf: query.asOf } : {}),
       ...(nextCursor ? { nextCursor } : {}),
     };
