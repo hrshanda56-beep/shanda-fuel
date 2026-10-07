@@ -10,7 +10,7 @@ import {
   type ContextSelection,
   type CurrentContext,
 } from '@/modules/context';
-import { Button } from './primitives';
+import { Button, SkeletonBlock } from './primitives';
 import { Icon } from './icons';
 import { Modal } from './modal';
 
@@ -31,6 +31,45 @@ type SelectorState =
   | { status: 'ready'; resolution: ContextResolution; error?: undefined }
   | { status: 'error'; resolution?: undefined; error: string };
 
+/*
+ * The shell is mounted by each route boundary, but the authenticated work
+ * context is session-scoped. Share in-flight and completed reads between
+ * those mounts so navigation does not create a request waterfall.
+ */
+const contextReadCache = new Map<string, Promise<ContextResolution>>();
+
+function contextCacheKey(pathname: string, search: string): string {
+  return `${pathname}?${search}`;
+}
+
+function readContextResolution(pathname: string, search: string): Promise<ContextResolution> {
+  const key = contextCacheKey(pathname, search);
+  const cached = contextReadCache.get(key);
+  if (cached) return cached;
+
+  const params = new URLSearchParams(search);
+  params.set('pathname', pathname);
+  const request = fetch(`/api/context?${params.toString()}`, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  }).then(async (response) => {
+    const body = (await response.json().catch(() => null)) as {
+      data?: ContextResolution;
+      message?: string;
+    } | null;
+    if (!response.ok || !body?.data) {
+      throw new Error(body?.message ?? 'The available work context could not be loaded.');
+    }
+    return body.data;
+  });
+
+  contextReadCache.set(key, request);
+  void request.catch(() => {
+    if (contextReadCache.get(key) === request) contextReadCache.delete(key);
+  });
+  return request;
+}
+
 export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSelectorProps) {
   const pathname = usePathname() ?? '/';
   const search = useLocationSearch();
@@ -44,25 +83,9 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = new URLSearchParams(search);
-    params.set('pathname', pathname);
-
-    fetch(`/api/context?${params.toString()}`, {
-      credentials: 'same-origin',
-      cache: 'no-store',
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const body = (await response.json().catch(() => null)) as {
-          data?: ContextResolution;
-          message?: string;
-        } | null;
-        if (!response.ok || !body?.data) {
-          throw new Error(body?.message ?? 'The available work context could not be loaded.');
-        }
-        return body.data;
-      })
+    readContextResolution(pathname, search)
       .then((resolution) => {
+        if (controller.signal.aborted) return;
         setState({ status: 'ready', resolution });
         setSelection(resolution.current);
       })
@@ -96,6 +119,7 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
   const showContextControl = state.status !== 'ready' || !singleStation;
 
   function retry() {
+    contextReadCache.delete(contextCacheKey(pathname, search));
     setState({ status: 'loading' });
     setRefresh((value) => value + 1);
   }
@@ -194,9 +218,15 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
 
 function ContextLoading() {
   return (
-    <div className="context-selector-state" role="status" aria-live="polite">
-      <span className="context-selector-spinner" aria-hidden="true" />
-      <p>Loading authorised work context…</p>
+    <div
+      className="context-selector-state context-selector-loading"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="visually-hidden">Loading authorised work context…</span>
+      <SkeletonBlock width="58%" height="0.9rem" />
+      <SkeletonBlock width="82%" height="0.75rem" />
+      <SkeletonBlock width="42%" height="0.75rem" />
     </div>
   );
 }
