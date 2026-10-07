@@ -389,7 +389,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             {overview.organisation.name} · {overview.station.name} · {overview.station.timezone}
           </p>
         </div>
-        <StatusBadge tone="informational">Server-backed</StatusBadge>
+        <StatusBadge tone="informational">Live station state</StatusBadge>
       </div>
 
       {error ? (
@@ -428,8 +428,8 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             </StatusBadge>
           </div>
           <p className="panel-detail">
-            Business date is derived by the server in {overview.station.timezone}. No browser date
-            is authoritative.
+            Business date follows the station timezone ({overview.station.timezone}). The browser
+            clock is not used for the operating date.
           </p>
           {day ? (
             <dl className="operational-summary">
@@ -457,7 +457,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
           ) : (
             <EmptyState
               title="No business day yet"
-              message="Open the server-derived current business date to begin operations."
+              message="Open the current station business date to begin operations."
             />
           )}
           <div className="form-actions">
@@ -475,7 +475,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                       expectedVersion: day?.version ?? 0,
                     },
                     openDayId,
-                    'Open this server-derived business day?',
+                    'Open this station business day?',
                     'Business day opened.',
                   )
                 }
@@ -497,8 +497,8 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                       expectedVersion: day.version,
                     },
                     day.id,
-                    'Close this business day? The server will require all operated shifts and meter evidence to be complete.',
-                    'Business day closed after server validation.',
+                    'Close this business day? All operated shifts and meter evidence must be complete.',
+                    'Business day closed after validation.',
                   )
                 }
               >
@@ -692,7 +692,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
           {overview.businessDays.length === 0 ? (
             <EmptyState
               title="No business-day history"
-              message="The server has not recorded a business day for this station."
+              message="No business day has been recorded for this station."
             />
           ) : (
             <div className="operations-list">
@@ -724,7 +724,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
         {!day || overview.shifts.length === 0 ? (
           <EmptyState
             title="No shifts recorded"
-            message="Open a business day and start a server-defined shift when the station is ready."
+            message="Open a business day and start a shift when the station is ready."
           />
         ) : (
           <div className="operations-list">
@@ -854,7 +854,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
           ) : overview.reconciliations.length === 0 ? (
             <EmptyState
               title="No reconciliations yet"
-              message="A production reconciliation appears here after a server-backed draft is created for a shift."
+              message="A production reconciliation appears here after a draft is created for a shift."
             />
           ) : (
             <div className="operations-list">
@@ -883,7 +883,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             </div>
           )}
           <p className="semantic-note">
-            <strong>Production lifecycle:</strong> approval posts the canonical sale evidence and
+            <strong>Production lifecycle:</strong> approval posts the recorded sale evidence and
             ends at APPROVED. Separate post and lock revision commands are not used here.
           </p>
         </Card>
@@ -903,7 +903,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
           ) : overview.timeline.length === 0 ? (
             <EmptyState
               title="No recorded actions"
-              message="Authoritative commands will appear here with their actor and server timestamp."
+              message="Recorded commands will appear here with their actor and timestamp."
             />
           ) : (
             <ol className="operations-timeline">

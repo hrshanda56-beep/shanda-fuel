@@ -172,6 +172,12 @@ const paths = {
       <circle cx="19" cy="12" r="1" />
     </>
   ),
+  keyboard: (
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M6 9h.01M9 9h.01M12 9h.01M15 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01" />
+    </>
+  ),
   calendar: (
     <>
       <rect x="3" y="4" width="18" height="17" rx="2" />

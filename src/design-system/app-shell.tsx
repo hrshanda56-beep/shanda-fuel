@@ -1012,6 +1012,10 @@ function AccountMenuDetails({
           <Icon name="users" />
           <span>Account</span>
         </Link>
+        <Link className="account-menu-link" href="/settings#shortcuts">
+          <Icon name="keyboard" />
+          <span>Keyboard shortcuts</span>
+        </Link>
         <SignOutButton />
       </nav>
     </>

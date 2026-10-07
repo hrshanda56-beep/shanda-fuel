@@ -15,7 +15,7 @@ import {
   type InventoryContext,
 } from '@/modules/inventory/ui/inventory-workspace';
 
-export const metadata: Metadata = { title: 'Inventory valuation' };
+export const metadata: Metadata = { title: 'Stock' };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
