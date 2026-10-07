@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
 test('overview shows calm unavailable states without synthetic figures', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
   await expect(
     page.getByText('Live figures are not available for this work context yet.'),
   ).toBeVisible();

@@ -17,8 +17,6 @@ import { Modal } from './modal';
 type FallbackShellContext = Readonly<{
   organisation: string;
   station: string;
-  businessDate: string;
-  shift?: string;
 }>;
 
 type ContextSelectorProps = Readonly<{
@@ -88,6 +86,14 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
       fallback,
     );
   }, [fallback, state]);
+  const singleStation = useMemo(() => {
+    if (state.status !== 'ready') return false;
+    const stations = state.resolution.available.organisations.flatMap((organisation) =>
+      organisation.legalEntities.flatMap((legalEntity) => legalEntity.stations),
+    );
+    return stations.length === 1;
+  }, [state]);
+  const showContextControl = state.status !== 'ready' || !singleStation;
 
   function retry() {
     setState({ status: 'loading' });
@@ -140,19 +146,21 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
           </span>
         ))}
       </p>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="shell-context-trigger"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label="Change work context"
-        aria-describedby="shell-context-current"
-        onClick={onOpen}
-      >
-        <span className="shell-context-trigger-label">Change</span>
-        <Icon name="chevron-down" size="sm" />
-      </button>
+      {showContextControl ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          className="shell-context-trigger"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label="Change work context"
+          aria-describedby="shell-context-current"
+          onClick={onOpen}
+        >
+          <span className="shell-context-trigger-label">Change</span>
+          <Icon name="chevron-down" size="sm" />
+        </button>
+      ) : null}
 
       <Modal
         open={open}
@@ -369,9 +377,7 @@ function contextDisplay(
 ): string[] {
   if (!available || !current) {
     return fallback
-      ? [fallback.organisation, fallback.station, fallback.businessDate, fallback.shift].filter(
-          (part): part is string => Boolean(part),
-        )
+      ? [fallback.station, fallback.organisation].filter((part): part is string => Boolean(part))
       : ['No work context selected'];
   }
   const organisation = available.organisations.find(
@@ -384,9 +390,8 @@ function contextDisplay(
     ? legalEntity?.stations.find((candidate) => candidate.id === current.stationId)
     : undefined;
   return [
-    organisation?.name ?? 'Organisation',
-    ...(legalEntity ? [legalEntity.name] : []),
     current.allStations ? 'All stations' : (station?.name ?? 'No station selected'),
+    [legalEntity?.name, organisation?.name].filter(Boolean).join(' · ') || 'Organisation',
   ];
 }
 

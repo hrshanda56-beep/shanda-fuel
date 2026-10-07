@@ -20,6 +20,7 @@ import { ContextSelector } from './context-selector';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
 import { Icon } from './icons';
 import { Modal } from './modal';
+import { SignOutButton } from '@/modules/settings/ui/sign-out-button';
 import {
   isNavigationItemActive,
   isSingleDestinationSection,
@@ -66,6 +67,7 @@ export type AppShellProps = {
   context?: ShellContext;
   role?: string;
   userName?: string;
+  userEmail?: string;
   breadcrumbs?: readonly ShellBreadcrumb[];
   pageTitle?: string;
   pageSubtitle?: ReactNode;
@@ -111,7 +113,7 @@ function pageTitleForRoute(
     .flatMap((section) => section.items)
     .find((item) => isNavigationItemActive(item, pathname));
   if (!current) return undefined;
-  return current.key === 'today' ? 'Dashboard' : current.label;
+  return current.key === 'today' ? 'Today' : current.label;
 }
 
 type ClosedGroupState = {
@@ -127,10 +129,10 @@ type ClosedGroupState = {
  *
  * - Desktop (≥ 64rem): persistent grouped sidebar; can collapse to an icon
  *   rail (remembered per device and applied before first paint).
- * - Tablet (768–1199px): a persistent icon rail keeps every destination
- *   reachable without taking content width from the workspace.
- * - Phone (<768px): a slim top bar opens the same grouped navigation in a
- *   drawer. Content keeps the full width.
+ * - Tablet (768–1023px): a slim top bar opens the same grouped navigation in
+ *   a drawer. Content keeps the full width.
+ * - Phone (<768px): the same top bar is paired with the fixed four-item
+ *   Today / Shift / Stock / More navigation.
  *
  * Navigation is presentation: visibility comes from `navigationProjection`
  * and every destination re-validates access on the server.
@@ -141,6 +143,7 @@ export function AppShell({
   context,
   role,
   userName,
+  userEmail,
   breadcrumbs = [],
   pageTitle: pageTitleOverride,
   pageSubtitle,
@@ -185,6 +188,7 @@ export function AppShell({
     () => false,
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -235,13 +239,15 @@ export function AppShell({
   );
 
   const openWip = useCallback((request: WipRequest) => {
-    // Close the drawer first so only one modal owns focus and Escape.
+    // Close navigation surfaces first so only one modal owns focus and Escape.
     setMenuOpen(false);
+    setMoreOpen(false);
     setWip(request);
   }, []);
 
   const openContextSelector = useCallback(() => {
     setMenuOpen(false);
+    setMoreOpen(false);
     setContextSelectorOpen(true);
   }, []);
 
@@ -285,7 +291,13 @@ export function AppShell({
           </button>
           <BrandLink href={todayHref} />
           {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
-          <AccountMenu userName={userName} role={role} placement="mobile" />
+          <AccountMenu
+            userName={userName}
+            userEmail={userEmail}
+            role={role}
+            context={context}
+            placement="mobile"
+          />
         </header>
 
         <aside className="shell-sidebar" aria-label="Sidebar">
@@ -334,7 +346,13 @@ export function AppShell({
                   onClose={() => setContextSelectorOpen(false)}
                 />
                 {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
-                <AccountMenu userName={userName} role={role} placement="desktop" />
+                <AccountMenu
+                  userName={userName}
+                  userEmail={userEmail}
+                  role={role}
+                  context={context}
+                  placement="desktop"
+                />
               </div>
             </div>
             <main
@@ -362,7 +380,19 @@ export function AppShell({
         <MobileBottomNavigation
           items={mobileNavigationItems}
           pathname={pathname}
-          onMore={() => setMenuOpen(true)}
+          onMore={() => setMoreOpen(true)}
+        />
+
+        <MoreHub
+          open={moreOpen}
+          onClose={() => setMoreOpen(false)}
+          sections={sections}
+          onWip={openWip}
+          onContextRequired={openContextSelector}
+          userName={userName}
+          userEmail={userEmail}
+          role={role}
+          context={context}
         />
 
         <Modal
@@ -420,7 +450,7 @@ function MobileBottomNavigation({
   pathname,
   onMore,
 }: {
-  items: readonly Extract<ResolvedNavigationItem, { state: 'link' }>[];
+  items: readonly ResolvedNavigationItem[];
   pathname: string | null;
   onMore: () => void;
 }) {
@@ -431,14 +461,24 @@ function MobileBottomNavigation({
           const active = isNavigationItemActive(item, pathname);
           return (
             <li key={item.key}>
-              <Link
-                className="shell-mobile-nav-link"
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-              >
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-              </Link>
+              {item.state === 'link' ? (
+                <Link
+                  className="shell-mobile-nav-link"
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                </Link>
+              ) : (
+                <span
+                  className="shell-mobile-nav-link shell-mobile-nav-link-restricted"
+                  aria-disabled="true"
+                >
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                </span>
+              )}
             </li>
           );
         })}
@@ -457,6 +497,137 @@ function MobileBottomNavigation({
       </ul>
     </nav>
   );
+}
+
+const MORE_NAVIGATION_KEYS = [
+  'reports',
+  'customers',
+  'suppliers',
+  'cash',
+  'settlements',
+  'reconciliations',
+  'settings',
+] as const;
+
+function MoreHub({
+  open,
+  onClose,
+  sections,
+  onWip,
+  onContextRequired,
+  userName,
+  userEmail,
+  role,
+  context,
+}: {
+  open: boolean;
+  onClose: () => void;
+  sections: readonly ResolvedNavigationSection[];
+  onWip: (request: WipRequest) => void;
+  onContextRequired: () => void;
+  userName?: string;
+  userEmail?: string;
+  role?: string;
+  context?: ShellContext;
+}) {
+  const items = MORE_NAVIGATION_KEYS.flatMap((key) => {
+    const item = sections.flatMap((section) => section.items).find((entry) => entry.key === key);
+    return item ? [item] : [];
+  });
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="More"
+      description="Lower-frequency areas and account controls."
+      size="lg"
+      className="more-hub-modal"
+      returnFocus={() => document.querySelector<HTMLButtonElement>('.shell-mobile-nav-more')}
+    >
+      <div className="more-hub">
+        <div className="more-hub-section" aria-labelledby="more-destinations-title">
+          <h3 id="more-destinations-title">Destinations</h3>
+          <ul className="more-hub-list">
+            {items.map((item) => (
+              <li key={item.key}>
+                <MoreHubEntry
+                  item={item}
+                  onClose={onClose}
+                  onWip={onWip}
+                  onContextRequired={onContextRequired}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="more-hub-section" aria-labelledby="more-account-title">
+          <h3 id="more-account-title">Account</h3>
+          <AccountMenuDetails
+            userName={userName}
+            userEmail={userEmail}
+            role={role}
+            context={context}
+          />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MoreHubEntry({
+  item,
+  onClose,
+  onWip,
+  onContextRequired,
+}: {
+  item: ResolvedNavigationItem;
+  onClose: () => void;
+  onWip: (request: WipRequest) => void;
+  onContextRequired: () => void;
+}) {
+  const pathname = usePathname();
+
+  if (item.state === 'link') {
+    return (
+      <Link
+        className="more-hub-link"
+        href={item.href}
+        aria-current={isNavigationItemActive(item, pathname) ? 'page' : undefined}
+        onClick={onClose}
+      >
+        <Icon name={item.icon} />
+        <span>{item.label}</span>
+        <Icon name="chevron-right" className="more-hub-link-chevron" />
+      </Link>
+    );
+  }
+
+  if (item.state === 'wip' && item.reason === 'station') {
+    return (
+      <button type="button" className="more-hub-link" onClick={onContextRequired}>
+        <Icon name={item.icon} />
+        <span>{item.label}</span>
+        <Icon name="chevron-right" className="more-hub-link-chevron" />
+      </button>
+    );
+  }
+
+  if (item.state === 'wip') {
+    return (
+      <button
+        type="button"
+        className="more-hub-link"
+        onClick={() => onWip({ feature: item.feature, message: item.message })}
+      >
+        <Icon name={item.icon} />
+        <span>{item.label}</span>
+        <Icon name="chevron-right" className="more-hub-link-chevron" />
+      </button>
+    );
+  }
+
+  return null;
 }
 
 /* Navigation ---------------------------------------------------------------- */
@@ -729,11 +900,15 @@ function BrandLink({ href }: { href: string }) {
 
 function AccountMenu({
   userName,
+  userEmail,
   role,
+  context,
   placement,
 }: {
   userName?: string;
+  userEmail?: string;
   role?: string;
+  context?: ShellContext;
   placement: 'desktop' | 'mobile';
 }) {
   const [open, setOpen] = useState(false);
@@ -793,17 +968,53 @@ function AccountMenu({
           aria-label="Account menu"
           tabIndex={-1}
         >
-          <div className="account-menu-identity">
-            <strong>{displayName ?? 'Account preferences'}</strong>
-            {displayRole ? <span>{displayRole}</span> : null}
-          </div>
-          <div role="group" aria-label="Theme" className="account-menu-theme">
-            <span className="account-menu-label">Theme</span>
-            <ThemeControl />
-          </div>
+          <AccountMenuDetails
+            userName={displayName}
+            userEmail={userEmail}
+            role={displayRole}
+            context={context}
+          />
         </div>
       ) : null}
     </div>
+  );
+}
+
+function AccountMenuDetails({
+  userName,
+  userEmail,
+  role,
+  context,
+}: {
+  userName?: string;
+  userEmail?: string;
+  role?: string;
+  context?: ShellContext;
+}) {
+  return (
+    <>
+      <div className="account-menu-identity">
+        <strong>{displayableIdentity(userName) ?? 'Account'}</strong>
+        {userEmail?.trim() ? <span>{userEmail.trim()}</span> : null}
+        {displayableRole(role) ? <span>{displayableRole(role)}</span> : null}
+        {context?.organisation || context?.station ? (
+          <span className="account-menu-context">
+            {[context.station, context.organisation].filter(Boolean).join(' · ')}
+          </span>
+        ) : null}
+      </div>
+      <div role="group" aria-label="Appearance" className="account-menu-theme">
+        <span className="account-menu-label">Appearance</span>
+        <ThemeControl />
+      </div>
+      <nav className="account-menu-actions" aria-label="Account actions">
+        <Link className="account-menu-link" href="/settings#account">
+          <Icon name="users" />
+          <span>Account</span>
+        </Link>
+        <SignOutButton />
+      </nav>
+    </>
   );
 }
 
@@ -1038,6 +1249,6 @@ function subscribeToViewport(onChange: () => void) {
 function readShellMode(): 'mobile' | 'tablet' | 'desktop' {
   if (typeof window === 'undefined') return 'desktop';
   if (window.innerWidth < 768) return 'mobile';
-  if (window.innerWidth < 1200) return 'tablet';
+  if (window.innerWidth < 1024) return 'tablet';
   return 'desktop';
 }

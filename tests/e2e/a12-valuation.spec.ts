@@ -10,7 +10,7 @@ test.describe('A12 inventory valuation operator surface', () => {
     await expect(
       page.getByRole('heading', { name: 'Choose a station to view inventory', level: 2 }),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Inventory', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stock', level: 1 })).toBeVisible();
   });
 
   test('valuation entry state has no detectable accessibility violations and supports keyboard focus', async ({
