@@ -1,10 +1,31 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
+async function openFoundation(page: import('@playwright/test').Page) {
+  const response = await page.goto('/foundation');
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('html#__next_error__')).toHaveCount(0);
+}
+
 test('foundation page has no detectable accessibility violations', async ({ page }) => {
-  await page.goto('/foundation');
+  await openFoundation(page);
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test('foundation modal and sheet triggers render and open across the client boundary', async ({
+  page,
+}) => {
+  await openFoundation(page);
+
+  await page.getByRole('button', { name: 'Open accessible dialog' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Confirm return' });
+  await expect(dialog).toBeVisible();
+  await page.getByRole('button', { name: 'Close Confirm return' }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('button', { name: 'Open mobile sheet' }).click();
+  await expect(page.getByRole('dialog', { name: 'Quick context' })).toBeVisible();
 });
 
 test('foundation honors reduced motion preference', async ({ page }) => {
@@ -18,7 +39,7 @@ test('foundation honors reduced motion preference', async ({ page }) => {
 
 test('foundation remains accessible with dark system preference', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.goto('/foundation');
+  await openFoundation(page);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
@@ -26,7 +47,7 @@ test('foundation remains accessible with dark system preference', async ({ page 
 
 test('mobile shell remains accessible with valid navigation semantics', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/foundation');
+  await openFoundation(page);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

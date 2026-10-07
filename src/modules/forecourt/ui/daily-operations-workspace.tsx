@@ -646,7 +646,17 @@ export function DailyOperationsWorkspace({
     ? Object.values(record.totals.stockVariance).some((value) => !isZero(value))
     : false;
 
-  if (loading) return <LoadingState label="Loading daily operations" />;
+  if (loading)
+    return (
+      <>
+        {notice ? (
+          <div className="state state-success" role="status" aria-live="polite">
+            {notice}
+          </div>
+        ) : null}
+        <LoadingState label="Loading daily operations" />
+      </>
+    );
   if (error && !operation) {
     return (
       <ErrorState

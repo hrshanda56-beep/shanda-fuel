@@ -331,6 +331,16 @@ test.describe('production reconciliation persistence', () => {
     context,
     page,
   }) => {
+    // beforeAll intentionally preserves existing rows on conflict. Restore this
+    // fixed shift because the reconciliation scenario retimes it around now().
+    await client.unsafe(`
+      update app.shifts
+      set planned_start_at = '2026-09-23T06:00:00Z',
+          planned_end_at = '2026-09-23T14:00:00Z'
+      where tenant_id = '${ids.tenant}'
+        and station_id = '${ids.station}'
+        and id = '${ids.shift}'
+    `);
     await authenticate(context, supervisorToken);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(

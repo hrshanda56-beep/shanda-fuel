@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { isDesignSystemReferenceAvailable } from '@/design-system/reference/availability';
+import { FoundationModalShowcase } from '@/design-system/reference/foundation-modal-showcase';
 import { ForecourtWorkspace } from '@/modules/forecourt/ui/forecourt-workspace';
 import {
   formatBusinessDate,
@@ -14,8 +15,6 @@ import {
   Button,
   Card,
   ConflictState,
-  BottomSheet,
-  DialogFrame,
   EvidenceFile,
   EmptyState,
   ErrorState,
@@ -288,20 +287,7 @@ export default function FoundationPreviewPage() {
           detail="Synthetic evidence · private storage reference pending A0 platform wiring"
         />
         <div className="modal-demo-grid">
-          <DialogFrame
-            trigger={<Button variant="secondary">Open accessible dialog</Button>}
-            title="Confirm return"
-            description="This is a synthetic modal surface for future named commands."
-          >
-            <p>Focus is contained here until the dialog is closed.</p>
-          </DialogFrame>
-          <BottomSheet
-            trigger={<Button variant="quiet">Open mobile sheet</Button>}
-            title="Quick context"
-            description="Short contextual tasks can use this responsive presentation."
-          >
-            <p>Longer workflows should remain full pages.</p>
-          </BottomSheet>
+          <FoundationModalShowcase />
         </div>
       </section>
     </AppShell>
