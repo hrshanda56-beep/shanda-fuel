@@ -39,19 +39,17 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 ## Current critical path
 
 The following is the current authoritative Phase 0 sequence, last synchronized
-against main `8b9d163763cb4fab52b96aed225f7553f0069e65` and the frozen Phase 0
-candidate `498fc95893c0b6313e5e719888bebba1850fcd9d`:
+against the final pushed candidate `07263c7fbb9883a77bb73bd226f353224a54ea11`:
 
-1. Complete the corrected authorization-projection review on the combined
-   Phase 0 candidate.
-2. Confirm the dependency-audit CI job and all required non-production gates.
-3. Complete the disposable PostgreSQL 18.6 release lifecycle gate.
-4. Human executes the reviewed production Stage 1 procedure.
-5. Select legitimate production scope and run the Stage 2 READ ONLY dry run.
-6. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-7. Obtain explicit human approval, provision the real first user, and run
+1. Clear the remaining GitHub Actions quality/browser gate on the exact pushed
+   candidate. The dependency audit, runtime-role, secret, SAST, local browser,
+   and disposable PostgreSQL 18.6 gates are already green.
+2. Human executes the reviewed production Stage 1 procedure.
+3. Select legitimate production scope and run the Stage 2 READ ONLY dry run.
+4. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+5. Obtain explicit human approval, provision the real first user, and run
    authenticated smoke.
-8. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
+6. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
    exact production SHA, and complete owner handoff.
 
 The frozen candidate's authorization-projection issue was a real UI/control

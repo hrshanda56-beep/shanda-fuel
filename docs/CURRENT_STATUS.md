@@ -293,19 +293,15 @@ Across the prepared candidate work:
 - A8/database verification passed after the decimal fix,
 - broader non-provisioning integration suite passed 96/0 with 17 intentional provisioning-only skips.
 
-### PARTIAL / pending final combined verification
+### PARTIAL / CI browser gate pending
 
-After the A8 fix and Daily Ops timezone patch are cleanly integrated together, the final release candidate still needs a combined gate including:
-
-- full relevant unit suite,
-- integration/database checks,
-- typecheck,
-- lint/format,
-- build,
-- browser/E2E,
-- accessibility,
-- responsive checks,
-- security/runtime-role checks as applicable.
+The combined Phase 0 candidate has passed the local unit, integration,
+typecheck, lint, format, build, browser, accessibility, mobile, runtime-role,
+and PostgreSQL 18.6 lifecycle checks. The remaining release gate is the
+authoritative GitHub Actions quality job: its browser run continues to show
+non-deterministic Next development-server/error-page and DB-backed E2E
+failures despite local reproduction passing and the configured CI retry policy
+being enabled.
 
 ## 11. Owner readiness
 
@@ -381,8 +377,10 @@ the client shell received an all-visible synthetic navigation projection. The
 current release candidate replaces that with a server-derived projection from
 the authenticated actor and validated tenant/legal-entity/station context,
 fails closed to an empty projection, and limits the synthetic projection to
-the explicit non-production `APP_ENV=test` test fixture. This correction remains subject to
-the fresh independent final security review required for the candidate.
+the explicit non-production `APP_ENV=test` test fixture. This correction was
+independently reviewed GREEN on the final candidate; that review did not
+approve production release by itself. The CI quality/browser gate remains
+open.
 
 ### Closed / not product bugs
 
