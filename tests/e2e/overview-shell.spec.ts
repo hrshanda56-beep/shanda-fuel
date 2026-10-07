@@ -39,9 +39,12 @@ test('overview shows calm unavailable states without synthetic figures', async (
     page.getByText('Live figures are not available for this work context yet.'),
   ).toBeVisible();
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'Keep today moving',
+    'Select an authorised station',
     'Today at a glance',
     'Statistics by period',
     'Needs attention',
+    'Recent activity',
   ]);
   await expect(page.getByText('Sample data for design review.', { exact: false })).toHaveCount(0);
   await expect(page.locator('.metric-card')).toHaveCount(0);

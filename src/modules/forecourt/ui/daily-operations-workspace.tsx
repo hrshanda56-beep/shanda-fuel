@@ -770,9 +770,15 @@ export function DailyOperationsWorkspace({
         </div>
       ) : null}
 
-      <nav className="operations-steps" aria-label="Daily workflow sections">
-        {['Shift', 'Meters', 'Evidence', 'Cash', 'Review'].map((label, index) => (
-          <a key={label} href={`#operations-${label.toLowerCase()}`}>
+      <nav className="operations-steps" aria-label="Shift workflow stages">
+        {[
+          ['Open', 'shift'],
+          ['Readings', 'meters'],
+          ['Sales and cash', 'evidence'],
+          ['Review', 'review'],
+          ['Close', 'review'],
+        ].map(([label, target], index) => (
+          <a key={label} href={`#operations-${target}`}>
             <span>{index + 1}</span>
             {label}
           </a>
@@ -1466,7 +1472,11 @@ export function DailyOperationsWorkspace({
         </div>
 
         <aside className="operations-sidebar" aria-label="Daily operations status">
-          <Card as="section" className="panel sticky-panel" aria-labelledby="operations-save-title">
+          <Card
+            as="section"
+            className="panel sticky-panel operations-save-panel"
+            aria-labelledby="operations-save-title"
+          >
             <SectionHeading
               eyebrow="Draft resilience"
               title="Server-backed draft"

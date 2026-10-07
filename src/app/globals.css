@@ -592,6 +592,30 @@
     position: static;
   }
 
+  .operations-save-panel {
+    position: fixed;
+    z-index: var(--z-sticky);
+    right: var(--page-gutter);
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    left: var(--page-gutter);
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-color: var(--accent-border);
+    background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+    box-shadow: var(--shadow-md);
+    backdrop-filter: blur(12px);
+  }
+
+  .operations-save-panel .section-heading,
+  .operations-save-panel .panel-detail {
+    display: none;
+  }
+
+  .operations-save-panel .save-status {
+    margin: 0;
+  }
+
   /* The five workflow steps share one row: number above label. */
   .operations-steps {
     display: grid;
@@ -605,7 +629,7 @@
     justify-content: center;
     gap: var(--space-1);
     padding: var(--space-1-5) 0;
-    font-size: var(--font-size-2xs);
+    font-size: var(--font-size-xs);
   }
 
   .entry-row {
@@ -623,6 +647,79 @@
   gap: var(--section-gap);
 }
 
+.today-hero,
+.today-next-action {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.today-hero {
+  padding-block: var(--space-2) 0;
+}
+
+.today-hero h2,
+.today-next-action h2 {
+  margin-bottom: var(--space-2);
+}
+
+.today-hero .lede,
+.today-next-action p:last-child {
+  max-width: 58ch;
+  margin-bottom: 0;
+}
+
+.today-next-action {
+  padding: var(--space-6);
+  border-color: var(--accent-border);
+  background: var(--bg-surface);
+}
+
+.today-next-action-copy {
+  min-width: 0;
+}
+
+.today-stage-summary {
+  display: grid;
+  min-width: min(100%, 18rem);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.today-stage-summary div {
+  min-width: 0;
+  padding-left: var(--space-3);
+  border-left: var(--border-width) solid var(--accent-border);
+}
+
+.today-stage-summary dt,
+.today-stage-summary dd {
+  margin: 0;
+}
+
+.today-stage-summary dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.today-stage-summary dd {
+  margin-top: var(--space-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.today-empty-grid {
+  display: grid;
+  gap: var(--grid-gap);
+}
+
+.today-empty-grid .card {
+  min-width: 0;
+}
+
 .today-top,
 .today-overview {
   display: grid;
@@ -637,5 +734,24 @@
 @media (min-width: 64rem) {
   .today-overview {
     grid-template-columns: minmax(0, 1.6fr) minmax(17rem, 1fr);
+  }
+
+  .today-empty-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .today-hero,
+  .today-next-action {
+    display: grid;
+  }
+
+  .today-next-action {
+    padding: var(--space-4);
+  }
+
+  .today-stage-summary {
+    min-width: 0;
   }
 }
