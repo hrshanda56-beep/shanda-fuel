@@ -426,9 +426,10 @@ prerequisite.
 avoids creating a meaningless production role.
 
 **Consequences:** The exhaustive validation and independent Access Review are
-GREEN. The current Stage 1 blocker is separate: the latest RLS/policy
-preflight failed closed with a division-by-zero error and remains under
-investigation.
+GREEN. The separate Stage 1 blocker is now diagnosed: its historical policy
+assertion compared normalized `pg_policies.cmd` with raw `pg_policy.polcmd`.
+The repository-local diagnostic is corrected; the external helper still
+requires owner-applied correction and human retry.
 
 ---
 

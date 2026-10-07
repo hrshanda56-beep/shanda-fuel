@@ -183,9 +183,13 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - The latest run passed identity, provider-membership, schema-capability,
   runtime-role, migration-0021, and RLS/Force-RLS relation checks, then failed
   closed in the RLS/policy preflight with `ERROR: division by zero`.
-- Treat the cause as under investigation: production drift, assertion defect,
-  catalog normalization mismatch, or another policy-property mismatch remain
-  possible.
+- Predicate-level evidence verified the assertion defect: normalized
+  `pg_policies.cmd` was compared with raw `pg_policy.polcmd`; raw `'*'` is
+  exposed as normalized `'ALL'`, producing an exact-policy count of zero.
+  No unexpected prefixed policies were observed.
+- The repository-local diagnostic now uses `cmd = 'ALL'` with regression
+  coverage. The external operator helper remains unchanged and must be
+  corrected and independently reviewed by its owner before human retry.
 - The failure occurred before temporary provisioner password assignment; no
   cleanup is required from that failed run and no scope was selected.
 - Do not guess tenant/legal-entity/station IDs.
