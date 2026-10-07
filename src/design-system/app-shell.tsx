@@ -265,10 +265,13 @@ export function AppShell({
         data-sidebar={collapsed ? 'collapsed' : 'expanded'}
         data-shell-mode={shellMode}
       >
-        <header className="shell-topbar" aria-label="Application header">
+        <nav className="shell-skip-navigation" aria-label="Skip navigation">
           <a className="skip-link" href="#main-content">
             Skip to main content
           </a>
+        </nav>
+
+        <header className="shell-topbar" aria-label="Application header">
           <button
             ref={menuButtonRef}
             type="button"
