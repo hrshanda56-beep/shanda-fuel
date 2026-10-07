@@ -10,6 +10,8 @@ review pass.
 | `today-390-light.png` | 390 × 844 | light |
 | `today-768-light.png` | 768 × 1024 | light |
 | `today-1440-light.png` | 1440 × 900 | light |
+| `signin-390-light.png` | 390 × 844 | light |
+| `signin-390-dark.png` | 390 × 844 | dark |
 
 The browser review also covered the tablet drawer, mobile More hub, desktop
 account and appearance menus, and the fixed mobile navigation bar.
