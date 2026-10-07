@@ -16,8 +16,12 @@ export type NavigationProjectionInput = Readonly<{
 
 export const E2E_NAVIGATION_FIXTURE_HEADER = 'x-shanda-e2e-navigation-fixture';
 
-export function allowsE2ENavigationFixture(appEnv: string | undefined, header: string | null) {
-  return appEnv === 'e2e' && header === 'synthetic';
+export function allowsE2ENavigationFixture(
+  appEnv: string | undefined,
+  header: string | null,
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+) {
+  return nodeEnv !== 'production' && appEnv === 'e2e' && header === 'synthetic';
 }
 
 const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly PermissionCode[]>> =

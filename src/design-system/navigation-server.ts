@@ -27,6 +27,7 @@ export async function getServerNavigationProjection(
     allowsE2ENavigationFixture(
       process.env.APP_ENV,
       requestHeaders.get(E2E_NAVIGATION_FIXTURE_HEADER),
+      process.env.NODE_ENV,
     )
   ) {
     return syntheticNavigationProjection;

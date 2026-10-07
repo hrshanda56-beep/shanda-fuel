@@ -25,6 +25,7 @@ describe('server navigation projection', () => {
   it('allows the synthetic projection only for the explicit non-production E2E fixture', () => {
     expect(allowsE2ENavigationFixture('e2e', 'synthetic')).toBe(true);
     expect(allowsE2ENavigationFixture('production', 'synthetic')).toBe(false);
+    expect(allowsE2ENavigationFixture('e2e', 'synthetic', 'production')).toBe(false);
     expect(allowsE2ENavigationFixture('e2e', null)).toBe(false);
   });
 
