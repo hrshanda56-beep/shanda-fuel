@@ -28,7 +28,11 @@ export FIRST_USER_PROVISIONING_TEST_CROSS_ENTITY_STATION_ID='aaaaaaaa-aaaa-4aaa-
 export FIRST_USER_PROVISIONING_TEST_ROLLBACK_TENANT_ID='33333333-3333-4333-8333-333333333333'
 export FIRST_USER_PROVISIONING_TEST_ROLLBACK_LEGAL_ENTITY_ID='cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 export FIRST_USER_PROVISIONING_TEST_ROLLBACK_STATION_ID='cccccccc-cccc-4ccc-8ccc-ccccccccccc1'
+export FIRST_OWNER_PROVISIONING_TEST_TENANT_ID='a8852b9f-c490-4a72-a3f3-8662aeb14a8a'
+export FIRST_OWNER_PROVISIONING_TEST_LEGAL_ENTITY_ID='cb5789ea-0979-450e-83d1-9834135cbedf'
+export FIRST_OWNER_PROVISIONING_TEST_STATION_IDS='d8913b4d-7bb8-48cb-bb46-a741cea1f6c5,c4954604-2bcb-4e59-96e9-12e35449545c,ae3bf2a5-7ff0-42a3-832c-ae8f49a14b9f,68ef219f-6baa-442a-8465-6d52e505d1f3'
 
 cd "$repo_root"
 exec pnpm exec vitest run --config vitest.integration.config.ts \
-  tests/integration/first-user-provisioning.test.ts --reporter verbose
+  tests/integration/first-user-provisioning.test.ts \
+  tests/integration/first-owner-provisioning.test.ts --reporter verbose

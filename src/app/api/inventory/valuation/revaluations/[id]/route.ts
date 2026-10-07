@@ -10,7 +10,7 @@ function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-export const GET = withRequestObservability(
+const getRevaluation = withRequestObservability(
   async (request: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> => {
     try {
       await requireAuthenticatedActor(request);
@@ -33,3 +33,11 @@ export const GET = withRequestObservability(
     }
   },
 );
+
+// Next.js 16 requires a present route context for dynamic handlers. The
+// observability wrapper keeps context optional for non-dynamic routes, so the
+// exported handler records this route's generated contract explicitly.
+export const GET: (
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) => Promise<Response> = getRevaluation;
