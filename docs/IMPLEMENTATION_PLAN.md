@@ -38,37 +38,43 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 
 ## Current critical path
 
-The following is the current authoritative Phase 0 sequence, last synchronized
-against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
+The current authoritative Phase 0 application candidate is
+`498fc95893c0b6313e5e719888bebba1850fcd9d` on
+`codex/phase0-overnight-integration` (PR #98), based on origin/main
+`598b280bebbec94e0a7e751fe2efcda12e7cc9f4`. Its local application gates are
+green, but the independent final security review is RED because the inherited
+runtime navigation path still supplies an all-visible synthetic projection
+instead of live authorization, and the PostgreSQL 18.6 gate is blocked by the
+absence of an approved disposable environment. It is not release-complete.
 
-1. Obtain human authority review of DEC-040 and confirm that the existing
-   Neon/provider-owner or deployment-admin boundary is the approved one-time
-   authority for assigning and clearing the temporary
-   `first_user_provisioner` password.
-2. Update or replace the external Stage 1 helper so only that reviewed
+The current authoritative Phase 0 sequence is:
+
+1. Resolve and independently review the authorization-projection finding on
+   the exact Phase 0 candidate.
+2. Provide an approved disposable PostgreSQL 18.6 environment and run the
+   final combined integration/auth/RLS lifecycle against the exact candidate.
+3. Use the human-approved DEC-040 Neon control-plane reset and reviewed
+   provisioner self-cleanup boundary for assigning and clearing the temporary
+   `first_user_provisioner` password; no new database role, grant, or
+   privileged function is authorized.
+4. Update or replace the external Stage 1 helper so only that reviewed
    authority boundary performs the password assignment/cleanup; preserve
    `migration_owner` as `NOCREATEROLE`, the existing DEC-011 secret handling,
    all preflight predicates, and all fail-closed behavior. Independently
    review the actual final helper/procedure.
-3. Have the approved human operator rerun Stage 1 through the reviewed
+5. Have the approved human operator rerun Stage 1 through the reviewed
    human-controlled procedure, stopping at its scope-discovery hard stop.
-4. Classify the rerun result and scope discovery; do not continue to Stage 2
+6. Classify the rerun result and scope discovery; do not continue to Stage 2
    or provisioning from this task.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+7. Select legitimate production scope.
+8. Run Stage 2 READ ONLY dry run.
+9. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+10. Obtain explicit human approval.
+11. Provision the real first user.
+12. Run authenticated smoke.
+13. FINAL RELEASE GO: merge/deploy only after all external gates and review
+    conditions are green.
+14. Verify exact production SHA and complete owner acceptance.
 
 The documentation merge did not change deployed application behavior. The
 production application baseline remains
@@ -233,12 +239,11 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
   18.6 correctly rejects `ALTER ROLE first_user_provisioner PASSWORD` from
   `migration_owner` while that role is `NOCREATEROLE`. The existing
   `ADMIN=true` membership is not sufficient authority for this operation.
-- DEC-040 recommends a one-time human/provider-owner or deployment-admin
-  authority boundary already documented for managed-PostgreSQL role
-  operations. This preserves the `migration_owner NOCREATEROLE` contract and
-  avoids a durable SECURITY DEFINER or elevated application credential. The
-  proposal still requires human authority review and a separately reviewed
-  helper/procedure handoff before any production rerun.
+- DEC-040 records the human-approved Neon control-plane reset and provisioner
+  self-cleanup boundary for this one-time operation. This preserves the
+  `migration_owner NOCREATEROLE` contract and avoids a durable SECURITY
+  DEFINER or elevated application credential. A separately reviewed final
+  helper/procedure handoff is still required before any production rerun.
 - The local PostgreSQL 18.6 regression suite adds coverage for the intended
   boundary: a `SET ROLE migration_owner` attempt to assign the password must
   be rejected with SQLSTATE `42501`, while the disposable local owner/admin
@@ -253,9 +258,8 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - No legitimate scope choices were accepted for Stage 2.
 - No temporary provisioner credential was assigned by the failed run.
 - No user was provisioned.
-- Do not rerun Stage 1 until DEC-040 is approved and the actual helper/procedure
-  uses the reviewed existing admin boundary for both temporary assignment and
-  cleanup.
+- Do not rerun Stage 1 until the actual helper/procedure uses the reviewed
+  DEC-040 control-plane reset/self-cleanup flow and receives final review.
 
 **Tests/verification**
 

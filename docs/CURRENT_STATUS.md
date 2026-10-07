@@ -53,6 +53,34 @@ Status labels:
 
 Production migrations are not automatic. A deployed web release must not be assumed to imply a database migration occurred.
 
+### Current Phase 0 integration candidate — VERIFIED LOCALLY / NOT RELEASE-GREEN
+
+- The authoritative Phase 0 candidate is
+  `498fc95893c0b6313e5e719888bebba1850fcd9d` on
+  `codex/phase0-overnight-integration`, pushed to origin as PR #98.
+- This SHA is a descendant of `2a4ee5bd473cc97211503718b19c49214d2ae2c4`
+  and includes the validated UI polish, Customers work, A8 decimal
+  corrections, Daily Operations timezone correction, mobile shell, and
+  responsive bottom navigation. No Phase 1 branch was included.
+- Exact-SHA local validation is green: 518 unit tests, ESLint, TypeScript,
+  production build, Prettier, `git diff --check`, and 48 browser/accessibility/
+  mobile/desktop checks with one intentional conditional skip.
+- The PostgreSQL 18.6 integration gate is BLOCKED because no approved
+  disposable PostgreSQL 18.6 environment was available to the agent. No
+  production database was contacted.
+- The independent final security review of the actual SHA is RED: the
+  candidate still feeds an all-visible synthetic navigation projection into
+  `AppShell`, so runtime navigation is not derived from live authorization.
+  The mobile selector is fail-closed when given a real authorized projection,
+  but the inherited projection gap must be fixed and reviewed before merge.
+- PR #98 must not be merged or treated as release-ready until that
+  authorization-projection finding and the PostgreSQL 18.6 gate are resolved.
+- At the last available GitHub check observation, SAST, secret scan,
+  runtime-role proof, and Vercel previews were green; Dependency audit was
+  failing and the quality job was still pending. A subsequent status refresh
+  was unavailable because the GitHub API connection failed, so CI is not
+  claimed green here.
+
 ## 4. First-user production access
 
 ### VERIFIED COMPLETE
@@ -175,13 +203,13 @@ rerun and no production mutation was performed.
   attempt despite the reviewed `ADMIN` membership relationship. This is a
   verified authority-model defect in the operator path; it does not justify
   granting `CREATEROLE` or weakening the migration-owner contract.
-- The existing repository bootstrap/deployment runbook already reserves role
-  credential and ownership operations for the Neon/provider-owner or
-  deployment-admin boundary. DEC-040 records the recommended one-time,
-  human-controlled use of that boundary for the temporary password assignment
-  and matching `PASSWORD NULL` cleanup. DEC-040 remains proposed pending
-  human authority review; no new privileged database function or persistent
-  elevated credential is approved.
+- The existing repository bootstrap/deployment runbook reserves role
+  credential and ownership operations for a human-controlled Neon control-
+  plane/provider-admin boundary. DEC-040 is now human-approved: use the
+  control-plane reset for the temporary password and the reviewed provisioner
+  self-cleanup path for matching `PASSWORD NULL` cleanup. No new privileged
+  database function, database role, grant, or persistent elevated credential
+  is approved.
 - M0-T03 is therefore **BLOCKED — PASSWORD ASSIGNMENT AUTHORITY REQUIRED**.
   The external Stage 1 helper still attempts the password assignment through
   `migration_owner` and must not be rerun until a separately reviewed helper
@@ -328,6 +356,10 @@ merged or deployed.
 ## 9. Clean Phase 0 integration candidate
 
 ### REPORTED COMPLETE / LOCAL CANDIDATE
+
+The older SHA recorded below is historical. It is superseded by the exact,
+clean, pushed candidate `498fc95893c0b6313e5e719888bebba1850fcd9d` and PR #98;
+use that SHA for current Phase 0 review.
 
 A clean isolated candidate was created at documented HEAD:
 
@@ -512,8 +544,8 @@ The following remain unresolved and must not be silently invented:
 - formal performance/SLO targets;
 - which Phase 1 provider integrations are required first and their exact
   contracts;
-- cause of the Stage 1 RLS/policy preflight division-by-zero failure and the
-  exact predicate result that selected its intentional failure branch;
+- the reviewed correction and human rerun of the Stage 1 helper's password
+  authority path;
 - exact current production release SHA after the next integrated release.
 
 ### Newly unblocked planning work
@@ -533,11 +565,13 @@ The following remain unresolved and must not be silently invented:
   remaining sub-contract gates are exact permission/migration alignment,
   lifecycle transition commands, monthly statement read-model details, and
   later pricing, vehicle/driver, benefits, tax, and FX contracts.
-- M5-T02 is IN PROGRESS for a bounded credit-guard slice: positive CREDIT
-  limits are required and treated as hard caps, and suspended/closed
-  customers or inactive accounts cannot initiate new account transactions.
-  Full lifecycle writes remain gated by reviewed command, audit, permission,
-  and migration contracts.
+- M5-T02 remains IN PROGRESS for the bounded credit/activity guard already
+  implemented and tested. The existing customer command surface already
+  supports create/account, credit authorization, payment, money-value prepaid,
+  and monthly statement reads under the existing A8 boundary. Lifecycle
+  transition writes, richer vehicle/driver controls, benefits, customer
+  pricing, new tax/accounting semantics, and FX remain separate sub-contracts;
+  do not infer readiness for those from DEC-041 alone.
 
 These decisions do not alter the M0-T03 production diagnostic gate.
 
@@ -572,33 +606,34 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 ## 21. Current critical path / next recommended work
 
 The Phase 1 customer lane may proceed in parallel with the parked M0-T03
-production gate. The next customer steps are to independently review the
-bounded credit/activity guard diff, integrate it through the A0 migration and
+production gate. The current Phase 0 candidate is reviewable but not
+release-green because its independent security review found an inherited
+authorization-projection gap and the approved PostgreSQL 18.6 gate is still
+unavailable. The next customer steps are to independently review the bounded
+credit/activity guard diff, integrate it through the A0 migration and
 permission ownership process if needed, then specify lifecycle transitions and
 the monthly statement read model separately. Do not invent accounting, tax, FX,
 or customer-specific pricing behavior.
 
 Use this order unless a current human instruction changes it:
 
-1. Apply and independently review the one-line `pg_policies.cmd = 'ALL'`
+1. Resolve the Phase 0 authorization-projection security finding and obtain a
+   fresh review of the actual final candidate.
+2. Provide an approved disposable PostgreSQL 18.6 environment and rerun the
+   combined integration/auth/RLS lifecycle against the exact candidate SHA.
+3. Apply and independently review the one-line `pg_policies.cmd = 'ALL'`
    correction in the immutable external Stage 1 helper.
-2. Rerun Stage 1 from the beginning only after that correction is reviewed and
+4. Rerun Stage 1 from the beginning only after that correction is reviewed and
    human-approved.
-3. Select legitimate production scope and stop before Stage 2 or provisioning.
-4. Run Stage 2 READ ONLY dry run.
-5. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-6. Obtain explicit human approval.
-7. Provision the real first user.
-8. Run authenticated smoke.
-9. FINAL RELEASE GO.
-10. Integrate PR #92 plus Customers clean candidate.
-11. Integrate verified A8 fix.
-12. Integrate reviewed Daily Operations timezone fix.
-13. Run full DB/CI/browser/accessibility/responsive verification.
-14. Deploy.
-15. Verify exact production SHA.
-16. Final owner review.
-17. OWNER READY handoff.
+5. Select legitimate production scope and stop before Stage 2 or provisioning.
+6. Run Stage 2 READ ONLY dry run.
+7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+8. Obtain explicit human approval.
+9. Provision the real first user.
+10. Run authenticated smoke.
+11. FINAL RELEASE GO: merge/deploy only after all external gates and review
+    conditions are green.
+12. Verify exact production SHA and complete owner acceptance.
 
 ## 22. Things agents must not assume
 
