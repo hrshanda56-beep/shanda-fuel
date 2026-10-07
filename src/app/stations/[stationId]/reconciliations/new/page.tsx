@@ -1,10 +1,11 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
 import {
   ProductionReconciliationWorkflow,
   type ProductionReconciliationContext,
 } from '@/modules/forecourt/ui/production-reconciliation-workflow';
+
+export const metadata = { title: 'New reconciliation' };
 
 export default async function NewReconciliationPage({
   params,
@@ -32,15 +33,6 @@ export default async function NewReconciliationPage({
       : undefined;
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      context={{
-        organisation: 'Authorised organisation',
-        station: 'Station context',
-        businessDate: 'Business date',
-        shift: 'Active shift',
-      }}
-      role="Station operations"
-      userName="Current user"
       breadcrumbs={[
         { label: 'Reconciliations', href: '/stations/demo/reconciliations' },
         { label: 'New' },

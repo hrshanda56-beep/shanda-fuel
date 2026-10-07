@@ -18,6 +18,7 @@ import {
   formatLitres,
   formatMoney,
   formatStatusLabel,
+  formatTimeInTimeZone,
 } from '../../../design-system/formatters';
 import {
   dailyOperationsStatusLabel,
@@ -645,7 +646,17 @@ export function DailyOperationsWorkspace({
     ? Object.values(record.totals.stockVariance).some((value) => !isZero(value))
     : false;
 
-  if (loading) return <LoadingState label="Loading daily operations" />;
+  if (loading)
+    return (
+      <>
+        {notice ? (
+          <div className="state state-success" role="status" aria-live="polite">
+            {notice}
+          </div>
+        ) : null}
+        <LoadingState label="Loading daily operations" />
+      </>
+    );
   if (error && !operation) {
     return (
       <ErrorState
@@ -662,8 +673,6 @@ export function DailyOperationsWorkspace({
       <div className="daily-operations-workspace" aria-label="Daily station operations workspace">
         <div className="page-header">
           <div>
-            <p className="eyebrow">Station operations</p>
-            <h1>Daily operations workspace</h1>
             <p className="lede">
               {operation.station.name} · {formatBusinessDate(operation.businessDay.date)} ·{' '}
               {formatStatusLabel(operation.shift.state)} shift
@@ -731,8 +740,6 @@ export function DailyOperationsWorkspace({
     <div className="daily-operations-workspace" aria-label="Daily station operations workspace">
       <div className="page-header">
         <div>
-          <p className="eyebrow">Station operations · {operation.station.code}</p>
-          <h1>Daily operations workspace</h1>
           <p className="lede">
             {operation.station.name} · {formatBusinessDate(record.business_date)} · shift evidence
             in one place
@@ -822,15 +829,8 @@ export function DailyOperationsWorkspace({
                 <span className="metric-label">Shift</span>
                 <strong>{formatStatusLabel(operation.shift.state)}</strong>
                 <span className="metric-meta">
-                  {new Date(operation.shift.plannedStartAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  –{' '}
-                  {new Date(operation.shift.plannedEndAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {formatTimeInTimeZone(operation.shift.plannedStartAt, operation.station.timezone)}{' '}
+                  – {formatTimeInTimeZone(operation.shift.plannedEndAt, operation.station.timezone)}
                 </span>
               </div>
               <div>
@@ -1555,22 +1555,17 @@ export function DailyOperationsContextRequired() {
     <>
       <div className="page-header">
         <div>
-          <p className="eyebrow">Station operations</p>
-          <h1>Daily operations workspace</h1>
-          <p className="lede">Confirm an authorised station context to begin.</p>
+          <p className="lede">Choose an authorised station to begin.</p>
         </div>
       </div>
       <Card as="section" className="panel" aria-labelledby="operations-context-title">
         <SectionHeading
           eyebrow="Station context"
-          title="Select a station context"
+          title="Choose a station"
           headingId="operations-context-title"
-          detail="Open this workspace from an authorised station-day link. Master data is never invented in the browser."
+          detail="Use Change above to choose an authorised station, business date, and shift."
         />
-        <p>
-          A tenant, station, business date, and shift are required before the server can load the
-          operational workspace.
-        </p>
+        <p>The daily workspace will load once the selected work context is ready.</p>
       </Card>
     </>
   );

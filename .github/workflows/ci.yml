@@ -67,7 +67,7 @@ jobs:
       - run: pnpm test:integration
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e --workers=1 --retries=0
+      - run: pnpm test:e2e --workers=1
       - name: Upload browser failure artifacts
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

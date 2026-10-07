@@ -1564,6 +1564,17 @@ body {
   .shell-sheet {
     border-radius: var(--radius-xl);
   }
+
+  .shell-account-menu-desktop .shell-account-trigger-text,
+  .shell-account-menu-desktop .shell-account-chevron {
+    display: none;
+  }
+
+  .shell-account-menu-desktop .shell-account-trigger {
+    width: var(--touch-target-min);
+    justify-content: center;
+    padding: 0;
+  }
 }
 
 @media (min-width: 75rem) {
@@ -1639,12 +1650,21 @@ body {
     padding: var(--space-2) var(--page-gutter) 0;
   }
 
+  .shell-page-heading,
+  .shell-header-controls {
+    flex-basis: 100%;
+  }
+
+  .shell-header-controls {
+    justify-content: flex-start;
+  }
+
   .shell-header-account,
   .shell-header .global-search {
     display: none;
   }
 
-  .shell-header .shell-context-selector {
+  .shell-header-controls .shell-context-selector {
     width: 100%;
   }
 
@@ -1669,5 +1689,56 @@ body {
   .shell-account-chevron {
     animation: none;
     transition: none;
+  }
+}
+
+/* UI polish: keep long authorised context names readable at every width. */
+.shell-context {
+  row-gap: var(--space-1);
+}
+
+.shell-context-part {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* UI polish: the auth surface should share the product's calm canvas and use
+ * mobile-friendly control sizing without changing the sign-in flow. */
+.auth-layout {
+  background-color: var(--bg-canvas);
+  background-image: var(--bg-app);
+}
+
+.auth-card input {
+  font-size: 1rem;
+}
+
+.auth-card .button {
+  width: 100%;
+}
+
+@media (min-width: 75rem) {
+  .shell-header {
+    min-height: 4rem;
+  }
+
+  .shell-sheet {
+    padding-top: var(--space-8);
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .shell-topbar {
+    height: calc(3.5rem + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .shell-sheet {
+    min-height: calc(100dvh - 3.5rem - env(safe-area-inset-top));
+  }
+
+  .account-menu-panel {
+    top: calc(3.5rem + env(safe-area-inset-top) + var(--space-2));
   }
 }

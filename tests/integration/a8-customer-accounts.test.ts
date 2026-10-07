@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as customerCommandPost } from '../../src/app/api/customers/commands/route';
+import { GET as customerSummaryGet } from '../../src/app/api/customers/summary/route';
 import { GET as customerStatementGet } from '../../src/app/api/customers/statement/route';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
@@ -405,6 +406,38 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       'a8-topup',
     );
     expect(topUp.status).toBe(201);
+    const customerSummary = await customerSummaryGet(
+      new Request(
+        `http://127.0.0.1:3000/api/customers/summary?tenantId=${ids.tenant}&customerId=${customer.customerId}`,
+        {
+          headers: {
+            cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
+          },
+        },
+      ),
+    );
+    expect(customerSummary.status).toBe(200);
+    const customerSummaryBody = await body(customerSummary);
+    expect(customerSummaryBody.customers).toHaveLength(1);
+    expect(customerSummaryBody.customers[0]).toMatchObject({
+      customerId: customer.customerId,
+      accountReference: 'A8-CUST-001',
+      displayName: 'A8 Customer',
+      accounts: [
+        expect.objectContaining({
+          accountType: 'PREPAID_VALUE',
+          balance: '125.3750',
+          availableBalance: '125.3750',
+          reservedAmount: '0',
+        }),
+      ],
+      recentTransactions: [
+        expect.objectContaining({
+          amount: '125.3750',
+          currency: 'USD',
+        }),
+      ],
+    });
     expect(
       (
         await body(

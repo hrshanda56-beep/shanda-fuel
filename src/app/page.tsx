@@ -1,26 +1,19 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 
-import { OverviewDashboard, ProductionSafeOverview } from './_overview/overview-dashboard';
-import { sampleContext, sampleTasks } from './_overview/sample-overview';
+import { ProductionSafeOverview } from './_overview/overview-dashboard';
 
-/**
- * Owner/Finance overview. The sample presentation is available for local
- * design review only; production never renders synthetic figures.
- */
+export const metadata = {
+  title: { absolute: 'Dashboard · Shanda Fuel' },
+};
+
+/** Owner/Finance overview. Live figures stay hidden until reporting data exists. */
 export default function OverviewPage() {
-  const isProduction = process.env.NODE_ENV === 'production';
-
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      context={isProduction ? undefined : sampleContext}
-      role={isProduction ? undefined : 'Owner'}
-      userName={isProduction ? undefined : 'Demo owner'}
-      openTasks={isProduction ? undefined : sampleTasks}
       searchPlacement="header"
+      pageSubtitle="Live figures are not available for this work context yet."
     >
-      {isProduction ? <ProductionSafeOverview /> : <OverviewDashboard />}
+      <ProductionSafeOverview />
     </AppShell>
   );
 }

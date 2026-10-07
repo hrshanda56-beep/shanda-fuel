@@ -2,13 +2,16 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { AccessDeniedState } from '@/design-system/primitives';
-import { PageContainer, PageHeader } from '@/design-system/layout';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
-import { AppShell } from '@/design-system/app-shell';
+import { PageContainer } from '@/design-system/layout';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { AppError } from '@/platform/errors';
 import { resolveSettings } from '@/modules/settings';
 import type { SettingsView } from '@/modules/settings';
 import { SettingsWorkspace } from '@/modules/settings/ui/settings-workspace';
+
+export const metadata = {
+  title: 'Settings',
+};
 
 const SETTINGS_ORIGIN = 'http://shanda-fuel.local';
 
@@ -47,16 +50,8 @@ export default async function SettingsPage({
   }
   if (failure instanceof AppError && failure.code === 'FORBIDDEN') {
     return (
-      <AppShell
-        navigationProjection={syntheticNavigationProjection}
-        breadcrumbs={[{ label: 'Settings' }]}
-      >
+      <AppShell pageSubtitle="Review the organisation, legal entities, stations, and account available to you.">
         <PageContainer width="narrow">
-          <PageHeader
-            eyebrow="Settings"
-            title="Settings"
-            description="Settings are available only within an authorised organisation."
-          />
           <AccessDeniedState />
         </PageContainer>
       </AppShell>
@@ -67,9 +62,8 @@ export default async function SettingsPage({
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       userName={view.account.name}
-      breadcrumbs={[{ label: 'Settings' }]}
+      pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
     >
       <SettingsWorkspace view={view} />
     </AppShell>

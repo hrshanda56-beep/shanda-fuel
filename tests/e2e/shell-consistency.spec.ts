@@ -3,9 +3,18 @@ import { expect, test, type Page } from '@playwright/test';
 
 const VIEWPORTS = [
   { name: 'mobile-small', width: 320, height: 800 },
-  { name: 'mobile', width: 468, height: 844 },
+  { name: 'mobile-360', width: 360, height: 800 },
+  { name: 'mobile-375', width: 375, height: 844 },
+  { name: 'mobile-390', width: 390, height: 844 },
+  { name: 'mobile-430', width: 430, height: 844 },
   { name: 'tablet', width: 982, height: 800 },
   { name: 'desktop', width: 1482, height: 900 },
+] as const;
+
+const HEADER_VIEWPORTS = [
+  { name: 'phone', width: 390, height: 844 },
+  { name: 'tablet', width: 768, height: 800 },
+  { name: 'desktop', width: 1440, height: 900 },
 ] as const;
 
 async function prepareShell(page: Page, viewport: { width: number; height: number }) {
@@ -84,6 +93,12 @@ test.describe('shared shell consistency', () => {
       '0',
     );
     await expect(sidebar.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
+
+    const account = page.locator('.shell-account-trigger:visible');
+    await expect(account).toHaveAttribute('aria-label', 'Account');
+    await expect(account).toHaveCSS('width', '44px');
+    await expect(account.locator('.shell-account-trigger-text')).toBeHidden();
+    await expect(account.locator('.shell-account-chevron')).toBeHidden();
   });
 
   test('mobile has one compact header and a working navigation drawer', async ({ page }) => {
@@ -103,15 +118,99 @@ test.describe('shared shell consistency', () => {
       'href',
       '/settings',
     );
-    await expect(drawer.getByText('Customers', { exact: true })).toHaveCount(0);
+    await drawer.getByRole('button', { name: 'Finance' }).click();
+    await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toHaveAttribute(
+      'href',
+      '/customers',
+    );
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
   });
 
-  test('Customers is absent while Settings remains represented', async ({ page }) => {
+  test('mobile exposes authorized bottom navigation and keeps More in the drawer', async ({
+    page,
+  }) => {
+    await prepareShell(page, { width: 390, height: 844 });
+    const bottomNav = page.getByRole('navigation', { name: 'Mobile navigation' });
+    await expect(bottomNav).toBeVisible();
+    await expect(bottomNav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(bottomNav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
+      'href',
+      '/operations/daily',
+    );
+    await bottomNav.getByRole('button', { name: 'More navigation' }).click();
+    const menu = page.getByRole('dialog', { name: 'Menu' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
+  });
+
+  test('long work-context names wrap without creating horizontal overflow', async ({ page }) => {
+    await page.route('**/api/context**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            available: {
+              organisations: [
+                {
+                  id: 'tenant-long',
+                  name: 'A deliberately long authorised organisation name for mobile review',
+                  legalEntities: [
+                    {
+                      id: 'entity-long',
+                      name: 'A deliberately long legal entity name for mobile review',
+                      stations: [
+                        {
+                          id: 'station-long',
+                          code: 'HRE-LONG',
+                          name: 'A deliberately long station name for mobile review',
+                          timezone: 'Africa/Harare',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            current: {
+              organisationId: 'tenant-long',
+              legalEntityId: 'entity-long',
+              stationId: 'station-long',
+              allStations: false,
+            },
+            route: {
+              pathname: '/reports',
+              policy: { legalEntity: 'required', station: 'required', allStationsAllowed: false },
+            },
+            persistedContextInvalid: false,
+          },
+        }),
+      });
+    });
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto('/reports');
+
+    const context = page.getByRole('group', { name: 'Work context' });
+    await expect(context).toContainText('A deliberately long authorised organisation name');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      320,
+    );
+    const box = await context.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+  });
+
+  test('Customers is represented while Settings remains represented', async ({ page }) => {
     await prepareShell(page, { width: 1482, height: 900 });
     const sidebar = page.locator('.shell-sidebar');
-    await expect(sidebar.getByText('Customers', { exact: true })).toHaveCount(0);
+    await sidebar.getByRole('button', { name: 'Finance' }).click();
+    await expect(sidebar.getByRole('link', { name: 'Customers', exact: true })).toHaveAttribute(
+      'href',
+      '/customers',
+    );
     await expect(sidebar.getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/settings',
@@ -121,7 +220,7 @@ test.describe('shared shell consistency', () => {
     const palette = page.getByRole('dialog', { name: 'Search' });
     await expect(palette.getByRole('combobox', { name: 'Search pages' })).toBeFocused();
     await expect(palette).toContainText('Settings');
-    await expect(palette.getByText('Customers', { exact: true })).toHaveCount(0);
+    await expect(palette).toContainText('Customers');
     await expect(page.getByText('Search anything', { exact: false })).toHaveCount(0);
   });
 
@@ -160,4 +259,26 @@ test.describe('shared shell consistency', () => {
       .analyze();
     expect(results.violations).toEqual([]);
   });
+
+  for (const viewport of HEADER_VIEWPORTS) {
+    test(`${viewport.name} keeps page headings in the shared header`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      for (const [path, title] of [
+        ['/', 'Dashboard'],
+        ['/operations/daily', 'Daily operations'],
+        ['/reports', 'Reports'],
+        ['/inventory', 'Inventory'],
+      ] as const) {
+        await page.goto(path);
+        const shell = page.locator('.app-shell');
+        await expect(shell).toHaveCount(1);
+        await expect(shell).toHaveAttribute('data-hydrated', 'true');
+        await expect(shell.locator('.shell-header h1')).toHaveText(title);
+        await expect(shell.locator('.shell-sheet h1')).toHaveCount(0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          viewport.width,
+        );
+      }
+    });
+  }
 });

@@ -1,8 +1,9 @@
 /*
  * Product Shell: the permanent application frame.
  *
- *   phone / tablet (< 64rem)  slim sticky top bar; the menu opens the grouped
+ *   phone (< 48rem)           slim sticky top bar; the menu opens the grouped
  *                             navigation in a drawer. Content keeps full width.
+ *   tablet (48–74.99rem)      persistent icon rail beside the content.
  *   desktop (≥ 64rem)         persistent grouped sidebar beside the content;
  *                             collapsible to an icon rail. The rail state is
  *                             <html data-sidebar="collapsed">, set before first
@@ -24,6 +25,16 @@
 .shell-body {
   min-width: 0;
   overflow-x: clip;
+}
+
+.shell-mobile-nav {
+  display: none;
+}
+
+.shell-skip-navigation {
+  position: fixed;
+  width: 0;
+  height: 0;
 }
 
 /* Brand ------------------------------------------------------------------- */
@@ -130,6 +141,31 @@
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
+}
+
+.shell-page-heading {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.shell-page-heading h1 {
+  margin: 0;
+}
+
+.shell-page-subtitle {
+  max-width: 46rem;
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.shell-header-controls {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
 }
 
 .shell-header-trail {
@@ -676,6 +712,75 @@
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .shell-main {
+    padding-bottom: calc(var(--space-16) + 4.5rem + env(safe-area-inset-bottom));
+  }
+
+  .shell-mobile-nav {
+    position: fixed;
+    z-index: calc(var(--z-sticky) + 1);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    padding: var(--space-1) var(--page-gutter) calc(var(--space-1) + env(safe-area-inset-bottom));
+    border-top: var(--border-width) solid var(--border-subtle);
+    background: color-mix(in srgb, var(--bg-canvas) 94%, transparent);
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(12px);
+  }
+
+  .shell-mobile-nav-list {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--space-1);
+    max-width: 36rem;
+    padding: 0;
+    margin: 0 auto;
+    list-style: none;
+  }
+
+  .shell-mobile-nav-link {
+    display: grid;
+    min-width: 0;
+    min-height: var(--touch-target-min);
+    place-items: center;
+    gap: var(--space-0-5);
+    padding: var(--space-1) var(--space-0-5);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-tertiary);
+    font: inherit;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-tight);
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .shell-mobile-nav-link:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .shell-mobile-nav-link[aria-current='page'] {
+    background: var(--bg-surface);
+    box-shadow: 0 0 0 var(--border-width) var(--border-subtle);
+    color: var(--accent);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .shell-mobile-nav-link span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 }

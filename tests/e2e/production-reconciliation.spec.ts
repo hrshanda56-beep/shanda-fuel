@@ -331,6 +331,16 @@ test.describe('production reconciliation persistence', () => {
     context,
     page,
   }) => {
+    // beforeAll intentionally preserves existing rows on conflict. Restore this
+    // fixed shift because the reconciliation scenario retimes it around now().
+    await client.unsafe(`
+      update app.shifts
+      set planned_start_at = '2026-09-23T06:00:00Z',
+          planned_end_at = '2026-09-23T14:00:00Z'
+      where tenant_id = '${ids.tenant}'
+        and station_id = '${ids.station}'
+        and id = '${ids.shift}'
+    `);
     await authenticate(context, supervisorToken);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(
@@ -343,7 +353,7 @@ test.describe('production reconciliation persistence', () => {
 
     const controlRoom = page.locator('[aria-label="Operations control room"]');
     await expect(
-      controlRoom.getByRole('heading', { name: 'Business day, shifts and reconciliation' }),
+      controlRoom.getByRole('heading', { name: 'Shift boundaries and team context' }),
     ).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
@@ -649,7 +659,7 @@ test.describe('production reconciliation persistence', () => {
       })
       .toBe(reconciliationId);
 
-    await expect(page.getByRole('heading', { name: 'Daily operations workspace' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Daily operations' })).toBeVisible();
 
     const common = {
       tenantId: ids.tenant,

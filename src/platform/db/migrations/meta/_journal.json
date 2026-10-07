@@ -155,6 +155,13 @@
       "when": 1790540000000,
       "tag": "0021_security_first_user_provisioning",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791370719297,
+      "tag": "0022_a3_shift_template_start_time",
+      "breakpoints": true
     }
   ]
 }

@@ -25,19 +25,16 @@ import {
   isSingleDestinationSection,
   readWorkContext,
   resolveNavigation,
+  selectMobileNavigationItems,
   type NavigationProjection,
   type ResolvedNavigationItem,
   type ResolvedNavigationSection,
 } from './navigation';
 import { IconButton } from './primitives';
 import {
-  parseClosedGroups,
-  readClosedGroupsRaw,
   readSidebarCollapsed,
-  setClosedGroupsRaw,
   setSidebarCollapsed,
   subscribeShellPreferences,
-  toggleClosedGroup,
 } from './shell-preferences';
 import { ThemeControl } from './theme-control';
 import { applyThemePreference, readStoredThemePreference } from './theme';
@@ -61,7 +58,7 @@ export type ShellTask = {
   href?: string;
 };
 
-type AppShellProps = {
+export type AppShellProps = {
   children: ReactNode;
   /** Visibility per navigation key, projected by the authorization layer. */
   navigationProjection: readonly NavigationProjection[];
@@ -70,6 +67,8 @@ type AppShellProps = {
   role?: string;
   userName?: string;
   breadcrumbs?: readonly ShellBreadcrumb[];
+  pageTitle?: string;
+  pageSubtitle?: ReactNode;
   /** Synthetic or server-projected tasks assigned to the signed-in user. */
   openTasks?: readonly ShellTask[];
   /**
@@ -89,6 +88,38 @@ type WipRequest = {
 type ShellContextValue = { openSearch: () => void };
 const ShellContext = createContext<ShellContextValue | null>(null);
 
+function closedGroupsForRoute(
+  sections: readonly ResolvedNavigationSection[],
+  pathname: string | null,
+): ReadonlySet<string> {
+  return new Set(
+    sections
+      .filter(
+        (section) =>
+          !isSingleDestinationSection(section) &&
+          !section.items.some((item) => isNavigationItemActive(item, pathname)),
+      )
+      .map((section) => section.key),
+  );
+}
+
+function pageTitleForRoute(
+  sections: readonly ResolvedNavigationSection[],
+  pathname: string | null,
+): string | undefined {
+  const current = sections
+    .flatMap((section) => section.items)
+    .find((item) => isNavigationItemActive(item, pathname));
+  if (!current) return undefined;
+  return current.key === 'today' ? 'Dashboard' : current.label;
+}
+
+type ClosedGroupState = {
+  pathname: string | null;
+  sections: readonly ResolvedNavigationSection[];
+  closedGroups: ReadonlySet<string>;
+};
+
 /* Shell -------------------------------------------------------------------- */
 
 /**
@@ -96,8 +127,10 @@ const ShellContext = createContext<ShellContextValue | null>(null);
  *
  * - Desktop (≥ 64rem): persistent grouped sidebar; can collapse to an icon
  *   rail (remembered per device and applied before first paint).
- * - Tablet and phone: a slim top bar whose menu opens the same grouped
- *   navigation in a drawer. Content keeps the full width.
+ * - Tablet (768–1199px): a persistent icon rail keeps every destination
+ *   reachable without taking content width from the workspace.
+ * - Phone (<768px): a slim top bar opens the same grouped navigation in a
+ *   drawer. Content keeps the full width.
  *
  * Navigation is presentation: visibility comes from `navigationProjection`
  * and every destination re-validates access on the server.
@@ -109,6 +142,8 @@ export function AppShell({
   role,
   userName,
   breadcrumbs = [],
+  pageTitle: pageTitleOverride,
+  pageSubtitle,
   openTasks,
   attention,
   searchPlacement = 'header',
@@ -131,13 +166,17 @@ export function AppShell({
     readSidebarCollapsed,
     () => false,
   );
-  const closedGroupsRaw = useSyncExternalStore(
-    subscribeShellPreferences,
-    readClosedGroupsRaw,
-    () => '',
-  );
-  const closedGroups = useMemo(() => parseClosedGroups(closedGroupsRaw), [closedGroupsRaw]);
+  const [closedGroupState, setClosedGroupState] = useState<ClosedGroupState>(() => ({
+    pathname,
+    sections,
+    closedGroups: closedGroupsForRoute(sections, pathname),
+  }));
+  const closedGroups =
+    closedGroupState.pathname === pathname && closedGroupState.sections === sections
+      ? closedGroupState.closedGroups
+      : closedGroupsForRoute(sections, pathname);
   const rail = shellMode === 'tablet' || (shellMode === 'desktop' && collapsed);
+  const resolvedPageTitle = pageTitleOverride ?? pageTitleForRoute(sections, pathname);
 
   // False during server render and hydration, true once client handlers are live.
   const hydrated = useSyncExternalStore(
@@ -172,8 +211,18 @@ export function AppShell({
   }, []);
 
   const toggleGroup = useCallback(
-    (key: string) => setClosedGroupsRaw(toggleClosedGroup(readClosedGroupsRaw(), key)),
-    [],
+    (key: string) =>
+      setClosedGroupState((current) => {
+        const base =
+          current.pathname === pathname && current.sections === sections
+            ? current.closedGroups
+            : closedGroupsForRoute(sections, pathname);
+        const next = new Set(base);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return { pathname, sections, closedGroups: next };
+      }),
+    [pathname, sections],
   );
 
   // From the rail, a group opens the full sidebar with that group expanded.
@@ -204,6 +253,7 @@ export function AppShell({
     onWip: openWip,
     onContextRequired: openContextSelector,
   };
+  const mobileNavigationItems = selectMobileNavigationItems(sections);
 
   const shellContext = useMemo(() => ({ openSearch: () => setSearchOpen(true) }), []);
 
@@ -215,9 +265,11 @@ export function AppShell({
         data-sidebar={collapsed ? 'collapsed' : 'expanded'}
         data-shell-mode={shellMode}
       >
-        <a className="skip-link" href="#main-content">
-          Skip to main content
-        </a>
+        <nav className="shell-skip-navigation" aria-label="Skip navigation">
+          <a className="skip-link" href="#main-content">
+            Skip to main content
+          </a>
+        </nav>
 
         <header className="shell-topbar" aria-label="Application header">
           <button
@@ -267,17 +319,30 @@ export function AppShell({
 
         <div className="shell-body">
           <div className="shell-main">
-            <div className="shell-header" role="region" aria-label="Work context and account">
-              <ContextSelector
-                fallback={context}
-                open={contextSelectorOpen}
-                onOpen={() => setContextSelectorOpen(true)}
-                onClose={() => setContextSelectorOpen(false)}
-              />
-              {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
-              <AccountMenu userName={userName} role={role} placement="desktop" />
+            <div className="shell-header" role="region" aria-label="Page header and work context">
+              {resolvedPageTitle ? (
+                <div className="shell-page-heading">
+                  <h1 id="page-title">{resolvedPageTitle}</h1>
+                  {pageSubtitle ? <p className="shell-page-subtitle">{pageSubtitle}</p> : null}
+                </div>
+              ) : null}
+              <div className="shell-header-controls">
+                <ContextSelector
+                  fallback={context}
+                  open={contextSelectorOpen}
+                  onOpen={() => setContextSelectorOpen(true)}
+                  onClose={() => setContextSelectorOpen(false)}
+                />
+                {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
+                <AccountMenu userName={userName} role={role} placement="desktop" />
+              </div>
             </div>
-            <main className="shell-sheet" id="main-content" tabIndex={-1}>
+            <main
+              className="shell-sheet"
+              id="main-content"
+              aria-labelledby={resolvedPageTitle ? 'page-title' : undefined}
+              tabIndex={-1}
+            >
               {breadcrumbs.length > 0 || attention ? (
                 <div className="shell-sheet-header">
                   {breadcrumbs.length > 0 ? <Breadcrumbs items={breadcrumbs} /> : <span />}
@@ -293,6 +358,12 @@ export function AppShell({
             </main>
           </div>
         </div>
+
+        <MobileBottomNavigation
+          items={mobileNavigationItems}
+          pathname={pathname}
+          onMore={() => setMenuOpen(true)}
+        />
 
         <Modal
           open={menuOpen}
@@ -341,6 +412,50 @@ export function AppShell({
         />
       </div>
     </ShellContext.Provider>
+  );
+}
+
+function MobileBottomNavigation({
+  items,
+  pathname,
+  onMore,
+}: {
+  items: readonly Extract<ResolvedNavigationItem, { state: 'link' }>[];
+  pathname: string | null;
+  onMore: () => void;
+}) {
+  return (
+    <nav className="shell-mobile-nav" aria-label="Mobile navigation">
+      <ul className="shell-mobile-nav-list">
+        {items.map((item) => {
+          const active = isNavigationItemActive(item, pathname);
+          return (
+            <li key={item.key}>
+              <Link
+                className="shell-mobile-nav-link"
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+        <li>
+          <button
+            type="button"
+            className="shell-mobile-nav-link shell-mobile-nav-more"
+            aria-haspopup="dialog"
+            aria-label="More navigation"
+            onClick={onMore}
+          >
+            <Icon name="more" />
+            <span>More</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
   );
 }
 
@@ -433,6 +548,7 @@ function NavigationSectionEntry({
             <NavigationEntry
               item={item}
               pathname={pathname}
+              tabIndex={open ? undefined : -1}
               onWip={onWip}
               onContextRequired={onContextRequired}
               onNavigate={onNavigate}
@@ -451,6 +567,7 @@ function NavigationEntry({
   onContextRequired,
   onNavigate,
   withIcon = false,
+  tabIndex,
 }: {
   item: ResolvedNavigationItem;
   pathname: string | null;
@@ -458,6 +575,7 @@ function NavigationEntry({
   onContextRequired: () => void;
   onNavigate?: () => void;
   withIcon?: boolean;
+  tabIndex?: number;
 }) {
   const icon = withIcon ? <Icon name={item.icon} className="nav-icon" /> : null;
 
@@ -468,6 +586,7 @@ function NavigationEntry({
         className="nav-row nav-link"
         href={item.href}
         aria-current={active ? 'page' : undefined}
+        tabIndex={tabIndex}
         onClick={onNavigate}
       >
         {icon}
@@ -483,6 +602,7 @@ function NavigationEntry({
           type="button"
           className="nav-row nav-link"
           aria-haspopup="dialog"
+          tabIndex={tabIndex}
           onClick={onContextRequired}
         >
           {icon}
@@ -495,6 +615,7 @@ function NavigationEntry({
         type="button"
         className="nav-row nav-link"
         aria-haspopup="dialog"
+        tabIndex={tabIndex}
         onClick={() => onWip({ feature: item.feature, message: item.message })}
       >
         {icon}

@@ -1,10 +1,11 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import {
   DailyOperationsContextRequired,
   DailyOperationsWorkspace,
   type DailyOperationsContext,
 } from '@/modules/forecourt/ui/daily-operations-workspace';
+
+export const metadata = { title: 'Review reconciliation' };
 
 export default async function OperationsReconciliationReviewPage({
   params,
@@ -35,15 +36,6 @@ export default async function OperationsReconciliationReviewPage({
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      context={{
-        organisation: 'Authorised organisation',
-        station: 'Station context',
-        businessDate: 'Business date',
-        shift: 'Active shift',
-      }}
-      role="Management review"
-      userName="Current user"
       breadcrumbs={[
         { label: 'Operations', href: '/operations/daily' },
         { label: 'Management review' },

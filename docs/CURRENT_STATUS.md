@@ -99,10 +99,16 @@ code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
   and nine expected relations with RLS plus FORCE RLS enabled.
 - The run printed the production policy catalog and then failed closed with
   `FAIL: RLS/policy preflight failed` and `ERROR: division by zero`.
-- This failure is **UNDER INVESTIGATION**. Do not yet classify it as definite
-  production security drift; possible causes include production drift, a
-  preflight assertion bug, catalog normalization mismatch, or another policy
-  property mismatch.
+- Predicate-level evidence established nine valid policies, zero exact
+  policies under the historical assertion, and zero unexpected prefixed
+  policies. The historical assertion compared normalized `pg_policies.cmd`
+  with raw `pg_policy.polcmd`: raw `'*'` is exposed as normalized `'ALL'`,
+  so the exact-policy count was zero. This is a verified preflight
+  normalization bug, not observed policy drift.
+- The repository-local diagnostic now asserts `pg_policies.cmd = 'ALL'` and
+  has regression coverage. The external operator helper was not modified;
+  its owner must apply and review the one-line correction before a human
+  Stage 1 retry.
 - The failed run stopped before temporary provisioner password assignment.
   No cleanup is required from that run, no first user exists, Stage 2 has not
   run, real-provisioning approval has not been given, and authenticated
@@ -293,19 +299,15 @@ Across the prepared candidate work:
 - A8/database verification passed after the decimal fix,
 - broader non-provisioning integration suite passed 96/0 with 17 intentional provisioning-only skips.
 
-### PARTIAL / pending final combined verification
+### PARTIAL / CI browser gate pending
 
-After the A8 fix and Daily Ops timezone patch are cleanly integrated together, the final release candidate still needs a combined gate including:
-
-- full relevant unit suite,
-- integration/database checks,
-- typecheck,
-- lint/format,
-- build,
-- browser/E2E,
-- accessibility,
-- responsive checks,
-- security/runtime-role checks as applicable.
+The combined Phase 0 candidate has passed the local unit, integration,
+typecheck, lint, format, build, browser, accessibility, mobile, runtime-role,
+and PostgreSQL 18.6 lifecycle checks. The remaining release gate is the
+authoritative GitHub Actions quality job: its browser run continues to show
+non-deterministic Next development-server/error-page and DB-backed E2E
+failures despite local reproduction passing and the configured CI retry policy
+being enabled.
 
 ## 11. Owner readiness
 
@@ -326,7 +328,8 @@ Covered areas include:
 
 Final owner handoff is not green because the following remain open:
 
-1. diagnose the latest Stage 1 RLS/policy preflight failure and rerun Stage 1,
+1. apply and independently review the external helper's `cmd = 'ALL'`
+   correction, then rerun Stage 1,
 2. choose legitimate production scope and complete the Stage 2 read-only dry run,
 3. obtain explicit approval and provision the real first user,
 4. run authenticated production smoke,
@@ -358,22 +361,35 @@ Owner handoff must use only:
 
 ## 14. Dependency advisory
 
-### PARTIAL / time-bounded exception
+### VERIFIED FOR THE CURRENT PHASE 0 CANDIDATE / time-bounded exception
 
-A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstream version at the documented snapshot.
-
-- production-only audit had no high/critical finding,
-- a narrow CI exception exists with a review date,
-- future agents should re-check whether an upstream fix is available rather than treating the exception as permanent.
+The release-candidate dependency remediation updates the production-reachable
+`source-map-js` and `sharp` dependency paths and moves Vitest to the patched
+major line that removes the reported `tinypool` findings. The repository audit
+script passes with the existing, explicitly scoped dev-only `braces@3.0.3`
+exception; that exception remains time-bounded and is not a production waiver.
 
 ## 15. Known bugs/issues
 
 ### Active
 
 1. **Production Stage 1 fails closed in the RLS/policy preflight** with a
-   division-by-zero error; cause remains under investigation.
-2. **Daily Operations timezone fix is not yet cleanly integrated into the final candidate** even though the scoped implementation/tests are green.
-3. **A8 decimal fix is verified but still needs final clean release-candidate integration.**
+   division-by-zero error caused by the historical `pg_policies.cmd = '*'
+   assertion`; the repository-local diagnostic is corrected, but the external
+   helper still needs its owner-applied correction and human retry.
+2. **Daily Operations timezone and A8 decimal corrections are present in the
+   overnight Phase 0 integration candidate;** final release evidence remains
+   dependent on the combined-candidate gates below.
+
+The frozen Phase 0 candidate also had an authorization-projection blocker:
+the client shell received an all-visible synthetic navigation projection. The
+current release candidate replaces that with a server-derived projection from
+the authenticated actor and validated tenant/legal-entity/station context,
+fails closed to an empty projection, and limits the synthetic projection to
+the explicit non-production `APP_ENV=test` test fixture. This correction was
+independently reviewed GREEN on the final candidate; that review did not
+approve production release by itself. The CI quality/browser gate remains
+open.
 
 ### Closed / not product bugs
 
@@ -385,9 +401,10 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 - Existing owner-readiness documents contain stale historical SHAs and pre-candidate status.
 - Some implementation-status/parallel-execution/traceability documentation references older base SHAs.
 - Local integration harness setup is ownership-sensitive and should be documented clearly to avoid future false regressions.
-- The latest Stage 1 RLS/policy preflight failure needs a reviewed diagnosis and
-  rerun; the exhaustive function ACL-grantee validation is already Access
-  Review GREEN.
+- The Stage 1 RLS/policy preflight normalization bug is diagnosed and the
+  repository-local diagnostic is corrected; the external helper correction
+  and human rerun remain open. The exhaustive function ACL-grantee validation
+  is already Access Review GREEN.
 
 ## 17. Open product questions
 
@@ -406,7 +423,7 @@ These must not be silently converted into requirements.
 
 ### UNRESOLVED / needs verification
 
-- Cause of the Stage 1 RLS/policy preflight division-by-zero failure.
+- Human confirmation after the external helper correction and Stage 1 retry.
 - Exact current production release SHA after the next integrated release.
 - Whether the dev-only dependency advisory now has an upstream fix.
 - Whether hosting/plan changes alter the observability exception.
@@ -433,25 +450,21 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 
 Use this order unless a current human instruction changes it:
 
-1. Diagnose the latest production RLS/policy preflight failure.
-2. Determine drift versus assertion/normalization bug.
-3. Access Review any tooling-only correction.
-4. Rerun Stage 1 from the beginning.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
+1. Apply and independently review the external helper's normalized
+   `pg_policies.cmd = 'ALL'` assertion.
+2. Complete the fresh independent security review of the corrected
+   authorization projection on the combined Phase 0 candidate.
+3. Confirm the dependency-audit CI job is green with the scoped dev-only
+   exception and the patched dependency graph.
+4. Complete the disposable PostgreSQL 18.6 lifecycle gate against the exact
+   candidate.
+5. Human executes the already-reviewed production Stage 1 procedure.
+6. Select legitimate production scope and run the Stage 2 READ ONLY dry run.
 7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+8. Obtain explicit human approval, provision the real first user, and run
+   authenticated smoke.
+9. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
+   exact production SHA, and complete owner handoff.
 
 ## 21. Things agents must not assume
 
@@ -459,7 +472,7 @@ Use this order unless a current human instruction changes it:
 - Do not assume the clean candidate HEAD includes later uncommitted A8/timezone fixes.
 - Do not assume an intentionally skipped provisioning suite is a passing provisioning suite.
 - Do not assume `job_runtime` exists in production.
-- Do not assume the latest Stage 1 run passed; it failed closed at the RLS/policy preflight.
+- Do not assume the latest Stage 1 run passed; it failed closed at the RLS/policy preflight because the historical assertion used raw `'*'` instead of normalized `'ALL'`.
 - Do not assume a temporary provisioner password was set by the failed Stage 1 run.
 - Do not treat the earlier `\\quit 1`-ignored run as valid evidence.
 - Do not assume a Vercel deploy runs database migrations.

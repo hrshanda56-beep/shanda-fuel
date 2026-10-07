@@ -1,7 +1,6 @@
 import { headers } from 'next/headers';
 
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import {
   buildContextHref,
   contextRoutePolicy,
@@ -14,6 +13,8 @@ import {
   InventoryContextRequired,
   type InventoryContext,
 } from '@/modules/inventory/ui/inventory-workspace';
+
+export const metadata = { title: 'Inventory valuation stream' };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -95,8 +96,6 @@ export default async function InventoryValuationStreamPage({
     : '/inventory/valuation';
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      role="Inventory control"
       breadcrumbs={[
         {
           label: 'Inventory',

@@ -39,27 +39,26 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 ## Current critical path
 
 The following is the current authoritative Phase 0 sequence, last synchronized
-against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
+against the final pushed candidate `07263c7fbb9883a77bb73bd226f353224a54ea11`:
 
-1. Diagnose the latest production RLS/policy preflight failure.
-2. Determine drift versus assertion/normalization bug.
-3. Access Review any tooling-only correction.
-4. Rerun Stage 1 from the beginning.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+1. Clear the remaining GitHub Actions quality/browser gate on the exact pushed
+   candidate. The dependency audit, runtime-role, secret, SAST, local browser,
+   and disposable PostgreSQL 18.6 gates are already green.
+2. Human executes the reviewed production Stage 1 procedure.
+3. Select legitimate production scope and run the Stage 2 READ ONLY dry run.
+4. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+5. Obtain explicit human approval, provision the real first user, and run
+   authenticated smoke.
+6. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
+   exact production SHA, and complete owner handoff.
+
+The frozen candidate's authorization-projection issue was a real UI/control
+surface exposure: the shell was given an all-visible synthetic projection even
+when the authenticated actor lacked those permissions. The release candidate
+fix derives the projection server-side from the validated actor and current
+tenant/legal-entity/station scope, while leaving route and database
+authorization checks intact. The synthetic projection is now limited to the
+explicit non-production `APP_ENV=test` E2E fixture.
 
 The documentation merge did not change deployed application behavior. The
 production application baseline remains
@@ -184,9 +183,13 @@ Perform the reviewed production preflight and discover legitimate bootstrap scop
 - The latest run passed identity, provider-membership, schema-capability,
   runtime-role, migration-0021, and RLS/Force-RLS relation checks, then failed
   closed in the RLS/policy preflight with `ERROR: division by zero`.
-- Treat the cause as under investigation: production drift, assertion defect,
-  catalog normalization mismatch, or another policy-property mismatch remain
-  possible.
+- Predicate-level evidence verified the assertion defect: normalized
+  `pg_policies.cmd` was compared with raw `pg_policy.polcmd`; raw `'*'` is
+  exposed as normalized `'ALL'`, producing an exact-policy count of zero.
+  No unexpected prefixed policies were observed.
+- The repository-local diagnostic now uses `cmd = 'ALL'` with regression
+  coverage. The external operator helper remains unchanged and must be
+  corrected and independently reviewed by its owner before human retry.
 - The failure occurred before temporary provisioner password assignment; no
   cleanup is required from that failed run and no scope was selected.
 - Do not guess tenant/legal-entity/station IDs.

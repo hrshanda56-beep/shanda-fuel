@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation';
 
-import { AppShell } from '@/design-system/app-shell';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { isDesignSystemReferenceAvailable } from '@/design-system/reference/availability';
+import { FoundationModalShowcase } from '@/design-system/reference/foundation-modal-showcase';
 import { ForecourtWorkspace } from '@/modules/forecourt/ui/forecourt-workspace';
 import {
   formatBusinessDate,
@@ -9,14 +10,11 @@ import {
   formatMoney,
   formatPercentage,
 } from '@/design-system/formatters';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
 import {
   AccessDeniedState,
   Button,
   Card,
   ConflictState,
-  BottomSheet,
-  DialogFrame,
   EvidenceFile,
   EmptyState,
   ErrorState,
@@ -32,6 +30,8 @@ import {
 } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
 
+export const metadata = { title: 'Foundation preview' };
+
 /**
  * Pre-ADR-015 foundation preview: the synthetic Forecourt workspace and the
  * shared state, form, dialog and evidence patterns. Kept reachable (and under
@@ -42,7 +42,6 @@ export default function FoundationPreviewPage() {
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       context={{
         organisation: 'Demo organisation',
         station: 'Demo station',
@@ -288,20 +287,7 @@ export default function FoundationPreviewPage() {
           detail="Synthetic evidence · private storage reference pending A0 platform wiring"
         />
         <div className="modal-demo-grid">
-          <DialogFrame
-            trigger={<Button variant="secondary">Open accessible dialog</Button>}
-            title="Confirm return"
-            description="This is a synthetic modal surface for future named commands."
-          >
-            <p>Focus is contained here until the dialog is closed.</p>
-          </DialogFrame>
-          <BottomSheet
-            trigger={<Button variant="quiet">Open mobile sheet</Button>}
-            title="Quick context"
-            description="Short contextual tasks can use this responsive presentation."
-          >
-            <p>Longer workflows should remain full pages.</p>
-          </BottomSheet>
+          <FoundationModalShowcase />
         </div>
       </section>
     </AppShell>

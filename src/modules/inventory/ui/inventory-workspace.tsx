@@ -2,7 +2,14 @@
 
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
-import { Button, Card, ErrorState, Field, SuccessState } from '@/design-system/primitives';
+import {
+  Button,
+  Card,
+  ContextRequiredState,
+  ErrorState,
+  Field,
+  SuccessState,
+} from '@/design-system/primitives';
 
 export type InventoryContext = Readonly<{
   tenantId: string;
@@ -702,12 +709,11 @@ function ReceiptCostForm({
 export function InventoryContextRequired() {
   return (
     <Card className="panel">
-      <h1>Inventory needs a station context</h1>
-      <p>
-        Select an authorised organisation and station using the shared legal-entity and station
-        selector before opening an operational Inventory workflow. All stations is not valid for
-        Inventory commands.
-      </p>
+      <ContextRequiredState
+        headingLevel={2}
+        title="Choose a station to view inventory"
+        message="Use Change above to choose an authorised organisation, legal entity, and station. Inventory is available for one station at a time."
+      />
     </Card>
   );
 }

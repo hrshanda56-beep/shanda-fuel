@@ -523,11 +523,7 @@ export function NotFoundState({
   );
 }
 
-/**
- * A page that needs an operating context (tenant, legal entity, station)
- * before it can load anything. This is a normal starting point, not an error,
- * so it stays calm and neutral.
- */
+/** A calm, non-interactive state for pages waiting on an authorised context. */
 export function ContextRequiredState({
   title,
   message,
@@ -535,14 +531,16 @@ export function ContextRequiredState({
 }: {
   title: string;
   message: string;
-  headingLevel?: 2 | 3;
+  headingLevel?: 1 | 2 | 3;
 }) {
-  const Heading = `h${headingLevel}` as const;
   return (
-    <div className="context-required">
-      <Heading>{title}</Heading>
-      <p>{message}</p>
-    </div>
+    <EmptyState
+      layout="block"
+      icon="building"
+      title={title}
+      message={message}
+      headingLevel={headingLevel}
+    />
   );
 }
 

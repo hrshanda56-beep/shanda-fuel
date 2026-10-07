@@ -73,6 +73,26 @@ export function formatBusinessDate(value: string, locale = 'en-GB'): string {
   }).format(date);
 }
 
+/** Format an instant in the authoritative station timezone, never the viewer's timezone. */
+export function formatTimeInTimeZone(
+  value: DateInput,
+  timeZone: string | null | undefined,
+  locale = 'en-GB',
+): string {
+  const date = toDate(value);
+  if (!date || !timeZone?.trim()) return '—';
+
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone,
+    }).format(date);
+  } catch {
+    return '—';
+  }
+}
+
 export function formatStatusLabel(value: string): string {
   return value
     .trim()

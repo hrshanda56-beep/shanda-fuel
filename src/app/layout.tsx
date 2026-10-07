@@ -12,7 +12,10 @@ import { shellInitScript } from '@/design-system/shell-preferences';
 import { themeInitScript } from '@/design-system/theme';
 
 export const metadata: Metadata = {
-  title: 'Shanda Fuel',
+  title: {
+    default: 'Shanda Fuel',
+    template: '%s · Shanda Fuel',
+  },
   description: 'Fuel-station operations and financial control',
 };
 

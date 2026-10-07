@@ -1,6 +1,7 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { SettlementWorkspace } from '@/modules/settlements/ui/settlement-workspace';
+
+export const metadata = { title: 'Provider settlements' };
 
 export default async function SettlementsPage({
   params,
@@ -9,10 +10,7 @@ export default async function SettlementsPage({
 }) {
   const { stationId } = await params;
   return (
-    <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      breadcrumbs={[{ label: 'Provider settlements' }]}
-    >
+    <AppShell>
       <SettlementWorkspace stationId={stationId} />
     </AppShell>
   );
