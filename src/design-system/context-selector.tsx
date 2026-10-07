@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 
 import {
   buildContextHref,
+  listContextOptions,
   type AvailableContext,
   type ContextResolution,
   type ContextSelection,
@@ -87,7 +88,11 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
       .then((resolution) => {
         if (controller.signal.aborted) return;
         setState({ status: 'ready', resolution });
-        setSelection(resolution.current);
+        setSelection(
+          resolution.current ??
+            listContextOptions(resolution.available, resolution.route.policy)[0]?.selection ??
+            null,
+        );
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;

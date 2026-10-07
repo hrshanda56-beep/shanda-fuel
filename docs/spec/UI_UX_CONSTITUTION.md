@@ -61,6 +61,16 @@ names: Reconciliations, Cash, Settlements, Customers, Suppliers, Reports, Settin
 - The global header does not carry date or shift. Business date and shift belong to the Shift workflow.
 - While context is loading, show a content-shaped skeleton. Never "Choose organisation" or "0 records".
 
+### 4.1 Entry, authentication and context gating
+
+- The root visit is an explicit state machine: **session resolving → unauthenticated → authenticated/context resolving → ready, choose context, or no authorised context**.
+- Session resolving uses a restrained entry skeleton. It does not render the application shell, Today panels, counts, zeros, or empty-data messages.
+- Unauthenticated entry uses the dedicated Sign in experience only. It has no sidebar, bottom navigation, search, work-context control, or dashboard metrics.
+- The server resolves the authenticated actor and authorised work context before rendering context-dependent Today content. A missing context is an application state, never an empty-data state.
+- One valid work context is selected automatically. Multiple valid contexts with no remembered or explicit selection show a focused chooser headed **Where are you working?** and display organisation, legal entity, and station choices.
+- No authorised context shows **Your account isn’t ready yet** and explains that the signed-in account has not been assigned a workplace. It offers an appropriate account action without exposing implementation terminology.
+- Context choice persistence continues through the existing server-validated URL and HTTP-only cookie contract. The browser never grants itself identity, tenant, legal-entity, station, or permission access.
+
 ## 5. Visual system
 
 All colour comes from semantic tokens. Components never use palette tokens or colour literals. Light and dark

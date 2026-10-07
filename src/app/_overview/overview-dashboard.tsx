@@ -2,8 +2,8 @@ import { EmptyState, StatusBadge } from '@/design-system/primitives';
 
 /**
  * Production boundary for the overview until live reporting data is available.
- * Never replace these states with sample values or a silent fallback after a
- * fetch failure.
+ * The root entry gate guarantees that this surface only renders after a valid
+ * work context has been resolved.
  */
 export function ProductionSafeOverview() {
   return (
@@ -17,16 +17,16 @@ export function ProductionSafeOverview() {
             available.
           </p>
         </div>
-        <StatusBadge tone="neutral">Waiting for work context</StatusBadge>
+        <StatusBadge tone="neutral">Waiting for live evidence</StatusBadge>
       </section>
 
       <section className="today-next-action card" aria-labelledby="today-next-action-heading">
         <div className="today-next-action-copy">
           <p className="eyebrow">Next action</p>
-          <h2 id="today-next-action-heading">Select an authorised station</h2>
+          <h2 id="today-next-action-heading">Review today’s evidence</h2>
           <p>
-            Choose a work context above to unlock the live shift, figures, and exceptions for the
-            station you are working on.
+            Start with the current shift, then review sales, cash, stock, and exceptions as they
+            become available.
           </p>
         </div>
         <dl className="today-stage-summary">
@@ -57,16 +57,16 @@ export function ProductionSafeOverview() {
             <EmptyState
               layout="block"
               headingLevel={3}
-              title="Live position is not available"
-              message="Sales, litres, and cash will appear here after you choose an authorised work context."
+              title="Live position is not available yet"
+              message="Sales, litres, and cash will appear here when today’s operational evidence is recorded."
             />
           </div>
           <div className="card">
             <EmptyState
               layout="block"
               headingLevel={3}
-              title="Current shift is not available"
-              message="Shift progress and the next step will appear here for the selected station."
+              title="No current shift to review"
+              message="Shift progress and the next step will appear here when today’s shift is opened."
             />
           </div>
         </div>
@@ -83,8 +83,8 @@ export function ProductionSafeOverview() {
           <EmptyState
             layout="block"
             headingLevel={3}
-            title="No trend data for this context"
-            message="Period comparisons will appear when reporting data is available for the selected station."
+            title="No trend data yet"
+            message="Period comparisons will appear after enough operational evidence has been recorded."
           />
         </div>
       </section>
@@ -95,8 +95,8 @@ export function ProductionSafeOverview() {
           <EmptyState
             layout="block"
             headingLevel={3}
-            title="No attention feed available"
-            message="Exceptions will rise here with a clear next action when the station context is selected."
+            title="No exceptions recorded"
+            message="Exceptions will rise here with a clear next action when evidence needs attention."
           />
         </div>
       </section>
@@ -112,8 +112,8 @@ export function ProductionSafeOverview() {
           <EmptyState
             layout="block"
             headingLevel={3}
-            title="No recent activity available"
-            message="Recorded shift, stock, and finance activity will appear here after a work context is selected."
+            title="No recent activity yet"
+            message="Recorded shift, stock, and finance activity will appear here as work is completed."
           />
         </div>
       </section>

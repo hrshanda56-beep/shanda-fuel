@@ -36,11 +36,11 @@ test('overview shows calm unavailable states without synthetic figures', async (
 
   await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
   await expect(
-    page.getByText('Live figures are not available for this work context yet.'),
+    page.getByText('Live figures appear as operational evidence is recorded.'),
   ).toBeVisible();
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
     'Keep today moving',
-    'Select an authorised station',
+    'Review today’s evidence',
     'Today at a glance',
     'Statistics by period',
     'Needs attention',

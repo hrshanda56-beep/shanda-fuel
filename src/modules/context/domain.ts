@@ -8,6 +8,14 @@ import type {
 } from './contracts';
 import type { ContextRoutePolicy } from './routes';
 
+export type ContextOption = Readonly<{
+  selection: ContextSelection;
+  organisationName: string;
+  legalEntityName?: string;
+  stationName?: string;
+  stationCode?: string;
+}>;
+
 export function findOrganisation(
   available: AvailableContext,
   organisationId: string,
@@ -86,33 +94,79 @@ export function validateContextSelection(
   };
 }
 
+/**
+ * Present the authorised work contexts that are valid for a route. This is a
+ * display/selection projection only; the server still validates the chosen
+ * selection before persisting or using it.
+ */
+export function listContextOptions(
+  available: AvailableContext,
+  policy: ContextRoutePolicy,
+): readonly ContextOption[] {
+  const options: ContextOption[] = [];
+
+  for (const organisation of available.organisations) {
+    if (policy.allStationsAllowed) {
+      if (policy.legalEntity === 'required') {
+        for (const legalEntity of organisation.legalEntities) {
+          options.push({
+            selection: {
+              organisationId: organisation.id,
+              legalEntityId: legalEntity.id,
+              allStations: true,
+            },
+            organisationName: organisation.name,
+            legalEntityName: legalEntity.name,
+          });
+        }
+      } else {
+        options.push({
+          selection: { organisationId: organisation.id, allStations: true },
+          organisationName: organisation.name,
+        });
+      }
+      continue;
+    }
+
+    for (const legalEntity of organisation.legalEntities) {
+      if (legalEntity.stations.length > 0) {
+        for (const station of legalEntity.stations) {
+          options.push({
+            selection: {
+              organisationId: organisation.id,
+              legalEntityId: legalEntity.id,
+              stationId: station.id,
+              allStations: false,
+            },
+            organisationName: organisation.name,
+            legalEntityName: legalEntity.name,
+            stationName: station.name,
+            stationCode: station.code,
+          });
+        }
+      } else if (policy.station !== 'required') {
+        options.push({
+          selection: {
+            organisationId: organisation.id,
+            legalEntityId: legalEntity.id,
+            allStations: false,
+          },
+          organisationName: organisation.name,
+          legalEntityName: legalEntity.name,
+        });
+      }
+    }
+  }
+
+  return options;
+}
+
 export function defaultContextSelection(
   available: AvailableContext,
   policy: ContextRoutePolicy,
 ): ContextSelection | null {
-  const organisation = available.organisations[0];
-  if (!organisation) return null;
-  const legalEntity = organisation.legalEntities[0];
-  if (policy.legalEntity === 'required' && !legalEntity) return null;
-
-  if (policy.allStationsAllowed) {
-    return {
-      organisationId: organisation.id,
-      ...(policy.legalEntity === 'required' && legalEntity
-        ? { legalEntityId: legalEntity.id }
-        : {}),
-      allStations: true,
-    };
-  }
-
-  const station = legalEntity?.stations[0];
-  if (policy.station === 'required' && !station) return null;
-  return {
-    organisationId: organisation.id,
-    ...(legalEntity ? { legalEntityId: legalEntity.id } : {}),
-    ...(station ? { stationId: station.id } : {}),
-    allStations: false,
-  };
+  const options = listContextOptions(available, policy);
+  return options.length === 1 ? options[0]!.selection : null;
 }
 
 export function invalidContext(subject: string): AppError {
