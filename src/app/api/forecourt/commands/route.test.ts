@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
   loadStation: vi.fn(),
   handlers: {
+    activateStation: vi.fn(),
     activatePriceChange: vi.fn(),
     approvePriceChange: vi.fn(),
     approveReconciliation: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock('../../../../modules/forecourt/persistence', () => ({
 }));
 
 vi.mock('../../../../modules/forecourt/commands', () => ({
+  activateStationFromRequest: mocks.handlers.activateStation,
   activatePriceChangeFromRequest: mocks.handlers.activatePriceChange,
   approvePriceChangeFromRequest: mocks.handlers.approvePriceChange,
   approveReconciliationFromRequest: mocks.handlers.approveReconciliation,
@@ -114,6 +116,18 @@ describe('POST /api/forecourt/commands security boundary', () => {
     mocks.authenticate.mockResolvedValue({});
     mocks.preflight.mockResolvedValue({});
     for (const handler of Object.values(mocks.handlers)) handler.mockResolvedValue({ ok: true });
+  });
+
+  it('preflights station activation before dispatching the named command', async () => {
+    const body = { ...authorityBody, commandType: 'ActivateStation' };
+    const response = await POST(request(body));
+
+    expect(response.status).toBe(200);
+    expect(mocks.preflight).toHaveBeenCalledWith(
+      expect.objectContaining({ commandType: 'ActivateStation', body }),
+    );
+    expect(mocks.handlers.activateStation).toHaveBeenCalledOnce();
+    expect(mocks.handlers.openBusinessDay).not.toHaveBeenCalled();
   });
 
   it('authenticates before parsing an unauthenticated body, including malformed JSON', async () => {

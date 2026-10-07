@@ -465,16 +465,34 @@ async function loadShiftTemplate(
   tenantId: string,
   stationId: string,
   shiftTemplateId: string,
-): Promise<{ durationMinutes: number }> {
-  const rows = await transaction.execute<{ duration_minutes: number; active: boolean }>(sql`
-    select duration_minutes, active from app.shift_templates
+): Promise<{ durationMinutes: number; startTime: string | null }> {
+  const rows = await transaction.execute<{
+    duration_minutes: number;
+    active: boolean;
+    start_time: string | null;
+  }>(sql`
+    select duration_minutes, active, start_time::text from app.shift_templates
     where tenant_id = ${tenantId} and station_id = ${stationId} and id = ${shiftTemplateId}
     limit 1
   `);
   const row = rows[0];
   if (!row) throw new AppError('NOT_FOUND', 'The shift template was not found for this station');
   if (!row.active) throw new AppError('VALIDATION_FAILED', 'The shift template is not active');
-  return { durationMinutes: Number(row.duration_minutes) };
+  return { durationMinutes: Number(row.duration_minutes), startTime: row.start_time };
+}
+
+function stationClockTime(instant: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(instant));
+  const hour = parts.find((part) => part.type === 'hour')?.value;
+  const minute = parts.find((part) => part.type === 'minute')?.value;
+  if (!hour || !minute)
+    throw new AppError('INVARIANT_VIOLATION', 'Station time could not be derived');
+  return `${hour}:${minute}`;
 }
 
 /** Server-trusted station timezone lookup -- never client-supplied. */
@@ -482,13 +500,29 @@ async function loadStationTimezone(
   transaction: ForecourtTransaction,
   tenantId: string,
   stationId: string,
-): Promise<string> {
-  const rows = await transaction.execute<{ timezone: string }>(sql`
-    select timezone from app.stations where tenant_id = ${tenantId} and id = ${stationId} limit 1
+): Promise<{ timezone: string; status: string; clockScheduleEnabled: boolean }> {
+  const rows = await transaction.execute<{
+    timezone: string;
+    status: string;
+    clock_schedule_enabled: boolean;
+  }>(sql`
+    select station.timezone, station.status, exists (
+      select 1 from app.shift_templates
+      where tenant_id = station.tenant_id and station_id = station.id
+        and active and start_time is not null
+    ) as clock_schedule_enabled
+    from app.stations station
+    where station.tenant_id = ${tenantId} and station.id = ${stationId}
+    limit 1
   `);
-  const timezone = rows[0]?.timezone;
-  if (!timezone) throw new AppError('NOT_FOUND', 'The station timezone could not be resolved');
-  return timezone;
+  const station = rows[0];
+  if (!station?.timezone)
+    throw new AppError('NOT_FOUND', 'The station timezone could not be resolved');
+  return {
+    timezone: station.timezone,
+    status: station.status,
+    clockScheduleEnabled: station.clock_schedule_enabled,
+  };
 }
 
 async function serverNow(
@@ -529,8 +563,8 @@ export async function openBusinessDayFromRequest(request: Request, input: unknow
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
       const now = await serverNow(transaction);
-      const timezone = await loadStationTimezone(transaction, context.tenantId, context.stationId);
-      const businessDate = deriveBusinessDate(now, timezone);
+      const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+      const businessDate = deriveBusinessDate(now, station.timezone);
       let row = (
         await transaction.execute<{
           id: string;
@@ -667,6 +701,10 @@ const defineShiftTemplatePayload = z
     expectedVersion: z.number().int().nonnegative(),
     code: z.string().trim().min(1),
     name: z.string().trim().min(1),
+    startTime: z
+      .string()
+      .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
     /** Configurable per station; never hardcoded in domain logic. */
     durationMinutes: z.number().int().positive(),
     active: z.boolean().optional(),
@@ -695,22 +733,44 @@ export async function defineShiftTemplateFromRequest(request: Request, input: un
     expectedVersion: payload.expectedVersion,
     ports: databaseForecourtPorts(),
     execute: async (transaction) => {
-      const rows = await transaction.execute<{ id: string }>(sql`
-        select id from app.shift_templates
+      const stationRows = await transaction.execute<{
+        status: string;
+        clock_schedule_enabled: boolean;
+      }>(sql`
+        select status, exists (
+          select 1 from app.shift_templates
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and active and start_time is not null
+        ) as clock_schedule_enabled
+        from app.stations
+        where tenant_id = ${context.tenantId} and id = ${context.stationId}
+        for update
+      `);
+      const station = stationRows[0];
+      if (!station) throw new AppError('NOT_FOUND', 'The station was not found in this tenant');
+      if (station.status === 'ACTIVE' && station.clock_schedule_enabled) {
+        throw new AppError(
+          'CONFLICT',
+          'An activated station shift schedule cannot be changed by this command',
+        );
+      }
+      const rows = await transaction.execute<{ id: string; start_time: string | null }>(sql`
+        select id, start_time::text from app.shift_templates
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
           and id = ${payload.shiftTemplateId}
         for update
       `);
-      if (!rows[0]) {
+      const existingTemplate = rows[0];
+      if (!existingTemplate) {
         if (payload.expectedVersion !== 0)
           throw new AppError('NOT_FOUND', 'Shift template was not found in this station');
         try {
           await transaction.execute(sql`
             insert into app.shift_templates
-              (id, tenant_id, station_id, code, name, duration_minutes, active, created_by, version)
+              (id, tenant_id, station_id, code, name, start_time, duration_minutes, active, created_by, version)
             values (
               ${payload.shiftTemplateId}, ${context.tenantId}, ${context.stationId},
-              ${payload.code}, ${payload.name}, ${payload.durationMinutes}, ${active},
+              ${payload.code}, ${payload.name}, ${payload.startTime ?? null}::time, ${payload.durationMinutes}, ${active},
               ${context.actor.membershipId}, 0
             )
           `);
@@ -723,7 +783,9 @@ export async function defineShiftTemplateFromRequest(request: Request, input: un
       } else {
         await transaction.execute(sql`
           update app.shift_templates
-          set code = ${payload.code}, name = ${payload.name}, duration_minutes = ${payload.durationMinutes},
+          set code = ${payload.code}, name = ${payload.name},
+            start_time = coalesce(${payload.startTime ?? null}::time, start_time),
+            duration_minutes = ${payload.durationMinutes},
             active = ${active}, updated_at = now(), version = version + 1
           where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
             and id = ${payload.shiftTemplateId} and version = ${payload.expectedVersion}
@@ -733,8 +795,89 @@ export async function defineShiftTemplateFromRequest(request: Request, input: un
         result: {
           shiftTemplateId: payload.shiftTemplateId,
           durationMinutes: payload.durationMinutes,
+          startTime: payload.startTime ?? null,
           active,
         },
+      };
+    },
+  });
+}
+
+const activateStationPayload = z
+  .object({
+    commandType: z.literal('ActivateStation').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+  })
+  .strict();
+
+/** Explicit ONBOARDING -> ACTIVE transition, guarded by the approved TEI schedule. */
+export async function activateStationFromRequest(request: Request, input: unknown) {
+  const payload = activateStationPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  return executeForecourtCommand({
+    context,
+    commandType: 'ActivateStation',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'Station',
+    subjectId: payload.stationId,
+    before: { status: 'ONBOARDING' },
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const stationRows = await transaction.execute<{
+        station_status: string;
+        tenant_status: string;
+        entity_status: string;
+        timezone: string;
+      }>(sql`
+        select station.status as station_status, tenant.status as tenant_status,
+          entity.status as entity_status, station.timezone
+        from app.stations station
+        join app.tenants tenant on tenant.id = station.tenant_id
+        join app.legal_entities entity
+          on entity.tenant_id = station.tenant_id and entity.id = station.legal_entity_id
+        where station.tenant_id = ${context.tenantId} and station.id = ${context.stationId}
+        for update of station
+      `);
+      const station = stationRows[0];
+      if (!station) throw new AppError('NOT_FOUND', 'The station was not found in this tenant');
+      if (station.station_status !== 'ONBOARDING') {
+        throw new AppError('CONFLICT', 'Only an ONBOARDING station can be activated');
+      }
+      if (station.tenant_status !== 'ACTIVE' || station.entity_status !== 'ACTIVE') {
+        throw new AppError('CONFLICT', 'The station tenant and legal entity must be ACTIVE');
+      }
+      // Read the schedule in a separate statement after taking the station
+      // lock. DefineShiftTemplate uses the same lock, so READ COMMITTED gives
+      // this query a fresh snapshot after any preceding template edit commits.
+      const scheduleRows = await transaction.execute<{ schedule_ok: boolean }>(sql`
+        select coalesce(
+          count(*) = 2
+            and array_agg(to_char(start_time, 'HH24:MI') order by start_time)
+              = array['06:00', '18:00']::text[]
+            and bool_and(duration_minutes = 720),
+          false
+        ) as schedule_ok
+        from app.shift_templates
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and active
+      `);
+      if (station.timezone !== 'Africa/Harare' || !scheduleRows[0]?.schedule_ok) {
+        throw new AppError(
+          'CONFLICT',
+          'Activation requires active 06:00 and 18:00 twelve-hour shifts in Africa/Harare',
+        );
+      }
+      await transaction.execute(sql`
+        update app.stations set status = 'ACTIVE', updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${context.stationId}
+          and status = 'ONBOARDING'
+      `);
+      return {
+        result: { stationId: context.stationId, status: 'ACTIVE' as const },
+        after: { status: 'ACTIVE' },
       };
     },
   });
@@ -835,6 +978,7 @@ async function runShiftLifecycleCommand(
             'Provide either shiftTemplateId or an explicit plannedEndAt, not both',
           );
         let resolvedPlannedEndAt: string;
+        let shiftTemplateStartTime: string | null = null;
         if (payload.shiftTemplateId) {
           const template = await loadShiftTemplate(
             transaction,
@@ -842,6 +986,7 @@ async function runShiftLifecycleCommand(
             context.stationId,
             payload.shiftTemplateId,
           );
+          shiftTemplateStartTime = template.startTime;
           resolvedPlannedEndAt = new Date(
             new Date(payload.plannedStartAt).getTime() + template.durationMinutes * 60_000,
           ).toISOString();
@@ -855,12 +1000,29 @@ async function runShiftLifecycleCommand(
         }
         if (new Date(resolvedPlannedEndAt).getTime() <= new Date(payload.plannedStartAt).getTime())
           throw new AppError('VALIDATION_FAILED', 'plannedEndAt must be after plannedStartAt');
-        const timezone = await loadStationTimezone(
-          transaction,
-          context.tenantId,
-          context.stationId,
-        );
-        const derivedBusinessDate = deriveBusinessDate(payload.plannedStartAt, timezone);
+        const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+        if (
+          station.status === 'ACTIVE' &&
+          station.clockScheduleEnabled &&
+          (!payload.shiftTemplateId || !shiftTemplateStartTime)
+        ) {
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'Activated stations require a scheduled shift template',
+          );
+        }
+        if (
+          payload.shiftTemplateId &&
+          shiftTemplateStartTime &&
+          stationClockTime(payload.plannedStartAt, station.timezone) !==
+            shiftTemplateStartTime.slice(0, 5)
+        ) {
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'plannedStartAt does not match the shift template clock time',
+          );
+        }
+        const derivedBusinessDate = deriveBusinessDate(payload.plannedStartAt, station.timezone);
         if (derivedBusinessDate !== dayRow.business_date)
           throw new AppError(
             'INVARIANT_VIOLATION',

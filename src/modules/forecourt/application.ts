@@ -105,6 +105,12 @@ export const FORECOURT_COMMAND_POLICY = {
     assuranceRequirement: 'STEP_UP',
     requiresExpectedVersion: true,
   },
+  ActivateStation: {
+    permissionCode: 'station.manage',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STEP_UP',
+    requiresExpectedVersion: false,
+  },
   OpenBusinessDay: {
     permissionCode: 'business_day.open',
     requiredScopeType: 'STATION',
@@ -512,6 +518,7 @@ export type ForecourtCommandPorts = {
 };
 
 export type ForecourtVersionSubject =
+  | 'Station'
   | 'StationBusinessDay'
   | 'Shift'
   | 'MeterBoundary'
@@ -523,6 +530,7 @@ export type ForecourtVersionSubject =
   | 'ShiftTemplate';
 
 export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVersionSubject> = {
+  ActivateStation: 'Station',
   DefineShiftTemplate: 'ShiftTemplate',
   OpenBusinessDay: 'StationBusinessDay',
   CloseBusinessDay: 'StationBusinessDay',

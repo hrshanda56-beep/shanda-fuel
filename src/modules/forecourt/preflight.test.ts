@@ -17,7 +17,7 @@ const ids = {
   membership: '55555555-5555-4555-8555-555555555555',
 };
 
-function authority(roleCode: 'SUPERVISOR' | 'ATTENDANT' = 'SUPERVISOR') {
+function authority(roleCode: 'SUPERVISOR' | 'ATTENDANT' | 'OWNER' = 'SUPERVISOR', stepUp = false) {
   const roleAssignment = {
     tenantId: ids.tenant,
     scopeType: 'STATION' as const,
@@ -38,6 +38,15 @@ function authority(roleCode: 'SUPERVISOR' | 'ATTENDANT' = 'SUPERVISOR') {
         sessionId: '77777777-7777-4777-8777-777777777777',
         userId: ids.actor,
         expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+        ...(stepUp
+          ? {
+              strongAuthenticationVerified: true,
+              strongAuthenticatedAt: new Date(),
+              stepUpLevel: 1 as const,
+              stepUpExpiresAt: new Date(Date.now() + 60_000),
+              stepUpTenantId: ids.tenant,
+            }
+          : {}),
       },
     },
     membership: {
@@ -54,6 +63,14 @@ function authority(roleCode: 'SUPERVISOR' | 'ATTENDANT' = 'SUPERVISOR') {
       membershipId: ids.membership,
       tenantId: ids.tenant,
       membershipActive: true,
+      ...(stepUp
+        ? {
+            strongAuthenticationVerified: true,
+            strongAuthenticationAt: new Date(),
+            stepUpLevel: 1 as const,
+            stepUpTenantId: ids.tenant,
+          }
+        : {}),
       roleAssignments: [roleAssignment],
       temporaryGrants: [],
     },
@@ -142,5 +159,37 @@ describe('forecourt command authorization preflight', () => {
       message: 'Forecourt command authority could not be established',
       details: undefined,
     });
+  });
+
+  it('requires station.manage and tenant-bound step-up for station activation', async () => {
+    const loadStation = vi.fn().mockResolvedValue(station);
+    await expect(
+      authorizeForecourtCommandPreflight({
+        request,
+        commandType: 'ActivateStation',
+        body: { tenantId: ids.tenant, stationId: ids.station },
+        loadStation,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    tenantResolver.mockResolvedValue(authority('OWNER'));
+    await expect(
+      authorizeForecourtCommandPreflight({
+        request,
+        commandType: 'ActivateStation',
+        body: { tenantId: ids.tenant, stationId: ids.station },
+        loadStation,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    tenantResolver.mockResolvedValue(authority('OWNER', true));
+    await expect(
+      authorizeForecourtCommandPreflight({
+        request,
+        commandType: 'ActivateStation',
+        body: { tenantId: ids.tenant, stationId: ids.station },
+        loadStation,
+      }),
+    ).resolves.toMatchObject({ stationId: ids.station, tenantId: ids.tenant });
   });
 });

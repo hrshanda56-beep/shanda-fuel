@@ -6,6 +6,7 @@ import {
 } from '../../../../modules/forecourt/application';
 import { loadForecourtStation } from '../../../../modules/forecourt/persistence';
 import {
+  activateStationFromRequest,
   activatePriceChangeFromRequest,
   approvePriceChangeFromRequest,
   approveReconciliationFromRequest,
@@ -59,6 +60,7 @@ import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/
  * build rather than silently falling through to an unrelated command.
  */
 const COMMAND_TYPES = [
+  'ActivateStation',
   'SealSegment',
   'HandoverAttendant',
   'DefineShiftTemplate',
@@ -145,6 +147,9 @@ export const POST = withRequestObservability(
       });
       let result: unknown;
       switch (commandType) {
+        case 'ActivateStation':
+          result = await activateStationFromRequest(request, body);
+          break;
         case 'SealSegment':
           result = await sealMeterSegmentFromRequest(request, body);
           break;

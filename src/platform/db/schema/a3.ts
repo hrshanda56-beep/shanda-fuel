@@ -11,6 +11,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  time,
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -207,6 +208,7 @@ export const shiftTemplates = appSchema.table(
     stationId: uuid('station_id').notNull(),
     code: text('code').notNull(),
     name: text('name').notNull(),
+    startTime: time('start_time'),
     durationMinutes: integer('duration_minutes').notNull().default(480),
     active: boolean('active').notNull().default(true),
     version: integer('version').notNull().default(0),
