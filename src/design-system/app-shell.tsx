@@ -25,6 +25,7 @@ import {
   isSingleDestinationSection,
   readWorkContext,
   resolveNavigation,
+  selectMobileNavigationItems,
   type NavigationProjection,
   type ResolvedNavigationItem,
   type ResolvedNavigationSection,
@@ -252,6 +253,7 @@ export function AppShell({
     onWip: openWip,
     onContextRequired: openContextSelector,
   };
+  const mobileNavigationItems = selectMobileNavigationItems(sections);
 
   const shellContext = useMemo(() => ({ openSearch: () => setSearchOpen(true) }), []);
 
@@ -355,6 +357,12 @@ export function AppShell({
           </div>
         </div>
 
+        <MobileBottomNavigation
+          items={mobileNavigationItems}
+          pathname={pathname}
+          onMore={() => setMenuOpen(true)}
+        />
+
         <Modal
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
@@ -402,6 +410,50 @@ export function AppShell({
         />
       </div>
     </ShellContext.Provider>
+  );
+}
+
+function MobileBottomNavigation({
+  items,
+  pathname,
+  onMore,
+}: {
+  items: readonly Extract<ResolvedNavigationItem, { state: 'link' }>[];
+  pathname: string | null;
+  onMore: () => void;
+}) {
+  return (
+    <nav className="shell-mobile-nav" aria-label="Mobile navigation">
+      <ul className="shell-mobile-nav-list">
+        {items.map((item) => {
+          const active = isNavigationItemActive(item, pathname);
+          return (
+            <li key={item.key}>
+              <Link
+                className="shell-mobile-nav-link"
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+        <li>
+          <button
+            type="button"
+            className="shell-mobile-nav-link shell-mobile-nav-more"
+            aria-haspopup="dialog"
+            aria-label="More navigation"
+            onClick={onMore}
+          >
+            <Icon name="more" />
+            <span>More</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
   );
 }
 
