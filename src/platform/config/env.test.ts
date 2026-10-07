@@ -10,7 +10,23 @@ describe('server environment validation', () => {
     expect(getServerEnv({ APP_ENV: 'local', APP_URL: 'http://localhost:3000' })).toMatchObject({
       APP_ENV: 'local',
       APP_URL: 'http://localhost:3000',
+      REQUIRE_LOGIN_MFA: true,
+      REQUIRE_PRIVILEGED_STEP_UP: true,
     });
+  });
+
+  it('supports an explicit login-MFA override without permitting privileged-step-up weakening', () => {
+    expect(
+      getServerEnv({
+        APP_ENV: 'test',
+        REQUIRE_LOGIN_MFA: 'false',
+        REQUIRE_PRIVILEGED_STEP_UP: 'true',
+      }),
+    ).toMatchObject({ REQUIRE_LOGIN_MFA: false, REQUIRE_PRIVILEGED_STEP_UP: true });
+    expect(() =>
+      getServerEnv({ APP_ENV: 'test', REQUIRE_PRIVILEGED_STEP_UP: 'false' }),
+    ).toThrow('Privileged step-up must remain enabled');
+    expect(() => getServerEnv({ APP_ENV: 'test', REQUIRE_LOGIN_MFA: 'not-a-boolean' })).toThrow();
   });
 
   it('requires a database in production', () => {

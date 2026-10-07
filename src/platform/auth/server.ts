@@ -10,7 +10,34 @@ import { AppError } from '../errors';
 export const AUTH_SECURITY_POLICY = {
   publicSignUpDisabled: true,
   strongAuthenticationMode: 'fail-closed-until-verified' as const,
+  privilegedStepUpRequired: true,
 } as const;
+
+/**
+ * Better Auth does not expose a login-only MFA enforcement option. When the
+ * temporary Phase 0 policy is explicitly disabled, remove only its
+ * sign-in-after hook while retaining the plugin's enrollment, verification,
+ * backup-code, lockout, schema, and privileged step-up capabilities.
+ */
+export function buildTwoFactorPlugin(requireLoginMfa: boolean) {
+  const plugin = twoFactor({
+    issuer: 'Shanda Fuel',
+    allowPasswordless: false,
+    skipVerificationOnEnable: false,
+    totpOptions: { issuer: 'Shanda Fuel', digits: 6, period: 30 },
+    accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 },
+  });
+
+  if (requireLoginMfa) return plugin;
+
+  return {
+    ...plugin,
+    hooks: {
+      ...plugin.hooks,
+      after: [],
+    },
+  };
+}
 
 /**
  * Better Auth owns identity/session mechanics. Memberships and business
@@ -40,13 +67,7 @@ export function getAuth() {
       disableSignUp: AUTH_SECURITY_POLICY.publicSignUpDisabled,
     },
     plugins: [
-      twoFactor({
-        issuer: 'Shanda Fuel',
-        allowPasswordless: false,
-        skipVerificationOnEnable: false,
-        totpOptions: { issuer: 'Shanda Fuel', digits: 6, period: 30 },
-        accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 },
-      }),
+      buildTwoFactorPlugin(env.REQUIRE_LOGIN_MFA),
     ],
     session: {
       expiresIn: 60 * 60 * 24 * 7,

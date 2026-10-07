@@ -4,6 +4,13 @@ import { AppError } from '../errors';
 
 const r2AccountIdPattern = /^[a-f0-9]{32}$/i;
 const r2BucketNamePattern = /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/;
+const booleanEnvironmentFlag = z
+  .preprocess(
+    (value) => (typeof value === 'boolean' ? String(value) : value),
+    z.enum(['true', 'false']),
+  )
+  .default('true')
+  .transform((value) => value === 'true');
 
 function isDeployedEnvironment(value: ServerEnv['APP_ENV']): boolean {
   return value === 'staging' || value === 'production';
@@ -29,6 +36,11 @@ const envSchema = z
     DATABASE_URL: z.string().min(1).optional(),
     DATABASE_DIRECT_URL: z.string().min(1).optional(),
     BETTER_AUTH_SECRET: z.string().min(32).optional(),
+    // Login MFA is an explicit, reversible policy switch. The secure default
+    // keeps Better Auth's normal-login challenge enabled.
+    REQUIRE_LOGIN_MFA: booleanEnvironmentFlag,
+    // This is a security invariant, not an operational feature switch.
+    REQUIRE_PRIVILEGED_STEP_UP: booleanEnvironmentFlag,
     R2_ACCOUNT_ID: z
       .string()
       .regex(r2AccountIdPattern, { error: 'R2 account ID must be 32 hexadecimal characters' })
@@ -52,6 +64,13 @@ const envSchema = z
     AUDIT_SIGNING_KEY: z.string().min(1).optional(),
   })
   .superRefine((value, context) => {
+    if (!value.REQUIRE_PRIVILEGED_STEP_UP) {
+      context.addIssue({
+        code: 'custom',
+        path: ['REQUIRE_PRIVILEGED_STEP_UP'],
+        message: 'Privileged step-up must remain enabled',
+      });
+    }
     const r2Values = [
       value.R2_ACCOUNT_ID,
       value.R2_BUCKET,
@@ -170,7 +189,7 @@ const envSchema = z
 
 export type ServerEnv = z.infer<typeof envSchema>;
 
-export function getServerEnv(input: Record<string, string | undefined> = process.env): ServerEnv {
+export function getServerEnv(input: Record<string, unknown> = process.env): ServerEnv {
   if (process.env.NODE_ENV === 'production' && input.APP_ENV === undefined) {
     throw new AppError(
       'INVARIANT_VIOLATION',
