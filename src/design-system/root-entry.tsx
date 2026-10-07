@@ -57,16 +57,19 @@ export function NoAuthorisedContextState() {
     <main className="entry-layout" aria-labelledby="entry-access-title">
       <div className="entry-panel">
         <EntryBrand />
-        <Card as="section" className="entry-card" aria-labelledby="entry-access-title">
-          <div className="section-heading">
-            <p className="eyebrow">Account access</p>
+        <Card
+          as="section"
+          className="entry-card entry-state-card"
+          aria-labelledby="entry-access-title"
+        >
+          <div className="entry-state-copy">
             <h1 id="entry-access-title">Your account isn’t ready yet</h1>
             <p>
-              You’re signed in, but no workplace has been assigned to your account. Ask your
-              administrator to assign your organisation, legal entity, or station.
+              You’re signed in, but no workplace has been assigned to this account. Ask your
+              administrator to assign access.
             </p>
           </div>
-          <div className="entry-actions">
+          <div className="entry-actions entry-actions-secondary">
             <SignOutButton />
           </div>
         </Card>
@@ -80,11 +83,17 @@ export function EntryUnavailableState() {
     <main className="entry-layout" aria-labelledby="entry-unavailable-title">
       <div className="entry-panel">
         <EntryBrand />
-        <Card as="section" className="entry-card" aria-labelledby="entry-unavailable-title">
-          <div className="section-heading">
-            <p className="eyebrow">Workspace access</p>
+        <Card
+          as="section"
+          className="entry-card entry-state-card"
+          aria-labelledby="entry-unavailable-title"
+        >
+          <div className="entry-state-copy">
             <h1 id="entry-unavailable-title">We couldn’t load your workspace</h1>
-            <p>Try again. If the problem continues, ask your administrator for help.</p>
+            <p>
+              We couldn’t check your workspace right now. Try again, or sign out and use another
+              account.
+            </p>
           </div>
           <div className="entry-actions">
             <Link className="button button-primary" href="/">
@@ -143,8 +152,7 @@ export function RootContextChooser({ resolution }: { resolution: ContextResoluti
       <div className="entry-panel entry-panel-wide">
         <EntryBrand />
         <Card as="section" className="entry-card" aria-labelledby="entry-context-title">
-          <div className="section-heading">
-            <p className="eyebrow">Work context</p>
+          <div className="entry-state-copy">
             <h1 id="entry-context-title">Where are you working?</h1>
             <p>Choose the organisation, legal entity, and station for today’s work.</p>
           </div>

@@ -69,6 +69,8 @@ names: Reconciliations, Cash, Settlements, Customers, Suppliers, Reports, Settin
 - The server resolves the authenticated actor and authorised work context before rendering context-dependent Today content. A missing context is an application state, never an empty-data state.
 - One valid work context is selected automatically. Multiple valid contexts with no remembered or explicit selection show a focused chooser headed **Where are you working?** and display organisation, legal entity, and station choices.
 - No authorised context shows **Your account isn’t ready yet** and explains that the signed-in account has not been assigned a workplace. It offers an appropriate account action without exposing implementation terminology.
+- A technical workspace-resolution failure is a separate state: it says that the workspace could not be checked, offers a clear retry as the primary action, and does not imply that access has been revoked or that no workplace exists.
+- Entry states use a composed, centred identity-to-state layout on desktop and a full-width, stacked mobile treatment. Avoid ornamental filler, uppercase meta labels, and equal-weight actions.
 - Context choice persistence continues through the existing server-validated URL and HTTP-only cookie contract. The browser never grants itself identity, tenant, legal-entity, station, or permission access.
 
 ## 5. Visual system

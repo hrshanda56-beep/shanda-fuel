@@ -1036,12 +1036,20 @@
 }
 
 .entry-layout {
-  align-items: start;
-  padding-top: clamp(var(--space-8), 12vh, var(--space-16));
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: clamp(var(--space-8), 8vh, var(--space-16)) var(--page-gutter);
+  background: var(--bg-canvas);
 }
 
 .entry-panel {
+  display: grid;
+  align-content: center;
+  gap: var(--space-5);
   width: min(100%, 28rem);
+  margin-inline: auto;
 }
 
 .entry-panel-wide {
@@ -1051,6 +1059,7 @@
 .entry-brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3);
   padding-inline: var(--space-1);
 }
@@ -1059,20 +1068,42 @@
   display: grid;
   gap: var(--space-6);
   padding: var(--space-6);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-sm);
 }
 
-.entry-card .section-heading {
+.entry-state-card {
+  gap: var(--space-8);
+}
+
+.entry-state-copy {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.entry-state-copy h1,
+.entry-state-copy p {
   margin: 0;
 }
 
 .entry-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
 .entry-actions > * {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+}
+
+.entry-actions > .button,
+.entry-actions > a.button {
+  min-width: 9rem;
+}
+
+.entry-actions-secondary {
+  justify-content: flex-start;
 }
 
 .entry-loading-card {
@@ -1174,6 +1205,44 @@
 }
 
 /* Responsive --------------------------------------------------------------- */
+
+@media (max-width: 39.99rem) {
+  .entry-layout {
+    place-items: stretch;
+    padding: max(var(--space-8), env(safe-area-inset-top) + var(--space-6)) var(--page-gutter)
+      max(var(--space-8), env(safe-area-inset-bottom) + var(--space-6));
+  }
+
+  .entry-panel,
+  .entry-panel-wide {
+    width: 100%;
+    align-content: center;
+  }
+
+  .entry-card {
+    padding: var(--space-6) var(--space-5);
+  }
+
+  .entry-state-card {
+    gap: var(--space-6);
+  }
+
+  .entry-actions {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .entry-actions > *,
+  .entry-actions > .button,
+  .entry-actions > a.button,
+  .entry-actions > div {
+    width: 100%;
+  }
+
+  .entry-actions > div > .button {
+    width: 100%;
+  }
+}
 
 @media (max-width: 39.99rem) {
   /* The count and the accessible name remain; the visible label goes. */
