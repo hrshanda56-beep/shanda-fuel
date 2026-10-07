@@ -28,7 +28,12 @@ const configuredStationIds = (process.env.FIRST_OWNER_PROVISIONING_TEST_STATION_
 );
 const auditKey = { keyId: 'integration-first-owner', secret: 'integration-only-secret' };
 
-type Provisioned = { userId: string; membershipId: string; operationId: string };
+type Provisioned = {
+  userId: string;
+  membershipId: string;
+  operationId: string;
+  result?: Record<string, unknown>;
+};
 
 let client: ReturnType<typeof postgres> | undefined;
 let adminClient: ReturnType<typeof postgres> | undefined;
@@ -92,8 +97,8 @@ async function plan(
 async function provision(roleCode = 'OWNER'): Promise<Provisioned> {
   const target = { userId: randomUUID(), membershipId: randomUUID(), operationId: randomUUID() };
   const passwordHash = await hashPassword('integration-owner-password');
-  await client!.begin(async (transaction) => {
-    await transaction`
+  const rows = await client!.begin(async (transaction) => {
+    return transaction<{ value: Record<string, unknown> }[]>`
       select platform.first_owner_provisioning_provision(
         ${target.userId}::uuid,
         ${target.membershipId}::uuid,
@@ -106,10 +111,10 @@ async function provision(roleCode = 'OWNER'): Promise<Provisioned> {
         ${passwordHash},
         ${transaction.json(JSON.parse(JSON.stringify(event('ACCESS.PROVISIONING_INITIATED', target, roleCode))))}::jsonb,
         ${transaction.json(JSON.parse(JSON.stringify(event('ACCESS.PROVISIONING_COMPLETED', target, roleCode))))}::jsonb
-      )
+      ) as value
     `;
   });
-  return target;
+  return { ...target, result: rows[0]?.value };
 }
 
 integration('first-owner provisioning PostgreSQL hardening', () => {
@@ -183,6 +188,11 @@ integration('first-owner provisioning PostgreSQL hardening', () => {
     );
     expect(success).toBeDefined();
     provisioned = success!.value;
+    expect(provisioned.result).toMatchObject({
+      roleCode: 'OWNER',
+      scopeType: 'TENANT',
+      stationCount: 4,
+    });
 
     const roleRows = await adminClient!<
       {
