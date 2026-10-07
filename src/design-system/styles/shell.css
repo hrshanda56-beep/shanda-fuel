@@ -31,6 +31,12 @@
   display: none;
 }
 
+.shell-skip-navigation {
+  position: fixed;
+  width: 0;
+  height: 0;
+}
+
 /* Brand ------------------------------------------------------------------- */
 
 .shell-brand {
