@@ -66,9 +66,7 @@ export function getAuth() {
       enabled: true,
       disableSignUp: AUTH_SECURITY_POLICY.publicSignUpDisabled,
     },
-    plugins: [
-      buildTwoFactorPlugin(env.REQUIRE_LOGIN_MFA),
-    ],
+    plugins: [buildTwoFactorPlugin(env.REQUIRE_LOGIN_MFA)],
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,

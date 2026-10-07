@@ -23,9 +23,9 @@ describe('server environment validation', () => {
         REQUIRE_PRIVILEGED_STEP_UP: 'true',
       }),
     ).toMatchObject({ REQUIRE_LOGIN_MFA: false, REQUIRE_PRIVILEGED_STEP_UP: true });
-    expect(() =>
-      getServerEnv({ APP_ENV: 'test', REQUIRE_PRIVILEGED_STEP_UP: 'false' }),
-    ).toThrow('Privileged step-up must remain enabled');
+    expect(() => getServerEnv({ APP_ENV: 'test', REQUIRE_PRIVILEGED_STEP_UP: 'false' })).toThrow(
+      'Privileged step-up must remain enabled',
+    );
     expect(() => getServerEnv({ APP_ENV: 'test', REQUIRE_LOGIN_MFA: 'not-a-boolean' })).toThrow();
   });
 
