@@ -8,6 +8,10 @@ The locked product direction lives in `docs/release-readiness.md` (calm, airy, p
 restrained; less is more). This foundation is how that direction is applied. Build
 screens by composing it; do not add page-specific visual systems.
 
+The Phase 0.5 UI/UX rules (navigation, terminology, status language, data entry, states) are
+locked in `docs/spec/UI_UX_CONSTITUTION.md`; where this README and the constitution differ, the
+constitution wins.
+
 Visual reference: run `pnpm dev` and open `/design-system`. It renders every token and
 primitive in the current theme. The route is internal and development-only: production
 builds intentionally return 404 (`reference/availability.ts`, unit-tested). The E2E suite
