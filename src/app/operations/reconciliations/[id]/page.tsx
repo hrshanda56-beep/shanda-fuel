@@ -1,5 +1,4 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import {
   DailyOperationsContextRequired,
   DailyOperationsWorkspace,
@@ -37,7 +36,6 @@ export default async function OperationsReconciliationPage({
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       breadcrumbs={[
         { label: 'Operations', href: '/operations/daily' },
         { label: 'Reconciliation' },

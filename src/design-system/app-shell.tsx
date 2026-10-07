@@ -58,7 +58,7 @@ export type ShellTask = {
   href?: string;
 };
 
-type AppShellProps = {
+export type AppShellProps = {
   children: ReactNode;
   /** Visibility per navigation key, projected by the authorization layer. */
   navigationProjection: readonly NavigationProjection[];

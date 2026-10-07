@@ -1,5 +1,4 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { ManagementReportDashboard } from '@/modules/reporting/ui/management-report-dashboard';
 
@@ -14,10 +13,7 @@ export default async function ReportsPage({
 }) {
   const { tenantId } = await searchParams;
   return (
-    <AppShell
-      navigationProjection={syntheticNavigationProjection}
-      pageSubtitle="Operational financial position"
-    >
+    <AppShell pageSubtitle="Operational financial position">
       <p className="lede">
         A factual view across approved sales, custody, settlements, commercial exposure, and stock.
       </p>

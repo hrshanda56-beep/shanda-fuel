@@ -39,27 +39,28 @@ Task status in this file is a planning aid. `/docs/CURRENT_STATUS.md` remains th
 ## Current critical path
 
 The following is the current authoritative Phase 0 sequence, last synchronized
-against main `8b9d163763cb4fab52b96aed225f7553f0069e65`:
+against main `8b9d163763cb4fab52b96aed225f7553f0069e65` and the frozen Phase 0
+candidate `498fc95893c0b6313e5e719888bebba1850fcd9d`:
 
-1. Diagnose the latest production RLS/policy preflight failure.
-2. Determine drift versus assertion/normalization bug.
-3. Access Review any tooling-only correction.
-4. Rerun Stage 1 from the beginning.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+1. Complete the corrected authorization-projection review on the combined
+   Phase 0 candidate.
+2. Confirm the dependency-audit CI job and all required non-production gates.
+3. Complete the disposable PostgreSQL 18.6 release lifecycle gate.
+4. Human executes the reviewed production Stage 1 procedure.
+5. Select legitimate production scope and run the Stage 2 READ ONLY dry run.
+6. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+7. Obtain explicit human approval, provision the real first user, and run
+   authenticated smoke.
+8. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
+   exact production SHA, and complete owner handoff.
+
+The frozen candidate's authorization-projection issue was a real UI/control
+surface exposure: the shell was given an all-visible synthetic projection even
+when the authenticated actor lacked those permissions. The release candidate
+fix derives the projection server-side from the validated actor and current
+tenant/legal-entity/station scope, while leaving route and database
+authorization checks intact. The synthetic projection is now limited to the
+explicit non-production E2E fixture.
 
 The documentation merge did not change deployed application behavior. The
 production application baseline remains

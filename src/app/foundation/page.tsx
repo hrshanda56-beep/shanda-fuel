@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 
-import { AppShell } from '@/design-system/app-shell';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { isDesignSystemReferenceAvailable } from '@/design-system/reference/availability';
 import { ForecourtWorkspace } from '@/modules/forecourt/ui/forecourt-workspace';
 import {
@@ -9,7 +9,6 @@ import {
   formatMoney,
   formatPercentage,
 } from '@/design-system/formatters';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
 import {
   AccessDeniedState,
   Button,
@@ -44,7 +43,6 @@ export default function FoundationPreviewPage() {
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       context={{
         organisation: 'Demo organisation',
         station: 'Demo station',

@@ -1,5 +1,4 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
 import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
 
@@ -17,7 +16,6 @@ export default async function ReconciliationListPage({
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       breadcrumbs={[
         { label: 'Operations', href: '/operations/daily' },
         { label: 'Reconciliations' },

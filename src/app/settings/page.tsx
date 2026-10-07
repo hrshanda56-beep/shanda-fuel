@@ -3,8 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { AccessDeniedState } from '@/design-system/primitives';
 import { PageContainer } from '@/design-system/layout';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
-import { AppShell } from '@/design-system/app-shell';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { AppError } from '@/platform/errors';
 import { resolveSettings } from '@/modules/settings';
 import type { SettingsView } from '@/modules/settings';
@@ -51,10 +50,7 @@ export default async function SettingsPage({
   }
   if (failure instanceof AppError && failure.code === 'FORBIDDEN') {
     return (
-      <AppShell
-        navigationProjection={syntheticNavigationProjection}
-        pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
-      >
+      <AppShell pageSubtitle="Review the organisation, legal entities, stations, and account available to you.">
         <PageContainer width="narrow">
           <AccessDeniedState />
         </PageContainer>
@@ -66,7 +62,6 @@ export default async function SettingsPage({
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       userName={view.account.name}
       pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
     >

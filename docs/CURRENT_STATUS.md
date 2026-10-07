@@ -358,13 +358,13 @@ Owner handoff must use only:
 
 ## 14. Dependency advisory
 
-### PARTIAL / time-bounded exception
+### VERIFIED FOR THE CURRENT PHASE 0 CANDIDATE / time-bounded exception
 
-A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstream version at the documented snapshot.
-
-- production-only audit had no high/critical finding,
-- a narrow CI exception exists with a review date,
-- future agents should re-check whether an upstream fix is available rather than treating the exception as permanent.
+The release-candidate dependency remediation updates the production-reachable
+`source-map-js` and `sharp` dependency paths and moves Vitest to the patched
+major line that removes the reported `tinypool` findings. The repository audit
+script passes with the existing, explicitly scoped dev-only `braces@3.0.3`
+exception; that exception remains time-bounded and is not a production waiver.
 
 ## 15. Known bugs/issues
 
@@ -372,8 +372,17 @@ A dev-only transitive advisory affects `braces <= 3.0.3` and had no fixed upstre
 
 1. **Production Stage 1 fails closed in the RLS/policy preflight** with a
    division-by-zero error; cause remains under investigation.
-2. **Daily Operations timezone fix is not yet cleanly integrated into the final candidate** even though the scoped implementation/tests are green.
-3. **A8 decimal fix is verified but still needs final clean release-candidate integration.**
+2. **Daily Operations timezone and A8 decimal corrections are present in the
+   overnight Phase 0 integration candidate;** final release evidence remains
+   dependent on the combined-candidate gates below.
+
+The frozen Phase 0 candidate also had an authorization-projection blocker:
+the client shell received an all-visible synthetic navigation projection. The
+current release candidate replaces that with a server-derived projection from
+the authenticated actor and validated tenant/legal-entity/station context,
+fails closed to an empty projection, and limits the synthetic projection to
+the explicit `APP_ENV=e2e` test fixture. This correction remains subject to
+the fresh independent final security review required for the candidate.
 
 ### Closed / not product bugs
 
@@ -433,25 +442,19 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 
 Use this order unless a current human instruction changes it:
 
-1. Diagnose the latest production RLS/policy preflight failure.
-2. Determine drift versus assertion/normalization bug.
-3. Access Review any tooling-only correction.
-4. Rerun Stage 1 from the beginning.
-5. Select legitimate production scope.
-6. Run Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval.
-9. Provision the real first user.
-10. Run authenticated smoke.
-11. FINAL RELEASE GO.
-12. Integrate PR #92 plus Customers clean candidate.
-13. Integrate verified A8 fix.
-14. Integrate reviewed Daily Operations timezone fix.
-15. Run full DB/CI/browser/accessibility/responsive verification.
-16. Deploy.
-17. Verify exact production SHA.
-18. Final owner review.
-19. OWNER READY handoff.
+1. Complete the fresh independent security review of the corrected
+   authorization projection on the combined Phase 0 candidate.
+2. Confirm the dependency-audit CI job is green with the scoped dev-only
+   exception and the patched dependency graph.
+3. Complete the disposable PostgreSQL 18.6 lifecycle gate against the exact
+   candidate.
+4. Human executes the already-reviewed production Stage 1 procedure.
+5. Select legitimate production scope and run the Stage 2 READ ONLY dry run.
+6. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
+7. Obtain explicit human approval, provision the real first user, and run
+   authenticated smoke.
+8. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
+   exact production SHA, and complete owner handoff.
 
 ## 21. Things agents must not assume
 

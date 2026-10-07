@@ -1,5 +1,4 @@
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 
 import { ProductionSafeOverview } from './_overview/overview-dashboard';
 
@@ -11,7 +10,6 @@ export const metadata = {
 export default function OverviewPage() {
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       searchPlacement="header"
       pageSubtitle="Live figures are not available for this work context yet."
     >

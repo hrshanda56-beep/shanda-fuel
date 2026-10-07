@@ -1,7 +1,6 @@
 import { headers } from 'next/headers';
 
-import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import {
   buildContextHref,
   contextRoutePolicy,
@@ -97,7 +96,6 @@ export default async function InventoryValuationStreamPage({
     : '/inventory/valuation';
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
       breadcrumbs={[
         {
           label: 'Inventory',

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 import { AppShell } from './app-shell';
-import { syntheticNavigationProjection } from './navigation';
+import { emptyNavigationProjection } from './navigation-projection';
 import { Button, EmptyState, ErrorState, SkeletonBlock } from './primitives';
 
 /**
@@ -17,7 +17,7 @@ import { Button, EmptyState, ErrorState, SkeletonBlock } from './primitives';
 
 export function RouteLoading() {
   return (
-    <AppShell navigationProjection={syntheticNavigationProjection}>
+    <AppShell navigationProjection={emptyNavigationProjection}>
       <div className="route-loading" role="status" aria-live="polite">
         <span className="visually-hidden">Loading page…</span>
         <div className="route-loading-header" aria-hidden="true">
@@ -38,7 +38,7 @@ export function RouteLoading() {
 
 export function RouteError({ digest, retry }: { digest?: string; retry: () => void }) {
   return (
-    <AppShell navigationProjection={syntheticNavigationProjection}>
+    <AppShell navigationProjection={emptyNavigationProjection}>
       <div className="route-state">
         <ErrorState
           layout="block"
@@ -68,7 +68,7 @@ export function RouteError({ digest, retry }: { digest?: string; retry: () => vo
 
 export function RouteNotFound() {
   return (
-    <AppShell navigationProjection={syntheticNavigationProjection}>
+    <AppShell navigationProjection={emptyNavigationProjection}>
       <div className="route-state">
         <EmptyState
           layout="block"
