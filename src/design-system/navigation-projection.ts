@@ -21,7 +21,7 @@ export function allowsE2ENavigationFixture(
   header: string | null,
   nodeEnv: string | undefined = process.env.NODE_ENV,
 ) {
-  return nodeEnv !== 'production' && appEnv === 'e2e' && header === 'synthetic';
+  return nodeEnv !== 'production' && appEnv === 'test' && header === 'synthetic';
 }
 
 const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly PermissionCode[]>> =

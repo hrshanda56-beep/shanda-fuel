@@ -381,7 +381,7 @@ the client shell received an all-visible synthetic navigation projection. The
 current release candidate replaces that with a server-derived projection from
 the authenticated actor and validated tenant/legal-entity/station context,
 fails closed to an empty projection, and limits the synthetic projection to
-the explicit `APP_ENV=e2e` test fixture. This correction remains subject to
+the explicit non-production `APP_ENV=test` test fixture. This correction remains subject to
 the fresh independent final security review required for the candidate.
 
 ### Closed / not product bugs

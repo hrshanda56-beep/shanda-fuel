@@ -60,7 +60,7 @@ when the authenticated actor lacked those permissions. The release candidate
 fix derives the projection server-side from the validated actor and current
 tenant/legal-entity/station scope, while leaving route and database
 authorization checks intact. The synthetic projection is now limited to the
-explicit non-production E2E fixture.
+explicit non-production `APP_ENV=test` E2E fixture.
 
 The documentation merge did not change deployed application behavior. The
 production application baseline remains
