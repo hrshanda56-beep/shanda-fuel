@@ -70,7 +70,7 @@ jobs:
       - run: pnpm test:e2e --workers=1
       - name: Upload browser failure artifacts
         if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-failure-${{ github.run_id }}
           path: |
@@ -105,7 +105,7 @@ jobs:
           node scripts/dependency-audit-exception.mjs 2>&1 | tee pnpm-audit.txt
       - name: Upload dependency audit output
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dependency-audit-${{ github.run_id }}
           path: pnpm-audit.txt
@@ -147,7 +147,7 @@ jobs:
           --error --sarif-output=semgrep.sarif
       - name: Upload SAST result
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: semgrep-sast-${{ github.run_id }}
           path: semgrep.sarif
@@ -259,7 +259,7 @@ jobs:
           fi
       - name: Upload runtime-role proof artifacts
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: runtime-role-proof-${{ github.run_id }}
           path: |
