@@ -148,6 +148,11 @@ integration('first-owner provisioning PostgreSQL hardening', () => {
         ],
       }),
     ).rejects.toThrow('approved fixed scope');
+    await expect(
+      plan({
+        stations: [...OWNER_BOOTSTRAP_STATION_IDS.slice(0, 3), null] as unknown as string[],
+      }),
+    ).rejects.toThrow('approved fixed scope');
     await expect(provision('ADMINISTRATOR')).rejects.toThrow('audit event is invalid');
   });
 

@@ -77,6 +77,10 @@ BEGIN
      OR cardinality(p_station_ids) <> cardinality(v_expected_station_ids)
      OR EXISTS (
        SELECT 1 FROM unnest(p_station_ids) supplied
+       WHERE supplied IS NULL
+     )
+     OR EXISTS (
+       SELECT 1 FROM unnest(p_station_ids) supplied
        WHERE supplied <> ALL(v_expected_station_ids)
      )
      OR EXISTS (
@@ -396,6 +400,7 @@ BEGIN
     'membershipId', p_membership_id::text,
     'roleCode', 'OWNER',
     'scopeType', 'TENANT',
+    'stationCount', cardinality(p_station_ids),
     'createdAt', v_now
   );
 END
