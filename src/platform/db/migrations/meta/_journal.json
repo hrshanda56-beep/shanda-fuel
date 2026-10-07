@@ -162,6 +162,13 @@
       "when": 1791370719297,
       "tag": "0022_a3_shift_template_start_time",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791417600000,
+      "tag": "0023_security_first_owner_bootstrap",
+      "breakpoints": true
     }
   ]
 }

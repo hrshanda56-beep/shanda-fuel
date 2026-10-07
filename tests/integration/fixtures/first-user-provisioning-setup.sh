@@ -68,19 +68,25 @@ DATABASE_DIRECT_URL="postgresql://${pg_user}@${pg_host}:${pg_port}/${test_db}" \
 INSERT INTO app.tenants (id, name, slug, status) VALUES
   ('11111111-1111-4111-8111-111111111111', 'Synthetic Tenant A', 'synthetic-tenant-a', 'ACTIVE'),
   ('22222222-2222-4222-8222-222222222222', 'Synthetic Tenant B', 'synthetic-tenant-b', 'ACTIVE'),
-  ('33333333-3333-4333-8333-333333333333', 'Synthetic Tenant C', 'synthetic-tenant-c', 'ACTIVE');
+  ('33333333-3333-4333-8333-333333333333', 'Synthetic Tenant C', 'synthetic-tenant-c', 'ACTIVE'),
+  ('a8852b9f-c490-4a72-a3f3-8662aeb14a8a', 'T.E.I Oils', 'tei-oils', 'ACTIVE');
 
 INSERT INTO app.legal_entities (id, tenant_id, legal_name, status) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Synthetic Legal Entity A', 'ACTIVE'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab', '11111111-1111-4111-8111-111111111111', 'Synthetic Legal Entity A2', 'ACTIVE'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', 'Synthetic Legal Entity B', 'ACTIVE'),
-  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '33333333-3333-4333-8333-333333333333', 'Synthetic Legal Entity C', 'ACTIVE');
+  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '33333333-3333-4333-8333-333333333333', 'Synthetic Legal Entity C', 'ACTIVE'),
+  ('cb5789ea-0979-450e-83d1-9834135cbedf', 'a8852b9f-c490-4a72-a3f3-8662aeb14a8a', 'Triumph Energy', 'ACTIVE');
 
 INSERT INTO app.stations (id, tenant_id, legal_entity_id, code, name, timezone, status) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'SYN-A', 'Synthetic Station A', 'Africa/Harare', 'ACTIVE'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab', 'SYN-A2', 'Synthetic Station A2', 'Africa/Harare', 'ACTIVE'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'SYN-B', 'Synthetic Station B', 'Africa/Harare', 'ACTIVE'),
-  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1', '33333333-3333-4333-8333-333333333333', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'SYN-C', 'Synthetic Station C', 'Africa/Harare', 'ACTIVE');
+  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1', '33333333-3333-4333-8333-333333333333', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'SYN-C', 'Synthetic Station C', 'Africa/Harare', 'ACTIVE'),
+  ('d8913b4d-7bb8-48cb-bb46-a741cea1f6c5', 'a8852b9f-c490-4a72-a3f3-8662aeb14a8a', 'cb5789ea-0979-450e-83d1-9834135cbedf', 'BND', 'Bindura', 'Africa/Harare', 'ONBOARDING'),
+  ('c4954604-2bcb-4e59-96e9-12e35449545c', 'a8852b9f-c490-4a72-a3f3-8662aeb14a8a', 'cb5789ea-0979-450e-83d1-9834135cbedf', 'MRT', 'Maruta', 'Africa/Harare', 'ONBOARDING'),
+  ('ae3bf2a5-7ff0-42a3-832c-ae8f49a14b9f', 'a8852b9f-c490-4a72-a3f3-8662aeb14a8a', 'cb5789ea-0979-450e-83d1-9834135cbedf', 'ARC', 'Arcturus', 'Africa/Harare', 'ONBOARDING'),
+  ('68ef219f-6baa-442a-8465-6d52e505d1f3', 'a8852b9f-c490-4a72-a3f3-8662aeb14a8a', 'cb5789ea-0979-450e-83d1-9834135cbedf', 'GAZ', 'Gazebo', 'Africa/Harare', 'ONBOARDING');
 
 DO $$
 DECLARE
@@ -104,9 +110,10 @@ BEGIN
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'platform'
-    AND p.proname LIKE 'first_user_provisioning_%'
+    AND (p.proname LIKE 'first_user_provisioning_%'
+      OR p.proname LIKE 'first_owner_provisioning_%')
     AND has_function_privilege('first_user_provisioner', p.oid, 'EXECUTE');
-  IF exposed_function_count <> 8 THEN
+  IF exposed_function_count <> 11 THEN
     RAISE EXCEPTION 'first-user provisioner function grants are incomplete';
   END IF;
 

@@ -979,7 +979,7 @@ export async function listScopeOptions(
   );
 }
 
-function databaseUrlFromEnvironment(environment: NodeJS.ProcessEnv = process.env): string {
+export function databaseUrlFromEnvironment(environment: NodeJS.ProcessEnv = process.env): string {
   if (environment.APP_ENV !== 'local') {
     throw new ProvisioningError('This local-only tool requires APP_ENV=local');
   }
@@ -1091,7 +1091,10 @@ export async function loadDatabaseRoleSnapshot(client: Sql): Promise<DatabaseRol
         ('platform.first_user_provisioning_grants(uuid,uuid,uuid)'::regprocedure::oid),
         ('platform.first_user_provisioning_provision(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,timestamptz,jsonb,jsonb)'::regprocedure::oid),
         ('platform.first_user_provisioning_revoke(uuid,uuid,uuid,uuid,uuid,uuid,jsonb)'::regprocedure::oid),
-        ('platform.first_user_provisioning_append_failure(uuid,jsonb)'::regprocedure::oid)
+        ('platform.first_user_provisioning_append_failure(uuid,jsonb)'::regprocedure::oid),
+        ('platform.first_owner_provisioning_plan(uuid,uuid,uuid[],text,text)'::regprocedure::oid),
+        ('platform.first_owner_provisioning_provision(uuid,uuid,uuid,uuid,uuid,uuid[],text,text,text,jsonb,jsonb)'::regprocedure::oid),
+        ('platform.first_owner_provisioning_append_failure(uuid,jsonb)'::regprocedure::oid)
     )
     select
       current_user as "currentUser",
@@ -1180,7 +1183,7 @@ export async function loadDatabaseRoleSnapshot(client: Sql): Promise<DatabaseRol
   return one(rows, 'Unable to validate database connection privileges');
 }
 
-async function assertPrivilegedDirectConnection(client: Sql): Promise<void> {
+export async function assertPrivilegedDirectConnection(client: Sql): Promise<void> {
   const row = await loadDatabaseRoleSnapshot(client);
   assertAcceptedProvisioningRole(row);
   await client`select platform.first_user_provisioning_assert_runtime_role()`;
