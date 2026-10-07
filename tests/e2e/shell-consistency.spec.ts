@@ -3,7 +3,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 const VIEWPORTS = [
   { name: 'mobile-small', width: 320, height: 800 },
-  { name: 'mobile', width: 468, height: 844 },
+  { name: 'mobile-360', width: 360, height: 800 },
+  { name: 'mobile-375', width: 375, height: 844 },
+  { name: 'mobile-390', width: 390, height: 844 },
+  { name: 'mobile-430', width: 430, height: 844 },
   { name: 'tablet', width: 982, height: 800 },
   { name: 'desktop', width: 1482, height: 900 },
 ] as const;
@@ -122,6 +125,26 @@ test.describe('shared shell consistency', () => {
     );
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
+  });
+
+  test('mobile exposes authorized bottom navigation and keeps More in the drawer', async ({
+    page,
+  }) => {
+    await prepareShell(page, { width: 390, height: 844 });
+    const bottomNav = page.getByRole('navigation', { name: 'Mobile navigation' });
+    await expect(bottomNav).toBeVisible();
+    await expect(bottomNav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(bottomNav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
+      'href',
+      '/operations/daily',
+    );
+    await bottomNav.getByRole('button', { name: 'More navigation' }).click();
+    const menu = page.getByRole('dialog', { name: 'Menu' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
   });
 
   test('long work-context names wrap without creating horizontal overflow', async ({ page }) => {

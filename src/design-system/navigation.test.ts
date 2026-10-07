@@ -6,6 +6,7 @@ import {
   navigationSections,
   readWorkContext,
   resolveNavigation,
+  selectMobileNavigationItems,
   syntheticNavigationProjection,
   type NavigationProjection,
 } from './navigation';
@@ -112,6 +113,38 @@ describe('navigation destinations', () => {
       'Suppliers',
       'Reports',
       'Settings',
+    ]);
+  });
+});
+
+describe('mobile navigation projection', () => {
+  it('selects authorized operational links without exposing unavailable destinations', () => {
+    const projection = syntheticNavigationProjection.map((entry) =>
+      entry.key === 'cash' || entry.key === 'reconciliations'
+        ? { ...entry, visible: true, enabled: false }
+        : entry,
+    );
+    const items = selectMobileNavigationItems(resolveNavigation(projection, {}));
+
+    expect(items.map((entry) => entry.key)).toEqual([
+      'today',
+      'daily-operations',
+      'reports',
+      'inventory',
+    ]);
+    expect(items.every((entry) => entry.state === 'link')).toBe(true);
+  });
+
+  it('uses station-scoped cash and reconciliation links when context authorizes them', () => {
+    const items = selectMobileNavigationItems(
+      resolveNavigation(syntheticNavigationProjection, { stationId: 'station-1' }),
+    );
+
+    expect(items.map((entry) => entry.key)).toEqual([
+      'today',
+      'daily-operations',
+      'cash',
+      'reconciliations',
     ]);
   });
 });
