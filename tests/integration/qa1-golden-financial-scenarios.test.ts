@@ -760,6 +760,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         tenantId: ctx.tenantId,
         accountReference: `QA1-CUST-${ctx.runId.slice(0, 8)}`,
         displayName: 'QA1 Customer',
+        legalEntityId: ctx.legalEntityId,
       },
       'g5-customer',
     );

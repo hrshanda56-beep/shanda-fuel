@@ -21,6 +21,8 @@ if (!databaseUrl) {
 const ids = {
   tenant: 'a8b00000-0000-4000-8000-000000000001',
   legal: 'a8b00000-0000-4000-8000-000000000011',
+  otherLegal: 'a8b00000-0000-4000-8000-000000000012',
+  secondStation: 'a8b00000-0000-4000-8000-000000000022',
   station: 'a8b00000-0000-4000-8000-000000000021',
   product: 'a8b00000-0000-4000-8000-000000000301',
   pump: 'a8b00000-0000-4000-8000-000000000302',
@@ -269,7 +271,8 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       insert into auth."user" (id, name, email) values ('${ids.financeActor}', 'A8 Operational Finance', 'a8-operational-finance@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.financeMembership}', '${ids.tenant}', '${ids.financeActor}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'A8 Customer Legal') on conflict (id) do nothing;
-      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A8CUSTOMER', 'A8 Customer Station', 'ACTIVE') on conflict (id) do nothing;
+      insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.otherLegal}', '${ids.tenant}', 'A8 Other Legal') on conflict (id) do nothing;
+      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A8CUSTOMER', 'A8 Customer Station', 'ACTIVE'), ('${ids.secondStation}', '${ids.tenant}', '${ids.legal}', 'A8SECOND', 'A8 Second Station', 'ACTIVE') on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name, status) values ('${ids.product}', '${ids.tenant}', 'A8-PETROL', 'A8 Petrol', 'ACTIVE') on conflict (id) do nothing;
       insert into app.pumps (id, tenant_id, station_id, number, status)
         values ('${ids.pump}', '${ids.tenant}', '${ids.station}', '1', 'ACTIVE') on conflict (id) do nothing;
@@ -388,6 +391,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         tenantId: ids.tenant,
         accountReference: 'A8-CUST-001',
         displayName: 'A8 Customer',
+        legalEntityId: ids.legal,
       },
       'a8-create-customer',
     );
@@ -689,5 +693,157 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       'a8-finance-session-token',
     );
     expect(financePayment.status).toBe(201);
+  });
+
+  it('applies a customer account only where its legal entity and station scope allow', async () => {
+    const authorize = (accountId: string, n: number) =>
+      command(
+        {
+          commandType: 'RequestCustomerFuelAuthorization',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          accountId,
+          authorizationId: `a8b00000-0000-4000-8000-0000000005${n}1`,
+          requested: {
+            productId: ids.product,
+            litres: '1.000',
+            amount: { amount: '1.0000', currency: 'USD' },
+          },
+          requestedAt: '2026-09-24T09:10:00+02:00',
+          source: {
+            sourceType: 'A5_RECONCILIATION_CUSTOMER_FUEL',
+            sourceId: `a8b00000-0000-4000-8000-0000000005${n}2`,
+            sourceRevisionId: `a8b00000-0000-4000-8000-0000000005${n}3`,
+          },
+        },
+        `a8-scope-auth-${n}`,
+      );
+    const created = await body(
+      await command(
+        {
+          commandType: 'CreateCustomer',
+          tenantId: ids.tenant,
+          accountReference: 'A8-SCOPE-001',
+          displayName: 'Scope Customer',
+        },
+        'a8-scope-customer',
+      ),
+    );
+    const open = await body(
+      await command(
+        {
+          commandType: 'CreateCustomerAccount',
+          tenantId: ids.tenant,
+          customerId: created.customerId,
+          accountType: 'CREDIT',
+          currency: 'USD',
+          creditLimit: '100.0000',
+        },
+        'a8-scope-account',
+      ),
+    );
+
+    // No legal entity yet: fuel is refused rather than guessed.
+    expect((await authorize(open.accountId, 1)).status).toBe(409);
+
+    // Choosing stations needs a legal entity first.
+    const early = await command(
+      {
+        commandType: 'SetCustomerAccountStations',
+        tenantId: ids.tenant,
+        accountId: open.accountId,
+        expectedVersion: 0,
+        stationScope: 'SELECTED',
+        stationIds: [ids.secondStation],
+      },
+      'a8-scope-early',
+    );
+    expect(early.status).toBe(409);
+
+    const entity = await command(
+      {
+        commandType: 'SetCustomerLegalEntity',
+        tenantId: ids.tenant,
+        customerId: created.customerId,
+        legalEntityId: ids.legal,
+        expectedVersion: 0,
+      },
+      'a8-scope-entity',
+    );
+    expect(entity.status).toBe(200);
+    // The existing account adopted the entity, so its version moved on.
+    const [account] = await client`
+      select version from app.customer_accounts where id = ${open.accountId}
+    `;
+    expect(Number(account?.version)).toBe(1);
+
+    // All stations of the legal entity by default.
+    expect((await authorize(open.accountId, 2)).status).toBe(201);
+
+    // Restricted to another station: refused here.
+    const restrict = await command(
+      {
+        commandType: 'SetCustomerAccountStations',
+        tenantId: ids.tenant,
+        accountId: open.accountId,
+        expectedVersion: 1,
+        stationScope: 'SELECTED',
+        stationIds: [ids.secondStation],
+      },
+      'a8-scope-restrict',
+    );
+    expect(restrict.status).toBe(200);
+    expect((await authorize(open.accountId, 3)).status).toBe(403);
+
+    // A station of another legal entity cannot be added.
+    await client`
+      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status)
+      values ('a8b00000-0000-4000-8000-000000000023', ${ids.tenant}, ${ids.otherLegal}, 'A8FOREIGN', 'A8 Foreign Station', 'ACTIVE')
+      on conflict (id) do nothing
+    `;
+    const foreign = await command(
+      {
+        commandType: 'SetCustomerAccountStations',
+        tenantId: ids.tenant,
+        accountId: open.accountId,
+        expectedVersion: 2,
+        stationScope: 'SELECTED',
+        stationIds: ['a8b00000-0000-4000-8000-000000000023'],
+      },
+      'a8-scope-foreign',
+    );
+    expect(foreign.status).toBe(400);
+
+    // Back to all stations; the old station rows are deactivated, not deleted.
+    const reopen = await command(
+      {
+        commandType: 'SetCustomerAccountStations',
+        tenantId: ids.tenant,
+        accountId: open.accountId,
+        expectedVersion: 2,
+        stationScope: 'ALL',
+      },
+      'a8-scope-all',
+    );
+    expect(reopen.status).toBe(200);
+    expect((await authorize(open.accountId, 4)).status).toBe(201);
+    const rows = await client`
+      select active from app.customer_account_stations where account_id = ${open.accountId}
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.active).toBe(false);
+
+    // A customer cannot be moved to another legal entity.
+    const move = await command(
+      {
+        commandType: 'SetCustomerLegalEntity',
+        tenantId: ids.tenant,
+        customerId: created.customerId,
+        legalEntityId: ids.otherLegal,
+        expectedVersion: 1,
+      },
+      'a8-scope-move',
+    );
+    expect(move.status).toBe(409);
   });
 });
