@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, type RefObject, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   buildContextHref,
@@ -46,9 +46,10 @@ export function ContextSelector({
   const search = useLocationSearch();
   const router = useRouter();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<SelectorState>({ status: 'loading' });
   const [refresh, setRefresh] = useState(0);
-  const [selection, setSelection] = useState<ContextSelection | null>(null);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -74,7 +75,6 @@ export function ContextSelector({
       })
       .then((resolution) => {
         setState({ status: 'ready', resolution });
-        setSelection(resolution.current);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -114,8 +114,8 @@ export function ContextSelector({
     setRefresh((value) => value + 1);
   }
 
-  async function submit() {
-    if (!selection) return;
+  async function submit(selection: ContextSelection, key: string) {
+    setPendingKey(key);
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -143,6 +143,7 @@ export function ContextSelector({
       );
     } finally {
       setSubmitting(false);
+      setPendingKey(null);
     }
   }
 
@@ -177,9 +178,11 @@ export function ContextSelector({
       <Modal
         open={open}
         onClose={onClose}
-        title="Select work context"
-        description="Choose an organisation, legal entity, and station you are authorised to use."
+        title="Switch station"
+        description="Tap where you are working. It applies straight away."
         size="md"
+        className="modal-context"
+        initialFocusRef={formRef}
         returnFocus={() => triggerRef.current}
         dismissible={!submitting}
       >
@@ -188,15 +191,18 @@ export function ContextSelector({
         {state.status === 'ready' && state.resolution.available.organisations.length === 0 ? (
           <ContextEmpty />
         ) : null}
-        {state.status === 'ready' && selection ? (
+        {state.status === 'ready' &&
+        state.resolution.current &&
+        state.resolution.available.organisations.length > 0 ? (
           <ContextForm
             available={state.resolution.available}
             policy={state.resolution.route.policy}
-            selection={selection}
-            onChange={setSelection}
+            current={state.resolution.current}
             submitting={submitting}
+            pendingKey={pendingKey}
             submitError={submitError}
-            onSubmit={submit}
+            onSelect={submit}
+            formRef={formRef}
           />
         ) : null}
       </Modal>
@@ -237,148 +243,185 @@ function ContextEmpty() {
 function ContextForm({
   available,
   policy,
-  selection,
-  onChange,
+  current,
   submitting,
+  pendingKey,
   submitError,
-  onSubmit,
+  onSelect,
+  formRef,
 }: {
+  formRef: RefObject<HTMLDivElement | null>;
   available: AvailableContext;
   policy: ContextResolution['route']['policy'];
-  selection: ContextSelection;
-  onChange: (selection: ContextSelection) => void;
+  current: CurrentContext;
   submitting: boolean;
+  pendingKey: string | null;
   submitError: string | null;
-  onSubmit: () => void;
+  onSelect: (selection: ContextSelection, key: string) => void;
 }) {
-  const organisation = available.organisations.find(
-    (candidate) => candidate.id === selection.organisationId,
-  );
-  const legalEntities = organisation?.legalEntities ?? [];
-  const legalEntity = selection.legalEntityId
-    ? legalEntities.find((candidate) => candidate.id === selection.legalEntityId)
-    : undefined;
-  const stations = legalEntity
-    ? legalEntity.stations.map((station) => ({ station, legalEntity }))
-    : legalEntities.flatMap((candidate) =>
-        candidate.stations.map((station) => ({ station, legalEntity: candidate })),
-      );
-  const canSubmit =
-    Boolean(organisation) &&
-    (policy.legalEntity === 'optional' || Boolean(selection.legalEntityId)) &&
-    (policy.station !== 'required' || Boolean(selection.stationId));
+  const [organisationId, setOrganisationId] = useState(current.organisationId);
+  const organisation =
+    available.organisations.find((candidate) => candidate.id === organisationId) ??
+    available.organisations[0];
+  if (!organisation) return null;
 
-  function changeOrganisation(organisationId: string) {
-    const nextOrganisation = available.organisations.find(
-      (candidate) => candidate.id === organisationId,
-    );
-    const nextLegalEntity = nextOrganisation?.legalEntities[0];
-    onChange({
-      organisationId,
-      ...(policy.legalEntity === 'required' && nextLegalEntity
-        ? { legalEntityId: nextLegalEntity.id }
-        : {}),
-      allStations: policy.allStationsAllowed,
-    });
-  }
-
-  function changeLegalEntity(value: string) {
-    onChange({
-      ...selection,
-      ...(value ? { legalEntityId: value } : { legalEntityId: undefined }),
-      stationId: undefined,
-      allStations: policy.allStationsAllowed,
-    });
-  }
-
-  function changeStation(value: string) {
-    if (value === 'all') {
-      onChange({ ...selection, stationId: undefined, allStations: true });
-      return;
-    }
-    const match = stations.find(({ station }) => station.id === value);
-    onChange({
-      ...selection,
-      ...(match ? { legalEntityId: match.legalEntity.id } : {}),
-      stationId: value || undefined,
-      allStations: false,
-    });
-  }
+  const legalEntities = organisation.legalEntities;
+  const showEntityHeadings = legalEntities.length > 1;
+  const hasStations = legalEntities.some((entity) => entity.stations.length > 0);
+  const inCurrentOrganisation = organisation.id === current.organisationId;
+  // With the legal entity optional, one "all stations" row covers the organisation;
+  // when it is required, "all stations" belongs to each legal entity.
+  const allPerEntity = policy.allStationsAllowed && policy.legalEntity === 'required';
+  const allForOrganisation = policy.allStationsAllowed && policy.legalEntity === 'optional';
 
   return (
-    <div className="context-selector-form">
-      <div className="context-selector-current" role="status">
-        <span className="context-selector-current-label">Current selection</span>
-        <strong>{contextDisplay(available, selection).join(' · ')}</strong>
-      </div>
-
-      <label className="context-selector-field">
-        <span>Organisation</span>
-        <select
-          value={selection.organisationId}
-          onChange={(event) => changeOrganisation(event.target.value)}
-          disabled={submitting}
-        >
+    <div className="context-selector-form" ref={formRef} tabIndex={-1}>
+      {available.organisations.length > 1 ? (
+        <div className="context-selector-orgs" role="group" aria-label="Organisation">
           {available.organisations.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
+            <button
+              key={candidate.id}
+              type="button"
+              className="context-selector-org"
+              aria-pressed={candidate.id === organisation.id}
+              disabled={submitting}
+              onClick={() => setOrganisationId(candidate.id)}
+            >
               {candidate.name}
-            </option>
+            </button>
           ))}
-        </select>
-      </label>
+        </div>
+      ) : null}
 
-      <label className="context-selector-field">
-        <span>Legal entity{policy.legalEntity === 'optional' ? ' (optional)' : ''}</span>
-        <select
-          value={selection.legalEntityId ?? ''}
-          onChange={(event) => changeLegalEntity(event.target.value)}
-          disabled={submitting || !organisation}
-          required={policy.legalEntity === 'required'}
-          aria-required={policy.legalEntity === 'required' || undefined}
-        >
-          {policy.legalEntity === 'optional' ? <option value="">All legal entities</option> : null}
-          {legalEntities.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {allForOrganisation ? (
+        <ul className="context-selector-list">
+          <ContextOption
+            title="All stations"
+            detail={organisation.name}
+            selected={inCurrentOrganisation && current.allStations}
+            pending={pendingKey === 'all'}
+            disabled={submitting}
+            onSelect={() => onSelect({ organisationId: organisation.id, allStations: true }, 'all')}
+          />
+        </ul>
+      ) : null}
 
-      <label className="context-selector-field">
-        <span>Station{policy.station === 'optional' ? ' (optional)' : ''}</span>
-        <select
-          value={selection.allStations ? 'all' : (selection.stationId ?? '')}
-          onChange={(event) => changeStation(event.target.value)}
-          disabled={submitting || !organisation}
-          required={policy.station === 'required'}
-          aria-required={policy.station === 'required' || undefined}
-        >
-          {policy.station === 'required' ? (
-            <option value="">Choose an authorised station</option>
-          ) : null}
-          {policy.allStationsAllowed ? <option value="all">All stations</option> : null}
-          {stations.map(({ station, legalEntity: stationLegalEntity }) => (
-            <option key={station.id} value={station.id}>
-              {policy.legalEntity === 'optional'
-                ? `${stationLegalEntity.name} · ${station.name}`
-                : station.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {legalEntities.map((entity) => {
+        const entityCurrent = inCurrentOrganisation && current.legalEntityId === entity.id;
+        return (
+          <section key={entity.id} className="context-selector-group">
+            {showEntityHeadings ? <h3>{entity.name}</h3> : null}
+            <ul className="context-selector-list">
+              {allPerEntity ? (
+                <ContextOption
+                  title="All stations"
+                  detail={showEntityHeadings ? undefined : entity.name}
+                  selected={entityCurrent && current.allStations}
+                  pending={pendingKey === `all:${entity.id}`}
+                  disabled={submitting}
+                  onSelect={() =>
+                    onSelect(
+                      {
+                        organisationId: organisation.id,
+                        legalEntityId: entity.id,
+                        allStations: true,
+                      },
+                      `all:${entity.id}`,
+                    )
+                  }
+                />
+              ) : null}
+              {entity.stations.map((station) => (
+                <ContextOption
+                  key={station.id}
+                  title={station.name}
+                  detail={showEntityHeadings ? undefined : entity.name}
+                  selected={inCurrentOrganisation && current.stationId === station.id}
+                  pending={pendingKey === station.id}
+                  disabled={submitting}
+                  onSelect={() =>
+                    onSelect(
+                      {
+                        organisationId: organisation.id,
+                        legalEntityId: entity.id,
+                        stationId: station.id,
+                        allStations: false,
+                      },
+                      station.id,
+                    )
+                  }
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+
+      {!hasStations && policy.station === 'optional' && policy.legalEntity === 'optional' ? (
+        <ul className="context-selector-list">
+          <ContextOption
+            title={organisation.name}
+            detail="No stations set up yet"
+            selected={inCurrentOrganisation && !current.stationId && !current.allStations}
+            pending={pendingKey === 'organisation'}
+            disabled={submitting}
+            onSelect={() =>
+              onSelect({ organisationId: organisation.id, allStations: false }, 'organisation')
+            }
+          />
+        </ul>
+      ) : !hasStations ? (
+        <p className="context-selector-note">No stations are available in this organisation.</p>
+      ) : null}
 
       {submitError ? (
         <p className="context-selector-error" role="alert">
           {submitError}
         </p>
       ) : null}
-      <div className="context-selector-actions">
-        <Button onClick={onSubmit} loading={submitting} disabled={!canSubmit}>
-          Use this context
-        </Button>
-      </div>
     </div>
+  );
+}
+
+function ContextOption({
+  title,
+  detail,
+  selected,
+  pending,
+  disabled,
+  onSelect,
+}: {
+  title: string;
+  detail?: string | undefined;
+  selected: boolean;
+  pending: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        className="context-selector-option"
+        aria-current={selected || undefined}
+        data-selected={selected || undefined}
+        disabled={disabled}
+        onClick={selected ? undefined : onSelect}
+      >
+        <span className="context-selector-option-text">
+          <span className="context-selector-option-title">{title}</span>
+          {detail ? <span className="context-selector-option-detail">{detail}</span> : null}
+        </span>
+        {pending ? (
+          <span className="context-selector-spinner" aria-hidden="true" />
+        ) : selected ? (
+          <>
+            <Icon name="check" size="sm" className="context-selector-check" />
+            <span className="visually-hidden">Current</span>
+          </>
+        ) : null}
+      </button>
+    </li>
   );
 }
 
