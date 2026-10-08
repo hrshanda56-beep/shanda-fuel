@@ -1,0 +1,158 @@
+/*
+ * Page layer: every screen except Today wears the dashboard's look.
+ *
+ * Presentation only. It restyles the shared page classes (page header,
+ * panel, section heading, table, form field, callout, state) so they match
+ * the Today screen: glass cards on large radii, quiet muted section
+ * headings, hairline lists, pill controls and the same phone gutters.
+ * Loaded after shell-phase1.css; everything is scoped to the page sheet.
+ */
+
+/* Page header: a calm title, no loud eyebrow. */
+.shell-sheet .page-header {
+  padding-block: 0 var(--space-4);
+  gap: var(--space-3);
+}
+
+.shell-sheet .page-header .eyebrow {
+  margin-bottom: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.shell-sheet .page-header :is(h1, h2) {
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+}
+
+.shell-sheet .page-header .lede {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+/* Cards: the dashboard card (glass, 2xl radius, one padding step). */
+.shell-sheet .panel,
+.shell-sheet .form-panel,
+.shell-sheet .card-body {
+  padding: var(--space-4);
+}
+
+@media (min-width: 64rem) {
+  .shell-sheet .panel,
+  .shell-sheet .form-panel,
+  .shell-sheet .card-body {
+    padding: var(--space-5);
+  }
+}
+
+.shell-sheet .content-grid,
+.shell-sheet .metric-grid,
+.shell-sheet .state-grid {
+  gap: var(--space-4);
+}
+
+/* Section heading: the dashboard's muted heading; the eyebrow is spoken, not shown. */
+.shell-sheet .panel-heading {
+  margin-bottom: var(--space-3);
+}
+
+.shell-sheet .panel-heading .eyebrow,
+.shell-sheet .section-heading .eyebrow {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.shell-sheet :is(.panel-heading, .section-heading) :is(h2, h3) {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.shell-sheet :is(.panel-heading, .section-heading) p {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Tables: hairlines, quiet headers, whole-row hover like the Today lists. */
+.shell-sheet :is(.responsive-table, .data-table) thead th {
+  border-bottom-color: var(--border-subtle);
+  font-weight: var(--font-weight-semibold);
+}
+
+.shell-sheet :is(.responsive-table, .data-table) tbody tr {
+  transition: var(--transition-colors);
+}
+
+@media (hover: hover) {
+  .shell-sheet :is(.responsive-table, .data-table) tbody tr:hover {
+    background: var(--bg-hover);
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .shell-sheet :is(.responsive-table, .data-table) tr {
+    padding: var(--space-3) 0;
+  }
+}
+
+/* Controls: pills for buttons, soft rounded fields. */
+.shell-sheet .button {
+  border-radius: var(--radius-full);
+}
+
+.shell-sheet
+  :is(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']),
+    select,
+    textarea
+  ) {
+  border-radius: var(--radius-xl);
+}
+
+.shell-sheet .field > label,
+.shell-sheet .field-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Notes, callouts and states: rounded, unboxed tint, same type as Today notes. */
+.shell-sheet :is(.callout, .state, .source-card) {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-xl);
+}
+
+.shell-sheet .semantic-note {
+  border-radius: var(--radius-lg);
+  border-left-width: 3px;
+}
+
+.shell-sheet .state {
+  border-style: solid;
+  background: var(--bg-subtle);
+}
+
+.shell-sheet :is(.state p, .callout p) {
+  font-size: var(--font-size-sm);
+}
+
+/* Whole-card links keep the Today lift. */
+.shell-sheet a.card {
+  border-radius: var(--radius-2xl);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-sheet :is(.responsive-table, .data-table) tbody tr {
+    transition: none;
+  }
+}
