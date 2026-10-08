@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 
@@ -70,39 +70,132 @@ test.describe('Settings', () => {
       await client?.end();
     });
 
-    test('renders authorised data, has no fake save action, and signs out', async ({
-      context,
-      page,
-    }) => {
+    const sections = ['Organisation', 'Companies', 'Stations', 'Account'] as const;
+
+    test.beforeEach(async ({ context, page }) => {
       const signedCookie = `${sessionToken}.${await makeSignature(sessionToken, authSecret!)}`;
       await context.addCookies([
         { name: 'shanda-fuel.session_token', value: signedCookie, domain: '127.0.0.1', path: '/' },
       ]);
-
       await page.goto(
         `/settings?tenantId=${ids.organisation}&legalEntityId=${ids.legalEntity}&stationId=${ids.station}`,
       );
       await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
-      await expect(page.getByText('Settings E2E Organisation', { exact: true })).toBeVisible();
-      await expect(page.getByText('Settings E2E Legal Entity', { exact: true })).toBeVisible();
-      await expect(page.getByText('Settings E2E Station', { exact: true })).toBeVisible();
-      await expect(page.getByText('settings-e2e@example.test', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: /save/i })).toHaveCount(0);
+    });
 
-      await page.setViewportSize({ width: 320, height: 800 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        await page.evaluate(() => window.innerWidth),
-      );
-      await expect(page.getByRole('link', { name: 'Account' })).toBeVisible();
-      await page.getByRole('link', { name: 'Account' }).focus();
+    function content(page: Page) {
+      return page.getByRole('main', { name: 'Settings' });
+    }
+
+    function sectionButton(page: Page, name: (typeof sections)[number]) {
+      return page
+        .getByRole('navigation', { name: 'Settings sections' })
+        .getByRole('button', { name, exact: true });
+    }
+
+    async function expectOnlyPressed(page: Page, active: (typeof sections)[number]) {
+      for (const name of sections) {
+        await expect(sectionButton(page, name)).toHaveAttribute(
+          'aria-pressed',
+          name === active ? 'true' : 'false',
+        );
+      }
+    }
+
+    test('opens on Organisation and shows the organisation name', async ({ page }) => {
+      await expectOnlyPressed(page, 'Organisation');
+      await expect(
+        content(page).getByRole('heading', { name: 'Organisation', level: 2 }),
+      ).toBeVisible();
+      await expect(
+        content(page).getByText('Settings E2E Organisation', { exact: true }),
+      ).toBeVisible();
+    });
+
+    test('each section shows its own details once opened', async ({ page }) => {
+      await sectionButton(page, 'Companies').click();
+      await expectOnlyPressed(page, 'Companies');
+      await expect(
+        content(page).getByRole('heading', { name: 'Companies', level: 2 }),
+      ).toBeVisible();
+      await expect(
+        content(page).getByText('Settings E2E Legal Entity', { exact: true }),
+      ).toBeVisible();
+
+      await sectionButton(page, 'Stations').click();
+      await expectOnlyPressed(page, 'Stations');
+      await expect(
+        content(page).getByRole('heading', { name: 'Stations', level: 2 }),
+      ).toBeVisible();
+      await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
+
+      await sectionButton(page, 'Account').click();
+      await expectOnlyPressed(page, 'Account');
+      await expect(content(page).getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Your details' })).toBeVisible();
+      // The email is shown in the profile card and again in the details list.
+      await expect(
+        content(page).getByText('settings-e2e@example.test', { exact: true }).first(),
+      ).toBeVisible();
+
+      await sectionButton(page, 'Organisation').click();
+      await expectOnlyPressed(page, 'Organisation');
+      await expect(
+        content(page).getByText('Settings E2E Organisation', { exact: true }),
+      ).toBeVisible();
+    });
+
+    test('sections work from the keyboard and stay on the same address', async ({ page }) => {
+      const url = page.url();
+      await sectionButton(page, 'Organisation').focus();
+      await page.keyboard.press('Tab');
+      await expect(sectionButton(page, 'Companies')).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/settings\?.*#account$/);
+      await expectOnlyPressed(page, 'Companies');
+      await expect(
+        content(page).getByText('Settings E2E Legal Entity', { exact: true }),
+      ).toBeVisible();
 
-      const results = await new AxeBuilder({ page }).analyze();
-      expect(results.violations).toEqual([]);
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      await expect(sectionButton(page, 'Account')).toBeFocused();
+      await page.keyboard.press('Space');
+      await expectOnlyPressed(page, 'Account');
 
+      // Sections are in-page state: no #account anchor or navigation.
+      expect(page.url()).toBe(url);
+    });
+
+    test('is read-only: no save action in any section', async ({ page }) => {
+      for (const name of sections) {
+        await sectionButton(page, name).click();
+        await expect(content(page).getByRole('button', { name: /save/i })).toHaveCount(0);
+      }
+    });
+
+    test('fits a 320px phone in every section and has no accessibility violations', async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 320, height: 800 });
+      for (const name of sections) {
+        const button = sectionButton(page, name);
+        await expect(button).toBeVisible();
+        await button.click();
+        await expect(button).toHaveAttribute('aria-pressed', 'true');
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          await page.evaluate(() => window.innerWidth),
+        );
+        const results = await new AxeBuilder({ page }).analyze();
+        expect(results.violations, `accessibility violations in ${name}`).toEqual([]);
+      }
+    });
+
+    test('signs out from Account', async ({ page }) => {
+      await sectionButton(page, 'Account').click();
       await page.getByRole('button', { name: 'Sign out' }).click();
-      await expect(page).toHaveURL(/\/login$/);
+      // Navigation wait, not the 5s assertion window: the first sign-out call compiles its route.
+      await page.waitForURL(/\/login$/);
+      await expect(page.getByRole('heading', { name: 'Sign in', level: 1 })).toBeVisible();
     });
   });
 });
