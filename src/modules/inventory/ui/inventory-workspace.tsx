@@ -127,8 +127,8 @@ export function InventoryOperationalActions({
           <span className="eyebrow">Authorised station actions</span>
           <h2 id="inventory-actions-heading">Record an Inventory observation or movement</h2>
           <p>
-            These actions are sent to the named server command and remain scoped to{' '}
-            {context.stationName}. Server validation remains authoritative.
+            These actions remain scoped to {context.stationName}. Review each entry before it is
+            recorded.
           </p>
         </div>
       </div>
@@ -417,8 +417,8 @@ function OpeningInventoryForm({
   return (
     <div className="dialog-form">
       <p className="muted-small">
-        Opening quantity and opening cost are separate authoritative commands. Do not enter an
-        unknown cost as zero.
+        Opening quantity and opening cost are separate records. Do not enter an unknown cost as
+        zero.
       </p>
       <form onSubmit={submitQuantity}>
         <Field id="opening-litres" label="Opening quantity litres" required>
@@ -612,8 +612,8 @@ function DeliveryForm({
         <div className="callout callout-warning">
           <strong>Draft awaiting confirmation</strong>
           <p>
-            Review the server-calculated shortage/excess and allocation before posting delivery
-            stock. Draft reference <code>{deliveryId}</code>.
+            Review the calculated shortage/excess and allocation before posting delivery stock.
+            Draft reference <code>{deliveryId}</code>.
           </p>
           <Button type="button" loading={saving === 'confirm'} onClick={() => void confirm()}>
             Confirm delivery

@@ -659,7 +659,7 @@ test.describe('production reconciliation persistence', () => {
       })
       .toBe(reconciliationId);
 
-    await expect(page.getByRole('heading', { name: 'Daily operations' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Shift' })).toBeVisible();
 
     const common = {
       tenantId: ids.tenant,

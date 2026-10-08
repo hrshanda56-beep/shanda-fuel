@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 /*
  * Product Shell: grouped navigation, current-route indication, collapsible
  * groups and rail, work-in-progress destinations, theme control, the phone
- * drawer, and shell-level route states. Presentation only; no backend data.
+ * drawer, More hub, and shell-level route states. Presentation only; no backend data.
  */
 
 const DESKTOP = { width: 1280, height: 800 };
@@ -66,10 +66,7 @@ test.describe('desktop sidebar', () => {
     await expect(nav.getByRole('button', { name: 'Finance' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Suppliers' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Reports' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    await expect(nav.getByRole('link', { name: 'Shift' })).toHaveAttribute('aria-current', 'page');
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   });
 
@@ -124,7 +121,7 @@ test.describe('desktop sidebar', () => {
       'aria-expanded',
       'false',
     );
-    await expect(page.locator('.shell-header h1')).toHaveText('Daily operations');
+    await expect(page.locator('.shell-header h1')).toHaveText('Shift');
     await expect(page.locator('.shell-sheet h1')).toHaveCount(0);
 
     await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
@@ -170,7 +167,7 @@ test.describe('desktop sidebar', () => {
     await waitForHydration(page);
     await nav.getByRole('button', { name: 'Operations' }).click();
     await expect(page.locator('html')).not.toHaveAttribute('data-sidebar', 'collapsed');
-    await expect(nav.getByRole('link', { name: 'Daily operations' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Shift' })).toBeVisible();
   });
 
   test('Settings links to the integrated page', async ({ page }) => {
@@ -260,6 +257,12 @@ test.describe('desktop sidebar', () => {
                           name: 'Authorised station',
                           timezone: 'Africa/Harare',
                         },
+                        {
+                          id: '44444444-4444-4444-8444-444444444444',
+                          code: 'STB',
+                          name: 'Second authorised station',
+                          timezone: 'Africa/Harare',
+                        },
                       ],
                     },
                   ],
@@ -283,7 +286,9 @@ test.describe('desktop sidebar', () => {
     const dialog = page.getByRole('dialog', { name: 'Select work context' });
     await expect(dialog).toContainText('Authorised organisation');
     await expect(dialog.locator('option', { hasText: 'All stations' })).toBeAttached();
-    await expect(dialog.locator('option', { hasText: 'Authorised station' })).toBeAttached();
+    await expect(
+      dialog.locator('option', { hasText: /^Trading entity · Authorised station$/ }),
+    ).toBeAttached();
 
     await dialog.getByLabel('Station (optional)').selectOption(stationId);
     await dialog.getByRole('button', { name: 'Use this context' }).click();
@@ -327,7 +332,7 @@ test.describe('desktop sidebar', () => {
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Account' }).click();
     const control = page.getByRole('menu', { name: 'Account menu' }).getByRole('group', {
-      name: 'Theme',
+      name: 'Appearance',
     });
     await expect(control.getByRole('radio', { name: /System/ })).toBeChecked();
 
@@ -347,7 +352,7 @@ test.describe('desktop sidebar', () => {
     await page.getByRole('button', { name: 'Account' }).click();
     await page
       .getByRole('menu', { name: 'Account menu' })
-      .getByRole('group', { name: 'Theme' })
+      .getByRole('group', { name: 'Appearance' })
       .getByRole('radio', { name: /System/ })
       .check();
     await expect(page.locator('html')).not.toHaveAttribute('data-theme');
@@ -357,7 +362,7 @@ test.describe('desktop sidebar', () => {
     const response = await page.goto('/no-such-page');
     expect(response?.status()).toBe(404);
     await expect(page.getByRole('heading', { name: 'Page not found', level: 1 })).toBeVisible();
-    await expect(sidebarNav(page)).toBeVisible();
+    await expect(page.locator('.shell-sidebar')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Go to Today', exact: true })).toHaveAttribute(
       'href',
       '/',

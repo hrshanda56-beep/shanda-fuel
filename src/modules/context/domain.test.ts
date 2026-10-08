@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultContextSelection, findStation, validateContextSelection } from './domain';
+import {
+  defaultContextSelection,
+  findStation,
+  listContextOptions,
+  validateContextSelection,
+} from './domain';
 import type { AvailableContext } from './contracts';
 import { contextRoutePolicy } from './routes';
 
@@ -103,5 +108,37 @@ describe('context selection contract', () => {
     expect(findStation(available.organisations[0]!, ids.stationB)?.legalEntity.id).toBe(
       ids.legalEntityB,
     );
+  });
+
+  it('does not silently choose the first station when several work contexts are valid', () => {
+    const policy = contextRoutePolicy('/');
+    expect(listContextOptions(available, policy)).toHaveLength(2);
+    expect(defaultContextSelection(available, policy)).toBeNull();
+  });
+
+  it('auto-selects the only valid work context', () => {
+    const singleContext: AvailableContext = {
+      organisations: [
+        {
+          id: ids.organisation,
+          name: 'Authorised organisation',
+          legalEntities: [
+            {
+              id: ids.legalEntityA,
+              name: 'Trading entity A',
+              stations: [
+                { id: ids.stationA, code: 'STA', name: 'Station A', timezone: 'Africa/Harare' },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(defaultContextSelection(singleContext, contextRoutePolicy('/'))).toEqual({
+      organisationId: ids.organisation,
+      legalEntityId: ids.legalEntityA,
+      stationId: ids.stationA,
+      allStations: false,
+    });
   });
 });

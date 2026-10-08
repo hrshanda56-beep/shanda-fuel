@@ -6,7 +6,6 @@ import '@/design-system/styles/base.css';
 import '@/design-system/styles/components.css';
 import '@/design-system/styles/shell.css';
 import './globals.css';
-import '@/design-system/styles/adr015.css';
 
 import { shellInitScript } from '@/design-system/shell-preferences';
 import { themeInitScript } from '@/design-system/theme';

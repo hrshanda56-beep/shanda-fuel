@@ -79,26 +79,15 @@ test.describe('shared shell consistency', () => {
     await expect(sidebar.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
   });
 
-  test('tablet uses a persistent icon rail', async ({ page }) => {
+  test('tablet uses the grouped drawer without a squeezed sidebar', async ({ page }) => {
     await prepareShell(page, { width: 982, height: 800 });
     const sidebar = page.locator('.shell-sidebar');
-    const nav = sidebar.getByRole('navigation', { name: 'Primary navigation' });
 
     await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'tablet');
-    await expect(sidebar).toBeVisible();
-    await expect(page.locator('.shell-topbar')).toBeHidden();
-    await expect(nav.getByRole('button', { name: 'Operations' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Operations' }).locator('.nav-label')).toHaveCSS(
-      'opacity',
-      '0',
-    );
-    await expect(sidebar.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
-
-    const account = page.locator('.shell-account-trigger:visible');
-    await expect(account).toHaveAttribute('aria-label', 'Account');
-    await expect(account).toHaveCSS('width', '44px');
-    await expect(account.locator('.shell-account-trigger-text')).toBeHidden();
-    await expect(account.locator('.shell-account-chevron')).toBeHidden();
+    await expect(sidebar).toBeHidden();
+    await expect(page.locator('.shell-topbar')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Mobile navigation' })).toBeVisible();
   });
 
   test('mobile has one compact header and a working navigation drawer', async ({ page }) => {
@@ -127,24 +116,20 @@ test.describe('shared shell consistency', () => {
     await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
   });
 
-  test('mobile exposes authorized bottom navigation and keeps More in the drawer', async ({
-    page,
-  }) => {
+  test('mobile exposes exactly Today, Shift, Stock, and More', async ({ page }) => {
     await prepareShell(page, { width: 390, height: 844 });
     const bottomNav = page.getByRole('navigation', { name: 'Mobile navigation' });
     await expect(bottomNav).toBeVisible();
-    await expect(bottomNav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    await expect(bottomNav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
+    await expect(bottomNav.locator('li')).toHaveCount(4);
+    await expect(bottomNav.getByRole('link', { name: 'Shift' })).toHaveAttribute(
       'href',
       '/operations/daily',
     );
     await bottomNav.getByRole('button', { name: 'More navigation' }).click();
-    const menu = page.getByRole('dialog', { name: 'Menu' });
-    await expect(menu).toBeVisible();
-    await expect(menu.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
+    const more = page.getByRole('dialog', { name: 'More' });
+    await expect(more).toBeVisible();
+    await expect(more.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
+    await expect(more.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
   });
 
   test('long work-context names wrap without creating horizontal overflow', async ({ page }) => {
@@ -236,6 +221,11 @@ test.describe('shared shell consistency', () => {
     await expect(page.locator('.theme-control:visible')).toHaveCount(1);
     await expect(menu).not.toContainText('Current user');
     await expect(menu).not.toContainText('CU');
+    await expect(menu.getByRole('link', { name: 'Account' })).toHaveAttribute(
+      'href',
+      '/settings#account',
+    );
+    await expect(menu.getByText('Sign out', { exact: true })).toBeVisible();
 
     const theme = page.locator('.theme-control:visible');
     await theme.getByRole('radio', { name: 'Dark' }).check();
@@ -264,10 +254,10 @@ test.describe('shared shell consistency', () => {
     test(`${viewport.name} keeps page headings in the shared header`, async ({ page }) => {
       await page.setViewportSize(viewport);
       for (const [path, title] of [
-        ['/', 'Dashboard'],
-        ['/operations/daily', 'Daily operations'],
+        ['/', 'Today'],
+        ['/operations/daily', 'Shift'],
         ['/reports', 'Reports'],
-        ['/inventory', 'Inventory'],
+        ['/inventory', 'Stock'],
       ] as const) {
         await page.goto(path);
         const shell = page.locator('.app-shell');

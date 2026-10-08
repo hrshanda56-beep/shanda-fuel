@@ -62,7 +62,7 @@
     'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
 
-  --font-size-2xs: 0.6875rem; /* 11px — eyebrows, dense meta */
+  --font-size-2xs: 0.75rem; /* 12px — compact meta; 11px text is not used */
   --font-size-xs: 0.75rem; /* 12px — captions, badges, table headers */
   --font-size-sm: 0.8125rem; /* 13px — secondary text, dense tables */
   --font-size-md: 0.875rem; /* 14px — controls, table body, UI default */
@@ -171,7 +171,7 @@
   /* 2. Semantic colour — light theme (default) ----------------------------- */
   color-scheme: light;
 
-  --bg-canvas: var(--palette-neutral-50);
+  --bg-canvas: #f7f4ed;
   --bg-surface: var(--palette-white);
   --bg-surface-raised: var(--palette-white);
   --bg-subtle: var(--palette-neutral-25);
