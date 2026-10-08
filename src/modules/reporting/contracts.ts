@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeStationIds } from './domain';
 import type { CanonicalRevenueReport, RestatedCogsReport } from '../profitability/contracts';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must use YYYY-MM-DD');
@@ -6,7 +7,19 @@ const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must use YYYY-M
 export const managementReportQuerySchema = z
   .object({
     tenantId: z.string().uuid(),
+    /** Single station; kept so existing links keep working. */
     stationId: z.string().uuid().optional(),
+    /** One or more stations, as an array or a comma-separated list. Empty means all. */
+    stationIds: z.preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value
+              .split(',')
+              .map((part) => part.trim())
+              .filter(Boolean)
+          : value,
+      z.array(z.string().uuid()).max(100).optional(),
+    ),
     fromDate: dateOnly.optional(),
     toDate: dateOnly.optional(),
   })
@@ -18,9 +31,18 @@ export const managementReportQuerySchema = z
         message: 'fromDate must not be after toDate',
       });
     }
+  })
+  .transform(({ stationId: _single, stationIds, ...rest }) => {
+    const normalized = normalizeStationIds(_single, stationIds);
+    return {
+      ...rest,
+      stationIds: normalized,
+      // Transitional: single-station callers still read `stationId`.
+      ...(normalized.length === 1 ? { stationId: normalized[0] as string } : {}),
+    };
   });
 
-export type ManagementReportQuery = z.infer<typeof managementReportQuerySchema> & {
+export type ManagementReportQuery = z.output<typeof managementReportQuerySchema> & {
   fromDate: string;
   toDate: string;
 };

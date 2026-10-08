@@ -53,6 +53,17 @@ export function uniqueIds(values: readonly (string | null | undefined)[]): strin
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
+/**
+ * Merges the legacy single `stationId` and the multi-station `stationIds`
+ * into one sorted, de-duplicated list. An empty list means every station.
+ */
+export function normalizeStationIds(
+  stationId: string | undefined,
+  stationIds: readonly string[] | undefined,
+): string[] {
+  return [...new Set([...(stationId ? [stationId] : []), ...(stationIds ?? [])])].sort();
+}
+
 export function customerScopeAvailability(
   stationId?: string,
 ): 'AVAILABLE' | 'UNAVAILABLE_STATION_DIMENSION' {

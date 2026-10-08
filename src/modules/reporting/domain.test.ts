@@ -5,6 +5,7 @@ import {
   deriveCashPosition,
   formatLitres,
   formatMoney,
+  normalizeStationIds,
   sumExact,
 } from './domain';
 
@@ -45,5 +46,16 @@ describe('management reporting exact arithmetic', () => {
   it('marks station-scoped customer balances unavailable instead of zero', () => {
     expect(customerScopeAvailability()).toBe('AVAILABLE');
     expect(customerScopeAvailability('station-1')).toBe('UNAVAILABLE_STATION_DIMENSION');
+  });
+});
+
+describe('station scope normalisation', () => {
+  it('merges the legacy station with the list, sorted and de-duplicated', () => {
+    expect(normalizeStationIds('b', ['c', 'a', 'b'])).toEqual(['a', 'b', 'c']);
+  });
+
+  it('treats no stations as every station', () => {
+    expect(normalizeStationIds(undefined, undefined)).toEqual([]);
+    expect(normalizeStationIds(undefined, [])).toEqual([]);
   });
 });
