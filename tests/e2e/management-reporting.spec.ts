@@ -72,26 +72,108 @@ test.describe('management reporting surface', () => {
       await client?.end();
     });
 
-    test('authorized finance user can open the posted report and filters are accessible', async ({
-      context,
-      page,
-    }) => {
+    async function signIn(context: import('@playwright/test').BrowserContext) {
       const signedCookie = `${sessionToken}.${await makeSignature(sessionToken, authSecret!)}`;
       await context.addCookies([
         { name: 'shanda-fuel.session_token', value: signedCookie, domain: '127.0.0.1', path: '/' },
       ]);
-      await page.goto(`/reports?tenantId=${ids.tenant}`);
-      await expect(page.getByRole('heading', { name: 'Report filters' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Refresh report' })).toBeVisible();
-      await expect(page.getByText('POSTED', { exact: true })).toBeVisible();
-      await page.getByLabel('Station').selectOption(ids.station);
-      await page.getByRole('button', { name: 'Refresh report' }).click();
+    }
+
+    test('a station filter shows customer balances as unavailable and passes accessibility', async ({
+      context,
+      page,
+    }) => {
+      await signIn(context);
+      await page.goto(`/reports/commercial?tenantId=${ids.tenant}&stations=${ids.station}`);
+      await expect(page.getByRole('group', { name: 'Report filters' })).toBeVisible();
+      await expect(page.getByLabel('Stations: A10 E2E Main Station')).toBeVisible();
       await expect(page.getByText('Unavailable', { exact: true }).first()).toBeVisible();
       await expect(
         page.getByText(/unavailable at station scope because A8 balances/),
       ).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
+    });
+
+    test('the Reports page lists reports, keeps filters in the link and passes accessibility', async ({
+      context,
+      page,
+    }) => {
+      await signIn(context);
+      await page.goto(`/reports?tenantId=${ids.tenant}`);
+      await expect(page.getByRole('heading', { name: 'Available reports' })).toBeVisible();
+      await expect(page.getByText('Nothing shared or exported yet.')).toBeVisible();
+      await page.getByLabel('Period', { exact: true }).first().selectOption('3m');
+      await expect(page).toHaveURL(/period=3m/);
+      await page.getByRole('link', { name: /Cash and banking/ }).click();
+      await expect(page).toHaveURL(/period=3m.*category=cash|category=cash.*period=3m/);
+      await expect(page.locator('.report-row')).toHaveCount(1);
+      const results = await new AxeBuilder({ page }).analyze();
+      expect(results.violations).toEqual([]);
+    });
+
+    test('row menu is keyboard operable; share copies a private link; export downloads a CSV; activity shows both', async ({
+      context,
+      page,
+    }) => {
+      await signIn(context);
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.goto(`/reports?tenantId=${ids.tenant}&period=last-month`);
+      const menuButton = page.getByRole('button', { name: 'More actions for Sales and payments' });
+
+      // Keyboard: opens with ArrowDown, items move with arrows, Escape returns focus.
+      await menuButton.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('menuitem', { name: 'View' })).toBeFocused();
+      await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('menuitem', { name: 'Share private link' })).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('menu')).toHaveCount(0);
+      await expect(menuButton).toBeFocused();
+
+      // Click away closes.
+      await menuButton.click();
+      await expect(page.getByRole('menu')).toBeVisible();
+      await page.getByRole('heading', { name: 'Available reports' }).click();
+      await expect(page.getByRole('menu')).toHaveCount(0);
+
+      // Share.
+      await menuButton.click();
+      await page.getByRole('menuitem', { name: 'Share private link' }).click();
+      await expect(page.getByText(/Private link copied/)).toBeVisible();
+      const link = await page.evaluate(() => navigator.clipboard.readText());
+      expect(link).toContain(`/reports/sales?tenantId=${ids.tenant}&period=last-month`);
+      expect(link).not.toMatch(/token|secret|session|signature/i);
+
+      // Export.
+      const download = page.waitForEvent('download');
+      await menuButton.click();
+      await page.getByRole('menuitem', { name: 'Export CSV' }).click();
+      const file = await download;
+      expect(file.suggestedFilename()).toMatch(
+        /^sales_\d{4}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}\.csv$/,
+      );
+
+      // Recent activity lists both real actions.
+      const rail = page.getByRole('complementary', { name: 'Browse reports' });
+      await expect(rail.getByText('Sales and payments link shared')).toBeVisible();
+      await expect(rail.getByText('Sales and payments exported')).toBeVisible();
+      const results = await new AxeBuilder({ page }).analyze();
+      expect(results.violations).toEqual([]);
+    });
+
+    test('a failed report request shows an error instead of figures', async ({ context, page }) => {
+      await signIn(context);
+      await page.route('**/api/reports/management**', (route) =>
+        route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'Report could not be loaded' }),
+        }),
+      );
+      await page.goto(`/reports?tenantId=${ids.tenant}`);
+      await expect(page.getByText('Report unavailable')).toBeVisible();
+      await expect(page.getByText('Accounted sales')).toHaveCount(0);
     });
   });
 });
