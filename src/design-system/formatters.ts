@@ -65,6 +65,20 @@ export function formatMoneyDisplay(value: string | null | undefined, currency = 
   return currency === 'USD' ? `${sign}$${rounded.text}` : `${sign}${currency} ${rounded.text}`;
 }
 
+/**
+ * Unit price for people: at least two decimals, up to four, trailing zeros
+ * trimmed ("$1.495", "$1.50"), so a price is never rounded into a different one.
+ */
+export function formatUnitPrice(value: string | null | undefined, currency = 'USD'): string {
+  const rounded = value == null ? undefined : roundDecimalString(value, 4);
+  if (!rounded) return '—';
+  const [whole = '0', fraction = ''] = rounded.text.split('.');
+  const trimmed = fraction.replace(/0+$/, '').padEnd(2, '0');
+  const sign = rounded.negative ? '−' : '';
+  const text = `${whole}.${trimmed}`;
+  return currency === 'USD' ? `${sign}$${text}` : `${sign}${currency} ${text}`;
+}
+
 /** Plain litres for people: "1,234 L", with one decimal below 10 L, "—" when unknown. */
 export function formatLitresDisplay(value: string | null | undefined): string {
   if (value == null) return '—';

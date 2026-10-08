@@ -8,6 +8,7 @@ import {
   formatMoney,
   formatMoneyDisplay,
   formatStatusSentence,
+  formatUnitPrice,
   formatUsd,
   formatPercentage,
   formatStatusLabel,
@@ -107,5 +108,13 @@ describe('plain display formatters', () => {
   it('turns status codes into sentence case', () => {
     expect(formatStatusSentence('NOT_STARTED')).toBe('Not started');
     expect(formatStatusSentence('APPROVED')).toBe('Approved');
+  });
+
+  it('keeps unit prices exact to four places without trailing zeros', () => {
+    expect(formatUnitPrice('1.495')).toBe('$1.495');
+    expect(formatUnitPrice('1.5')).toBe('$1.50');
+    expect(formatUnitPrice('1.23456')).toBe('$1.2346');
+    expect(formatUnitPrice('2')).toBe('$2.00');
+    expect(formatUnitPrice(null)).toBe('—');
   });
 });

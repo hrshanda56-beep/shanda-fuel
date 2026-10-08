@@ -490,7 +490,7 @@ test.describe('phones never scroll sideways', () => {
       await page.setViewportSize({ width, height: 800 });
 
       await page.goto('/reports?tenantId=tenant-1');
-      await expect(page.getByRole('heading', { name: 'Payments and products' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Sales by product' })).toBeVisible();
       await expectFitsWidth(page);
 
       await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
@@ -527,33 +527,32 @@ test.describe('phones never scroll sideways', () => {
 test.describe('KPIs', () => {
   test('never carry icons', async ({ page }) => {
     await mockApis(page);
-    for (const route of ['/foundation', '/reports?tenantId=tenant-1', '/design-system']) {
+    for (const route of ['/foundation', '/design-system']) {
       await page.goto(route);
       await expect(page.locator('.metric-card').first(), route).toBeVisible();
       await expect(page.locator('.metric-card :is(svg, img)'), route).toHaveCount(0);
     }
   });
 
-  test('link to the detail behind the number', async ({ page }) => {
+  test('open the detail behind the number', async ({ page }) => {
     await mockApis(page);
     await page.goto('/reports?tenantId=tenant-1');
-    await page.getByRole('link', { name: /Cash collected/ }).click();
-    await expect(page).toHaveURL(/#cash-report$/);
-    await expect(
-      page.getByRole('heading', { name: 'Evidence → collected → banked' }),
-    ).toBeInViewport();
+    await page.getByRole('button', { name: 'Cash not banked' }).click();
+    await expect(page.getByRole('heading', { name: 'Cash', exact: true })).toBeVisible();
   });
 
-  test('become one calm list on phones', async ({ page }) => {
+  test('sit two across on phones, like the dashboard', async ({ page }) => {
     await mockApis(page);
     await page.setViewportSize({ width: 390, height: 800 });
     await page.goto('/reports?tenantId=tenant-1');
-    const grid = page.getByRole('region', { name: 'Management report headline metrics' });
-    await expect(grid).toBeVisible();
-    const columns = await grid.evaluate(
-      (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
-    );
-    expect(columns).toBe(1);
+    const grid = page
+      .getByRole('group', { name: 'Headline figures' })
+      .or(page.locator('dl[aria-label="Headline figures"]'));
+    await expect(grid.first()).toBeVisible();
+    const columns = await grid
+      .first()
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+    expect(columns).toBe(2);
   });
 });
 
@@ -591,7 +590,7 @@ test.describe('click targets', () => {
 
 test.describe('data screens stay accessible', () => {
   const screens = [
-    ['/reports?tenantId=tenant-1', 'Payments and products'],
+    ['/reports?tenantId=tenant-1', 'Sales by product'],
     [
       '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
       'Choose a station to view inventory',

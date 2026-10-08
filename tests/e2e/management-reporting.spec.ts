@@ -21,12 +21,7 @@ test.describe('management reporting surface', () => {
     await page.goto('/reports');
     const pageHeader = page.getByRole('region', { name: 'Page header and work context' });
     await expect(pageHeader.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible();
-    await expect(
-      pageHeader.getByText('Operational financial position', { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: 'Choose an organisation to view reports' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose an organisation' })).toBeVisible();
   });
 
   test.describe('authorized posted-facts report', () => {
@@ -81,15 +76,11 @@ test.describe('management reporting surface', () => {
         { name: 'shanda-fuel.session_token', value: signedCookie, domain: '127.0.0.1', path: '/' },
       ]);
       await page.goto(`/reports?tenantId=${ids.tenant}`);
-      await expect(page.getByRole('heading', { name: 'Report filters' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Refresh report' })).toBeVisible();
-      await expect(page.getByText('POSTED', { exact: true })).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Period' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
       await page.getByLabel('Station').selectOption(ids.station);
-      await page.getByRole('button', { name: 'Refresh report' }).click();
-      await expect(page.getByText('Unavailable', { exact: true }).first()).toBeVisible();
-      await expect(
-        page.getByText(/unavailable at station scope because A8 balances/),
-      ).toBeVisible();
+      await page.getByRole('button', { name: 'Suppliers & customers' }).click();
+      await expect(page.getByText('Customer balances aren’t tracked per station.')).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });

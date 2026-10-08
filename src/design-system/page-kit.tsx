@@ -42,6 +42,7 @@ export function KpiTile({
   label,
   value,
   href,
+  onSelect,
   icon,
   state = 'ready',
   caption,
@@ -49,6 +50,8 @@ export function KpiTile({
   label: string;
   value: ReactNode | null;
   href?: string;
+  /** Makes the whole tile a button (e.g. to switch a tab) when there is no page to link to. */
+  onSelect?: () => void;
   icon?: IconName;
   state?: KpiState;
   /** Replaces the default caption for a tile with no value, or adds context to one with a value. */
@@ -66,6 +69,10 @@ export function KpiTile({
           <Link className="today-figure-link" href={href}>
             {label}
           </Link>
+        ) : onSelect ? (
+          <button type="button" className="today-figure-link" onClick={onSelect}>
+            {label}
+          </button>
         ) : (
           label
         )}
@@ -75,7 +82,12 @@ export function KpiTile({
           <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
         ) : hasValue ? (
           <>
-            <span className="today-figure-value">{value}</span>
+            <span
+              className="today-figure-value"
+              data-long={typeof value === 'string' && value.length > 8 ? '' : undefined}
+            >
+              {value}
+            </span>
             {caption ? <span className="today-figure-caption">{caption}</span> : null}
           </>
         ) : (
@@ -153,15 +165,22 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   label,
+  fit = 'equal',
 }: {
   options: ReadonlyArray<SegmentedOption<T> | T>;
   value: T;
   onChange: (value: T) => void;
   /** Accessible name for the group. */
   label: string;
+  /** `equal` shares the width (short labels); `content` sizes each pill to its label and wraps. */
+  fit?: 'equal' | 'content';
 }) {
   return (
-    <div className="today-periods segmented" role="group" aria-label={label}>
+    <div
+      className={`today-periods segmented${fit === 'content' ? ' segmented-content' : ''}`}
+      role="group"
+      aria-label={label}
+    >
       {options.map((option) => {
         const item = typeof option === 'string' ? { value: option, label: option } : option;
         const active = item.value === value;

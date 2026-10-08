@@ -440,3 +440,54 @@
 .dialog-backdrop .button {
   border-radius: var(--radius-full);
 }
+
+/* Reports: period control and station picker share one card. */
+.report-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.report-page > .kpi-section {
+  margin-bottom: 0;
+}
+
+.report-controls {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@media (min-width: 48rem) {
+  .report-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem);
+    align-items: end;
+  }
+}
+
+/* Long figures step down so they never touch the tile edge. */
+.today-figure-value[data-long] {
+  font-size: calc(var(--font-size-4xl, 2.25rem) * 0.8);
+}
+
+/* Tab-style choices size to their labels and wrap, never squeeze. */
+.today-periods.segmented-content {
+  width: 100%;
+}
+
+.today-periods.segmented-content .today-period {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.today-periods.segmented .today-period {
+  white-space: nowrap;
+}
+
+/* A tile that switches a tab is a button with the same whole-tile target. */
+button.today-figure-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}

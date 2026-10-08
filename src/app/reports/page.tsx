@@ -13,16 +13,13 @@ export default async function ReportsPage({
 }) {
   const { tenantId } = await searchParams;
   return (
-    <AppShell pageSubtitle="Operational financial position">
-      <p className="lede">
-        A factual view across approved sales, custody, settlements, commercial exposure, and stock.
-      </p>
+    <AppShell>
       {tenantId ? (
         <ManagementReportDashboard tenantId={tenantId} />
       ) : (
         <ContextRequiredState
-          title="Choose an organisation to view reports"
-          message="Use Change above to choose an authorised organisation before loading reporting data."
+          title="Choose an organisation"
+          message="Pick an organisation at the top of the page to see its reports."
         />
       )}
     </AppShell>
