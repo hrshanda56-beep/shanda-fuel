@@ -135,6 +135,6 @@ test.describe('design-system foundation reference', () => {
     await page.reload();
 
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(247, 244, 237)');
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(230, 236, 234)');
   });
 });

@@ -63,7 +63,6 @@ export default async function SettingsPage({
   return (
     <AppShell
       userName={view.account.name}
-      userEmail={view.account.email}
       pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
     >
       <SettingsWorkspace view={view} />

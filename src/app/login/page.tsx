@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { authClient } from '@/platform/auth/client';
 import { Button, Card, Field } from '@/design-system/primitives';
-import { EntryBrand } from '@/design-system/root-entry';
 
 type PasswordSignInData = {
   twoFactorRedirect?: boolean;
@@ -83,7 +82,15 @@ export default function LoginPage() {
   return (
     <main className="auth-layout">
       <div className="auth-panel">
-        <EntryBrand />
+        <div className="shell-brand">
+          <span className="brand-mark" aria-hidden="true">
+            SF
+          </span>
+          <span className="shell-brand-text">
+            <span className="brand-name">Shanda Fuel</span>
+            <span className="brand-byline">by ShandaHR</span>
+          </span>
+        </div>
         <Card as="section" className="auth-card" aria-labelledby="login-title">
           {twoFactorRequired ? (
             <div key="totp-step">
@@ -139,9 +146,7 @@ export default function LoginPage() {
                     name="email"
                     type="email"
                     autoComplete="username"
-                    autoFocus
                     inputMode="email"
-                    enterKeyHint="next"
                     required
                   />
                 </Field>
@@ -152,7 +157,6 @@ export default function LoginPage() {
                     name="password"
                     type="password"
                     autoComplete="current-password"
-                    enterKeyHint="go"
                     required
                   />
                 </Field>

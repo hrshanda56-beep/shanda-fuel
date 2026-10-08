@@ -2404,15 +2404,6 @@ tr:has(.row-link):active {
     flex-wrap: wrap;
   }
 
-  input:where(
-    :not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'])
-  ),
-  select,
-  textarea {
-    min-height: var(--touch-target-min);
-    font-size: 1rem;
-  }
-
   .panel-heading > .status {
     flex-shrink: 1;
   }

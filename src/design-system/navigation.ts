@@ -84,8 +84,8 @@ export const navigationSections: readonly NavigationSection[] = [
     items: [
       {
         key: 'daily-operations',
-        label: 'Shift',
-        searchLabel: 'Shift',
+        label: 'Daily operations',
+        searchLabel: 'Daily operations',
         icon: 'fuel',
         destination: { kind: 'route', path: '/operations/daily' },
         availability: 'active',
@@ -105,8 +105,8 @@ export const navigationSections: readonly NavigationSection[] = [
       },
       {
         key: 'inventory',
-        label: 'Stock',
-        searchLabel: 'Stock',
+        label: 'Inventory',
+        searchLabel: 'Inventory',
         icon: 'inbox',
         destination: { kind: 'route', path: '/inventory/valuation' },
         availability: 'active',
@@ -335,38 +335,44 @@ export function resolveNavigation(
 const MOBILE_NAVIGATION_PRIORITY: readonly NavigationKey[] = [
   'today',
   'daily-operations',
-  'inventory',
+  'cash',
+  'reconciliations',
+  'reports',
 ];
 
 /**
  * Selects the compact phone navigation from the already-authorized links.
  *
- * The bottom bar is deliberately fixed to the three primary destinations. The
- * fourth item, More, is rendered by the shell as the full-screen lower-
- * frequency navigation hub. This function still consumes the authorized
- * projection and returns links only when their route is available.
+ * The bottom bar is a presentation of the resolved navigation projection: it
+ * never turns a work-in-progress, restricted, or station-less destination
+ * into a link. Remaining authorized links fill unused slots so a role with a
+ * narrower projection still gets useful navigation without exposing routes.
  */
 export function selectMobileNavigationItems(
   sections: readonly ResolvedNavigationSection[],
-  maxItems = 3,
-): ResolvedNavigationItem[] {
+  maxItems = 4,
+): Extract<ResolvedNavigationItem, { state: 'link' }>[] {
   if (maxItems < 1) return [];
 
-  const resolved = sections.flatMap((section) => section.items);
-  const byKey = new Map(resolved.map((item) => [item.key, item]));
-  const selected: ResolvedNavigationItem[] = [];
+  const links = sections
+    .flatMap((section) => section.items)
+    .filter(
+      (item): item is Extract<ResolvedNavigationItem, { state: 'link' }> => item.state === 'link',
+    );
+  const byKey = new Map(links.map((item) => [item.key, item]));
+  const selected: Extract<ResolvedNavigationItem, { state: 'link' }>[] = [];
 
   for (const key of MOBILE_NAVIGATION_PRIORITY) {
     const item = byKey.get(key);
-    if (item) {
-      selected.push(item);
-    } else {
-      const definition = navigationSections
-        .flatMap((section) => section.items)
-        .find((candidate) => candidate.key === key);
-      if (definition) selected.push({ ...definition, state: 'restricted' });
-    }
+    if (!item) continue;
+    selected.push(item);
     if (selected.length === maxItems) return selected;
+  }
+
+  for (const item of links) {
+    if (selected.some((selectedItem) => selectedItem.key === item.key)) continue;
+    selected.push(item);
+    if (selected.length === maxItems) break;
   }
 
   return selected;

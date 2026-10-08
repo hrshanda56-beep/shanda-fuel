@@ -104,9 +104,9 @@ describe('navigation destinations', () => {
     expect(allItems.every((entry) => entry.label === entry.searchLabel)).toBe(true);
     expect(allItems.map((entry) => entry.searchLabel)).toEqual([
       'Today',
-      'Shift',
+      'Daily operations',
       'Reconciliations',
-      'Stock',
+      'Inventory',
       'Cash and banking',
       'Provider settlements',
       'Customers',
@@ -126,7 +126,12 @@ describe('mobile navigation projection', () => {
     );
     const items = selectMobileNavigationItems(resolveNavigation(projection, {}));
 
-    expect(items.map((entry) => entry.key)).toEqual(['today', 'daily-operations', 'inventory']);
+    expect(items.map((entry) => entry.key)).toEqual([
+      'today',
+      'daily-operations',
+      'reports',
+      'inventory',
+    ]);
     expect(items.every((entry) => entry.state === 'link')).toBe(true);
   });
 
@@ -135,7 +140,12 @@ describe('mobile navigation projection', () => {
       resolveNavigation(syntheticNavigationProjection, { stationId: 'station-1' }),
     );
 
-    expect(items.map((entry) => entry.key)).toEqual(['today', 'daily-operations', 'inventory']);
+    expect(items.map((entry) => entry.key)).toEqual([
+      'today',
+      'daily-operations',
+      'cash',
+      'reconciliations',
+    ]);
   });
 });
 
