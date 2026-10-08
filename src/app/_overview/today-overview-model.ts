@@ -89,6 +89,14 @@ export function countSuspendedCustomers(customers: ReadonlyArray<{ status: strin
   return customers.filter((customer) => customer.status === 'SUSPENDED').length;
 }
 
+export function countActiveCustomers(customers: ReadonlyArray<{ status: string }>): number {
+  return customers.filter((customer) => customer.status === 'ACTIVE').length;
+}
+
+export function countOpenShifts(shifts: ReadonlyArray<{ state: string }>): number {
+  return shifts.filter((shift) => shift.state === 'OPEN').length;
+}
+
 export function shiftSummary(shifts: ReadonlyArray<{ state: string }>): string {
   if (shifts.length === 0) return 'No shifts yet';
   const open = shifts.filter((shift) => shift.state === 'OPEN').length;
