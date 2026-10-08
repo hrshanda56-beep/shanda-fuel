@@ -9,19 +9,16 @@ describe('management report query stations', () => {
   it('means every station when none is given', () => {
     const parsed = managementReportQuerySchema.parse({ tenantId });
     expect(parsed.stationIds).toEqual([]);
-    expect(parsed.stationId).toBeUndefined();
   });
 
   it('keeps the legacy single station working', () => {
     const parsed = managementReportQuerySchema.parse({ tenantId, stationId: a });
     expect(parsed.stationIds).toEqual([a]);
-    expect(parsed.stationId).toBe(a);
   });
 
   it('accepts a comma-separated list from a URL and sorts it', () => {
     const parsed = managementReportQuerySchema.parse({ tenantId, stationIds: `${b}, ${a},${b}` });
     expect(parsed.stationIds).toEqual([a, b]);
-    expect(parsed.stationId).toBeUndefined();
   });
 
   it('accepts an array', () => {

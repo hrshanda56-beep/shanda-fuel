@@ -890,6 +890,41 @@ describe('A10 management reporting PostgreSQL read model', () => {
     });
   });
 
+  it('reports on several selected stations and marks customer scope unavailable', async () => {
+    const response = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.scopedStation}`,
+        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+      ),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, any>;
+    expect(body.filters.stationIds).toEqual([ids.station, ids.scopedStation].sort());
+    expect(body.stations.map((station: Record<string, any>) => station.stationId).sort()).toEqual(
+      [ids.station, ids.scopedStation].sort(),
+    );
+    expect(body.customers.availability).toBe('UNAVAILABLE_STATION_DIMENSION');
+  });
+
+  it('rejects the whole request when any selected station is not permitted', async () => {
+    const scopedActorCookie = `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`;
+    const mixed = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.scopedStation}`,
+        { headers: { cookie: scopedActorCookie } },
+      ),
+    );
+    expect(mixed.status).toBe(403);
+
+    const foreign = await managementReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.otherStation}`,
+        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+      ),
+    );
+    expect(foreign.status).toBe(404);
+  });
+
   it('uses the A4 sale business date for costing periods and does not double-count revisions', async () => {
     const saleDateResponse = await managementReportGet(
       new Request(

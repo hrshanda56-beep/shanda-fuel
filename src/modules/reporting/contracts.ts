@@ -33,13 +33,7 @@ export const managementReportQuerySchema = z
     }
   })
   .transform(({ stationId: _single, stationIds, ...rest }) => {
-    const normalized = normalizeStationIds(_single, stationIds);
-    return {
-      ...rest,
-      stationIds: normalized,
-      // Transitional: single-station callers still read `stationId`.
-      ...(normalized.length === 1 ? { stationId: normalized[0] as string } : {}),
-    };
+    return { ...rest, stationIds: normalizeStationIds(_single, stationIds) };
   });
 
 export type ManagementReportQuery = z.output<typeof managementReportQuerySchema> & {
@@ -187,7 +181,8 @@ export type ManagementReport = Readonly<{
   currency: 'USD';
   filters: Readonly<{
     tenantId: string;
-    stationId?: string;
+    /** Stations covered; empty means every station. */
+    stationIds: readonly string[];
     fromDate: string;
     toDate: string;
   }>;

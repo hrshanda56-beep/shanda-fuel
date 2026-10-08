@@ -50,12 +50,23 @@ export function parseManagementReportQuery(input: unknown): ManagementReportQuer
   };
 }
 
-function stationClause(alias: string, stationId?: string) {
-  return stationId ? sql`and ${sql.raw(`${alias}.station_id`)} = ${stationId}` : sql``;
+function idList(ids: readonly string[]) {
+  return sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  );
 }
 
-function legalEntityClause(alias: string, legalEntityId?: string) {
-  return legalEntityId ? sql`and ${sql.raw(`${alias}.legal_entity_id`)} = ${legalEntityId}` : sql``;
+function stationClause(alias: string, stationIds: readonly string[]) {
+  return stationIds.length > 0
+    ? sql`and ${sql.raw(`${alias}.station_id`)} in (${idList(stationIds)})`
+    : sql``;
+}
+
+function legalEntityClause(alias: string, legalEntityIds: readonly string[]) {
+  return legalEntityIds.length > 0
+    ? sql`and ${sql.raw(`${alias}.legal_entity_id`)} in (${idList(legalEntityIds)})`
+    : sql``;
 }
 
 function approvedReconciliations(filters: ManagementReportQuery) {
@@ -80,27 +91,55 @@ function approvedReconciliations(filters: ManagementReportQuery) {
     where r.tenant_id = ${filters.tenantId}
       and rev.state in ${FINAL_RECONCILIATION_STATES}
       and bd.business_date between ${filters.fromDate} and ${filters.toDate}
-      ${stationClause('r', filters.stationId)}
+      ${stationClause('r', filters.stationIds)}
     order by r.id, rev.revision desc
   `;
 }
 
-async function selectedStation(
+async function selectedStations(
   transaction: ReportingTransaction,
   filters: ManagementReportQuery,
-): Promise<{ id: string; legalEntityId: string } | null> {
-  if (!filters.stationId) return null;
+): Promise<{ id: string; legalEntityId: string }[]> {
+  if (filters.stationIds.length === 0) return [];
   const rows = await transaction.execute<{ id: string; legal_entity_id: string }>(sql`
     select id, legal_entity_id
     from app.stations
     where tenant_id = ${filters.tenantId}
-      and id = ${filters.stationId}
+      and id in (${idList(filters.stationIds)})
       and status = 'ACTIVE'
-    limit 1
   `);
-  const station = rows[0];
-  if (!station) throw new AppError('NOT_FOUND', 'The requested reporting station was not found');
-  return { id: station.id, legalEntityId: station.legal_entity_id };
+  if (rows.length !== filters.stationIds.length) {
+    throw new AppError('NOT_FOUND', 'A requested reporting station was not found');
+  }
+  return rows.map((row) => ({ id: row.id, legalEntityId: row.legal_entity_id }));
+}
+
+/** Every requested station must be authorised; one failure rejects the whole request. */
+function authorizeStations(
+  actor: Parameters<typeof authorize>[0]['actor'],
+  filters: ManagementReportQuery,
+  stations: readonly { id: string; legalEntityId: string }[],
+) {
+  if (stations.length === 0) {
+    authorize({
+      actor,
+      permissionCode: 'report.view',
+      requestedScope: { tenantId: filters.tenantId, scopeType: 'TENANT' as const },
+    });
+    return;
+  }
+  for (const station of stations) {
+    authorize({
+      actor,
+      permissionCode: 'report.view',
+      requestedScope: {
+        tenantId: filters.tenantId,
+        scopeType: 'STATION' as const,
+        legalEntityId: station.legalEntityId,
+        stationId: station.id,
+      },
+    });
+  }
 }
 
 async function listStations(
@@ -112,7 +151,7 @@ async function listStations(
     from app.stations
     where tenant_id = ${filters.tenantId}
       and status = 'ACTIVE'
-      ${filters.stationId ? sql`and id = ${filters.stationId}` : sql``}
+      ${filters.stationIds.length > 0 ? sql`and id in (${idList(filters.stationIds)})` : sql``}
     order by code, id
   `);
   return rows.map((row) => ({ stationId: row.id, code: row.code, name: row.name }));
@@ -244,7 +283,7 @@ async function readCash(
         where c.tenant_id = ${filters.tenantId}
           and c.state <> 'REVERSED'
           and c.business_date between ${filters.fromDate} and ${filters.toDate}
-          ${stationClause('c', filters.stationId)}
+          ${stationClause('c', filters.stationIds)}
       ), period_deposits as (
         select d.id, d.tenant_id, d.station_id
         from app.bank_deposits d
@@ -252,7 +291,7 @@ async function readCash(
           and d.state = 'CONFIRMED'
           and d.deposited_at >= (${filters.fromDate}::date at time zone 'UTC')
           and d.deposited_at < ((${filters.toDate}::date + interval '1 day') at time zone 'UTC')
-          ${stationClause('d', filters.stationId)}
+          ${stationClause('d', filters.stationIds)}
       )
       select
         (select coalesce(sum(amount), 0)::text from period_collections) as collected,
@@ -328,7 +367,7 @@ async function readProviders(
       left join allocation_totals a on a.settlement_id = s.id
       where s.tenant_id = ${filters.tenantId}
         and s.settlement_date between ${filters.fromDate} and ${filters.toDate}
-        ${stationClause('s', filters.stationId)}
+        ${stationClause('s', filters.stationIds)}
       order by s.settlement_date, pp.name, s.settlement_reference
     `),
     transaction.execute<AggregateRow>(sql`
@@ -378,7 +417,7 @@ async function readProviders(
 async function readSuppliers(
   transaction: ReportingTransaction,
   filters: ManagementReportQuery,
-  legalEntityId?: string,
+  legalEntityIds: readonly string[],
 ): Promise<ManagementReport['suppliers']> {
   const rows = await transaction.execute<{
     supplier_id: string;
@@ -400,7 +439,7 @@ async function readSuppliers(
     left join app.supplier_account_movements m
       on m.tenant_id = s.tenant_id and m.supplier_id = s.id
      and m.effective_date <= ${filters.toDate}
-     ${legalEntityClause('m', legalEntityId)}
+     ${legalEntityClause('m', legalEntityIds)}
     where s.tenant_id = ${filters.tenantId}
     group by s.id, s.code, s.legal_name
     order by s.code, s.id
@@ -430,9 +469,9 @@ async function readCustomers(
   // A8 ledger balances are tenant-owned and intentionally do not carry a
   // station dimension. Do not expose a tenant-wide balance to a station
   // report; station-level customer exposure is not derivable safely yet.
-  if (filters.stationId) {
+  if (filters.stationIds.length > 0) {
     return {
-      availability: customerScopeAvailability(filters.stationId),
+      availability: customerScopeAvailability(filters.stationIds),
       receivableBalance: null,
       prepaidValueBalance: null,
       reservedAmount: null,
@@ -466,7 +505,7 @@ async function readCustomers(
       where tenant_id = ${filters.tenantId}
         and state in ('AUTHORIZED', 'PARTIALLY_USED')
         and requested_at < (${filters.toDate}::date + interval '1 day')
-        ${stationClause('customer_fuel_authorizations', filters.stationId)}
+        ${stationClause('customer_fuel_authorizations', filters.stationIds)}
       group by customer_id
     )
     select c.id as customer_id, c.account_reference, c.display_name,
@@ -553,7 +592,7 @@ async function readInventory(
     left join latest_dips d on d.station_id = t.station_id and d.tank_id = t.id
     left join deliveries del on del.station_id = t.station_id and del.product_id = t.product_id
     where t.tenant_id = ${filters.tenantId} and t.status <> 'RETIRED'
-      ${stationClause('t', filters.stationId)}
+      ${stationClause('t', filters.stationIds)}
     order by t.station_id, t.code
   `);
   const mapped = rows.map((row) => ({
@@ -666,7 +705,7 @@ async function readDaily(
       from app.cash_collections c
       where c.tenant_id = ${filters.tenantId} and c.state <> 'REVERSED'
         and c.business_date between ${filters.fromDate} and ${filters.toDate}
-      ${stationClause('c', filters.stationId)}
+      ${stationClause('c', filters.stationIds)}
       group by c.business_date, c.station_id
     ), banked as (
       select to_char(d.deposited_at at time zone 'UTC', 'YYYY-MM-DD') as report_date,
@@ -677,7 +716,7 @@ async function readDaily(
       where d.tenant_id = ${filters.tenantId} and d.state = 'CONFIRMED'
         and d.deposited_at >= (${filters.fromDate}::date at time zone 'UTC')
         and d.deposited_at < ((${filters.toDate}::date + interval '1 day') at time zone 'UTC')
-        ${stationClause('d', filters.stationId)}
+        ${stationClause('d', filters.stationIds)}
       group by to_char(d.deposited_at at time zone 'UTC', 'YYYY-MM-DD'), d.station_id
     ), settlements as (
       select s.settlement_date as report_date, s.station_id, sum(s.gross_amount)::text as provider_settled,
@@ -698,7 +737,7 @@ async function readDaily(
         group by settlement_id
       ) a on a.settlement_id = s.id
       where s.tenant_id = ${filters.tenantId} and s.settlement_date between ${filters.fromDate} and ${filters.toDate}
-      ${stationClause('s', filters.stationId)}
+      ${stationClause('s', filters.stationIds)}
       group by s.settlement_date, s.station_id
     ), expenses as (
       select a.business_date as report_date, a.station_id, sum(e.amount)::text as expenses
@@ -749,7 +788,7 @@ async function readDaily(
     left join expenses e on e.report_date = k.report_date and e.station_id = k.station_id
     left join deliveries d on d.report_date = k.report_date and d.station_id = k.station_id
     left join inventory_variance iv on iv.report_date = k.report_date and iv.station_id = k.station_id
-    ${filters.stationId ? sql`where k.station_id = ${filters.stationId}` : sql``}
+    ${filters.stationIds.length > 0 ? sql`where k.station_id in (${idList(filters.stationIds)})` : sql``}
     order by k.report_date, st.code
   `);
   const paymentsByDate = await transaction.execute<{
@@ -826,29 +865,22 @@ export async function getManagementReportFromRequest(
     request,
     requestedTenantId: filters.tenantId,
   });
-  const station = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStation(transaction, filters),
+  const stations = await withTenantTransaction(authority.transaction, (transaction) =>
+    selectedStations(transaction, filters),
   );
-  const requestedScope = station
-    ? {
-        tenantId: filters.tenantId,
-        scopeType: 'STATION' as const,
-        legalEntityId: station.legalEntityId,
-        stationId: station.id,
-      }
-    : { tenantId: filters.tenantId, scopeType: 'TENANT' as const };
-  authorize({
-    actor: authority.authorization,
-    permissionCode: 'report.view',
-    requestedScope,
-  });
-  const reportTransactionContext = station
-    ? createTrustedTenantTransactionContext({
-        ...authority.transaction,
-        legalEntityId: station.legalEntityId,
-        stationId: station.id,
-      })
-    : authority.transaction;
+  authorizeStations(authority.authorization, filters, stations);
+  // One station keeps the station-scoped transaction context; several stations
+  // are each authorised above and then bounded by the explicit station filter.
+  const [single] = stations;
+  const reportTransactionContext =
+    stations.length === 1 && single
+      ? createTrustedTenantTransactionContext({
+          ...authority.transaction,
+          legalEntityId: single.legalEntityId,
+          stationId: single.id,
+        })
+      : authority.transaction;
+  const legalEntityIds = [...new Set(stations.map((station) => station.legalEntityId))].sort();
   return withTenantTransaction(reportTransactionContext, async (transaction) => {
     const [
       stations,
@@ -866,7 +898,7 @@ export async function getManagementReportFromRequest(
       readSales(transaction, filters),
       readCash(transaction, filters),
       readProviders(transaction, filters),
-      readSuppliers(transaction, filters, station?.legalEntityId),
+      readSuppliers(transaction, filters, legalEntityIds),
       readCustomers(transaction, filters),
       readInventory(transaction, filters),
       readExpenses(transaction, filters),
@@ -879,7 +911,7 @@ export async function getManagementReportFromRequest(
       currency: 'USD',
       filters: {
         tenantId: filters.tenantId,
-        ...(filters.stationId ? { stationId: filters.stationId } : {}),
+        stationIds: filters.stationIds,
         fromDate: filters.fromDate,
         toDate: filters.toDate,
       },
@@ -914,27 +946,16 @@ export async function getDailyOperationsFromRequest(
     request,
     requestedTenantId: filters.tenantId,
   });
-  const station = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStation(transaction, filters),
+  const stations = await withTenantTransaction(authority.transaction, (transaction) =>
+    selectedStations(transaction, filters),
   );
-  authorize({
-    actor: authority.authorization,
-    permissionCode: 'report.view',
-    requestedScope: station
-      ? {
-          tenantId: filters.tenantId,
-          scopeType: 'STATION' as const,
-          legalEntityId: station.legalEntityId,
-          stationId: station.id,
-        }
-      : { tenantId: filters.tenantId, scopeType: 'TENANT' as const },
-  });
+  authorizeStations(authority.authorization, filters, stations);
   return withTenantTransaction(authority.transaction, async (transaction) => ({
     report: 'DAILY_OPERATIONS' as const,
     state: 'POSTED' as const,
     filters: {
       tenantId: filters.tenantId,
-      ...(filters.stationId ? { stationId: filters.stationId } : {}),
+      stationIds: filters.stationIds,
       fromDate: filters.fromDate,
       toDate: filters.toDate,
     },
