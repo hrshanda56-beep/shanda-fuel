@@ -8,6 +8,8 @@ import {
   completeCustomerFuelTransactionInTransaction,
   createCustomerAccountInTransaction,
   createCustomerInTransaction,
+  setCustomerAccountStationsInTransaction,
+  setCustomerLegalEntityInTransaction,
   activateCustomerInTransaction,
   deactivateCustomerInTransaction,
   expireCustomerFuelAuthorizationInTransaction,
@@ -28,6 +30,8 @@ import {
   completeCustomerFuelTransactionSchema,
   createCustomerAccountSchema,
   createCustomerSchema,
+  setCustomerAccountStationsSchema,
+  setCustomerLegalEntitySchema,
   activateCustomerSchema,
   deactivateCustomerSchema,
   expireCustomerFuelAuthorizationSchema,
@@ -43,6 +47,8 @@ export const CUSTOMER_COMMAND_TYPES = [
   'ActivateCustomer',
   'DeactivateCustomer',
   'CreateCustomerAccount',
+  'SetCustomerLegalEntity',
+  'SetCustomerAccountStations',
   'RequestCustomerFuelAuthorization',
   'AuthorizeCustomerFuel',
   'CompleteCustomerFuelTransaction',
@@ -108,6 +114,48 @@ export async function createCustomerAccountFromRequest(request: Request, body: u
       subjectId: (result) => (result as { accountId: string }).accountId,
     },
     execute: (transaction) => createCustomerAccountInTransaction(transaction, context, input),
+  });
+}
+
+export async function setCustomerLegalEntityFromRequest(request: Request, body: unknown) {
+  const input = setCustomerLegalEntitySchema.parse(body);
+  const context = await resolveCustomerCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+  });
+  return executeCustomerCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'customer.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: customerRequestHash(input),
+    audit: {
+      actionCode: 'CUSTOMER.LEGAL_ENTITY_SET',
+      subjectType: 'Customer',
+      subjectId: input.customerId,
+    },
+    execute: (transaction) => setCustomerLegalEntityInTransaction(transaction, context, input),
+  });
+}
+
+export async function setCustomerAccountStationsFromRequest(request: Request, body: unknown) {
+  const input = setCustomerAccountStationsSchema.parse(body);
+  const context = await resolveCustomerCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+  });
+  return executeCustomerCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'customer.account.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: customerRequestHash(input),
+    audit: {
+      actionCode: 'CUSTOMER.ACCOUNT_STATIONS_SET',
+      subjectType: 'CustomerAccount',
+      subjectId: input.accountId,
+    },
+    execute: (transaction) => setCustomerAccountStationsInTransaction(transaction, context, input),
   });
 }
 
