@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createCustomerAccountSchema,
   customerStatementQuerySchema,
+  recordCustomerPaymentSchema,
   recordPrepaidTopUpSchema,
   setCustomerAccountStationsSchema,
   setCustomerLegalEntitySchema,
@@ -170,6 +171,28 @@ describe('customer station scope validation (ADR-017)', () => {
     expect(setCustomerLegalEntitySchema.safeParse(command).success).toBe(false);
     expect(
       setCustomerLegalEntitySchema.safeParse({ ...command, legalEntityId: station }).success,
+    ).toBe(true);
+  });
+});
+
+describe('customer payment receiving station (ADR-017)', () => {
+  const payment = {
+    commandType: 'RecordCustomerPayment' as const,
+    tenantId: ids.tenantId,
+    accountId: ids.accountId,
+    amount: { amount: '10.0000', currency: 'USD' },
+    source: { sourceType: 'CUSTOMER_PAYMENT' as const, sourceId: ids.productId },
+    occurredAt: '2026-09-24T09:00:00+02:00',
+    businessDate: '2026-09-24',
+  };
+
+  it('requires the station that received the cash', () => {
+    expect(recordCustomerPaymentSchema.safeParse(payment).success).toBe(false);
+    expect(
+      recordCustomerPaymentSchema.safeParse({
+        ...payment,
+        receivingStationId: '00000000-0000-4000-8000-000000000006',
+      }).success,
     ).toBe(true);
   });
 });
