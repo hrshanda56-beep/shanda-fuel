@@ -88,7 +88,8 @@ test "${rate_limit_public_execute}" = f
 test "${rate_limit_function_owner}" = f
 test "${rate_limit_table_owner}" = f
 
-rate_limit_scope="ci-runtime-proof-${GITHUB_RUN_ID:-local}-${BASHPID}-${RANDOM}-$(date +%s%N)"
+runtime_process_id="${BASHPID:-$$}"
+rate_limit_scope="ci-runtime-proof-${GITHUB_RUN_ID:-local}-${runtime_process_id}-${RANDOM}-$(date +%s%N)"
 rate_limit_key="$(printf '%s' "${rate_limit_scope}" | sha256sum | awk '{print $1}')"
 rate_limit_first="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
   "select allowed from platform.consume_rate_limit('${rate_limit_scope}', '${rate_limit_key}', 1, 60)")"
