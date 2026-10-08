@@ -210,6 +210,8 @@ export const customerLedgerEntries = appSchema.table(
     tenantId: tenantId(),
     customerId: uuid('customer_id').notNull(),
     accountId: uuid('account_id').notNull(),
+    /** Station where a customer payment's cash was received (ADR-017). */
+    receivingStationId: uuid('receiving_station_id'),
     accountType: text('account_type').notNull(),
     entryType: text('entry_type').notNull(),
     direction: text('direction').notNull(),
@@ -279,6 +281,11 @@ export const customerLedgerEntries = appSchema.table(
       name: 'customer_ledger_entries_customer_fk',
     }),
     accountScope(table, 'customer_ledger_entries_account_fk'),
+    foreignKey({
+      columns: [table.tenantId, table.receivingStationId],
+      foreignColumns: [stations.tenantId, stations.id],
+      name: 'customer_ledger_entries_receiving_station_fk',
+    }),
     foreignKey({
       columns: [table.tenantId, table.actorMembershipId],
       foreignColumns: [memberships.tenantId, memberships.id],
