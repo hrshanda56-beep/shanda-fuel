@@ -216,6 +216,8 @@ export const recordCustomerPaymentSchema = z.object({
   commandType: z.literal('RecordCustomerPayment'),
   tenantId: uuid,
   accountId: uuid,
+  /** The station where the cash was received (ADR-017). */
+  receivingStationId: uuid,
   amount: z.object({ amount: decimalText, currency }),
   source: customerSourceSchema,
   occurredAt: instant,
