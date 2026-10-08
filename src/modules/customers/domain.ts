@@ -172,12 +172,6 @@ function requirePositiveMoney(value: Money, label: string): Money {
   return value;
 }
 
-function requireNonnegativeMoney(value: Money, label: string): Money {
-  if (value.amount.value.isNegative())
-    throw new AppError('VALIDATION_FAILED', `${label} cannot be negative`);
-  return value;
-}
-
 function requirePositiveLitres(value: Litres, label: string): Litres {
   if (value.value.isNegative() || value.value.isZero())
     throw new AppError('VALIDATION_FAILED', `${label} must be positive`);
@@ -234,6 +228,47 @@ export function newCustomer(input: {
   };
 }
 
+export function updateCustomerMasterData(
+  customer: Customer,
+  input: {
+    accountReference?: string;
+    displayName?: string;
+    contactMetadata?: Readonly<Record<string, string>>;
+  },
+): Customer {
+  return {
+    ...customer,
+    ...(input.accountReference !== undefined
+      ? { accountReference: requireText(input.accountReference, 'Customer account reference') }
+      : {}),
+    ...(input.displayName !== undefined
+      ? { displayName: requireText(input.displayName, 'Customer display name') }
+      : {}),
+    ...(input.contactMetadata !== undefined ? { contactMetadata: input.contactMetadata } : {}),
+  };
+}
+
+/** Deactivation is the reversible SUSPENDED lifecycle state; CLOSED remains terminal. */
+export function deactivateCustomer(customer: Customer): Customer {
+  if (customer.status === 'CLOSED') {
+    throw new AppError('CONFLICT', 'A closed customer cannot be deactivated');
+  }
+  if (customer.status === 'SUSPENDED') {
+    throw new AppError('CONFLICT', 'The customer is already deactivated');
+  }
+  return { ...customer, status: 'SUSPENDED' };
+}
+
+export function activateCustomer(customer: Customer): Customer {
+  if (customer.status === 'CLOSED') {
+    throw new AppError('CONFLICT', 'A closed customer cannot be activated');
+  }
+  if (customer.status === 'ACTIVE') {
+    throw new AppError('CONFLICT', 'The customer is already active');
+  }
+  return { ...customer, status: 'ACTIVE' };
+}
+
 export function newCustomerAccount(input: {
   id: string;
   tenantId: string;
@@ -242,6 +277,9 @@ export function newCustomerAccount(input: {
   currency: CurrencyCode;
   creditLimit?: Money;
 }): CustomerAccount {
+  if (input.accountType === 'CREDIT' && !input.creditLimit) {
+    throw new AppError('VALIDATION_FAILED', 'Credit accounts require a positive credit limit');
+  }
   const account = {
     id: requireText(input.id, 'Customer account id'),
     tenantId: requireText(input.tenantId, 'Customer account tenant id'),
@@ -250,7 +288,7 @@ export function newCustomerAccount(input: {
     currency: input.currency,
     status: 'ACTIVE' as const,
     ...(input.creditLimit
-      ? { creditLimit: requireNonnegativeMoney(input.creditLimit, 'Credit limit') }
+      ? { creditLimit: requirePositiveMoney(input.creditLimit, 'Credit limit') }
       : {}),
   };
   if (account.accountType !== 'CREDIT' && input.creditLimit) {
@@ -260,6 +298,26 @@ export function newCustomerAccount(input: {
     throw new AppError('VALIDATION_FAILED', 'Credit limit currency must match the account');
   }
   return account;
+}
+
+export function assertCustomerAccountTransactionAllowed(
+  customerStatus: CustomerLifecycleState,
+  accountStatus: CustomerAccountState,
+): void {
+  if (customerStatus !== 'ACTIVE' || accountStatus !== 'ACTIVE') {
+    throw new AppError(
+      'CONFLICT',
+      'Customer account transactions require an active customer and customer account',
+    );
+  }
+}
+
+export function assertCreditAccountHasPositiveLimit(account: CustomerAccount): void {
+  if (account.accountType !== 'CREDIT') return;
+  const limit = account.creditLimit?.amount;
+  if (!limit || limit.value.isNegative() || limit.value.isZero()) {
+    throw new AppError('CONFLICT', 'Credit account is disabled without a positive credit limit');
+  }
 }
 
 function assertAccountMatchesEntry(account: CustomerAccount, entry: CustomerLedgerEntry): void {
@@ -423,6 +481,7 @@ export function requestCustomerFuelAuthorization(input: {
 }): CustomerFuelAuthorization {
   if (input.account.status !== 'ACTIVE')
     throw new AppError('CONFLICT', 'Fuel authorization requires an active customer account');
+  assertCreditAccountHasPositiveLimit(input.account);
   const requested = assertFuelValue(input.requested, input.account.currency);
   return {
     id: requireText(input.id, 'Fuel authorization id'),
@@ -466,11 +525,15 @@ export function reserveCustomerFuelAuthorization(input: {
     authorization.requested.productId,
   );
   if (account.accountType === 'CREDIT') {
+    assertCreditAccountHasPositiveLimit(account);
     if (balance.accountType !== 'CREDIT')
       throw new AppError('INVARIANT_VIOLATION', 'Credit account balance has the wrong shape');
     const owed = balance.amount.amount.add(reserved.amount);
     const limit = account.creditLimit?.amount;
-    if (limit && owed.add(authorization.requested.amount.amount).value.gt(limit.value)) {
+    if (!limit || limit.value.isNegative() || limit.value.isZero()) {
+      throw new AppError('CONFLICT', 'Credit account is disabled without a positive credit limit');
+    }
+    if (owed.add(authorization.requested.amount.amount).value.gt(limit.value)) {
       throw new AppError('CONFLICT', 'Credit authorization exceeds the configured credit limit');
     }
   } else if (account.accountType === 'PREPAID_VALUE') {
@@ -506,6 +569,7 @@ export function recordCustomerFuelUse(input: {
   fuelAllocationId: string;
 }): { authorization: CustomerFuelAuthorization; ledgerEntry: CustomerLedgerEntry } {
   const { authorization, account } = input;
+  assertCreditAccountHasPositiveLimit(account);
   if (authorization.state !== 'AUTHORIZED' && authorization.state !== 'PARTIALLY_USED') {
     throw new AppError('CONFLICT', 'Fuel usage requires an authorized reservation');
   }

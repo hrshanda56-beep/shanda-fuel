@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createCustomerAccountSchema, recordPrepaidTopUpSchema } from './validation';
+import {
+  createCustomerAccountSchema,
+  customerStatementQuerySchema,
+  recordPrepaidTopUpSchema,
+} from './validation';
 
 const ids = {
   tenantId: '00000000-0000-4000-8000-000000000001',
@@ -14,6 +18,25 @@ const source = {
 };
 
 describe('customer command validation contracts', () => {
+  it('requires a positive limit for credit accounts', () => {
+    const base = {
+      commandType: 'CreateCustomerAccount' as const,
+      tenantId: ids.tenantId,
+      customerId: ids.customerId,
+      accountType: 'CREDIT' as const,
+      currency: 'USD',
+    };
+    expect(() => createCustomerAccountSchema.parse(base)).toThrow(
+      'Credit accounts require a positive credit limit',
+    );
+    expect(() => createCustomerAccountSchema.parse({ ...base, creditLimit: '0.0000' })).toThrow(
+      'Credit accounts require a positive credit limit',
+    );
+    expect(createCustomerAccountSchema.parse({ ...base, creditLimit: '0.0001' }).creditLimit).toBe(
+      '0.0001',
+    );
+  });
+
   it('accepts an arbitrary uppercase currency code without inventing FX behavior', () => {
     const result = createCustomerAccountSchema.parse({
       commandType: 'CreateCustomerAccount',
@@ -53,5 +76,30 @@ describe('customer command validation contracts', () => {
       businessDate: '2026-09-23',
     });
     expect(result.litres).toBe('20.000');
+  });
+
+  it('accepts a monthly statement period and rejects ambiguous period bounds', () => {
+    expect(
+      customerStatementQuerySchema.parse({
+        tenantId: ids.tenantId,
+        accountId: ids.accountId,
+        period: '2026-09',
+      }).period,
+    ).toBe('2026-09');
+    expect(() =>
+      customerStatementQuerySchema.parse({
+        tenantId: ids.tenantId,
+        accountId: ids.accountId,
+        period: '2026-13',
+      }),
+    ).toThrow('A statement period must use YYYY-MM');
+    expect(() =>
+      customerStatementQuerySchema.parse({
+        tenantId: ids.tenantId,
+        accountId: ids.accountId,
+        period: '2026-09',
+        asOf: '2026-09-30T23:59:59Z',
+      }),
+    ).toThrow('A statement period cannot be combined with asOf');
   });
 });

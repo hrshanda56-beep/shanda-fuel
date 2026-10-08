@@ -15,7 +15,10 @@ import {
   createCustomerPaymentEntry,
   createPrepaidTopUpEntry,
   assertSourceReferenceUnused,
+  assertCustomerAccountTransactionAllowed,
+  activateCustomer,
   customerLedgerSourceKey,
+  deactivateCustomer,
   deriveAccountBalance,
   recordCustomerFuelUse,
   requestCustomerFuelAuthorization,
@@ -27,15 +30,19 @@ import {
   type CustomerAccount,
   type CustomerFuelAuthorization,
   type CustomerLedgerEntry,
+  updateCustomerMasterData,
 } from './domain';
 import type { CustomerCommandContext, CustomerTransaction } from './application';
 import type {
   CompleteCustomerFuelTransactionInput,
   CreateCustomerAccountInput,
   CreateCustomerInput,
+  ActivateCustomerInput,
+  DeactivateCustomerInput,
   RecordCustomerPaymentInput,
   RecordPrepaidTopUpInput,
   RequestCustomerFuelAuthorizationInput,
+  UpdateCustomerInput,
 } from './validation';
 
 type AccountRow = {
@@ -114,7 +121,7 @@ function accountFromRow(row: AccountRow): CustomerAccount {
   };
 }
 
-function ledgerFromRow(row: LedgerRow): CustomerLedgerEntry {
+function ledgerFromRow(row: LedgerRow, currency: CurrencyCode): CustomerLedgerEntry {
   const base = {
     id: row.id,
     tenantId: row.tenant_id,
@@ -151,7 +158,7 @@ function ledgerFromRow(row: LedgerRow): CustomerLedgerEntry {
   return {
     ...base,
     accountType: row.account_type,
-    amount: money(row.amount, 'USD'),
+    amount: money(row.amount, currency),
   } as CustomerLedgerEntry;
 }
 
@@ -224,7 +231,7 @@ export async function loadAccount(
       displayName: row.display_name,
       status: row.customer_status,
     },
-    entries: entries.map(ledgerFromRow),
+    entries: entries.map((entry) => ledgerFromRow(entry, row.currency)),
   };
 }
 
@@ -262,6 +269,124 @@ export async function createCustomerInTransaction(
   return { customerId: id, accountReference: input.accountReference };
 }
 
+type CustomerRow = {
+  id: string;
+  tenant_id: string;
+  account_reference: string;
+  display_name: string;
+  contact_metadata: Record<string, string>;
+  status: Customer['status'];
+  version: number | string;
+};
+
+async function loadCustomerForUpdate(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  customerId: string,
+): Promise<CustomerRow> {
+  const rows = await transaction.execute<CustomerRow>(sql`
+    select id, tenant_id, account_reference, display_name, contact_metadata, status, version
+    from app.customers
+    where tenant_id=${context.tenantId} and id=${customerId}
+    for update
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'The customer was not found');
+  return row;
+}
+
+function customerFromRow(row: CustomerRow): Customer {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    accountReference: row.account_reference,
+    displayName: row.display_name,
+    status: row.status,
+    contactMetadata: row.contact_metadata,
+  };
+}
+
+async function persistCustomer(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  row: CustomerRow,
+  next: Customer,
+  expectedVersion: number,
+) {
+  const updated = await transaction.execute<{ id: string; version: number | string }>(sql`
+    update app.customers
+    set account_reference=${next.accountReference},
+        display_name=${next.displayName},
+        contact_metadata=${JSON.stringify(next.contactMetadata ?? {})}::jsonb,
+        status=${next.status},
+        version=version+1,
+        updated_by=${context.authority.membership.membershipId},
+        updated_at=now()
+    where tenant_id=${context.tenantId} and id=${row.id} and version=${expectedVersion}
+    returning id, version
+  `);
+  if (!updated[0]) throw new AppError('CONFLICT', 'The customer became stale');
+  return {
+    customerId: next.id,
+    accountReference: next.accountReference,
+    displayName: next.displayName,
+    contactMetadata: next.contactMetadata ?? {},
+    status: next.status,
+    version: Number(updated[0].version),
+  };
+}
+
+export async function updateCustomerInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: UpdateCustomerInput,
+) {
+  const row = await loadCustomerForUpdate(transaction, context, input.customerId);
+  if (Number(row.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer became stale');
+  return persistCustomer(
+    transaction,
+    context,
+    row,
+    updateCustomerMasterData(customerFromRow(row), input),
+    input.expectedVersion,
+  );
+}
+
+export async function activateCustomerInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: ActivateCustomerInput,
+) {
+  const row = await loadCustomerForUpdate(transaction, context, input.customerId);
+  if (Number(row.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer became stale');
+  return persistCustomer(
+    transaction,
+    context,
+    row,
+    activateCustomer(customerFromRow(row)),
+    input.expectedVersion,
+  );
+}
+
+export async function deactivateCustomerInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: DeactivateCustomerInput,
+) {
+  const row = await loadCustomerForUpdate(transaction, context, input.customerId);
+  if (Number(row.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer became stale');
+  return persistCustomer(
+    transaction,
+    context,
+    row,
+    deactivateCustomer(customerFromRow(row)),
+    input.expectedVersion,
+  );
+}
+
 export async function createCustomerAccountInTransaction(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
@@ -275,6 +400,13 @@ export async function createCustomerAccountInTransaction(
     throw new AppError('CONFLICT', 'Accounts may only be opened for active customers');
   const accountId = randomUUID();
   const limit = input.creditLimit ?? null;
+  const parsedLimit = limit ? new ExactDecimal(limit).value : null;
+  if (
+    input.accountType === 'CREDIT' &&
+    (!parsedLimit || parsedLimit.isNegative() || parsedLimit.isZero())
+  ) {
+    throw new AppError('VALIDATION_FAILED', 'Credit accounts require a positive credit limit');
+  }
   if (input.accountType !== 'CREDIT' && limit)
     throw new AppError('VALIDATION_FAILED', 'Credit limits apply only to credit accounts');
   await transaction.execute(sql`
@@ -290,8 +422,7 @@ export async function recordCustomerPaymentInTransaction(
   input: RecordCustomerPaymentInput,
 ) {
   const loaded = await loadAccount(transaction, context, input.accountId);
-  if (loaded.account.status !== 'ACTIVE' || loaded.customer.status !== 'ACTIVE')
-    throw new AppError('CONFLICT', 'Payments require an active customer account and customer');
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   assertSourceReferenceUnused(loaded.entries, input.source);
   const entry = createCustomerPaymentEntry({
     id: randomUUID(),
@@ -315,11 +446,7 @@ export async function recordPrepaidTopUpInTransaction(
   input: RecordPrepaidTopUpInput,
 ) {
   const loaded = await loadAccount(transaction, context, input.accountId);
-  if (loaded.account.status !== 'ACTIVE' || loaded.customer.status !== 'ACTIVE')
-    throw new AppError(
-      'CONFLICT',
-      'Prepaid top-ups require an active customer account and customer',
-    );
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   assertSourceReferenceUnused(loaded.entries, input.source);
   if (loaded.account.accountType !== input.accountType)
     throw new AppError(
@@ -353,6 +480,7 @@ export async function requestCustomerFuelAuthorizationInTransaction(
   if (!context.stationId)
     throw new AppError('FORBIDDEN', 'A station context is required for fuel authorization');
   const loaded = await loadAccount(transaction, context, input.accountId);
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   const authorization = requestCustomerFuelAuthorization({
     id: input.authorizationId,
     account: loaded.account,
@@ -442,6 +570,7 @@ export async function authorizeCustomerFuelInTransaction(
 ) {
   const initial = await loadAuthorization(transaction, context, input.authorizationId, false);
   const loaded = await loadAccount(transaction, context, initial.accountId);
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   const next = reserveCustomerFuelAuthorization({
     authorization,
@@ -500,6 +629,7 @@ export async function completeCustomerFuelTransactionInTransaction(
   if (initial.accountId !== input.accountId)
     throw new AppError('FORBIDDEN', 'The authorization does not belong to the requested account');
   const loaded = await loadAccount(transaction, context, input.accountId);
+  assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   await assertPostedA5Evidence(
     transaction,

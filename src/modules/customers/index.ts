@@ -5,18 +5,23 @@ export {
   CUSTOMER_LEDGER_DIRECTIONS,
   CUSTOMER_LEDGER_ENTRY_TYPES,
   CUSTOMER_SOURCE_TYPES,
+  assertCustomerAccountTransactionAllowed,
+  assertCreditAccountHasPositiveLimit,
   assertSourceReferenceUnused,
+  activateCustomer,
   cancelCustomerFuelAuthorization,
   createCustomerPaymentEntry,
   createPrepaidTopUpEntry,
   customerLedgerSourceKey,
   deriveAccountBalance,
+  deactivateCustomer,
   expireCustomerFuelAuthorization,
   newCustomer,
   newCustomerAccount,
   recordCustomerFuelUse,
   requestCustomerFuelAuthorization,
   reserveCustomerFuelAuthorization,
+  updateCustomerMasterData,
 } from './domain';
 export type {
   ActiveReservation,
@@ -80,6 +85,7 @@ export type {
 } from './queries';
 export {
   completeCustomerFuelTransactionSchema,
+  activateCustomerSchema,
   authorizeCustomerFuelSchema,
   cancelCustomerFuelAuthorizationSchema,
   createCustomerAccountSchema,
@@ -87,8 +93,10 @@ export {
   customerAccountTypeSchema,
   customerSourceSchema,
   customerStatementQuerySchema,
+  deactivateCustomerSchema,
   recordCustomerPaymentSchema,
   recordPrepaidTopUpSchema,
   requestCustomerFuelAuthorizationSchema,
   expireCustomerFuelAuthorizationSchema,
+  updateCustomerSchema,
 } from './validation';

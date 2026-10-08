@@ -8,10 +8,13 @@ import {
   completeCustomerFuelTransactionInTransaction,
   createCustomerAccountInTransaction,
   createCustomerInTransaction,
+  activateCustomerInTransaction,
+  deactivateCustomerInTransaction,
   expireCustomerFuelAuthorizationInTransaction,
   recordCustomerPaymentInTransaction,
   recordPrepaidTopUpInTransaction,
   requestCustomerFuelAuthorizationInTransaction,
+  updateCustomerInTransaction,
 } from './persistence';
 import {
   authorizeCustomerCommand,
@@ -25,14 +28,20 @@ import {
   completeCustomerFuelTransactionSchema,
   createCustomerAccountSchema,
   createCustomerSchema,
+  activateCustomerSchema,
+  deactivateCustomerSchema,
   expireCustomerFuelAuthorizationSchema,
   recordCustomerPaymentSchema,
   recordPrepaidTopUpSchema,
   requestCustomerFuelAuthorizationSchema,
+  updateCustomerSchema,
 } from './validation';
 
 export const CUSTOMER_COMMAND_TYPES = [
   'CreateCustomer',
+  'UpdateCustomer',
+  'ActivateCustomer',
+  'DeactivateCustomer',
   'CreateCustomerAccount',
   'RequestCustomerFuelAuthorization',
   'AuthorizeCustomerFuel',
@@ -99,6 +108,69 @@ export async function createCustomerAccountFromRequest(request: Request, body: u
       subjectId: (result) => (result as { accountId: string }).accountId,
     },
     execute: (transaction) => createCustomerAccountInTransaction(transaction, context, input),
+  });
+}
+
+export async function updateCustomerFromRequest(request: Request, body: unknown) {
+  const input = updateCustomerSchema.parse(body);
+  const context = await resolveCustomerCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+  });
+  return executeCustomerCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'customer.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: customerRequestHash(input),
+    audit: {
+      actionCode: 'CUSTOMER.UPDATED',
+      subjectType: 'Customer',
+      subjectId: input.customerId,
+    },
+    execute: (transaction) => updateCustomerInTransaction(transaction, context, input),
+  });
+}
+
+export async function activateCustomerFromRequest(request: Request, body: unknown) {
+  const input = activateCustomerSchema.parse(body);
+  const context = await resolveCustomerCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+  });
+  return executeCustomerCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'customer.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: customerRequestHash(input),
+    audit: {
+      actionCode: 'CUSTOMER.ACTIVATED',
+      subjectType: 'Customer',
+      subjectId: input.customerId,
+    },
+    execute: (transaction) => activateCustomerInTransaction(transaction, context, input),
+  });
+}
+
+export async function deactivateCustomerFromRequest(request: Request, body: unknown) {
+  const input = deactivateCustomerSchema.parse(body);
+  const context = await resolveCustomerCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+  });
+  return executeCustomerCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'customer.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: customerRequestHash(input),
+    audit: {
+      actionCode: 'CUSTOMER.DEACTIVATED',
+      subjectType: 'Customer',
+      subjectId: input.customerId,
+    },
+    execute: (transaction) => deactivateCustomerInTransaction(transaction, context, input),
   });
 }
 

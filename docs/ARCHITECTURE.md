@@ -96,11 +96,51 @@ Agents should not introduce lossy `Number` conversions for precision-sensitive v
 
 Examples referenced in project work include tenant-authorised Customers APIs and server-side Daily Operations logic.
 
+### 4.1.1 Operational actors and bounded policy configuration
+
+**CONFIRMED:** Daily Operations must represent the operator/submitter and the
+Supervisor approver as distinct actors. The Supervisor has fixed review and
+close-approval semantics; manager/admin exception handling is a separate
+authorised responsibility. Account-sale customer identity, approved-fuel
+recipient/authorizer attribution, cash custody attribution, and required audit
+evidence are not optional tenant settings.
+
+Configuration may control bounded policy choices such as whether approval is
+required before close, whether an account reference or deposit proof is
+mandatory, available approved-fuel categories, variance thresholds, and
+optional close-summary sections. These settings must not weaken tenant
+isolation, authorization, audit, accounting, reconciliation, or actor
+attribution, and do not justify a generic workflow engine.
+
 ### 4.2 API approach
 
 **CONFIRMED:** APIs are expected to enforce authorisation at the server/database boundary. Browser route parameters or IDs are not trusted as sufficient authorisation.
 
 Customers Phase 0 includes a read-oriented API surface such as the customer summary route. The real PostgreSQL integration coverage verifies that summary behavior against database data rather than relying only on browser mocks.
+
+### 4.2.1 Customer lifecycle boundary
+
+**CONFIRMED:** Phase 1 customer lifecycle behavior reuses the existing A8
+tenant-scoped customer/account, exact-decimal append-oriented ledger, and
+reservation boundaries. A CREDIT account is disabled unless it has an
+explicitly positive limit; the limit is a hard cap by default. Suspended or
+closed customers, and non-active accounts, cannot initiate new account
+transactions. Customer history is retained rather than hard-deleted.
+
+Statements are reporting artifacts with a monthly calendar-month default in the
+applicable tenant/station timezone; they do not post, pay, or mutate balances.
+Money-value prepaid is the initial supported model; prepaid litres remain a
+separate later balance model with no automatic conversion. Phase 1 does not
+add customer-specific pricing, new tax calculations, FX conversion, or mixed-
+currency balances. Those boundaries remain fixed even where later policy
+configuration is introduced.
+
+The customer-specific authorization meaning is Owner/Admin configuration and
+lifecycle control, Supervisor operational review/use, and Operator selection/
+use in authorized workflows. Existing tenant authorization and RLS remain the
+security boundary. Exact permission-code and migration alignment is a separate
+reviewed change; this architecture note does not authorize broadening existing
+database grants.
 
 ### 4.3 Domain/module organisation
 
@@ -178,6 +218,17 @@ Key properties:
 - dry-run is read-only and must prove zero writes and unchanged sentinel state;
 - real provisioning requires explicit human approval;
 - the temporary provisioner credential must be cleared (`PASSWORD NULL`) on normal and abnormal exits.
+
+**Credential-assignment boundary:** `migration_owner` remains
+`NOCREATEROLE`. Its reviewed membership/admin relationship to
+`first_user_provisioner` is used for the catalog, ownership, policy, ACL, and
+sentinel evidence checks; it is not sufficient authority to change a role
+password on PostgreSQL 18.6. Until the authority decision in DEC-040 is
+approved and implemented in the operator procedure, temporary password
+assignment remains a human-only operation at the existing Neon/provider-owner
+or deployment-admin bootstrap boundary. No application/runtime role, durable
+provider credential, or new SECURITY DEFINER escape hatch may be introduced
+for this purpose.
 
 ### 6.4 Neon PostgreSQL 18 provider membership
 

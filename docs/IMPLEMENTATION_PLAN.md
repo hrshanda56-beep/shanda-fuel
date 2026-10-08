@@ -713,24 +713,33 @@ Fix release-blocking correctness/usability findings without reopening Phase 1 sc
 
 ---
 
-## M3-T03 — Record owner decisions on unresolved domain semantics
+## M3-T03 — Record owner decisions on unresolved domain semantics — VERIFIED COMPLETE
 
 **Objective**
 
 Convert owner feedback into explicit decisions without mixing it into ad-hoc code changes.
 
-**Questions to resolve where possible**
+**Resolved owner decisions**
 
-- supervisor/accountability meaning,
-- account-sale reference,
-- approved-fuel terminology/authorization,
-- cash handover/deposit reference minimum,
-- customer account priorities.
+- Supervisor means the accountable reviewer/approver, distinct from the
+  operator/submitter.
+- Account sales require a customer/account before finalization; references are
+  optional by default and must precede finalization when required by policy.
+- Approved-fuel activity carries auditable recipient, authorizer,
+  reason/category, and authorization/reference evidence where applicable.
+- Cash handover/deposit records preserve amount, actor attribution, date/time,
+  and reference; bank deposits require a bank/deposit reference.
+- Customer-account Phase 1 priority is credit/limits, prepaid value,
+  statements, vehicles/drivers, prepaid litres, then benefits.
+- Close summaries are exception-first and include required reconciliation and
+  approval/sign-off information.
 
 **Acceptance criteria**
 
-- Decisions are recorded in product/decision docs.
-- Any resulting Phase 1 tasks are added to the plan.
+- Decisions are recorded in `docs/PRODUCT_SPEC.md`, `docs/DECISIONS.md`, and
+  the bounded configuration rule is reflected in `docs/ARCHITECTURE.md`.
+- Resulting Phase 1 specification work and remaining accounting/security gates
+  are explicit below.
 
 **Parallel safety**
 
@@ -802,7 +811,7 @@ Map remaining owner requirements to existing schema/APIs/modules and identify tr
 
 ---
 
-## M4-T02 — Replace remaining dashboard placeholders/unavailable states with real supported metrics
+## M4-T02 — Replace remaining dashboard placeholders/unavailable states with real supported metrics — READY FOR A BOUNDED FIRST SLICE
 
 **Objective**
 
@@ -816,7 +825,29 @@ Implement owner-useful dashboard metrics only where the data contract is establi
 **Dependencies**
 
 - M4-T01.
-- Owner confirmation for ambiguous metric definitions.
+- DEC-039 owner dashboard contract.
+
+**Resolved owner decision**
+
+DEC-039 defines the home dashboard as an operational-control and
+exception-visibility surface for today’s total sales, expected cash, actual
+cash, cash variance, fuel/stock variance, account/credit sales, unresolved
+exceptions, and shift approval/close status. The primary audience is the
+owner, manager, and Supervisor subject to existing permissions. The default
+scope follows existing authorized/current tenant, legal-entity, and station
+conventions; no new authorization model is introduced.
+
+**Bounded first-slice contract**
+
+Use existing A10 read-only reporting contracts for supported sales, cash,
+account-credit, and fuel/stock variance facts. Do not add tax, GL,
+profitability, or other accounting calculations for presentation. Unresolved
+exceptions and shift approval/close status must come from authoritative source
+state; if the current read model cannot provide them, show a truthful
+unavailable state and define the smallest reviewed read-model extension before
+implementation. Optional sections, display ordering, station-specific cards,
+and variance thresholds are bounded future settings, never a way to disable
+required security, reconciliation, exception, or authorization behavior.
 
 **Implementation notes**
 
@@ -826,6 +857,8 @@ Implement owner-useful dashboard metrics only where the data contract is establi
 **Acceptance criteria**
 
 - Every displayed metric has a documented data source and scope.
+- The first slice uses existing A10 sources for supported facts and does not
+  fabricate unsupported exception or approval values.
 - Tenant/station isolation verified.
 - No fake fallback values.
 
@@ -840,7 +873,7 @@ Implement owner-useful dashboard metrics only where the data contract is establi
 
 ---
 
-## M4-T03 — Expand Daily Operations workflow where owner semantics are confirmed
+## M4-T03 — Expand Daily Operations workflow where owner semantics are confirmed — DECOMPOSED / READY FOR SCOPED IMPLEMENTATION REVIEW
 
 **Objective**
 
@@ -856,12 +889,22 @@ Move beyond Phase 0 composition into approved workflow depth.
 
 **Dependencies**
 
-- Owner decisions from M3-T03.
-- Approval infrastructure where required.
+- M3-T03 owner decisions are complete.
+- Approval infrastructure where required for a specific workflow slice.
+- M4-T01 gap audit before implementation claims are made.
 
 **Implementation notes**
 
-Do not create accounting/approval semantics before the owner/domain contract is recorded.
+The owner/domain contract is now recorded. Decompose Daily Operations into
+bounded contract slices before implementation; do not invent unresolved
+accounting, ledger, tax, or approval details.
+
+The bounded decomposition is recorded in
+`docs/architecture/phase1-contract-decomposition.md`. It covers
+accountability/close approval, approved-fuel attribution, cash custody and
+deposit evidence, exception-first close projection, and the separate A4
+delivery/calibration boundary. Each slice still requires its own reviewed
+command/read-model contract before implementation.
 
 **Acceptance criteria**
 
@@ -875,7 +918,7 @@ Do not create accounting/approval semantics before the owner/domain contract is 
 
 # M5 — Phase 1: Customers, finance, expenses, and approvals
 
-## M5-T01 — Define full customer lifecycle contract
+## M5-T01 — Define full customer lifecycle contract — ACCEPTED FOR BOUNDED SUB-CONTRACTS
 
 **Objective**
 
@@ -893,9 +936,27 @@ Turn the Phase 0 read-oriented Customers surface into a reviewed lifecycle speci
 - account status transitions,
 - permissions and approval requirements.
 
-**Dependencies**
+DEC-041 now fixes the product semantics for positive hard-capped credit,
+money-value prepaid, monthly reporting statements, normal station pricing,
+optional vehicle/driver restrictions, deferred benefits, metadata/tax
+boundaries, one operational currency, the ACTIVE/SUSPENDED/CLOSED lifecycle,
+and the default customer authorization meaning. The existing A8 exact-decimal
+ledger/reservation boundary remains authoritative; unresolved accounting,
+ledger, tax, and FX details are not invented.
 
-- Owner decisions.
+The bounded lifecycle sequence and the remaining sub-contract gates are
+recorded in `docs/architecture/phase1-contract-decomposition.md`, using the
+existing A8 customer-account boundary as the starting contract.
+
+**Remaining sub-contract dependencies**
+
+- exact permission-code and migration alignment for the customer-specific role
+  split;
+- lifecycle transition command/audit/idempotency details;
+- monthly statement read-model and timezone-period contract;
+- any accounting/ledger detail not already covered by A8;
+- later customer-specific pricing, vehicle/driver, benefits, tax, and FX
+  contracts.
 
 **Acceptance criteria**
 
@@ -904,20 +965,28 @@ Turn the Phase 0 read-oriented Customers surface into a reviewed lifecycle speci
 
 **Parallel safety**
 
-- Specification can run in parallel with unrelated dashboard work.
+- Positive credit-limit enforcement and active-customer/account guards may
+  proceed as a bounded M5-T02 slice. Other writes require their own reviewed
+  command and migration boundaries.
 
 ---
 
-## M5-T02 — Implement approved customer lifecycle writes
+## M5-T02 — Implement approved customer lifecycle writes — IN PROGRESS / CREDIT GUARD SLICE
 
 **Objective**
 
-Add only the lifecycle writes approved in M5-T01.
+Add only the lifecycle behavior approved in M5-T01. The first ready slice
+enforces a positive CREDIT limit as a hard cap and blocks new account
+transactions for SUSPENDED/CLOSED customers or inactive accounts. It reuses
+the existing A8 ledger/reservation behavior and does not add a new accounting
+model or role grant.
 
 **Dependencies**
 
-- M5-T01.
-- Security/RLS review.
+- DEC-041 and the existing A8 contract.
+- Independent security review of the final customer-domain diff.
+- A0-owned permission/migration alignment before lifecycle mutation commands
+  or broader operator-use authorization are implemented.
 
 **Acceptance criteria**
 
@@ -929,7 +998,8 @@ Add only the lifecycle writes approved in M5-T01.
 
 **Parallel safety**
 
-- Split by independent lifecycle capability only after schema/API contracts are stable.
+- Split by independent lifecycle capability only after its command, schema/API,
+  permission, audit, and migration contracts are stable.
 
 ---
 
@@ -1087,6 +1157,10 @@ Expand reporting/export behavior around confirmed owner needs and established ca
 
 - M0-T01/M0-T02 access-preflight work can run separately from M1 application candidate work.
 - M1-T01 Customers precision integration can run separately from M1-T02 Daily Ops timezone review when isolated worktrees are used.
+- M4-T03 scoped Daily Operations contract decomposition and M5-T01 customer
+  lifecycle specification can proceed in isolated workstreams while M0-T03
+  remains gated; neither authorizes production access or write implementation
+  before its remaining contracts are reviewed.
 - Once M1-T03 freezes a candidate, M1-T04 database verification and M1-T05 browser verification can run in parallel.
 
 ### Avoid parallel edits

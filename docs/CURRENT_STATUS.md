@@ -406,20 +406,70 @@ open.
   and human rerun remain open. The exhaustive function ACL-grantee validation
   is already Access Review GREEN.
 
-## 17. Open product questions
+## 17. Owner-resolved product decisions
 
-### UNRESOLVED
+The owner has resolved the previously open Daily Operations, account-sale,
+approved-fuel, cash-custody, customer-account sequencing, workflow,
+close-summary, and Phase 1 customer-lifecycle questions. Durable decisions
+are recorded in DEC-032 through DEC-039 and DEC-041 and integrated into
+`PRODUCT_SPEC.md` and `ARCHITECTURE.md`.
 
-- Exact meaning of “supervisor” in Daily Operations accountability.
-- Required customer/account reference for account sales and when it is selected.
-- Approved-fuel authorization/reference/recipient rules and terminology.
-- Minimum cash handover/deposit/bank-reference requirements.
-- Priority/order for the fuller customer lifecycle: credit, prepaid value, prepaid litres, benefits, limits, vehicles/drivers, statements.
-- Final human application role/permission matrix.
+The fixed semantics include distinct operator/submitter and Supervisor
+approver actors, required customer identity for account sales, auditable
+approved-fuel attribution, core cash custody evidence, exception-first close
+summaries, the stated Phase 1 customer-account priority order, and the
+operational-control purpose and authorized scope of the home dashboard. The
+home-dashboard decision is recorded in DEC-039.
 
-These must not be silently converted into requirements.
+DEC-041 now fixes customer credit, prepaid-value, statement, pricing,
+vehicle/driver, benefits, tax-metadata, currency, lifecycle, and
+customer-specific authorization semantics. The initial implementation slice
+enforces positive hard-capped CREDIT accounts and blocks new account
+transactions for non-active customers/accounts. No new accounting, tax, FX,
+or broad role-grant behavior has been invented.
 
-## 18. Open technical questions
+## 18. Remaining product and technical decisions
+
+The following remain unresolved and must not be silently invented:
+
+- complete human application role/permission matrix;
+- detailed accounting/ledger behavior not already covered by the A8 customer
+  contract; exact customer permission-code and migration alignment; and
+  detailed authorization contracts for approved-fuel, cash, and close
+  workflows;
+- formal performance/SLO targets;
+- which Phase 1 provider integrations are required first and their exact
+  contracts;
+- cause of the Stage 1 RLS/policy preflight division-by-zero failure and the
+  exact predicate result that selected its intentional failure branch;
+- exact current production release SHA after the next integrated release.
+
+### Newly unblocked planning work
+
+- M3-T03 owner-decision documentation is VERIFIED COMPLETE.
+- M4-T02 is READY FOR A BOUNDED FIRST SLICE: DEC-039 fixes the operational
+  headline/status areas, audience, authorized scope, and bounded
+  configurability. Existing A10 contracts support the initial read-only sales,
+  cash-evidence/variance, account-credit, and fuel/stock variance facts.
+  Unresolved-exception and shift approval/close presentation must use
+  authoritative source state or remain truthfully unavailable until a reviewed
+  read-model extension exists.
+- M4-T03 has a bounded contract decomposition in
+  `docs/architecture/phase1-contract-decomposition.md`; individual slices
+  still require reviewed command/read-model contracts before implementation.
+- M5-T01 is accepted for the DEC-041 customer lifecycle semantics. Its
+  remaining sub-contract gates are exact permission/migration alignment,
+  lifecycle transition commands, monthly statement read-model details, and
+  later pricing, vehicle/driver, benefits, tax, and FX contracts.
+- M5-T02 is IN PROGRESS for a bounded credit-guard slice: positive CREDIT
+  limits are required and treated as hard caps, and suspended/closed
+  customers or inactive accounts cannot initiate new account transactions.
+  Full lifecycle writes remain gated by reviewed command, audit, permission,
+  and migration contracts.
+
+These decisions do not alter the M0-T03 production diagnostic gate.
+
+## 19. Open technical questions
 
 ### UNRESOLVED / needs verification
 
@@ -429,11 +479,11 @@ These must not be silently converted into requirements.
 - Whether hosting/plan changes alter the observability exception.
 - Full background-job topology and current production `job_runtime` presence.
 
-## 19. Not started / deferred Phase 1 work
+## 20. Not started / deferred Phase 1 work
 
 The following are explicitly not Phase 0 completion requirements unless promoted by a new human instruction:
 
-- full customer lifecycle/write policy,
+- full customer lifecycle/write command set and permission/migration alignment,
 - richer approved-fuel approval policy,
 - complete expense approval/allocation lifecycle,
 - full cash custody/banking workflow,
@@ -446,7 +496,14 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 - general ledger,
 - tax treatment.
 
-## 20. Current critical path / next recommended work
+## 21. Current critical path / next recommended work
+
+The Phase 1 customer lane may proceed in parallel with the parked M0-T03
+production gate. The next customer steps are to independently review the
+bounded credit/activity guard diff, integrate it through the A0 migration and
+permission ownership process if needed, then specify lifecycle transitions and
+the monthly statement read model separately. Do not invent accounting, tax, FX,
+or customer-specific pricing behavior.
 
 Use this order unless a current human instruction changes it:
 
@@ -466,7 +523,7 @@ Use this order unless a current human instruction changes it:
 9. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
    exact production SHA, and complete owner handoff.
 
-## 21. Things agents must not assume
+## 22. Things agents must not assume
 
 - Do not assume a discussed feature is implemented.
 - Do not assume the clean candidate HEAD includes later uncommitted A8/timezone fixes.

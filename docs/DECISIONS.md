@@ -197,6 +197,50 @@ Status values:
 
 ---
 
+## DEC-040 — Keep ephemeral provisioner password assignment at the existing deployment-admin boundary
+
+**Status:** PROPOSED — HUMAN AUTHORITY REVIEW REQUIRED
+
+**Context:** The accepted DEC-009 procedure assigns a temporary password to
+`first_user_provisioner` through `migration_owner`. The repository bootstrap
+and migration contract intentionally keep `migration_owner` as
+`NOCREATEROLE`; PostgreSQL 18.6 therefore rejects that `ALTER ROLE` operation
+even when the reviewed `ADMIN` membership relationship exists. This is a
+credential-assignment authority defect, not permission to weaken the role
+contract.
+
+**Recommended approach:** Keep `migration_owner` `NOCREATEROLE` and use the
+already documented Neon/provider-owner or deployment-admin boundary from the
+deployment runbook for the single human-controlled temporary password
+assignment and the matching `PASSWORD NULL` cleanup. Keep all Stage 1
+catalog/security checks and all first-user operations on their existing
+reviewed principals. The privileged connection is not stored, passed in
+argv, committed, or made a durable application/runtime credential.
+
+**Why this is the least-risk available option:** It reuses the existing
+bootstrap authority that is already documented for role credential and
+ownership operations, changes no production role attributes, adds no
+`SECURITY DEFINER` surface, and leaves the temporary credential reversible by
+clearing it immediately after the human-controlled operation. The external
+Stage 1 helper must be separately reviewed before it can invoke this boundary;
+the current helper still attempts the assignment as `migration_owner` and is
+not ready for another production run.
+
+**Rejected alternatives:** Granting `CREATEROLE` to `migration_owner` would
+weaken its locked least-privilege contract. A provider-managed
+`cloud_admin`/`neon_superuser` database session, persistent elevated
+credential, or a new SECURITY DEFINER function would create a broader or
+durable privileged surface and conflict with DEC-008, DEC-013, and the
+security-definer restrictions. A second ad-hoc parser or secret path is
+forbidden by DEC-010 and DEC-011.
+
+**Consequence:** M0-T03 remains blocked until the human approves this
+authority boundary and the actual Stage 1 operator helper is changed or
+replaced by a separately reviewed procedure that uses it without exposing
+credentials. No production rerun is authorized by this proposal.
+
+---
+
 ## DEC-014 — Owner handoff uses one production URL, not preview links
 
 **Status:** ACCEPTED
@@ -444,3 +488,288 @@ requires owner-applied correction and human retry.
 **Rationale:** Owner handoff should represent a trustworthy, usable product state.
 
 **Consequences:** Phase 1 work remains deferred, but P0/P1 correctness/usability issues found in final QA are not deferred merely to hit a date.
+
+---
+
+## DEC-031 — Use the authenticated Neon production endpoint as the Stage 1 target invariant
+
+**Status:** ACCEPTED
+
+**Context:** The Stage 1 RLS/policy diagnostic could not previously prove that
+the connection was the approved production database. Connection-supplied
+`PGHOST`, `PGDATABASE`, `PGPORT`, `APP_ENV`, migration fingerprints, role
+membership, and server version were not independent production identity
+evidence. The human authenticated to the Neon control plane and established
+the approved production project, branch, endpoint, and region metadata.
+
+**Chosen approach:** Before `psql` executes, the diagnostic compares the
+decoded process-local `PGHOST` from the existing DEC-011 bootstrap against the
+exact approved endpoint host:
+`ep-polished-haze-b29kd207.c-6.eu-central-1.aws.neon.tech`.
+
+Approved non-secret provider provenance:
+
+- project: `shanda-fuel-production` (`plain-paper-48449309`)
+- branch: `main` (`br-morning-dust-b270y3ry`)
+- endpoint: `ep-polished-haze-b29kd207`
+- region: `aws-eu-central-1`
+
+**Rationale:** The exact endpoint host is the smallest independent invariant
+that fits the reviewed process-local DEC-011 libpq bootstrap without adding a
+second credential path, URI in argv, service indirection, or secret storage.
+
+**Consequences:** A missing or different `PGHOST` is a pre-connect nonzero
+failure and cannot reach catalog diagnostics. Endpoint replacement, project or
+branch migration, or provider-region change requires a new reviewed canonical
+decision before any future production diagnostic. These identifiers are
+non-secret metadata; no API token, password, or connection string is recorded.
+
+---
+
+## DEC-032 — Fix Daily Operations accountability and close workflow semantics
+
+**Status:** ACCEPTED
+
+**Context:** “Supervisor” had been ambiguous between assigned shift personnel,
+the person submitting records, and the person approving a close.
+
+**Chosen approach:** The fixed workflow is Open Shift, Record Activity,
+Reconcile, Supervisor Review, and Close Shift. The operator/cashier records
+activity and submits the initial reconciliation. The Supervisor reviews,
+investigates or resolves ordinary discrepancies where authorised, and approves
+the shift/day close. Manager/admin users handle authorised exceptions and
+overrides. Submitter/operator and approving Supervisor are distinct actors.
+
+**Rationale:** Close accountability and audit evidence require the person who
+entered or submitted operational data to remain distinguishable from the
+person who approved the close.
+
+**Consequences:** “Supervisor” has this fixed meaning and is not a generic
+configurable role label. A future organisation/station policy may control
+whether Supervisor approval is required before close, without changing the
+meaning of the actor or weakening approval evidence.
+
+---
+
+## DEC-033 — Require customer identity before finalizing account sales
+
+**Status:** ACCEPTED
+
+**Context:** Account-sale customer identity and external references were not
+previously fixed.
+
+**Chosen approach:** A customer/account must be selected before an account sale
+is finalized. An external/customer reference is optional by default and must be
+captured before finalization when policy requires it. The customer/account
+relationship is never optional.
+
+**Rationale:** Account sales must remain attributable to an account while
+allowing organisations to introduce reference requirements without rewriting
+finalized records.
+
+**Consequences:** Reference-required policy is configurable at bounded
+organisation, station, customer, or account scope as supported by the domain.
+Detailed accounting, credit-control, and tax treatment remain separate
+decisions.
+
+---
+
+## DEC-034 — Preserve auditable approved-fuel authorization attribution
+
+**Status:** ACCEPTED
+
+**Context:** Approved-fuel transactions need a clear, reviewable reason and
+authorization trail without freezing business category wording prematurely.
+
+**Chosen approach:** Capture recipient, authorizer, reason/category, and
+authorization/reference where applicable. Support bounded categories such as
+staff benefit, customer authorization, company/internal use, and other
+authorized use. Category labels may be administrator-configurable.
+
+**Rationale:** Configurable categories support future business terminology, but
+recipient and authorizer attribution are core audit facts and must not disappear.
+
+**Consequences:** Authorization evidence is mandatory where the workflow
+requires it. Detailed benefit, accounting, and tax policy remains unresolved
+until separately specified.
+
+---
+
+## DEC-035 — Require core cash custody and bank-deposit evidence
+
+**Status:** ACCEPTED
+
+**Context:** Cash handover and bank deposit workflows lacked a fixed minimum
+audit record.
+
+**Chosen approach:** Record amount, handing-over/depositing person,
+receiving/verifying person where applicable, date/time, and reference. A bank
+deposit requires a bank/deposit reference. Supporting proof or attachment is
+optional by default.
+
+**Rationale:** These facts provide the minimum useful custody trail without
+making optional evidence a prerequisite for every handover.
+
+**Consequences:** An administrator may later require supporting proof or add
+bounded reference fields, but core amount, actor attribution, timestamp, and
+bank reference controls cannot be disabled where required by the workflow.
+
+---
+
+## DEC-036 — Sequence Phase 1 customer-account capability by owner priority
+
+**Status:** ACCEPTED
+
+**Context:** Phase 1 customer-account capability needed an explicit delivery
+order.
+
+**Chosen approach:** Prioritize credit and enforceable limits, prepaid monetary
+value, statements, vehicles/drivers, prepaid litres, and benefits, in that
+order.
+
+**Rationale:** The sequence establishes the core monetary account model before
+dependent quantity, relationship, and benefit features.
+
+**Consequences:** This is implementation sequencing, not a complete accounting,
+ledger, tax, credit-control, or authorization policy. Those details must still
+be specified before write behavior is implemented.
+
+---
+
+## DEC-037 — Use fixed semantics with bounded configurable policy
+
+**Status:** ACCEPTED
+
+**Context:** The owner approved limited configurability while rejecting a
+generic arbitrary workflow engine.
+
+**Chosen approach:** Keep workflow semantics, tenant isolation, security,
+audit integrity, accounting integrity, reconciliation evidence, and actor
+attribution fixed. Allow only explicit bounded settings such as approval
+requiredness, account-reference requiredness, approved-fuel categories, deposit
+proof requiredness, variance thresholds, and optional close-summary sections.
+
+**Rationale:** Small explicit settings preserve control integrity while allowing
+station and organisation policy differences.
+
+**Consequences:** Configuration must never weaken authorization, RLS, audit,
+accounting, reconciliation, or core actor attribution. Do not add a generic
+rules/workflow engine merely for configurability.
+
+---
+
+## DEC-038 — Make the close summary exception-first and approval-aware
+
+**Status:** ACCEPTED
+
+**Context:** The close summary should help an operator determine whether a
+shift is clean rather than become an unprioritized reporting dashboard.
+
+**Chosen approach:** Surface total sales, payment-method sales, account/credit
+sales, expected and actual cash, cash variance, expenses, fuel/stock variance,
+unresolved exceptions, and Supervisor approval/sign-off state where applicable.
+
+**Rationale:** The summary should make balance, variance, unresolved work, and
+approval state immediately understandable.
+
+**Consequences:** Required reconciliation and audit sections cannot be hidden
+by configuration. Optional sections and variance thresholds may be bounded
+policy settings.
+
+---
+
+## DEC-039 — Make the default home dashboard operational-control and exception-first
+
+**Status:** ACCEPTED
+
+**Context:** The home dashboard needed a fixed purpose and audience without
+turning it into a broad accounting/reporting surface or inventing unsupported
+financial calculations.
+
+**Chosen approach:** The default owner/supervisor home dashboard answers “How is
+the operation performing today, and what needs my attention?” Its primary
+headline metrics/status areas are today’s total sales, expected cash, actual
+cash, cash variance, fuel/stock variance, account/credit sales, unresolved
+exceptions, and shift approval/close status. The primary audience is the
+owner, manager, and Supervisor subject to existing permissions.
+
+The dashboard uses the user’s authorized/current operational scope under the
+existing tenant, legal-entity, station, and navigation conventions. It must
+not introduce a new authorization model or expose cross-tenant or unauthorized
+data. Existing A10 reporting metrics and contracts are reused where they
+support the bounded first slice. Missing source facts remain truthful
+unavailable states until a reviewed read-model contract exists; no new tax,
+GL, profitability, or other accounting calculation is created solely for the
+dashboard.
+
+**Rationale:** The owner needs operational control and visible exceptions first,
+while the existing reporting model already provides supported read-only facts
+for sales, cash evidence/variance, account-credit evidence, and inventory
+variance. Approval/close and unresolved-exception presentation must remain
+grounded in authoritative source state rather than inferred from presentation
+data.
+
+**Consequences:** M4-T02 may proceed with a bounded first read-only slice using
+existing supported reporting contracts. A future administrator may configure
+optional dashboard sections, display ordering, relevant station-specific cards,
+and variance thresholds, but required security, reconciliation, exception, and
+authorization behavior cannot be disabled. A generic workflow/rules engine is
+not introduced for dashboard configuration.
+
+## DEC-041 — Lock the Phase 1 customer lifecycle semantics
+
+**Status:** ACCEPTED
+
+**Context:** Phase 1 customer lifecycle work needed explicit product
+semantics before bounded implementation could proceed. The owner resolved the
+customer policy questions without selecting new accounting, tax, or FX rules.
+
+**Chosen approach:**
+
+- Credit is disabled unless a positive credit limit is explicitly configured;
+  the limit is a hard cap by default and over-limit transactions are blocked.
+  Any future manager/admin over-limit override must be explicit, authorized,
+  and audited. Operators and Supervisors cannot silently change credit policy
+  or limits.
+- Money-value prepaid is the first prepaid model. Prepaid litres are a later,
+  separate balance model, with no automatic conversion between them.
+- Statements default to monthly calendar periods in the applicable
+  tenant/station timezone. They are reporting artifacts and do not create
+  postings, payments, or balance mutations.
+- Customer transactions use the normal applicable station selling price.
+  Customer-specific pricing is a later bounded contract; no margin, tax,
+  discount, profitability, or new accounting calculation is invented here.
+- Vehicle/driver restrictions are optional and disabled by default. When
+  configured, eligibility is required before finalization; exceptions require
+  manager/admin authorization and audit.
+- Benefits are disabled by default, are the lowest lifecycle priority, and do
+  not block the other customer capabilities. Any later benefit must have
+  explicit eligibility/caps and cannot be redeemed as cash.
+- Customer records may hold invoicing/contact/reference metadata, while
+  existing approved tax behavior remains authoritative. Unresolved tax/
+  accounting behavior stays a separate gate.
+- Phase 1 uses one operational currency per tenant. Currency identifiers are
+  persisted where durable monetary records require them; FX, exchange-rate
+  management, and mixed-currency balances are out of scope.
+- Customer lifecycle states are `ACTIVE`, `SUSPENDED`, and `CLOSED`.
+  Customers with operational history are never hard-deleted. Suspended and
+  closed customers remain readable but cannot initiate new account
+  transactions.
+- Owner/Admin manage customer configuration, credit limits, prepaid
+  configuration, and lifecycle transitions subject to audit. Supervisors may
+  review/use accounts but cannot alter credit/prepaid policy without a later
+  explicit permission. Operators may select/use eligible customers in
+  authorized operational workflows but cannot modify financial/account
+  configuration. Every security-sensitive mutation has actor attribution and
+  auditability.
+
+**Rationale:** These rules establish fixed safety and lifecycle meaning while
+leaving accounting/ledger details, tax treatment, FX, and later bounded
+pricing/benefit contracts to their own reviewed scopes.
+
+**Consequences:** M5-T01 is accepted for these bounded sub-contracts. The
+existing A8 exact-decimal ledger and reservation boundary is reused. M5-T02
+may proceed with positive credit-limit enforcement and active-customer/account
+guards. Role-permission migration alignment, lifecycle transition commands,
+monthly statement read-model details, and the explicitly deferred pricing,
+vehicle/driver, benefits, tax, and FX contracts remain separately scoped.

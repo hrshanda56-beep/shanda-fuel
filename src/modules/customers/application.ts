@@ -40,6 +40,9 @@ export type CustomerPermissionCode = (typeof CUSTOMER_PERMISSION_CODES)[number];
 
 export const CUSTOMER_COMMAND_TYPES = [
   'CreateCustomer',
+  'UpdateCustomer',
+  'ActivateCustomer',
+  'DeactivateCustomer',
   'CreateCustomerAccount',
   'RequestCustomerFuelAuthorization',
   'AuthorizeCustomerFuel',
@@ -81,6 +84,24 @@ export const CUSTOMER_COMMAND_POLICY: Readonly<
     scopeType: 'TENANT',
     requiresStepUp: false,
     requiresExpectedVersion: false,
+  },
+  UpdateCustomer: {
+    permissionCode: 'customer.manage',
+    scopeType: 'TENANT',
+    requiresStepUp: false,
+    requiresExpectedVersion: true,
+  },
+  ActivateCustomer: {
+    permissionCode: 'customer.manage',
+    scopeType: 'TENANT',
+    requiresStepUp: false,
+    requiresExpectedVersion: true,
+  },
+  DeactivateCustomer: {
+    permissionCode: 'customer.manage',
+    scopeType: 'TENANT',
+    requiresStepUp: false,
+    requiresExpectedVersion: true,
   },
   CreateCustomerAccount: {
     permissionCode: 'customer.account.manage',

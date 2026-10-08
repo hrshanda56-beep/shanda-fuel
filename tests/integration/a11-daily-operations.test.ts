@@ -268,6 +268,7 @@ describe('A11 daily operations composition read', () => {
         closedAt: string | null;
       };
       businessDays: Array<{ id: string }>;
+      status: { close: string; approval: string };
     };
 
     expect(response.status).toBe(200);
@@ -281,6 +282,7 @@ describe('A11 daily operations composition read', () => {
     });
     expect(body.businessDays).toHaveLength(30);
     expect(body.businessDays.some((day) => day.id === ids.historicalDay)).toBe(false);
+    expect(body.status).toEqual({ close: 'NOT_STARTED', approval: 'NO_REVISION' });
   });
 
   it('does not substitute another day for an explicit nonexistent or out-of-scope day', async () => {
@@ -320,6 +322,7 @@ describe('A11 daily operations composition read', () => {
       reconciliations: Array<{ id: string }>;
       timeline: Array<{ eventCode: string; subjectId: string | null }>;
       visibility: { reconciliations: boolean; auditTimeline: boolean };
+      status: { close: string; approval: string };
       actions: {
         OpenBusinessDay: { canExecute: boolean };
         CloseBusinessDay: { canExecute: boolean };
@@ -338,11 +341,13 @@ describe('A11 daily operations composition read', () => {
       reconciliations: Array<{ id: string }>;
       timeline: Array<{ eventCode: string }>;
       visibility: { reconciliations: boolean; auditTimeline: boolean };
+      status: { close: string; approval: string };
       actions: Record<string, { canExecute: boolean }>;
     };
 
     expect(supervisorResponse.status).toBe(200);
     expect(supervisorBody.visibility).toEqual({ reconciliations: true, auditTimeline: true });
+    expect(supervisorBody.status).toEqual({ close: 'READY_FOR_REVIEW', approval: 'READY' });
     expect(supervisorBody.actions).toMatchObject({
       OpenBusinessDay: { canExecute: true },
       CloseBusinessDay: { canExecute: true },
@@ -362,6 +367,7 @@ describe('A11 daily operations composition read', () => {
     );
     expect(attendantResponse.status).toBe(200);
     expect(attendantBody.visibility).toEqual({ reconciliations: false, auditTimeline: false });
+    expect(attendantBody.status).toEqual({ close: 'IN_PROGRESS', approval: 'NO_REVISION' });
     expect(Object.values(attendantBody.actions).every((action) => !action.canExecute)).toBe(true);
     expect(attendantBody.shifts.map((shift) => shift.id)).toContain(ids.shift);
     expect(attendantBody.reconciliations).toHaveLength(0);

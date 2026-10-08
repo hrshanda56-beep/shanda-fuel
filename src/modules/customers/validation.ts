@@ -10,6 +10,10 @@ const currency = z
   .trim()
   .regex(/^[A-Z]{3}$/, 'An uppercase ISO-style currency code is required');
 const instant = z.string().datetime({ offset: true });
+const statementPeriod = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'A statement period must use YYYY-MM');
 
 export const customerAccountTypeSchema = z.enum(['CREDIT', 'PREPAID_VALUE', 'PREPAID_LITRES']);
 export const customerSourceSchema = z.object({
@@ -32,14 +36,69 @@ export const createCustomerSchema = z.object({
   contactMetadata: z.record(z.string(), z.string().trim().max(200)).optional(),
 });
 
-export const createCustomerAccountSchema = z.object({
-  commandType: z.literal('CreateCustomerAccount'),
+const customerLifecycleCommandBase = z.object({
   tenantId: uuid,
   customerId: uuid,
-  accountType: customerAccountTypeSchema,
-  currency,
-  creditLimit: decimalText.optional(),
+  expectedVersion: z.number().int().nonnegative(),
 });
+
+export const updateCustomerSchema = customerLifecycleCommandBase
+  .extend({
+    commandType: z.literal('UpdateCustomer'),
+    accountReference: z.string().trim().min(1).max(80).optional(),
+    displayName: z.string().trim().min(1).max(200).optional(),
+    contactMetadata: z.record(z.string(), z.string().trim().max(200)).optional(),
+  })
+  .superRefine((input, refinement) => {
+    if (
+      input.accountReference === undefined &&
+      input.displayName === undefined &&
+      input.contactMetadata === undefined
+    ) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['accountReference'],
+        message: 'At least one customer field must be provided',
+      });
+    }
+  });
+
+export const activateCustomerSchema = customerLifecycleCommandBase.extend({
+  commandType: z.literal('ActivateCustomer'),
+});
+
+export const deactivateCustomerSchema = customerLifecycleCommandBase.extend({
+  commandType: z.literal('DeactivateCustomer'),
+});
+
+export const createCustomerAccountSchema = z
+  .object({
+    commandType: z.literal('CreateCustomerAccount'),
+    tenantId: uuid,
+    customerId: uuid,
+    accountType: customerAccountTypeSchema,
+    currency,
+    creditLimit: decimalText.optional(),
+  })
+  .superRefine((input, refinement) => {
+    if (
+      input.accountType === 'CREDIT' &&
+      (!input.creditLimit || !/[1-9]/.test(input.creditLimit))
+    ) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['creditLimit'],
+        message: 'Credit accounts require a positive credit limit',
+      });
+    }
+    if (input.accountType !== 'CREDIT' && input.creditLimit) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['creditLimit'],
+        message: 'Credit limits apply only to credit accounts',
+      });
+    }
+  });
 
 const fuelValueSchema = z.object({
   productId: uuid,
@@ -148,15 +207,30 @@ export const recordPrepaidTopUpSchema = z
     }
   });
 
-export const customerStatementQuerySchema = z.object({
-  tenantId: uuid,
-  accountId: uuid,
-  asOf: instant.optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  cursor: z.string().trim().min(1).max(200).optional(),
-});
+export const customerStatementQuerySchema = z
+  .object({
+    tenantId: uuid,
+    accountId: uuid,
+    /** Business-date month used for a monthly statement read model. */
+    period: statementPeriod.optional(),
+    asOf: instant.optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    cursor: z.string().trim().min(1).max(200).optional(),
+  })
+  .superRefine((input, refinement) => {
+    if (input.period && input.asOf) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['period'],
+        message: 'A statement period cannot be combined with asOf',
+      });
+    }
+  });
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+export type ActivateCustomerInput = z.infer<typeof activateCustomerSchema>;
+export type DeactivateCustomerInput = z.infer<typeof deactivateCustomerSchema>;
 export type CreateCustomerAccountInput = z.infer<typeof createCustomerAccountSchema>;
 export type CompleteCustomerFuelTransactionInput = z.infer<
   typeof completeCustomerFuelTransactionSchema

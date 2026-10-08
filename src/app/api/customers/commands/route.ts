@@ -3,14 +3,17 @@ import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   assertCustomerCommandType,
   authorizeCustomerFuelFromRequest,
+  activateCustomerFromRequest,
   cancelCustomerFuelAuthorizationFromRequest,
   completeCustomerFuelTransactionFromRequest,
   createCustomerAccountFromRequest,
   createCustomerFromRequest,
+  deactivateCustomerFromRequest,
   expireCustomerFuelAuthorizationFromRequest,
   recordCustomerPaymentFromRequest,
   recordPrepaidTopUpFromRequest,
   requestCustomerFuelAuthorizationFromRequest,
+  updateCustomerFromRequest,
 } from '../../../../modules/customers/commands';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
@@ -31,6 +34,12 @@ export const POST = withRequestObservability(
       switch (assertCustomerCommandType(commandType)) {
         case 'CreateCustomer':
           return response(await createCustomerFromRequest(request, body), 201);
+        case 'UpdateCustomer':
+          return response(await updateCustomerFromRequest(request, body));
+        case 'ActivateCustomer':
+          return response(await activateCustomerFromRequest(request, body));
+        case 'DeactivateCustomer':
+          return response(await deactivateCustomerFromRequest(request, body));
         case 'CreateCustomerAccount':
           return response(await createCustomerAccountFromRequest(request, body), 201);
         case 'RecordCustomerPayment':
