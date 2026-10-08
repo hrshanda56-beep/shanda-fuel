@@ -1,137 +1,187 @@
-import {
-  AccessDeniedState,
-  Card,
-  ContextRequiredState,
-  StatusBadge,
-} from '@/design-system/primitives';
-import { PageContainer, Section } from '@/design-system/layout';
+'use client';
+
+import { useState, type ReactNode } from 'react';
+
+import { Icon, type IconName } from '@/design-system/icons';
+import { AccessDeniedState, ContextRequiredState } from '@/design-system/primitives';
+import { PageContainer } from '@/design-system/layout';
 
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
 import styles from './settings-workspace.module.css';
 
+type Tab = 'organisation' | 'companies' | 'stations' | 'account';
+
+const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
+  { value: 'organisation', label: 'Organisation', icon: 'building' },
+  { value: 'companies', label: 'Companies', icon: 'receipt' },
+  { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'account', label: 'Account', icon: 'users' },
+];
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  const first = parts[0]!.charAt(0);
+  const last = parts.length > 1 ? parts[parts.length - 1]!.charAt(0) : '';
+  return (first + last).toUpperCase();
+}
+
+function Fields({ items }: { items: ReadonlyArray<{ label: string; value: ReactNode }> }) {
+  return (
+    <dl className={styles.fields}>
+      {items.map((item) => (
+        <div key={item.label}>
+          <dt>{item.label}</dt>
+          <dd>{item.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function InfoCard({
+  headingId,
+  title,
+  children,
+}: {
+  headingId: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.card}>
+      <h3 id={headingId} className={styles.cardTitle}>
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function AccountPanel({ view }: { view: SettingsView }) {
+  return (
+    <>
+      <div className={`${styles.card} ${styles.profileCard}`}>
+        <span className={styles.avatar} aria-hidden="true">
+          {initialsOf(view.account.name)}
+        </span>
+        <div className={styles.profileText}>
+          <p className={styles.profileName}>{view.account.name}</p>
+          <p className={styles.profileMeta}>{view.account.email}</p>
+        </div>
+      </div>
+      <InfoCard headingId="account-details" title="Your details">
+        <Fields
+          items={[
+            { label: 'Name', value: view.account.name },
+            { label: 'Email', value: view.account.email },
+          ]}
+        />
+      </InfoCard>
+      <div className={styles.signOutRow}>
+        <SignOutButton />
+      </div>
+    </>
+  );
+}
+
 export function SettingsWorkspace({ view }: { view: SettingsView }) {
-  const hasContext = view.context.status === 'ready' && view.context.organisation;
+  const [tab, setTab] = useState<Tab>('organisation');
+  const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
+
+  if (!organisation) {
+    return (
+      <PageContainer width="wide">
+        <div className={styles.frame}>
+          <div className={styles.content}>
+            <header className={styles.contentHeader}>
+              <h2 className={styles.contentTitle}>Organisation</h2>
+            </header>
+            <InfoCard headingId="organisation-unavailable" title="Not available">
+              <AccessDeniedState message="No organisation is available for this account." />
+            </InfoCard>
+            <AccountPanel view={view} />
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
+
+  const active = TABS.find((item) => item.value === tab) ?? TABS[0]!;
+  const { selectedStation, legalEntities } = view.context;
 
   return (
     <PageContainer width="wide">
-      <div className={styles.workspace}>
-        {hasContext ? (
-          <nav className={styles.sectionNav} aria-label="Settings sections">
-            <a href="#organisation">Organisation</a>
-            <a href="#legal-entities">Legal entities</a>
-            <a href="#stations">Stations</a>
-            <a href="#account">Account</a>
-          </nav>
-        ) : (
-          <nav className={styles.sectionNav} aria-label="Settings sections">
-            <a href="#account">Account</a>
-          </nav>
-        )}
-
-        {hasContext ? (
-          <>
-            <Section
-              headingId="organisation"
-              title="Organisation"
-              description="The organisation available in your authorised work area."
-              action={<StatusBadge tone="neutral">Read-only</StatusBadge>}
+      <div className={styles.frame}>
+        <nav className={styles.subnav} aria-label="Settings sections">
+          {TABS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={styles.subnavItem}
+              aria-pressed={item.value === tab}
+              onClick={() => setTab(item.value)}
             >
-              <Card className={styles.detailCard}>
-                <dl className={styles.detailList}>
-                  <div>
-                    <dt>Name</dt>
-                    <dd>{view.context.organisation.name}</dd>
-                  </div>
-                </dl>
-                <p className={styles.readOnlyNote}>
-                  Organisation details are managed through the approved administration process.
-                </p>
-              </Card>
-            </Section>
+              <Icon name={item.icon} className={styles.subnavIcon} />
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-            <Section
-              headingId="legal-entities"
-              title="Legal entities"
-              description="Legal entities you are authorised to view within this organisation."
-              action={<StatusBadge tone="neutral">Read-only</StatusBadge>}
-            >
-              {view.context.legalEntities.length > 0 ? (
-                <ul className={styles.entityList}>
-                  {view.context.legalEntities.map((legalEntity) => (
-                    <li key={legalEntity.id}>
-                      <strong>{legalEntity.name}</strong>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <Card>
-                  <p className={styles.readOnlyNote}>No authorised legal entities are available.</p>
-                </Card>
-              )}
-            </Section>
+        <div className={styles.content}>
+          <header className={styles.contentHeader}>
+            <h2 className={styles.contentTitle}>{active.label}</h2>
+            <p className={styles.note}>
+              You can look at these details here. Ask your administrator to change them.
+            </p>
+          </header>
 
-            <Section
-              headingId="stations"
-              title="Stations"
-              description="View the selected station’s supported details from the authorised work context."
-              action={<StatusBadge tone="neutral">Read-only</StatusBadge>}
-            >
-              {view.context.selectedStation ? (
-                <Card className={styles.detailCard}>
-                  <dl className={styles.detailList}>
-                    <div>
-                      <dt>Name</dt>
-                      <dd>{view.context.selectedStation.name}</dd>
-                    </div>
-                    <div>
-                      <dt>Code</dt>
-                      <dd>{view.context.selectedStation.code}</dd>
-                    </div>
-                    <div>
-                      <dt>Time zone</dt>
-                      <dd>{view.context.selectedStation.timezone}</dd>
-                    </div>
-                  </dl>
-                  <p className={styles.readOnlyNote}>
-                    Station details are shown for the selected authorised station.
-                  </p>
-                </Card>
-              ) : (
-                <ContextRequiredState
-                  title="Choose a station to manage its settings."
-                  message="Use Change in the work context bar above to select an authorised station."
+          {tab === 'organisation' ? (
+            <InfoCard headingId="organisation" title="Organisation details">
+              <Fields items={[{ label: 'Name', value: organisation.name }]} />
+            </InfoCard>
+          ) : null}
+
+          {tab === 'companies' ? (
+            legalEntities.length > 0 ? (
+              legalEntities.map((legalEntity) => (
+                <InfoCard
+                  key={legalEntity.id}
+                  headingId={`company-${legalEntity.id}`}
+                  title="Company"
+                >
+                  <Fields items={[{ label: 'Name', value: legalEntity.name }]} />
+                </InfoCard>
+              ))
+            ) : (
+              <InfoCard headingId="legal-entities" title="Companies">
+                <p className={styles.note}>No companies are available to you.</p>
+              </InfoCard>
+            )
+          ) : null}
+
+          {tab === 'stations' ? (
+            selectedStation ? (
+              <InfoCard headingId="stations" title="Station details">
+                <Fields
+                  items={[
+                    { label: 'Name', value: selectedStation.name },
+                    { label: 'Code', value: selectedStation.code },
+                    { label: 'Time zone', value: selectedStation.timezone },
+                  ]}
                 />
-              )}
-            </Section>
-          </>
-        ) : (
-          <section aria-labelledby="organisation-unavailable">
-            <h2 id="organisation-unavailable">Organisation</h2>
-            <AccessDeniedState message="No authorised organisation is available for this account." />
-          </section>
-        )}
+              </InfoCard>
+            ) : (
+              <ContextRequiredState
+                title="Choose a station"
+                message="Pick a station at the top of the page to see its details."
+              />
+            )
+          ) : null}
 
-        <Section
-          headingId="account"
-          title="Account"
-          description="Your authenticated Shanda Fuel account."
-          action={<StatusBadge tone="neutral">Read-only</StatusBadge>}
-        >
-          <Card className={styles.detailCard}>
-            <dl className={styles.detailList}>
-              <div>
-                <dt>Name</dt>
-                <dd>{view.account.name}</dd>
-              </div>
-              <div>
-                <dt>Email</dt>
-                <dd>{view.account.email}</dd>
-              </div>
-            </dl>
-            <SignOutButton />
-          </Card>
-        </Section>
+          {tab === 'account' ? <AccountPanel view={view} /> : null}
+        </div>
       </div>
     </PageContainer>
   );

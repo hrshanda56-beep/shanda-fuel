@@ -1,116 +1,186 @@
-.workspace {
+/* One rounded panel: section list on the left, details on the right. */
+.frame {
   display: grid;
-  gap: var(--space-5);
+  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+  min-width: 0;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
 }
 
-.sectionNav {
+.subnav {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-2);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-glass);
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-right: var(--border-width) solid var(--border-subtle);
 }
 
-.sectionNav a {
-  display: inline-flex;
-  min-height: 2.75rem;
+.subnavItem {
+  display: flex;
   align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
   padding: 0 var(--space-3);
+  border: 0;
   border-radius: var(--radius-md);
+  background: transparent;
   color: var(--text-secondary);
+  font: inherit;
   font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
-  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition-colors);
 }
 
-.sectionNav a:hover,
-.sectionNav a:focus-visible {
-  background: var(--bg-hover);
+.subnavItem:hover {
+  background: var(--bg-subtle);
   color: var(--text-primary);
 }
 
-.detailCard {
-  display: grid;
-  gap: var(--space-4);
+.subnavItem[aria-pressed='true'] {
+  background: var(--bg-selected);
+  color: var(--accent-text);
+  font-weight: var(--font-weight-medium);
 }
 
-.detailList {
+.subnavIcon {
+  flex-shrink: 0;
+}
+
+.content {
   display: grid;
-  gap: 0;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+}
+
+.contentHeader {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.contentTitle {
   margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
 }
 
-.detailList > div {
-  display: grid;
-  grid-template-columns: minmax(7rem, 0.7fr) minmax(0, 1.3fr);
-  gap: var(--space-4);
-  padding: var(--space-3) 0;
-  border-bottom: var(--border-width) solid var(--border-subtle);
-}
-
-.detailList > div:first-child {
-  padding-top: 0;
-}
-
-.detailList > div:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.detailList dt {
+.note {
+  margin: 0;
   color: var(--text-secondary);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-sm);
 }
 
-.detailList dd {
+.card {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.cardTitle {
   margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-6);
+  margin: 0;
+}
+
+.fields dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.fields dd {
+  margin: var(--space-1) 0 0;
   color: var(--text-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   overflow-wrap: anywhere;
 }
 
-.entityList {
-  display: grid;
-  gap: var(--space-3);
+.profileCard {
+  grid-auto-flow: column;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: var(--accent-muted);
+  color: var(--accent-text);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.profileText {
+  min-width: 0;
+}
+
+.profileName {
   margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.entityList li {
-  padding: var(--space-4);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-subtle);
-}
-
-.entityList strong {
-  display: block;
   color: var(--text-primary);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
 }
 
-.readOnlyNote {
-  margin: 0;
+.profileMeta {
+  margin: var(--space-1) 0 0;
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
+  overflow-wrap: anywhere;
+}
+
+.signOutRow {
+  display: flex;
+}
+
+/* Phone: the section list becomes wrapping pills above the details. */
+@media (max-width: 48rem) {
+  .frame {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .subnav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: var(--space-3);
+    border-right: 0;
+    border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+
+  .subnavItem {
+    min-height: 2.5rem;
+    padding: 0 var(--space-3);
+  }
+
+  .content {
+    padding: var(--space-4);
+  }
 }
 
 @media (max-width: 30rem) {
-  .sectionNav {
-    display: grid;
-  }
-
-  .sectionNav a {
-    width: 100%;
-  }
-
-  .detailList > div {
-    grid-template-columns: 1fr;
-    gap: var(--space-1);
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
