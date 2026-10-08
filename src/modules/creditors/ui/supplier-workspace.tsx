@@ -12,17 +12,17 @@ import {
 } from '@/modules/context';
 import {
   Button,
-  Card,
   ContextRequiredState,
   EmptyState,
   ErrorState,
   Field,
-  LoadingState,
+  Skeleton,
   SuccessState,
-  StatusBadge,
 } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
-import { PageHeader } from '@/design-system/layout';
+import { Section } from '@/design-system/layout';
+import { SkeletonCard } from '@/design-system/page-kit';
+import { formatMoneyDisplay } from '@/design-system/formatters';
 import { TableScrollRegion } from '@/design-system/table';
 
 type SupplierSummary = {
@@ -97,10 +97,14 @@ export function SupplierWorkspace() {
   const [creating, setCreating] = useState(false);
 
   const current = context?.current ?? null;
-  const currentLegalEntityName = useMemo(
-    () => (context && current ? legalEntityName(context, current) : null),
-    [context, current],
-  );
+  const currentLegalEntityName = useMemo(() => {
+    if (!context || !current) return null;
+    const organisation = context.available.organisations.find(
+      (candidate) => candidate.id === current.organisationId,
+    );
+    // Only name the company when the person has more than one.
+    return (organisation?.legalEntities.length ?? 0) > 1 ? legalEntityName(context, current) : null;
+  }, [context, current]);
   const hasRequiredContext = Boolean(
     current?.organisationId &&
     current.legalEntityId &&
@@ -120,17 +124,13 @@ export function SupplierWorkspace() {
         message?: string;
       };
       if (!response.ok || !result.data) {
-        throw new Error(getErrorMessage(result, 'Authorised supplier context could not be loaded'));
+        throw new Error(getErrorMessage(result, 'Suppliers could not be loaded'));
       }
       setContext(result.data);
     } catch (cause) {
       if (!signal.aborted) {
         setContext(null);
-        setContextError(
-          cause instanceof Error
-            ? cause.message
-            : 'Authorised supplier context could not be loaded',
-        );
+        setContextError(cause instanceof Error ? cause.message : 'Suppliers could not be loaded');
       }
     } finally {
       if (!signal.aborted) setContextLoading(false);
@@ -152,12 +152,12 @@ export function SupplierWorkspace() {
       });
       const result: unknown = await response.json();
       if (!response.ok || !Array.isArray(result)) {
-        throw new Error(getErrorMessage(result, 'Supplier balances could not be loaded'));
+        throw new Error(getErrorMessage(result, 'Suppliers could not be loaded'));
       }
       setRows(result as SupplierSummary[]);
     } catch (cause) {
       if (!signal?.aborted) {
-        setError(cause instanceof Error ? cause.message : 'Supplier balances could not be loaded');
+        setError(cause instanceof Error ? cause.message : 'Suppliers could not be loaded');
       }
     } finally {
       if (!signal?.aborted) setLoading(false);
@@ -235,86 +235,64 @@ export function SupplierWorkspace() {
 
   const supplierSelection = current;
 
-  return (
-    <div className="content-grid">
-      <PageHeader
-        eyebrow="Supplier creditors"
-        title="Payables position"
-        headingLevel="h2"
-        titleId="supplier-payables-title"
-        description="What each legal entity owes its suppliers, current and overdue."
-        actions={
-          hasRequiredContext ? (
-            <Button
-              onClick={() => {
-                resetCreateForm();
-                setCreateOpen(true);
-              }}
-            >
-              Add supplier
-            </Button>
-          ) : null
-        }
-      />
+  const openCreate = () => {
+    resetCreateForm();
+    setCreateOpen(true);
+  };
 
-      {contextLoading ? <LoadingState label="Loading authorised context" /> : null}
+  return (
+    <div className="suppliers-page">
+      {contextLoading ? <SkeletonCard label="Loading suppliers" lines={3} /> : null}
       {contextError ? (
         <ErrorState
           message={contextError}
-          action={<Button onClick={() => window.location.reload()}>Retry</Button>}
+          action={<Button onClick={() => window.location.reload()}>Try again</Button>}
         />
       ) : null}
       {!contextLoading && !contextError && !hasRequiredContext ? (
         <ContextRequiredState
-          title="Select a legal entity"
-          message="Choose an authorised legal-entity context before creditor balances can be loaded."
+          title="Choose a company"
+          message="Pick a company at the top of the page to see what you owe your suppliers."
         />
       ) : null}
 
-      {createSuccess ? <SuccessState title="Supplier created" message={createSuccess} /> : null}
+      {createSuccess ? <SuccessState title="Supplier added" message={createSuccess} /> : null}
 
       {hasRequiredContext && supplierSelection ? (
-        <Card as="section" className="panel" aria-labelledby="supplier-creditors-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">{currentLegalEntityName ?? 'Legal entity'}</p>
-              <h2 id="supplier-creditors-title">Supplier balances</h2>
-            </div>
-            <StatusBadge tone="informational">Legal-entity scoped</StatusBadge>
-          </div>
-          {loading ? <LoadingState label="Loading supplier balances" /> : null}
+        <Section
+          title={currentLegalEntityName ? `Suppliers · ${currentLegalEntityName}` : 'Suppliers'}
+          headingId="supplier-creditors-title"
+          action={
+            <Button size="sm" onClick={openCreate}>
+              Add supplier
+            </Button>
+          }
+        >
+          {loading ? <Skeleton lines={3} label="Loading suppliers" /> : null}
           {error ? (
             <ErrorState
               message={error}
-              action={<Button onClick={() => void loadSummary(supplierSelection)}>Retry</Button>}
+              action={
+                <Button onClick={() => void loadSummary(supplierSelection)}>Try again</Button>
+              }
             />
           ) : null}
           {!loading && !error && rows.length === 0 ? (
             <EmptyState
               title="No suppliers yet"
-              message="Supplier records will appear after onboarding."
-              action={
-                <Button
-                  onClick={() => {
-                    resetCreateForm();
-                    setCreateOpen(true);
-                  }}
-                >
-                  Add supplier
-                </Button>
-              }
+              message="Add a supplier to start tracking what you owe."
             />
           ) : null}
           {!loading && !error && rows.length > 0 ? (
-            <TableScrollRegion label="Supplier creditor balances">
+            <TableScrollRegion label="What you owe suppliers">
               <table className="responsive-table">
-                <caption className="visually-hidden">Supplier creditor balances</caption>
+                <caption className="visually-hidden">What you owe suppliers</caption>
                 <thead>
                   <tr>
                     <th scope="col">Supplier</th>
-                    <th scope="col">Current</th>
+                    <th scope="col">Not yet due</th>
                     <th scope="col">Overdue</th>
-                    <th scope="col">Total</th>
+                    <th scope="col">Total owed</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -333,14 +311,14 @@ export function SupplierWorkspace() {
                           {row.legalName}
                         </Link>
                       </td>
-                      <td data-label="Current" className="numeric">
-                        ${row.current}
+                      <td data-label="Not yet due" className="numeric">
+                        {formatMoneyDisplay(row.current)}
                       </td>
                       <td data-label="Overdue" className="numeric">
-                        ${row.overdue}
+                        {formatMoneyDisplay(row.overdue)}
                       </td>
-                      <td data-label="Total" className="numeric">
-                        ${row.total}
+                      <td data-label="Total owed" className="numeric">
+                        {formatMoneyDisplay(row.total)}
                       </td>
                     </tr>
                   ))}
@@ -348,7 +326,7 @@ export function SupplierWorkspace() {
               </table>
             </TableScrollRegion>
           ) : null}
-        </Card>
+        </Section>
       ) : null}
 
       <Modal
@@ -357,7 +335,7 @@ export function SupplierWorkspace() {
           if (!creating) setCreateOpen(false);
         }}
         title="Add supplier"
-        description="Create a supplier record in the currently authorised legal entity."
+        description="Add a supplier you buy from."
         dismissible={!creating}
         footer={
           <>

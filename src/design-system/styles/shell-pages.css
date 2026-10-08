@@ -491,3 +491,14 @@ button.today-figure-link {
   text-align: start;
   cursor: pointer;
 }
+
+/* List cards: a quiet count in the header and search above the rows. */
+.section-count {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.list-search {
+  margin-bottom: var(--space-3);
+}
