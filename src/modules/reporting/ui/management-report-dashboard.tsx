@@ -22,10 +22,13 @@ import {
   resolveReportFilters,
   type ReportFilters,
 } from '../filters';
+import { formatTileMoney } from '../format';
 import { businessToday } from '../period';
-import type { ReportDefinition } from '../catalog';
+import { findReport, type ReportDefinition } from '../catalog';
 import { ReportFilterBar } from './report-filter-bar';
+import { ReportActionStatus } from './report-action-status';
 import { useAvailableStations } from './use-available-stations';
+import { useReportActions } from './use-report-actions';
 
 function customerMoney(value: string | null): string {
   return value === null ? 'Unavailable' : formatMoney(value);
@@ -64,6 +67,8 @@ export function ManagementReportDashboard({
   const filters = useMemo(() => parseReportFilters(searchParams), [searchParams]);
   const stations = useAvailableStations(tenantId, view !== 'summary');
   const range = resolveReportFilters(filters, businessToday());
+  const actions = useReportActions();
+  const reportTitle = findReport(view)?.title ?? '';
   const [report, setReport] = useState<ManagementReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,25 +159,25 @@ export function ManagementReportDashboard({
             <section className="metric-grid" aria-label="Headline figures for the chosen period">
               <MetricCard
                 label="Accounted sales"
-                value={formatMoney(report.sales.salesValue)}
+                value={formatTileMoney(report.sales.salesValue)}
                 meta={`${formatLitres(report.sales.litresSold)} litres sold`}
                 href={detailHref('sales')}
               />
               <MetricCard
                 label="Cash collected"
-                value={formatMoney(report.cash.collected)}
-                meta={`${formatMoney(report.cash.collectedButNotBanked)} not yet banked`}
+                value={formatTileMoney(report.cash.collected)}
+                meta={`${formatTileMoney(report.cash.collectedButNotBanked)} not yet banked`}
                 href={detailHref('cash')}
               />
               <MetricCard
                 label="Provider settlements outstanding"
-                value={formatMoney(report.providers.unallocatedProviderAmount)}
+                value={formatTileMoney(report.providers.unallocatedProviderAmount)}
                 meta="Unallocated"
                 href={detailHref('providers')}
               />
               <MetricCard
                 label="Supplier balance"
-                value={formatMoney(report.suppliers.outstandingBalance)}
+                value={formatTileMoney(report.suppliers.outstandingBalance)}
                 meta="At the end of the period"
                 href={detailHref('commercial')}
               />

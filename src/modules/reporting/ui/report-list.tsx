@@ -5,6 +5,9 @@ import { useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { parseCategoryParam } from '../rail';
 import { Card } from '../../../design-system/primitives';
+import { ReportActionMenu } from './report-action-menu';
+import { ReportActionStatus } from './report-action-status';
+import { useReportActions, type ReportActionTarget } from './use-report-actions';
 import { REPORT_CATALOG, categoryLabel, type ReportDefinition } from '../catalog';
 import { applyReportFilters, parseReportFilters, resolveReportFilters } from '../filters';
 import { REPORT_PERIODS, REPORT_PERIOD_LABELS, businessToday, type ReportPeriod } from '../period';
@@ -14,6 +17,7 @@ type RowPeriod = { period: ReportPeriod; customFrom: string; customTo: string };
 /** One row per report type. Each row has its own period; stations come from the page filters. */
 export function ReportList({ tenantId }: { tenantId: string }) {
   const searchParams = useSearchParams();
+  const actions = useReportActions();
   const category = parseCategoryParam(searchParams.get('category'));
   const reports = REPORT_CATALOG.filter((report) => !category || report.category === category);
   const pageFilters = useMemo(() => parseReportFilters(searchParams), [searchParams]);
@@ -24,6 +28,7 @@ export function ReportList({ tenantId }: { tenantId: string }) {
       <div className="panel-heading">
         <h2 id="available-reports-title">Available reports</h2>
       </div>
+      <ReportActionStatus status={actions.status} onDismiss={actions.dismiss} />
       <ul className="report-rows">
         {reports.map((report) => {
           const rowPeriod: RowPeriod = overrides[report.slug] ?? {
@@ -38,6 +43,9 @@ export function ReportList({ tenantId }: { tenantId: string }) {
               tenantId={tenantId}
               stationIds={pageFilters.stationIds}
               rowPeriod={rowPeriod}
+              busy={actions.busy}
+              onShare={(target) => void actions.share(target, report.title)}
+              onExport={(target) => void actions.exportCsv(target)}
               onPeriod={(next) => setOverrides((current) => ({ ...current, [report.slug]: next }))}
             />
           );
@@ -52,16 +60,33 @@ function ReportRow({
   tenantId,
   stationIds,
   rowPeriod,
+  busy,
+  onShare,
+  onExport,
   onPeriod,
 }: {
   report: ReportDefinition;
   tenantId: string;
   stationIds: readonly string[];
   rowPeriod: RowPeriod;
+  busy: boolean;
+  onShare: (target: ReportActionTarget) => void;
+  onExport: (target: ReportActionTarget) => void;
   onPeriod: (next: RowPeriod) => void;
 }) {
   const filters = { stationIds, ...rowPeriod };
-  const ready = resolveReportFilters(filters, businessToday()) !== null;
+  const range = resolveReportFilters(filters, businessToday());
+  const ready = range !== null;
+  const target: ReportActionTarget | null = range
+    ? {
+        tenantId,
+        slug: report.slug,
+        stationIds,
+        period: rowPeriod.period,
+        fromDate: range.fromDate,
+        toDate: range.toDate,
+      }
+    : null;
   const href = `/reports/${report.slug}?${applyReportFilters(
     new URLSearchParams({ tenantId }),
     filters,
@@ -127,6 +152,19 @@ function ReportRow({
             View
           </button>
         )}
+        <ReportActionMenu
+          reportTitle={report.title}
+          disabled={!target || busy}
+          items={
+            target
+              ? [
+                  { kind: 'link', label: 'View', href },
+                  { kind: 'action', label: 'Share private link', onSelect: () => onShare(target) },
+                  { kind: 'action', label: 'Export CSV', onSelect: () => onExport(target) },
+                ]
+              : []
+          }
+        />
       </div>
     </li>
   );
