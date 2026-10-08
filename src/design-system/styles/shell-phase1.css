@@ -282,9 +282,13 @@
 }
 
 .shell-more-context-action {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+}
+
+.modal-more .nav-row {
+  color: var(--text-primary);
 }
 
 /* Today ------------------------------------------------------------------------ */
@@ -893,46 +897,6 @@
   }
 }
 
-/* Notifications bell: round icon button beside search and the avatar. */
-.shell-notifications {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-height-md);
-  height: var(--control-height-md);
-  padding: 0;
-  border: 1px solid var(--border-outline);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.shell-notifications:hover {
-  border-color: var(--text-primary);
-  color: var(--text-primary);
-}
-
-.shell-notifications-dot {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.5rem;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: var(--radius-full);
-  background: #ecd57a;
-  box-shadow: 0 0 0 2px var(--bg-surface-raised);
-}
-
-@media (pointer: coarse), (max-width: 74.99rem) {
-  .shell-notifications {
-    width: var(--touch-target-min);
-    height: var(--touch-target-min);
-  }
-}
-
 /* Desktop: search is a real bar, as in the design. Smaller screens keep the icon. */
 @media (min-width: 64rem) {
   .shell-header .global-search {
@@ -1151,8 +1115,7 @@ button.today-period {
 
 /* Below desktop the header icon buttons are rounded squares, not circles. */
 @media (max-width: 63.99rem) {
-  .shell-header .global-search,
-  .shell-notifications {
+  .shell-header .global-search {
     border-radius: var(--radius-lg);
   }
 }

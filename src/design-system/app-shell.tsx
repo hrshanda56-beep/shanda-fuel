@@ -91,14 +91,19 @@ type WipRequest = {
 type ShellContextValue = { openSearch: () => void };
 const ShellContext = createContext<ShellContextValue | null>(null);
 
-/** Groups with sub-pages start folded everywhere; people open them themselves. */
+/** Keep the active route visible while folding unrelated navigation groups. */
 function closedGroupsForRoute(
   sections: readonly ResolvedNavigationSection[],
-  // Kept so a route change still re-derives the folded state.
-  _pathname: string | null,
+  pathname: string | null,
 ): ReadonlySet<string> {
   return new Set(
-    sections.filter((section) => !isSingleDestinationSection(section)).map((s) => s.key),
+    sections
+      .filter(
+        (section) =>
+          !isSingleDestinationSection(section) &&
+          !section.items.some((item) => isNavigationItemActive(item, pathname)),
+      )
+      .map((s) => s.key),
   );
 }
 
@@ -184,11 +189,9 @@ export function AppShell({
     () => false,
   );
   const [menuOpen, setMenuOpen] = useState(false);
-  // The More drawer opens with every group folded; people unfold what they need,
-  // and it resets each time the drawer opens.
-  const [drawerClosedGroups, setDrawerClosedGroups] = useState<ReadonlySet<string>>(() =>
-    closedGroupsForRoute(sections, pathname),
-  );
+  // The More drawer keeps every destination reachable in one tap and resets
+  // any user-folded groups each time it opens.
+  const [drawerClosedGroups, setDrawerClosedGroups] = useState<ReadonlySet<string>>(new Set());
   const toggleDrawerGroup = useCallback((key: string) => {
     setDrawerClosedGroups((current) => {
       const next = new Set(current);
@@ -197,7 +200,6 @@ export function AppShell({
     });
   }, []);
   const [attentionOpen, setAttentionOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [contextSelectorOpen, setContextSelectorOpen] = useState(false);
@@ -261,14 +263,14 @@ export function AppShell({
   const expandRailGroup = useCallback(
     (key: string) => {
       if (shellMode === 'tablet') {
-        setDrawerClosedGroups(closedGroupsForRoute(sections, pathname));
+        setDrawerClosedGroups(new Set());
         setMenuOpen(true);
         return;
       }
       if (closedGroups.has(key)) toggleGroup(key);
       setSidebarCollapsed(false);
     },
-    [closedGroups, sections, pathname, shellMode, toggleGroup],
+    [closedGroups, shellMode, toggleGroup],
   );
 
   const openWip = useCallback((request: WipRequest) => {
@@ -366,23 +368,6 @@ export function AppShell({
                   onLabelChange={setContextLabel}
                 />
                 {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
-                <button
-                  type="button"
-                  className="shell-notifications"
-                  aria-haspopup="dialog"
-                  onClick={() => setNotificationsOpen(true)}
-                >
-                  <Icon name="bell" size="md" />
-                  {attention && attention.items.length > 0 ? (
-                    <span className="shell-notifications-dot" aria-hidden="true" />
-                  ) : null}
-                  <span className="visually-hidden">
-                    Notifications
-                    {attention && attention.items.length > 0
-                      ? `, ${attention.items.length} ${attention.items.length === 1 ? 'item' : 'items'}`
-                      : ', none'}
-                  </span>
-                </button>
                 <AccountMenu userName={userName} role={role} placement="desktop" />
               </div>
             </div>
@@ -421,7 +406,7 @@ export function AppShell({
             })
           }
           onMore={() => {
-            setDrawerClosedGroups(closedGroupsForRoute(sections, pathname));
+            setDrawerClosedGroups(new Set());
             setMenuOpen(true);
           }}
         />
@@ -459,24 +444,6 @@ export function AppShell({
               onNavigate={() => setMenuOpen(false)}
             />
           </nav>
-        </Modal>
-
-        <Modal
-          open={notificationsOpen}
-          onClose={() => setNotificationsOpen(false)}
-          title="Notifications"
-          description="Things that need your attention."
-        >
-          {attention && attention.items.length > 0 ? (
-            <NeedsAttention
-              items={attention.items}
-              viewAll={attention.viewAll}
-              title="Open items"
-              headingLevel={3}
-            />
-          ) : (
-            <p role="status">You’re all caught up. Nothing needs your attention right now.</p>
-          )}
         </Modal>
 
         {attention ? (

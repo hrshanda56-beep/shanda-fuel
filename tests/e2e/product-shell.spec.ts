@@ -199,7 +199,7 @@ test.describe('desktop sidebar', () => {
     const reportsNav = sidebarNav(page);
     await reportsNav.getByRole('button', { name: 'Finance' }).click();
     await reportsNav.getByRole('button', { name: 'Cash and banking' }).click();
-    await expect(page.getByRole('dialog', { name: 'Select work context' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Switch station' })).toBeVisible();
     await expect(
       page.getByRole('dialog', { name: 'Station selection is in progress' }),
     ).toHaveCount(0);
@@ -280,13 +280,12 @@ test.describe('desktop sidebar', () => {
     await page.goto('/reports');
     await waitForHydration(page);
     await page.getByRole('button', { name: /Change work context/ }).click();
-    const dialog = page.getByRole('dialog', { name: 'Select work context' });
+    const dialog = page.getByRole('dialog', { name: 'Switch station' });
     await expect(dialog).toContainText('Authorised organisation');
-    await expect(dialog.locator('option', { hasText: 'All stations' })).toBeAttached();
-    await expect(dialog.locator('option', { hasText: 'Authorised station' })).toBeAttached();
+    await expect(dialog.getByRole('button', { name: /All stations/ })).toBeAttached();
+    await expect(dialog.getByRole('button', { name: /Authorised station/ })).toBeAttached();
 
-    await dialog.getByLabel('Station (optional)').selectOption(stationId);
-    await dialog.getByRole('button', { name: 'Use this context' }).click();
+    await dialog.getByRole('button', { name: /Authorised station/ }).click();
     await expect(page).toHaveURL(
       `/reports?tenantId=${organisationId}&legalEntityId=${legalEntityId}&stationId=${stationId}`,
     );
@@ -316,9 +315,9 @@ test.describe('desktop sidebar', () => {
     await page.getByRole('button', { name: 'More' }).click();
     await page
       .getByRole('dialog', { name: 'More' })
-      .getByRole('button', { name: /Change/ })
+      .getByRole('button', { name: /Switch/ })
       .click();
-    await expect(page.getByRole('dialog', { name: 'Select work context' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Switch station' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       await page.evaluate(() => window.innerWidth),
     );

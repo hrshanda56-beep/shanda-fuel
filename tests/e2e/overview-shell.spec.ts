@@ -87,7 +87,7 @@ test('key figures show real counts and honest placeholders', async ({ page }) =>
   await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
     'Not connected yet',
   );
-  await expect(page.getByRole('heading', { name: 'Statistics by period' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sales performance Statistic' })).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);
 });
 
@@ -278,6 +278,7 @@ test.describe('today hardening', () => {
     await mockToday(page);
     await page.setViewportSize({ width: 820, height: 1180 });
     await page.goto(TODAY);
+    await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'tablet');
     const rail = page.locator('.shell-sidebar');
     await expect(rail.getByRole('link').first()).toBeVisible();
     await rail.getByRole('button', { name: 'Finance' }).click();
