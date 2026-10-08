@@ -420,9 +420,9 @@ test.describe('phone navigation', () => {
 test('sign-in page keeps its frame and passes accessibility checks on tablet', async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Sign in', level: 1 })).toBeVisible();
-  const card = await page.locator('.auth-card').boundingBox();
-  expect(card?.x).toBeGreaterThan(16);
+  await expect(page.getByRole('heading', { name: 'Welcome back', level: 1 })).toBeVisible();
+  const column = await page.locator('.entry-column').boundingBox();
+  expect(column?.x).toBeGreaterThan(16);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

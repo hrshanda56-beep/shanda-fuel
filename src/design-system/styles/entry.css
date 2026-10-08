@@ -1,0 +1,419 @@
+/* Entry surfaces: sign-in, invitation, workplace choice ---------------------
+ * One quiet task beside a restrained brand panel (desktop only). The panel is
+ * a fixed deep petrol in both themes; the task area follows the theme tokens. */
+
+.entry {
+  /* Brand-panel greens, reused by the primary action and the password toggle. */
+  --entry-green-deep: #0a3d33;
+  --entry-green-mid: #072a24;
+  --entry-green-soft: #7cc2ab;
+  --entry-icon: var(--entry-green-deep);
+
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--bg-canvas);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .entry {
+    --entry-icon: var(--entry-green-soft);
+  }
+}
+
+:root[data-theme='dark'] .entry {
+  --entry-icon: var(--entry-green-soft);
+}
+
+.entry-brand {
+  display: none;
+}
+
+.entry-main {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: var(--page-block) var(--page-gutter);
+}
+
+.entry-column {
+  display: grid;
+  width: min(100%, 26rem);
+  min-width: 0;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  border: var(--border-width) solid var(--border-glass);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-glass);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(115%);
+}
+
+@media (max-width: 30rem) {
+  .entry-column {
+    padding: var(--space-6) var(--space-5);
+  }
+}
+
+.entry-wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-snug);
+}
+
+.entry-wordmark .brand-mark {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+}
+
+.entry-heading {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.entry-heading h1 {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  overflow-wrap: anywhere;
+}
+
+.entry-heading p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
+}
+
+.entry-wrap {
+  overflow-wrap: anywhere;
+}
+
+.entry-form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.entry-form input {
+  min-height: var(--touch-target-min);
+  border-radius: var(--radius-xl);
+  font-size: 1rem;
+}
+
+.entry-form .button-primary {
+  border-color: rgb(124 194 171 / 35%);
+  background: linear-gradient(160deg, var(--entry-green-deep) 0%, var(--entry-green-mid) 100%);
+  color: #f1f6f4;
+}
+
+.entry-form .button-primary:hover:not(:disabled) {
+  border-color: rgb(124 194 171 / 60%);
+  background: linear-gradient(160deg, #0d4c40 0%, #093a31 100%);
+  color: #fff;
+}
+
+.entry-form .button {
+  min-height: var(--touch-target-min);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.entry-form input[readonly] {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-note,
+.entry-footnote,
+.entry-secondary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+}
+
+.entry-note {
+  margin-top: calc(var(--space-3) * -1);
+  font-size: var(--font-size-sm);
+}
+
+.entry-footnote {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--border-subtle, var(--border-default));
+}
+
+.entry-secondary a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  color: var(--text-link);
+}
+
+.entry-alert {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--tone-critical-border);
+  border-radius: var(--radius-xl);
+  background: var(--tone-critical-bg);
+  color: var(--tone-critical-text);
+  font-size: var(--font-size-md);
+  overflow-wrap: anywhere;
+}
+
+/* Password show / hide */
+.entry-password {
+  position: relative;
+}
+
+.entry-password input {
+  width: 100%;
+  padding-inline-end: var(--touch-target-min);
+}
+
+.entry-password-toggle {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: grid;
+  place-items: center;
+  width: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--entry-icon);
+  font: inherit;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.entry-password-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+}
+
+/* Workplace choice: the whole row is the target */
+.entry-choices {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-choice {
+  display: grid;
+  width: 100%;
+  min-height: 3.5rem;
+  gap: var(--space-0-5);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.entry-choice:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+}
+
+.entry-choice:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.entry-choice:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.entry-choice-name {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.entry-choice-detail {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.entry-skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.entry-skeleton span {
+  height: var(--touch-target-min);
+  border-radius: var(--radius-md);
+  background: var(--bg-skeleton);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .entry-skeleton span {
+    animation: entry-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes entry-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Phones and tablets: the brand panel becomes the page background. The
+ * wordmark sits above the task card and the tagline below it, all on the same
+ * green. The card keeps its normal (opaque) colours. */
+@media (max-width: 63.99rem) {
+  .entry {
+    position: relative;
+    grid-template-rows: auto 1fr auto;
+    overflow: hidden;
+    background: linear-gradient(160deg, #0a3d33 0%, #072a24 55%, #101514 100%);
+    color: #f1f6f4;
+  }
+
+  .entry-brand {
+    display: contents;
+  }
+
+  .entry-brand-art {
+    position: absolute;
+    inset: auto -30% -10% auto;
+    width: 130%;
+    max-width: 36rem;
+    color: rgb(255 255 255 / 9%);
+    pointer-events: none;
+  }
+
+  .entry-brand-art-accent {
+    color: rgb(124 194 171 / 38%);
+  }
+
+  .entry-brand .entry-wordmark {
+    position: relative;
+    grid-row: 1;
+    padding: var(--space-6) var(--page-gutter) 0;
+    color: #f1f6f4;
+  }
+
+  .entry-main {
+    position: relative;
+    grid-row: 2;
+    padding-block: var(--space-6);
+  }
+
+  .entry-brand-copy {
+    position: relative;
+    grid-row: 3;
+    display: grid;
+    gap: var(--space-1);
+    padding: 0 var(--page-gutter) var(--space-8);
+    text-align: center;
+  }
+
+  .entry-tagline {
+    margin: 0;
+    color: #f4f8f6;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .entry-tagline-sub {
+    margin: 0;
+    color: #c4d6d0;
+    font-size: var(--font-size-md);
+  }
+
+  .entry-wordmark-compact {
+    display: none;
+  }
+
+  /* Opaque card: the same colours it has on desktop, now over the green. */
+  .entry-column {
+    background: linear-gradient(var(--bg-glass), var(--bg-glass)), var(--bg-canvas);
+    backdrop-filter: none;
+  }
+}
+
+/* Desktop: ~35 / 65 split with the brand panel */
+@media (min-width: 64rem) {
+  .entry {
+    grid-template-columns: minmax(20rem, 35fr) 65fr;
+    gap: var(--space-4);
+    padding: var(--space-4);
+  }
+
+  .entry-brand {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    padding: var(--space-12);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-glass);
+    background: linear-gradient(160deg, #0a3d33 0%, #072a24 55%, #101514 100%);
+    color: #f1f6f4;
+  }
+
+  .entry-brand .entry-wordmark {
+    position: relative;
+    font-size: var(--font-size-xl);
+  }
+
+  .entry-brand-art {
+    position: absolute;
+    inset: 2% -40% auto auto;
+    width: 130%;
+    max-width: 36rem;
+    color: rgb(255 255 255 / 9%);
+    pointer-events: none;
+  }
+
+  .entry-brand-art-accent {
+    color: rgb(124 194 171 / 38%);
+  }
+
+  .entry-brand-copy {
+    position: relative;
+    display: grid;
+    gap: var(--space-3);
+    max-width: 22rem;
+  }
+
+  .entry-tagline {
+    margin: 0;
+    color: #f4f8f6;
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--letter-spacing-tight);
+  }
+
+  .entry-tagline-sub {
+    margin: 0;
+    color: #c4d6d0;
+    font-size: var(--font-size-base);
+  }
+
+  .entry-wordmark-compact {
+    display: none;
+  }
+}

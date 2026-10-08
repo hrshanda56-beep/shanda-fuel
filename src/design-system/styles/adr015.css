@@ -1699,21 +1699,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* UI polish: the auth surface should share the product's calm canvas and use
- * mobile-friendly control sizing without changing the sign-in flow. */
-.auth-layout {
-  background-color: var(--bg-canvas);
-  background-image: var(--bg-app);
-}
-
-.auth-card input {
-  font-size: 1rem;
-}
-
-.auth-card .button {
-  width: 100%;
-}
-
 @media (min-width: 75rem) {
   .shell-header {
     min-height: 4rem;

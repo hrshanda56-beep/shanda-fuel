@@ -24,7 +24,7 @@ test.describe('Settings', () => {
     );
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole('heading', { name: 'Sign in', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome back', level: 1 })).toBeVisible();
   });
 
   test.describe('authorised read-only settings', () => {
