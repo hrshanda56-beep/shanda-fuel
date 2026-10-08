@@ -16,6 +16,7 @@ import {
   createPrepaidTopUpEntry,
   assertSourceReferenceUnused,
   assertCustomerAccountTransactionAllowed,
+  assertStationAllowedForAccount,
   activateCustomer,
   customerLedgerSourceKey,
   deactivateCustomer,
@@ -42,6 +43,8 @@ import type {
   RecordCustomerPaymentInput,
   RecordPrepaidTopUpInput,
   RequestCustomerFuelAuthorizationInput,
+  SetCustomerAccountStationsInput,
+  SetCustomerLegalEntityInput,
   UpdateCustomerInput,
 } from './validation';
 
@@ -262,11 +265,80 @@ export async function createCustomerInTransaction(
   input: CreateCustomerInput,
 ) {
   const id = randomUUID();
+  if (input.legalEntityId) await assertLegalEntityExists(transaction, context, input.legalEntityId);
   await transaction.execute(sql`
-    insert into app.customers (id, tenant_id, account_reference, display_name, contact_metadata, created_by, updated_by)
-    values (${id}, ${context.tenantId}, ${input.accountReference}, ${input.displayName}, ${JSON.stringify(input.contactMetadata ?? {})}::jsonb, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
+    insert into app.customers (id, tenant_id, account_reference, display_name, contact_metadata, legal_entity_id, created_by, updated_by)
+    values (${id}, ${context.tenantId}, ${input.accountReference}, ${input.displayName}, ${JSON.stringify(input.contactMetadata ?? {})}::jsonb, ${input.legalEntityId ?? null}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
   `);
-  return { customerId: id, accountReference: input.accountReference };
+  return {
+    customerId: id,
+    accountReference: input.accountReference,
+    legalEntityId: input.legalEntityId ?? null,
+  };
+}
+
+async function assertLegalEntityExists(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  legalEntityId: string,
+) {
+  const rows = await transaction.execute<{ id: string }>(sql`
+    select id from app.legal_entities where tenant_id = ${context.tenantId} and id = ${legalEntityId}
+  `);
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'The legal entity was not found');
+}
+
+/**
+ * Sets the customer's one legal entity. It can be set once; moving a customer
+ * to another legal entity is deliberately not supported here because it would
+ * re-home an existing receivable.
+ */
+export async function setCustomerLegalEntityInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: SetCustomerLegalEntityInput,
+) {
+  const rows = await transaction.execute<{
+    id: string;
+    version: number | string;
+    legal_entity_id: string | null;
+  }>(sql`
+    select id, version, legal_entity_id from app.customers
+    where tenant_id = ${context.tenantId} and id = ${input.customerId}
+    for update
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'The customer was not found');
+  if (Number(row.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer became stale');
+  if (row.legal_entity_id && row.legal_entity_id !== input.legalEntityId) {
+    throw new AppError(
+      'CONFLICT',
+      'The customer already has a legal entity; moving a customer between legal entities is not supported',
+    );
+  }
+  await assertLegalEntityExists(transaction, context, input.legalEntityId);
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.customers
+    set legal_entity_id = ${input.legalEntityId}, version = version + 1,
+        updated_by = ${context.authority.membership.membershipId}, updated_at = now()
+    where tenant_id = ${context.tenantId} and id = ${input.customerId} and version = ${input.expectedVersion}
+    returning version
+  `);
+  if (!updated[0]) throw new AppError('CONFLICT', 'The customer became stale');
+  // Existing accounts adopt the customer's legal entity.
+  await transaction.execute(sql`
+    update app.customer_accounts
+    set legal_entity_id = ${input.legalEntityId}, version = version + 1,
+        updated_by = ${context.authority.membership.membershipId}, updated_at = now()
+    where tenant_id = ${context.tenantId} and customer_id = ${input.customerId}
+      and legal_entity_id is null
+  `);
+  return {
+    customerId: input.customerId,
+    legalEntityId: input.legalEntityId,
+    version: Number(updated[0].version),
+  };
 }
 
 type CustomerRow = {
@@ -392,8 +464,12 @@ export async function createCustomerAccountInTransaction(
   context: CustomerCommandContext,
   input: CreateCustomerAccountInput,
 ) {
-  const customer = await transaction.execute<{ id: string; status: Customer['status'] }>(sql`
-    select id, status from app.customers where tenant_id = ${context.tenantId} and id = ${input.customerId} for update
+  const customer = await transaction.execute<{
+    id: string;
+    status: Customer['status'];
+    legal_entity_id: string | null;
+  }>(sql`
+    select id, status, legal_entity_id from app.customers where tenant_id = ${context.tenantId} and id = ${input.customerId} for update
   `);
   if (!customer[0]) throw new AppError('NOT_FOUND', 'The customer was not found');
   if (customer[0].status !== 'ACTIVE')
@@ -409,11 +485,149 @@ export async function createCustomerAccountInTransaction(
   }
   if (input.accountType !== 'CREDIT' && limit)
     throw new AppError('VALIDATION_FAILED', 'Credit limits apply only to credit accounts');
+  const legalEntityId = customer[0].legal_entity_id;
+  const stationScope = input.stationScope ?? 'ALL';
+  if (stationScope === 'SELECTED' && !legalEntityId) {
+    throw new AppError(
+      'CONFLICT',
+      'Set the customer legal entity before choosing the stations an account may use',
+    );
+  }
   await transaction.execute(sql`
-    insert into app.customer_accounts (id, tenant_id, customer_id, account_type, currency, credit_limit, created_by, updated_by)
-    values (${accountId}, ${context.tenantId}, ${input.customerId}, ${input.accountType}, ${input.currency}, ${limit}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
+    insert into app.customer_accounts (id, tenant_id, customer_id, account_type, currency, credit_limit, legal_entity_id, station_scope, created_by, updated_by)
+    values (${accountId}, ${context.tenantId}, ${input.customerId}, ${input.accountType}, ${input.currency}, ${limit}, ${legalEntityId}, ${stationScope}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
   `);
-  return { accountId, accountType: input.accountType };
+  if (stationScope === 'SELECTED' && legalEntityId) {
+    await replaceAccountStations(
+      transaction,
+      context,
+      accountId,
+      legalEntityId,
+      input.stationIds ?? [],
+    );
+  }
+  return { accountId, accountType: input.accountType, stationScope };
+}
+
+/** Makes exactly `stationIds` the active stations of the account. Rows are deactivated, never deleted. */
+async function replaceAccountStations(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  accountId: string,
+  legalEntityId: string,
+  stationIds: readonly string[],
+) {
+  if (stationIds.length > 0) {
+    const list = sql.join(
+      stationIds.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    const found = await transaction.execute<{ id: string }>(sql`
+      select id from app.stations
+      where tenant_id = ${context.tenantId} and legal_entity_id = ${legalEntityId}
+        and status = 'ACTIVE' and id in (${list})
+    `);
+    if (found.length !== stationIds.length) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        "Every station must be an active station of the customer's legal entity",
+      );
+    }
+    const membershipId = context.authority.membership.membershipId;
+    for (const stationId of stationIds) {
+      await transaction.execute(sql`
+        insert into app.customer_account_stations
+          (tenant_id, account_id, legal_entity_id, station_id, active, created_by, updated_by)
+        values (${context.tenantId}, ${accountId}, ${legalEntityId}, ${stationId}, true, ${membershipId}, ${membershipId})
+        on conflict (tenant_id, account_id, station_id)
+        do update set active = true, updated_by = ${membershipId}, updated_at = now()
+      `);
+    }
+    await transaction.execute(sql`
+      update app.customer_account_stations
+      set active = false, updated_by = ${context.authority.membership.membershipId}, updated_at = now()
+      where tenant_id = ${context.tenantId} and account_id = ${accountId}
+        and active and station_id not in (${list})
+    `);
+  } else {
+    await transaction.execute(sql`
+      update app.customer_account_stations
+      set active = false, updated_by = ${context.authority.membership.membershipId}, updated_at = now()
+      where tenant_id = ${context.tenantId} and account_id = ${accountId} and active
+    `);
+  }
+}
+
+export async function setCustomerAccountStationsInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: SetCustomerAccountStationsInput,
+) {
+  const rows = await transaction.execute<{
+    id: string;
+    version: number | string;
+    legal_entity_id: string | null;
+  }>(sql`
+    select id, version, legal_entity_id from app.customer_accounts
+    where tenant_id = ${context.tenantId} and id = ${input.accountId}
+    for update
+  `);
+  const account = rows[0];
+  if (!account) throw new AppError('NOT_FOUND', 'The customer account was not found');
+  if (Number(account.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer account became stale');
+  if (!account.legal_entity_id) {
+    throw new AppError(
+      'CONFLICT',
+      'Set the customer legal entity before choosing the stations an account may use',
+    );
+  }
+  await replaceAccountStations(
+    transaction,
+    context,
+    input.accountId,
+    account.legal_entity_id,
+    input.stationScope === 'SELECTED' ? (input.stationIds ?? []) : [],
+  );
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.customer_accounts
+    set station_scope = ${input.stationScope}, version = version + 1,
+        updated_by = ${context.authority.membership.membershipId}, updated_at = now()
+    where tenant_id = ${context.tenantId} and id = ${input.accountId} and version = ${input.expectedVersion}
+    returning version
+  `);
+  if (!updated[0]) throw new AppError('CONFLICT', 'The customer account became stale');
+  return {
+    accountId: input.accountId,
+    stationScope: input.stationScope,
+    stationIds: input.stationScope === 'SELECTED' ? [...(input.stationIds ?? [])].sort() : [],
+    version: Number(updated[0].version),
+  };
+}
+
+async function loadAccountStationPolicy(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  accountId: string,
+) {
+  const rows = await transaction.execute<{
+    legal_entity_id: string | null;
+    station_scope: 'ALL' | 'SELECTED';
+  }>(sql`
+    select legal_entity_id, station_scope from app.customer_accounts
+    where tenant_id = ${context.tenantId} and id = ${accountId}
+  `);
+  const account = rows[0];
+  if (!account) throw new AppError('NOT_FOUND', 'The customer account was not found');
+  const stations = await transaction.execute<{ station_id: string }>(sql`
+    select station_id from app.customer_account_stations
+    where tenant_id = ${context.tenantId} and account_id = ${accountId} and active
+  `);
+  return {
+    legalEntityId: account.legal_entity_id,
+    scope: account.station_scope,
+    allowedStationIds: stations.map((row) => row.station_id),
+  };
 }
 
 export async function recordCustomerPaymentInTransaction(
@@ -481,6 +695,13 @@ export async function requestCustomerFuelAuthorizationInTransaction(
     throw new AppError('FORBIDDEN', 'A station context is required for fuel authorization');
   const loaded = await loadAccount(transaction, context, input.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
+  const stationLegalEntityId = context.scope.legalEntityId;
+  if (!stationLegalEntityId)
+    throw new AppError('INVARIANT_VIOLATION', 'The station has no legal entity in this context');
+  assertStationAllowedForAccount(
+    await loadAccountStationPolicy(transaction, context, input.accountId),
+    { stationId: context.stationId, legalEntityId: stationLegalEntityId },
+  );
   const authorization = requestCustomerFuelAuthorization({
     id: input.authorizationId,
     account: loaded.account,
