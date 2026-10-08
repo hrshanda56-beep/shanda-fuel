@@ -41,7 +41,8 @@ export type RestatedCogsReport = Readonly<{
 
 export type RestatedCogsQueryFilters = Readonly<{
   tenantId: string;
-  stationId?: string;
+  /** Stations to include. Absent or empty means every station of the tenant. */
+  stationIds?: readonly string[];
   fromDate: string;
   toDate: string;
 }>;

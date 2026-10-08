@@ -45,7 +45,9 @@ describe('management reporting exact arithmetic', () => {
 
   it('marks station-scoped customer balances unavailable instead of zero', () => {
     expect(customerScopeAvailability()).toBe('AVAILABLE');
-    expect(customerScopeAvailability('station-1')).toBe('UNAVAILABLE_STATION_DIMENSION');
+    expect(customerScopeAvailability(['station-1', 'station-2'])).toBe(
+      'UNAVAILABLE_STATION_DIMENSION',
+    );
   });
 });
 

@@ -65,9 +65,9 @@ export function normalizeStationIds(
 }
 
 export function customerScopeAvailability(
-  stationId?: string,
+  stationIds: readonly string[] = [],
 ): 'AVAILABLE' | 'UNAVAILABLE_STATION_DIMENSION' {
-  return stationId ? 'UNAVAILABLE_STATION_DIMENSION' : 'AVAILABLE';
+  return stationIds.length > 0 ? 'UNAVAILABLE_STATION_DIMENSION' : 'AVAILABLE';
 }
 
 export function deriveCashPosition(input: {
