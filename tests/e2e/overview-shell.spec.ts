@@ -70,7 +70,24 @@ test('today asks for a station instead of showing empty figures', async ({ page 
 
   await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
   await expect(page.getByText('Choose a work context', { exact: false })).toBeVisible();
-  await expect(page.getByText('Statistics by period')).toHaveCount(0);
+  await expect(page.locator('.today-figures')).toHaveCount(0);
+  await expect(page.locator('.card')).toHaveCount(0);
+});
+
+test('key figures show real counts and honest placeholders', async ({ page }) => {
+  await mockToday(page, {
+    customers: [{ status: 'ACTIVE' }, { status: 'ACTIVE' }, { status: 'SUSPENDED' }],
+  });
+  await page.goto(TODAY);
+  const figures = page.locator('.today-figures');
+  await expect(figures.locator('.today-figure', { hasText: 'Shifts open' })).toContainText('1');
+  await expect(figures.locator('.today-figure', { hasText: 'Active customers' })).toContainText(
+    '2',
+  );
+  await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+    'Not connected yet',
+  );
+  await expect(page.getByRole('heading', { name: 'Sales performance Statistic' })).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);
 });
 
@@ -261,6 +278,7 @@ test.describe('today hardening', () => {
     await mockToday(page);
     await page.setViewportSize({ width: 820, height: 1180 });
     await page.goto(TODAY);
+    await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'tablet');
     const rail = page.locator('.shell-sidebar');
     await expect(rail.getByRole('link').first()).toBeVisible();
     await rail.getByRole('button', { name: 'Finance' }).click();

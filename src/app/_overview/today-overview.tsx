@@ -4,12 +4,15 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { formatBusinessDate } from '@/design-system/formatters';
-import { Icon } from '@/design-system/icons';
+import { Icon, type IconName } from '@/design-system/icons';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
 
+import { PerformanceChart } from './performance-chart';
 import {
   approvalLabel,
   CLOSE_STATUS_PRESENTATION,
+  countActiveCustomers,
+  countOpenShifts,
   countSuspendedCustomers,
   operationsAttention,
   shiftSummary,
@@ -41,11 +44,42 @@ async function load<T>(url: string, signal: AbortSignal, failure: string): Promi
 }
 
 /**
+ * When the address carries no scope, use the work context the shell already
+ * resolved for this person, so the dashboard matches the station selector.
+ */
+function useCurrentContext(enabled: boolean): Scope | null {
+  const [scope, setScope] = useState<Scope | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    const controller = new AbortController();
+    fetch(`/api/context?${new URLSearchParams({ pathname: '/' })}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then(
+        (body: { data?: { current?: { organisationId?: string; stationId?: string } } } | null) => {
+          const current = body?.data?.current;
+          if (current?.organisationId) {
+            setScope({ tenantId: current.organisationId, stationId: current.stationId });
+          }
+        },
+      )
+      .catch(() => {});
+    return () => controller.abort();
+  }, [enabled]);
+  return scope;
+}
+
+/**
  * "Today" for the selected station. Everything shown is a server projection:
  * nothing is computed or defaulted here, and nothing appears as zero while a
  * request is still loading.
  */
-export function TodayOverview({ tenantId, stationId }: Scope) {
+export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }: Scope) {
+  const fallback = useCurrentContext(!urlTenantId);
+  const tenantId = urlTenantId ?? fallback?.tenantId;
+  const stationId = urlTenantId ? urlStationId : fallback?.stationId;
   const [operations, setOperations] = useState<Section<TodayOperations>>({ status: 'loading' });
   const [customers, setCustomers] = useState<Section<{ customers: { status: string }[] }>>({
     status: 'loading',
@@ -83,6 +117,19 @@ export function TodayOverview({ tenantId, stationId }: Scope) {
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
+  const [period, setPeriod] = useState('24H');
+
+  const customersHref = useMemo(
+    () => (tenantId ? `/customers?${new URLSearchParams({ tenantId })}` : '/customers'),
+    [tenantId],
+  );
+  const reportsHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (tenantId) params.set('tenantId', tenantId);
+    if (stationId) params.set('stationId', stationId);
+    return `/reports?${params}`;
+  }, [tenantId, stationId]);
+
   const dailyHref = useMemo(() => {
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
@@ -119,58 +166,186 @@ export function TodayOverview({ tenantId, stationId }: Scope) {
   const attentionLoading = operations.status === 'loading' || customers.status === 'loading';
 
   return (
-    <div className="today">
-      <section className="today-section" aria-labelledby="today-ops-heading">
-        <h2 id="today-ops-heading">Daily operations</h2>
-        {!stationId ? (
-          <p className="today-note">Choose a station to see today’s operations.</p>
-        ) : operations.status === 'loading' ? (
-          <Skeleton lines={2} label="Loading daily operations" />
-        ) : operations.status === 'forbidden' ? (
-          <p className="today-note">You don’t have access to daily operations for this station.</p>
-        ) : operations.status === 'error' ? (
-          <ErrorState
-            title="Daily operations unavailable"
-            message={operations.message}
-            action={
-              <Button variant="secondary" onClick={retry}>
-                Try again
-              </Button>
+    <div className="today today-dashboard">
+      <section
+        className="today-section today-figures-section"
+        aria-labelledby="today-figures-heading"
+      >
+        <h2 id="today-figures-heading">Key figures</h2>
+        <dl className="today-figures">
+          <Figure
+            label="Shifts open"
+            href={dailyHref}
+            icon="today"
+            state={!stationId ? 'choose' : operations.status}
+            value={operations.status === 'ready' ? countOpenShifts(operations.data.shifts) : null}
+          />
+          <Figure
+            label="Active customers"
+            href={customersHref}
+            icon="users"
+            state={customers.status}
+            value={
+              customers.status === 'ready' ? countActiveCustomers(customers.data.customers) : null
             }
           />
-        ) : (
-          <OperationsRow operations={operations.data} href={dailyHref} />
-        )}
+          <Figure
+            label="Sales today"
+            href={reportsHref}
+            icon="dollar"
+            state="pending"
+            value={null}
+          />
+          <Figure label="Litres sold" href={reportsHref} icon="drop" state="pending" value={null} />
+        </dl>
       </section>
 
-      <section className="today-section" aria-labelledby="today-attention-heading">
-        <h2 id="today-attention-heading">Needs attention</h2>
-        {attentionLoading && attention.length === 0 ? (
-          <Skeleton lines={2} label="Checking for items that need attention" />
-        ) : attention.length > 0 ? (
-          <ul className="today-list">
-            {attention.map((row) => (
-              <li key={row.id}>
-                <Link className="today-row" href={row.href}>
-                  <span className="today-row-text">
-                    <span className="today-row-title">{row.title}</span>
-                    <span className="today-row-detail">{row.detail}</span>
-                  </span>
-                  <Icon name="chevron-right" className="today-row-chevron" />
-                </Link>
-              </li>
+      <div className="today-side">
+        <section className="today-section" aria-labelledby="today-ops-heading">
+          <h2 id="today-ops-heading">Daily operations</h2>
+          {!stationId ? (
+            <p className="today-note">Choose a station to see today’s operations.</p>
+          ) : operations.status === 'loading' ? (
+            <Skeleton lines={2} label="Loading daily operations" />
+          ) : operations.status === 'forbidden' ? (
+            <p className="today-note">
+              You don’t have access to daily operations for this station.
+            </p>
+          ) : operations.status === 'error' ? (
+            <ErrorState
+              title="Daily operations unavailable"
+              message={operations.message}
+              action={
+                <Button variant="secondary" onClick={retry}>
+                  Try again
+                </Button>
+              }
+            />
+          ) : (
+            <OperationsRow operations={operations.data} href={dailyHref} />
+          )}
+        </section>
+
+        <section className="today-section" aria-labelledby="today-attention-heading">
+          <h2 id="today-attention-heading">Needs attention</h2>
+          {attentionLoading && attention.length === 0 ? (
+            <Skeleton lines={2} label="Checking for items that need attention" />
+          ) : attention.length > 0 ? (
+            <ul className="today-list">
+              {attention.map((row) => (
+                <li key={row.id}>
+                  <Link className="today-row" href={row.href}>
+                    <span className="today-row-text">
+                      <span className="today-row-title">{row.title}</span>
+                      <span className="today-row-detail">{row.detail}</span>
+                    </span>
+                    <Icon name="chevron-right" className="today-row-chevron" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="today-note">Nothing needs attention.</p>
+          )}
+          {customers.status === 'forbidden' ? (
+            <p className="today-note">Customer alerts are hidden because you don’t have access.</p>
+          ) : null}
+          {operations.status === 'error' || customers.status === 'error' ? (
+            <p className="today-note">Some items could not be checked.</p>
+          ) : null}
+        </section>
+      </div>
+
+      <section className="today-section today-stats" aria-labelledby="today-stats-heading">
+        <div className="today-stats-head">
+          <h2 id="today-stats-heading">
+            Sales performance <span className="today-stats-sub">Statistic</span>
+          </h2>
+          <div className="today-periods" role="group" aria-label="Period">
+            {PERIODS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className="today-period"
+                aria-pressed={period === option}
+                data-active={period === option || undefined}
+                onClick={() => setPeriod(option)}
+              >
+                {option}
+              </button>
             ))}
-          </ul>
-        ) : (
-          <p className="today-note">Nothing needs attention.</p>
-        )}
-        {customers.status === 'forbidden' ? (
-          <p className="today-note">Customer alerts are hidden because you don’t have access.</p>
-        ) : null}
-        {operations.status === 'error' || customers.status === 'error' ? (
-          <p className="today-note">Some items could not be checked.</p>
-        ) : null}
+          </div>
+        </div>
+        <PerformanceChart
+          series={null}
+          xLabels={PERIOD_LABELS[period] ?? []}
+          formatValue={String}
+          label={`Sales performance, ${period}`}
+          emptyMessage="Sales trends will appear here once reporting is connected."
+        />
+        <p className="today-note">
+          <Link href={reportsHref}>Open reports</Link>
+        </p>
       </section>
+    </div>
+  );
+}
+
+const PERIODS = ['24H', '1W', '1M', '1Y'];
+const PERIOD_LABELS: Record<string, string[]> = {
+  '24H': ['6 AM', '9 AM', '12 PM', '3 PM', '6 PM', '9 PM'],
+  '1W': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  '1M': ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+  '1Y': ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov'],
+};
+
+type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'choose' | 'pending';
+
+const FIGURE_CAPTION: Partial<Record<FigureState, string>> = {
+  forbidden: 'No access',
+  error: 'Unavailable',
+  choose: 'Choose a station',
+  pending: 'Not connected yet',
+};
+
+function Figure({
+  label,
+  href,
+  icon,
+  state,
+  value,
+}: {
+  label: string;
+  href: string;
+  icon: IconName;
+  state: FigureState;
+  value: number | null;
+}) {
+  return (
+    <div className="today-figure" data-state={state}>
+      <span className="today-figure-icon" aria-hidden="true">
+        <Icon name={icon} />
+      </span>
+      <span className="today-figure-line" aria-hidden="true" />
+      <dt>
+        <Link className="today-figure-link" href={href}>
+          {label}
+        </Link>
+      </dt>
+      <dd>
+        {state === 'loading' ? (
+          <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
+        ) : value !== null ? (
+          <span className="today-figure-value">{value}</span>
+        ) : (
+          <>
+            <span className="today-figure-value" aria-hidden="true">
+              —
+            </span>
+            <span className="today-figure-caption">{FIGURE_CAPTION[state]}</span>
+          </>
+        )}
+      </dd>
     </div>
   );
 }
@@ -179,21 +354,21 @@ function OperationsRow({ operations, href }: { operations: TodayOperations; href
   const close = CLOSE_STATUS_PRESENTATION[operations.status.close];
   const approval = approvalLabel(operations.status.approval);
   return (
-    <ul className="today-list">
-      <li>
-        <Link className="today-row" href={href}>
-          <span className="today-row-text">
-            <span className="today-row-title">{operations.station.name}</span>
-            <span className="today-row-detail">
-              {formatBusinessDate(operations.currentBusinessDate)} ·{' '}
-              {shiftSummary(operations.shifts)}
-              {approval ? ` · ${approval}` : ''}
-            </span>
-          </span>
-          <StatusBadge tone={close.tone}>{close.label}</StatusBadge>
-          <Icon name="chevron-right" className="today-row-chevron" />
-        </Link>
-      </li>
-    </ul>
+    <Link className="today-hero" href={href}>
+      <span className="today-hero-ring" aria-hidden="true">
+        <Icon name="fuel" />
+      </span>
+      <span className="today-hero-title">{operations.station.name}</span>
+      <span className="today-hero-detail">
+        {formatBusinessDate(operations.currentBusinessDate)} · {shiftSummary(operations.shifts)}
+        {approval ? ` · ${approval}` : ''}
+      </span>
+      <span className="today-hero-status">
+        <StatusBadge tone={close.tone}>{close.label}</StatusBadge>
+        <span className="today-hero-go" aria-hidden="true">
+          <Icon name="arrow-right" />
+        </span>
+      </span>
+    </Link>
   );
 }

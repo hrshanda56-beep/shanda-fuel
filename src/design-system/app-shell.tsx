@@ -19,6 +19,7 @@ import {
 import { WorkInProgressDialog } from './dialogs';
 import { ContextSelector } from './context-selector';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
+import { BrandMark } from './brand-mark';
 import { Icon } from './icons';
 import { Modal } from './modal';
 import {
@@ -90,6 +91,7 @@ type WipRequest = {
 type ShellContextValue = { openSearch: () => void };
 const ShellContext = createContext<ShellContextValue | null>(null);
 
+/** Keep the active route visible while folding unrelated navigation groups. */
 function closedGroupsForRoute(
   sections: readonly ResolvedNavigationSection[],
   pathname: string | null,
@@ -101,7 +103,7 @@ function closedGroupsForRoute(
           !isSingleDestinationSection(section) &&
           !section.items.some((item) => isNavigationItemActive(item, pathname)),
       )
-      .map((section) => section.key),
+      .map((s) => s.key),
   );
 }
 
@@ -187,8 +189,8 @@ export function AppShell({
     () => false,
   );
   const [menuOpen, setMenuOpen] = useState(false);
-  // The More drawer shows every group open so any destination is one tap away;
-  // people can still fold a group, and it resets each time the drawer opens.
+  // The More drawer keeps every destination reachable in one tap and resets
+  // any user-folded groups each time it opens.
   const [drawerClosedGroups, setDrawerClosedGroups] = useState<ReadonlySet<string>>(new Set());
   const toggleDrawerGroup = useCallback((key: string) => {
     setDrawerClosedGroups((current) => {
@@ -207,6 +209,21 @@ export function AppShell({
     parts: readonly string[];
   } | null>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const headerHidden = useHideOnScroll(headerRef);
+
+  // Transparent at the top of the page, solid once content scrolls beneath it.
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const sync = () => {
+      if (window.scrollY > 8) header.setAttribute('data-scrolled', '');
+      else header.removeAttribute('data-scrolled');
+    };
+    sync();
+    window.addEventListener('scroll', sync, { passive: true });
+    return () => window.removeEventListener('scroll', sync);
+  }, []);
 
   useEffect(() => {
     // AppShell can survive a soft route transition while the document head
@@ -324,7 +341,13 @@ export function AppShell({
 
         <div className="shell-body">
           <div className="shell-main">
-            <div className="shell-header" role="region" aria-label="Page header and work context">
+            <div
+              ref={headerRef}
+              className="shell-header"
+              data-hidden={headerHidden || undefined}
+              role="region"
+              aria-label="Page header and work context"
+            >
               {resolvedPageTitle ? (
                 <div className="shell-page-heading">
                   <h1 id="page-title">{resolvedPageTitle}</h1>
@@ -375,6 +398,13 @@ export function AppShell({
           pathname={pathname}
           moreRef={moreButtonRef}
           moreOpen={menuOpen}
+          onScan={() =>
+            openWip({
+              feature: 'Document capture',
+              message:
+                'You will soon be able to scan documents with your camera or upload them from your device.',
+            })
+          }
           onMore={() => {
             setDrawerClosedGroups(new Set());
             setMenuOpen(true);
@@ -385,7 +415,7 @@ export function AppShell({
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
           title="More"
-          presentation="drawer"
+          className="modal-more"
           returnFocus={() => moreButtonRef.current}
         >
           {contextLabel ? (
@@ -402,7 +432,7 @@ export function AppShell({
                   {contextLabel.parts.filter((part) => part !== contextLabel.station).join(' · ')}
                 </span>
               </span>
-              <span className="shell-more-context-action">Change</span>
+              <span className="shell-more-context-action">Switch</span>
             </button>
           ) : null}
           <nav className="shell-nav shell-nav-drawer" aria-label="Primary navigation">
@@ -451,37 +481,122 @@ export function AppShell({
   );
 }
 
+const NAV_HIDE_AFTER = 40; // px of steady downward travel before the bar leaves
+const NAV_SHOW_AFTER = 20; // px of steady upward travel before it returns
+const NAV_MIN_DWELL = 400; // ms between changes, so it never flutters
+
+/**
+ * True while the bar should be tucked away. It follows deliberate scrolling,
+ * not jitter: travel is counted in one direction and resets when the direction
+ * flips, so a small flick or an elastic bounce changes nothing. Reaching the top
+ * of the page or moving keyboard focus into the bar brings it back; reaching
+ * the bottom leaves it alone.
+ */
+function useHideOnScroll(navRef: RefObject<HTMLElement | null>) {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    let last = window.scrollY;
+    let travel = 0;
+    let changedAt = 0;
+    let frame = 0;
+    const set = (next: boolean, force = false) => {
+      const now = performance.now();
+      if (!force && now - changedAt < NAV_MIN_DWELL) return;
+      changedAt = now;
+      travel = 0;
+      setHidden(next);
+    };
+    const update = () => {
+      frame = 0;
+      const y = window.scrollY;
+      const delta = y - last;
+      last = y;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (y <= 8) {
+        set(false, true);
+        return;
+      }
+      // At the very end the bar stays as it is; it returns on the way back up.
+      if (y >= max - 8) {
+        travel = 0;
+        return;
+      }
+      if (max < 96) return;
+      travel = Math.sign(delta) === Math.sign(travel) ? travel + delta : delta;
+      if (travel >= NAV_HIDE_AFTER) set(true);
+      else if (travel <= -NAV_SHOW_AFTER) set(false);
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+    const reveal = () => set(false, true);
+    const nav = navRef.current;
+    window.addEventListener('scroll', onScroll, { passive: true });
+    nav?.addEventListener('focusin', reveal);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      nav?.removeEventListener('focusin', reveal);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [navRef]);
+  return hidden;
+}
+
 function MobileBottomNavigation({
   items,
   pathname,
   moreRef,
   moreOpen,
+  onScan,
   onMore,
 }: {
   items: readonly MobileNavigationItem[];
   pathname: string | null;
   moreRef: RefObject<HTMLButtonElement | null>;
   moreOpen: boolean;
+  onScan: () => void;
   onMore: () => void;
 }) {
+  const navRef = useRef<HTMLElement>(null);
+  const hidden = useHideOnScroll(navRef);
+  const left = items.slice(0, 2);
+  const right = items.slice(2);
+  const renderItem = (item: MobileNavigationItem) => {
+    const active = isNavigationItemActive(item, pathname);
+    return (
+      <li key={item.key}>
+        <Link
+          className="shell-mobile-nav-link"
+          href={item.href}
+          aria-current={active ? 'page' : undefined}
+        >
+          <Icon name={item.icon} />
+          <span>{item.mobileLabel}</span>
+        </Link>
+      </li>
+    );
+  };
   return (
-    <nav className="shell-mobile-nav" aria-label="Mobile navigation">
+    <nav
+      ref={navRef}
+      className="shell-mobile-nav"
+      aria-label="Mobile navigation"
+      data-hidden={hidden || undefined}
+    >
       <ul className="shell-mobile-nav-list">
-        {items.map((item) => {
-          const active = isNavigationItemActive(item, pathname);
-          return (
-            <li key={item.key}>
-              <Link
-                className="shell-mobile-nav-link"
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-              >
-                <Icon name={item.icon} />
-                <span>{item.mobileLabel}</span>
-              </Link>
-            </li>
-          );
-        })}
+        {left.map(renderItem)}
+        <li className="shell-mobile-nav-scan-slot">
+          <button
+            type="button"
+            className="shell-mobile-nav-scan"
+            aria-haspopup="dialog"
+            onClick={onScan}
+          >
+            <Icon name="scan" />
+            <span className="visually-hidden">Scan or upload a document</span>
+          </button>
+        </li>
+        {right.map(renderItem)}
         <li>
           <button
             ref={moreRef}
@@ -756,9 +871,7 @@ function findHref(sections: readonly ResolvedNavigationSection[], key: string) {
 function BrandLink({ href }: { href: string }) {
   return (
     <Link className="shell-brand" href={href}>
-      <span className="brand-mark" aria-hidden="true">
-        SF
-      </span>
+      <BrandMark />
       <span className="shell-brand-text">
         <span className="brand-name">Shanda Fuel</span>
         <span className="brand-byline">by ShandaHR</span>
