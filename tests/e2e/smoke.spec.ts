@@ -21,6 +21,8 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   const mobileContext = page.getByRole('group', { name: 'Work context' });
   await expect(mobileContext).toContainText('Demo organisation');
   await expect(mobileContext).toContainText('Demo station');
+  await expect(mobileContext).toContainText('20 Sep 2026');
+  await expect(mobileContext).toContainText('Morning shift');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
 
   await page.getByRole('button', { name: 'Open menu' }).click();

@@ -7,7 +7,7 @@ import {
 import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
 
 export const metadata = {
-  title: 'Shift',
+  title: 'Daily operations',
 };
 
 export default async function DailyOperationsPage({

@@ -219,24 +219,24 @@ export async function discoverAvailableContext(
   const database = dependencies.database ?? getDatabase();
   const tenantIds = await listActiveTenantIds(actor.identityId, database);
   const membershipLoader = dependencies.loadMembership ?? loadTenantMembership;
-  const tenantResults = await Promise.all(
-    tenantIds.map(async (tenantId) => {
-      const membership = await membershipLoader(actor.identityId, tenantId);
-      if (!membership || membership.status !== 'ACTIVE') return [] as ContextOrganisation[];
-      const authority = await resolveTenantExecutionContext({
-        request,
-        requestedTenantId: tenantId,
-        resolveActor: async () => actor,
-        loadMembership: async () => membership,
-        now,
-      });
-      const rows = await readTenantRows(authority);
-      const authorized = filterAuthorizedContextRows(authority, rows, now);
-      return [...authorized.organisations];
-    }),
-  );
+  const organisations: ContextOrganisation[] = [];
 
-  return { organisations: tenantResults.flat() };
+  for (const tenantId of tenantIds) {
+    const membership = await membershipLoader(actor.identityId, tenantId);
+    if (!membership || membership.status !== 'ACTIVE') continue;
+    const authority = await resolveTenantExecutionContext({
+      request,
+      requestedTenantId: tenantId,
+      resolveActor: async () => actor,
+      loadMembership: async () => membership,
+      now,
+    });
+    const rows = await readTenantRows(authority);
+    const authorized = filterAuthorizedContextRows(authority, rows, now);
+    organisations.push(...authorized.organisations);
+  }
+
+  return { organisations };
 }
 
 function routeSelection(available: AvailableContext, route: ContextRoute): ContextSelection | null {

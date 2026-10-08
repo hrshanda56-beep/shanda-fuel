@@ -8,10 +8,6 @@ The locked product direction lives in `docs/release-readiness.md` (calm, airy, p
 restrained; less is more). This foundation is how that direction is applied. Build
 screens by composing it; do not add page-specific visual systems.
 
-The Phase 0.5 UI/UX rules (navigation, terminology, status language, data entry, states) are
-locked in `docs/spec/UI_UX_CONSTITUTION.md`; where this README and the constitution differ, the
-constitution wins.
-
 Visual reference: run `pnpm dev` and open `/design-system`. It renders every token and
 primitive in the current theme. The route is internal and development-only: production
 builds intentionally return 404 (`reference/availability.ts`, unit-tested). The E2E suite
@@ -92,15 +88,14 @@ init script in `src/app/layout.tsx` (theme + shell preferences) needs a nonce or
 
 Every product page renders inside `AppShell`; do not add per-page navigation markup.
 
-- **Desktop (≥ 64rem):** persistent sidebar grouped as Today, Operations, Finance,
+- **Desktop (≥ 75rem):** persistent sidebar grouped as Today, Operations, Finance,
   Suppliers, Reports, Settings. Groups with several destinations collapse
   (`aria-expanded`); single-destination sections are plain links. The sidebar collapses to
   an icon rail whose labels become hover/focus tooltips. Rail and closed groups persist per
   device (`shell-preferences.ts`); the rail is applied before first paint.
-- **Tablet (48–63.99rem):** a slim sticky top bar opens the same grouped navigation in a
-  `Modal` drawer (`presentation="drawer"`) and keeps the fixed Today / Shift / Stock / More
-  bottom navigation. Desktop (≥64rem) owns the persistent grouped sidebar and collapsible icon
-  rail. The theme control lives in the account menu only.
+- **Tablet (48–74.99rem):** a persistent icon rail with hover/focus labels. Phone (<48rem)
+  gets a slim sticky top bar; the menu opens the same grouped navigation in a `Modal` drawer
+  (`presentation="drawer"`). The theme control lives in the account menu only.
 - **Current route:** `aria-current="page"` on the link, shown as a raised neutral surface
   with an accent icon; a closed group containing it is marked the same way.
 - **Destinations:** only existing routes are linked. Planned areas open

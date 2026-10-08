@@ -6,7 +6,6 @@ export {
   type AuthorizedContextRow,
   type QueryDependencies,
 } from './queries';
-export { classifyRootEntryState, resolveRootEntryState, type RootEntryState } from './entry';
 export {
   clearPersistedContext,
   CONTEXT_COOKIE_NAME,

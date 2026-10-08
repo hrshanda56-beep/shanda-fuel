@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AuthorizationActor } from '../platform/security';
-import {
-  allowsE2ENavigationFixture,
-  buildNavigationProjection,
-  resolveE2EEntryFixture,
-} from './navigation-projection';
+import { allowsE2ENavigationFixture, buildNavigationProjection } from './navigation-projection';
 
 const scope = { tenantId: 'tenant-a', scopeType: 'TENANT' as const };
 
@@ -32,15 +28,6 @@ describe('server navigation projection', () => {
     expect(allowsE2ENavigationFixture('production', 'synthetic')).toBe(false);
     expect(allowsE2ENavigationFixture('test', 'synthetic', 'production')).toBe(false);
     expect(allowsE2ENavigationFixture('test', null)).toBe(false);
-  });
-
-  it('allows entry-state fixtures only in the test environment', () => {
-    expect(resolveE2EEntryFixture('test', 'unavailable')).toBe('unavailable');
-    expect(resolveE2EEntryFixture('test', 'no-authorised-context')).toBe('no-authorised-context');
-    expect(resolveE2EEntryFixture('test', 'choose-context')).toBe('choose-context');
-    expect(resolveE2EEntryFixture('production', 'unavailable')).toBeNull();
-    expect(resolveE2EEntryFixture('test', 'unavailable', 'production')).toBeNull();
-    expect(resolveE2EEntryFixture('test', 'unknown')).toBeNull();
   });
 
   it('projects only permissions granted to the actor', () => {

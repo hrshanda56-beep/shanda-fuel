@@ -132,30 +132,6 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
             <SignOutButton />
           </Card>
         </Section>
-
-        <Section
-          headingId="shortcuts"
-          title="Keyboard shortcuts"
-          description="Quick ways to move around the application."
-          action={<StatusBadge tone="neutral">Available</StatusBadge>}
-        >
-          <Card className={styles.detailCard}>
-            <dl className={styles.detailList}>
-              <div>
-                <dt>Search pages</dt>
-                <dd>
-                  <kbd>⌘ K</kbd> / <kbd>Ctrl K</kbd>
-                </dd>
-              </div>
-              <div>
-                <dt>Close a menu</dt>
-                <dd>
-                  <kbd>Esc</kbd>
-                </dd>
-              </div>
-            </dl>
-          </Card>
-        </Section>
       </div>
     </PageContainer>
   );

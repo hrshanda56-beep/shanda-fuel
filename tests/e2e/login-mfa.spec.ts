@@ -13,20 +13,6 @@ const AUTHENTICATED_CONTEXT = {
 };
 
 test.describe('password login MFA flow', () => {
-  test('dedicated sign-in entry has no application shell and focuses email on mobile', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/login');
-
-    await expect(page.getByRole('heading', { name: 'Sign in', level: 1 })).toBeVisible();
-    await expect(page.locator('.app-shell')).toHaveCount(0);
-    await expect(page.getByRole('navigation', { name: 'Mobile navigation' })).toHaveCount(0);
-    await expect(page.getByRole('searchbox')).toHaveCount(0);
-    await expect(page.getByRole('group', { name: 'Work context' })).toHaveCount(0);
-    await expect(page.getByLabel('Email')).toBeFocused();
-  });
-
   test('holds the MFA challenge, rejects a wrong code, and establishes a session for a correct code', async ({
     page,
   }) => {

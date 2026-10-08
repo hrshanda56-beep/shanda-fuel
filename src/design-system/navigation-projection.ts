@@ -15,9 +15,6 @@ export type NavigationProjectionInput = Readonly<{
 }>;
 
 export const E2E_NAVIGATION_FIXTURE_HEADER = 'x-shanda-e2e-navigation-fixture';
-export const E2E_ENTRY_FIXTURE_HEADER = 'x-shanda-e2e-entry-fixture';
-
-export type E2EEntryFixture = 'choose-context' | 'no-authorised-context' | 'unavailable';
 
 export function allowsE2ENavigationFixture(
   appEnv: string | undefined,
@@ -25,22 +22,6 @@ export function allowsE2ENavigationFixture(
   nodeEnv: string | undefined = process.env.NODE_ENV,
 ) {
   return nodeEnv !== 'production' && appEnv === 'test' && header === 'synthetic';
-}
-
-export function resolveE2EEntryFixture(
-  appEnv: string | undefined,
-  header: string | null,
-  nodeEnv: string | undefined = process.env.NODE_ENV,
-): E2EEntryFixture | null {
-  if (nodeEnv === 'production' || appEnv !== 'test') return null;
-  if (
-    header === 'choose-context' ||
-    header === 'no-authorised-context' ||
-    header === 'unavailable'
-  ) {
-    return header;
-  }
-  return null;
 }
 
 const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly PermissionCode[]>> =

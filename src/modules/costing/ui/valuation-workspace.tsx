@@ -16,7 +16,6 @@ import {
 } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
-import { formatStatusLabel } from '@/design-system/formatters';
 import {
   InventoryOperationalActions,
   type InventoryContext,
@@ -195,7 +194,7 @@ function hrefWithContext(path: string, contextHref: string) {
 }
 
 function Status({ status }: { status: string }) {
-  return <StatusBadge tone={tone(status)}>{formatStatusLabel(status)}</StatusBadge>;
+  return <StatusBadge tone={tone(status)}>{status}</StatusBadge>;
 }
 
 export function ValuationOverview({
@@ -261,8 +260,8 @@ export function ValuationOverview({
       <div className="page-heading">
         <div>
           <p>
-            Start with the physical tank position. Cost and revaluation detail stays available
-            beneath it for authorised finance users.
+            See which cost streams are valued, what is blocking an unvalued stream, and how
+            revaluation evidence changes historical COGS.
           </p>
         </div>
         <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
@@ -270,57 +269,54 @@ export function ValuationOverview({
         </Button>
       </div>
       {success ? <SuccessState title="Workflow updated" message={success} /> : null}
-      <section className="metric-grid" aria-label="Stock controls">
+      <section className="metric-grid" aria-label="Valuation summary">
         <MetricCard
-          label="Tank streams"
+          label="Streams"
           value={data.streams.length}
-          meta="Current station position"
+          meta="Persisted cost projections"
           href="#cost-streams"
         />
         <MetricCard
-          label="Needs cost"
+          label="Unvalued"
           value={unvalued.length}
-          meta="May block sale posting"
+          meta="May block sale-cost posting"
           tone={unvalued.length > 0 ? 'critical' : 'default'}
           href="#cost-streams"
         />
         <MetricCard
-          label="Cost reviews"
+          label="Active revaluations"
           value={
             data.revaluations.filter(
               (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
             ).length
           }
-          meta="Awaiting action"
+          meta="Requested or approved"
           href="#revaluation-history"
         />
       </section>
       {data.streams.length === 0 ? (
         <EmptyState
-          title="No tank position yet"
-          message="This station has no recorded stock stream. Record or import an inventory movement before reviewing stock."
+          title="No valuation streams yet"
+          message="This station has no persisted cost stream yet. Create or import inventory movements before reviewing valuation."
         />
       ) : (
         <Card className="panel table-card" id="cost-streams">
           <div className="section-heading">
             <div>
-              <h2>Tank stock</h2>
-              <p>
-                Current litres are read from the station stock projection. Cost detail is shown
-                where available.
-              </p>
+              <h2>Cost streams</h2>
+              <p>Value and WAC are read from the persisted projection.</p>
             </div>
           </div>
-          <TableScrollRegion label="Tank stock">
+          <TableScrollRegion label="Inventory valuation streams">
             <table className="data-table">
-              <caption className="visually-hidden">Tank stock</caption>
+              <caption className="visually-hidden">Inventory valuation streams</caption>
               <thead>
                 <tr>
                   <th scope="col">Tank / product</th>
-                  <th scope="col">Current litres</th>
-                  <th scope="col">Cost state</th>
-                  <th scope="col">Value</th>
-                  <th scope="col">Cost / litre</th>
+                  <th scope="col">Quantity</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Inventory value</th>
+                  <th scope="col">WAC</th>
                   <th scope="col">Action</th>
                 </tr>
               </thead>
@@ -344,7 +340,7 @@ export function ValuationOverview({
                       <Status status={stream.valuationStatus} />
                       {stream.hasActiveRevaluation ? (
                         <span className="table-secondary">
-                          Cost review {formatStatusLabel(stream.activeRevaluation?.status ?? '')}
+                          Revaluation {stream.activeRevaluation?.status}
                         </span>
                       ) : null}
                     </td>

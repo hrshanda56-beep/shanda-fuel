@@ -14,9 +14,7 @@ export {
   findOrganisation,
   findStation,
   invalidContext,
-  listContextOptions,
   validateContextSelection,
-  type ContextOption,
 } from './domain';
 export {
   buildContextHref,
