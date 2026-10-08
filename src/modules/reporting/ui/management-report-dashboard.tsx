@@ -10,6 +10,7 @@ import {
   ErrorState,
   Field,
   LoadingState,
+  SkeletonBlock,
   StatusBadge,
 } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
@@ -36,6 +37,20 @@ const managementReportState: ManagementReport['state'] = 'POSTED';
  * `view` is `summary` (headline figures, used on the Reports list) or the slug
  * of one report (its detail page, with the filter bar).
  */
+function SummarySkeleton() {
+  return (
+    <section className="metric-grid" aria-label="Loading headline figures" aria-busy="true">
+      {[0, 1, 2, 3].map((index) => (
+        <div className="card metric-card" key={index}>
+          <SkeletonBlock width="60%" height="0.875rem" />
+          <SkeletonBlock width="40%" height="1.5rem" />
+          <SkeletonBlock width="70%" height="0.75rem" />
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export function ManagementReportDashboard({
   tenantId,
   view,
@@ -68,6 +83,7 @@ export function ManagementReportDashboard({
 
   async function load(signal?: AbortSignal) {
     if (!fromDate || !toDate) {
+      setReport(null);
       setLoading(false);
       return;
     }
@@ -129,79 +145,36 @@ export function ManagementReportDashboard({
         </Card>
       ) : null}
 
-      {loading ? <LoadingState label="Loading management report" /> : null}
+      {loading && view === 'summary' ? <SummarySkeleton /> : null}
+      {loading && view !== 'summary' ? <LoadingState label="Loading report" /> : null}
       {error ? <ErrorState title="Report unavailable" message={error} /> : null}
       {!loading && !error && report ? (
         <>
           {view === 'summary' ? (
-            <section className="metric-grid" aria-label="Management report headline metrics">
+            <section className="metric-grid" aria-label="Headline figures for the chosen period">
               <MetricCard
                 label="Accounted sales"
                 value={formatMoney(report.sales.salesValue)}
-                meta={`${report.sales.approvedReconciliationCount} approved reconciliations`}
-                href={detailHref('sales')}
-              />
-              <MetricCard
-                label="Recognized revenue"
-                value={formatMoney(report.revenue.recognizedRevenue)}
-                meta="Ordinary fuel sales"
-                href={detailHref('sales')}
-              />
-              <MetricCard
-                label="Gross margin"
-                value={
-                  report.grossMargin === null ? 'Unavailable' : formatMoney(report.grossMargin)
-                }
-                meta={
-                  report.grossMargin === null
-                    ? `COGS status: ${report.costing.costingStatus}`
-                    : 'Recognized revenue − restated COGS'
-                }
-              />
-              <MetricCard
-                label="Litres sold"
-                value={formatLitres(report.sales.litresSold)}
-                meta="From meter readings"
+                meta={`${formatLitres(report.sales.litresSold)} litres sold`}
                 href={detailHref('sales')}
               />
               <MetricCard
                 label="Cash collected"
                 value={formatMoney(report.cash.collected)}
-                meta={`${formatMoney(report.cash.collectedButNotBanked)} not banked`}
+                meta={`${formatMoney(report.cash.collectedButNotBanked)} not yet banked`}
                 href={detailHref('cash')}
               />
               <MetricCard
-                label="Provider outstanding"
+                label="Provider settlements outstanding"
                 value={formatMoney(report.providers.unallocatedProviderAmount)}
-                meta="Unallocated settlements"
+                meta="Unallocated"
                 href={detailHref('providers')}
               />
               <MetricCard
-                label="Supplier exposure"
+                label="Supplier balance"
                 value={formatMoney(report.suppliers.outstandingBalance)}
-                meta="Balance at the end date"
+                meta="At the end of the period"
                 href={detailHref('commercial')}
-              />
-              <MetricCard
-                label="Customer receivables"
-                value={customerMoney(report.customers.receivableBalance)}
-                meta={
-                  report.customers.availability === 'AVAILABLE'
-                    ? 'Credit ledger at the end date'
-                    : 'Not tracked per station'
-                }
-                href={detailHref('commercial')}
-              />
-              <MetricCard
-                label="Expected stock"
-                value={formatLitres(report.inventory.expectedLitres)}
-                meta={`${formatLitres(report.inventory.varianceLitres)} variance`}
-                href={detailHref('inventory')}
-              />
-              <MetricCard
-                label="Recorded expenses"
-                value={formatMoney(report.expenses.total)}
-                meta="From daily reconciliations"
               />
             </section>
           ) : null}
