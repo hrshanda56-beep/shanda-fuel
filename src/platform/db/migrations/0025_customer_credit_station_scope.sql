@@ -22,6 +22,13 @@ ALTER TABLE app.customer_accounts
   FOREIGN KEY (tenant_id, customer_id, legal_entity_id)
   REFERENCES app.customers (tenant_id, id, legal_entity_id);
 
+-- A payment is recorded at the station where the cash is received (ADR-017).
+-- Older entries keep a null receiving station.
+ALTER TABLE app.customer_ledger_entries ADD COLUMN receiving_station_id uuid;
+ALTER TABLE app.customer_ledger_entries
+  ADD CONSTRAINT customer_ledger_entries_receiving_station_fk
+  FOREIGN KEY (tenant_id, receiving_station_id) REFERENCES app.stations (tenant_id, id);
+
 CREATE TABLE app.customer_account_stations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   tenant_id uuid NOT NULL,
