@@ -201,6 +201,7 @@ export function AppShell({
   const [tasksOpen, setTasksOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [contextSelectorOpen, setContextSelectorOpen] = useState(false);
+  const [pendingSegment, setPendingSegment] = useState<string | undefined>();
   const [wip, setWip] = useState<WipRequest | null>(null);
   const [contextLabel, setContextLabel] = useState<{
     station: string;
@@ -277,8 +278,9 @@ export function AppShell({
     setWip(request);
   }, []);
 
-  const openContextSelector = useCallback(() => {
+  const openContextSelector = useCallback((segment?: string) => {
     setMenuOpen(false);
+    setPendingSegment(segment);
     setContextSelectorOpen(true);
   }, []);
 
@@ -361,8 +363,12 @@ export function AppShell({
                 <ContextSelector
                   fallback={context}
                   open={contextSelectorOpen}
-                  onOpen={() => setContextSelectorOpen(true)}
+                  onOpen={() => {
+                    setPendingSegment(undefined);
+                    setContextSelectorOpen(true);
+                  }}
                   onClose={() => setContextSelectorOpen(false)}
+                  destinationSegment={pendingSegment}
                   onLabelChange={setContextLabel}
                 />
                 {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
@@ -438,7 +444,7 @@ export function AppShell({
               type="button"
               className="shell-more-context"
               aria-haspopup="dialog"
-              onClick={openContextSelector}
+              onClick={() => openContextSelector()}
             >
               <span className="shell-more-context-text">
                 <span className="shell-more-context-label">Working at</span>
@@ -657,7 +663,7 @@ type NavigationTreeProps = {
   rail: boolean;
   onToggleGroup: (key: string) => void;
   onWip: (request: WipRequest) => void;
-  onContextRequired: () => void;
+  onContextRequired: (segment?: string) => void;
   onExpandRail?: (key: string) => void;
   onNavigate?: () => void;
 };
@@ -761,7 +767,7 @@ function NavigationEntry({
   item: ResolvedNavigationItem;
   pathname: string | null;
   onWip: (request: WipRequest) => void;
-  onContextRequired: () => void;
+  onContextRequired: (segment?: string) => void;
   onNavigate?: () => void;
   withIcon?: boolean;
   tabIndex?: number;
@@ -792,7 +798,7 @@ function NavigationEntry({
           className="nav-row nav-link"
           aria-haspopup="dialog"
           tabIndex={tabIndex}
-          onClick={onContextRequired}
+          onClick={() => onContextRequired(item.segment)}
         >
           {icon}
           <span className="nav-label">{item.label}</span>

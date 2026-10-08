@@ -26,6 +26,8 @@ type ContextSelectorProps = Readonly<{
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
+  /** Station route to open straight after a station is chosen (e.g. `reconciliations`). */
+  destinationSegment?: string | undefined;
   /** Reports the current context parts (organisation → station) as they resolve. */
   onLabelChange?: (label: { station: string; parts: readonly string[] }) => void;
 }>;
@@ -40,6 +42,7 @@ export function ContextSelector({
   open,
   onOpen,
   onClose,
+  destinationSegment,
   onLabelChange,
 }: ContextSelectorProps) {
   const pathname = usePathname() ?? '/';
@@ -134,7 +137,11 @@ export function ContextSelector({
       }
       const nextSelection = body.data.current;
       onClose();
-      router.push(buildContextHref(pathname, search, nextSelection));
+      const target =
+        destinationSegment && nextSelection.stationId
+          ? `/stations/${encodeURIComponent(nextSelection.stationId)}/${destinationSegment}`
+          : pathname;
+      router.push(buildContextHref(target, search, nextSelection));
     } catch (error: unknown) {
       setSubmitError(
         error instanceof Error
@@ -406,7 +413,7 @@ function ContextOption({
         aria-current={selected || undefined}
         data-selected={selected || undefined}
         disabled={disabled}
-        onClick={selected ? undefined : onSelect}
+        onClick={onSelect}
       >
         <span className="context-selector-option-text">
           <span className="context-selector-option-title">{title}</span>

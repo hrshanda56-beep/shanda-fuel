@@ -256,6 +256,8 @@ export type ResolvedNavigationItem =
       state: 'wip';
       /** `planned`: no screen yet. `station`: the screen needs a station in context. */
       reason: 'planned' | 'station';
+      /** For `station`: the station route segment to open once a station is chosen. */
+      segment?: string;
       feature: string;
       message?: string;
     })
@@ -293,6 +295,7 @@ export function resolveNavigationItem(
           ...rest,
           state: 'wip',
           reason: 'station',
+          segment: destination.segment,
           feature: 'Station selection',
           message: stationSelectionMessage(item.label),
         };
