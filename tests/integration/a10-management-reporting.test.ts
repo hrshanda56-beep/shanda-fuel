@@ -888,6 +888,11 @@ describe('A10 management reporting PostgreSQL read model', () => {
       reservedLitres: null,
       rows: [],
     });
+    // What was drawn at the station stays visible even though balances are not.
+    expect(Array.isArray(body.customers.activity)).toBe(true);
+    expect(
+      body.customers.activity.every((row: Record<string, any>) => row.stationId === ids.station),
+    ).toBe(true);
   });
 
   it('reports on several selected stations and marks customer scope unavailable', async () => {
