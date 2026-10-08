@@ -135,8 +135,19 @@ export type SupplierExposure = Readonly<{
   }[];
 }>;
 
+export type CustomerCreditActivityRow = Readonly<{
+  stationId: string;
+  accountType: string;
+  drawnAmount: ReportMoney;
+  drawnLitres: ReportLitres;
+  authorizationCount: number;
+}>;
+
 export type CustomerExposure = Readonly<{
+  /** Applies to the balance and reservation figures only; `activity` is always available. */
   availability: 'AVAILABLE' | 'UNAVAILABLE_STATION_DIMENSION';
+  /** Fuel drawn on customer accounts in the period, by the station where it was drawn. */
+  activity: readonly CustomerCreditActivityRow[];
   receivableBalance: ReportMoney | null;
   prepaidValueBalance: ReportMoney | null;
   reservedAmount: ReportMoney | null;

@@ -21,6 +21,7 @@ import {
 } from './domain';
 import {
   managementReportQuerySchema,
+  type CustomerCreditActivityRow,
   type CustomerExposure,
   type DailyOperationsRow,
   type ManagementReport,
@@ -462,15 +463,50 @@ async function readSuppliers(
   };
 }
 
+async function readCustomerActivity(
+  transaction: ReportingTransaction,
+  filters: ManagementReportQuery,
+): Promise<CustomerCreditActivityRow[]> {
+  const rows = await transaction.execute<{
+    station_id: string;
+    account_type: string;
+    drawn_amount: string;
+    drawn_litres: string;
+    authorization_count: string;
+  }>(sql`
+    select station_id, account_type,
+      coalesce(sum(used_amount), 0)::text as drawn_amount,
+      coalesce(sum(used_litres), 0)::text as drawn_litres,
+      count(*)::text as authorization_count
+    from app.customer_fuel_authorizations
+    where tenant_id = ${filters.tenantId}
+      and used_amount > 0
+      and requested_at >= ${filters.fromDate}::date
+      and requested_at < (${filters.toDate}::date + interval '1 day')
+      ${stationClause('customer_fuel_authorizations', filters.stationIds)}
+    group by station_id, account_type
+    order by station_id, account_type
+  `);
+  return rows.map((row) => ({
+    stationId: row.station_id,
+    accountType: row.account_type,
+    drawnAmount: formatMoney(row.drawn_amount),
+    drawnLitres: formatLitres(row.drawn_litres),
+    authorizationCount: Number(row.authorization_count),
+  }));
+}
+
 async function readCustomers(
   transaction: ReportingTransaction,
   filters: ManagementReportQuery,
 ): Promise<CustomerExposure> {
+  const activity = await readCustomerActivity(transaction, filters);
   // A8 ledger balances are tenant-owned and intentionally do not carry a
-  // station dimension. Do not expose a tenant-wide balance to a station
-  // report; station-level customer exposure is not derivable safely yet.
+  // station dimension (ADR-017). Do not expose a tenant-wide balance to a
+  // station report; what was drawn at each station is shown as `activity`.
   if (filters.stationIds.length > 0) {
     return {
+      activity,
       availability: customerScopeAvailability(filters.stationIds),
       receivableBalance: null,
       prepaidValueBalance: null,
@@ -529,6 +565,7 @@ async function readCustomers(
     reservedLitres: formatLitres(row.reserved_litres),
   }));
   return {
+    activity,
     availability: customerScopeAvailability(),
     receivableBalance: formatMoney(sumExact(mapped.map((row) => row.receivableBalance))),
     prepaidValueBalance: formatMoney(sumExact(mapped.map((row) => row.prepaidValueBalance))),
