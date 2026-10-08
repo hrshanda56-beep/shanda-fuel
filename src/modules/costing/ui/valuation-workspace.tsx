@@ -14,7 +14,20 @@ import {
   StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
-import { MetricCard } from '@/design-system/layout';
+import {
+  formatLitresDisplay,
+  formatMoneyDisplay,
+  formatStatusSentence,
+  formatUnitPrice,
+} from '@/design-system/formatters';
+import { Section } from '@/design-system/layout';
+import {
+  KpiGrid,
+  KpiTile,
+  RefreshButton,
+  SkeletonCard,
+  SkeletonTiles,
+} from '@/design-system/page-kit';
 import { TableScrollRegion } from '@/design-system/table';
 import {
   InventoryOperationalActions,
@@ -128,55 +141,53 @@ function tone(status: string): 'positive' | 'warning' | 'pending' | 'neutral' | 
 function knownError(error: string, message: string) {
   if (message.includes('UNVALUED')) {
     return {
-      title: 'Valuation is blocking this operation',
-      message:
-        'The stream has no usable authoritative cost. Open the affected valuation stream, resolve its source movement, then retry.',
+      title: 'A cost is missing',
+      message: 'This tank has no cost recorded yet. Open it, add the missing cost, then try again.',
     };
   }
   if (message.includes('already has a revaluation workflow')) {
     return {
-      title: 'A revaluation already exists',
+      title: 'A cost update already exists',
       message:
-        'This source movement is already covered by a revaluation workflow. Refresh the stream before trying again.',
+        'A cost update is already in progress for this delivery. Reload the tank before trying again.',
     };
   }
   if (message.includes('Only a requested')) {
     return {
-      title: 'The request is no longer awaiting approval',
-      message: 'Another operator changed this workflow. Refresh to review the current state.',
+      title: 'This request was already handled',
+      message: 'Someone else changed it. Reload to see where it stands.',
     };
   }
   if (message.includes('Only an approved')) {
     return {
-      title: 'The revaluation is not ready to post',
-      message: 'Approval is required before posting. Refresh to review the current workflow state.',
+      title: 'Not ready to apply yet',
+      message: 'It needs approval first. Reload to see where it stands.',
     };
   }
   if (error === 'IDEMPOTENCY_CONFLICT' || error === 'CONFLICT') {
     return {
-      title: 'The record changed elsewhere',
-      message: message || 'Refresh before trying this action again.',
+      title: 'This changed somewhere else',
+      message: message || 'Reload and try again.',
     };
   }
   if (error === 'FORBIDDEN')
     return {
-      title: 'Action not permitted',
-      message: message || 'Your permission or authentication level does not allow this action.',
+      title: 'Not allowed',
+      message: message || 'Your access doesn’t allow this.',
     };
   if (error === 'VALIDATION_FAILED')
     return {
-      title: 'Check the revaluation details',
-      message: message || 'Review the amount, currency, and reason before retrying.',
+      title: 'Check the details',
+      message: message || 'Check the amount, currency and reason, then try again.',
     };
   if (message.includes('BETTER_AUTH_SECRET'))
     return {
-      title: 'Authentication is unavailable',
-      message:
-        'The station session could not be verified in this environment. Retry after authentication configuration is available.',
+      title: 'Sign-in check unavailable',
+      message: 'Your session could not be checked right now. Try again shortly.',
     };
   return {
-    title: 'Action failed',
-    message: message || 'The action could not be completed. Retry after checking the latest state.',
+    title: 'That didn’t work',
+    message: message || 'It could not be completed. Reload and try again.',
   };
 }
 
@@ -193,8 +204,14 @@ function hrefWithContext(path: string, contextHref: string) {
   return query ? `${path}?${query}` : path;
 }
 
+const STATUS_LABELS: Record<string, string> = { UNVALUED: 'Not valued' };
+
 function Status({ status }: { status: string }) {
-  return <StatusBadge tone={tone(status)}>{status}</StatusBadge>;
+  return (
+    <StatusBadge tone={tone(status)}>
+      {STATUS_LABELS[status] ?? formatStatusSentence(status)}
+    </StatusBadge>
+  );
 }
 
 export function ValuationOverview({
@@ -233,11 +250,16 @@ export function ValuationOverview({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
-  if (loading) return <LoadingState label="Loading valuation streams" />;
-  if (error?.code === 'FORBIDDEN')
+  if (loading) {
     return (
-      <AccessDeniedState message="Inventory valuation is restricted to authorised station users." />
+      <div className="inventory-page" aria-busy="true">
+        <SkeletonTiles count={3} label="Loading inventory" />
+        <SkeletonCard label="Loading tanks" lines={3} />
+      </div>
     );
+  }
+  if (error?.code === 'FORBIDDEN')
+    return <AccessDeniedState message="Inventory is only available to authorised station users." />;
   if (error) {
     const mapped = knownError(error.code, error.message);
     return (
@@ -246,7 +268,7 @@ export function ValuationOverview({
         message={mapped.message}
         action={
           <Button variant="secondary" onClick={load}>
-            Retry
+            Try again
           </Button>
         }
       />
@@ -255,69 +277,52 @@ export function ValuationOverview({
   if (!data) return null;
 
   const unvalued = data.streams.filter((stream) => stream.valuationStatus === 'UNVALUED');
+  const activeRevaluations = data.revaluations.filter(
+    (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
+  );
   return (
-    <div className="valuation-workspace">
-      <div className="page-heading">
-        <div>
-          <p>
-            See which cost streams are valued, what is blocking an unvalued stream, and how
-            revaluation evidence changes historical COGS.
-          </p>
-        </div>
-        <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
-          Refresh
-        </Button>
+    <div className="inventory-page valuation-workspace">
+      {success ? <SuccessState title="Updated" message={success} /> : null}
+      <div className="kpi-section">
+        <KpiGrid label="Inventory summary">
+          <KpiTile label="Tanks" icon="drop" value={data.streams.length} href="#tanks" />
+          <KpiTile
+            label="Not valued"
+            icon="alert"
+            value={unvalued.length}
+            caption={unvalued.length > 0 ? 'Needs a cost' : undefined}
+            href="#tanks"
+          />
+          <KpiTile
+            label="Cost updates open"
+            icon="clock"
+            value={activeRevaluations.length}
+            href="#revaluation-history"
+          />
+        </KpiGrid>
       </div>
-      {success ? <SuccessState title="Workflow updated" message={success} /> : null}
-      <section className="metric-grid" aria-label="Valuation summary">
-        <MetricCard
-          label="Streams"
-          value={data.streams.length}
-          meta="Persisted cost projections"
-          href="#cost-streams"
-        />
-        <MetricCard
-          label="Unvalued"
-          value={unvalued.length}
-          meta="May block sale-cost posting"
-          tone={unvalued.length > 0 ? 'critical' : 'default'}
-          href="#cost-streams"
-        />
-        <MetricCard
-          label="Active revaluations"
-          value={
-            data.revaluations.filter(
-              (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
-            ).length
-          }
-          meta="Requested or approved"
-          href="#revaluation-history"
-        />
-      </section>
-      {data.streams.length === 0 ? (
-        <EmptyState
-          title="No valuation streams yet"
-          message="This station has no persisted cost stream yet. Create or import inventory movements before reviewing valuation."
-        />
-      ) : (
-        <Card className="panel table-card" id="cost-streams">
-          <div className="section-heading">
-            <div>
-              <h2>Cost streams</h2>
-              <p>Value and WAC are read from the persisted projection.</p>
-            </div>
-          </div>
-          <TableScrollRegion label="Inventory valuation streams">
+
+      <Section
+        title="Tanks"
+        headingId="tanks"
+        action={<RefreshButton onClick={() => void load()} disabled={refreshing} />}
+      >
+        {data.streams.length === 0 ? (
+          <EmptyState
+            title="No tanks yet"
+            message="Tanks appear here once stock has been recorded for this station."
+          />
+        ) : (
+          <TableScrollRegion label="Tanks and stock value">
             <table className="data-table">
-              <caption className="visually-hidden">Inventory valuation streams</caption>
+              <caption className="visually-hidden">Tanks and stock value</caption>
               <thead>
                 <tr>
-                  <th scope="col">Tank / product</th>
-                  <th scope="col">Quantity</th>
+                  <th scope="col">Tank</th>
+                  <th scope="col">In tank</th>
+                  <th scope="col">Stock value</th>
+                  <th scope="col">Cost per litre</th>
                   <th scope="col">Status</th>
-                  <th scope="col">Inventory value</th>
-                  <th scope="col">WAC</th>
-                  <th scope="col">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -333,71 +338,54 @@ export function ValuationOverview({
                       >
                         {stream.tank.code} · {stream.product.name}
                       </Link>
-                      <span className="table-secondary">{stream.product.code}</span>
                     </th>
-                    <td data-label="Quantity">{stream.quantityLitres} L</td>
+                    <td data-label="In tank">{formatLitresDisplay(stream.quantityLitres)}</td>
+                    <td data-label="Stock value">
+                      {stream.inventoryValue === null
+                        ? '—'
+                        : formatMoneyDisplay(stream.inventoryValue, stream.currency ?? 'USD')}
+                    </td>
+                    <td data-label="Cost per litre">
+                      {stream.weightedAverageCost === null
+                        ? '—'
+                        : formatUnitPrice(stream.weightedAverageCost, stream.currency ?? 'USD')}
+                    </td>
                     <td data-label="Status">
                       <Status status={stream.valuationStatus} />
                       {stream.hasActiveRevaluation ? (
                         <span className="table-secondary">
-                          Revaluation {stream.activeRevaluation?.status}
+                          Cost update{' '}
+                          {formatStatusSentence(
+                            stream.activeRevaluation?.status ?? '',
+                          ).toLowerCase()}
                         </span>
                       ) : null}
-                    </td>
-                    <td data-label="Inventory value">
-                      {stream.inventoryValue === null
-                        ? '—'
-                        : `${stream.currency} ${stream.inventoryValue}`}
-                    </td>
-                    <td data-label="WAC">
-                      {stream.weightedAverageCost === null
-                        ? '—'
-                        : `${stream.currency} ${stream.weightedAverageCost}/L`}
-                    </td>
-                    <td className="cell-action">
-                      <Link
-                        className="button button-secondary button-small"
-                        href={hrefWithContext(
-                          `/inventory/valuation/streams/${stream.tank.id}/${stream.product.id}`,
-                          contextHref,
-                        )}
-                        tabIndex={-1}
-                        aria-hidden="true"
-                      >
-                        Review stream
-                      </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </TableScrollRegion>
-        </Card>
-      )}
-      <Card className="panel table-card" id="revaluation-history">
-        <div className="section-heading">
-          <div>
-            <h2>Revaluation history</h2>
-            <p>Every transition retains its actor, timestamp, and persisted evidence.</p>
-          </div>
-        </div>
+        )}
+      </Section>
+
+      <Section title="Cost updates" headingId="revaluation-history">
         {data.revaluations.length === 0 ? (
           <EmptyState
-            title="No revaluation workflows"
-            message="A request appears here when a source movement needs late authoritative cost."
+            title="No cost updates"
+            message="One appears here when a late cost changes the value of past sales."
           />
         ) : (
-          <TableScrollRegion label="Revaluation workflow history">
+          <TableScrollRegion label="Cost update history">
             <table className="data-table">
-              <caption className="visually-hidden">Revaluation workflow history</caption>
+              <caption className="visually-hidden">Cost update history</caption>
               <thead>
                 <tr>
-                  <th scope="col">Source</th>
+                  <th scope="col">Tank</th>
                   <th scope="col">Status</th>
                   <th scope="col">Amount</th>
                   <th scope="col">Requested</th>
-                  <th scope="col">Affected sales</th>
-                  <th scope="col">Action</th>
+                  <th scope="col">Sales affected</th>
                 </tr>
               </thead>
               <tbody>
@@ -414,40 +402,31 @@ export function ValuationOverview({
                         {item.tank.code} · {item.product.name}
                       </Link>
                       <span className="table-secondary">
-                        {item.source?.type ?? 'Source unavailable'}
+                        {item.source
+                          ? formatStatusSentence(item.source.type)
+                          : 'Source unavailable'}
                       </span>
                     </th>
                     <td data-label="Status">
                       <Status status={item.status} />
                     </td>
                     <td data-label="Amount">
-                      {item.amount === null ? '—' : `${item.currency} ${item.amount}`}
+                      {item.amount === null
+                        ? '—'
+                        : formatMoneyDisplay(item.amount, item.currency ?? 'USD')}
                     </td>
                     <td data-label="Requested">
                       {date(item.requestedAt)}
                       <span className="table-secondary">{item.requestedBy.name}</span>
                     </td>
-                    <td data-label="Affected sales">{item.affectedSales}</td>
-                    <td className="cell-action">
-                      <Link
-                        className="button button-secondary button-small"
-                        href={hrefWithContext(
-                          `/inventory/valuation/revaluations/${item.id}`,
-                          contextHref,
-                        )}
-                        tabIndex={-1}
-                        aria-hidden="true"
-                      >
-                        Open history
-                      </Link>
-                    </td>
+                    <td data-label="Sales affected">{item.affectedSales}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </TableScrollRegion>
         )}
-      </Card>
+      </Section>
     </div>
   );
 }

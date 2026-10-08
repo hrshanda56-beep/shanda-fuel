@@ -708,12 +708,10 @@ function ReceiptCostForm({
 
 export function InventoryContextRequired() {
   return (
-    <Card className="panel">
-      <ContextRequiredState
-        headingLevel={2}
-        title="Choose a station to view inventory"
-        message="Use Change above to choose an authorised organisation, legal entity, and station. Inventory is available for one station at a time."
-      />
-    </Card>
+    <ContextRequiredState
+      headingLevel={2}
+      title="Choose a station to view inventory"
+      message="Pick a station at the top of the page. Inventory shows one station at a time."
+    />
   );
 }
