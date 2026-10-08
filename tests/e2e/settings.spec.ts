@@ -193,7 +193,9 @@ test.describe('Settings', () => {
     test('signs out from Account', async ({ page }) => {
       await sectionButton(page, 'Account').click();
       await page.getByRole('button', { name: 'Sign out' }).click();
-      await expect(page).toHaveURL(/\/login$/);
+      // Navigation wait, not the 5s assertion window: the first sign-out call compiles its route.
+      await page.waitForURL(/\/login$/);
+      await expect(page.getByRole('heading', { name: 'Sign in', level: 1 })).toBeVisible();
     });
   });
 });
