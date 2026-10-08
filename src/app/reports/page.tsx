@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
+import { ReportList } from '@/modules/reporting/ui/report-list';
 import { ManagementReportDashboard } from '@/modules/reporting/ui/management-report-dashboard';
 
 export const metadata = {
@@ -20,6 +21,7 @@ export default async function ReportsPage({
       </p>
       {tenantId ? (
         <Suspense>
+          <ReportList tenantId={tenantId} />
           <ManagementReportDashboard tenantId={tenantId} />
         </Suspense>
       ) : (
