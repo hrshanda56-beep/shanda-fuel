@@ -176,6 +176,13 @@
       "when": 1791442598000,
       "tag": "0024_customer_permission_alignment",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791528998000,
+      "tag": "0025_customer_credit_station_scope",
+      "breakpoints": true
     }
   ]
 }
