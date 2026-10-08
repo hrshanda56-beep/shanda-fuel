@@ -1,26 +1,44 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { ReportFilterBar } from './report-filter-bar';
+import { useAvailableStations } from './use-available-stations';
 import { Card } from '../../../design-system/primitives';
 import { REPORT_CATALOG, categoryLabel, type ReportDefinition } from '../catalog';
-import { applyReportFilters, parseReportFilters, resolveReportFilters } from '../filters';
+import {
+  applyReportFilters,
+  parseReportFilters,
+  resolveReportFilters,
+  type ReportFilters,
+} from '../filters';
 import { REPORT_PERIODS, REPORT_PERIOD_LABELS, businessToday, type ReportPeriod } from '../period';
 
 type RowPeriod = { period: ReportPeriod; customFrom: string; customTo: string };
 
 /** One row per report type. Each row has its own period; stations come from the page filters. */
 export function ReportList({ tenantId }: { tenantId: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const stations = useAvailableStations(tenantId);
   const pageFilters = useMemo(() => parseReportFilters(searchParams), [searchParams]);
   const [overrides, setOverrides] = useState<Record<string, RowPeriod>>({});
+
+  function changeFilters(next: ReportFilters) {
+    const params = applyReportFilters(new URLSearchParams(searchParams.toString()), next);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    // A new page-level period replaces any per-row choice.
+    setOverrides({});
+  }
 
   return (
     <Card as="section" className="panel" aria-labelledby="available-reports-title">
       <div className="panel-heading">
         <h2 id="available-reports-title">Available reports</h2>
       </div>
+      <ReportFilterBar stations={stations} filters={pageFilters} onChange={changeFilters} />
       <ul className="report-rows">
         {REPORT_CATALOG.map((report) => {
           const rowPeriod: RowPeriod = overrides[report.slug] ?? {
