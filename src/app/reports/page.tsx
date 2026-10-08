@@ -22,7 +22,12 @@ export default async function ReportsPage({
       {tenantId ? (
         <Suspense>
           <ReportList tenantId={tenantId} />
-          <ManagementReportDashboard tenantId={tenantId} />
+          <ManagementReportDashboard tenantId={tenantId} view="summary" />
+          <p className="metric-meta">
+            Figures come from posted source records, each on its own date basis. This is an
+            operational view, not a general ledger, statutory P&amp;L, balance sheet, tax report, or
+            bank statement.
+          </p>
         </Suspense>
       ) : (
         <ContextRequiredState
