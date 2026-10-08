@@ -312,6 +312,44 @@ export function assertCustomerAccountTransactionAllowed(
   }
 }
 
+export const CUSTOMER_ACCOUNT_STATION_SCOPES = ['ALL', 'SELECTED'] as const;
+export type CustomerAccountStationScope = (typeof CUSTOMER_ACCOUNT_STATION_SCOPES)[number];
+
+/** Where a customer account may be used (ADR-017). */
+export type CustomerAccountStationPolicy = Readonly<{
+  /** The customer's one legal entity; null until onboarding confirms it. */
+  legalEntityId: string | null;
+  /** `ALL`: every station of the legal entity. `SELECTED`: only `allowedStationIds`. */
+  scope: CustomerAccountStationScope;
+  allowedStationIds: readonly string[];
+}>;
+
+/**
+ * A customer account's balance is organisation-wide, but fuel may be drawn only
+ * at stations of the account's legal entity and, when the account selects
+ * stations, only at those.
+ */
+export function assertStationAllowedForAccount(
+  policy: CustomerAccountStationPolicy,
+  station: Readonly<{ stationId: string; legalEntityId: string }>,
+): void {
+  if (!policy.legalEntityId) {
+    throw new AppError(
+      'CONFLICT',
+      'The customer has no legal entity yet. Confirm it before authorising fuel.',
+    );
+  }
+  if (policy.legalEntityId !== station.legalEntityId) {
+    throw new AppError(
+      'FORBIDDEN',
+      'This customer account cannot be used at a station of another legal entity',
+    );
+  }
+  if (policy.scope === 'SELECTED' && !policy.allowedStationIds.includes(station.stationId)) {
+    throw new AppError('FORBIDDEN', 'This customer account cannot be used at this station');
+  }
+}
+
 export function assertCreditAccountHasPositiveLimit(account: CustomerAccount): void {
   if (account.accountType !== 'CREDIT') return;
   const limit = account.creditLimit?.amount;
