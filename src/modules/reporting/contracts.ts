@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeStationIds } from './domain';
 import type { CanonicalRevenueReport, RestatedCogsReport } from '../profitability/contracts';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must use YYYY-MM-DD');
@@ -6,7 +7,19 @@ const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must use YYYY-M
 export const managementReportQuerySchema = z
   .object({
     tenantId: z.string().uuid(),
+    /** Single station; kept so existing links keep working. */
     stationId: z.string().uuid().optional(),
+    /** One or more stations, as an array or a comma-separated list. Empty means all. */
+    stationIds: z.preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value
+              .split(',')
+              .map((part) => part.trim())
+              .filter(Boolean)
+          : value,
+      z.array(z.string().uuid()).max(100).optional(),
+    ),
     fromDate: dateOnly.optional(),
     toDate: dateOnly.optional(),
   })
@@ -18,9 +31,12 @@ export const managementReportQuerySchema = z
         message: 'fromDate must not be after toDate',
       });
     }
+  })
+  .transform(({ stationId: _single, stationIds, ...rest }) => {
+    return { ...rest, stationIds: normalizeStationIds(_single, stationIds) };
   });
 
-export type ManagementReportQuery = z.infer<typeof managementReportQuerySchema> & {
+export type ManagementReportQuery = z.output<typeof managementReportQuerySchema> & {
   fromDate: string;
   toDate: string;
 };
@@ -119,8 +135,19 @@ export type SupplierExposure = Readonly<{
   }[];
 }>;
 
+export type CustomerCreditActivityRow = Readonly<{
+  stationId: string;
+  accountType: string;
+  drawnAmount: ReportMoney;
+  drawnLitres: ReportLitres;
+  authorizationCount: number;
+}>;
+
 export type CustomerExposure = Readonly<{
+  /** Applies to the balance and reservation figures only; `activity` is always available. */
   availability: 'AVAILABLE' | 'UNAVAILABLE_STATION_DIMENSION';
+  /** Fuel drawn on customer accounts in the period, by the station where it was drawn. */
+  activity: readonly CustomerCreditActivityRow[];
   receivableBalance: ReportMoney | null;
   prepaidValueBalance: ReportMoney | null;
   reservedAmount: ReportMoney | null;
@@ -165,7 +192,8 @@ export type ManagementReport = Readonly<{
   currency: 'USD';
   filters: Readonly<{
     tenantId: string;
-    stationId?: string;
+    /** Stations covered; empty means every station. */
+    stationIds: readonly string[];
     fromDate: string;
     toDate: string;
   }>;

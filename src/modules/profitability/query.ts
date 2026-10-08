@@ -38,8 +38,12 @@ type RestatedCogsRow = {
 
 const FINALIZED_REVISION_STATES = sql`('APPROVED', 'POSTED', 'LOCKED')`;
 
-function stationClause(alias: string, stationId?: string) {
-  return stationId ? sql`and ${sql.raw(`${alias}.station_id`)} = ${stationId}` : sql``;
+function stationClause(alias: string, stationIds?: readonly string[]) {
+  if (!stationIds || stationIds.length === 0) return sql``;
+  return sql`and ${sql.raw(`${alias}.station_id`)} in (${sql.join(
+    stationIds.map((id) => sql`${id}`),
+    sql`, `,
+  )})`;
 }
 
 function toIso(value: Date | string): string {
@@ -120,7 +124,7 @@ export async function readRestatedCogs(
        and rev.reconciliation_id = r.id
       where r.tenant_id = ${filters.tenantId}
         and rev.state in ${FINALIZED_REVISION_STATES}
-        ${stationClause('r', filters.stationId)}
+        ${stationClause('r', filters.stationIds)}
       order by r.id, rev.revision desc
     ),
     posted_revaluation_evidence as (
@@ -155,7 +159,7 @@ export async function readRestatedCogs(
        and event.currency = 'USD'
        and event.currency = line.currency
       where line.tenant_id = ${filters.tenantId}
-        ${stationClause('line', filters.stationId)}
+        ${stationClause('line', filters.stationIds)}
       group by
         line.tenant_id,
         line.station_id,
@@ -279,7 +283,7 @@ export async function readCanonicalRevenue(
        and rev.reconciliation_id = r.id
       where r.tenant_id = ${filters.tenantId}
         and rev.state in ${FINALIZED_REVISION_STATES}
-        ${stationClause('r', filters.stationId)}
+        ${stationClause('r', filters.stationIds)}
       order by r.id, rev.revision desc
     )
     select

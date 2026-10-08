@@ -490,6 +490,10 @@ test.describe('phones never scroll sideways', () => {
       await page.setViewportSize({ width, height: 800 });
 
       await page.goto('/reports?tenantId=tenant-1');
+      await expect(page.getByRole('heading', { name: 'Available reports' })).toBeVisible();
+      await expectFitsWidth(page);
+
+      await page.goto('/reports/sales?tenantId=tenant-1');
       await expect(page.getByRole('heading', { name: 'Payments and products' })).toBeVisible();
       await expectFitsWidth(page);
 
@@ -538,17 +542,17 @@ test.describe('KPIs', () => {
     await mockApis(page);
     await page.goto('/reports?tenantId=tenant-1');
     await page.getByRole('link', { name: /Cash collected/ }).click();
-    await expect(page).toHaveURL(/#cash-report$/);
+    await expect(page).toHaveURL(/\/reports\/cash\?tenantId=tenant-1/);
     await expect(
       page.getByRole('heading', { name: 'Evidence → collected → banked' }),
-    ).toBeInViewport();
+    ).toBeVisible();
   });
 
   test('become one calm list on phones', async ({ page }) => {
     await mockApis(page);
     await page.setViewportSize({ width: 390, height: 800 });
     await page.goto('/reports?tenantId=tenant-1');
-    const grid = page.getByRole('region', { name: 'Management report headline metrics' });
+    const grid = page.getByRole('region', { name: 'Headline figures for the chosen period' });
     await expect(grid).toBeVisible();
     const columns = await grid.evaluate(
       (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
@@ -591,7 +595,8 @@ test.describe('click targets', () => {
 
 test.describe('data screens stay accessible', () => {
   const screens = [
-    ['/reports?tenantId=tenant-1', 'Payments and products'],
+    ['/reports?tenantId=tenant-1', 'Available reports'],
+    ['/reports/sales?tenantId=tenant-1', 'Payments and products'],
     [
       '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
       'Choose a station to view inventory',
