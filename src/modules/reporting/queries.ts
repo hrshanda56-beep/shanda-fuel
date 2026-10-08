@@ -893,10 +893,12 @@ const dateBasis: ReportDateBasis = {
   expenses: 'A5 business date',
 };
 
-export async function getManagementReportFromRequest(
-  request: Request,
-  input: unknown,
-): Promise<ManagementReport> {
+/**
+ * The authorisation every report action shares (view, share, export): an
+ * authenticated tenant member who may view every requested station. One denial
+ * rejects the whole request.
+ */
+export async function authorizeManagementReportRequest(request: Request, input: unknown) {
   const filters = parseManagementReportQuery(input);
   const authority = await resolveTenantExecutionContext({
     request,
@@ -906,6 +908,14 @@ export async function getManagementReportFromRequest(
     selectedStations(transaction, filters),
   );
   authorizeStations(authority.authorization, filters, stations);
+  return { filters, authority, stations };
+}
+
+export async function getManagementReportFromRequest(
+  request: Request,
+  input: unknown,
+): Promise<ManagementReport> {
+  const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
   // One station keeps the station-scoped transaction context; several stations
   // are each authorised above and then bounded by the explicit station filter.
   const [single] = stations;
