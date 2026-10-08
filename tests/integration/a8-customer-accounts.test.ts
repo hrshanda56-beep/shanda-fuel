@@ -582,6 +582,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         tenantId: ids.tenant,
         accountReference: 'A8-PERM-001',
         displayName: 'Permission Alignment Customer',
+        legalEntityId: ids.legal,
       },
       'a8-permission-create',
     );
@@ -681,6 +682,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         commandType: 'RecordCustomerPayment',
         tenantId: ids.tenant,
         accountId: account.accountId,
+        receivingStationId: ids.secondStation,
         amount: { amount: '10.0000', currency: 'USD' },
         source: {
           sourceType: 'CUSTOMER_PAYMENT',
@@ -832,6 +834,32 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
     `;
     expect(rows).toHaveLength(1);
     expect(rows[0]?.active).toBe(false);
+
+    // A payment is received at any station of the entity and remembers which one.
+    const pay = (stationId: string, n: number) =>
+      command(
+        {
+          commandType: 'RecordCustomerPayment',
+          tenantId: ids.tenant,
+          accountId: open.accountId,
+          receivingStationId: stationId,
+          amount: { amount: '5.0000', currency: 'USD' },
+          source: {
+            sourceType: 'CUSTOMER_PAYMENT',
+            sourceId: `a8b00000-0000-4000-8000-0000000006${n}1`,
+          },
+          occurredAt: '2026-09-24T10:00:00+02:00',
+          businessDate: '2026-09-24',
+        },
+        `a8-scope-pay-${n}`,
+      );
+    expect((await pay(ids.secondStation, 1)).status).toBe(201);
+    const [entry] = await client`
+      select receiving_station_id from app.customer_ledger_entries
+      where account_id = ${open.accountId} and entry_type = 'CUSTOMER_PAYMENT'
+    `;
+    expect(entry?.receiving_station_id).toBe(ids.secondStation);
+    expect((await pay('a8b00000-0000-4000-8000-000000000023', 2)).status).toBe(400);
 
     // A customer cannot be moved to another legal entity.
     const move = await command(
