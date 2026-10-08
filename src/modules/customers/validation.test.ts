@@ -3,6 +3,8 @@ import {
   createCustomerAccountSchema,
   customerStatementQuerySchema,
   recordPrepaidTopUpSchema,
+  setCustomerAccountStationsSchema,
+  setCustomerLegalEntitySchema,
 } from './validation';
 
 const ids = {
@@ -101,5 +103,73 @@ describe('customer command validation contracts', () => {
         asOf: '2026-09-30T23:59:59Z',
       }),
     ).toThrow('A statement period cannot be combined with asOf');
+  });
+});
+
+describe('customer station scope validation (ADR-017)', () => {
+  const station = '00000000-0000-4000-8000-000000000006';
+  const other = '00000000-0000-4000-8000-000000000007';
+  const base = {
+    commandType: 'SetCustomerAccountStations' as const,
+    tenantId: ids.tenantId,
+    accountId: ids.accountId,
+    expectedVersion: 0,
+  };
+
+  it('requires a station list for a selected scope', () => {
+    expect(
+      setCustomerAccountStationsSchema.safeParse({ ...base, stationScope: 'SELECTED' }).success,
+    ).toBe(false);
+    expect(
+      setCustomerAccountStationsSchema.safeParse({
+        ...base,
+        stationScope: 'SELECTED',
+        stationIds: [station, other],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects listed stations for the all-stations scope and duplicate stations', () => {
+    expect(
+      setCustomerAccountStationsSchema.safeParse({
+        ...base,
+        stationScope: 'ALL',
+        stationIds: [station],
+      }).success,
+    ).toBe(false);
+    expect(
+      setCustomerAccountStationsSchema.safeParse({
+        ...base,
+        stationScope: 'SELECTED',
+        stationIds: [station, station],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('defaults a new account to all stations and checks its station list', () => {
+    const account = {
+      commandType: 'CreateCustomerAccount' as const,
+      tenantId: ids.tenantId,
+      customerId: ids.customerId,
+      accountType: 'PREPAID_VALUE' as const,
+      currency: 'USD',
+    };
+    expect(createCustomerAccountSchema.safeParse(account).success).toBe(true);
+    expect(
+      createCustomerAccountSchema.safeParse({ ...account, stationScope: 'SELECTED' }).success,
+    ).toBe(false);
+  });
+
+  it('needs a legal entity id to set the customer legal entity', () => {
+    const command = {
+      commandType: 'SetCustomerLegalEntity' as const,
+      tenantId: ids.tenantId,
+      customerId: ids.customerId,
+      expectedVersion: 0,
+    };
+    expect(setCustomerLegalEntitySchema.safeParse(command).success).toBe(false);
+    expect(
+      setCustomerLegalEntitySchema.safeParse({ ...command, legalEntityId: station }).success,
+    ).toBe(true);
   });
 });

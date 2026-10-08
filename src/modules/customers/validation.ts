@@ -34,6 +34,8 @@ export const createCustomerSchema = z.object({
   accountReference: z.string().trim().min(1).max(80),
   displayName: z.string().trim().min(1).max(200),
   contactMetadata: z.record(z.string(), z.string().trim().max(200)).optional(),
+  /** The one legal entity this customer's credit is with (ADR-017). */
+  legalEntityId: uuid.optional(),
 });
 
 const customerLifecycleCommandBase = z.object({
@@ -71,6 +73,52 @@ export const deactivateCustomerSchema = customerLifecycleCommandBase.extend({
   commandType: z.literal('DeactivateCustomer'),
 });
 
+export const setCustomerLegalEntitySchema = customerLifecycleCommandBase.extend({
+  commandType: z.literal('SetCustomerLegalEntity'),
+  legalEntityId: uuid,
+});
+
+export const customerAccountStationScopeSchema = z.enum(['ALL', 'SELECTED']);
+
+function refineStationScope(
+  input: { stationScope?: 'ALL' | 'SELECTED' | undefined; stationIds?: string[] | undefined },
+  refinement: z.RefinementCtx,
+) {
+  const count = input.stationIds?.length ?? 0;
+  if (input.stationScope === 'SELECTED' && count === 0) {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['stationIds'],
+      message: 'Choose at least one station, or use all stations',
+    });
+  }
+  if (input.stationScope !== 'SELECTED' && count > 0) {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['stationIds'],
+      message: 'Stations can only be listed when the scope is SELECTED',
+    });
+  }
+  if (new Set(input.stationIds).size !== count) {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['stationIds'],
+      message: 'Each station may be listed once',
+    });
+  }
+}
+
+export const setCustomerAccountStationsSchema = z
+  .object({
+    commandType: z.literal('SetCustomerAccountStations'),
+    tenantId: uuid,
+    accountId: uuid,
+    expectedVersion: z.number().int().nonnegative(),
+    stationScope: customerAccountStationScopeSchema,
+    stationIds: z.array(uuid).max(100).optional(),
+  })
+  .superRefine(refineStationScope);
+
 export const createCustomerAccountSchema = z
   .object({
     commandType: z.literal('CreateCustomerAccount'),
@@ -79,8 +127,12 @@ export const createCustomerAccountSchema = z
     accountType: customerAccountTypeSchema,
     currency,
     creditLimit: decimalText.optional(),
+    /** Defaults to every station of the customer's legal entity. */
+    stationScope: customerAccountStationScopeSchema.optional(),
+    stationIds: z.array(uuid).max(100).optional(),
   })
   .superRefine((input, refinement) => {
+    refineStationScope(input, refinement);
     if (
       input.accountType === 'CREDIT' &&
       (!input.creditLimit || !/[1-9]/.test(input.creditLimit))
@@ -232,6 +284,8 @@ export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type ActivateCustomerInput = z.infer<typeof activateCustomerSchema>;
 export type DeactivateCustomerInput = z.infer<typeof deactivateCustomerSchema>;
 export type CreateCustomerAccountInput = z.infer<typeof createCustomerAccountSchema>;
+export type SetCustomerLegalEntityInput = z.infer<typeof setCustomerLegalEntitySchema>;
+export type SetCustomerAccountStationsInput = z.infer<typeof setCustomerAccountStationsSchema>;
 export type CompleteCustomerFuelTransactionInput = z.infer<
   typeof completeCustomerFuelTransactionSchema
 >;

@@ -77,6 +77,8 @@ describe('customer command assurance', () => {
 
   it('keeps customer policy declarations and enforces requiresStepUp', () => {
     expect(CUSTOMER_COMMAND_POLICY.CreateCustomerAccount?.requiresStepUp).toBe(true);
+    expect(CUSTOMER_COMMAND_POLICY.SetCustomerAccountStations?.requiresStepUp).toBe(true);
+    expect(CUSTOMER_COMMAND_POLICY.SetCustomerLegalEntity?.requiresStepUp).toBe(true);
     const now = Date.now();
 
     expect(() =>
