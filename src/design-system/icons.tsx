@@ -172,6 +172,12 @@ const paths = {
       <circle cx="19" cy="12" r="1" />
     </>
   ),
+  scan: (
+    <>
+      <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+      <rect x="8" y="8" width="8" height="8" rx="2" />
+    </>
+  ),
   calendar: (
     <>
       <rect x="3" y="4" width="18" height="17" rx="2" />

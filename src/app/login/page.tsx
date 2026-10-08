@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { authClient } from '@/platform/auth/client';
+import { BrandMark } from '@/design-system/brand-mark';
 import { Button, Card, Field } from '@/design-system/primitives';
 
 type PasswordSignInData = {
@@ -83,9 +84,7 @@ export default function LoginPage() {
     <main className="auth-layout">
       <div className="auth-panel">
         <div className="shell-brand">
-          <span className="brand-mark" aria-hidden="true">
-            SF
-          </span>
+          <BrandMark />
           <span className="shell-brand-text">
             <span className="brand-name">Shanda Fuel</span>
             <span className="brand-byline">by ShandaHR</span>
