@@ -9,7 +9,6 @@ import {
   type ContextResolution,
   type ContextSelection,
 } from '@/modules/context';
-import { Notice } from '@/design-system/feedback';
 import {
   formatDate,
   formatLitres,
@@ -406,10 +405,8 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
           >
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Posted ledger activity</p>
                 <h2 id="customer-transactions-title">Recent account transactions</h2>
               </div>
-              <StatusBadge tone="informational">Read-only history</StatusBadge>
             </div>
             {customer.recentTransactions.length === 0 ? (
               <EmptyState
@@ -462,12 +459,6 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
               </TableScrollRegion>
             )}
           </Card>
-
-          <Notice tone="info" title="Phase 1 commercial gaps">
-            Invoices, formal statements, staff or management benefits, vehicle and driver rules,
-            customer-specific terms, and overdue ageing are not part of the currently modelled
-            customer account data and are intentionally not inferred here.
-          </Notice>
         </>
       ) : null}
       {customer ? (

@@ -9,19 +9,21 @@ import {
   type ContextResolution,
   type ContextSelection,
 } from '@/modules/context';
-import { Notice } from '@/design-system/feedback';
-import { PageHeader } from '@/design-system/layout';
+import { Section } from '@/design-system/layout';
+import { SkeletonCard } from '@/design-system/page-kit';
 import {
-  Card,
   ContextRequiredState,
   EmptyState,
   ErrorState,
-  Field,
-  LoadingState,
+  Skeleton,
   StatusBadge,
 } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
-import { formatLitres, formatMoney, formatStatusLabel } from '@/design-system/formatters';
+import {
+  formatLitresDisplay,
+  formatMoneyDisplay,
+  formatStatusSentence,
+} from '@/design-system/formatters';
 import type { CustomerAccount, CustomerAccountsResponse, CustomerSummary } from './types';
 
 function getErrorMessage(result: unknown, fallback: string): string {
@@ -52,29 +54,16 @@ function accountTypeLabel(type: CustomerAccount['accountType']): string {
 function accountIndicator(account: CustomerAccount): string {
   if (account.accountType === 'CREDIT') {
     return account.availableCredit === null
-      ? `Outstanding ${formatMoney(account.balance ?? '0', account.currency)} · limit not set`
-      : `${formatMoney(account.balance ?? '0', account.currency)} outstanding · ${formatMoney(account.availableCredit, account.currency)} available`;
+      ? `${formatMoneyDisplay(account.balance ?? '0', account.currency)} owed · no limit set`
+      : `${formatMoneyDisplay(account.balance ?? '0', account.currency)} owed · ${formatMoneyDisplay(account.availableCredit, account.currency)} available`;
   }
   if (account.accountType === 'PREPAID_VALUE') {
-    return `${formatMoney(account.availableBalance ?? '0', account.currency)} available`;
+    return `${formatMoneyDisplay(account.availableBalance ?? '0', account.currency)} available`;
   }
-  if (account.productBalances.length === 0) return 'No product balance';
+  if (account.productBalances.length === 0) return 'No fuel balance';
   return account.productBalances
-    .map((product) => `${product.productCode} ${formatLitres(product.availableLitres)}`)
+    .map((product) => `${product.productCode} ${formatLitresDisplay(product.availableLitres)}`)
     .join(' · ');
-}
-
-function contextLabel(context: ContextResolution | null, current: ContextSelection | null) {
-  if (!context || !current) return null;
-  const organisation = context.available.organisations.find(
-    (candidate) => candidate.id === current.organisationId,
-  );
-  const legalEntity = current.legalEntityId
-    ? organisation?.legalEntities.find((candidate) => candidate.id === current.legalEntityId)
-    : undefined;
-  return legalEntity
-    ? `${organisation?.name ?? 'Organisation'} · ${legalEntity.name}`
-    : organisation?.name;
 }
 
 export function CustomerWorkspace() {
@@ -90,7 +79,6 @@ export function CustomerWorkspace() {
 
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(current?.organisationId);
-  const scopeLabel = contextLabel(context, current);
 
   async function loadContext(signal: AbortSignal) {
     setContextLoading(true);
@@ -103,17 +91,13 @@ export function CustomerWorkspace() {
       });
       const result = (await response.json()) as Partial<ContextApiResponse> & { message?: string };
       if (!response.ok || !result.data) {
-        throw new Error(getErrorMessage(result, 'Authorised customer context could not be loaded'));
+        throw new Error(getErrorMessage(result, 'Customers could not be loaded'));
       }
       setContext(result.data);
     } catch (cause) {
       if (!signal.aborted) {
         setContext(null);
-        setContextError(
-          cause instanceof Error
-            ? cause.message
-            : 'Authorised customer context could not be loaded',
-        );
+        setContextError(cause instanceof Error ? cause.message : 'Customers could not be loaded');
       }
     } finally {
       if (!signal.aborted) setContextLoading(false);
@@ -138,12 +122,12 @@ export function CustomerWorkspace() {
         !('customers' in result) ||
         !Array.isArray((result as { customers?: unknown }).customers)
       ) {
-        throw new Error(getErrorMessage(result, 'Customer accounts could not be loaded'));
+        throw new Error(getErrorMessage(result, 'Customers could not be loaded'));
       }
       setCustomers((result as CustomerAccountsResponse).customers);
     } catch (cause) {
       if (!signal?.aborted) {
-        setError(cause instanceof Error ? cause.message : 'Customer accounts could not be loaded');
+        setError(cause instanceof Error ? cause.message : 'Customers could not be loaded');
       }
     } finally {
       if (!signal?.aborted) setLoading(false);
@@ -187,150 +171,121 @@ export function CustomerWorkspace() {
       ? buildContextHref(`/customers/${encodeURIComponent(customer.customerId)}`, search, current)
       : `/customers/${encodeURIComponent(customer.customerId)}`;
 
-  return (
-    <div className="content-grid">
-      <PageHeader
-        eyebrow={scopeLabel ?? 'Commercial accounts'}
-        title="Customer accounts"
-        headingLevel="h2"
-        titleId="customer-accounts-title"
-        description="Review the customer identity, account state and balances already recorded for this organisation."
-      />
+  const count = filteredCustomers.length;
+  const showList = !loading && !error;
 
-      {contextLoading ? <LoadingState label="Loading authorised context" /> : null}
+  return (
+    <div className="customers-page">
+      {contextLoading ? <SkeletonCard label="Loading customers" lines={3} /> : null}
       {contextError ? <ErrorState message={contextError} /> : null}
       {!contextLoading && !contextError && !hasRequiredContext ? (
         <ContextRequiredState
-          title="Select an organisation"
-          message="Choose an authorised organisation before customer accounts can be loaded."
+          title="Choose an organisation"
+          message="Pick an organisation at the top of the page to see its customers."
         />
       ) : null}
 
       {hasRequiredContext ? (
-        <>
-          <Card as="section" className="panel" aria-labelledby="customer-search-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Customer register</p>
-                <h2 id="customer-search-title">Find a customer</h2>
-              </div>
-              <StatusBadge tone="informational">Read-only view</StatusBadge>
-            </div>
-            <Field
+        <Section
+          title="Customers"
+          headingId="customer-list-title"
+          action={
+            showList && customers.length > 0 ? (
+              <span className="section-count">
+                {count} {count === 1 ? 'customer' : 'customers'}
+              </span>
+            ) : null
+          }
+        >
+          {customers.length > 0 ? (
+            <input
               id="customer-search"
-              label="Search customers"
-              hint="Search by name, account reference or account type."
-            >
-              <input
-                id="customer-search"
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="e.g. customer name or reference"
-                autoComplete="off"
-              />
-            </Field>
-          </Card>
-
-          <Card as="section" className="panel content-span" aria-labelledby="customer-list-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Existing records</p>
-                <h2 id="customer-list-title">Customers</h2>
-              </div>
-              <StatusBadge tone="neutral">
-                {filteredCustomers.length} {filteredCustomers.length === 1 ? 'record' : 'records'}
-              </StatusBadge>
-            </div>
-            {loading ? <LoadingState label="Loading customer accounts" /> : null}
-            {error ? (
-              <ErrorState
-                message={error}
-                action={
-                  <button
-                    className="button button-secondary"
-                    onClick={() => current && void loadCustomers(current)}
-                  >
-                    Retry
-                  </button>
-                }
-              />
-            ) : null}
-            {!loading && !error && customers.length === 0 ? (
-              <EmptyState
-                title="No customer records"
-                message="Customer records will appear here after authorised onboarding. This view does not create master data."
-              />
-            ) : null}
-            {!loading && !error && customers.length > 0 && filteredCustomers.length === 0 ? (
-              <EmptyState
-                title="No matching customers"
-                message="Try a different name, account reference or account type."
-              />
-            ) : null}
-            {!loading && !error && filteredCustomers.length > 0 ? (
-              <TableScrollRegion label="Customer accounts">
-                <table className="responsive-table">
-                  <caption className="visually-hidden">
-                    Customer accounts and balance indicators
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Customer</th>
-                      <th scope="col">Account type</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Balance / available</th>
+              className="list-search"
+              type="search"
+              aria-label="Search customers"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search by name or reference"
+              autoComplete="off"
+            />
+          ) : null}
+          {loading ? <Skeleton lines={3} label="Loading customers" /> : null}
+          {error ? (
+            <ErrorState
+              message={error}
+              action={
+                <button
+                  className="button button-secondary"
+                  onClick={() => current && void loadCustomers(current)}
+                >
+                  Try again
+                </button>
+              }
+            />
+          ) : null}
+          {showList && customers.length === 0 ? (
+            <EmptyState title="No customers yet" message="Customers you add will be listed here." />
+          ) : null}
+          {showList && customers.length > 0 && count === 0 ? (
+            <EmptyState
+              title="No matching customers"
+              message="Try a different name, reference or account type."
+            />
+          ) : null}
+          {showList && count > 0 ? (
+            <TableScrollRegion label="Customers">
+              <table className="responsive-table">
+                <caption className="visually-hidden">Customers and their balances</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Customer</th>
+                    <th scope="col">Account type</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCustomers.map((customer) => (
+                    <tr key={customer.customerId}>
+                      <td data-label="Customer">
+                        <Link className="row-link" href={customerHref(customer)}>
+                          <strong>{customer.displayName}</strong>
+                          <br />
+                          <small>{customer.accountReference}</small>
+                        </Link>
+                      </td>
+                      <td data-label="Account type">
+                        {customer.accounts.length > 0
+                          ? customer.accounts.map((account) => (
+                              <span className="stack-sm" key={account.accountId}>
+                                {accountTypeLabel(account.accountType)}
+                              </span>
+                            ))
+                          : 'No account yet'}
+                      </td>
+                      <td data-label="Status">
+                        <StatusBadge tone={customer.status === 'ACTIVE' ? 'positive' : 'neutral'}>
+                          {formatStatusSentence(customer.status)}
+                        </StatusBadge>
+                      </td>
+                      <td data-label="Balance">
+                        {customer.accounts.length > 0 ? (
+                          <div className="stack-sm">
+                            {customer.accounts.map((account) => (
+                              <div key={account.accountId}>{accountIndicator(account)}</div>
+                            ))}
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCustomers.map((customer) => (
-                      <tr key={customer.customerId}>
-                        <td data-label="Customer">
-                          <Link className="row-link" href={customerHref(customer)}>
-                            <strong>{customer.displayName}</strong>
-                            <br />
-                            <small>{customer.accountReference}</small>
-                          </Link>
-                        </td>
-                        <td data-label="Account type">
-                          {customer.accounts.length > 0
-                            ? customer.accounts.map((account) => (
-                                <span className="stack-sm" key={account.accountId}>
-                                  {accountTypeLabel(account.accountType)}
-                                </span>
-                              ))
-                            : 'No account opened'}
-                        </td>
-                        <td data-label="Status">
-                          <StatusBadge tone={customer.status === 'ACTIVE' ? 'positive' : 'neutral'}>
-                            {formatStatusLabel(customer.status)}
-                          </StatusBadge>
-                        </td>
-                        <td data-label="Balance / available">
-                          {customer.accounts.length > 0 ? (
-                            <div className="stack-sm">
-                              {customer.accounts.map((account) => (
-                                <div key={account.accountId}>{accountIndicator(account)}</div>
-                              ))}
-                            </div>
-                          ) : (
-                            'Not available'
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableScrollRegion>
-            ) : null}
-          </Card>
-
-          <Notice tone="info" title="What this view covers">
-            Balances and posted account activity come from the existing customer ledger. Customer
-            invoices, staff or management benefits, vehicle and driver controls, overdue ageing, and
-            statements are not represented in this Phase 0 surface.
-          </Notice>
-        </>
+                  ))}
+                </tbody>
+              </table>
+            </TableScrollRegion>
+          ) : null}
+        </Section>
       ) : null}
     </div>
   );

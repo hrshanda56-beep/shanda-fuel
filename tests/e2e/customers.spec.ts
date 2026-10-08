@@ -98,12 +98,12 @@ test.describe('customer accounts Phase 0', () => {
     await mockCustomerApis(page);
     await page.goto('/customers?tenantId=tenant-1&legalEntityId=entity-1');
 
-    await expect(page.getByRole('heading', { name: 'Customer accounts' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Customers', level: 2 })).toBeVisible();
     await expect(
       page.locator('.shell-sidebar').getByRole('link', { name: 'Customers', exact: true }),
     ).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('link', { name: /Acme Transport/ })).toBeVisible();
-    await expect(page.getByText('USD 250.0000 outstanding')).toBeVisible();
+    await expect(page.getByText('$250.00 owed')).toBeVisible();
 
     await page.getByLabel('Search customers').fill('does not exist');
     await expect(page.getByRole('heading', { name: 'No matching customers' })).toBeVisible();
@@ -114,7 +114,6 @@ test.describe('customer accounts Phase 0', () => {
     await expect(page.getByText('Available credit')).toBeVisible();
     await expect(page.getByText('Product balances')).toBeVisible();
     await expect(page.getByText('Fuel charged')).toBeVisible();
-    await expect(page.getByText('Phase 1 commercial gaps')).toBeVisible();
   });
 
   test('keeps the customer detail usable on a phone and accessible', async ({ page }) => {
