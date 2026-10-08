@@ -156,3 +156,107 @@
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * One card per topic, like Today: no boxes inside boxes.
+ * A layout Section is itself the glass card; cards, panels and state boxes
+ * placed inside a card or section lose their own border, fill and shadow and
+ * become plain content separated by hairlines.
+ * ------------------------------------------------------------------------- */
+
+.shell-sheet .section {
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-glass);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-glass);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(115%);
+}
+
+.shell-sheet .section + .section {
+  margin-top: var(--space-4);
+}
+
+.shell-sheet :is(.section, .panel, .card-body) :is(.card, .state, .callout, .source-card):not(a) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.shell-sheet :is(.section, .panel) .state {
+  padding-block: var(--space-1);
+}
+
+.shell-sheet :is(.section, .panel) :is(.state h3, .state strong) {
+  font-size: var(--font-size-md);
+}
+
+/* The heading row keeps its badge beside the title, even on phones. */
+.shell-sheet .panel-heading {
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+
+.shell-sheet .panel-heading > :first-child {
+  flex: 1 1 auto;
+}
+
+.shell-sheet .panel-heading > .status {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  white-space: nowrap;
+}
+
+/* Page header on phones: one quiet block under the shell title. */
+@media (max-width: 47.99rem) {
+  .shell-sheet .page-header :is(h1, h2) {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .shell-sheet .page-header .eyebrow {
+    display: none;
+  }
+
+  .shell-sheet .page-header {
+    padding-bottom: var(--space-3);
+  }
+
+  .shell-sheet .page-header-actions {
+    width: 100%;
+  }
+
+  .shell-sheet .page-header-actions .button {
+    flex: 1 1 auto;
+  }
+
+  .shell-sheet .breadcrumbs {
+    font-size: var(--font-size-xs);
+  }
+}
+
+/* Key/value lists read as Today rows: hairlines, label left, value right. */
+.shell-sheet :is(.detail-list, .summary-list, .operational-summary) > div {
+  padding-block: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.shell-sheet :is(.detail-list, .summary-list, .operational-summary) > div:last-child {
+  border-bottom: 0;
+}
+
+/* Full-width primary action at the foot of a card on phones. */
+@media (max-width: 47.99rem) {
+  .shell-sheet :is(.form-actions, .action-row) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shell-sheet :is(.form-actions, .action-row) .button {
+    width: 100%;
+    min-height: 3rem;
+  }
+}
