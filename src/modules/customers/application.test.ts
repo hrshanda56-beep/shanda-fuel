@@ -33,7 +33,7 @@ function context(sessionOverrides: Partial<SessionRecord> = {}): CustomerCommand
   const roleAssignment = {
     tenantId: ids.tenant,
     scopeType: 'TENANT' as const,
-    roleCode: 'FINANCE' as const,
+    roleCode: 'ADMINISTRATOR' as const,
   };
   const authority = {
     actor: { identityId: ids.actor, session },

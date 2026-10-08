@@ -16,7 +16,9 @@ import {
   createPrepaidTopUpEntry,
   assertSourceReferenceUnused,
   assertCustomerAccountTransactionAllowed,
+  activateCustomer,
   customerLedgerSourceKey,
+  deactivateCustomer,
   deriveAccountBalance,
   recordCustomerFuelUse,
   requestCustomerFuelAuthorization,
@@ -28,15 +30,19 @@ import {
   type CustomerAccount,
   type CustomerFuelAuthorization,
   type CustomerLedgerEntry,
+  updateCustomerMasterData,
 } from './domain';
 import type { CustomerCommandContext, CustomerTransaction } from './application';
 import type {
   CompleteCustomerFuelTransactionInput,
   CreateCustomerAccountInput,
   CreateCustomerInput,
+  ActivateCustomerInput,
+  DeactivateCustomerInput,
   RecordCustomerPaymentInput,
   RecordPrepaidTopUpInput,
   RequestCustomerFuelAuthorizationInput,
+  UpdateCustomerInput,
 } from './validation';
 
 type AccountRow = {
@@ -261,6 +267,124 @@ export async function createCustomerInTransaction(
     values (${id}, ${context.tenantId}, ${input.accountReference}, ${input.displayName}, ${JSON.stringify(input.contactMetadata ?? {})}::jsonb, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
   `);
   return { customerId: id, accountReference: input.accountReference };
+}
+
+type CustomerRow = {
+  id: string;
+  tenant_id: string;
+  account_reference: string;
+  display_name: string;
+  contact_metadata: Record<string, string>;
+  status: Customer['status'];
+  version: number | string;
+};
+
+async function loadCustomerForUpdate(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  customerId: string,
+): Promise<CustomerRow> {
+  const rows = await transaction.execute<CustomerRow>(sql`
+    select id, tenant_id, account_reference, display_name, contact_metadata, status, version
+    from app.customers
+    where tenant_id=${context.tenantId} and id=${customerId}
+    for update
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'The customer was not found');
+  return row;
+}
+
+function customerFromRow(row: CustomerRow): Customer {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    accountReference: row.account_reference,
+    displayName: row.display_name,
+    status: row.status,
+    contactMetadata: row.contact_metadata,
+  };
+}
+
+async function persistCustomer(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  row: CustomerRow,
+  next: Customer,
+  expectedVersion: number,
+) {
+  const updated = await transaction.execute<{ id: string; version: number | string }>(sql`
+    update app.customers
+    set account_reference=${next.accountReference},
+        display_name=${next.displayName},
+        contact_metadata=${JSON.stringify(next.contactMetadata ?? {})}::jsonb,
+        status=${next.status},
+        version=version+1,
+        updated_by=${context.authority.membership.membershipId},
+        updated_at=now()
+    where tenant_id=${context.tenantId} and id=${row.id} and version=${expectedVersion}
+    returning id, version
+  `);
+  if (!updated[0]) throw new AppError('CONFLICT', 'The customer became stale');
+  return {
+    customerId: next.id,
+    accountReference: next.accountReference,
+    displayName: next.displayName,
+    contactMetadata: next.contactMetadata ?? {},
+    status: next.status,
+    version: Number(updated[0].version),
+  };
+}
+
+export async function updateCustomerInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: UpdateCustomerInput,
+) {
+  const row = await loadCustomerForUpdate(transaction, context, input.customerId);
+  if (Number(row.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer became stale');
+  return persistCustomer(
+    transaction,
+    context,
+    row,
+    updateCustomerMasterData(customerFromRow(row), input),
+    input.expectedVersion,
+  );
+}
+
+export async function activateCustomerInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: ActivateCustomerInput,
+) {
+  const row = await loadCustomerForUpdate(transaction, context, input.customerId);
+  if (Number(row.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer became stale');
+  return persistCustomer(
+    transaction,
+    context,
+    row,
+    activateCustomer(customerFromRow(row)),
+    input.expectedVersion,
+  );
+}
+
+export async function deactivateCustomerInTransaction(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  input: DeactivateCustomerInput,
+) {
+  const row = await loadCustomerForUpdate(transaction, context, input.customerId);
+  if (Number(row.version) !== input.expectedVersion)
+    throw new AppError('CONFLICT', 'The customer became stale');
+  return persistCustomer(
+    transaction,
+    context,
+    row,
+    deactivateCustomer(customerFromRow(row)),
+    input.expectedVersion,
+  );
 }
 
 export async function createCustomerAccountInTransaction(

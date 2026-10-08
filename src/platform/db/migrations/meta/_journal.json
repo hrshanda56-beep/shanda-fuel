@@ -169,6 +169,13 @@
       "when": 1791417600000,
       "tag": "0023_security_first_owner_bootstrap",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791442598000,
+      "tag": "0024_customer_permission_alignment",
+      "breakpoints": true
     }
   ]
 }

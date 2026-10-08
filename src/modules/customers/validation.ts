@@ -36,6 +36,41 @@ export const createCustomerSchema = z.object({
   contactMetadata: z.record(z.string(), z.string().trim().max(200)).optional(),
 });
 
+const customerLifecycleCommandBase = z.object({
+  tenantId: uuid,
+  customerId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+});
+
+export const updateCustomerSchema = customerLifecycleCommandBase
+  .extend({
+    commandType: z.literal('UpdateCustomer'),
+    accountReference: z.string().trim().min(1).max(80).optional(),
+    displayName: z.string().trim().min(1).max(200).optional(),
+    contactMetadata: z.record(z.string(), z.string().trim().max(200)).optional(),
+  })
+  .superRefine((input, refinement) => {
+    if (
+      input.accountReference === undefined &&
+      input.displayName === undefined &&
+      input.contactMetadata === undefined
+    ) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['accountReference'],
+        message: 'At least one customer field must be provided',
+      });
+    }
+  });
+
+export const activateCustomerSchema = customerLifecycleCommandBase.extend({
+  commandType: z.literal('ActivateCustomer'),
+});
+
+export const deactivateCustomerSchema = customerLifecycleCommandBase.extend({
+  commandType: z.literal('DeactivateCustomer'),
+});
+
 export const createCustomerAccountSchema = z
   .object({
     commandType: z.literal('CreateCustomerAccount'),
@@ -193,6 +228,9 @@ export const customerStatementQuerySchema = z
   });
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+export type ActivateCustomerInput = z.infer<typeof activateCustomerSchema>;
+export type DeactivateCustomerInput = z.infer<typeof deactivateCustomerSchema>;
 export type CreateCustomerAccountInput = z.infer<typeof createCustomerAccountSchema>;
 export type CompleteCustomerFuelTransactionInput = z.infer<
   typeof completeCustomerFuelTransactionSchema

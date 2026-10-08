@@ -8,17 +8,20 @@ export {
   assertCustomerAccountTransactionAllowed,
   assertCreditAccountHasPositiveLimit,
   assertSourceReferenceUnused,
+  activateCustomer,
   cancelCustomerFuelAuthorization,
   createCustomerPaymentEntry,
   createPrepaidTopUpEntry,
   customerLedgerSourceKey,
   deriveAccountBalance,
+  deactivateCustomer,
   expireCustomerFuelAuthorization,
   newCustomer,
   newCustomerAccount,
   recordCustomerFuelUse,
   requestCustomerFuelAuthorization,
   reserveCustomerFuelAuthorization,
+  updateCustomerMasterData,
 } from './domain';
 export type {
   ActiveReservation,
@@ -82,6 +85,7 @@ export type {
 } from './queries';
 export {
   completeCustomerFuelTransactionSchema,
+  activateCustomerSchema,
   authorizeCustomerFuelSchema,
   cancelCustomerFuelAuthorizationSchema,
   createCustomerAccountSchema,
@@ -89,8 +93,10 @@ export {
   customerAccountTypeSchema,
   customerSourceSchema,
   customerStatementQuerySchema,
+  deactivateCustomerSchema,
   recordCustomerPaymentSchema,
   recordPrepaidTopUpSchema,
   requestCustomerFuelAuthorizationSchema,
   expireCustomerFuelAuthorizationSchema,
+  updateCustomerSchema,
 } from './validation';

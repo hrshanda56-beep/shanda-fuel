@@ -228,6 +228,47 @@ export function newCustomer(input: {
   };
 }
 
+export function updateCustomerMasterData(
+  customer: Customer,
+  input: {
+    accountReference?: string;
+    displayName?: string;
+    contactMetadata?: Readonly<Record<string, string>>;
+  },
+): Customer {
+  return {
+    ...customer,
+    ...(input.accountReference !== undefined
+      ? { accountReference: requireText(input.accountReference, 'Customer account reference') }
+      : {}),
+    ...(input.displayName !== undefined
+      ? { displayName: requireText(input.displayName, 'Customer display name') }
+      : {}),
+    ...(input.contactMetadata !== undefined ? { contactMetadata: input.contactMetadata } : {}),
+  };
+}
+
+/** Deactivation is the reversible SUSPENDED lifecycle state; CLOSED remains terminal. */
+export function deactivateCustomer(customer: Customer): Customer {
+  if (customer.status === 'CLOSED') {
+    throw new AppError('CONFLICT', 'A closed customer cannot be deactivated');
+  }
+  if (customer.status === 'SUSPENDED') {
+    throw new AppError('CONFLICT', 'The customer is already deactivated');
+  }
+  return { ...customer, status: 'SUSPENDED' };
+}
+
+export function activateCustomer(customer: Customer): Customer {
+  if (customer.status === 'CLOSED') {
+    throw new AppError('CONFLICT', 'A closed customer cannot be activated');
+  }
+  if (customer.status === 'ACTIVE') {
+    throw new AppError('CONFLICT', 'The customer is already active');
+  }
+  return { ...customer, status: 'ACTIVE' };
+}
+
 export function newCustomerAccount(input: {
   id: string;
   tenantId: string;

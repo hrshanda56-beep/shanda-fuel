@@ -199,6 +199,17 @@ describe('permission authorization', () => {
     ).toBe(true);
   });
 
+  it('keeps customer lifecycle management with OWNER and ADMINISTRATOR', () => {
+    expect(DEFAULT_ROLE_PERMISSIONS.OWNER).toContain('customer.manage');
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('customer.manage');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.manage');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.account.manage');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.account.adjust');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.limit.override');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).toContain('customer.payment.record');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).toContain('customer.credit.authorize');
+  });
+
   it('rejects a tenant scope carrying narrower identifiers', () => {
     expect(() =>
       scopeCovers(

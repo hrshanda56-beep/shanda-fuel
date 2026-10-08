@@ -41,6 +41,9 @@ const ids = {
   actor: 'a8b00000-0000-4000-8000-000000000031',
   membership: 'a8b00000-0000-4000-8000-000000000041',
   session: 'a8b00000-0000-4000-8000-000000000051',
+  financeActor: 'a8b00000-0000-4000-8000-000000000061',
+  financeMembership: 'a8b00000-0000-4000-8000-000000000071',
+  financeSession: 'a8b00000-0000-4000-8000-000000000081',
 };
 
 let client: Sql;
@@ -49,12 +52,16 @@ async function signedCookie(token: string): Promise<string> {
   return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
 }
 
-async function command(input: Record<string, unknown>, key: string) {
+async function command(
+  input: Record<string, unknown>,
+  key: string,
+  sessionToken = 'a8-session-token',
+) {
   return customerCommandPost(
     new Request('http://127.0.0.1:3000/api/customers/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
+        cookie: `shanda-fuel.session_token=${await signedCookie(sessionToken)}`,
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -259,6 +266,8 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       insert into app.tenants (id, name, slug) values ('${ids.tenant}', 'A8 Customer Tenant', 'a8-customer-tenant') on conflict (id) do nothing;
       insert into auth."user" (id, name, email) values ('${ids.actor}', 'A8 Finance', 'a8-finance@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE') on conflict (id) do nothing;
+      insert into auth."user" (id, name, email) values ('${ids.financeActor}', 'A8 Operational Finance', 'a8-operational-finance@example.test') on conflict (id) do nothing;
+      insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.financeMembership}', '${ids.tenant}', '${ids.financeActor}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'A8 Customer Legal') on conflict (id) do nothing;
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A8CUSTOMER', 'A8 Customer Station', 'ACTIVE') on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name, status) values ('${ids.product}', '${ids.tenant}', 'A8-PETROL', 'A8 Petrol', 'ACTIVE') on conflict (id) do nothing;
@@ -308,10 +317,14 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         values
           ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'TENANT', null, null),
           ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
-          ('${ids.tenant}', '${ids.membership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
+          ('${ids.tenant}', '${ids.membership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}'),
+          ('${ids.tenant}', '${ids.financeMembership}', 'FINANCE', 'TENANT', null, null)
         on conflict do nothing;
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
         values ('${ids.session}', '2030-01-01T00:00:00Z', 'a8-session-token', '${ids.actor}', true, now())
+        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
+      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
+        values ('${ids.financeSession}', '2030-01-01T00:00:00Z', 'a8-finance-session-token', '${ids.financeActor}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
     await seedActiveStepUp(client, ids.session, ids.tenant);
@@ -556,5 +569,125 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
     expect(linkedLedger).toEqual([
       { source_id: ids.creditPayment, source_revision_id: postedRevisionId },
     ]);
+  });
+
+  it('enforces management-only customer lifecycle while preserving operational use', async () => {
+    const created = await command(
+      {
+        commandType: 'CreateCustomer',
+        tenantId: ids.tenant,
+        accountReference: 'A8-PERM-001',
+        displayName: 'Permission Alignment Customer',
+      },
+      'a8-permission-create',
+    );
+    expect(created.status).toBe(201);
+    const customer = await body(created);
+
+    const updated = await command(
+      {
+        commandType: 'UpdateCustomer',
+        tenantId: ids.tenant,
+        customerId: customer.customerId,
+        expectedVersion: 0,
+        displayName: 'Permission Alignment Customer Updated',
+      },
+      'a8-permission-update',
+    );
+    expect(updated.status).toBe(200);
+    expect((await body(updated)).version).toBe(1);
+
+    const deactivated = await command(
+      {
+        commandType: 'DeactivateCustomer',
+        tenantId: ids.tenant,
+        customerId: customer.customerId,
+        expectedVersion: 1,
+      },
+      'a8-permission-deactivate',
+    );
+    expect(deactivated.status).toBe(200);
+    expect((await body(deactivated)).status).toBe('SUSPENDED');
+
+    const activated = await command(
+      {
+        commandType: 'ActivateCustomer',
+        tenantId: ids.tenant,
+        customerId: customer.customerId,
+        expectedVersion: 2,
+      },
+      'a8-permission-activate',
+    );
+    expect(activated.status).toBe(200);
+    expect((await body(activated)).status).toBe('ACTIVE');
+
+    const accountResponse = await command(
+      {
+        commandType: 'CreateCustomerAccount',
+        tenantId: ids.tenant,
+        customerId: customer.customerId,
+        accountType: 'CREDIT',
+        currency: 'USD',
+        creditLimit: '100.0000',
+      },
+      'a8-permission-account',
+    );
+    expect(accountResponse.status).toBe(201);
+    const account = await body(accountResponse);
+
+    const financeCreate = await command(
+      {
+        commandType: 'CreateCustomer',
+        tenantId: ids.tenant,
+        accountReference: 'A8-PERM-FINANCE-DENIED',
+        displayName: 'Should not be created',
+      },
+      'a8-permission-finance-create-denied',
+      'a8-finance-session-token',
+    );
+    expect(financeCreate.status).toBe(403);
+
+    const financeUpdate = await command(
+      {
+        commandType: 'UpdateCustomer',
+        tenantId: ids.tenant,
+        customerId: customer.customerId,
+        expectedVersion: 3,
+        displayName: 'Operational role cannot edit master data',
+      },
+      'a8-permission-finance-update-denied',
+      'a8-finance-session-token',
+    );
+    expect(financeUpdate.status).toBe(403);
+
+    const financeDeactivate = await command(
+      {
+        commandType: 'DeactivateCustomer',
+        tenantId: ids.tenant,
+        customerId: customer.customerId,
+        expectedVersion: 3,
+      },
+      'a8-permission-finance-deactivate-denied',
+      'a8-finance-session-token',
+    );
+    expect(financeDeactivate.status).toBe(403);
+
+    const financePayment = await command(
+      {
+        commandType: 'RecordCustomerPayment',
+        tenantId: ids.tenant,
+        accountId: account.accountId,
+        amount: { amount: '10.0000', currency: 'USD' },
+        source: {
+          sourceType: 'CUSTOMER_PAYMENT',
+          sourceId: 'a8b00000-0000-4000-8000-000000000091',
+        },
+        occurredAt: '2026-09-24T09:00:00+02:00',
+        businessDate: '2026-09-24',
+      },
+      'a8-permission-finance-payment',
+      'a8-finance-session-token',
+    );
+    expect(financePayment.status).toBe(201);
   });
 });

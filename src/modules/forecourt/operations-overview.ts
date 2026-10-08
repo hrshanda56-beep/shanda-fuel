@@ -15,6 +15,7 @@ import {
 } from './application';
 import { loadForecourtStation } from './persistence';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
+import { projectOperationsStatus } from './operations-status';
 
 const uuid = z.string().uuid();
 
@@ -238,6 +239,7 @@ async function loadOperationsOverview(
       organisation: { id: station.tenantId, name: station.tenantName },
       currentBusinessDate,
       currentBusinessDayId: null,
+      status: { close: 'NOT_STARTED', approval: 'NO_REVISION' },
       businessDays: [],
       shifts: [],
       reconciliations: [],
@@ -364,6 +366,14 @@ async function loadOperationsOverview(
     organisation: { id: station.tenantId, name: station.tenantName },
     currentBusinessDate,
     currentBusinessDayId: days.find((day) => day.date === currentBusinessDate)?.id ?? null,
+    status: projectOperationsStatus({
+      businessDayState: selectedDay.state,
+      shiftStates: shifts.map((shift) => shift.state),
+      reconciliationStates: reconciliations.map((item) => item.state),
+      revisionStates: reconciliations.flatMap((item) =>
+        item.revisionState ? [item.revisionState] : [],
+      ),
+    }),
     visibility: {
       reconciliations: permissions.canViewReconciliations,
       auditTimeline: permissions.canViewAudit,

@@ -3,14 +3,18 @@ import {
   assertSourceReferenceUnused,
   assertCustomerAccountTransactionAllowed,
   assertCreditAccountHasPositiveLimit,
+  activateCustomer,
   cancelCustomerFuelAuthorization,
   createCustomerPaymentEntry,
   createPrepaidTopUpEntry,
   deriveAccountBalance,
+  deactivateCustomer,
+  newCustomer,
   newCustomerAccount,
   recordCustomerFuelUse,
   requestCustomerFuelAuthorization,
   reserveCustomerFuelAuthorization,
+  updateCustomerMasterData,
   type ActiveReservation,
   type CustomerAccount,
   type CustomerFuelValue,
@@ -76,6 +80,28 @@ function authorization(target: CustomerAccount, requested: CustomerFuelValue) {
 }
 
 describe('customer account domain', () => {
+  it('supports explicit management edits and reversible lifecycle commands', () => {
+    const customer = newCustomer({
+      id: ids.customer,
+      tenantId: ids.tenant,
+      accountReference: 'C-001',
+      displayName: 'Original customer',
+    });
+    const edited = updateCustomerMasterData(customer, {
+      displayName: 'Updated customer',
+      contactMetadata: { phone: '+263000000000' },
+    });
+    expect(edited).toMatchObject({
+      accountReference: 'C-001',
+      displayName: 'Updated customer',
+      status: 'ACTIVE',
+    });
+    const suspended = deactivateCustomer(edited);
+    expect(suspended.status).toBe('SUSPENDED');
+    expect(activateCustomer(suspended).status).toBe('ACTIVE');
+    expect(() => deactivateCustomer(suspended)).toThrow('already deactivated');
+  });
+
   it('requires a positive limit before a credit account can be enabled', () => {
     expect(() =>
       newCustomerAccount({
