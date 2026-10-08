@@ -424,8 +424,8 @@
     gap: var(--space-3);
   }
 
-  .report-row-actions .button {
-    width: 100%;
+  .report-row-actions > .button {
+    flex: 1;
   }
 }
 
@@ -502,4 +502,107 @@
   display: grid;
   gap: var(--space-5);
   margin-top: var(--space-4);
+}
+
+/* Row overflow menu --------------------------------------------------------- */
+.report-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.action-menu {
+  position: relative;
+}
+
+.action-menu-button {
+  min-width: var(--control-height-md);
+  padding-inline: var(--space-2);
+}
+
+.action-menu-list {
+  position: absolute;
+  z-index: 30;
+  inset-inline-end: 0;
+  top: calc(100% + var(--space-1));
+  min-width: 12rem;
+  max-width: calc(100vw - 2 * var(--space-4));
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.action-menu-item {
+  display: flex;
+  width: 100%;
+  min-height: var(--control-height-md);
+  align-items: center;
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.action-menu-item:hover,
+.action-menu-item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.action-menu-item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+.report-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.report-action-status:empty {
+  display: none;
+}
+
+.report-action-status {
+  margin-block: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+/* Recent activity (in the rail) ---------------------------------------------- */
+.rail-note {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.rail-activity {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-activity li {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.rail-activity-headline {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.rail-activity-detail {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
 }

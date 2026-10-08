@@ -43,11 +43,11 @@ export function ReportFilterBar({
   return (
     <div className="report-filter-bar" role="group" aria-label="Report filters">
       <div className="report-filter">
-        <span className="field-label" id="report-stations-label">
+        <span className="field-label" aria-hidden="true">
           Stations
         </span>
         <details className="station-picker" ref={pickerRef}>
-          <summary aria-labelledby="report-stations-label">
+          <summary aria-label={`Stations: ${describeStations(filters.stationIds, stations)}`}>
             <span>{describeStations(filters.stationIds, stations)}</span>
             <Icon name="chevron-down" />
           </summary>
