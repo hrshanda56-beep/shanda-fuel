@@ -50,7 +50,7 @@ export default async function SettingsPage({
   }
   if (failure instanceof AppError && failure.code === 'FORBIDDEN') {
     return (
-      <AppShell pageSubtitle="Review the organisation, legal entities, stations, and account available to you.">
+      <AppShell>
         <PageContainer width="narrow">
           <AccessDeniedState />
         </PageContainer>
@@ -61,10 +61,7 @@ export default async function SettingsPage({
   if (!view) throw new Error('Settings data was not loaded');
 
   return (
-    <AppShell
-      userName={view.account.name}
-      pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
-    >
+    <AppShell userName={view.account.name}>
       <SettingsWorkspace view={view} />
     </AppShell>
   );

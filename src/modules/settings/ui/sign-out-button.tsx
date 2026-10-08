@@ -16,13 +16,13 @@ export function SignOutButton() {
     try {
       const result = await authClient.signOut();
       if (result.error) {
-        setError('Sign out failed. Please try again.');
+        setError('Signing out didn’t work. Try again.');
         return;
       }
       router.replace('/login');
       router.refresh();
     } catch {
-      setError('Sign out failed. Please try again.');
+      setError('Signing out didn’t work. Try again.');
     } finally {
       setPending(false);
     }
@@ -31,7 +31,7 @@ export function SignOutButton() {
   return (
     <div>
       <button
-        className="button button-secondary"
+        className="button button-secondary button-sign-out"
         type="button"
         onClick={signOut}
         disabled={pending}

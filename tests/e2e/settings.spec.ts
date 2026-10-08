@@ -84,8 +84,11 @@ test.describe('Settings', () => {
       );
       await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
       await expect(page.getByText('Settings E2E Organisation', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Companies' }).click();
       await expect(page.getByText('Settings E2E Legal Entity', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Stations' }).click();
       await expect(page.getByText('Settings E2E Station', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Account' }).click();
       await expect(page.getByText('settings-e2e@example.test', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: /save/i })).toHaveCount(0);
 
@@ -93,10 +96,10 @@ test.describe('Settings', () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         await page.evaluate(() => window.innerWidth),
       );
-      await expect(page.getByRole('link', { name: 'Account' })).toBeVisible();
-      await page.getByRole('link', { name: 'Account' }).focus();
-      await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/settings\?.*#account$/);
+      await expect(page.getByRole('button', { name: 'Account' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
 
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);

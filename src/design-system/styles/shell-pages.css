@@ -502,3 +502,17 @@ button.today-figure-link {
 .list-search {
   margin-bottom: var(--space-3);
 }
+
+/* Sign out is a clearly marked row at the end of the account card. */
+.button-sign-out {
+  width: 100%;
+  min-height: var(--control-height-lg, 2.75rem);
+  border-color: var(--tone-critical-fg);
+  color: var(--tone-critical-fg);
+}
+
+@media (min-width: 48rem) {
+  .button-sign-out {
+    width: auto;
+  }
+}
