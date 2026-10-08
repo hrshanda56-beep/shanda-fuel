@@ -80,9 +80,7 @@ test.describe('Settings', () => {
       await page.goto(
         `/settings?tenantId=${ids.organisation}&legalEntityId=${ids.legalEntity}&stationId=${ids.station}`,
       );
-      await expect(
-        content(page).getByRole('heading', { name: 'Settings', level: 1 }),
-      ).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
     });
 
     function content(page: Page) {
