@@ -1,19 +1,21 @@
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 
-import { ProductionSafeOverview } from './_overview/overview-dashboard';
+import { TodayOverview } from './_overview/today-overview';
 
 export const metadata = {
   title: { absolute: 'Dashboard · Shanda Fuel' },
 };
 
-/** Owner/Finance overview. Live figures stay hidden until reporting data exists. */
-export default function OverviewPage() {
+/** Today for the selected station: daily operations and anything needing attention. */
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tenantId?: string; stationId?: string }>;
+}) {
+  const { tenantId, stationId } = await searchParams;
   return (
-    <AppShell
-      searchPlacement="header"
-      pageSubtitle="Live figures are not available for this work context yet."
-    >
-      <ProductionSafeOverview />
+    <AppShell searchPlacement="header">
+      <TodayOverview tenantId={tenantId} stationId={stationId} />
     </AppShell>
   );
 }

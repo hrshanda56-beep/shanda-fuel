@@ -105,26 +105,31 @@ test.describe('shared shell consistency', () => {
     await prepareShell(page, { width: 468, height: 844 });
     await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'mobile');
     await expect(page.locator('.shell-sidebar')).toBeHidden();
-    await expect(page.locator('.shell-topbar')).toBeVisible();
-    await expect(page.locator('.shell-topbar .shell-brand')).toHaveCount(1);
-    await expect(page.locator('.shell-mobile-brand')).toHaveCount(0);
-    await expect(page.locator('.shell-topbar kbd:visible')).toHaveCount(0);
+    // No logo, hamburger or second bar: the page title, search and account share one row.
+    await expect(page.locator('.shell-topbar')).toHaveCount(0);
+    await expect(page.locator('.shell-brand:visible')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Open menu' })).toHaveCount(0);
+    await expect(page.locator('.shell-header kbd:visible')).toHaveCount(0);
     await expect(page.locator('.shell-account-trigger:visible')).toHaveCount(1);
 
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    const drawer = page.getByRole('dialog', { name: 'Menu' });
+    await page.getByRole('button', { name: 'More' }).click();
+    const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/settings',
     );
-    await drawer.getByRole('button', { name: 'Finance' }).click();
+    // Every group starts open: no extra tap to reach a destination.
+    await expect(drawer.getByRole('button', { name: 'Finance' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
     await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toHaveAttribute(
       'href',
       '/customers',
     );
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'More' })).toBeFocused();
   });
 
   test('mobile exposes authorized bottom navigation and keeps More in the drawer', async ({
@@ -133,16 +138,15 @@ test.describe('shared shell consistency', () => {
     await prepareShell(page, { width: 390, height: 844 });
     const bottomNav = page.getByRole('navigation', { name: 'Mobile navigation' });
     await expect(bottomNav).toBeVisible();
-    await expect(bottomNav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    await expect(bottomNav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
+    await expect(bottomNav.getByRole('link')).toHaveText(['Today', 'Daily ops', 'Customers']);
+    await expect(bottomNav.getByRole('link', { name: 'Daily ops' })).toHaveAttribute(
       'href',
       '/operations/daily',
     );
-    await bottomNav.getByRole('button', { name: 'More navigation' }).click();
-    const menu = page.getByRole('dialog', { name: 'Menu' });
+    await expect(bottomNav.getByRole('link', { name: 'Reports' })).toHaveCount(0);
+    await bottomNav.getByRole('button', { name: 'More' }).click();
+    const menu = page.getByRole('dialog', { name: 'More' });
+    await expect(menu.getByRole('link', { name: 'Reports' })).toBeVisible();
     await expect(menu).toBeVisible();
     await expect(menu.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
   });

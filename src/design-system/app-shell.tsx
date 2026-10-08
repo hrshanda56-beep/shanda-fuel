@@ -13,6 +13,7 @@ import {
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type RefObject,
 } from 'react';
 
 import { WorkInProgressDialog } from './dialogs';
@@ -26,6 +27,7 @@ import {
   readWorkContext,
   resolveNavigation,
   selectMobileNavigationItems,
+  type MobileNavigationItem,
   type NavigationProjection,
   type ResolvedNavigationItem,
   type ResolvedNavigationSection,
@@ -185,12 +187,26 @@ export function AppShell({
     () => false,
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  // The More drawer shows every group open so any destination is one tap away;
+  // people can still fold a group, and it resets each time the drawer opens.
+  const [drawerClosedGroups, setDrawerClosedGroups] = useState<ReadonlySet<string>>(new Set());
+  const toggleDrawerGroup = useCallback((key: string) => {
+    setDrawerClosedGroups((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }, []);
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [contextSelectorOpen, setContextSelectorOpen] = useState(false);
   const [wip, setWip] = useState<WipRequest | null>(null);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const [contextLabel, setContextLabel] = useState<{
+    station: string;
+    parts: readonly string[];
+  } | null>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     // AppShell can survive a soft route transition while the document head
@@ -225,13 +241,19 @@ export function AppShell({
     [pathname, sections],
   );
 
-  // From the rail, a group opens the full sidebar with that group expanded.
+  // From the desktop rail, a group opens the full sidebar with that group
+  // expanded. The tablet rail has no wider state, so it opens the full menu.
   const expandRailGroup = useCallback(
     (key: string) => {
+      if (shellMode === 'tablet') {
+        setDrawerClosedGroups(new Set());
+        setMenuOpen(true);
+        return;
+      }
       if (closedGroups.has(key)) toggleGroup(key);
       setSidebarCollapsed(false);
     },
-    [closedGroups, toggleGroup],
+    [closedGroups, shellMode, toggleGroup],
   );
 
   const openWip = useCallback((request: WipRequest) => {
@@ -271,23 +293,6 @@ export function AppShell({
           </a>
         </nav>
 
-        <header className="shell-topbar" aria-label="Application header">
-          <button
-            ref={menuButtonRef}
-            type="button"
-            className="shell-menu-button"
-            aria-haspopup="dialog"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(true)}
-          >
-            <Icon name="menu" size="md" />
-            <span className="visually-hidden">Open menu</span>
-          </button>
-          <BrandLink href={todayHref} />
-          {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
-          <AccountMenu userName={userName} role={role} placement="mobile" />
-        </header>
-
         <aside className="shell-sidebar" aria-label="Sidebar">
           <BrandLink href={todayHref} />
           <div className="shell-sidebar-nav-region">
@@ -324,6 +329,11 @@ export function AppShell({
                 <div className="shell-page-heading">
                   <h1 id="page-title">{resolvedPageTitle}</h1>
                   {pageSubtitle ? <p className="shell-page-subtitle">{pageSubtitle}</p> : null}
+                  {contextLabel ? (
+                    <p className="shell-station-line" aria-hidden="true">
+                      {contextLabel.station}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               <div className="shell-header-controls">
@@ -332,8 +342,9 @@ export function AppShell({
                   open={contextSelectorOpen}
                   onOpen={() => setContextSelectorOpen(true)}
                   onClose={() => setContextSelectorOpen(false)}
+                  onLabelChange={setContextLabel}
                 />
-                {searchPlacement === 'header' ? <GlobalSearchButton compact /> : null}
+                {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
                 <AccountMenu userName={userName} role={role} placement="desktop" />
               </div>
             </div>
@@ -362,18 +373,43 @@ export function AppShell({
         <MobileBottomNavigation
           items={mobileNavigationItems}
           pathname={pathname}
-          onMore={() => setMenuOpen(true)}
+          moreRef={moreButtonRef}
+          moreOpen={menuOpen}
+          onMore={() => {
+            setDrawerClosedGroups(new Set());
+            setMenuOpen(true);
+          }}
         />
 
         <Modal
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
-          title="Menu"
+          title="More"
           presentation="drawer"
+          returnFocus={() => moreButtonRef.current}
         >
+          {contextLabel ? (
+            <button
+              type="button"
+              className="shell-more-context"
+              aria-haspopup="dialog"
+              onClick={openContextSelector}
+            >
+              <span className="shell-more-context-text">
+                <span className="shell-more-context-label">Working at</span>
+                <span className="shell-more-context-value">{contextLabel.station}</span>
+                <span className="shell-more-context-meta">
+                  {contextLabel.parts.filter((part) => part !== contextLabel.station).join(' · ')}
+                </span>
+              </span>
+              <span className="shell-more-context-action">Change</span>
+            </button>
+          ) : null}
           <nav className="shell-nav shell-nav-drawer" aria-label="Primary navigation">
             <NavigationTree
               {...navigationProps}
+              closedGroups={drawerClosedGroups}
+              onToggleGroup={toggleDrawerGroup}
               rail={false}
               onNavigate={() => setMenuOpen(false)}
             />
@@ -408,7 +444,7 @@ export function AppShell({
           onClose={() => setWip(null)}
           feature={wip?.feature ?? ''}
           message={wip?.message}
-          returnFocus={wip?.returnFocus ?? (() => menuButtonRef.current)}
+          returnFocus={wip?.returnFocus ?? (() => moreButtonRef.current)}
         />
       </div>
     </ShellContext.Provider>
@@ -418,10 +454,14 @@ export function AppShell({
 function MobileBottomNavigation({
   items,
   pathname,
+  moreRef,
+  moreOpen,
   onMore,
 }: {
-  items: readonly Extract<ResolvedNavigationItem, { state: 'link' }>[];
+  items: readonly MobileNavigationItem[];
   pathname: string | null;
+  moreRef: RefObject<HTMLButtonElement | null>;
+  moreOpen: boolean;
   onMore: () => void;
 }) {
   return (
@@ -437,17 +477,18 @@ function MobileBottomNavigation({
                 aria-current={active ? 'page' : undefined}
               >
                 <Icon name={item.icon} />
-                <span>{item.label}</span>
+                <span>{item.mobileLabel}</span>
               </Link>
             </li>
           );
         })}
         <li>
           <button
+            ref={moreRef}
             type="button"
             className="shell-mobile-nav-link shell-mobile-nav-more"
             aria-haspopup="dialog"
-            aria-label="More navigation"
+            aria-expanded={moreOpen}
             onClick={onMore}
           >
             <Icon name="more" />
