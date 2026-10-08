@@ -139,7 +139,7 @@ test.describe('provider settlement workspace', () => {
 
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
-    await expect(page.getByRole('heading', { name: 'Choose an authorised station' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a station' })).toBeVisible();
     expect(summaryRequests).toBe(0);
     expect(unmatchedRequests).toBe(0);
   });
@@ -195,14 +195,16 @@ test.describe('provider settlement workspace', () => {
     ).toBeVisible();
     await expect(page.getByRole('row').filter({ hasText: paymentReference }).first()).toBeVisible();
 
-    await page.getByLabel('Allocation amount').fill('40.0000');
-    await page.getByRole('button', { name: 'Allocate evidence' }).click();
+    await page.getByRole('button', { name: 'Match payment' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Match payment' });
+    await sheet.getByLabel('Amount to match').fill('40.0000');
+    await sheet.getByRole('button', { name: 'Match payment', exact: true }).click();
     await expect(
-      page.locator('p[role="status"]').filter({ hasText: 'Allocation saved' }),
+      page.locator('p[role="status"]').filter({ hasText: 'Payment matched' }),
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'Reconcile', exact: true }).click();
-    await expect(page.getByText('RECONCILED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Reconciled', { exact: true })).toBeVisible();
     expect(commands.map(({ body }) => body.commandType)).toEqual([
       'AllocateProviderSettlement',
       'ReconcileProviderSettlement',
@@ -243,12 +245,12 @@ test.describe('provider settlement workspace', () => {
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Reconcile', exact: true }).click();
-    await expect(page.getByLabel('Variance reason')).toBeVisible();
+    await expect(page.getByLabel('Reason for the difference')).toBeVisible();
     await page
-      .getByLabel('Variance reason')
+      .getByLabel('Reason for the difference')
       .fill('Provider statement differs from approved POS evidence.');
     await page.getByRole('button', { name: 'Confirm reconciliation' }).click();
-    await expect(page.getByText('EXCEPTION', { exact: true })).toBeVisible();
+    await expect(page.getByText('Exception', { exact: true })).toBeVisible();
     expect(commandBody).toBeTruthy();
     expect((commandBody as unknown as { reason?: unknown } | null)?.reason).toBe(
       'Provider statement differs from approved POS evidence.',
@@ -271,7 +273,7 @@ test.describe('provider settlement workspace', () => {
       `/stations/${stationId}/settlements?tenantId=${organisationId}&allStations=true`,
     );
     await waitForHydration(page);
-    await expect(page.getByRole('heading', { name: 'Choose an authorised station' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a station' })).toBeVisible();
     expect(settlementRequests).toBe(0);
   });
 
@@ -311,12 +313,14 @@ test.describe('provider settlement workspace', () => {
 
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
-    await page.getByLabel('Allocation amount').fill('40.0000');
-    await page.getByRole('button', { name: 'Allocate evidence' }).click();
-    await expect(page.getByText('The provider settlement is stale')).toBeVisible();
-    await page.getByRole('button', { name: 'Allocate evidence' }).click();
+    await page.getByRole('button', { name: 'Match payment' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Match payment' });
+    await sheet.getByLabel('Amount to match').fill('40.0000');
+    await sheet.getByRole('button', { name: 'Match payment', exact: true }).click();
+    await expect(sheet.getByText('The provider settlement is stale')).toBeVisible();
+    await sheet.getByRole('button', { name: 'Match payment', exact: true }).click();
     await expect(
-      page.locator('p[role="status"]').filter({ hasText: 'Allocation saved' }),
+      page.locator('p[role="status"]').filter({ hasText: 'Payment matched' }),
     ).toBeVisible();
     expect(idempotencyKeys).toHaveLength(2);
     expect(idempotencyKeys[0]).toBe(idempotencyKeys[1]);
