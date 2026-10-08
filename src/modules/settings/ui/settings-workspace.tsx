@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import { SegmentedControl } from '@/design-system/page-kit';
+import { Icon, type IconName } from '@/design-system/icons';
 import { AccessDeniedState, ContextRequiredState } from '@/design-system/primitives';
-import { PageContainer, Section } from '@/design-system/layout';
+import { PageContainer } from '@/design-system/layout';
 
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
@@ -12,118 +12,176 @@ import styles from './settings-workspace.module.css';
 
 type Tab = 'organisation' | 'companies' | 'stations' | 'account';
 
-const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
-  { value: 'organisation', label: 'Organisation' },
-  { value: 'companies', label: 'Companies' },
-  { value: 'stations', label: 'Stations' },
-  { value: 'account', label: 'Account' },
+const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
+  { value: 'organisation', label: 'Organisation', icon: 'building' },
+  { value: 'companies', label: 'Companies', icon: 'receipt' },
+  { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'account', label: 'Account', icon: 'users' },
 ];
 
-function AccountSection({ view }: { view: SettingsView }) {
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  const first = parts[0]!.charAt(0);
+  const last = parts.length > 1 ? parts[parts.length - 1]!.charAt(0) : '';
+  return (first + last).toUpperCase();
+}
+
+function Fields({ items }: { items: ReadonlyArray<{ label: string; value: ReactNode }> }) {
   return (
-    <Section headingId="account" title="Account">
-      <dl className={styles.detailList}>
-        <div>
-          <dt>Name</dt>
-          <dd>{view.account.name}</dd>
+    <dl className={styles.fields}>
+      {items.map((item) => (
+        <div key={item.label}>
+          <dt>{item.label}</dt>
+          <dd>{item.value}</dd>
         </div>
-        <div>
-          <dt>Email</dt>
-          <dd>{view.account.email}</dd>
+      ))}
+    </dl>
+  );
+}
+
+function InfoCard({
+  headingId,
+  title,
+  children,
+}: {
+  headingId: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.card}>
+      <h3 id={headingId} className={styles.cardTitle}>
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function AccountPanel({ view }: { view: SettingsView }) {
+  return (
+    <>
+      <div className={`${styles.card} ${styles.profileCard}`}>
+        <span className={styles.avatar} aria-hidden="true">
+          {initialsOf(view.account.name)}
+        </span>
+        <div className={styles.profileText}>
+          <p className={styles.profileName}>{view.account.name}</p>
+          <p className={styles.profileMeta}>{view.account.email}</p>
         </div>
-      </dl>
+      </div>
+      <InfoCard headingId="account-details" title="Your details">
+        <Fields
+          items={[
+            { label: 'Name', value: view.account.name },
+            { label: 'Email', value: view.account.email },
+          ]}
+        />
+      </InfoCard>
       <div className={styles.signOutRow}>
         <SignOutButton />
       </div>
-    </Section>
+    </>
   );
 }
 
 export function SettingsWorkspace({ view }: { view: SettingsView }) {
   const [tab, setTab] = useState<Tab>('organisation');
-  const hasContext = view.context.status === 'ready' && view.context.organisation;
+  const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
-  if (!hasContext) {
+  if (!organisation) {
     return (
       <PageContainer width="wide">
-        <div className={styles.workspace}>
-          <Section headingId="organisation-unavailable" title="Organisation">
-            <AccessDeniedState message="No organisation is available for this account." />
-          </Section>
-          <AccountSection view={view} />
+        <div className={styles.frame}>
+          <div className={styles.content}>
+            <header className={styles.contentHeader}>
+              <h2 className={styles.contentTitle}>Organisation</h2>
+            </header>
+            <InfoCard headingId="organisation-unavailable" title="Not available">
+              <AccessDeniedState message="No organisation is available for this account." />
+            </InfoCard>
+            <AccountPanel view={view} />
+          </div>
         </div>
       </PageContainer>
     );
   }
 
+  const active = TABS.find((item) => item.value === tab) ?? TABS[0]!;
+  const { selectedStation, legalEntities } = view.context;
+
   return (
     <PageContainer width="wide">
-      <div className={styles.workspace}>
-        <p className={styles.readOnlyNote}>
-          You can look at these details here. Ask your administrator to change them.
-        </p>
-        <SegmentedControl
-          label="Settings sections"
-          options={TABS}
-          value={tab}
-          onChange={setTab}
-          fit="content"
-        />
+      <div className={styles.frame}>
+        <nav className={styles.subnav} aria-label="Settings sections">
+          {TABS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={styles.subnavItem}
+              aria-pressed={item.value === tab}
+              onClick={() => setTab(item.value)}
+            >
+              <Icon name={item.icon} className={styles.subnavIcon} />
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-        {tab === 'organisation' ? (
-          <Section headingId="organisation" title="Organisation">
-            <dl className={styles.detailList}>
-              <div>
-                <dt>Name</dt>
-                <dd>{view.context.organisation.name}</dd>
-              </div>
-            </dl>
-          </Section>
-        ) : null}
+        <div className={styles.content}>
+          <header className={styles.contentHeader}>
+            <h2 className={styles.contentTitle}>{active.label}</h2>
+            <p className={styles.note}>
+              You can look at these details here. Ask your administrator to change them.
+            </p>
+          </header>
 
-        {tab === 'companies' ? (
-          <Section headingId="legal-entities" title="Companies">
-            {view.context.legalEntities.length > 0 ? (
-              <ul className={styles.entityList}>
-                {view.context.legalEntities.map((legalEntity) => (
-                  <li key={legalEntity.id}>
-                    <strong>{legalEntity.name}</strong>
-                  </li>
-                ))}
-              </ul>
+          {tab === 'organisation' ? (
+            <InfoCard headingId="organisation" title="Organisation details">
+              <Fields items={[{ label: 'Name', value: organisation.name }]} />
+            </InfoCard>
+          ) : null}
+
+          {tab === 'companies' ? (
+            legalEntities.length > 0 ? (
+              legalEntities.map((legalEntity) => (
+                <InfoCard
+                  key={legalEntity.id}
+                  headingId={`company-${legalEntity.id}`}
+                  title="Company"
+                >
+                  <Fields items={[{ label: 'Name', value: legalEntity.name }]} />
+                </InfoCard>
+              ))
             ) : (
-              <p className={styles.readOnlyNote}>No companies are available to you.</p>
-            )}
-          </Section>
-        ) : null}
+              <InfoCard headingId="legal-entities" title="Companies">
+                <p className={styles.note}>No companies are available to you.</p>
+              </InfoCard>
+            )
+          ) : null}
 
-        {tab === 'stations' ? (
-          <Section headingId="stations" title="Stations">
-            {view.context.selectedStation ? (
-              <dl className={styles.detailList}>
-                <div>
-                  <dt>Name</dt>
-                  <dd>{view.context.selectedStation.name}</dd>
-                </div>
-                <div>
-                  <dt>Code</dt>
-                  <dd>{view.context.selectedStation.code}</dd>
-                </div>
-                <div>
-                  <dt>Time zone</dt>
-                  <dd>{view.context.selectedStation.timezone}</dd>
-                </div>
-              </dl>
+          {tab === 'stations' ? (
+            selectedStation ? (
+              <InfoCard headingId="stations" title="Station details">
+                <Fields
+                  items={[
+                    { label: 'Name', value: selectedStation.name },
+                    { label: 'Code', value: selectedStation.code },
+                    { label: 'Time zone', value: selectedStation.timezone },
+                  ]}
+                />
+              </InfoCard>
             ) : (
               <ContextRequiredState
                 title="Choose a station"
                 message="Pick a station at the top of the page to see its details."
               />
-            )}
-          </Section>
-        ) : null}
+            )
+          ) : null}
 
-        {tab === 'account' ? <AccountSection view={view} /> : null}
+          {tab === 'account' ? <AccountPanel view={view} /> : null}
+        </div>
       </div>
     </PageContainer>
   );
