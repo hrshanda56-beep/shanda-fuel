@@ -80,8 +80,14 @@ test.describe('Settings', () => {
       await page.goto(
         `/settings?tenantId=${ids.organisation}&legalEntityId=${ids.legalEntity}&stationId=${ids.station}`,
       );
-      await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+      await expect(
+        content(page).getByRole('heading', { name: 'Settings', level: 1 }),
+      ).toBeVisible();
     });
+
+    function content(page: Page) {
+      return page.getByRole('main', { name: 'Settings' });
+    }
 
     function sectionButton(page: Page, name: (typeof sections)[number]) {
       return page
@@ -100,33 +106,45 @@ test.describe('Settings', () => {
 
     test('opens on Organisation and shows the organisation name', async ({ page }) => {
       await expectOnlyPressed(page, 'Organisation');
-      await expect(page.getByRole('heading', { name: 'Organisation', level: 2 })).toBeVisible();
-      await expect(page.getByText('Settings E2E Organisation', { exact: true })).toBeVisible();
+      await expect(
+        content(page).getByRole('heading', { name: 'Organisation', level: 2 }),
+      ).toBeVisible();
+      await expect(
+        content(page).getByText('Settings E2E Organisation', { exact: true }),
+      ).toBeVisible();
     });
 
     test('each section shows its own details once opened', async ({ page }) => {
       await sectionButton(page, 'Companies').click();
       await expectOnlyPressed(page, 'Companies');
-      await expect(page.getByRole('heading', { name: 'Companies', level: 2 })).toBeVisible();
-      await expect(page.getByText('Settings E2E Legal Entity', { exact: true })).toBeVisible();
+      await expect(
+        content(page).getByRole('heading', { name: 'Companies', level: 2 }),
+      ).toBeVisible();
+      await expect(
+        content(page).getByText('Settings E2E Legal Entity', { exact: true }),
+      ).toBeVisible();
 
       await sectionButton(page, 'Stations').click();
       await expectOnlyPressed(page, 'Stations');
-      await expect(page.getByRole('heading', { name: 'Stations', level: 2 })).toBeVisible();
-      await expect(page.getByText('Settings E2E Station', { exact: true })).toBeVisible();
+      await expect(
+        content(page).getByRole('heading', { name: 'Stations', level: 2 }),
+      ).toBeVisible();
+      await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
 
       await sectionButton(page, 'Account').click();
       await expectOnlyPressed(page, 'Account');
-      await expect(page.getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Your details' })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Your details' })).toBeVisible();
       // The email is shown in the profile card and again in the details list.
       await expect(
-        page.getByText('settings-e2e@example.test', { exact: true }).first(),
+        content(page).getByText('settings-e2e@example.test', { exact: true }).first(),
       ).toBeVisible();
 
       await sectionButton(page, 'Organisation').click();
       await expectOnlyPressed(page, 'Organisation');
-      await expect(page.getByText('Settings E2E Organisation', { exact: true })).toBeVisible();
+      await expect(
+        content(page).getByText('Settings E2E Organisation', { exact: true }),
+      ).toBeVisible();
     });
 
     test('sections work from the keyboard and stay on the same address', async ({ page }) => {
@@ -136,7 +154,9 @@ test.describe('Settings', () => {
       await expect(sectionButton(page, 'Companies')).toBeFocused();
       await page.keyboard.press('Enter');
       await expectOnlyPressed(page, 'Companies');
-      await expect(page.getByText('Settings E2E Legal Entity', { exact: true })).toBeVisible();
+      await expect(
+        content(page).getByText('Settings E2E Legal Entity', { exact: true }),
+      ).toBeVisible();
 
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
@@ -151,7 +171,7 @@ test.describe('Settings', () => {
     test('is read-only: no save action in any section', async ({ page }) => {
       for (const name of sections) {
         await sectionButton(page, name).click();
-        await expect(page.getByRole('button', { name: /save/i })).toHaveCount(0);
+        await expect(content(page).getByRole('button', { name: /save/i })).toHaveCount(0);
       }
     });
 
