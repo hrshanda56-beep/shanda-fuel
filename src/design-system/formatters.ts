@@ -28,6 +28,56 @@ export function formatLitres(value: string): string {
   return formatDecimal(value, ' L');
 }
 
+/**
+ * Round a decimal string half away from zero to `places` using integer
+ * arithmetic only, so authoritative values never pass through binary floats.
+ * Returns undefined for malformed input.
+ */
+function roundDecimalString(
+  value: string,
+  places: number,
+): { negative: boolean; text: string } | undefined {
+  const normalized = value.trim();
+  if (!DECIMAL_PATTERN.test(normalized)) return undefined;
+  const negative = normalized.startsWith('-');
+  const [integerPart = '0', fractionPart = ''] = (
+    negative ? normalized.slice(1) : normalized
+  ).split('.');
+  const padded = fractionPart.padEnd(places + 1, '0');
+  const scaled = BigInt(integerPart + padded.slice(0, places)) * 10n;
+  const roundingDigit = BigInt(padded.charAt(places));
+  const rounded = (scaled + (roundingDigit >= 5n ? 10n : 0n)) / 10n;
+  const digits = rounded.toString().padStart(places + 1, '0');
+  const whole = places === 0 ? digits : digits.slice(0, -places);
+  const fraction = places === 0 ? '' : `.${digits.slice(-places)}`;
+  const isZero = /^0*$/.test(whole + fraction.replace('.', ''));
+  return {
+    negative: negative && !isZero,
+    text: `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction}`,
+  };
+}
+
+/** Plain money for people: "$1,234.50", "USD 1,234.50" for other currencies, "—" when unknown. */
+export function formatMoneyDisplay(value: string | null | undefined, currency = 'USD'): string {
+  const rounded = value == null ? undefined : roundDecimalString(value, 2);
+  if (!rounded) return '—';
+  const sign = rounded.negative ? '−' : '';
+  return currency === 'USD' ? `${sign}$${rounded.text}` : `${sign}${currency} ${rounded.text}`;
+}
+
+/** Plain litres for people: "1,234 L", with one decimal below 10 L, "—" when unknown. */
+export function formatLitresDisplay(value: string | null | undefined): string {
+  if (value == null) return '—';
+  const small = roundDecimalString(value, 1);
+  if (!small) return '—';
+  const whole = small.text.replace(/,/g, '');
+  const useDecimal = Number(whole.split('.')[0]) < 10;
+  const rounded = roundDecimalString(value, useDecimal ? 1 : 0);
+  if (!rounded) return '—';
+  const text = useDecimal ? rounded.text.replace(/\.0$/, '') : rounded.text;
+  return `${rounded.negative ? '−' : ''}${text} L`;
+}
+
 export function formatPercentage(value: string): string {
   return formatDecimal(value, '%');
 }
@@ -104,4 +154,10 @@ export function formatStatusLabel(value: string): string {
 function toDate(value: DateInput): Date | undefined {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/** Sentence-case label for a record status code, e.g. NOT_STARTED -> "Not started". */
+export function formatStatusSentence(value: string): string {
+  const words = value.trim().toLowerCase().replace(/[_-]+/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

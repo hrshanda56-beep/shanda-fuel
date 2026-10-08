@@ -260,3 +260,45 @@
     min-height: 3rem;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Shared page kit (page-kit.tsx): figure rows, hero card, segmented control.
+ * ------------------------------------------------------------------------- */
+
+.kpi-section {
+  margin-bottom: var(--space-4);
+}
+
+/* A hero that holds its own button rather than being a link. */
+.today-hero-static {
+  cursor: default;
+}
+
+.hero-action {
+  margin-top: var(--space-3);
+}
+
+.hero-action .button {
+  min-height: var(--control-height-lg, 2.75rem);
+  padding-inline: var(--space-6);
+}
+
+/* Choices wrap to a second row instead of scrolling sideways. */
+.segmented {
+  flex-wrap: wrap;
+}
+
+.segmented .today-period {
+  min-height: var(--touch-target-min, 2.75rem);
+}
+
+@media (min-width: 64rem) {
+  .segmented .today-period {
+    min-height: 2rem;
+  }
+}
+
+/* Section header: label on the left, round action on the right. */
+.shell-sheet .panel-heading .icon-button {
+  flex: 0 0 auto;
+}

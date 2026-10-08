@@ -4,7 +4,10 @@ import {
   formatBusinessDate,
   formatDecimal,
   formatLitres,
+  formatLitresDisplay,
   formatMoney,
+  formatMoneyDisplay,
+  formatStatusSentence,
   formatUsd,
   formatPercentage,
   formatStatusLabel,
@@ -75,5 +78,34 @@ describe('presentation formatters', () => {
 
   it('labels statuses', () => {
     expect(formatStatusLabel('PENDING_APPROVAL')).toBe('Pending Approval');
+  });
+});
+
+describe('plain display formatters', () => {
+  it('formats money to two places without binary floats', () => {
+    expect(formatMoneyDisplay('1234.5')).toBe('$1,234.50');
+    expect(formatMoneyDisplay('0.0000')).toBe('$0.00');
+    expect(formatMoneyDisplay('0.005')).toBe('$0.01');
+    expect(formatMoneyDisplay('999.995')).toBe('$1,000.00');
+    expect(formatMoneyDisplay('-212.4')).toBe('−$212.40');
+    expect(formatMoneyDisplay('-0.001')).toBe('$0.00');
+    expect(formatMoneyDisplay('12345678901234567.89')).toBe('$12,345,678,901,234,567.89');
+    expect(formatMoneyDisplay('12.5', 'ZWG')).toBe('ZWG 12.50');
+    expect(formatMoneyDisplay(null)).toBe('—');
+    expect(formatMoneyDisplay('NO_SALES')).toBe('—');
+  });
+
+  it('formats litres whole, with one decimal only below ten', () => {
+    expect(formatLitresDisplay('1234.567')).toBe('1,235 L');
+    expect(formatLitresDisplay('0.000')).toBe('0 L');
+    expect(formatLitresDisplay('9.46')).toBe('9.5 L');
+    expect(formatLitresDisplay('9.96')).toBe('10 L');
+    expect(formatLitresDisplay('3')).toBe('3 L');
+    expect(formatLitresDisplay(undefined)).toBe('—');
+  });
+
+  it('turns status codes into sentence case', () => {
+    expect(formatStatusSentence('NOT_STARTED')).toBe('Not started');
+    expect(formatStatusSentence('APPROVED')).toBe('Approved');
   });
 });

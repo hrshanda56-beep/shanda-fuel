@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { formatBusinessDate } from '@/design-system/formatters';
-import { Icon, type IconName } from '@/design-system/icons';
+import { HeroStatusCard, KpiTile, SegmentedControl } from '@/design-system/page-kit';
+import { Icon } from '@/design-system/icons';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
 
 import { PerformanceChart } from './performance-chart';
@@ -173,14 +174,14 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
       >
         <h2 id="today-figures-heading">Key figures</h2>
         <dl className="today-figures">
-          <Figure
+          <KpiTile
             label="Shifts open"
             href={dailyHref}
             icon="today"
             state={!stationId ? 'choose' : operations.status}
             value={operations.status === 'ready' ? countOpenShifts(operations.data.shifts) : null}
           />
-          <Figure
+          <KpiTile
             label="Active customers"
             href={customersHref}
             icon="users"
@@ -189,14 +190,20 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
               customers.status === 'ready' ? countActiveCustomers(customers.data.customers) : null
             }
           />
-          <Figure
+          <KpiTile
             label="Sales today"
             href={reportsHref}
             icon="dollar"
             state="pending"
             value={null}
           />
-          <Figure label="Litres sold" href={reportsHref} icon="drop" state="pending" value={null} />
+          <KpiTile
+            label="Litres sold"
+            href={reportsHref}
+            icon="drop"
+            state="pending"
+            value={null}
+          />
         </dl>
       </section>
 
@@ -261,20 +268,7 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
           <h2 id="today-stats-heading">
             Sales performance <span className="today-stats-sub">Statistic</span>
           </h2>
-          <div className="today-periods" role="group" aria-label="Period">
-            {PERIODS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className="today-period"
-                aria-pressed={period === option}
-                data-active={period === option || undefined}
-                onClick={() => setPeriod(option)}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl options={PERIODS} value={period} onChange={setPeriod} label="Period" />
         </div>
         <PerformanceChart
           series={null}
@@ -299,76 +293,15 @@ const PERIOD_LABELS: Record<string, string[]> = {
   '1Y': ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov'],
 };
 
-type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'choose' | 'pending';
-
-const FIGURE_CAPTION: Partial<Record<FigureState, string>> = {
-  forbidden: 'No access',
-  error: 'Unavailable',
-  choose: 'Choose a station',
-  pending: 'Not connected yet',
-};
-
-function Figure({
-  label,
-  href,
-  icon,
-  state,
-  value,
-}: {
-  label: string;
-  href: string;
-  icon: IconName;
-  state: FigureState;
-  value: number | null;
-}) {
-  return (
-    <div className="today-figure" data-state={state}>
-      <span className="today-figure-icon" aria-hidden="true">
-        <Icon name={icon} />
-      </span>
-      <span className="today-figure-line" aria-hidden="true" />
-      <dt>
-        <Link className="today-figure-link" href={href}>
-          {label}
-        </Link>
-      </dt>
-      <dd>
-        {state === 'loading' ? (
-          <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
-        ) : value !== null ? (
-          <span className="today-figure-value">{value}</span>
-        ) : (
-          <>
-            <span className="today-figure-value" aria-hidden="true">
-              —
-            </span>
-            <span className="today-figure-caption">{FIGURE_CAPTION[state]}</span>
-          </>
-        )}
-      </dd>
-    </div>
-  );
-}
-
 function OperationsRow({ operations, href }: { operations: TodayOperations; href: string }) {
   const close = CLOSE_STATUS_PRESENTATION[operations.status.close];
   const approval = approvalLabel(operations.status.approval);
   return (
-    <Link className="today-hero" href={href}>
-      <span className="today-hero-ring" aria-hidden="true">
-        <Icon name="fuel" />
-      </span>
-      <span className="today-hero-title">{operations.station.name}</span>
-      <span className="today-hero-detail">
-        {formatBusinessDate(operations.currentBusinessDate)} · {shiftSummary(operations.shifts)}
-        {approval ? ` · ${approval}` : ''}
-      </span>
-      <span className="today-hero-status">
-        <StatusBadge tone={close.tone}>{close.label}</StatusBadge>
-        <span className="today-hero-go" aria-hidden="true">
-          <Icon name="arrow-right" />
-        </span>
-      </span>
-    </Link>
+    <HeroStatusCard
+      href={href}
+      title={operations.station.name}
+      detail={`${formatBusinessDate(operations.currentBusinessDate)} · ${shiftSummary(operations.shifts)}${approval ? ` · ${approval}` : ''}`}
+      status={<StatusBadge tone={close.tone}>{close.label}</StatusBadge>}
+    />
   );
 }
