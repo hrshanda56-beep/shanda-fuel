@@ -44,6 +44,8 @@ export const CUSTOMER_COMMAND_TYPES = [
   'ActivateCustomer',
   'DeactivateCustomer',
   'CreateCustomerAccount',
+  'SetCustomerLegalEntity',
+  'SetCustomerAccountStations',
   'RequestCustomerFuelAuthorization',
   'AuthorizeCustomerFuel',
   'CompleteCustomerFuelTransaction',
@@ -108,6 +110,18 @@ export const CUSTOMER_COMMAND_POLICY: Readonly<
     scopeType: 'TENANT',
     requiresStepUp: true,
     requiresExpectedVersion: false,
+  },
+  SetCustomerLegalEntity: {
+    permissionCode: 'customer.manage',
+    scopeType: 'TENANT',
+    requiresStepUp: true,
+    requiresExpectedVersion: true,
+  },
+  SetCustomerAccountStations: {
+    permissionCode: 'customer.account.manage',
+    scopeType: 'TENANT',
+    requiresStepUp: true,
+    requiresExpectedVersion: true,
   },
   RequestCustomerFuelAuthorization: {
     permissionCode: 'customer.credit.authorize',
