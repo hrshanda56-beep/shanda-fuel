@@ -1,0 +1,358 @@
+/*
+ * Phase 1 shell refinements, loaded after every other shell layer.
+ *
+ *   - A slim page header: title on the left; station pill, search and avatar
+ *     on the right. No logo, hamburger or long context text.
+ *   - Phone: a large page title with search and avatar beside it, the station
+ *     as one quiet line, and a bottom bar of Today, Daily ops, Customers and
+ *     More. More holds every destination and the station switcher.
+ *   - Today: plain lists on the page background, not boxed cards.
+ */
+
+/* Page header ---------------------------------------------------------------- */
+
+.shell-header {
+  min-height: 3.5rem;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.shell-page-heading {
+  flex: 1 1 auto;
+}
+
+.shell-page-heading h1 {
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+}
+
+.shell-page-subtitle {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.shell-station-line {
+  display: none;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.shell-header-controls {
+  flex: 0 0 auto;
+  gap: var(--space-2);
+}
+
+.shell-context-selector {
+  order: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Tablet rail: brand, destinations and the collapse control stack in a column. */
+@media (min-width: 48rem) and (max-width: 74.99rem) {
+  .shell-sidebar {
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-4);
+    overflow: visible;
+  }
+
+  .shell-sidebar-nav-region {
+    flex: 1 1 auto;
+    overflow: visible;
+  }
+
+  .shell-sidebar-footer {
+    margin-top: auto;
+  }
+}
+
+.shell-context-pill {
+  display: inline-flex;
+  max-width: 14rem;
+  min-height: var(--control-height-md);
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.shell-context-pill:hover {
+  background: var(--bg-hover);
+}
+
+.shell-context-pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Search is an icon in the header; ⌘K still opens it. */
+.shell-header .global-search {
+  width: var(--control-height-md);
+  height: var(--control-height-md);
+  min-height: var(--control-height-md);
+  flex: 0 0 auto;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
+.shell-header .global-search > span,
+.shell-header .global-search kbd {
+  display: none;
+}
+
+/* The avatar alone; the name and role are inside the account menu. */
+.shell-account-menu-desktop .shell-account-trigger {
+  width: var(--control-height-md);
+  max-width: none;
+  min-height: var(--control-height-md);
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
+.shell-account-menu-desktop .shell-account-trigger-text,
+.shell-account-menu-desktop .shell-account-chevron {
+  display: none;
+}
+
+@media (pointer: coarse), (max-width: 74.99rem) {
+  .shell-context-pill,
+  .shell-header .global-search,
+  .shell-account-menu-desktop .shell-account-trigger {
+    min-height: var(--touch-target-min);
+  }
+
+  .shell-header .global-search,
+  .shell-account-menu-desktop .shell-account-trigger {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+  }
+}
+
+/* Phone ---------------------------------------------------------------------- */
+
+@media (max-width: 47.99rem) {
+  .shell-main {
+    padding-top: 0;
+  }
+
+  .shell-header {
+    position: sticky;
+    z-index: var(--z-sticky);
+    top: 0;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    min-height: 3.5rem;
+    margin: 0 calc(-1 * var(--page-gutter));
+    padding: calc(env(safe-area-inset-top) + var(--space-2)) calc(2 * var(--page-gutter))
+      var(--space-2);
+    background: color-mix(in srgb, var(--bg-canvas) 88%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .shell-page-heading {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .shell-page-heading h1 {
+    overflow: hidden;
+    font-size: var(--font-size-2xl);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-station-line {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-page-subtitle {
+    display: none;
+  }
+
+  .shell-header-controls {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+
+  /* The station is switched from More; the header keeps one quiet line. */
+  .shell-header-controls .shell-context-selector {
+    width: auto;
+    flex: 0 0 0;
+  }
+
+  .shell-context-pill {
+    display: none;
+  }
+
+  .shell-header .global-search,
+  .shell-header-account {
+    display: inline-flex;
+  }
+
+  .shell-account-menu-desktop {
+    display: block;
+  }
+
+  .shell-sheet {
+    min-height: 0;
+    padding-top: var(--space-2);
+  }
+
+  .account-menu-panel {
+    top: calc(3.5rem + env(safe-area-inset-top));
+  }
+
+  /* Bottom bar: four equal tabs. */
+  .shell-mobile-nav-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .shell-mobile-nav-link {
+    min-height: 3.25rem;
+  }
+}
+
+/* More menu -------------------------------------------------------------------- */
+
+.shell-more-context {
+  display: flex;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) 0;
+  border: 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-more-context-text {
+  display: grid;
+  min-width: 0;
+}
+
+.shell-more-context-label,
+.shell-more-context-meta {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.shell-more-context-value {
+  overflow: hidden;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-more-context-action {
+  color: var(--accent);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Today ------------------------------------------------------------------------ */
+
+.today {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.today-section h2 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.today-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.today-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.today-list > li {
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.today-row {
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-1);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: var(--transition-colors);
+}
+
+.today-row:hover {
+  background: var(--bg-hover);
+}
+
+.today-row-text {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.today-row-title {
+  font-weight: var(--font-weight-medium);
+}
+
+.today-row-detail {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.today-row-chevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+/* Reduced motion ---------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-context-pill,
+  .today-row {
+    transition: none;
+  }
+}
+
+.today-row .status {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}

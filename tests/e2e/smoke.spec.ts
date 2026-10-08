@@ -15,8 +15,8 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/foundation');
 
-  // Phones get a slim top bar; the grouped navigation opens from the menu.
-  await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
+  // Phones get a bottom bar; the grouped navigation opens from More.
+  await expect(page.getByRole('button', { name: 'More' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
   const mobileContext = page.getByRole('group', { name: 'Work context' });
   await expect(mobileContext).toContainText('Demo organisation');
@@ -25,8 +25,9 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(mobileContext).toContainText('Morning shift');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
 
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  const menu = page.getByRole('dialog', { name: 'Menu' });
+  await page.getByRole('button', { name: 'More' }).click();
+  const menu = page.getByRole('dialog', { name: 'More' });
+  await expect(menu.getByRole('button', { name: /Demo station/ })).toBeVisible();
   await expect(menu.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   await expect(menu.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('href', '/');
 });

@@ -123,10 +123,10 @@ test.describe('customer accounts Phase 0', () => {
     await page.goto('/customers/customer-1?tenantId=tenant-1&legalEntityId=entity-1');
 
     await expect(page.getByRole('heading', { name: 'Acme Transport' })).toBeVisible();
-    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.getByRole('button', { name: 'More' }).click();
     await expect(
       page
-        .getByRole('dialog', { name: 'Menu' })
+        .getByRole('dialog', { name: 'More' })
         .getByRole('link', { name: 'Customers', exact: true }),
     ).toBeVisible();
     await page.keyboard.press('Escape');

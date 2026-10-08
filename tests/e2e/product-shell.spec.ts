@@ -312,9 +312,12 @@ test.describe('desktop sidebar', () => {
     await page.setViewportSize({ width: 320, height: 844 });
     await page.goto('/reports');
     await waitForHydration(page);
-    const trigger = page.getByRole('button', { name: /Change work context/ });
-    await trigger.focus();
-    await page.keyboard.press('Enter');
+    // On a phone the station is switched from More; the header carries no pill.
+    await page.getByRole('button', { name: 'More' }).click();
+    await page
+      .getByRole('dialog', { name: 'More' })
+      .getByRole('button', { name: /Change/ })
+      .click();
     await expect(page.getByRole('dialog', { name: 'Select work context' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       await page.evaluate(() => window.innerWidth),
@@ -371,14 +374,14 @@ test.describe('phone navigation', () => {
   test('opens the grouped menu from the keyboard and returns focus', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    const menuButton = page.getByRole('button', { name: 'Open menu' });
+    const menuButton = page.getByRole('button', { name: 'More' });
 
     await menuButton.focus();
     await page.keyboard.press('Enter');
-    const menu = page.getByRole('dialog', { name: 'Menu' });
+    const menu = page.getByRole('dialog', { name: 'More' });
     await expect(menu).toBeVisible();
     // The page behind the drawer is inert, so assert on the element directly.
-    await expect(page.locator('.shell-menu-button')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.shell-mobile-nav-more')).toHaveAttribute('aria-expanded', 'true');
     await expect(menu.getByRole('link', { name: 'Reports' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -395,22 +398,22 @@ test.describe('phone navigation', () => {
   test('navigating from the menu closes it and lands on the destination', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.getByRole('button', { name: 'More' }).click();
     await page
-      .getByRole('dialog', { name: 'Menu' })
+      .getByRole('dialog', { name: 'More' })
       .getByRole('link', { name: 'Suppliers' })
       .click();
 
     await expect(page).toHaveURL(/\/suppliers$/);
-    await expect(page.getByRole('dialog', { name: 'Menu' })).toBeHidden();
+    await expect(page.getByRole('dialog', { name: 'More' })).toBeHidden();
   });
 
   test('Settings links to the real route from the menu', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.getByRole('button', { name: 'More' }).click();
     await expect(
-      page.getByRole('dialog', { name: 'Menu' }).getByRole('link', { name: 'Settings' }),
+      page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Settings' }),
     ).toHaveAttribute('href', '/settings');
   });
 });

@@ -26,6 +26,8 @@ type ContextSelectorProps = Readonly<{
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
+  /** Reports the current context parts (organisation → station) as they resolve. */
+  onLabelChange?: (label: { station: string; parts: readonly string[] }) => void;
 }>;
 
 type SelectorState =
@@ -33,7 +35,13 @@ type SelectorState =
   | { status: 'ready'; resolution: ContextResolution; error?: undefined }
   | { status: 'error'; resolution?: undefined; error: string };
 
-export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSelectorProps) {
+export function ContextSelector({
+  fallback,
+  open,
+  onOpen,
+  onClose,
+  onLabelChange,
+}: ContextSelectorProps) {
   const pathname = usePathname() ?? '/';
   const search = useLocationSearch();
   const router = useRouter();
@@ -89,6 +97,18 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
     );
   }, [fallback, state]);
 
+  const fullLabel = currentLabel.join(', ');
+  // The resolved context ends with its station (or "All stations"); the
+  // preview fallback ends with a date and shift, so it names its station.
+  const pillLabel =
+    state.status !== 'ready' && fallback
+      ? fallback.station
+      : (currentLabel[currentLabel.length - 1] ?? 'Work context');
+
+  useEffect(() => {
+    onLabelChange?.({ station: pillLabel, parts: currentLabel });
+  }, [currentLabel, onLabelChange, pillLabel]);
+
   function retry() {
     setState({ status: 'loading' });
     setRefresh((value) => value + 1);
@@ -130,7 +150,7 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
     <div className="shell-context-selector">
       <p
         id="shell-context-current"
-        className="shell-context"
+        className="shell-context visually-hidden"
         role="group"
         aria-label="Work context"
       >
@@ -143,14 +163,14 @@ export function ContextSelector({ fallback, open, onOpen, onClose }: ContextSele
       <button
         ref={triggerRef}
         type="button"
-        className="shell-context-trigger"
+        className="shell-context-pill"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label="Change work context"
-        aria-describedby="shell-context-current"
+        aria-label={`Work context: ${fullLabel}. Change work context`}
+        title={fullLabel}
         onClick={onOpen}
       >
-        <span className="shell-context-trigger-label">Change</span>
+        <span className="shell-context-pill-label">{pillLabel}</span>
         <Icon name="chevron-down" size="sm" />
       </button>
 

@@ -118,34 +118,26 @@ describe('navigation destinations', () => {
 });
 
 describe('mobile navigation projection', () => {
-  it('selects authorized operational links without exposing unavailable destinations', () => {
-    const projection = syntheticNavigationProjection.map((entry) =>
-      entry.key === 'cash' || entry.key === 'reconciliations'
-        ? { ...entry, visible: true, enabled: false }
-        : entry,
-    );
-    const items = selectMobileNavigationItems(resolveNavigation(projection, {}));
+  it('offers Today, Daily ops and Customers with short labels', () => {
+    const items = selectMobileNavigationItems(resolveNavigation(syntheticNavigationProjection, {}));
 
-    expect(items.map((entry) => entry.key)).toEqual([
-      'today',
-      'daily-operations',
-      'reports',
-      'inventory',
+    expect(items.map((entry) => [entry.key, entry.mobileLabel])).toEqual([
+      ['today', 'Today'],
+      ['daily-operations', 'Daily ops'],
+      ['customers', 'Customers'],
     ]);
     expect(items.every((entry) => entry.state === 'link')).toBe(true);
   });
 
-  it('uses station-scoped cash and reconciliation links when context authorizes them', () => {
-    const items = selectMobileNavigationItems(
-      resolveNavigation(syntheticNavigationProjection, { stationId: 'station-1' }),
-    );
+  it('never exposes restricted or hidden destinations and does not backfill', () => {
+    const projection = syntheticNavigationProjection.map((entry) => {
+      if (entry.key === 'customers') return { ...entry, visible: true, enabled: false };
+      if (entry.key === 'daily-operations') return { ...entry, visible: false };
+      return entry;
+    });
+    const items = selectMobileNavigationItems(resolveNavigation(projection, {}));
 
-    expect(items.map((entry) => entry.key)).toEqual([
-      'today',
-      'daily-operations',
-      'cash',
-      'reconciliations',
-    ]);
+    expect(items.map((entry) => entry.key)).toEqual(['today']);
   });
 });
 
