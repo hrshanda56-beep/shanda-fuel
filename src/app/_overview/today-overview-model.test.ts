@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   approvalLabel,
+  countActiveCustomers,
+  countOpenShifts,
   countSuspendedCustomers,
   operationsAttention,
   shiftSummary,
@@ -60,5 +62,15 @@ describe('today overview model', () => {
     expect(shiftSummary([])).toBe('No shifts yet');
     expect(shiftSummary([{ state: 'OPEN' }, { state: 'COMPLETED' }])).toBe('2 shifts · 1 open');
     expect(shiftSummary([{ state: 'COMPLETED' }])).toBe('1 shift');
+  });
+});
+
+describe('figure counts', () => {
+  it('counts only ACTIVE customers and OPEN shifts', () => {
+    expect(
+      countActiveCustomers([{ status: 'ACTIVE' }, { status: 'SUSPENDED' }, { status: 'CLOSED' }]),
+    ).toBe(1);
+    expect(countOpenShifts([{ state: 'OPEN' }, { state: 'CLOSED' }])).toBe(1);
+    expect(countOpenShifts([])).toBe(0);
   });
 });

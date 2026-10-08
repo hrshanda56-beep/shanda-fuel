@@ -10,6 +10,8 @@ import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primi
 import {
   approvalLabel,
   CLOSE_STATUS_PRESENTATION,
+  countActiveCustomers,
+  countOpenShifts,
   countSuspendedCustomers,
   operationsAttention,
   shiftSummary,
@@ -120,6 +122,26 @@ export function TodayOverview({ tenantId, stationId }: Scope) {
 
   return (
     <div className="today">
+      <section className="today-section" aria-labelledby="today-figures-heading">
+        <h2 id="today-figures-heading">Key figures</h2>
+        <dl className="today-figures">
+          <Figure
+            label="Shifts open"
+            state={!stationId ? 'choose' : operations.status}
+            value={operations.status === 'ready' ? countOpenShifts(operations.data.shifts) : null}
+          />
+          <Figure
+            label="Active customers"
+            state={customers.status}
+            value={
+              customers.status === 'ready' ? countActiveCustomers(customers.data.customers) : null
+            }
+          />
+          <Figure label="Sales today" state="pending" value={null} />
+          <Figure label="Litres sold" state="pending" value={null} />
+        </dl>
+      </section>
+
       <section className="today-section" aria-labelledby="today-ops-heading">
         <h2 id="today-ops-heading">Daily operations</h2>
         {!stationId ? (
@@ -171,6 +193,52 @@ export function TodayOverview({ tenantId, stationId }: Scope) {
           <p className="today-note">Some items could not be checked.</p>
         ) : null}
       </section>
+
+      <section className="today-section" aria-labelledby="today-stats-heading">
+        <h2 id="today-stats-heading">Statistics by period</h2>
+        <p className="today-note">
+          Daily, weekly and monthly trends will appear here once reporting is connected.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'choose' | 'pending';
+
+const FIGURE_CAPTION: Partial<Record<FigureState, string>> = {
+  forbidden: 'No access',
+  error: 'Unavailable',
+  choose: 'Choose a station',
+  pending: 'Not connected yet',
+};
+
+function Figure({
+  label,
+  state,
+  value,
+}: {
+  label: string;
+  state: FigureState;
+  value: number | null;
+}) {
+  return (
+    <div className="today-figure" data-state={state}>
+      <dt>{label}</dt>
+      <dd>
+        {state === 'loading' ? (
+          <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
+        ) : value !== null ? (
+          <span className="today-figure-value">{value}</span>
+        ) : (
+          <>
+            <span className="today-figure-value" aria-hidden="true">
+              —
+            </span>
+            <span className="today-figure-caption">{FIGURE_CAPTION[state]}</span>
+          </>
+        )}
+      </dd>
     </div>
   );
 }
