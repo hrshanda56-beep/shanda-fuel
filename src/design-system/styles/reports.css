@@ -1,0 +1,87 @@
+/* Reports page: filters, report rows, rail, menus and activity. */
+
+/* Report filter bar: stations (multi-select) and period ------------------ */
+.report-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.report-filter {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.station-picker {
+  position: relative;
+}
+
+.station-picker > summary {
+  display: flex;
+  min-height: var(--control-height-md);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  border: var(--border-width) solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  list-style: none;
+  cursor: pointer;
+}
+
+.station-picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+.station-picker > summary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.station-picker[open] > summary .icon {
+  transform: rotate(180deg);
+}
+
+.station-picker-panel {
+  position: absolute;
+  z-index: 20;
+  inset-inline: 0;
+  top: calc(100% + var(--space-1));
+  display: grid;
+  max-height: 18rem;
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.station-option {
+  display: flex;
+  min-height: var(--control-height-md);
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.station-option:hover {
+  background: var(--bg-hover);
+}
+
+.station-option-code,
+.station-option-empty {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.station-option-empty {
+  padding: var(--space-2);
+}

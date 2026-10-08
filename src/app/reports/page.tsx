@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { ManagementReportDashboard } from '@/modules/reporting/ui/management-report-dashboard';
@@ -18,7 +19,9 @@ export default async function ReportsPage({
         A factual view across approved sales, custody, settlements, commercial exposure, and stock.
       </p>
       {tenantId ? (
-        <ManagementReportDashboard tenantId={tenantId} />
+        <Suspense>
+          <ManagementReportDashboard tenantId={tenantId} />
+        </Suspense>
       ) : (
         <ContextRequiredState
           title="Choose an organisation to view reports"

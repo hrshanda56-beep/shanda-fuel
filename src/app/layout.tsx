@@ -8,6 +8,7 @@ import '@/design-system/styles/shell.css';
 import './globals.css';
 import '@/design-system/styles/adr015.css';
 import '@/design-system/styles/shell-phase1.css';
+import '@/design-system/styles/reports.css';
 
 import { shellInitScript } from '@/design-system/shell-preferences';
 import { themeInitScript } from '@/design-system/theme';

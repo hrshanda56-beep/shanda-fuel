@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { formatBusinessDate, formatLitres, formatMoney } from '../../../design-system/formatters';
 import { MetricCard } from '../../../design-system/layout';
 import {
@@ -12,11 +13,16 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
+import type { ContextResolution } from '../../context/contracts';
 import type { ManagementReport } from '../contracts';
-
-function today(): string {
-  return new Intl.DateTimeFormat('en-CA').format(new Date());
-}
+import {
+  applyReportFilters,
+  parseReportFilters,
+  resolveReportFilters,
+  type ReportFilters,
+} from '../filters';
+import { businessToday } from '../period';
+import { ReportFilterBar, type FilterStation } from './report-filter-bar';
 
 function customerMoney(value: string | null): string {
   return value === null ? 'Unavailable' : formatMoney(value);
@@ -24,19 +30,63 @@ function customerMoney(value: string | null): string {
 
 const managementReportState: ManagementReport['state'] = 'POSTED';
 
+function useAvailableStations(tenantId: string): FilterStation[] {
+  const [stations, setStations] = useState<FilterStation[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/context?pathname=/reports', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then((response) => response.json() as Promise<{ data?: ContextResolution }>)
+      .then((body) => {
+        const organisation = body.data?.available.organisations.find(
+          (candidate) => candidate.id === tenantId,
+        );
+        setStations(
+          (organisation?.legalEntities ?? []).flatMap((entity) =>
+            entity.stations.map(({ id, code, name }) => ({ id, code, name })),
+          ),
+        );
+      })
+      .catch(() => {
+        // The filter bar still works as "all stations" when the list is unavailable.
+      });
+    return () => controller.abort();
+  }, [tenantId]);
+  return stations;
+}
+
 export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
-  const [fromDate, setFromDate] = useState(today());
-  const [toDate, setToDate] = useState(today());
-  const [stationId, setStationId] = useState('');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filters = useMemo(() => parseReportFilters(searchParams), [searchParams]);
+  const stations = useAvailableStations(tenantId);
+  const range = resolveReportFilters(filters, businessToday());
   const [report, setReport] = useState<ManagementReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  function changeFilters(next: ReportFilters) {
+    const params = applyReportFilters(new URLSearchParams(searchParams.toString()), next);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  const fromDate = range?.fromDate;
+  const toDate = range?.toDate;
+  const stationKey = filters.stationIds.join(',');
+
   async function load(signal?: AbortSignal) {
+    if (!fromDate || !toDate) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     const query = new URLSearchParams({ tenantId, fromDate, toDate });
-    if (stationId) query.set('stationId', stationId);
+    if (stationKey) query.set('stationIds', stationKey);
     try {
       const response = await fetch(`/api/reports/management?${query.toString()}`, {
         cache: 'no-store',
@@ -61,15 +111,9 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
       window.clearTimeout(timeout);
       controller.abort();
     };
-    // The initial load is intentionally tied to the tenant context only.
-    // Filters are applied by the explicit form submission below.
+    // Reload whenever the tenant, stations or resolved dates change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId]);
-
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void load();
-  }
+  }, [tenantId, stationKey, fromDate, toDate]);
 
   return (
     <>
@@ -82,45 +126,12 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
             {report?.state ?? managementReportState}
           </StatusBadge>
         </div>
-        <form className="demo-form" onSubmit={submit}>
-          <div className="form-grid">
-            <Field id="report-from" label="From business date" required>
-              <input
-                id="report-from"
-                type="date"
-                value={fromDate}
-                onChange={(event) => setFromDate(event.target.value)}
-                required
-              />
-            </Field>
-            <Field id="report-to" label="To business date" required>
-              <input
-                id="report-to"
-                type="date"
-                value={toDate}
-                onChange={(event) => setToDate(event.target.value)}
-                required
-              />
-            </Field>
-            <Field id="report-station" label="Station" hint="Leave blank for every station.">
-              <select
-                id="report-station"
-                value={stationId}
-                onChange={(event) => setStationId(event.target.value)}
-              >
-                <option value="">All authorized stations</option>
-                {report?.stations.map((station) => (
-                  <option key={station.stationId} value={station.stationId}>
-                    {station.code} · {station.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <button className="button button-primary" type="submit" disabled={loading}>
-            Refresh report
-          </button>
-        </form>
+        <ReportFilterBar stations={stations} filters={filters} onChange={changeFilters} />
+        {!range ? (
+          <p className="field-hint" role="status">
+            Choose both dates, with the start on or before the end.
+          </p>
+        ) : null}
         <p className="metric-meta">
           Figures come from posted source records, each on its own date basis. This is an
           operational view, not a general ledger, statutory P&amp;L, balance sheet, tax report, or
