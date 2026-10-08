@@ -68,7 +68,7 @@ const TODAY = `/?tenantId=${TENANT}&stationId=${STATION}`;
 test('today asks for a station instead of showing empty figures', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
   await expect(page.getByText('Choose a work context', { exact: false })).toBeVisible();
   await expect(page.locator('.today-figures')).toHaveCount(0);
   await expect(page.locator('.card')).toHaveCount(0);
@@ -204,7 +204,7 @@ test.describe('today hardening', () => {
     );
     await page.goto(TODAY);
     await expect(page.locator('.state-error')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
     await expect(page.getByText('NaN', { exact: true })).toHaveCount(0);
     await expect(page.getByText('undefined', { exact: true })).toHaveCount(0);
   });

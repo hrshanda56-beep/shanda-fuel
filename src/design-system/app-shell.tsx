@@ -110,7 +110,7 @@ function pageTitleForRoute(
     .flatMap((section) => section.items)
     .find((item) => isNavigationItemActive(item, pathname));
   if (!current) return undefined;
-  return current.key === 'today' ? 'Dashboard' : current.label;
+  return current.label;
 }
 
 type ClosedGroupState = {
@@ -350,7 +350,7 @@ export function AppShell({
                 <div className="shell-page-heading">
                   <h1 id="page-title">{resolvedPageTitle}</h1>
                   {pageSubtitle ? <p className="shell-page-subtitle">{pageSubtitle}</p> : null}
-                  {contextLabel ? (
+                  {contextLabel && contextLabel.parts.length > 0 ? (
                     <p className="shell-station-line" aria-hidden="true">
                       {contextLabel.station}
                     </p>
@@ -433,7 +433,7 @@ export function AppShell({
           className="modal-more"
           returnFocus={() => moreButtonRef.current}
         >
-          {contextLabel ? (
+          {contextLabel && contextLabel.parts.length > 0 ? (
             <button
               type="button"
               className="shell-more-context"

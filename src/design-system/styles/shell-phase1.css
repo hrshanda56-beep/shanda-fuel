@@ -438,7 +438,7 @@
   .today-dashboard {
     grid-template-columns: minmax(0, 1fr) 22rem;
     grid-template-areas:
-      'figures side'
+      'figures figures'
       'stats side';
     align-items: start;
     gap: var(--space-6);

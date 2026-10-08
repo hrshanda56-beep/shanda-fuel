@@ -4,7 +4,8 @@ import Link from 'next/link';
 
 import { AppShell } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
-import { Button, EmptyState, ErrorState, SkeletonBlock } from './primitives';
+import { SkeletonCard, SkeletonTiles } from './page-kit';
+import { Button, EmptyState, ErrorState } from './primitives';
 
 /**
  * Whole-page states rendered inside the Product Shell, so navigation stays
@@ -20,17 +21,8 @@ export function RouteLoading() {
     <AppShell navigationProjection={emptyNavigationProjection}>
       <div className="route-loading" role="status" aria-live="polite">
         <span className="visually-hidden">Loading page…</span>
-        <div className="route-loading-header" aria-hidden="true">
-          <SkeletonBlock width="7rem" height="0.75rem" />
-          <SkeletonBlock width="min(22rem, 70%)" height="1.75rem" />
-          <SkeletonBlock width="min(34rem, 90%)" height="0.875rem" />
-        </div>
-        <div className="route-loading-grid" aria-hidden="true">
-          <SkeletonBlock height="6.5rem" />
-          <SkeletonBlock height="6.5rem" />
-          <SkeletonBlock height="6.5rem" />
-        </div>
-        <SkeletonBlock height="16rem" />
+        <SkeletonTiles count={4} label="Loading figures" />
+        <SkeletonCard label="Loading content" lines={4} />
       </div>
     </AppShell>
   );

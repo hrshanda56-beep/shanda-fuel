@@ -268,7 +268,7 @@ test.describe('shared shell consistency', () => {
     test(`${viewport.name} keeps page headings in the shared header`, async ({ page }) => {
       await page.setViewportSize(viewport);
       for (const [path, title] of [
-        ['/', 'Dashboard'],
+        ['/', 'Today'],
         ['/operations/daily', 'Daily operations'],
         ['/reports', 'Reports'],
         ['/inventory', 'Inventory'],

@@ -88,7 +88,7 @@ export function ContextSelector({
   }, [pathname, refresh, search]);
 
   const currentLabel = useMemo(() => {
-    if (state.status === 'loading' && !fallback) return ['Loading work context…'];
+    if (state.status === 'loading' && !fallback) return [];
     if (state.status === 'error' && !fallback) return ['Work context unavailable'];
     return contextDisplay(
       state.status === 'ready' ? state.resolution.available : undefined,
@@ -97,7 +97,7 @@ export function ContextSelector({
     );
   }, [fallback, state]);
 
-  const fullLabel = currentLabel.join(', ');
+  const fullLabel = currentLabel.join(', ') || 'loading';
   // The resolved context ends with its station (or "All stations"); the
   // preview fallback ends with a date and shift, so it names its station.
   const pillLabel =

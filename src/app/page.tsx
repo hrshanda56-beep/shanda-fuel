@@ -3,7 +3,7 @@ import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-s
 import { TodayOverview } from './_overview/today-overview';
 
 export const metadata = {
-  title: { absolute: 'Dashboard · Shanda Fuel' },
+  title: { absolute: 'Today · Shanda Fuel' },
 };
 
 /** Today for the selected station: daily operations and anything needing attention. */
