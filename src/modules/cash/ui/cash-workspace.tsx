@@ -1,18 +1,27 @@
 'use client';
 
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { buildContextHref, type ContextResolution, type ContextSelection } from '@/modules/context';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import type { ContextResolution, ContextSelection } from '@/modules/context';
 import { Select } from '../../../design-system/forms';
+import { formatBusinessDate, formatMoneyDisplay } from '../../../design-system/formatters';
+import { Section } from '../../../design-system/layout';
+import {
+  ActionSheet,
+  KpiGrid,
+  KpiTile,
+  RefreshButton,
+  SkeletonCard,
+  SkeletonTiles,
+} from '../../../design-system/page-kit';
 import {
   Button,
-  Card,
   ContextRequiredState,
   EmptyState,
   ErrorState,
   Field,
-  LoadingState,
   NumericInput,
+  Skeleton,
   StatusBadge,
   SuccessState,
 } from '../../../design-system/primitives';
@@ -88,6 +97,14 @@ type CashSummary = {
 };
 
 type RequestFailure = Error & { status?: number; conflict?: boolean };
+type CashSheet = 'collect' | 'receive' | 'deposit' | 'confirm' | null;
+
+const COMMAND_SUCCESS: Record<string, string> = {
+  RecordCashCollection: 'Collection recorded.',
+  ReceiveCashCollection: 'Collection received.',
+  CreateBankDeposit: 'Deposit recorded.',
+  ConfirmBankDeposit: 'Deposit confirmed.',
+};
 
 const emptyCapabilities: CashCapabilities = {
   viewDeposits: false,
@@ -148,12 +165,8 @@ export function CashWorkspace() {
   const [loadedRouteKey, setLoadedRouteKey] = useState<string | null>(null);
   const [receiveCollectionId, setReceiveCollectionId] = useState('');
   const [depositRows, setDepositRows] = useState([{ collectionId: '', amount: '' }]);
+  const [sheet, setSheet] = useState<CashSheet>(null);
   const intentKeys = useRef(new Map<string, string>());
-
-  const canonicalContextHref = useMemo(
-    () => (context ? buildContextHref(pathname, search, context) : pathname),
-    [context, pathname, search],
-  );
 
   const loadContext = useCallback(
     async (signal?: AbortSignal): Promise<ContextSelection | null> => {
@@ -167,7 +180,7 @@ export function CashWorkspace() {
       const result = (await response.json()) as { data?: ContextResolution; message?: string };
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) return null;
-        throw requestFailure(response, result, 'Work context could not be loaded');
+        throw requestFailure(response, result, 'The station could not be loaded');
       }
       const current = result.data?.current;
       if (!current?.stationId || current.allStations) return null;
@@ -190,7 +203,7 @@ export function CashWorkspace() {
       signal,
     });
     const result = await response.json();
-    if (!response.ok) throw requestFailure(response, result, 'Cash summary could not be loaded');
+    if (!response.ok) throw requestFailure(response, result, 'Cash could not be loaded');
     setSummary(normalizeSummary(result as CashSummary));
     setReceiveCollectionId('');
   }, []);
@@ -216,9 +229,7 @@ export function CashWorkspace() {
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         setContextStatus('error');
-        setContextError(
-          cause instanceof Error ? cause.message : 'Work context could not be loaded',
-        );
+        setContextError(cause instanceof Error ? cause.message : 'The station could not be loaded');
         setLoadedRouteKey(routeKey);
         setLoading(false);
       })
@@ -245,9 +256,9 @@ export function CashWorkspace() {
     }
   }
 
-  async function postCommand(event: FormEvent<HTMLFormElement>) {
+  async function postCommand(event: FormEvent<HTMLFormElement>): Promise<boolean> {
     event.preventDefault();
-    if (!context) return;
+    if (!context) return false;
     const form = event.currentTarget;
     const data = new FormData(form);
     const commandType = String(data.get('commandType'));
@@ -302,17 +313,19 @@ export function CashWorkspace() {
         body: JSON.stringify(payload),
       });
       const result = await response.json();
-      if (!response.ok) throw requestFailure(response, result, 'Cash command failed');
+      if (!response.ok) throw requestFailure(response, result, 'That could not be saved');
       intentKeys.current.delete(signature);
-      setSuccess(`${displayState(commandType)} accepted and recorded by the server.`);
+      setSuccess(COMMAND_SUCCESS[commandType] ?? 'Saved.');
       form.reset();
       if (commandType === 'CreateBankDeposit') setDepositRows([{ collectionId: '', amount: '' }]);
       await refresh();
+      return true;
     } catch (cause) {
       const failure = cause as RequestFailure;
       if (failure.conflict)
-        failure.message = `${failure.message} Refresh the station position before retrying.`;
+        failure.message = `${failure.message} Reload to see the latest and try again.`;
       setError(failure);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -320,39 +333,35 @@ export function CashWorkspace() {
 
   if (loadedRouteKey !== routeKey || contextStatus === 'loading') {
     return (
-      <Card as="section" className="panel" aria-labelledby="cash-context-loading-title">
-        <h2 id="cash-context-loading-title" className="sr-only">
-          Cash context
-        </h2>
-        <LoadingState label="Checking authorised station context" />
-      </Card>
+      <div className="cash-page" aria-busy="true">
+        <SkeletonTiles count={3} label="Loading cash position" />
+        <SkeletonCard label="Loading collections" lines={3} />
+      </div>
     );
   }
 
   if (contextStatus === 'required') {
     return (
-      <Card as="section" className="panel" aria-labelledby="cash-context-required-title">
-        <ContextRequiredState
-          title="Select a station to load cash"
-          message="Choose one authorised station in the work context control above. Cash does not fall back to an all-stations view."
-        />
-      </Card>
+      <ContextRequiredState
+        title="Choose a station"
+        message="Pick one station at the top of the page to see its cash."
+      />
     );
   }
 
   if (contextStatus === 'error') {
     return (
-      <Card as="section" className="panel" aria-labelledby="cash-context-error-title">
-        <h2 id="cash-context-error-title">Cash context unavailable</h2>
-        <ErrorState
-          message={contextError ?? 'The authorised station context could not be loaded.'}
-          action={<Button onClick={() => window.location.reload()}>Retry</Button>}
-        />
-      </Card>
+      <ErrorState
+        title="Cash unavailable"
+        message={contextError ?? 'The station could not be loaded.'}
+        action={<Button onClick={() => window.location.reload()}>Try again</Button>}
+      />
     );
   }
 
   const capabilities = summary?.capabilities ?? emptyCapabilities;
+  const currency = summary?.currency ?? 'USD';
+  const money = (value: string) => formatMoneyDisplay(value, currency);
   const recordableSources = summary?.reconciliationSources ?? [];
   const receiveableCollections =
     summary?.collections.filter((collection) => collection.state === 'RECORDED') ?? [];
@@ -369,103 +378,200 @@ export function CashWorkspace() {
     })) ?? [];
   const collectionOptions = depositableCollections.map((collection) => ({
     value: collection.collectionId,
-    label: `${collection.collectionReference} · ${collection.availableAtStation} USD available`,
+    label: `${collection.collectionReference} · ${money(collection.availableAtStation)} available`,
   }));
+  const tileState = loading && !summary ? 'loading' : summary ? 'ready' : 'error';
+  const canConfirm = capabilities.confirmDeposit && confirmableDeposits.length > 0;
+  const hasAnyAction =
+    capabilities.recordCollection ||
+    capabilities.receiveCollection ||
+    capabilities.recordDeposit ||
+    canConfirm;
+
+  function openSheet(next: CashSheet) {
+    setError(null);
+    setSuccess(null);
+    setSheet(next);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    if (await postCommand(event)) setSheet(null);
+  }
+
+  const sheetError = error ? <ErrorState message={error.message} title="That didn’t work" /> : null;
 
   return (
-    <div className="content-grid">
-      <Card as="section" className="panel" aria-labelledby="cash-position-title">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Cash custody</p>
-            <h2 id="cash-position-title">Collected is not banked</h2>
-          </div>
-          <a href={canonicalContextHref} aria-label="Open the canonical station cash context">
-            <StatusBadge tone="informational">Station scoped</StatusBadge>
-          </a>
-        </div>
-        {loading ? <LoadingState label="Loading cash position" /> : null}
-        {error ? (
-          <ErrorState
-            message={error.message}
-            action={<Button onClick={() => void refresh()}>Retry</Button>}
+    <div className="cash-page">
+      {sheet === null && error ? (
+        <ErrorState
+          message={error.message}
+          action={<Button onClick={() => void refresh()}>Try again</Button>}
+        />
+      ) : null}
+      {sheet === null && success ? <SuccessState title="Done" message={success} /> : null}
+
+      <div className="kpi-section">
+        <KpiGrid label="Cash position">
+          <KpiTile
+            label="At station"
+            icon="wallet"
+            state={tileState}
+            value={summary ? money(summary.totals.availableAtStation) : null}
           />
-        ) : null}
-        {success ? <SuccessState message={success} /> : null}
-        {summary ? (
-          <>
-            <dl className="operational-summary">
-              <div>
-                <dt>Available at station</dt>
-                <dd>{summary.totals.availableAtStation} USD</dd>
-              </div>
-              <div>
-                <dt>Collected but unbanked</dt>
-                <dd>{summary.totals.collectedButUnbanked} USD</dd>
-              </div>
-              <div>
-                <dt>Pending bank confirmation</dt>
-                <dd>{summary.totals.pendingBankConfirmation} USD</dd>
-              </div>
-            </dl>
-            {summary.collections.length === 0 ? (
-              <EmptyState
-                title="No collections yet"
-                message="Record a collection against cash evidence from an approved daily reconciliation."
-              />
-            ) : (
-              <TableScrollRegion label="Station cash collections">
-                <table className="data-table">
-                  <caption className="sr-only">Station cash collections</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Reference</th>
-                      <th scope="col">Amount</th>
-                      <th scope="col">Unbanked</th>
-                      <th scope="col">Custody</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.collections.map((collection) => (
-                      <tr key={collection.collectionId}>
-                        <th scope="row">{collection.collectionReference}</th>
-                        <td data-label="Amount">{collection.amount} USD</td>
-                        <td data-label="Unbanked">{collection.collectedButUnbanked} USD</td>
-                        <td data-label="Custody">
-                          <StatusBadge
-                            tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
-                          >
-                            {displayState(collection.custodyState)}
-                          </StatusBadge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableScrollRegion>
-            )}
-          </>
-        ) : null}
-      </Card>
+          <KpiTile
+            label="Collected, not banked"
+            icon="inbox"
+            state={tileState}
+            value={summary ? money(summary.totals.collectedButUnbanked) : null}
+          />
+          <KpiTile
+            label="Awaiting bank confirmation"
+            icon="clock"
+            state={tileState}
+            value={summary ? money(summary.totals.pendingBankConfirmation) : null}
+          />
+        </KpiGrid>
+      </div>
 
-      <Card as="section" className="panel" aria-labelledby="cash-actions-title">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Named commands</p>
-            <h2 id="cash-actions-title">Record custody movement</h2>
-          </div>
+      {hasAnyAction ? (
+        <div className="page-actions">
+          {capabilities.recordCollection ? (
+            <Button variant="primary" onClick={() => openSheet('collect')}>
+              Record collection
+            </Button>
+          ) : null}
+          {capabilities.receiveCollection ? (
+            <Button variant="secondary" onClick={() => openSheet('receive')}>
+              Receive collection
+            </Button>
+          ) : null}
+          {capabilities.recordDeposit ? (
+            <Button variant="secondary" onClick={() => openSheet('deposit')}>
+              Record deposit
+            </Button>
+          ) : null}
+          {canConfirm ? (
+            <Button variant="secondary" onClick={() => openSheet('confirm')}>
+              Confirm deposit
+            </Button>
+          ) : null}
         </div>
+      ) : null}
 
-        {capabilities.recordCollection ? (
-          <form className="form-stack" onSubmit={(event) => void postCommand(event)}>
+      <Section
+        title="Collections"
+        headingId="cash-collections-title"
+        action={<RefreshButton onClick={() => void refresh()} disabled={loading} />}
+      >
+        {!summary ? (
+          <Skeleton lines={3} label="Loading collections" />
+        ) : summary.collections.length === 0 ? (
+          <EmptyState
+            title="No collections yet"
+            message="Collections you record from approved shift cash appear here."
+          />
+        ) : (
+          <TableScrollRegion label="Station cash collections">
+            <table className="data-table">
+              <caption className="sr-only">Station cash collections</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Reference</th>
+                  <th scope="col">Amount</th>
+                  <th scope="col">Not banked</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.collections.map((collection) => (
+                  <tr key={collection.collectionId}>
+                    <th scope="row">{collection.collectionReference}</th>
+                    <td data-label="Amount">{money(collection.amount)}</td>
+                    <td data-label="Not banked">{money(collection.collectedButUnbanked)}</td>
+                    <td data-label="Status">
+                      <StatusBadge
+                        tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
+                      >
+                        {displayState(collection.custodyState)}
+                      </StatusBadge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScrollRegion>
+        )}
+      </Section>
+
+      {capabilities.viewDeposits ? (
+        <Section title="Bank deposits" headingId="deposit-list-title">
+          {!summary ? (
+            <Skeleton lines={2} label="Loading deposits" />
+          ) : summary.deposits.length ? (
+            <TableScrollRegion label="Station bank deposits">
+              <table className="data-table">
+                <caption className="sr-only">Station bank deposits</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">Account</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Difference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.deposits.map((deposit) => (
+                    <tr key={deposit.depositId}>
+                      <th scope="row">{deposit.depositReference}</th>
+                      <td data-label="Account">{deposit.bankAccountName}</td>
+                      <td data-label="Amount">{money(deposit.amount)}</td>
+                      <td data-label="Status">
+                        <StatusBadge tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}>
+                          {displayState(deposit.state)}
+                        </StatusBadge>
+                      </td>
+                      <td data-label="Difference">
+                        {deposit.confirmationVariance ? money(deposit.confirmationVariance) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScrollRegion>
+          ) : (
+            <EmptyState
+              title="No deposits yet"
+              message="Deposits you record appear here until the bank confirms them."
+            />
+          )}
+        </Section>
+      ) : null}
+
+      {!hasAnyAction && summary ? (
+        <EmptyState
+          title="View only"
+          message="Your access lets you see cash here but not record it."
+        />
+      ) : null}
+
+      <ActionSheet
+        title="Record collection"
+        open={sheet === 'collect'}
+        onOpenChange={(next) => setSheet(next ? 'collect' : null)}
+        dismissible={!busy}
+      >
+        {() => (
+          <form className="form-stack" onSubmit={(event) => void submit(event)}>
             <input type="hidden" name="commandType" value="RecordCashCollection" />
+            {sheetError}
             <Field id="collection-reference" label="Collection reference" required>
               <input id="collection-reference" name="collectionReference" />
             </Field>
             <Field
               id="reconciliation-id"
-              label="Approved reconciliation cash evidence"
-              hint="Only approved, posted, or locked A5 cash evidence returned by the server can be selected."
+              label="Approved cash from a shift"
+              hint="Choose the approved shift cash this collection comes from."
               required
             >
               <Select
@@ -473,18 +579,18 @@ export function CashWorkspace() {
                 name="reconciliationId"
                 options={recordableSources.map((source) => ({
                   value: source.reconciliationId,
-                  label: `${source.businessDate} · ${source.availableCash} USD available · ${source.reconciliationId}`,
+                  label: `${formatBusinessDate(source.businessDate)} · ${money(source.availableCash)} available`,
                 }))}
-                placeholder="Choose approved cash evidence"
+                placeholder="Choose approved cash"
                 disabled={recordableSources.length === 0}
               />
             </Field>
-            <Field id="source-location-id" label="Source cash location" required>
+            <Field id="source-location-id" label="Cash location" required>
               <Select
                 id="source-location-id"
                 name="sourceLocationId"
                 options={locationOptions}
-                placeholder="Choose a station location"
+                placeholder="Choose where the cash is"
                 disabled={locationOptions.length === 0}
               />
             </Field>
@@ -492,24 +598,32 @@ export function CashWorkspace() {
               id="collection-amount"
               name="amount"
               label="Collected amount"
-              unit="USD"
+              unit={currency}
               required
             />
-            <Button type="submit" loading={busy} disabled={recordableSources.length === 0}>
-              Record collection
-            </Button>
+            <div className="sheet-actions">
+              <Button type="submit" loading={busy} disabled={recordableSources.length === 0} block>
+                Record collection
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setSheet(null)} block>
+                Cancel
+              </Button>
+            </div>
           </form>
-        ) : null}
+        )}
+      </ActionSheet>
 
-        {capabilities.receiveCollection ? (
-          <form className="form-stack form-section" onSubmit={(event) => void postCommand(event)}>
+      <ActionSheet
+        title="Receive collection"
+        open={sheet === 'receive'}
+        onOpenChange={(next) => setSheet(next ? 'receive' : null)}
+        dismissible={!busy}
+      >
+        {() => (
+          <form className="form-stack" onSubmit={(event) => void submit(event)}>
             <input type="hidden" name="commandType" value="ReceiveCashCollection" />
-            <Field
-              id="receive-collection-id"
-              label="Recorded collection"
-              hint="The server rechecks the collection version and current custody location."
-              required
-            >
+            {sheetError}
+            <Field id="receive-collection-id" label="Recorded collection" required>
               <Select
                 id="receive-collection-id"
                 name="collectionId"
@@ -517,13 +631,13 @@ export function CashWorkspace() {
                 onChange={(event) => setReceiveCollectionId(event.currentTarget.value)}
                 options={receiveableCollections.map((collection) => ({
                   value: collection.collectionId,
-                  label: `${collection.collectionReference} · ${collection.amount} USD`,
+                  label: `${collection.collectionReference} · ${money(collection.amount)}`,
                 }))}
-                placeholder="Choose a recorded collection"
+                placeholder="Choose a collection"
                 disabled={receiveableCollections.length === 0}
               />
             </Field>
-            <Field id="receive-location-id" label="Receiving cash location" required>
+            <Field id="receive-location-id" label="Receiving location" required>
               <Select
                 id="receive-location-id"
                 name="targetLocationId"
@@ -532,21 +646,34 @@ export function CashWorkspace() {
                 disabled={locationOptions.length < 2}
               />
             </Field>
-            <Button
-              type="submit"
-              variant="secondary"
-              loading={busy}
-              disabled={receiveableCollections.length === 0}
-            >
-              Receive collection
-            </Button>
+            <div className="sheet-actions">
+              <Button
+                type="submit"
+                loading={busy}
+                disabled={receiveableCollections.length === 0}
+                block
+              >
+                Receive collection
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setSheet(null)} block>
+                Cancel
+              </Button>
+            </div>
           </form>
-        ) : null}
+        )}
+      </ActionSheet>
 
-        {capabilities.recordDeposit ? (
-          <form className="form-stack form-section" onSubmit={(event) => void postCommand(event)}>
+      <ActionSheet
+        title="Record deposit"
+        open={sheet === 'deposit'}
+        onOpenChange={(next) => setSheet(next ? 'deposit' : null)}
+        dismissible={!busy}
+      >
+        {() => (
+          <form className="form-stack" onSubmit={(event) => void submit(event)}>
             <input type="hidden" name="commandType" value="CreateBankDeposit" />
-            <Field id="bank-account-id" label="USD bank account" required>
+            {sheetError}
+            <Field id="bank-account-id" label="Bank account" required>
               <Select
                 id="bank-account-id"
                 name="bankAccountId"
@@ -556,16 +683,16 @@ export function CashWorkspace() {
                     label: `${account.name} · ${account.bankName} ${account.accountReferenceMasked}`,
                   })) ?? []
                 }
-                placeholder="Choose an active legal-entity account"
+                placeholder="Choose a bank account"
                 disabled={!summary?.bankAccounts.length}
               />
             </Field>
-            <Field id="deposit-location-id" label="Deposit source location" required>
+            <Field id="deposit-location-id" label="Handed over from" required>
               <Select
                 id="deposit-location-id"
                 name="sourceLocationId"
                 options={locationOptions}
-                placeholder="Choose the location handing over cash"
+                placeholder="Choose where the cash is"
                 disabled={locationOptions.length === 0}
               />
             </Field>
@@ -575,11 +702,8 @@ export function CashWorkspace() {
             <div className="form-stack">
               <div className="panel-heading">
                 <div>
-                  <h3>Collection allocations</h3>
-                  <p className="field-hint">
-                    Allocate exact decimal amounts from collections available at the source
-                    location.
-                  </p>
+                  <h3>Collections in this deposit</h3>
+                  <p className="field-hint">Choose each collection and how much of it goes in.</p>
                 </div>
                 <Button
                   type="button"
@@ -589,7 +713,7 @@ export function CashWorkspace() {
                   }
                   disabled={depositableCollections.length === 0}
                 >
-                  Add allocation
+                  Add another
                 </Button>
               </div>
               {depositRows.map((row, index) => (
@@ -612,7 +736,7 @@ export function CashWorkspace() {
                     id={`allocation-amount-${index}`}
                     name="allocationAmount"
                     label="Amount"
-                    unit="USD"
+                    unit={currency}
                     defaultValue={row.amount}
                     required
                   />
@@ -630,121 +754,71 @@ export function CashWorkspace() {
                 </div>
               ))}
             </div>
-            <Button
-              type="submit"
-              variant="secondary"
-              loading={busy}
-              disabled={!summary?.bankAccounts.length || depositableCollections.length === 0}
-            >
-              Record bank deposit
-            </Button>
-          </form>
-        ) : null}
-
-        {capabilities.confirmDeposit && confirmableDeposits.length > 0 ? (
-          <div className="form-section">
-            <div className="panel-heading">
-              <div>
-                <h3>Confirm bank deposit</h3>
-                <p className="field-hint">
-                  Confirmation is a separate named command and may require step-up authentication.
-                </p>
-              </div>
+            <div className="sheet-actions">
+              <Button
+                type="submit"
+                loading={busy}
+                disabled={!summary?.bankAccounts.length || depositableCollections.length === 0}
+                block
+              >
+                Record deposit
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setSheet(null)} block>
+                Cancel
+              </Button>
             </div>
+          </form>
+        )}
+      </ActionSheet>
+
+      <ActionSheet
+        title="Confirm deposit"
+        description="Enter what the bank confirmed."
+        open={sheet === 'confirm'}
+        onOpenChange={(next) => setSheet(next ? 'confirm' : null)}
+        dismissible={!busy}
+      >
+        {() => (
+          <div className="form-stack">
+            {sheetError}
             {confirmableDeposits.map((deposit) => (
               <form
                 className="form-stack"
                 key={deposit.depositId}
-                onSubmit={(event) => void postCommand(event)}
+                onSubmit={(event) => void submit(event)}
               >
                 <input type="hidden" name="commandType" value="ConfirmBankDeposit" />
                 <input type="hidden" name="depositId" value={deposit.depositId} />
                 <Field id={`confirm-deposit-${deposit.depositId}`} label={deposit.depositReference}>
                   <span className="field-hint">
-                    {deposit.amount} USD · {optionLabel(deposit.bankAccountName, 'Bank account')} ·{' '}
-                    {displayState(deposit.state)}
+                    {money(deposit.amount)} · {optionLabel(deposit.bankAccountName, 'Bank account')}{' '}
+                    · {displayState(deposit.state)}
                   </span>
                 </Field>
                 <NumericInput
                   id={`confirmed-amount-${deposit.depositId}`}
                   name="confirmedAmount"
                   label="Confirmed amount"
-                  unit="USD"
+                  unit={currency}
                   defaultValue={deposit.amount}
                   required
                 />
                 <Field id={`bank-reference-${deposit.depositId}`} label="Bank reference" required>
                   <input id={`bank-reference-${deposit.depositId}`} name="bankReference" />
                 </Field>
-                <Button type="submit" variant="secondary" loading={busy}>
-                  Confirm deposit
-                </Button>
+                <div className="sheet-actions">
+                  <Button type="submit" loading={busy} block>
+                    Confirm deposit
+                  </Button>
+                </div>
               </form>
             ))}
+            <Button type="button" variant="secondary" onClick={() => setSheet(null)} block>
+              Close
+            </Button>
           </div>
-        ) : null}
-
-        {!capabilities.recordCollection &&
-        !capabilities.receiveCollection &&
-        !capabilities.recordDeposit &&
-        !capabilities.confirmDeposit ? (
-          <EmptyState
-            title="No cash actions available"
-            message="Your current station permissions allow viewing the cash position but not recording custody or bank commands."
-          />
-        ) : null}
-      </Card>
-
-      {capabilities.viewDeposits ? (
-        <Card as="section" className="panel content-span" aria-labelledby="deposit-list-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Banking evidence</p>
-              <h2 id="deposit-list-title">Deposits remain distinct from confirmation</h2>
-            </div>
-          </div>
-          {summary?.deposits.length ? (
-            <TableScrollRegion label="Station bank deposits">
-              <table className="data-table">
-                <caption className="sr-only">Station bank deposits</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Reference</th>
-                    <th scope="col">Account</th>
-                    <th scope="col">Amount</th>
-                    <th scope="col">State</th>
-                    <th scope="col">Confirmation variance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.deposits.map((deposit) => (
-                    <tr key={deposit.depositId}>
-                      <th scope="row">{deposit.depositReference}</th>
-                      <td data-label="Account">{deposit.bankAccountName}</td>
-                      <td data-label="Amount">{deposit.amount} USD</td>
-                      <td data-label="State">
-                        <StatusBadge tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}>
-                          {displayState(deposit.state)}
-                        </StatusBadge>
-                      </td>
-                      <td data-label="Confirmation variance">
-                        {deposit.confirmationVariance
-                          ? `${deposit.confirmationVariance} USD`
-                          : 'Pending'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableScrollRegion>
-          ) : (
-            <EmptyState
-              title="No bank deposits yet"
-              message="Recorded deposits will appear here before and after bank confirmation."
-            />
-          )}
-        </Card>
-      ) : null}
+        )}
+      </ActionSheet>
     </div>
   );
 }

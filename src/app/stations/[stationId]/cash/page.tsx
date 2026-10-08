@@ -1,20 +1,20 @@
 import { Suspense } from 'react';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
-import { ContextRequiredState } from '@/design-system/primitives';
+import { SkeletonCard, SkeletonTiles } from '@/design-system/page-kit';
 import { CashWorkspace } from '@/modules/cash/ui/cash-workspace';
 
-export const metadata = { title: 'Station collections' };
+export const metadata = { title: 'Cash and banking' };
 
 export default async function CashPage({ params }: { params: Promise<{ stationId: string }> }) {
   await params;
   return (
-    <AppShell pageSubtitle="Track custody, collection allocation, and distinct bank confirmation.">
+    <AppShell>
       <Suspense
         fallback={
-          <ContextRequiredState
-            title="Checking station context"
-            message="Cash loads only after the shared work context has confirmed one authorised station."
-          />
+          <div aria-busy="true">
+            <SkeletonTiles count={3} label="Loading cash position" />
+            <SkeletonCard label="Loading collections" lines={3} />
+          </div>
         }
       >
         <CashWorkspace />

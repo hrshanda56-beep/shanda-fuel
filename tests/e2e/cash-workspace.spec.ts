@@ -132,13 +132,14 @@ test.describe('Cash workspace', () => {
     await mockCash(page);
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
 
-    await expect(page.getByRole('heading', { name: 'Collected is not banked' })).toBeVisible();
+    await expect(page.getByText('Collected, not banked')).toBeVisible();
+    await expect(page.getByText('$700.00').first()).toBeVisible();
     await expect(page.getByRole('table', { name: 'Station cash collections' })).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: 'Deposits remain distinct from confirmation' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Bank deposits' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Receive collection' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Confirm deposit' })).toBeVisible();
+    // Recording happens in sheets, not in inline forms.
+    await expect(page.getByLabel('Collection reference')).toHaveCount(0);
   });
 
   test('fits the Cash workspace at 320px and 390px without page overflow', async ({ page }) => {
@@ -165,9 +166,7 @@ test.describe('Cash workspace', () => {
     });
     await page.goto('/stations/station-1/cash?tenantId=tenant-1&allStations=true');
 
-    await expect(
-      page.getByRole('heading', { name: 'Select a station to load cash' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a station' })).toBeVisible();
     expect(summaryRequested).toBe(false);
   });
 
@@ -187,11 +186,11 @@ test.describe('Cash workspace', () => {
       });
     });
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-    await page.getByRole('combobox', { name: 'Recorded collection' }).selectOption('collection-1');
-    await page
-      .getByRole('combobox', { name: 'Receiving cash location' })
-      .selectOption('location-2');
     await page.getByRole('button', { name: 'Receive collection' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Receive collection' });
+    await sheet.getByRole('combobox', { name: 'Recorded collection' }).selectOption('collection-1');
+    await sheet.getByRole('combobox', { name: 'Receiving location' }).selectOption('location-2');
+    await sheet.getByRole('button', { name: 'Receive collection', exact: true }).click();
 
     await expect
       .poll(() => commandPayload)
@@ -222,16 +221,18 @@ test.describe('Cash workspace', () => {
       }),
     );
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-    await page
-      .getByRole('combobox', { name: 'Approved reconciliation cash evidence' })
-      .selectOption('reconciliation-1');
-    await page.getByRole('combobox', { name: 'Source cash location' }).selectOption('location-1');
-    await page.getByLabel('Collection reference').fill('COL-002');
-    await page.getByLabel('Collected amount').fill('25.00');
     await page.getByRole('button', { name: 'Record collection' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Record collection' });
+    await sheet
+      .getByRole('combobox', { name: 'Approved cash from a shift' })
+      .selectOption('reconciliation-1');
+    await sheet.getByRole('combobox', { name: 'Cash location' }).selectOption('location-1');
+    await sheet.getByLabel('Collection reference').fill('COL-002');
+    await sheet.getByLabel('Collected amount').fill('25.00');
+    await sheet.getByRole('button', { name: 'Record collection', exact: true }).click();
 
     await expect(
-      page.getByText(/The cash collection is stale.*Refresh the station position/),
+      sheet.getByText(/The cash collection is stale.*Reload to see the latest/),
     ).toBeVisible();
   });
 });

@@ -378,3 +378,65 @@
     background: var(--bg-hover);
   }
 }
+
+/* Primary and secondary page actions sit in one row of pills. */
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+@media (max-width: 47.99rem) {
+  .page-actions .button {
+    flex: 1 1 calc(50% - var(--space-3));
+    min-height: var(--control-height-lg, 2.75rem);
+  }
+
+  .page-actions .button-primary {
+    flex-basis: 100%;
+  }
+}
+
+.cash-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.cash-page > .kpi-section {
+  margin-bottom: 0;
+}
+
+/* Sheet footers: full-width primary, then the secondary choice. */
+.sheet-actions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/*
+ * Buttons and fields, everywhere (also inside sheets, which render outside the
+ * page): disabled is the same control at reduced strength, never a grey slab.
+ */
+.button:disabled,
+.button[aria-disabled='true'] {
+  opacity: 0.4;
+}
+
+:is(input, select, textarea):disabled {
+  border-color: var(--border-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  opacity: 0.55;
+}
+
+:is(.shell-sheet, .dialog-backdrop)
+  :is(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']),
+    select,
+    textarea
+  ) {
+  border-radius: var(--radius-xl);
+}
+
+.dialog-backdrop .button {
+  border-radius: var(--radius-full);
+}
