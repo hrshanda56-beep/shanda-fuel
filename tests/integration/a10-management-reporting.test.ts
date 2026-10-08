@@ -4,6 +4,9 @@ import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { GET as dailyReportGet } from '../../src/app/api/reports/daily/route';
 import { GET as managementReportGet } from '../../src/app/api/reports/management/route';
+import { GET as reportActivityGet } from '../../src/app/api/reports/activity/route';
+import { GET as reportExportGet } from '../../src/app/api/reports/export/route';
+import { POST as reportSharePost } from '../../src/app/api/reports/share/route';
 import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -1068,5 +1071,231 @@ describe('A10 management reporting PostgreSQL read model', () => {
       ),
     );
     expect(scopedStationResponse.status).toBe(403);
+  });
+
+  describe('report share, export and recent activity', () => {
+    const range = 'fromDate=2026-09-01&toDate=2026-09-30';
+    const both = `${ids.station},${ids.scopedStation}`;
+
+    async function eventCount(): Promise<number> {
+      const rows = await client.unsafe(
+        `select count(*)::int as n from platform.security_events
+         where tenant_id = '${ids.tenant}' and event_code in ('REPORT.SHARED', 'REPORT.EXPORTED')`,
+      );
+      return Number((rows[0] as unknown as { n: number }).n);
+    }
+
+    async function exportAs(token: string | null, query: string) {
+      return reportExportGet(
+        new Request(`http://127.0.0.1:3000/api/reports/export?${query}`, {
+          headers: token
+            ? { cookie: `shanda-fuel.session_token=${await signedCookie(token)}` }
+            : {},
+        }),
+      );
+    }
+
+    async function shareAs(token: string | null, body: Record<string, unknown>) {
+      return reportSharePost(
+        new Request('http://127.0.0.1:3000/api/reports/share', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(token ? { cookie: `shanda-fuel.session_token=${await signedCookie(token)}` } : {}),
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+    }
+
+    it('exports an authorised station subset as a named CSV and records it', async () => {
+      const before = await eventCount();
+      const response = await exportAs(
+        sessionToken,
+        `report=sales&period=last-month&tenantId=${ids.tenant}&stationIds=${both}&${range}`,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('text/csv; charset=utf-8');
+      expect(response.headers.get('content-disposition')).toBe(
+        'attachment; filename="sales_2026-09-01_to_2026-09-30_2-stations.csv"',
+      );
+      const csv = await response.text();
+      expect(csv.split('\r\n')[0]).toBe(
+        'business_date,station_code,product_code,product_name,litres_sold,sales_value,average_realized_price,variance',
+      );
+      expect(await eventCount()).toBe(before + 1);
+    });
+
+    it('exports every station only when none is selected', async () => {
+      const response = await exportAs(sessionToken, `report=cash&tenantId=${ids.tenant}&${range}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-disposition')).toBe(
+        'attachment; filename="cash_2026-09-01_to_2026-09-30.csv"',
+      );
+    });
+
+    it('refuses export and share without authentication, and records nothing', async () => {
+      const before = await eventCount();
+      const query = `report=sales&tenantId=${ids.tenant}&${range}`;
+      expect((await exportAs(null, query)).status).toBe(401);
+      expect(
+        (
+          await shareAs(null, {
+            report: 'sales',
+            tenantId: ids.tenant,
+            fromDate: '2026-09-01',
+            toDate: '2026-09-30',
+          })
+        ).status,
+      ).toBe(401);
+      expect(await eventCount()).toBe(before);
+    });
+
+    it('applies the same station authorisation as viewing, records nothing when denied', async () => {
+      const before = await eventCount();
+      // The scoped user may not report on the main station, alone or mixed.
+      for (const stations of [ids.station, both]) {
+        expect(
+          (
+            await exportAs(
+              scopedSessionToken,
+              `report=sales&tenantId=${ids.tenant}&stationIds=${stations}&${range}`,
+            )
+          ).status,
+        ).toBe(403);
+        expect(
+          (
+            await shareAs(scopedSessionToken, {
+              report: 'sales',
+              tenantId: ids.tenant,
+              stationIds: stations,
+              fromDate: '2026-09-01',
+              toDate: '2026-09-30',
+            })
+          ).status,
+        ).toBe(403);
+      }
+      // Other tenant and a station from another tenant.
+      expect(
+        (await exportAs(sessionToken, `report=sales&tenantId=${ids.otherTenant}&${range}`)).status,
+      ).toBe(403);
+      expect(
+        (
+          await exportAs(
+            sessionToken,
+            `report=sales&tenantId=${ids.tenant}&stationIds=${ids.otherStation}&${range}`,
+          )
+        ).status,
+      ).toBe(404);
+      expect(await eventCount()).toBe(before);
+    });
+
+    it('rejects an unknown report', async () => {
+      expect(
+        (await exportAs(sessionToken, `report=payroll&tenantId=${ids.tenant}&${range}`)).status,
+      ).toBe(404);
+    });
+
+    it('creates a private link that carries state but no credentials', async () => {
+      const response = await shareAs(sessionToken, {
+        report: 'cash',
+        tenantId: ids.tenant,
+        stationIds: both,
+        period: '3m',
+        fromDate: '2026-07-09',
+        toDate: '2026-10-08',
+      });
+      expect(response.status).toBe(200);
+      const { path } = (await response.json()) as { path: string };
+      expect(path).toBe(
+        `/reports/cash?tenantId=${ids.tenant}&stations=${[ids.station, ids.scopedStation]
+          .sort()
+          .join('%2C')}&period=3m`,
+      );
+      expect(path).not.toMatch(/token|secret|session|signature/i);
+    });
+
+    it('lists only the signed-in user’s own real actions, without raw ids', async () => {
+      await exportAs(
+        scopedSessionToken,
+        `report=sales&period=this-month&tenantId=${ids.tenant}&stationIds=${ids.scopedStation}&${range}`,
+      );
+      const owner = await reportActivityGet(
+        new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
+          headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` },
+        }),
+      );
+      expect(owner.status).toBe(200);
+      const ownerText = await owner.text();
+      const ownerItems = (JSON.parse(ownerText) as { data: Record<string, string>[] }).data;
+      expect(ownerItems.length).toBeGreaterThan(0);
+      expect(ownerItems.map((item) => item.headline)).toContain('Sales and payments exported');
+      expect(ownerItems[0]?.detail ?? '').toMatch(/·/);
+      // No station or tenant id appears in anything shown (the event id is only a list key).
+      expect(ownerText.replace(/"id":"[^"]+",/g, '')).not.toMatch(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
+      );
+
+      const scoped = await reportActivityGet(
+        new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
+          headers: {
+            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+          },
+        }),
+      );
+      const scopedItems = ((await scoped.json()) as { data: Record<string, string>[] }).data;
+      expect(scopedItems).toHaveLength(1);
+      expect(scopedItems[0]?.detail).toContain('A10 Scoped Station');
+    });
+
+    it('stops honouring a copied link once the permission is revoked', async () => {
+      const body = {
+        report: 'sales',
+        tenantId: ids.tenant,
+        stationIds: ids.scopedStation,
+        period: 'last-month',
+        fromDate: '2026-09-01',
+        toDate: '2026-09-30',
+      };
+      const link = await shareAs(scopedSessionToken, body);
+      expect(link.status).toBe(200);
+      const viewUrl = `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.scopedStation}&${range}`;
+      const view = () =>
+        managementReportGet(
+          new Request(viewUrl, {
+            headers: {
+              cookie: `shanda-fuel.session_token=${scopedSessionCookieSync}`,
+            },
+          }),
+        );
+      const scopedSessionCookieSync = await signedCookie(scopedSessionToken);
+      expect((await view()).status).toBe(200);
+
+      await client.unsafe(
+        `delete from app.membership_role_assignments
+         where tenant_id = '${ids.tenant}' and membership_id = '${ids.scopedMembership}'`,
+      );
+      try {
+        const before = await eventCount();
+        expect((await view()).status).toBe(403);
+        expect(
+          (
+            await exportAs(
+              scopedSessionToken,
+              `report=sales&tenantId=${ids.tenant}&stationIds=${ids.scopedStation}&${range}`,
+            )
+          ).status,
+        ).toBe(403);
+        expect((await shareAs(scopedSessionToken, body)).status).toBe(403);
+        expect(await eventCount()).toBe(before);
+      } finally {
+        await client.unsafe(
+          `insert into app.membership_role_assignments
+             (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+           values ('${ids.tenant}', '${ids.scopedMembership}', 'FINANCE', 'STATION', '${ids.legal}', '${ids.scopedStation}')
+           on conflict do nothing`,
+        );
+      }
+    });
   });
 });
