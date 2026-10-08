@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
+  ContextRequiredState,
   EmptyState,
   ErrorState,
   Field,
@@ -1552,21 +1553,9 @@ export function DailyOperationsWorkspace({
 
 export function DailyOperationsContextRequired() {
   return (
-    <>
-      <div className="page-header">
-        <div>
-          <p className="lede">Choose an authorised station to begin.</p>
-        </div>
-      </div>
-      <Card as="section" className="panel" aria-labelledby="operations-context-title">
-        <SectionHeading
-          eyebrow="Station context"
-          title="Choose a station"
-          headingId="operations-context-title"
-          detail="Use Change above to choose an authorised station, business date, and shift."
-        />
-        <p>The daily workspace will load once the selected work context is ready.</p>
-      </Card>
-    </>
+    <ContextRequiredState
+      title="Choose a station"
+      message="Pick a station at the top of the page to see its day."
+    />
   );
 }

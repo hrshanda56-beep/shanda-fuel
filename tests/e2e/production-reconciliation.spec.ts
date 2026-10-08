@@ -352,12 +352,12 @@ test.describe('production reconciliation persistence', () => {
     );
 
     const controlRoom = page.locator('[aria-label="Operations control room"]');
-    await expect(
-      controlRoom.getByRole('heading', { name: 'Shift boundaries and team context' }),
-    ).toBeVisible();
+    await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
-    await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
-    await expect(controlRoom.getByText('Audit history restricted')).toBeVisible();
+    await expect(controlRoom.getByRole('button', { name: 'Lock day' })).toHaveCount(0);
+    await expect(
+      controlRoom.getByText('You don’t have access to activity for this station.'),
+    ).toBeVisible();
     await expect(
       controlRoom
         .locator('article.operations-shift-row strong')
@@ -411,10 +411,8 @@ test.describe('production reconciliation persistence', () => {
     await closeMeters.click();
     const response = await responsePromise;
     expect(response.status()).toBe(409);
-    await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
-    await expect(
-      page.getByText(/authoritative state has been refreshed; review it before trying again/i),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'This changed' })).toBeVisible();
+    await expect(page.getByText(/latest details are shown below/i)).toBeVisible();
   });
 
   test('persists through refresh, submits, approves, and rejects edits after production approval', async ({

@@ -7,7 +7,7 @@ test('reconciliation routes do not present synthetic local state without server 
   await page.goto('/stations/demo-station/reconciliations/new');
 
   await expect(page.getByRole('heading', { name: 'Choose a station' })).toBeVisible();
-  await expect(page.getByText('Use Change above to choose an authorised station')).toBeVisible();
+  await expect(page.getByText('Pick a station at the top of the page')).toBeVisible();
   await expect(page.getByText('20 Sep 2026')).not.toBeVisible();
 });
 

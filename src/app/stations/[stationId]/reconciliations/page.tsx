@@ -1,6 +1,6 @@
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
-import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
+import { ReconciliationsList } from '@/modules/forecourt/ui/reconciliations-list';
 
 export const metadata = { title: 'Reconciliations' };
 
@@ -15,14 +15,9 @@ export default async function ReconciliationListPage({
   const search = (await searchParams) ?? {};
 
   return (
-    <AppShell
-      breadcrumbs={[
-        { label: 'Operations', href: '/operations/daily' },
-        { label: 'Reconciliations' },
-      ]}
-    >
+    <AppShell>
       {search.tenantId ? (
-        <OperationsControlRoom
+        <ReconciliationsList
           context={{ tenantId: search.tenantId, stationId, businessDayId: search.businessDayId }}
         />
       ) : (

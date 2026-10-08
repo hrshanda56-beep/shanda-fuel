@@ -1,15 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  StatusBadge,
-} from '../../../design-system/primitives';
-import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
+import { Button, EmptyState, ErrorState, StatusBadge } from '../../../design-system/primitives';
+import { Section } from '../../../design-system/layout';
+import { HeroStatusCard, RefreshButton, SkeletonCard } from '../../../design-system/page-kit';
+import { formatBusinessDate, formatStatusSentence } from '../../../design-system/formatters';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
 type ActionAvailability = {
@@ -23,7 +18,7 @@ type OperationsCommandError = Error & {
   code?: string;
 };
 
-type Overview = {
+export type Overview = {
   station: { code: string; name: string; timezone: string };
   organisation: { name: string };
   currentBusinessDate: string;
@@ -92,14 +87,14 @@ type Overview = {
   }>;
 };
 
-function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational' {
+export function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational' {
   if (state === 'LOCKED' || state === 'APPROVED' || state === 'COMPLETED') return 'locked';
   if (state === 'RETURNED' || state === 'CLOSED') return 'warning';
   if (state === 'SUBMITTED' || state === 'PENDING_APPROVAL' || state === 'OPEN') return 'pending';
   return 'informational';
 }
 
-function timeRange(start: string, end: string, timeZone: string) {
+export function timeRange(start: string, end: string, timeZone: string) {
   const formatter = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
@@ -108,7 +103,7 @@ function timeRange(start: string, end: string, timeZone: string) {
   return `${formatter.format(new Date(start))} – ${formatter.format(new Date(end))}`;
 }
 
-function formatTimestamp(value: string | null, timeZone: string) {
+export function formatTimestamp(value: string | null, timeZone: string) {
   return value
     ? new Intl.DateTimeFormat('en-GB', {
         dateStyle: 'medium',
@@ -156,15 +151,13 @@ export function OperationsControlRoom({ context }: { context: Context }) {
         const body = (await response.json()) as Overview & { message?: string; error?: string };
         if (!response.ok) {
           if (response.status === 403)
-            throw new Error('You do not have permission to view operations for this station.');
-          throw new Error(body.message ?? 'The operations control room could not be loaded.');
+            throw new Error('You don’t have access to daily operations for this station.');
+          throw new Error(body.message ?? 'Daily operations could not be loaded.');
         }
         setOverview(body);
       } catch (caught) {
         setError(
-          caught instanceof Error
-            ? caught.message
-            : 'The operations control room could not be loaded.',
+          caught instanceof Error ? caught.message : 'Daily operations could not be loaded.',
         );
       } finally {
         setLoading(false);
@@ -215,7 +208,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     const body = (await response.json()) as { message?: string; error?: string };
     if (!response.ok) {
       const failure = new Error(
-        body.message ?? 'The server could not complete that action.',
+        body.message ?? 'That action could not be completed.',
       ) as OperationsCommandError;
       failure.status = response.status;
       failure.code = body.error;
@@ -240,9 +233,9 @@ export function OperationsControlRoom({ context }: { context: Context }) {
       (caught as OperationsCommandError).status === 403 &&
       (caught.message.toLowerCase().includes('step-up') || commandType === 'LockBusinessDay')
     ) {
-      return 'Locking a business day requires the existing step-up authentication flow. No change was posted.';
+      return 'Locking the day needs your password and an authenticator code. Nothing was changed.';
     }
-    return caught instanceof Error ? caught.message : 'The server could not complete that action.';
+    return caught instanceof Error ? caught.message : 'That action could not be completed.';
   }
 
   async function runCommand(
@@ -265,7 +258,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
       if (isConflictError(caught)) {
         await load(true);
         setConflict(
-          'This operation changed elsewhere or is stale. The authoritative state has been refreshed; review it before trying again. The command was not retried.',
+          'This changed somewhere else. The latest details are shown below. Check them and try again; nothing was repeated.',
         );
       } else {
         setError(commandErrorMessage(caught, commandType));
@@ -291,14 +284,14 @@ export function OperationsControlRoom({ context }: { context: Context }) {
       });
       const body = (await response.json()) as { message?: string };
       if (!response.ok) {
-        throw new Error(body.message ?? 'Step-up verification failed.');
+        throw new Error(body.message ?? 'Verification failed.');
       }
       setStepUpPassword('');
       setStepUpTotpCode('');
-      setNotice('Step-up authentication verified. The lock action is now available briefly.');
+      setNotice('Verified. You can lock the day now.');
       await load();
     } catch (caught) {
-      setStepUpError(caught instanceof Error ? caught.message : 'Step-up verification failed.');
+      setStepUpError(caught instanceof Error ? caught.message : 'Verification failed.');
     } finally {
       setStepUpBusy(false);
     }
@@ -344,7 +337,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
       setMfaEnabled(true);
       setMfaSetup(undefined);
       setMfaSetupCode('');
-      setNotice('Authenticator MFA is enabled. Enter a current code to establish step-up.');
+      setNotice('Authenticator is set up. Enter a current code to continue.');
     } catch (caught) {
       setMfaError(caught instanceof Error ? caught.message : 'Authenticator verification failed.');
     } finally {
@@ -362,48 +355,124 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     return `/operations/daily?${params.toString()}`;
   }
 
-  if (loading) return <LoadingState label="Loading operations control room" />;
+  if (loading && !overview) {
+    return (
+      <div className="operations-control-room" aria-busy="true">
+        <SkeletonCard label="Loading daily operations" lines={4} />
+        <SkeletonCard label="Loading shifts" lines={3} />
+      </div>
+    );
+  }
   if (error && !overview)
     return (
       <ErrorState
-        title="Operations unavailable"
+        title="Daily operations unavailable"
         message={error}
-        action={<Button onClick={() => void load()}>Retry</Button>}
+        action={<Button onClick={() => void load()}>Try again</Button>}
       />
     );
   if (!overview) return null;
 
   const day = overview.selectedBusinessDay;
-  const selectedShift = overview.shifts[0];
-  const isCurrentDay = day?.id === overview.currentBusinessDayId;
+  const isCurrentDay = !day || day.id === overview.currentBusinessDayId;
   const openDayId = day?.id ?? crypto.randomUUID();
   const openBusinessDay = overview.actions.OpenBusinessDay;
   const closeBusinessDay = overview.actions.CloseBusinessDay;
   const lockBusinessDay = overview.actions.LockBusinessDay;
+  const dayState = day?.state ?? 'NOT_STARTED';
+  const displayDate = formatBusinessDate(day ? day.date : overview.currentBusinessDate);
+  const canOpen = (!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute;
+  const heroDetail = day
+    ? `${isCurrentDay ? 'Today · ' : ''}${displayDate}`
+    : canOpen
+      ? 'Start the day to begin taking shifts.'
+      : `Today · ${displayDate}`;
+
+  const heroAction = canOpen ? (
+    <Button
+      variant="primary"
+      size="lg"
+      disabled={busy}
+      onClick={() =>
+        void runCommand(
+          'OpenBusinessDay',
+          {
+            tenantId: context.tenantId,
+            stationId: context.stationId,
+            businessDayId: openDayId,
+            expectedVersion: day?.version ?? 0,
+          },
+          openDayId,
+          'Start the day for this station?',
+          'Day started.',
+        )
+      }
+    >
+      Start day
+    </Button>
+  ) : day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
+    <Button
+      variant="primary"
+      size="lg"
+      disabled={busy}
+      onClick={() =>
+        void runCommand(
+          'CloseBusinessDay',
+          {
+            tenantId: context.tenantId,
+            stationId: context.stationId,
+            businessDayId: day.id,
+            expectedVersion: day.version,
+          },
+          day.id,
+          'Close the day? Every shift that ran must be finished and its meters closed first.',
+          'Day closed.',
+        )
+      }
+    >
+      Close day
+    </Button>
+  ) : day?.state === 'CLOSED' && lockBusinessDay.canExecute ? (
+    <Button
+      variant="danger"
+      size="lg"
+      disabled={busy}
+      onClick={() =>
+        void runCommand(
+          'LockBusinessDay',
+          {
+            tenantId: context.tenantId,
+            stationId: context.stationId,
+            businessDayId: day.id,
+            expectedVersion: day.version,
+          },
+          day.id,
+          'Lock this day? This cannot be undone and stops ordinary changes.',
+          'Day locked.',
+        )
+      }
+    >
+      Lock day
+    </Button>
+  ) : null;
+
+  const needsStepUp =
+    day?.state === 'CLOSED' && lockBusinessDay.permissionGranted && lockBusinessDay.requiresStepUp;
 
   return (
     <div className="operations-control-room" aria-label="Operations control room">
-      <div className="page-header">
-        <div>
-          <p className="lede">
-            {overview.organisation.name} · {overview.station.name} · {overview.station.timezone}
-          </p>
-        </div>
-        <StatusBadge tone="informational">Server-backed</StatusBadge>
-      </div>
-
       {error ? (
         <ErrorState
-          title="Action needs attention"
+          title="That didn’t work"
           message={error}
-          action={<Button onClick={() => void load()}>Refresh</Button>}
+          action={<Button onClick={() => void load()}>Try again</Button>}
         />
       ) : null}
       {conflict ? (
         <ErrorState
-          title="State changed"
+          title="This changed"
           message={conflict}
-          action={<Button onClick={() => void load()}>Refresh</Button>}
+          action={<Button onClick={() => void load()}>Reload</Button>}
         />
       ) : null}
       {notice ? (
@@ -412,125 +481,38 @@ export function OperationsControlRoom({ context }: { context: Context }) {
         </p>
       ) : null}
 
-      <div className="content-grid operations-control-grid">
-        <Card as="section" className="panel" aria-labelledby="current-day-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Business day</p>
-              <h2 id="current-day-title">
-                {day
-                  ? formatBusinessDate(day.date)
-                  : formatBusinessDate(overview.currentBusinessDate)}
-              </h2>
-            </div>
-            <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
-              {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
-            </StatusBadge>
-          </div>
-          <p className="panel-detail">
-            Business date is derived by the server in {overview.station.timezone}. No browser date
-            is authoritative.
-          </p>
-          {day ? (
-            <dl className="operational-summary">
-              <div>
-                <dt>Version</dt>
-                <dd>v{day.version}</dd>
-              </div>
-              <div>
-                <dt>Opened</dt>
-                <dd>
-                  {day.openedAt
-                    ? formatTimestamp(day.openedAt, overview.station.timezone)
-                    : 'Not opened'}
-                </dd>
-              </div>
-              <div>
-                <dt>Closed</dt>
-                <dd>
-                  {day.closedAt
-                    ? formatTimestamp(day.closedAt, overview.station.timezone)
-                    : 'Not closed'}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <EmptyState
-              title="No business day yet"
-              message="Open the server-derived current business date to begin operations."
+      <div className="page-split">
+        <div className="page-main">
+          <section className="section" aria-label="Business day">
+            <HeroStatusCard
+              title={overview.station.name}
+              detail={heroDetail}
+              status={
+                <StatusBadge tone={tone(dayState)}>{formatStatusSentence(dayState)}</StatusBadge>
+              }
+              action={heroAction}
             />
-          )}
-          <div className="form-actions">
-            {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={() =>
-                  void runCommand(
-                    'OpenBusinessDay',
-                    {
-                      tenantId: context.tenantId,
-                      stationId: context.stationId,
-                      businessDayId: openDayId,
-                      expectedVersion: day?.version ?? 0,
-                    },
-                    openDayId,
-                    'Open this server-derived business day?',
-                    'Business day opened.',
-                  )
-                }
-              >
-                Open business day
-              </Button>
+            {day && (day.openedAt || day.closedAt) ? (
+              <dl className="operational-summary">
+                <div>
+                  <dt>Opened</dt>
+                  <dd>
+                    {day.openedAt ? formatTimestamp(day.openedAt, overview.station.timezone) : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Closed</dt>
+                  <dd>
+                    {day.closedAt ? formatTimestamp(day.closedAt, overview.station.timezone) : '—'}
+                  </dd>
+                </div>
+              </dl>
             ) : null}
-            {day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={() =>
-                  void runCommand(
-                    'CloseBusinessDay',
-                    {
-                      tenantId: context.tenantId,
-                      stationId: context.stationId,
-                      businessDayId: day.id,
-                      expectedVersion: day.version,
-                    },
-                    day.id,
-                    'Close this business day? The server will require all operated shifts and meter evidence to be complete.',
-                    'Business day closed after server validation.',
-                  )
-                }
-              >
-                Close business day
-              </Button>
-            ) : null}
-            {day?.state === 'CLOSED' && lockBusinessDay.canExecute ? (
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={() =>
-                  void runCommand(
-                    'LockBusinessDay',
-                    {
-                      tenantId: context.tenantId,
-                      stationId: context.stationId,
-                      businessDayId: day.id,
-                      expectedVersion: day.version,
-                    },
-                    day.id,
-                    'Lock this business day? This is irreversible and prevents ordinary changes.',
-                    'Business day locked.',
-                  )
-                }
-              >
-                Lock business day
-              </Button>
-            ) : null}
-            {day?.state === 'CLOSED' &&
-            lockBusinessDay.permissionGranted &&
-            lockBusinessDay.requiresStepUp ? (
-              <>
+          </section>
+
+          {needsStepUp ? (
+            <Section title="Lock this day" headingId="lock-day-title">
+              <div className="form-actions">
                 {mfaEnabled !== true ? (
                   <form
                     className="step-up-form"
@@ -541,10 +523,10 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                     }}
                     aria-describedby="lock-business-day-step-up-help"
                   >
-                    <p className="eyebrow">Authenticator setup required</p>
+                    <strong>Set up your authenticator</strong>
                     <p className="semantic-note">
-                      Supervisor high-risk actions require password re-authentication plus an
-                      authenticator code. Set up TOTP once, then use the current six-digit code.
+                      Locking a day needs your password and a code from an authenticator app. Set it
+                      up once, then use the current six-digit code.
                     </p>
                     {!mfaSetup ? (
                       <>
@@ -571,8 +553,8 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                     ) : (
                       <>
                         <p className="semantic-note">
-                          Scan or enter this authenticator URI, save the backup codes securely, then
-                          confirm with the current six-digit code.
+                          Add this to your authenticator app, keep the backup codes somewhere safe,
+                          then enter the current six-digit code.
                         </p>
                         <code className="mfa-uri">{mfaSetup.totpURI}</code>
                         <p className="semantic-note">
@@ -616,7 +598,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                     aria-describedby="lock-business-day-step-up-help"
                   >
                     <label htmlFor="lock-business-day-step-up-password">
-                      Confirm your password to unlock this action
+                      Confirm your password to continue
                     </label>
                     <input
                       id="lock-business-day-step-up-password"
@@ -651,7 +633,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                       }
                       loading={stepUpBusy}
                     >
-                      Verify step-up
+                      Verify
                     </Button>
                     {stepUpError ? (
                       <p className="state state-error" role="alert">
@@ -668,260 +650,223 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                   verification. Secrets are verified by the server and are never stored by this
                   form.
                 </p>
-              </>
-            ) : null}
-          </div>
-          {day?.state === 'CLOSED' ? (
-            <p className="semantic-note">
-              <strong>Lock is irreversible.</strong> Corrections require named compensating
-              workflows.
-            </p>
+                <Button variant="danger" disabled aria-describedby="lock-business-day-step-up-help">
+                  Lock day
+                </Button>
+                <p className="semantic-note" id="lock-business-day-step-up-help" role="status">
+                  Locking needs your password and an authenticator code. It can’t be undone;
+                  corrections after that are made as separate adjustments.
+                </p>
+              </div>
+            </Section>
           ) : null}
-          {isCurrentDay ? (
-            <p className="panel-detail">This is the station’s current business date.</p>
-          ) : null}
-        </Card>
 
-        <Card as="section" className="panel" aria-labelledby="day-history-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">History</p>
-              <h2 id="day-history-title">Business days</h2>
-            </div>
-          </div>
-          {overview.businessDays.length === 0 ? (
-            <EmptyState
-              title="No business-day history"
-              message="The server has not recorded a business day for this station."
-            />
-          ) : (
-            <div className="operations-list">
-              {overview.businessDays.map((item) => (
-                <a className="operations-list-row" key={item.id} href={dayHref(item.id)}>
-                  <span>
-                    <strong>{formatBusinessDate(item.date)}</strong>
-                    <small>
-                      Updated {formatTimestamp(item.updatedAt, overview.station.timezone)}
-                    </small>
-                  </span>
-                  <StatusBadge tone={tone(item.state)}>{formatStatusLabel(item.state)}</StatusBadge>
-                </a>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+          <Section
+            title="Shifts"
+            headingId="shifts-title"
+            action={<RefreshButton onClick={() => void load()} disabled={loading} />}
+          >
+            {!day || overview.shifts.length === 0 ? (
+              <EmptyState
+                title="No shifts yet"
+                message={day ? 'Shifts appear here once they are planned.' : 'Start the day first.'}
+              />
+            ) : (
+              <div className="operations-list">
+                {overview.shifts.map((shift) => {
+                  const reconciliation = overview.reconciliations.find(
+                    (item) => item.shiftId === shift.id,
+                  );
+                  const values = {
+                    tenantId: context.tenantId,
+                    stationId: context.stationId,
+                    businessDayId: day.id,
+                    shiftId: shift.id,
+                    expectedVersion: shift.version,
+                  };
+                  return (
+                    <article className="operations-list-row operations-shift-row" key={shift.id}>
+                      <div>
+                        <strong>
+                          {timeRange(
+                            shift.plannedStartAt,
+                            shift.plannedEndAt,
+                            overview.station.timezone,
+                          )}
+                        </strong>
+                        <small>
+                          {shift.attendantCount} attendant{shift.attendantCount === 1 ? '' : 's'}
+                        </small>
+                      </div>
+                      <StatusBadge tone={tone(shift.state)}>
+                        {formatStatusSentence(shift.state)}
+                      </StatusBadge>
+                      <div className="inline-links">
+                        {shift.state === 'PLANNED' && overview.actions.StartShift.canExecute ? (
+                          <Button
+                            variant="secondary"
+                            disabled={busy}
+                            onClick={() =>
+                              void runCommand(
+                                'StartShift',
+                                {
+                                  ...values,
+                                  plannedStartAt: shift.plannedStartAt,
+                                  plannedEndAt: shift.plannedEndAt,
+                                },
+                                shift.id,
+                                'Start this shift?',
+                                'Shift started.',
+                              )
+                            }
+                          >
+                            Start shift
+                          </Button>
+                        ) : null}
+                        {shift.state === 'OPEN' && overview.actions.CloseMeters.canExecute ? (
+                          <Button
+                            variant="secondary"
+                            disabled={busy}
+                            onClick={() =>
+                              void runCommand(
+                                'CloseMeters',
+                                values,
+                                shift.id,
+                                'Close the meters for this shift? The final meter readings must already be entered.',
+                                'Meters closed.',
+                              )
+                            }
+                          >
+                            Close meters
+                          </Button>
+                        ) : null}
+                        {shift.state === 'METER_CLOSED' &&
+                        overview.actions.CompleteShift.canExecute ? (
+                          <Button
+                            variant="secondary"
+                            disabled={busy}
+                            onClick={() =>
+                              void runCommand(
+                                'CompleteShift',
+                                values,
+                                shift.id,
+                                'Finish this shift?',
+                                'Shift finished.',
+                              )
+                            }
+                          >
+                            Finish shift
+                          </Button>
+                        ) : null}
+                        <a className="text-link" href={dayHref(day.id, shift.id)}>
+                          Open
+                        </a>
+                        {reconciliation ? (
+                          <a
+                            className="text-link"
+                            href={`/operations/reconciliations/${reconciliation.id}?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: shift.id }).toString()}`}
+                          >
+                            Reconciliation
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
 
-      <Card as="section" className="panel" aria-labelledby="shifts-title">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">
-              Shift board · {day ? formatBusinessDate(day.date) : 'No day selected'}
-            </p>
-            <h2 id="shifts-title">Shift boundaries and team context</h2>
-          </div>
-        </div>
-        {!day || overview.shifts.length === 0 ? (
-          <EmptyState
-            title="No shifts recorded"
-            message="Open a business day and start a server-defined shift when the station is ready."
-          />
-        ) : (
-          <div className="operations-list">
-            {overview.shifts.map((shift) => {
-              const reconciliation = overview.reconciliations.find(
-                (item) => item.shiftId === shift.id,
-              );
-              const values = {
-                tenantId: context.tenantId,
-                stationId: context.stationId,
-                businessDayId: day.id,
-                shiftId: shift.id,
-                expectedVersion: shift.version,
-              };
-              return (
-                <article className="operations-list-row operations-shift-row" key={shift.id}>
-                  <div>
-                    <strong>
-                      {timeRange(
-                        shift.plannedStartAt,
-                        shift.plannedEndAt,
-                        overview.station.timezone,
-                      )}
-                    </strong>
-                    <small>
-                      {shift.attendantCount} attendant{shift.attendantCount === 1 ? '' : 's'} ·{' '}
-                      {shift.id}
-                    </small>
-                  </div>
-                  <StatusBadge tone={tone(shift.state)}>
-                    {formatStatusLabel(shift.state)}
-                  </StatusBadge>
-                  <div className="inline-links">
-                    {shift.state === 'PLANNED' && overview.actions.StartShift.canExecute ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void runCommand(
-                            'StartShift',
-                            {
-                              ...values,
-                              plannedStartAt: shift.plannedStartAt,
-                              plannedEndAt: shift.plannedEndAt,
-                            },
-                            shift.id,
-                            'Start this shift and record its opening boundary?',
-                            'Shift started.',
-                          )
-                        }
-                      >
-                        Start shift
-                      </Button>
-                    ) : null}
-                    {shift.state === 'OPEN' && overview.actions.CloseMeters.canExecute ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void runCommand(
-                            'CloseMeters',
-                            values,
-                            shift.id,
-                            'Close meters for this shift? Meter evidence must already be complete.',
-                            'Shift meters closed.',
-                          )
-                        }
-                      >
-                        Close meters
-                      </Button>
-                    ) : null}
-                    {shift.state === 'METER_CLOSED' && overview.actions.CompleteShift.canExecute ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void runCommand(
-                            'CompleteShift',
-                            values,
-                            shift.id,
-                            'Complete this shift? This records the close boundary as complete.',
-                            'Shift completed.',
-                          )
-                        }
-                      >
-                        Complete shift
-                      </Button>
-                    ) : null}
-                    <a className="text-link" href={dayHref(day.id, shift.id)}>
-                      Open workspace
-                    </a>
-                    {reconciliation ? (
+          <Section title="Reconciliations" headingId="reconciliations-title">
+            {!overview.visibility.reconciliations ? (
+              <EmptyState
+                title="No access"
+                message="You don’t have access to reconciliations for this station."
+              />
+            ) : overview.reconciliations.length === 0 ? (
+              <EmptyState
+                title="No reconciliations yet"
+                message="They appear here when a shift is closed."
+              />
+            ) : (
+              <div className="operations-list">
+                {overview.reconciliations.map((item) => (
+                  <div className="operations-list-row" key={item.id}>
+                    <span>
+                      <strong>{formatStatusSentence(item.state)}</strong>
+                      <small>
+                        Updated {formatTimestamp(item.updatedAt, overview.station.timezone)}
+                      </small>
+                    </span>
+                    <StatusBadge tone={tone(item.state)}>
+                      {item.revisionState ? formatStatusSentence(item.revisionState) : 'Draft'}
+                    </StatusBadge>
+                    {item.shiftId && day ? (
                       <a
                         className="text-link"
-                        href={`/operations/reconciliations/${reconciliation.id}?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: shift.id }).toString()}`}
+                        href={`/operations/reconciliations/${item.id}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: item.shiftId }).toString()}`}
                       >
-                        Reconciliation
+                        Review
                       </a>
                     ) : null}
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        {selectedShift?.state === 'EXCEPTIONALLY_CLOSED' ? (
-          <p className="semantic-note">
-            Exceptional close is not exposed by the production command route, so this board reports
-            the server state without inventing an action.
-          </p>
-        ) : null}
-      </Card>
+                ))}
+              </div>
+            )}
+          </Section>
+        </div>
 
-      <div className="content-grid operations-control-grid">
-        <Card as="section" className="panel" aria-labelledby="approval-queue-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Approval queue</p>
-              <h2 id="approval-queue-title">Reconciliations</h2>
-            </div>
-          </div>
-          {!overview.visibility.reconciliations ? (
-            <EmptyState
-              title="Reconciliation details restricted"
-              message="You do not have permission to view reconciliation details for this station."
-            />
-          ) : overview.reconciliations.length === 0 ? (
-            <EmptyState
-              title="No reconciliations yet"
-              message="A production reconciliation appears here after a server-backed draft is created for a shift."
-            />
-          ) : (
-            <div className="operations-list">
-              {overview.reconciliations.map((item) => (
-                <div className="operations-list-row" key={item.id}>
-                  <span>
-                    <strong>{formatStatusLabel(item.state)}</strong>
-                    <small>
-                      Revision {item.revision ?? '—'} · updated{' '}
-                      {formatTimestamp(item.updatedAt, overview.station.timezone)}
-                    </small>
-                  </span>
-                  <StatusBadge tone={tone(item.state)}>
-                    {item.revisionState ? formatStatusLabel(item.revisionState) : 'No revision'}
-                  </StatusBadge>
-                  {item.shiftId && day ? (
-                    <a
-                      className="text-link"
-                      href={`/operations/reconciliations/${item.id}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: item.shiftId }).toString()}`}
-                    >
-                      Review
-                    </a>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="semantic-note">
-            <strong>Production lifecycle:</strong> approval posts the canonical sale evidence and
-            ends at APPROVED. Separate post and lock revision commands are not used here.
-          </p>
-        </Card>
+        <div className="page-side">
+          <Section title="Previous days" headingId="day-history-title">
+            {overview.businessDays.length === 0 ? (
+              <EmptyState title="No days yet" message="Days you start will be listed here." />
+            ) : (
+              <div className="operations-list">
+                {overview.businessDays.map((item) => (
+                  <a className="operations-list-row" key={item.id} href={dayHref(item.id)}>
+                    <span>
+                      <strong>{formatBusinessDate(item.date)}</strong>
+                      <small>
+                        Updated {formatTimestamp(item.updatedAt, overview.station.timezone)}
+                      </small>
+                    </span>
+                    <StatusBadge tone={tone(item.state)}>
+                      {formatStatusSentence(item.state)}
+                    </StatusBadge>
+                  </a>
+                ))}
+              </div>
+            )}
+          </Section>
 
-        <Card as="section" className="panel" aria-labelledby="timeline-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Audit trail</p>
-              <h2 id="timeline-title">Actor and timestamp history</h2>
-            </div>
-          </div>
-          {!overview.visibility.auditTimeline ? (
-            <EmptyState
-              title="Audit history restricted"
-              message="You do not have permission to view audit history for this station."
-            />
-          ) : overview.timeline.length === 0 ? (
-            <EmptyState
-              title="No recorded actions"
-              message="Authoritative commands will appear here with their actor and server timestamp."
-            />
-          ) : (
-            <ol className="operations-timeline">
-              {overview.timeline.map((event, index) => (
-                <li key={`${event.eventCode}-${event.occurredAt}-${index}`}>
-                  <div>
-                    <strong>{formatStatusLabel(event.eventCode.replace('FORECOURT.', ''))}</strong>
-                    <small>
-                      {event.actorName ?? 'Unknown actor'} ·{' '}
-                      {formatTimestamp(event.occurredAt, overview.station.timezone)}
-                    </small>
-                    {event.reason ? <p>{event.reason}</p> : null}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </Card>
+          <Section title="Activity" headingId="timeline-title">
+            {!overview.visibility.auditTimeline ? (
+              <EmptyState
+                title="No access"
+                message="You don’t have access to activity for this station."
+              />
+            ) : overview.timeline.length === 0 ? (
+              <EmptyState title="Nothing yet" message="What people do here will be listed." />
+            ) : (
+              <ol className="operations-timeline">
+                {overview.timeline.map((event, index) => (
+                  <li key={`${event.eventCode}-${event.occurredAt}-${index}`}>
+                    <div>
+                      <strong>
+                        {formatStatusSentence(event.eventCode.replace('FORECOURT.', ''))}
+                      </strong>
+                      <small>
+                        {event.actorName ?? 'Unknown user'} ·{' '}
+                        {formatTimestamp(event.occurredAt, overview.station.timezone)}
+                      </small>
+                      {event.reason ? <p>{event.reason}</p> : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Section>
+        </div>
       </div>
     </div>
   );

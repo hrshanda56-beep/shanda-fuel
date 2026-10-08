@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { Children, useState, type ReactNode } from 'react';
 
 import { Icon, type IconName } from './icons';
 import { Modal } from './modal';
@@ -27,7 +27,7 @@ const KPI_CAPTION: Partial<Record<KpiState, string>> = {
 /** The tinted figure tiles. Tints follow tile order, exactly as on Today. */
 export function KpiGrid({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <dl className="today-figures" aria-label={label}>
+    <dl className="today-figures" aria-label={label} data-count={Children.count(children)}>
       {children}
     </dl>
   );
@@ -247,7 +247,7 @@ export function ActionSheet({
 /** Skeleton of a figure row, so loading mirrors the finished layout. */
 export function SkeletonTiles({ count = 4, label }: { count?: number; label: string }) {
   return (
-    <dl className="today-figures" aria-busy="true" aria-label={label}>
+    <dl className="today-figures" aria-busy="true" aria-label={label} data-count={count}>
       {Array.from({ length: count }, (_, index) => (
         <div className="today-figure" data-state="loading" key={index}>
           <span className="today-figure-icon" aria-hidden="true" />

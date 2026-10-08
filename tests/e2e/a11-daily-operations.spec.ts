@@ -7,7 +7,7 @@ test('A11 daily operations entry requires an authorised station-day context', as
   await expect(page.getByRole('heading', { name: 'Daily operations', level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Choose a station', level: 2 })).toBeVisible();
   await expect(
-    page.getByText('Use Change above to choose an authorised station, business date, and shift.'),
+    page.getByText('Pick a station at the top of the page to see its day.'),
   ).toBeVisible();
 });
 
