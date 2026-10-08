@@ -242,20 +242,23 @@ async function insertLedgerEntry(
   transaction: CustomerTransaction,
   entry: CustomerLedgerEntry,
   actorMembershipId: string,
+  receivingStationId: string | null = null,
 ): Promise<void> {
   const sourceKey = customerLedgerSourceKey(entry.source);
   await transaction.execute(sql`
     insert into app.customer_ledger_entries
       (id, tenant_id, customer_id, account_id, account_type, entry_type, direction, amount,
        product_id, quantity_litres, source_type, source_id, source_revision_id, source_key,
-       occurred_at, business_date, note, reason, fuel_allocation_id, reversal_of_entry_id, actor_membership_id)
+       occurred_at, business_date, note, reason, fuel_allocation_id, reversal_of_entry_id, actor_membership_id,
+       receiving_station_id)
     values
       (${entry.id}, ${entry.tenantId}, ${entry.customerId}, ${entry.accountId}, ${entry.accountType},
        ${entry.entryType}, ${entry.direction}, ${'amount' in entry ? entry.amount.amount.toString() : null},
        ${'productId' in entry ? entry.productId : null}, ${'quantityLitres' in entry ? entry.quantityLitres.toString() : null},
        ${entry.source.sourceType}, ${entry.source.sourceId}, ${entry.source.sourceRevisionId ?? null}, ${sourceKey},
        ${entry.occurredAt}::timestamptz, ${entry.businessDate}, ${entry.note ?? null}, ${entry.reason ?? null},
-       ${entry.fuelAllocationId ?? null}, ${entry.reversalOfEntryId ?? null}, ${actorMembershipId})
+       ${entry.fuelAllocationId ?? null}, ${entry.reversalOfEntryId ?? null}, ${actorMembershipId},
+       ${receivingStationId})
   `);
 }
 
@@ -638,6 +641,7 @@ export async function recordCustomerPaymentInTransaction(
   const loaded = await loadAccount(transaction, context, input.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   assertSourceReferenceUnused(loaded.entries, input.source);
+  await assertReceivingStation(transaction, context, input.accountId, input.receivingStationId);
   const entry = createCustomerPaymentEntry({
     id: randomUUID(),
     account: loaded.account,
@@ -647,11 +651,44 @@ export async function recordCustomerPaymentInTransaction(
     businessDate: input.businessDate,
     note: input.note,
   });
-  await insertLedgerEntry(transaction, entry, context.authority.membership.membershipId);
+  await insertLedgerEntry(
+    transaction,
+    entry,
+    context.authority.membership.membershipId,
+    input.receivingStationId,
+  );
   return {
     entryId: entry.id,
+    receivingStationId: input.receivingStationId,
     balance: deriveAccountBalance(loaded.account, [...loaded.entries, entry]),
   };
+}
+
+/**
+ * A payment may be received at any active station of the customer's legal
+ * entity, regardless of the account's fuel-use station scope: the cash lands in
+ * that station's custody and is applied to the organisation-level account.
+ */
+async function assertReceivingStation(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  accountId: string,
+  stationId: string,
+) {
+  const rows = await transaction.execute<{ id: string }>(sql`
+    select s.id
+    from app.stations s
+    join app.customer_accounts a
+      on a.tenant_id = s.tenant_id and a.legal_entity_id = s.legal_entity_id
+    where s.tenant_id = ${context.tenantId} and s.id = ${stationId}
+      and s.status = 'ACTIVE' and a.id = ${accountId}
+  `);
+  if (!rows[0]) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      "The receiving station must be an active station of the customer's legal entity",
+    );
+  }
 }
 
 export async function recordPrepaidTopUpInTransaction(
