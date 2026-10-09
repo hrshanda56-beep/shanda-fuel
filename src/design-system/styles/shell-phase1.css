@@ -50,14 +50,181 @@
   min-width: 0;
 }
 
+/* Keep the sidebar frame separate from its independently scrolling menu. */
+.shell-sidebar {
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.shell-sidebar > .shell-brand {
+  flex: 0 0 auto;
+}
+
+.shell-sidebar-nav-region {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.shell-sidebar-nav-region > .shell-nav {
+  min-height: min-content;
+}
+
+.shell-sidebar-footer {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+/* Shared search control: neutral surfaces only; the header below reduces it
+ * to an icon on smaller screens and expands it on desktop. */
+.global-search {
+  display: inline-flex;
+  width: min(28.75rem, 100%);
+  min-height: 3rem;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--border-control);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.global-search:hover {
+  border-color: var(--border-control-hover);
+}
+
+.global-search > span {
+  flex: 1;
+  text-align: left;
+}
+
+.global-search kbd {
+  min-width: 3.25rem;
+  padding: 0.1rem var(--space-2);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+.global-search-compact {
+  width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  flex-shrink: 0;
+  justify-content: center;
+  padding: 0;
+}
+
+.global-search-compact > span,
+.global-search-compact kbd {
+  display: none;
+}
+
+/* Navigation spacing retained from the shell layer; no visual authority is
+ * implied by this structural rule. */
+.shell-nav {
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-3) var(--space-4);
+}
+
 /* Tablet rail: brand, destinations and the collapse control stack in a column. */
 @media (min-width: 48rem) and (max-width: 74.99rem) {
+  .app-shell {
+    display: grid;
+    grid-template-columns: var(--sidebar-width-collapsed) minmax(0, 1fr);
+  }
+
+  .shell-topbar {
+    display: none;
+  }
+
   .shell-sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100dvh;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
+    padding: var(--space-4) var(--space-2);
     gap: var(--space-4);
-    overflow: visible;
+    border-right: var(--border-width) solid var(--border-subtle);
+    background: var(--bg-canvas);
+  }
+
+  .shell-sidebar > .shell-brand {
+    padding-inline: 0;
+  }
+
+  .shell-sidebar :is(.shell-brand-text, .shell-account-text) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .shell-sidebar-nav-region,
+  .shell-sidebar .shell-nav {
+    width: 100%;
+  }
+
+  .shell-sidebar .nav-row {
+    width: 2.75rem;
+    min-height: 2.75rem;
+    justify-content: center;
+    margin-inline: auto;
+    padding-inline: 0;
+  }
+
+  .shell-sidebar :is(.nav-chevron, .wip-badge, .nav-trailing-icon, .nav-group-items) {
+    display: none;
+  }
+
+  .shell-sidebar .nav-label {
+    position: absolute;
+    z-index: var(--z-dropdown);
+    top: 50%;
+    left: calc(100% + var(--space-2));
+    width: max-content;
+    max-width: 12rem;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-inverse);
+    color: var(--text-inverse);
+    font-size: var(--font-size-xs);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-0.25rem, -50%);
+    transition:
+      opacity var(--duration-fast) var(--ease-standard),
+      transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .shell-sidebar .nav-row:is(:hover, :focus-visible) .nav-label {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+
+  .shell-sidebar-footer {
+    padding-inline: 0;
+  }
+
+  .shell-sidebar-controls {
+    justify-content: center;
+  }
+
+  .shell-sidebar-controls .shell-collapse-button {
+    display: inline-grid;
   }
 
   .shell-sidebar-nav-region {
@@ -466,10 +633,10 @@
   .today-side > .today-section,
   .today-stats {
     padding: var(--space-5);
-    background: var(--bg-glass);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-glass);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xs);
   }
 
   .today-figures {
@@ -483,7 +650,7 @@
     justify-content: space-between;
     padding: var(--space-4) var(--space-5);
     border: 0;
-    border-radius: var(--radius-2xl);
+    border-radius: var(--radius-xl);
     background: var(--figure-bg);
     color: #14201e;
   }
@@ -544,7 +711,7 @@
   }
 }
 
-/* Desktop: the sidebar is a floating, rounded panel. */
+/* Desktop: keep the sidebar compact while using the canonical neutral tokens. */
 @media (min-width: 75rem) {
   .shell-sidebar {
     top: var(--space-4);
@@ -552,10 +719,10 @@
     min-height: 0;
     align-self: start;
     margin: var(--space-4) 0 var(--space-4) var(--space-4);
-    border: var(--border-width) solid var(--border-glass);
-    border-radius: var(--radius-3xl, 2rem);
-    background: var(--bg-glass);
-    box-shadow: var(--shadow-glass);
+    border: var(--border-width) solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-xs);
   }
 
   .shell-sidebar > .shell-brand {
@@ -567,12 +734,14 @@
     border-radius: var(--radius-full);
   }
 
-  /* The current page is a solid pill, as in the reference design. */
+  /* Keep the current route on the canonical neutral selected surface. */
   .shell-sidebar .nav-row[aria-current='page'],
   .shell-sidebar .nav-group-toggle[data-contains-current][aria-expanded='false'] {
-    background: var(--action-bg);
-    color: var(--action-text);
-    box-shadow: none;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    box-shadow:
+      0 0 0 var(--border-width) var(--border-subtle),
+      var(--shadow-xs);
   }
 
   .shell-sidebar .nav-row[aria-current='page'] .nav-icon,
@@ -671,7 +840,7 @@
   padding: 0.375rem 1rem;
   border-radius: var(--radius-full);
   background: var(--bg-hover);
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--text-secondary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
 }
@@ -911,7 +1080,7 @@
     display: inline;
     flex: 1;
     text-align: left;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
   }
 
   .shell-header .global-search kbd {
@@ -991,7 +1160,7 @@ button.today-period {
     justify-content: space-between;
     padding: var(--space-4);
     border: 0;
-    border-radius: var(--radius-2xl);
+    border-radius: var(--radius-xl);
     background: var(--figure-bg);
     color: #14201e;
   }
@@ -1058,10 +1227,10 @@ button.today-period {
   .today-side > .today-section,
   .today-stats {
     padding: var(--space-4);
-    background: var(--bg-glass);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-glass);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xs);
   }
 
   .today-stats-head {
