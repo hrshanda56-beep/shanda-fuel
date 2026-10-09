@@ -377,12 +377,25 @@ The current production closeout is recorded against release SHA
 | Production health | **PASS** — HTTP 200. |
 | Production readiness | **PASS** — HTTP 200 with database readiness `ok`. |
 
-`job_runtime` is intentionally **not marked resolved** by this closeout. It
-remains a separate open security release blocker and must be tracked and
-closed independently. This is a Stage 1 security closeout only: it makes no
-claim that migration `0025` is applied and does not declare final production
-release readiness. It does not run migrations, change production data, users,
-or database roles, or alter issues `#111`, `#113`, or `#114`.
+`job_runtime` temporary quarantine is **EFFECTIVE**. Its production password
+was rotated without exposing the replacement credential; post-rotation
+sessions were `0`; the deployed web app uses `app_runtime`; no active
+`job_runtime` consumer was found; and health, readiness, and normal
+authenticated application load passed.
+
+| `job_runtime` quarantine | **PASS** — effective after password rotation; the role remains unbound. |
+| Controlled release exception | **YES** — release may proceed with this documented security exception. |
+| `job_runtime` release blocker | **REMOVED** — this role-specific blocker is no longer release-blocking. |
+| Provider-level permanent hardening | **OPEN** — the role is not fully remediated. |
+
+Required post-launch provider hardening remains mandatory: remove
+`neon_superuser` membership; enforce `NOLOGIN`, `NOINHERIT`, and
+`NOBYPASSRLS`; remove `CREATEROLE`, `CREATEDB`, and `REPLICATION`; remove
+obsolete legacy grants; and keep `job_runtime` unbound until completion is
+verified. This is a Stage 1 security closeout only: it makes no claim that
+migration `0025` is applied and does not declare final production release
+readiness. It does not run migrations, change production data, users, or
+database roles, or alter issues `#111`, `#113`, or `#114`.
 
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
