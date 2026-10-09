@@ -18,6 +18,11 @@ export default function LoginPage() {
   const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [totpCode, setTotpCode] = useState('');
 
+  function safeNextPath() {
+    const next = new URLSearchParams(window.location.search).get('next');
+    return next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
+  }
+
   async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(undefined);
@@ -48,7 +53,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/');
+      router.push(safeNextPath());
     } catch {
       setError('Sign-in failed. Please try again.');
     } finally {
@@ -72,7 +77,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/');
+      router.push(safeNextPath());
     } catch {
       setError('That authenticator code is invalid or expired. Try the current code.');
     } finally {

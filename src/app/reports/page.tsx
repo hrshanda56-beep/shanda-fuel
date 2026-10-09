@@ -1,10 +1,18 @@
 import { Suspense } from 'react';
-import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
+import { AppShell } from '@/design-system/app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { ReportsFilters } from '@/modules/reporting/ui/reports-filters';
 import { ReportsRail } from '@/modules/reporting/ui/reports-rail';
 import { ReportList } from '@/modules/reporting/ui/report-list';
 import { ManagementReportDashboard } from '@/modules/reporting/ui/management-report-dashboard';
+import { notFound } from 'next/navigation';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
 
 export const metadata = {
   title: 'Reports',
@@ -15,13 +23,36 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<{ tenantId?: string }>;
 }) {
-  const { tenantId } = await searchParams;
+  const { tenantId: requestedTenantId } = await searchParams;
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents('/reports'),
+    requestedTenantId,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'report.view');
+  } catch {
+    notFound();
+  }
+  const tenantId = workspace.tenant?.tenantId ?? requestedTenantId;
   return (
-    <AppShell pageSubtitle="Operational financial position">
+    <AppShell
+      navigationProjection={workspace.navigationProjection}
+      context={{
+        organisation: workspace.tenant?.tenantName ?? 'Choose an organisation',
+        station: workspace.station?.stationName ?? 'All authorised stations',
+        businessDate: 'Selected range',
+      }}
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
+      breadcrumbs={[{ label: 'Management reporting' }]}
+      pageSubtitle="Operational financial position"
+    >
       <p className="lede">
         A factual view across approved sales, custody, settlements, commercial exposure, and stock.
       </p>
-      {tenantId ? (
+      {workspace.needsTenantSelection ? (
+        <WorkspaceContextPicker tenants={workspace.tenants} nextPath="/reports" />
+      ) : tenantId ? (
         <Suspense>
           <div className="reports-stack">
             <ReportsFilters tenantId={tenantId} />

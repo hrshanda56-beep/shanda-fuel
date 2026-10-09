@@ -73,7 +73,7 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'today',
         destination: { kind: 'route', path: '/' },
         availability: 'active',
-        match: [/^\/$/],
+        match: [/^\/$/, /^\/today(\/|$)/],
       },
     ],
   },

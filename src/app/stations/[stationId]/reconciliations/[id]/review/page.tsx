@@ -1,11 +1,17 @@
-import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
+import { AppShell } from '@/design-system/app-shell';
+import { notFound } from 'next/navigation';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
 import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
 import {
   ProductionReconciliationWorkflow,
   type ProductionReconciliationContext,
 } from '@/modules/forecourt/ui/production-reconciliation-workflow';
-
-export const metadata = { title: 'Review reconciliation' };
 
 export default async function ReconciliationReviewPage({
   params,
@@ -20,6 +26,19 @@ export default async function ReconciliationReviewPage({
 }) {
   const { stationId, id } = await params;
   const search = (await searchParams) ?? {};
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents(
+      `/stations/${stationId}/reconciliations/${id}/review`,
+    ),
+    requestedTenantId: search.tenantId,
+    requestedStationId: stationId,
+    requireStation: true,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'reconciliation.view');
+  } catch {
+    notFound();
+  }
   const productionContext: ProductionReconciliationContext | undefined =
     search.tenantId && search.businessDayId && search.shiftId
       ? {
@@ -32,12 +51,26 @@ export default async function ReconciliationReviewPage({
       : undefined;
   return (
     <AppShell
+      navigationProjection={workspace.navigationProjection}
+      context={{
+        organisation: workspace.tenant?.tenantName ?? 'Authorised organisation',
+        station: workspace.station?.stationName ?? 'Station context',
+        businessDate: 'Business date',
+        shift: 'Active shift',
+      }}
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[
         { label: 'Reconciliations', href: '/stations/demo/reconciliations' },
         { label: 'Management review' },
       ]}
     >
-      {productionContext ? (
+      {workspace.needsTenantSelection || workspace.needsStationSelection ? (
+        <WorkspaceContextPicker
+          tenants={workspace.tenants}
+          nextPath={`/stations/${stationId}/reconciliations/${id}/review`}
+        />
+      ) : productionContext ? (
         <ProductionReconciliationWorkflow context={productionContext} role="MANAGEMENT" />
       ) : (
         <DailyOperationsContextRequired />

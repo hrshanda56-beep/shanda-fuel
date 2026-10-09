@@ -1,113 +1,70 @@
-import { headers } from 'next/headers';
-
-import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
+import { AppShell } from '@/design-system/app-shell';
+import { notFound } from 'next/navigation';
 import {
-  buildContextHref,
-  contextRoutePolicy,
-  readContextRoute,
-  type ContextResolution,
-} from '@/modules/context';
-import { resolveCurrentContext } from '@/modules/context/server';
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
 import { RevaluationDetail } from '@/modules/costing/ui/valuation-workspace';
-import {
-  InventoryContextRequired,
-  type InventoryContext,
-} from '@/modules/inventory/ui/inventory-workspace';
-
-export const metadata = { title: 'Inventory revaluation' };
-
-type SearchParams = Record<string, string | string[] | undefined>;
-
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function searchForContext(search: SearchParams): URLSearchParams {
-  const params = new URLSearchParams();
-  for (const name of ['tenantId', 'organisationId', 'legalEntityId', 'stationId', 'allStations']) {
-    const value = first(search[name]);
-    if (value) params.set(name, value);
-  }
-  return params;
-}
-
-function resolvedInventoryContext(resolution: ContextResolution): InventoryContext | null {
-  const selection = resolution.current;
-  if (!selection || selection.allStations || !selection.legalEntityId || !selection.stationId) {
-    return null;
-  }
-  const organisation = resolution.available.organisations.find(
-    (candidate) => candidate.id === selection.organisationId,
-  );
-  const legalEntity = organisation?.legalEntities.find(
-    (candidate) => candidate.id === selection.legalEntityId,
-  );
-  const station = legalEntity?.stations.find((candidate) => candidate.id === selection.stationId);
-  if (!organisation || !legalEntity || !station) return null;
-  return {
-    tenantId: organisation.id,
-    legalEntityId: legalEntity.id,
-    stationId: station.id,
-    organisationName: organisation.name,
-    legalEntityName: legalEntity.name,
-    stationName: station.name,
-    stationTimezone: station.timezone,
-  };
-}
-
-async function loadInventoryContext(search: SearchParams): Promise<InventoryContext | null> {
-  const pathname = '/inventory/valuation';
-  const params = searchForContext(search);
-  const requestHeaders = await headers();
-  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
-  if (!host) return null;
-  const protocol = requestHeaders.get('x-forwarded-proto')?.split(',')[0]?.trim() ?? 'http';
-  const request = new Request(`${protocol}://${host}${pathname}?${params.toString()}`, {
-    headers: new Headers(requestHeaders),
-  });
-  try {
-    const policy = contextRoutePolicy(pathname);
-    const resolution = await resolveCurrentContext(request, {
-      route: readContextRoute(pathname, new URL(request.url).searchParams),
-      policy,
-    });
-    return resolvedInventoryContext(resolution);
-  } catch {
-    return null;
-  }
-}
 
 export default async function InventoryRevaluationPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<SearchParams>;
+  searchParams: Promise<{ tenantId?: string; stationId?: string }>;
 }) {
   const [route, search] = await Promise.all([params, searchParams]);
-  const context = await loadInventoryContext(search);
-  const contextHref = context
-    ? buildContextHref('/inventory/valuation', '', {
-        organisationId: context.tenantId,
-        legalEntityId: context.legalEntityId,
-        stationId: context.stationId,
-        allStations: false,
-      })
-    : '/inventory/valuation';
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents(`/inventory/valuation/revaluations/${route.id}`),
+    requestedTenantId: search.tenantId,
+    requestedStationId: search.stationId,
+    requireStation: true,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'inventory.view');
+  } catch {
+    notFound();
+  }
+  const tenantId = workspace.tenant?.tenantId ?? search.tenantId;
+  const stationId = workspace.station?.stationId ?? search.stationId;
+  const context = tenantId && stationId ? { tenantId, stationId } : null;
   return (
     <AppShell
+      navigationProjection={workspace.navigationProjection}
+      context={{
+        organisation: workspace.tenant?.tenantName ?? 'Authorised organisation',
+        station: workspace.station?.stationName ?? 'Selected station',
+        businessDate: 'Business date',
+      }}
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[
         {
           label: 'Inventory',
-          href: contextHref,
+          href: context
+            ? `/inventory/valuation?${new URLSearchParams(context)}`
+            : '/inventory/valuation',
         },
         { label: 'Revaluation history' },
       ]}
     >
-      {context ? (
-        <RevaluationDetail context={context} contextHref={contextHref} revaluationId={route.id} />
+      {workspace.needsTenantSelection || workspace.needsStationSelection ? (
+        <WorkspaceContextPicker
+          tenants={workspace.tenants}
+          nextPath={`/inventory/valuation/revaluations/${route.id}`}
+        />
+      ) : context ? (
+        <RevaluationDetail context={context} revaluationId={route.id} />
       ) : (
-        <InventoryContextRequired />
+        <div className="valuation-workspace">
+          <h1>Revaluation history</h1>
+          <p className="context-required">
+            Select an authorised tenant and station context to review revaluation history.
+          </p>
+        </div>
       )}
     </AppShell>
   );
