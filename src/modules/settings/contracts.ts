@@ -1,4 +1,5 @@
 import type { ContextResolution } from '../context';
+import type { StaffOverview } from '../staff';
 
 export type SettingsAccount = Readonly<{
   name: string;
@@ -32,6 +33,7 @@ export type SettingsContext = Readonly<{
 export type SettingsView = Readonly<{
   account: SettingsAccount;
   context: SettingsContext;
+  staff?: StaffOverview;
 }>;
 
 export type SettingsContextResolution = ContextResolution;

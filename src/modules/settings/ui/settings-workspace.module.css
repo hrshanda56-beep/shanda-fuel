@@ -155,6 +155,104 @@
   display: flex;
 }
 
+.staffPanel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.staffHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.staffForm {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.staffForm label,
+.staffStations {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.staffForm label > span,
+.staffStations legend {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.staffForm input,
+.staffForm select {
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.staffStations {
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.staffCheck {
+  display: flex !important;
+  grid-template-columns: auto 1fr;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: var(--space-2) !important;
+}
+
+.staffCheck small {
+  color: var(--text-secondary);
+}
+
+.staffList {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.staffRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.staffRow > div:first-child {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.staffRow span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.staffActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.staffMessage {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 /* Phone: the section list becomes wrapping pills above the details. */
 @media (max-width: 48rem) {
   .frame {
