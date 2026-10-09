@@ -12,6 +12,9 @@ ALTER TABLE app.customers
 
 ALTER TABLE app.customer_accounts ADD COLUMN legal_entity_id uuid;
 ALTER TABLE app.customer_accounts ADD COLUMN station_scope text NOT NULL DEFAULT 'ALL';
+-- Existing accounts retain the stored ALL value for compatibility, but are not
+-- operationally ready until an owner/administrator explicitly confirms scope.
+ALTER TABLE app.customer_accounts ADD COLUMN station_scope_configured boolean NOT NULL DEFAULT false;
 ALTER TABLE app.customer_accounts
   ADD CONSTRAINT customer_accounts_station_scope_ck CHECK (station_scope IN ('ALL', 'SELECTED'));
 ALTER TABLE app.customer_accounts

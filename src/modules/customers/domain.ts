@@ -53,6 +53,7 @@ export type Customer = Readonly<{
   accountReference: string;
   displayName: string;
   status: CustomerLifecycleState;
+  legalEntityId?: string | null;
   contactMetadata?: Readonly<Record<string, string>>;
 }>;
 
@@ -63,6 +64,9 @@ export type CustomerAccount = Readonly<{
   accountType: CustomerAccountType;
   currency: CurrencyCode;
   status: CustomerAccountState;
+  legalEntityId?: string | null;
+  stationScope?: CustomerAccountStationScope;
+  stationScopeConfigured?: boolean;
   /** Optional policy input; the domain does not invent a default limit. */
   creditLimit?: Money;
 }>;
@@ -319,6 +323,8 @@ export type CustomerAccountStationScope = (typeof CUSTOMER_ACCOUNT_STATION_SCOPE
 export type CustomerAccountStationPolicy = Readonly<{
   /** The customer's one legal entity; null until onboarding confirms it. */
   legalEntityId: string | null;
+  /** Explicit owner/administrator confirmation is required, including for ALL. */
+  configured: boolean;
   /** `ALL`: every station of the legal entity. `SELECTED`: only `allowedStationIds`. */
   scope: CustomerAccountStationScope;
   allowedStationIds: readonly string[];
@@ -333,6 +339,12 @@ export function assertStationAllowedForAccount(
   policy: CustomerAccountStationPolicy,
   station: Readonly<{ stationId: string; legalEntityId: string }>,
 ): void {
+  if (!policy.configured) {
+    throw new AppError(
+      'CONFLICT',
+      'The customer account station scope is not configured. Confirm ALL or SELECTED station scope before use.',
+    );
+  }
   if (!policy.legalEntityId) {
     throw new AppError(
       'CONFLICT',

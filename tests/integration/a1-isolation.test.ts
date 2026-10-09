@@ -365,10 +365,12 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
       join pg_roles r on r.oid = c.relowner
       where n.nspname in ('app', 'platform')
         and c.relname in ('tenants', 'legal_entities', 'stations', 'memberships',
-          'membership_role_assignments', 'temporary_permission_grants', 'security_events')
+          'membership_role_assignments', 'temporary_permission_grants', 'security_events',
+          'customer_account_stations')
       order by c.relname
     `;
     expect(owners).toEqual([
+      { relname: 'customer_account_stations', owner: 'migration_owner' },
       { relname: 'legal_entities', owner: 'migration_owner' },
       { relname: 'membership_role_assignments', owner: 'migration_owner' },
       { relname: 'memberships', owner: 'migration_owner' },
@@ -386,10 +388,11 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
       join pg_namespace n on n.oid = c.relnamespace
       where n.nspname in ('app', 'platform')
         and c.relname in ('tenants', 'legal_entities', 'stations', 'memberships',
-          'membership_role_assignments', 'temporary_permission_grants', 'security_events')
+          'membership_role_assignments', 'temporary_permission_grants', 'security_events',
+          'customer_account_stations')
       order by c.relname
     `;
-    expect(rls).toHaveLength(7);
+    expect(rls).toHaveLength(8);
     expect(rls.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
 
     for (const role of ['app_runtime', 'job_runtime'] as const) {
