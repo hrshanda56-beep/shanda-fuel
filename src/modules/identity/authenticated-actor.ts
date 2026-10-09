@@ -15,6 +15,8 @@ import { getAuth } from '../../platform/auth';
 export type AuthenticatedActorContext = {
   identityId: string;
   session: SessionRecord;
+  displayName?: string;
+  email?: string;
 };
 
 export type AuthenticatedActorResolver = (
@@ -50,7 +52,11 @@ export type BetterAuthSessionRevoker = {
 export type BetterAuthServer = BetterAuthSessionReader & BetterAuthSessionRevoker;
 
 const betterAuthSessionSchema = z.object({
-  user: z.object({ id: z.string().uuid() }),
+  user: z.object({
+    id: z.string().uuid(),
+    name: z.string().optional(),
+    email: z.string().email().optional(),
+  }),
   session: z.object({
     id: z.string().uuid(),
     userId: z.string().uuid(),
@@ -101,7 +107,12 @@ export async function resolveAuthenticatedActor(
     stepUpTenantId: parsed.data.session.stepUpTenantId ?? undefined,
   };
   assertSessionActive(session, now);
-  return { identityId: parsed.data.user.id, session: invalidateExpiredAssurance(session, now) };
+  return {
+    identityId: parsed.data.user.id,
+    session: invalidateExpiredAssurance(session, now),
+    ...(parsed.data.user.name ? { displayName: parsed.data.user.name } : {}),
+    ...(parsed.data.user.email ? { email: parsed.data.user.email } : {}),
+  };
 }
 
 /** Revoke all Better Auth sessions for the authenticated identity on compromise. */

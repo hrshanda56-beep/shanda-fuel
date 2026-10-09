@@ -1,5 +1,12 @@
 import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { notFound } from 'next/navigation';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
 import { ValuationStreamDetail } from '@/modules/costing/ui/valuation-workspace';
 
 export default async function InventoryValuationStreamPage({
@@ -10,20 +17,32 @@ export default async function InventoryValuationStreamPage({
   searchParams: Promise<{ tenantId?: string; stationId?: string }>;
 }) {
   const [route, search] = await Promise.all([params, searchParams]);
-  const context =
-    search.tenantId && search.stationId
-      ? { tenantId: search.tenantId, stationId: search.stationId }
-      : null;
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents(
+      `/inventory/valuation/streams/${route.tankId}/${route.productId}`,
+    ),
+    requestedTenantId: search.tenantId,
+    requestedStationId: search.stationId,
+    requireStation: true,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'inventory.view');
+  } catch {
+    notFound();
+  }
+  const tenantId = workspace.tenant?.tenantId ?? search.tenantId;
+  const stationId = workspace.station?.stationId ?? search.stationId;
+  const context = tenantId && stationId ? { tenantId, stationId } : null;
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
+      navigationProjection={workspace.navigationProjection}
       context={{
-        organisation: 'Authorised organisation',
-        station: 'Selected station',
+        organisation: workspace.tenant?.tenantName ?? 'Authorised organisation',
+        station: workspace.station?.stationName ?? 'Selected station',
         businessDate: 'Business date',
       }}
-      role="Inventory control"
-      userName="Current user"
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[
         {
           label: 'Inventory',
@@ -34,7 +53,12 @@ export default async function InventoryValuationStreamPage({
         { label: 'Valuation stream' },
       ]}
     >
-      {context ? (
+      {workspace.needsTenantSelection || workspace.needsStationSelection ? (
+        <WorkspaceContextPicker
+          tenants={workspace.tenants}
+          nextPath={`/inventory/valuation/streams/${route.tankId}/${route.productId}`}
+        />
+      ) : context ? (
         <ValuationStreamDetail
           context={context}
           tankId={route.tankId}

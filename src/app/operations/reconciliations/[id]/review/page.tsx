@@ -1,5 +1,12 @@
 import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { notFound } from 'next/navigation';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
 import {
   DailyOperationsContextRequired,
   DailyOperationsWorkspace,
@@ -20,13 +27,27 @@ export default async function OperationsReconciliationReviewPage({
 }) {
   const { id } = await params;
   const search = await searchParams;
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents(`/operations/reconciliations/${id}/review`),
+    requestedTenantId: search.tenantId,
+    requestedStationId: search.stationId,
+    requireStation: true,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'reconciliation.view');
+  } catch {
+    notFound();
+  }
   const hasContext = Boolean(
-    search.tenantId && search.stationId && search.businessDayId && search.shiftId,
+    (workspace.tenant?.tenantId ?? search.tenantId) &&
+    (workspace.station?.stationId ?? search.stationId) &&
+    search.businessDayId &&
+    search.shiftId,
   );
   const context: DailyOperationsContext | undefined = hasContext
     ? {
-        tenantId: search.tenantId!,
-        stationId: search.stationId!,
+        tenantId: workspace.tenant?.tenantId ?? search.tenantId!,
+        stationId: workspace.station?.stationId ?? search.stationId!,
         businessDayId: search.businessDayId!,
         shiftId: search.shiftId!,
         reconciliationId: id,
@@ -35,21 +56,26 @@ export default async function OperationsReconciliationReviewPage({
 
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
+      navigationProjection={workspace.navigationProjection}
       context={{
-        organisation: 'Authorised organisation',
-        station: 'Station context',
+        organisation: workspace.tenant?.tenantName ?? 'Authorised organisation',
+        station: workspace.station?.stationName ?? 'Station context',
         businessDate: 'Business date',
         shift: 'Active shift',
       }}
-      role="Management review"
-      userName="Current user"
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[
         { label: 'Operations', href: '/operations/daily' },
         { label: 'Management review' },
       ]}
     >
-      {context ? (
+      {workspace.needsTenantSelection || workspace.needsStationSelection ? (
+        <WorkspaceContextPicker
+          tenants={workspace.tenants}
+          nextPath={`/operations/reconciliations/${id}/review`}
+        />
+      ) : context ? (
         <DailyOperationsWorkspace context={context} role="MANAGEMENT" />
       ) : (
         <DailyOperationsContextRequired />

@@ -1,5 +1,12 @@
 import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { notFound } from 'next/navigation';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
 import { SupplierWorkspace } from '@/modules/creditors/ui/supplier-workspace';
 
 export default async function SuppliersPage({
@@ -8,22 +15,40 @@ export default async function SuppliersPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const tenantId = typeof params.tenantId === 'string' ? params.tenantId : '';
-  const legalEntityId = typeof params.legalEntityId === 'string' ? params.legalEntityId : '';
+  const requestedTenantId = typeof params.tenantId === 'string' ? params.tenantId : undefined;
+  const requestedLegalEntityId =
+    typeof params.legalEntityId === 'string' ? params.legalEntityId : undefined;
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents('/suppliers'),
+    requestedTenantId,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'supplier.view');
+  } catch {
+    notFound();
+  }
+  const tenantId = workspace.tenant?.tenantId ?? '';
+  const legalEntityId =
+    requestedLegalEntityId ??
+    workspace.station?.legalEntityId ??
+    workspace.tenant?.stations[0]?.legalEntityId ??
+    '';
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
+      navigationProjection={workspace.navigationProjection}
       context={{
-        organisation: 'ShandaHR',
-        station: 'All stations',
+        organisation: workspace.tenant?.tenantName ?? 'Choose an organisation',
+        station: workspace.station?.stationName ?? 'All authorised stations',
         businessDate: 'Current',
         shift: 'Finance',
       }}
-      role="Finance"
-      userName="Current user"
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[{ label: 'Suppliers' }]}
     >
-      {tenantId && legalEntityId ? (
+      {workspace.needsTenantSelection ? (
+        <WorkspaceContextPicker tenants={workspace.tenants} nextPath="/suppliers" />
+      ) : tenantId && legalEntityId ? (
         <SupplierWorkspace tenantId={tenantId} legalEntityId={legalEntityId} />
       ) : (
         <div className="content-grid">

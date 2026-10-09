@@ -10,6 +10,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
+  function safeNextPath() {
+    const next = new URLSearchParams(window.location.search).get('next');
+    return next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(undefined);
@@ -30,7 +35,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/');
+      router.push(safeNextPath());
     } catch {
       setError('Sign-in failed. Please try again.');
     } finally {

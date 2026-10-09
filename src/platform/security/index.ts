@@ -4,6 +4,7 @@ export {
   assertValidScope,
   DEFAULT_ROLE_PERMISSIONS,
   isAuthorized,
+  isPermissionGranted,
   PERMISSION_CODES,
   ROLE_CODES,
   scopeCovers,

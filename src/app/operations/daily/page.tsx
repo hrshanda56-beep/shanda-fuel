@@ -1,5 +1,11 @@
 import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
 import {
   DailyOperationsContextRequired,
   DailyOperationsWorkspace,
@@ -19,40 +25,54 @@ export default async function DailyOperationsPage({
   }>;
 }) {
   const search = await searchParams;
-  const hasContext = Boolean(
-    search.tenantId && search.stationId && search.businessDayId && search.shiftId,
-  );
+  const request = await requestFromServerComponents('/operations/daily');
+  const workspace = await resolveWebWorkspace({
+    request,
+    requestedTenantId: search.tenantId,
+    requestedStationId: search.stationId,
+    requireStation: true,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'business_day.view');
+    assertWorkspacePermission(workspace, 'shift.view');
+  } catch {
+    const { notFound } = await import('next/navigation');
+    notFound();
+  }
+  const tenantId = workspace.tenant?.tenantId ?? search.tenantId;
+  const stationId = workspace.station?.stationId ?? search.stationId;
+  const hasContext = Boolean(tenantId && stationId && search.businessDayId && search.shiftId);
   const context: DailyOperationsContext | undefined = hasContext
     ? {
-        tenantId: search.tenantId!,
-        stationId: search.stationId!,
+        tenantId: tenantId!,
+        stationId: stationId!,
         businessDayId: search.businessDayId!,
         shiftId: search.shiftId!,
         reconciliationId: search.reconciliationId,
       }
     : undefined;
-  const hasStationContext = Boolean(search.tenantId && search.stationId);
-
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
+      navigationProjection={workspace.navigationProjection}
       context={{
-        organisation: 'Authorised organisation',
-        station: 'Select station context',
+        organisation: workspace.tenant?.tenantName ?? 'Choose an organisation',
+        station: workspace.station?.stationName ?? 'Choose a station',
         businessDate: 'Business date',
         shift: 'Active shift',
       }}
-      role="Station operations"
-      userName="Current user"
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[{ label: 'Operations' }, { label: 'Daily workspace' }]}
     >
-      {context ? (
+      {workspace.needsTenantSelection || workspace.needsStationSelection ? (
+        <WorkspaceContextPicker tenants={workspace.tenants} nextPath="/operations/daily" />
+      ) : context ? (
         <DailyOperationsWorkspace context={context} />
-      ) : hasStationContext ? (
+      ) : tenantId && stationId ? (
         <OperationsControlRoom
           context={{
-            tenantId: search.tenantId!,
-            stationId: search.stationId!,
+            tenantId,
+            stationId,
             businessDayId: search.businessDayId,
           }}
         />

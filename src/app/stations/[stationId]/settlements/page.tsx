@@ -1,5 +1,11 @@
 import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { notFound } from 'next/navigation';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
 import { SettlementWorkspace } from '@/modules/settlements/ui/settlement-workspace';
 
 export default async function SettlementsPage({
@@ -11,18 +17,30 @@ export default async function SettlementsPage({
 }) {
   const { stationId } = await params;
   const query = await searchParams;
-  const tenantId = typeof query.tenantId === 'string' ? query.tenantId : '';
+  const requestedTenantId = typeof query.tenantId === 'string' ? query.tenantId : undefined;
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents(`/stations/${stationId}/settlements`),
+    requestedTenantId,
+    requestedStationId: stationId,
+    requireStation: true,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'provider.settlement.view');
+  } catch {
+    notFound();
+  }
+  const tenantId = workspace.tenant?.tenantId ?? '';
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
+      navigationProjection={workspace.navigationProjection}
       context={{
-        organisation: 'ShandaHR',
-        station: stationId,
+        organisation: workspace.tenant?.tenantName ?? 'Authorised organisation',
+        station: workspace.station?.stationName ?? stationId,
         businessDate: 'Current',
         shift: 'Finance',
       }}
-      role="Finance"
-      userName="Current user"
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[{ label: 'Provider settlements' }]}
     >
       {tenantId ? (

@@ -1,5 +1,12 @@
 import { AppShell } from '@/design-system/app-shell';
-import { syntheticNavigationProjection } from '@/design-system/navigation';
+import { notFound } from 'next/navigation';
+import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
+import {
+  assertWorkspacePermission,
+  requestFromServerComponents,
+  resolveWebWorkspace,
+  workspaceRoleLabel,
+} from '@/modules/authorization/server';
 import { ValuationOverview } from '@/modules/costing/ui/valuation-workspace';
 
 export default async function InventoryValuationPage({
@@ -8,23 +15,35 @@ export default async function InventoryValuationPage({
   searchParams: Promise<{ tenantId?: string; stationId?: string }>;
 }) {
   const search = await searchParams;
-  const context =
-    search.tenantId && search.stationId
-      ? { tenantId: search.tenantId, stationId: search.stationId }
-      : null;
+  const workspace = await resolveWebWorkspace({
+    request: await requestFromServerComponents('/inventory/valuation'),
+    requestedTenantId: search.tenantId,
+    requestedStationId: search.stationId,
+    requireStation: true,
+  });
+  try {
+    assertWorkspacePermission(workspace, 'inventory.view');
+  } catch {
+    notFound();
+  }
+  const tenantId = workspace.tenant?.tenantId ?? search.tenantId;
+  const stationId = workspace.station?.stationId ?? search.stationId;
+  const context = tenantId && stationId ? { tenantId, stationId } : null;
   return (
     <AppShell
-      navigationProjection={syntheticNavigationProjection}
+      navigationProjection={workspace.navigationProjection}
       context={{
-        organisation: 'Authorised organisation',
-        station: 'Selected station',
+        organisation: workspace.tenant?.tenantName ?? 'Choose an organisation',
+        station: workspace.station?.stationName ?? 'Choose a station',
         businessDate: 'Business date',
       }}
-      role="Inventory control"
-      userName="Current user"
+      role={workspaceRoleLabel(workspace.role)}
+      userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[{ label: 'Inventory' }, { label: 'Valuation' }]}
     >
-      {context ? (
+      {workspace.needsTenantSelection || workspace.needsStationSelection ? (
+        <WorkspaceContextPicker tenants={workspace.tenants} nextPath="/inventory/valuation" />
+      ) : context ? (
         <ValuationOverview context={context} />
       ) : (
         <div className="valuation-workspace">
