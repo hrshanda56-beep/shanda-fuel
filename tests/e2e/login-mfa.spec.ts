@@ -70,7 +70,7 @@ test.describe('password login MFA flow', () => {
 
     await page.goto('/login');
     await page.getByLabel('Email').fill('mfa@example.test');
-    await page.getByLabel('Password').fill('test-password');
+    await page.getByRole('textbox', { name: 'Password' }).fill('test-password');
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page.getByRole('heading', { name: 'Verify your authenticator' })).toBeVisible();
@@ -80,7 +80,7 @@ test.describe('password login MFA flow', () => {
 
     await page.getByLabel('Authenticator code').fill('000000');
     await page.getByRole('button', { name: 'Verify code' }).click();
-    await expect(page.locator('p.field-error')).toHaveText(
+    await expect(page.locator('p.entry-alert')).toHaveText(
       'That authenticator code is invalid or expired. Try the current code.',
     );
     await expect(page).toHaveURL(/\/login$/);
@@ -88,40 +88,25 @@ test.describe('password login MFA flow', () => {
 
     await page.getByLabel('Authenticator code').fill('123456');
     await page.getByRole('button', { name: 'Verify code' }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await expect.poll(() => contextRequests).toBeGreaterThan(0);
+    await expect(page).toHaveURL(/\/workplace$/);
     expect(challengeCookieSeen).toBe(true);
     expect(submittedCodes).toEqual(['000000', '123456']);
   });
 
   test('keeps the existing normal sign-in path for non-MFA accounts', async ({ page }) => {
-    let authenticated = false;
-    let contextRequests = 0;
-
     await page.route('**/api/auth/sign-in/email', async (route) => {
-      authenticated = true;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ token: 'test-session', user: { id: 'user-1' } }),
       });
     });
-    await page.route('**/api/context**', async (route) => {
-      contextRequests += 1;
-      await route.fulfill({
-        status: authenticated ? 200 : 401,
-        contentType: 'application/json',
-        body: JSON.stringify(authenticated ? AUTHENTICATED_CONTEXT : { error: 'UNAUTHENTICATED' }),
-      });
-    });
-
     await page.goto('/login');
     await page.getByLabel('Email').fill('normal@example.test');
-    await page.getByLabel('Password').fill('test-password');
+    await page.getByRole('textbox', { name: 'Password' }).fill('test-password');
     await page.getByRole('button', { name: 'Sign in' }).click();
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/workplace$/);
     await expect(page.getByRole('heading', { name: 'Verify your authenticator' })).toHaveCount(0);
-    await expect.poll(() => contextRequests).toBeGreaterThan(0);
   });
 });

@@ -1,12 +1,13 @@
 import 'server-only';
 
 import { resolveCurrentContext } from '../modules/context/server';
+import { AppError } from '../platform/errors';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
 import { buildNavigationProjection } from './navigation-projection';
 import { syntheticNavigationProjection, type NavigationProjection } from './navigation';
 import { allowsE2ENavigationFixture, E2E_NAVIGATION_FIXTURE_HEADER } from './navigation-projection';
 
-function requestFromHeaders(requestHeaders: Headers): Request | null {
+export function requestFromHeaders(requestHeaders: Headers): Request | null {
   const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
   if (!host) return null;
   const protocol = requestHeaders.get('x-forwarded-proto')?.split(',')[0]?.trim() ?? 'http';
@@ -64,4 +65,45 @@ export async function getServerNavigationProjection(
   } catch {
     return null;
   }
+}
+
+export type ServerShellAccess =
+  | { status: 'signed-out' }
+  | { status: 'no-workplace' }
+  | { status: 'ready'; projection: readonly NavigationProjection[] | null };
+
+/**
+ * Server-side gate for the authenticated shell. A missing or expired session is
+ * `signed-out` (the caller redirects before any product UI is produced); an
+ * account with no active organisation is `no-workplace`; any other lookup
+ * failure keeps the previous fail-closed behaviour of an empty projection.
+ */
+export async function getServerShellAccess(requestHeaders: Headers): Promise<ServerShellAccess> {
+  if (
+    allowsE2ENavigationFixture(
+      process.env.APP_ENV,
+      requestHeaders.get(E2E_NAVIGATION_FIXTURE_HEADER),
+      process.env.NODE_ENV,
+    )
+  ) {
+    return { status: 'ready', projection: syntheticNavigationProjection };
+  }
+
+  const request = requestFromHeaders(requestHeaders);
+  if (!request) return { status: 'signed-out' };
+  // No session cookie means signed out, whatever the database is doing. This
+  // keeps a lookup failure from ever rendering product UI for a visitor.
+  if (!(requestHeaders.get('cookie') ?? '').includes('session_token')) {
+    return { status: 'signed-out' };
+  }
+
+  try {
+    const resolution = await resolveCurrentContext(request);
+    if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'UNAUTHENTICATED') {
+      return { status: 'signed-out' };
+    }
+  }
+  return { status: 'ready', projection: await getServerNavigationProjection(requestHeaders) };
 }

@@ -17,7 +17,7 @@ import { Button, EmptyState, ErrorState, SkeletonBlock } from './primitives';
 
 export function RouteLoading() {
   return (
-    <AppShell navigationProjection={emptyNavigationProjection}>
+    <main className="route-loading-standalone" id="main-content">
       <div className="route-loading" role="status" aria-live="polite">
         <span className="visually-hidden">Loading page…</span>
         <div className="route-loading-header" aria-hidden="true">
@@ -32,7 +32,7 @@ export function RouteLoading() {
         </div>
         <SkeletonBlock height="16rem" />
       </div>
-    </AppShell>
+    </main>
   );
 }
 

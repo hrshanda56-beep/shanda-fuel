@@ -629,6 +629,19 @@
 
 /* Route states --------------------------------------------------------------- */
 
+.route-loading-standalone {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: var(--page-block) var(--page-gutter);
+  background: var(--bg-canvas);
+}
+
+.route-loading-standalone > .route-loading {
+  width: min(100%, 72rem);
+}
+
 .route-loading {
   display: grid;
   gap: var(--section-gap);
@@ -667,31 +680,6 @@
   margin: 0;
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
-}
-
-/* Sign-in frame (outside the shell) ----------------------------------------- */
-
-.auth-layout {
-  display: grid;
-  min-height: 100vh;
-  min-height: 100dvh;
-  place-items: center;
-  padding: var(--page-block) var(--page-gutter);
-  background: var(--bg-canvas);
-}
-
-.auth-panel {
-  display: grid;
-  width: min(100%, 25rem);
-  gap: var(--space-6);
-}
-
-.auth-card {
-  padding: var(--space-8) var(--space-6);
-}
-
-.auth-card .section-heading {
-  margin-bottom: var(--space-6);
 }
 
 /* Responsive --------------------------------------------------------------- */
