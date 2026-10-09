@@ -17,7 +17,11 @@ type Rgb = [number, number, number];
 
 function parseTokens(block: string): Tokens {
   return Object.fromEntries(
-    [...block.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((match) => [match[1]!, match[2]!.trim()]),
+    // Collapse whitespace so multi-line values compare equal across indentation levels.
+    [...block.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((match) => [
+      match[1]!,
+      match[2]!.replace(/\s+/g, ' ').trim(),
+    ]),
   );
 }
 
@@ -110,6 +114,32 @@ describe('design tokens', () => {
       const surface = resolve(tokens, '--bg-surface');
       const bg = resolve(tokens, background, surface);
       expect(contrast(resolve(tokens, foreground, bg), bg)).toBeGreaterThanOrEqual(minimum);
+    });
+  }
+
+  // Desktop glass cards (ADR-015): --bg-glass over --bg-sheet over the solid canvas.
+  for (const [theme, tokens] of [
+    ['light', light],
+    ['dark', dark],
+  ] as const) {
+    it.each([
+      '--text-primary',
+      '--text-secondary',
+      '--text-tertiary',
+      '--text-link',
+      '--tone-critical-text',
+      '--tone-warning-text',
+      '--tone-positive-text',
+    ])(`${theme}: %s on a glass card meets 4.5:1`, (foreground) => {
+      const sheet = resolve(tokens, '--bg-sheet', resolve(tokens, '--bg-canvas'));
+      const glass = resolve(tokens, '--bg-glass', sheet);
+      expect(contrast(resolve(tokens, foreground), glass)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${theme}: selected pills keep their label readable`, () => {
+      expect(
+        contrast(resolve(tokens, '--action-text'), resolve(tokens, '--action-bg')),
+      ).toBeGreaterThanOrEqual(4.5);
     });
   }
 

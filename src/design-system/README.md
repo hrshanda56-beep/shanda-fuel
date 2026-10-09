@@ -5,7 +5,8 @@ domain-neutral: examples use synthetic context and do not represent tenant, stat
 financial, or product master data.
 
 The locked product direction lives in `docs/release-readiness.md` (calm, airy, premium,
-restrained; less is more). This foundation is how that direction is applied. Build
+restrained; less is more), as amended by ADR-015 (slate/pale canvas, glass cards on
+desktop, solid surfaces on phones, DM Sans, Shanda green as the only accent). This foundation is how that direction is applied. Build
 screens by composing it; do not add page-specific visual systems.
 
 Visual reference: run `pnpm dev` and open `/design-system`. It renders every token and
@@ -23,17 +24,18 @@ exercises it through `next dev`, which Playwright uses locally and in CI.
 | `tokens.ts`                      | Breakpoints, content widths, motion timings, chart series order for JS                                                                                                                                                           |
 | `theme.ts` / `theme-runtime.tsx` | Theme preference model, no-flash init script, `useThemePreference`                                                                                                                                                               |
 | `icons.tsx`                      | Minimal inline icon set (`Icon`)                                                                                                                                                                                                 |
+| `charts.tsx`                     | `AreaChart`, `BarChart`, `DonutChart` with hidden-table text equivalents                                                                                                                                                         |
 | `modal.tsx`                      | Controlled accessible `Modal` (focus trap, inert background, focus restore)                                                                                                                                                      |
 | `primitives.tsx`                 | `Button`, `IconButton`, `StatusBadge`, `Card`, `Field`, `NumericInput`, loading/skeleton/empty/error/access/not-found/conflict/success states, `DialogFrame`, `BottomSheet`, `RiskConfirmation`, `EvidenceFile`, `OfflineBanner` |
 | `forms.tsx`                      | `Select`, `Checkbox`, `Radio`, `Fieldset`, `Disclosure`                                                                                                                                                                          |
 | `feedback.tsx`                   | `Notice`, `NeedsAttention`, `WipBadge`, `WorkInProgressPanel`                                                                                                                                                                    |
 | `dialogs.tsx`                    | `ConfirmDialog`, `WorkInProgressDialog`, `WorkInProgressTrigger`                                                                                                                                                                 |
 | `layout.tsx`                     | `PageHeader`, `PageContainer`, `Section`, `MetricCard`                                                                                                                                                                           |
-| `app-shell.tsx`, `navigation.ts` | Pre-Product-Shell app shell (to be replaced in Phase 2)                                                                                                                                                                          |
+| `app-shell.tsx`, `navigation.ts` | Product Shell (ADR-015): grouped sidebar, account pill, ⌘K search, phone bottom bar                                                                                                                                              |
 | `formatters.ts`                  | Presentation-only money, litre, ratio, percentage, date, status labels                                                                                                                                                           |
 
 Stylesheets are imported once, in order, from `src/app/layout.tsx`:
-tokens → base → components → `src/app/globals.css` (shell and module layouts only).
+tokens → base → components → shell → `src/app/globals.css` (module layouts only).
 
 ## Tokens
 
@@ -114,10 +116,15 @@ If a Content Security Policy is introduced, the inline init script in
   `LoadingState` for short waits. `EmptyState` and `ErrorState` take
   `layout="inline"` (within a region) or `layout="block"` (whole region/page). Errors say
   what happened, whether anything changed, and offer the next step.
-- **Charts:** no chart library yet. When one is introduced: one question per chart,
-  `--chart-1…5` in order (max five series), hairline `--chart-grid`, no borders, 3D, or
-  gradients, direct labels where possible, `.chart`/`.chart-legend` frame, and always a
-  table or text equivalent. Prefer a number or table when it is clearer.
+- **Charts:** `charts.tsx` provides `AreaChart`, `BarChart` and `DonutChart` (no
+  library). One question per chart, `--chart-1…5` in order (max five series), hairline
+  `--chart-grid`, no borders or 3D; the only gradient is the soft fade under areas and
+  bars. Keep plots short (about 100px): the number leads, the chart supports it. Each
+  chart renders a visually hidden table as its text equivalent. Prefer a number or table
+  when it is clearer.
+- **Pills and priority:** `.pill` with `aria-pressed` for filters and periods (selected
+  = solid neutral). Priority and status in tables are coloured text (`.text-critical`,
+  `.text-warning`, `.text-positive`) and always state the meaning in words.
 - **Page composition:** `PageHeader` answers where am I / what can I do next;
   `PageContainer` sets width; `Section` groups with a quiet heading.
 

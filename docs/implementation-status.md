@@ -72,12 +72,27 @@ binding centrally and expired assurance is invalidated at session resolution.
 
 ### A2 — UI foundation — COMPLETE
 
-Evidence: `src/design-system/`; `src/app/page.tsx`;
+Evidence: `src/design-system/`; `src/app/foundation/page.tsx`;
 `tests/e2e/accessibility.spec.ts`; `tests/e2e/smoke.spec.ts`.
 
 Responsive shell, semantic primitives, permission-aware navigation projection,
 truthful state components, focus behavior, and representative accessibility
 coverage are integrated. A2 remains presentation-only.
+
+### Track B — ADR-015 visual redesign and Product Shell — PARTIAL
+
+Evidence: ADR-015; `src/design-system/styles/tokens.css` and `shell.css`;
+`src/design-system/app-shell.tsx`, `navigation.ts`, `charts.tsx`;
+`src/app/page.tsx` and `src/app/_overview/`; `tokens.test.ts`
+(AA contrast including glass cards); `tests/e2e/overview-shell.spec.ts`.
+
+Integrated: owner-approved tokens (slate/pale canvas, glass cards on desktop,
+DM Sans), grouped collapsible sidebar without search, context line, account
+pill with theme toggle, ⌘K page search, phone bottom bar and "More" sheet, and
+the Owner/Finance Overview. Every existing page adopts the shell through
+`AppShell`. The Overview renders **synthetic sample data**; wiring it to the
+reporting projection, role-based home selection, records search, the tenant
+logo from tenant configuration, and the list template are open.
 
 ### A3 — Forecourt and reconciliation — COMPLETE
 
