@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
+import { authorize } from '../../platform/security/permissions';
 import { getStationProductStock, getTankVariance } from './persistence';
 import { resolveInventoryCommandContext } from './application';
 
@@ -22,6 +23,12 @@ export async function queryInventoryStock(input: {
     request: input.request,
     requestedTenantId: parsed.tenantId,
     stationId: parsed.stationId,
+  });
+  // Context resolution proves tenant/station scope only; stock is management data.
+  authorize({
+    actor: context.authority.authorization,
+    permissionCode: 'inventory.view',
+    requestedScope: context.scope,
   });
   if (parsed.tankId) {
     if (parsed.productId) {
