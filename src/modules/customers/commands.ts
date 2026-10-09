@@ -248,6 +248,7 @@ export async function recordPrepaidTopUpFromRequest(request: Request, body: unkn
   const context = await resolveCustomerCommandContext({
     request,
     requestedTenantId: input.tenantId,
+    ...(input.stationId ? { stationId: input.stationId } : {}),
   });
   return executeCustomerCommand({
     context,

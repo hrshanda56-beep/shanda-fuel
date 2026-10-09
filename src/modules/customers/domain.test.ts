@@ -326,16 +326,25 @@ describe('customer account station policy (ADR-017)', () => {
   it('allows every station of the legal entity by default', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: entity, scope: 'ALL', allowedStationIds: [] },
+        { legalEntityId: entity, configured: true, scope: 'ALL', allowedStationIds: [] },
         here,
       ),
     ).not.toThrow();
   });
 
+  it('fails closed when ALL has not been explicitly confirmed', () => {
+    expect(() =>
+      assertStationAllowedForAccount(
+        { legalEntityId: entity, configured: false, scope: 'ALL', allowedStationIds: [] },
+        here,
+      ),
+    ).toThrow('scope is not configured');
+  });
+
   it('refuses fuel until the customer has a legal entity', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: null, scope: 'ALL', allowedStationIds: [] },
+        { legalEntityId: null, configured: true, scope: 'ALL', allowedStationIds: [] },
         here,
       ),
     ).toThrow('no legal entity');
@@ -344,7 +353,7 @@ describe('customer account station policy (ADR-017)', () => {
   it('never crosses legal entities, even for an all-stations account', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: entity, scope: 'ALL', allowedStationIds: [] },
+        { legalEntityId: entity, configured: true, scope: 'ALL', allowedStationIds: [] },
         { stationId: 'station-9', legalEntityId: 'entity-b' },
       ),
     ).toThrow('another legal entity');
@@ -353,6 +362,7 @@ describe('customer account station policy (ADR-017)', () => {
   it('restricts a selected-stations account to its list', () => {
     const policy = {
       legalEntityId: entity,
+      configured: true,
       scope: 'SELECTED' as const,
       allowedStationIds: ['station-1'],
     };
@@ -365,7 +375,7 @@ describe('customer account station policy (ADR-017)', () => {
   it('allows nothing when a selected-stations account has an empty list', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: entity, scope: 'SELECTED', allowedStationIds: [] },
+        { legalEntityId: entity, configured: true, scope: 'SELECTED', allowedStationIds: [] },
         here,
       ),
     ).toThrow('cannot be used at this station');

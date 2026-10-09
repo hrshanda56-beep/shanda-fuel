@@ -229,6 +229,8 @@ export const recordPrepaidTopUpSchema = z
   .object({
     commandType: z.literal('RecordPrepaidTopUp'),
     tenantId: uuid,
+    /** Optional station context; when supplied it is checked against account scope. */
+    stationId: uuid.optional(),
     accountId: uuid,
     accountType: z.enum(['PREPAID_VALUE', 'PREPAID_LITRES']),
     amount: z.object({ amount: decimalText, currency }).optional(),

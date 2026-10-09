@@ -93,6 +93,8 @@ export const customerAccounts = appSchema.table(
     legalEntityId: uuid('legal_entity_id'),
     /** `ALL`: every station of the legal entity. `SELECTED`: only active customer_account_stations rows. */
     stationScope: text('station_scope').notNull().default('ALL'),
+    /** False for migrated rows until an owner/administrator explicitly confirms scope. */
+    stationScopeConfigured: boolean('station_scope_configured').notNull().default(false),
     status: text('status').notNull().default('ACTIVE'),
     version: integer('version').notNull().default(0),
     createdBy: uuid('created_by').notNull(),
