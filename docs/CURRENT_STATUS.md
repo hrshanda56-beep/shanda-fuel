@@ -52,7 +52,13 @@ Current production evidence:
 
 Still open and not implied closed by this documentation update:
 
-- The `job_runtime` security release blocker remains open.
+- `job_runtime` temporary quarantine is effective: its password was rotated,
+  the replacement credential was not exposed, post-rotation sessions were `0`,
+  the deployed web app uses `app_runtime`, no active `job_runtime` consumer was
+  found, and health/readiness/normal authenticated app load passed.
+- Controlled release may proceed with a documented security exception. This
+  does not fully remediate `job_runtime`; provider-level permanent hardening is
+  mandatory, and the role must remain unbound until that hardening completes.
 - Authenticated final production smoke remains open.
 - The #114, #113, and #111 release work remains open as applicable.
 - Final production release readiness is not declared complete.
@@ -369,8 +375,8 @@ Covered areas include:
 
 Final owner handoff is not green because the following remain open:
 
-1. keep the `job_runtime` security release blocker open until provider-authorized
-   remediation and post-change verification are complete,
+1. keep `job_runtime` unbound and complete provider-level permanent hardening
+   after controlled release under the documented security exception,
 2. complete authenticated final production smoke,
 3. complete the #114, #113, and #111 release work as applicable while keeping
    `0025` deferred,
@@ -418,7 +424,9 @@ exception; that exception remains time-bounded and is not a production waiver.
    the RLS/policy preflight with a division-by-zero error caused by the
    historical `pg_policies.cmd = '*'` assertion. The current production Stage 1
    result is PASS; the historical evidence remains preserved above.
-2. **`job_runtime` remains an open security release blocker.**
+2. **`job_runtime` temporary quarantine is effective; provider-level permanent
+   hardening remains open and is not a current role-specific release blocker
+   under the documented security exception.**
 3. **Daily Operations timezone and A8 decimal corrections are present in the
    overnight Phase 0 integration candidate;** final release evidence remains
    dependent on the combined-candidate gates below.
@@ -517,7 +525,8 @@ evidence. The current Stage 1 closeout is recorded above.
 
 ### UNRESOLVED / needs verification
 
-- Provider-authorized `job_runtime` remediation and post-change verification.
+- Provider-level permanent hardening of `job_runtime` and its post-change
+  verification; keep the role unbound until complete.
 - Authenticated final production smoke and owner handoff.
 - Whether the dev-only dependency advisory now has an upstream fix.
 - Whether hosting/plan changes alter the observability exception.
@@ -551,8 +560,9 @@ or customer-specific pricing behavior.
 
 Use this order unless a current human instruction changes it:
 
-1. Keep the `job_runtime` security release blocker open pending
-   provider-authorized remediation and verification.
+1. Proceed with controlled release under the documented `job_runtime` security
+   exception; keep the role unbound and complete provider-level permanent
+   hardening post-launch.
 2. Complete authenticated final production smoke and owner handoff.
 3. Complete the #114, #113, and #111 release work as applicable; keep `0025`
    intentionally deferred.
@@ -564,7 +574,9 @@ Use this order unless a current human instruction changes it:
 - Do not assume a discussed feature is implemented.
 - Do not assume the clean candidate HEAD includes later uncommitted A8/timezone fixes.
 - Do not assume an intentionally skipped provisioning suite is a passing provisioning suite.
-- Do not assume `job_runtime` exists in production.
+- Do not assume `job_runtime` is fully remediated: the temporary quarantine is
+  effective, but provider-level permanent hardening remains mandatory and the
+  role must remain unbound until complete.
 - Do not treat the historical Stage 1 fail-closed attempt as the current
   result; current verified Stage 1 status is PASS and the historical failure
   is superseded.
