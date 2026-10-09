@@ -79,6 +79,8 @@ The visual direction is:
 Support both light mode and dark mode. Default to the device/system
 preference, and provide a manual theme toggle/override.
 
+> **Amended by [ADR-015](decisions/ADR-015-ui-visual-redesign.md) (owner sign-off 2026-09-29):** the visual language is a mid-tone slate (dark) / pale grey-green (light) canvas with translucent cards on desktop and solid surfaces on mobile, DM Sans type, and the Shanda Fuel green as the single accent. WCAG 2.2 AA remains mandatory.
+
 Motion must be subtle and premium: small transitions, soft panel changes, and
 polished loading states, with no distracting animation.
 
@@ -113,6 +115,8 @@ Recommended grouping direction:
 - Reports
 - Settings
 
+> **Amended by [ADR-015](decisions/ADR-015-ui-visual-redesign.md) (owner sign-off 2026-09-29):** groups are My open tasks, Operations, Finance, Partners, Insights and Settings; the sidebar has no search; the header carries the station · business date · CAT context and one global ⌘K search.
+
 Mobile navigation must be adapted for compact screens and optimized for common
 quick actions. Navigation may be reorganized substantially when doing so makes
 the application simpler and easier to understand.
@@ -125,6 +129,8 @@ understand is: “What needs my attention right now?”
 “Needs attention” should visually behave like premium notifications: compact,
 prioritized, clear, non-overwhelming, dismissible where appropriate, and
 role/context-aware where appropriate. It must never dominate the entire page.
+
+> **Amended by [ADR-015](decisions/ADR-015-ui-visual-redesign.md) (owner sign-off 2026-09-29):** Owner and Finance roles land on a KPI-first Overview (today's KPIs, period charts, then Needs attention). Operations roles remain action-first. Gross margin is labelled Provisional until the period is locked.
 
 Key metrics, charts, and operational summaries can sit beneath or around the
 action-first content.
