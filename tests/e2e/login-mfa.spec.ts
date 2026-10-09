@@ -70,7 +70,7 @@ test.describe('password login MFA flow', () => {
 
     await page.goto('/login');
     await page.getByLabel('Email').fill('mfa@example.test');
-    await page.getByLabel('Password').fill('test-password');
+    await page.getByRole('textbox', { name: 'Password' }).fill('test-password');
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page.getByRole('heading', { name: 'Verify your authenticator' })).toBeVisible();
@@ -103,7 +103,7 @@ test.describe('password login MFA flow', () => {
     });
     await page.goto('/login');
     await page.getByLabel('Email').fill('normal@example.test');
-    await page.getByLabel('Password').fill('test-password');
+    await page.getByRole('textbox', { name: 'Password' }).fill('test-password');
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page).toHaveURL(/\/workplace$/);

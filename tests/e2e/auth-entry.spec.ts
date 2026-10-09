@@ -34,7 +34,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
             // Brand panel only on desktop; compact brand header otherwise.
             const panel = page.locator('.entry-brand');
             if (width >= 1024) await expect(panel).toBeVisible();
-            else await expect(panel).toBeHidden();
+            else {
+              // At tablet widths the brand wrapper becomes the page background rather
+              // than a separate panel, so its contents remain visible via display: contents.
+              await expect(panel).toHaveCSS('display', 'contents');
+              await expect(panel.locator('.entry-wordmark')).toBeVisible();
+            }
 
             // No signed-out chrome, no sign-up, no role / company pickers.
             await expect(page.getByRole('navigation')).toHaveCount(0);
@@ -55,6 +60,24 @@ for (const colorScheme of ['light', 'dark'] as const) {
 }
 
 test.describe('sign-in behaviour', () => {
+  test('redirects signed-out protected routes before rendering the product shell', async ({
+    page,
+    request,
+  }) => {
+    await page.setExtraHTTPHeaders({});
+    const response = await request.get('/reports', {
+      headers: { 'x-shanda-e2e-navigation-fixture': 'none' },
+    });
+    const html = await response.text();
+    expect(response.ok()).toBe(true);
+    expect(html).toContain('__next-page-redirect');
+    expect(html).toContain('url=/login');
+    expect(html).not.toContain('class="app-shell"');
+
+    await page.goto('/login');
+    await expect(page.getByRole('heading', { name: 'Welcome back', level: 1 })).toBeVisible();
+  });
+
   test('uses 35/65 split on desktop and hides forgot-password without a reset flow', async ({
     page,
   }) => {
@@ -65,7 +88,10 @@ test.describe('sign-in behaviour', () => {
     expect(brand!.width / 1440).toBeLessThan(0.37);
     await expect(page.getByText('Forgot password?')).toHaveCount(0);
     await expect(page.getByLabel('Work email')).toHaveAttribute('autocomplete', 'username');
-    await expect(page.getByLabel('Password')).toHaveAttribute('autocomplete', 'current-password');
+    await expect(page.getByRole('textbox', { name: 'Password' })).toHaveAttribute(
+      'autocomplete',
+      'current-password',
+    );
   });
 
   test('toggles password visibility without submitting, and Enter submits', async ({ page }) => {

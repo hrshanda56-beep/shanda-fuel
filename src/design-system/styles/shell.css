@@ -629,6 +629,19 @@
 
 /* Route states --------------------------------------------------------------- */
 
+.route-loading-standalone {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: var(--page-block) var(--page-gutter);
+  background: var(--bg-canvas);
+}
+
+.route-loading-standalone > .route-loading {
+  width: min(100%, 72rem);
+}
+
 .route-loading {
   display: grid;
   gap: var(--section-gap);
