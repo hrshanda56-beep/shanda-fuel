@@ -53,6 +53,7 @@ export type Customer = Readonly<{
   accountReference: string;
   displayName: string;
   status: CustomerLifecycleState;
+  legalEntityId?: string | null;
   contactMetadata?: Readonly<Record<string, string>>;
 }>;
 
@@ -63,6 +64,9 @@ export type CustomerAccount = Readonly<{
   accountType: CustomerAccountType;
   currency: CurrencyCode;
   status: CustomerAccountState;
+  legalEntityId?: string | null;
+  stationScope?: CustomerAccountStationScope;
+  stationScopeConfigured?: boolean;
   /** Optional policy input; the domain does not invent a default limit. */
   creditLimit?: Money;
 }>;
@@ -309,6 +313,52 @@ export function assertCustomerAccountTransactionAllowed(
       'CONFLICT',
       'Customer account transactions require an active customer and customer account',
     );
+  }
+}
+
+export const CUSTOMER_ACCOUNT_STATION_SCOPES = ['ALL', 'SELECTED'] as const;
+export type CustomerAccountStationScope = (typeof CUSTOMER_ACCOUNT_STATION_SCOPES)[number];
+
+/** Where a customer account may be used (ADR-017). */
+export type CustomerAccountStationPolicy = Readonly<{
+  /** The customer's one legal entity; null until onboarding confirms it. */
+  legalEntityId: string | null;
+  /** Explicit owner/administrator confirmation is required, including for ALL. */
+  configured: boolean;
+  /** `ALL`: every station of the legal entity. `SELECTED`: only `allowedStationIds`. */
+  scope: CustomerAccountStationScope;
+  allowedStationIds: readonly string[];
+}>;
+
+/**
+ * A customer account's balance is organisation-wide, but fuel may be drawn only
+ * at stations of the account's legal entity and, when the account selects
+ * stations, only at those.
+ */
+export function assertStationAllowedForAccount(
+  policy: CustomerAccountStationPolicy,
+  station: Readonly<{ stationId: string; legalEntityId: string }>,
+): void {
+  if (!policy.configured) {
+    throw new AppError(
+      'CONFLICT',
+      'The customer account station scope is not configured. Confirm ALL or SELECTED station scope before use.',
+    );
+  }
+  if (!policy.legalEntityId) {
+    throw new AppError(
+      'CONFLICT',
+      'The customer has no legal entity yet. Confirm it before authorising fuel.',
+    );
+  }
+  if (policy.legalEntityId !== station.legalEntityId) {
+    throw new AppError(
+      'FORBIDDEN',
+      'This customer account cannot be used at a station of another legal entity',
+    );
+  }
+  if (policy.scope === 'SELECTED' && !policy.allowedStationIds.includes(station.stationId)) {
+    throw new AppError('FORBIDDEN', 'This customer account cannot be used at this station');
   }
 }
 

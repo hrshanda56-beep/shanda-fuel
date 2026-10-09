@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertSourceReferenceUnused,
   assertCustomerAccountTransactionAllowed,
+  assertStationAllowedForAccount,
   assertCreditAccountHasPositiveLimit,
   activateCustomer,
   cancelCustomerFuelAuthorization,
@@ -315,5 +316,68 @@ describe('customer account domain', () => {
     const target = account('PREPAID_VALUE', ids.prepaidValue);
     const entry = topUpEntry(target, { id: 'source-entry', amount: '10.0000' });
     expect(() => assertSourceReferenceUnused([entry], entry.source)).toThrow('already been posted');
+  });
+});
+
+describe('customer account station policy (ADR-017)', () => {
+  const entity = 'entity-a';
+  const here = { stationId: 'station-1', legalEntityId: entity };
+
+  it('allows every station of the legal entity by default', () => {
+    expect(() =>
+      assertStationAllowedForAccount(
+        { legalEntityId: entity, configured: true, scope: 'ALL', allowedStationIds: [] },
+        here,
+      ),
+    ).not.toThrow();
+  });
+
+  it('fails closed when ALL has not been explicitly confirmed', () => {
+    expect(() =>
+      assertStationAllowedForAccount(
+        { legalEntityId: entity, configured: false, scope: 'ALL', allowedStationIds: [] },
+        here,
+      ),
+    ).toThrow('scope is not configured');
+  });
+
+  it('refuses fuel until the customer has a legal entity', () => {
+    expect(() =>
+      assertStationAllowedForAccount(
+        { legalEntityId: null, configured: true, scope: 'ALL', allowedStationIds: [] },
+        here,
+      ),
+    ).toThrow('no legal entity');
+  });
+
+  it('never crosses legal entities, even for an all-stations account', () => {
+    expect(() =>
+      assertStationAllowedForAccount(
+        { legalEntityId: entity, configured: true, scope: 'ALL', allowedStationIds: [] },
+        { stationId: 'station-9', legalEntityId: 'entity-b' },
+      ),
+    ).toThrow('another legal entity');
+  });
+
+  it('restricts a selected-stations account to its list', () => {
+    const policy = {
+      legalEntityId: entity,
+      configured: true,
+      scope: 'SELECTED' as const,
+      allowedStationIds: ['station-1'],
+    };
+    expect(() => assertStationAllowedForAccount(policy, here)).not.toThrow();
+    expect(() =>
+      assertStationAllowedForAccount(policy, { stationId: 'station-2', legalEntityId: entity }),
+    ).toThrow('cannot be used at this station');
+  });
+
+  it('allows nothing when a selected-stations account has an empty list', () => {
+    expect(() =>
+      assertStationAllowedForAccount(
+        { legalEntityId: entity, configured: true, scope: 'SELECTED', allowedStationIds: [] },
+        here,
+      ),
+    ).toThrow('cannot be used at this station');
   });
 });

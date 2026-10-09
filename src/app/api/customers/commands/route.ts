@@ -13,6 +13,8 @@ import {
   recordCustomerPaymentFromRequest,
   recordPrepaidTopUpFromRequest,
   requestCustomerFuelAuthorizationFromRequest,
+  setCustomerAccountStationsFromRequest,
+  setCustomerLegalEntityFromRequest,
   updateCustomerFromRequest,
 } from '../../../../modules/customers/commands';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
@@ -42,6 +44,10 @@ export const POST = withRequestObservability(
           return response(await deactivateCustomerFromRequest(request, body));
         case 'CreateCustomerAccount':
           return response(await createCustomerAccountFromRequest(request, body), 201);
+        case 'SetCustomerLegalEntity':
+          return response(await setCustomerLegalEntityFromRequest(request, body));
+        case 'SetCustomerAccountStations':
+          return response(await setCustomerAccountStationsFromRequest(request, body));
         case 'RecordCustomerPayment':
           return response(await recordCustomerPaymentFromRequest(request, body), 201);
         case 'RecordPrepaidTopUp':

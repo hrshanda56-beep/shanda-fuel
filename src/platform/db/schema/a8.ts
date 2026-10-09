@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   AnyPgColumn,
+  boolean,
   check,
   foreignKey,
   index,
@@ -13,7 +14,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { appSchema } from './namespaces';
-import { memberships, stations, tenants } from './a1';
+import { legalEntities, memberships, stations, tenants } from './a1';
 import { products } from './a3';
 
 const id = () =>
@@ -35,6 +36,8 @@ export const customers = appSchema.table(
     contactMetadata: jsonb('contact_metadata')
       .notNull()
       .default(sql`'{}'::jsonb`),
+    /** The one legal entity this customer's credit is with (ADR-017). Null until onboarding confirms it. */
+    legalEntityId: uuid('legal_entity_id'),
     status: text('status').notNull().default('ACTIVE'),
     version: integer('version').notNull().default(0),
     createdBy: uuid('created_by').notNull(),
@@ -44,6 +47,16 @@ export const customers = appSchema.table(
   },
   (table) => [
     unique('customers_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('customers_tenant_id_id_legal_entity_uidx').on(
+      table.tenantId,
+      table.id,
+      table.legalEntityId,
+    ),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId],
+      foreignColumns: [legalEntities.tenantId, legalEntities.id],
+      name: 'customers_legal_entity_fk',
+    }),
     unique('customers_tenant_reference_uidx').on(table.tenantId, table.accountReference),
     index('customers_tenant_status_idx').on(table.tenantId, table.status),
     check('customers_reference_nonempty_ck', sql`btrim(${table.accountReference}) <> ''`),
@@ -76,6 +89,12 @@ export const customerAccounts = appSchema.table(
     accountType: text('account_type').notNull(),
     currency: text('currency').notNull().default('USD'),
     creditLimit: money('credit_limit'),
+    /** Copy of the customer's legal entity; kept equal by a composite foreign key. */
+    legalEntityId: uuid('legal_entity_id'),
+    /** `ALL`: every station of the legal entity. `SELECTED`: only active customer_account_stations rows. */
+    stationScope: text('station_scope').notNull().default('ALL'),
+    /** False for migrated rows until an owner/administrator explicitly confirms scope. */
+    stationScopeConfigured: boolean('station_scope_configured').notNull().default(false),
     status: text('status').notNull().default('ACTIVE'),
     version: integer('version').notNull().default(0),
     createdBy: uuid('created_by').notNull(),
@@ -85,6 +104,17 @@ export const customerAccounts = appSchema.table(
   },
   (table) => [
     unique('customer_accounts_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('customer_accounts_tenant_id_id_legal_entity_uidx').on(
+      table.tenantId,
+      table.id,
+      table.legalEntityId,
+    ),
+    check('customer_accounts_station_scope_ck', sql`${table.stationScope} in ('ALL','SELECTED')`),
+    foreignKey({
+      columns: [table.tenantId, table.customerId, table.legalEntityId],
+      foreignColumns: [customers.tenantId, customers.id, customers.legalEntityId],
+      name: 'customer_accounts_customer_legal_entity_fk',
+    }),
     index('customer_accounts_tenant_customer_status_idx').on(
       table.tenantId,
       table.customerId,
@@ -118,6 +148,56 @@ export const customerAccounts = appSchema.table(
   ],
 );
 
+export const customerAccountStations = appSchema.table(
+  'customer_account_stations',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    accountId: uuid('account_id').notNull(),
+    legalEntityId: uuid('legal_entity_id').notNull(),
+    stationId: uuid('station_id').notNull(),
+    active: boolean('active').notNull().default(true),
+    createdBy: uuid('created_by').notNull(),
+    updatedBy: uuid('updated_by').notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+    updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('customer_account_stations_account_station_uidx').on(
+      table.tenantId,
+      table.accountId,
+      table.stationId,
+    ),
+    index('customer_account_stations_station_idx')
+      .on(table.tenantId, table.stationId)
+      .where(sql`${table.active}`),
+    foreignKey({
+      columns: [table.tenantId, table.accountId, table.legalEntityId],
+      foreignColumns: [
+        customerAccounts.tenantId,
+        customerAccounts.id,
+        customerAccounts.legalEntityId,
+      ],
+      name: 'customer_account_stations_account_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId, table.stationId],
+      foreignColumns: [stations.tenantId, stations.legalEntityId, stations.id],
+      name: 'customer_account_stations_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.createdBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_account_stations_created_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.updatedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_account_stations_updated_by_fk',
+    }),
+  ],
+);
+
 const accountScope = (table: { tenantId: AnyPgColumn; accountId: AnyPgColumn }, name: string) =>
   foreignKey({
     columns: [table.tenantId, table.accountId],
@@ -132,6 +212,8 @@ export const customerLedgerEntries = appSchema.table(
     tenantId: tenantId(),
     customerId: uuid('customer_id').notNull(),
     accountId: uuid('account_id').notNull(),
+    /** Station where a customer payment's cash was received (ADR-017). */
+    receivingStationId: uuid('receiving_station_id'),
     accountType: text('account_type').notNull(),
     entryType: text('entry_type').notNull(),
     direction: text('direction').notNull(),
@@ -201,6 +283,11 @@ export const customerLedgerEntries = appSchema.table(
       name: 'customer_ledger_entries_customer_fk',
     }),
     accountScope(table, 'customer_ledger_entries_account_fk'),
+    foreignKey({
+      columns: [table.tenantId, table.receivingStationId],
+      foreignColumns: [stations.tenantId, stations.id],
+      name: 'customer_ledger_entries_receiving_station_fk',
+    }),
     foreignKey({
       columns: [table.tenantId, table.actorMembershipId],
       foreignColumns: [memberships.tenantId, memberships.id],
