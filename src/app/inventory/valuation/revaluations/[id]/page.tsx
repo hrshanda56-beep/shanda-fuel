@@ -29,8 +29,21 @@ export default async function InventoryRevaluationPage({
     notFound();
   }
   const tenantId = workspace.tenant?.tenantId ?? search.tenantId;
-  const stationId = workspace.station?.stationId ?? search.stationId;
-  const context = tenantId && stationId ? { tenantId, stationId } : null;
+  const context =
+    tenantId && workspace.station
+      ? {
+          tenantId,
+          legalEntityId: workspace.station.legalEntityId,
+          stationId: workspace.station.stationId,
+          organisationName: workspace.station.tenantName,
+          legalEntityName: workspace.station.legalEntityName,
+          stationName: workspace.station.stationName,
+          stationTimezone: workspace.station.timezone,
+        }
+      : null;
+  const contextHref = context
+    ? `/inventory/valuation?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId })}`
+    : '/inventory/valuation';
   return (
     <AppShell
       navigationProjection={workspace.navigationProjection}
@@ -44,9 +57,7 @@ export default async function InventoryRevaluationPage({
       breadcrumbs={[
         {
           label: 'Inventory',
-          href: context
-            ? `/inventory/valuation?${new URLSearchParams(context)}`
-            : '/inventory/valuation',
+          href: context ? contextHref : '/inventory/valuation',
         },
         { label: 'Revaluation history' },
       ]}
@@ -57,7 +68,7 @@ export default async function InventoryRevaluationPage({
           nextPath={`/inventory/valuation/revaluations/${route.id}`}
         />
       ) : context ? (
-        <RevaluationDetail context={context} revaluationId={route.id} />
+        <RevaluationDetail context={context} contextHref={contextHref} revaluationId={route.id} />
       ) : (
         <div className="valuation-workspace">
           <h1>Revaluation history</h1>

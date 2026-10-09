@@ -54,7 +54,7 @@ export default async function CashPage({
         </div>
       </div>
       {tenantId && workspace.station ? (
-        <CashWorkspace tenantId={tenantId} stationId={stationId} />
+        <CashWorkspace />
       ) : (
         <Card as="section" className="panel">
           <ErrorState

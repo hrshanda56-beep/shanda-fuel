@@ -27,6 +27,7 @@ export type AuthorizedStation = {
   tenantId: string;
   tenantName: string;
   legalEntityId: string;
+  legalEntityName: string;
   stationId: string;
   stationCode: string;
   stationName: string;
@@ -103,12 +104,14 @@ async function loadAuthorizedStations(
       select s.tenant_id as "tenantId",
              t.name as "tenantName",
              s.legal_entity_id as "legalEntityId",
+             le.legal_name as "legalEntityName",
              s.id as "stationId",
              s.code as "stationCode",
              s.name as "stationName",
              s.timezone
       from app.stations s
       join app.tenants t on t.id = s.tenant_id
+      join app.legal_entities le on le.tenant_id = s.tenant_id and le.id = s.legal_entity_id
       where s.tenant_id = ${tenantId}
         and s.status <> 'ARCHIVED'
       order by s.name, s.id

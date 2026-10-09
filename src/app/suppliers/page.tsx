@@ -27,7 +27,6 @@ export default async function SuppliersPage({
   } catch {
     notFound();
   }
-  const tenantId = workspace.tenant?.tenantId ?? '';
   const legalEntityId =
     requestedLegalEntityId ??
     workspace.station?.legalEntityId ??
@@ -48,8 +47,8 @@ export default async function SuppliersPage({
     >
       {workspace.needsTenantSelection ? (
         <WorkspaceContextPicker tenants={workspace.tenants} nextPath="/suppliers" />
-      ) : tenantId && legalEntityId ? (
-        <SupplierWorkspace tenantId={tenantId} legalEntityId={legalEntityId} />
+      ) : legalEntityId ? (
+        <SupplierWorkspace />
       ) : (
         <div className="content-grid">
           <section className="panel" aria-labelledby="supplier-context-title">

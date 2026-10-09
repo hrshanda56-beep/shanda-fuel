@@ -28,7 +28,21 @@ export default async function InventoryValuationPage({
   }
   const tenantId = workspace.tenant?.tenantId ?? search.tenantId;
   const stationId = workspace.station?.stationId ?? search.stationId;
-  const context = tenantId && stationId ? { tenantId, stationId } : null;
+  const context =
+    tenantId && workspace.station
+      ? {
+          tenantId,
+          legalEntityId: workspace.station.legalEntityId,
+          stationId: workspace.station.stationId,
+          organisationName: workspace.station.tenantName,
+          legalEntityName: workspace.station.legalEntityName,
+          stationName: workspace.station.stationName,
+          stationTimezone: workspace.station.timezone,
+        }
+      : null;
+  const contextHref = context
+    ? `/inventory/valuation?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId })}`
+    : '/inventory/valuation';
   return (
     <AppShell
       navigationProjection={workspace.navigationProjection}
@@ -44,7 +58,7 @@ export default async function InventoryValuationPage({
       {workspace.needsTenantSelection || workspace.needsStationSelection ? (
         <WorkspaceContextPicker tenants={workspace.tenants} nextPath="/inventory/valuation" />
       ) : context ? (
-        <ValuationOverview context={context} />
+        <ValuationOverview context={context} contextHref={contextHref} />
       ) : (
         <div className="valuation-workspace">
           <div className="page-heading">

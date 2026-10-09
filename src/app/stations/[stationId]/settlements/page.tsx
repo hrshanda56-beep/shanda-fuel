@@ -44,7 +44,7 @@ export default async function SettlementsPage({
       breadcrumbs={[{ label: 'Provider settlements' }]}
     >
       {tenantId ? (
-        <SettlementWorkspace tenantId={tenantId} stationId={stationId} />
+        <SettlementWorkspace stationId={stationId} />
       ) : (
         <div className="content-grid">
           <section className="panel" aria-labelledby="settlement-context-title">

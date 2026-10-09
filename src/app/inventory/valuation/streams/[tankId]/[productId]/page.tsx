@@ -31,8 +31,21 @@ export default async function InventoryValuationStreamPage({
     notFound();
   }
   const tenantId = workspace.tenant?.tenantId ?? search.tenantId;
-  const stationId = workspace.station?.stationId ?? search.stationId;
-  const context = tenantId && stationId ? { tenantId, stationId } : null;
+  const context =
+    tenantId && workspace.station
+      ? {
+          tenantId,
+          legalEntityId: workspace.station.legalEntityId,
+          stationId: workspace.station.stationId,
+          organisationName: workspace.station.tenantName,
+          legalEntityName: workspace.station.legalEntityName,
+          stationName: workspace.station.stationName,
+          stationTimezone: workspace.station.timezone,
+        }
+      : null;
+  const contextHref = context
+    ? `/inventory/valuation?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId })}`
+    : '/inventory/valuation';
   return (
     <AppShell
       navigationProjection={workspace.navigationProjection}
@@ -46,9 +59,7 @@ export default async function InventoryValuationStreamPage({
       breadcrumbs={[
         {
           label: 'Inventory',
-          href: context
-            ? `/inventory/valuation?${new URLSearchParams(context)}`
-            : '/inventory/valuation',
+          href: context ? contextHref : '/inventory/valuation',
         },
         { label: 'Valuation stream' },
       ]}
@@ -61,6 +72,7 @@ export default async function InventoryValuationStreamPage({
       ) : context ? (
         <ValuationStreamDetail
           context={context}
+          contextHref={contextHref}
           tankId={route.tankId}
           productId={route.productId}
         />
