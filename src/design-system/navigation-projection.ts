@@ -26,6 +26,7 @@ export function allowsE2ENavigationFixture(
 
 const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly PermissionCode[]>> =
   {
+    'my-shift': [],
     today: ['business_day.view'],
     'daily-operations': ['business_day.view'],
     reconciliations: ['reconciliation.view'],
@@ -38,11 +39,40 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     settings: ['tenant.view'],
   };
 
+/** Permissions that make up the attendant's own work; none of them is management. */
+const ATTENDANT_WORKSPACE_PERMISSIONS: readonly PermissionCode[] = [
+  'station.view',
+  'shift.view',
+  'meter.view',
+];
+
+/**
+ * An actor whose resolved permissions cover shift/meter work but none of the
+ * management destinations lands on My Shift. This is decided from permissions,
+ * never from a role name, and it never grants anything: the page and its data
+ * route authorise again.
+ */
+export function isAttendantWorkspaceActor({ actor, scope }: NavigationProjectionInput): boolean {
+  const granted = (permissionCode: PermissionCode) =>
+    isPermissionGranted({ actor, permissionCode, requestedScope: scope });
+  if (!ATTENDANT_WORKSPACE_PERMISSIONS.every(granted)) return false;
+  return !MANAGEMENT_NAVIGATION_KEYS.some((key) =>
+    NAVIGATION_PERMISSION_CANDIDATES[key].some(granted),
+  );
+}
+
+const MANAGEMENT_NAVIGATION_KEYS = (
+  Object.keys(NAVIGATION_PERMISSION_CANDIDATES) as NavigationKey[]
+).filter((key) => key !== 'my-shift');
+
 export function buildNavigationProjection({
   actor,
   scope,
 }: NavigationProjectionInput): readonly NavigationProjection[] {
+  const attendantWorkspace = isAttendantWorkspaceActor({ actor, scope });
   return (Object.keys(NAVIGATION_PERMISSION_CANDIDATES) as NavigationKey[]).map((key) => {
+    if (key === 'my-shift')
+      return { key, visible: attendantWorkspace, enabled: attendantWorkspace };
     const visible = NAVIGATION_PERMISSION_CANDIDATES[key].some((permissionCode) =>
       isPermissionGranted({ actor, permissionCode, requestedScope: scope }),
     );
