@@ -361,6 +361,35 @@ define the scope, completion criteria, validation, evidence, and follow-up for
 each workstream. `TBD` means the value is not yet known or evidenced; it must
 not be replaced with an invented PR number, SHA, validation result, or owner.
 
+### Current production Stage 1 security closeout
+
+**Evidence date:** 2026-10-09
+
+**Stage 1 result:** **PASS**
+
+**Historical Stage 1 failure:** **SUPERSEDED**
+
+**Ready to record formal closeout:** **YES**
+
+The current production closeout is recorded against release SHA
+`2c7304916c191c66907d9582a3e7c26225c6eb59`.
+
+| Check | Current result |
+| --- | --- |
+| Migration journal and integrity | **PASS** — journal through `0024`; migrations `0022`, `0023`, and `0024` counts/hashes verified. |
+| Tenant isolation and RLS | **PASS** — tenant isolation controls verified; all 67 app tables have RLS and `FORCE ROW LEVEL SECURITY`. |
+| `app_runtime` | **PASS** — least-privilege controls verified, including migration-table and rate-limit-table restrictions. |
+| Owner and MFA | **PASS** — active `OWNER` exists and OWNER MFA enrollment is verified. |
+| Production health | **PASS** — HTTP 200. |
+| Production readiness | **PASS** — HTTP 200 with database readiness `ok`. |
+
+`job_runtime` is intentionally **not marked resolved** by this closeout. It
+remains a separate open security release blocker and must be tracked and
+closed independently. This is a Stage 1 security closeout only: it makes no
+claim that migration `0025` is applied and does not declare final production
+release readiness. It does not run migrations, change production data, users,
+or database roles, or alter issues `#111`, `#113`, or `#114`.
+
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Security P0 | Phase 1 | **VERIFIED** | Codex — Agent 1 (security owner) | `fix/security-p0-dev-csp` | None recorded | #45 | `843c3fa60977d591035157bd740c8a11a564b448` |
