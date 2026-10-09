@@ -12,6 +12,8 @@ import { NoWorkplace } from './entry/workplace-views';
 
 export type AuthorizedAppShellProps = Omit<AppShellProps, 'navigationProjection'> & {
   children: ReactNode;
+  /** Set only by the attendant workspace itself, the one page they may use. */
+  attendantHome?: boolean;
 };
 
 /**
@@ -20,7 +22,10 @@ export type AuthorizedAppShellProps = Omit<AppShellProps, 'navigationProjection'
  * evaluates raw permissions. Unauthenticated or invalid context renders a
  * deliberately empty projection rather than an all-visible fallback.
  */
-export async function AuthorizedAppShell(props: AuthorizedAppShellProps) {
+export async function AuthorizedAppShell({
+  attendantHome = false,
+  ...props
+}: AuthorizedAppShellProps) {
   const access = await getServerShellAccess(await headers());
   // Resolve before producing any product UI: no dashboard flash, no client spinner.
   if (access.status === 'signed-out') redirect('/login');
@@ -30,6 +35,16 @@ export async function AuthorizedAppShell(props: AuthorizedAppShellProps) {
         <NoWorkplace />
       </EntryShell>
     );
+  }
+  // Someone whose permissions are only shift and meter work never gets a
+  // management page, not even an empty one: send them to their own workspace.
+  // Every data route still authorises on its own; this is not the security
+  // boundary, it is the honest user experience on top of it.
+  if (
+    !attendantHome &&
+    access.projection?.some((entry) => entry.key === 'my-shift' && entry.visible)
+  ) {
+    redirect('/my-shift');
   }
   return (
     <AppShell {...props} navigationProjection={access.projection ?? emptyNavigationProjection} />

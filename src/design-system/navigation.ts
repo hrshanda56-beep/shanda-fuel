@@ -12,6 +12,7 @@ import type { IconName } from './icons';
  */
 
 export type NavigationKey =
+  | 'my-shift'
   | 'today'
   | 'daily-operations'
   | 'reconciliations'
@@ -24,7 +25,7 @@ export type NavigationKey =
   | 'settings';
 
 export type NavigationSectionKey =
-  'today' | 'operations' | 'finance' | 'suppliers' | 'reports' | 'settings';
+  'my-shift' | 'today' | 'operations' | 'finance' | 'suppliers' | 'reports' | 'settings';
 
 export type NavigationProjection = {
   key: NavigationKey;
@@ -61,6 +62,22 @@ export type NavigationSection = {
 };
 
 export const navigationSections: readonly NavigationSection[] = [
+  {
+    key: 'my-shift',
+    label: 'My Shift',
+    icon: 'today',
+    items: [
+      {
+        key: 'my-shift',
+        label: 'My Shift',
+        searchLabel: 'My Shift',
+        icon: 'today',
+        destination: { kind: 'route', path: '/my-shift' },
+        availability: 'active',
+        match: [/^\/my-shift(\/|$)/],
+      },
+    ],
+  },
   {
     key: 'today',
     label: 'Today',
@@ -205,6 +222,8 @@ export const navigationSections: readonly NavigationSection[] = [
  */
 export const syntheticNavigationProjection: readonly NavigationProjection[] = navigationSections
   .flatMap((section) => section.items)
+  // My Shift is the attendant's own destination, never part of the management preview.
+  .filter((item) => item.key !== 'my-shift')
   .map((item) => ({ key: item.key, visible: true, enabled: true }));
 
 /* Work context ------------------------------------------------------------ */
@@ -337,6 +356,7 @@ export function resolveNavigation(
  * lives behind "More". Short labels keep each tab on a single line.
  */
 const MOBILE_NAVIGATION_ITEMS: readonly { key: NavigationKey; label: string }[] = [
+  { key: 'my-shift', label: 'My Shift' },
   { key: 'today', label: 'Today' },
   { key: 'daily-operations', label: 'Daily ops' },
   { key: 'customers', label: 'Customers' },
