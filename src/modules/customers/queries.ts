@@ -12,6 +12,7 @@ import { authorizeCustomerCommand, resolveCustomerCommandContext } from './appli
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { deriveAccountBalance } from './domain';
 import { loadAccount } from './persistence';
+import { isPermissionGranted } from '../../platform/security/permissions';
 import { sql } from 'drizzle-orm';
 
 export type CustomerStatementLine = Readonly<{
@@ -48,6 +49,12 @@ export type CustomerAccountSummary = Readonly<{
   accountId: string;
   accountType: CustomerAccountType;
   status: CustomerAccountState;
+  version: number;
+  legalEntityId: string | null;
+  stationScope: 'ALL' | 'SELECTED';
+  stationScopeConfigured: boolean;
+  allowedStationIds: readonly string[];
+  ready: boolean;
   currency: string;
   creditLimit: string | null;
   balance: string | null;
@@ -79,6 +86,10 @@ export type CustomerSummary = Readonly<{
   accountReference: string;
   displayName: string;
   status: CustomerLifecycleState;
+  version: number;
+  legalEntityId: string | null;
+  legalEntityName: string | null;
+  canManageConfiguration: boolean;
   contactMetadata: Readonly<Record<string, string>>;
   accounts: readonly CustomerAccountSummary[];
   recentTransactions: readonly CustomerTransactionSummary[];
@@ -98,10 +109,17 @@ type CustomerAccountSummaryRow = {
   account_reference: string;
   display_name: string;
   customer_status: CustomerLifecycleState;
+  customer_version: number | string;
+  customer_legal_entity_id: string | null;
+  customer_legal_entity_name: string | null;
   contact_metadata: unknown;
   account_id: string | null;
   account_type: CustomerAccountType | null;
   account_status: CustomerAccountState | null;
+  account_version: number | string | null;
+  account_legal_entity_id: string | null;
+  station_scope: 'ALL' | 'SELECTED' | null;
+  station_scope_configured: boolean | null;
   currency: string | null;
   credit_limit: string | null;
   balance: string | null;
@@ -115,6 +133,11 @@ type CustomerProductBalanceRow = {
   product_name: string;
   balance_litres: string;
   reserved_litres: string;
+};
+
+type CustomerAccountStationRow = {
+  account_id: string;
+  station_id: string;
 };
 
 type CustomerTransactionRow = {
@@ -155,8 +178,18 @@ function contactMetadata(value: unknown): Readonly<Record<string, string>> {
 function accountSummaryFromRow(
   row: CustomerAccountSummaryRow,
   products: readonly CustomerProductBalanceRow[],
+  stationIds: readonly string[],
 ): CustomerAccountSummary | null {
-  if (!row.account_id || !row.account_type || !row.account_status || !row.currency) return null;
+  if (
+    !row.account_id ||
+    !row.account_type ||
+    !row.account_status ||
+    row.account_version === null ||
+    !row.station_scope ||
+    row.station_scope_configured === null ||
+    !row.currency
+  )
+    return null;
   const balance = row.balance ?? '0';
   const reservedAmount = row.reserved_amount ?? '0';
   const accountProducts = products
@@ -173,6 +206,12 @@ function accountSummaryFromRow(
     accountId: row.account_id,
     accountType: row.account_type,
     status: row.account_status,
+    version: Number(row.account_version),
+    legalEntityId: row.account_legal_entity_id,
+    stationScope: row.station_scope,
+    stationScopeConfigured: row.station_scope_configured,
+    allowedStationIds: [...stationIds],
+    ready: Boolean(row.account_legal_entity_id && row.station_scope_configured),
     currency: row.currency,
     creditLimit: row.credit_limit,
     balance: row.account_type === 'PREPAID_LITRES' ? null : balance,
@@ -244,6 +283,18 @@ export async function getCustomerAccountsFromRequest(
   });
   authorizeCustomerCommand(context, 'customer.view');
 
+  const canManageConfiguration =
+    isPermissionGranted({
+      actor: context.authority.authorization,
+      permissionCode: 'customer.manage',
+      requestedScope: { tenantId: context.tenantId, scopeType: 'TENANT' },
+    }) &&
+    isPermissionGranted({
+      actor: context.authority.authorization,
+      permissionCode: 'customer.account.manage',
+      requestedScope: { tenantId: context.tenantId, scopeType: 'TENANT' },
+    });
+
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const rows = await transaction.execute<CustomerAccountSummaryRow>(sql`
       with monetary_balances as (
@@ -265,10 +316,17 @@ export async function getCustomerAccountsFromRequest(
         c.account_reference,
         c.display_name,
         c.status as customer_status,
+        c.version as customer_version,
+        c.legal_entity_id as customer_legal_entity_id,
+        le.legal_name as customer_legal_entity_name,
         c.contact_metadata,
         a.id as account_id,
         a.account_type,
         a.status as account_status,
+        a.version as account_version,
+        a.legal_entity_id as account_legal_entity_id,
+        a.station_scope,
+        a.station_scope_configured,
         a.currency,
         a.credit_limit::text,
         mb.balance,
@@ -276,6 +334,8 @@ export async function getCustomerAccountsFromRequest(
       from app.customers c
       left join app.customer_accounts a
         on a.tenant_id = c.tenant_id and a.customer_id = c.id
+      left join app.legal_entities le
+        on le.tenant_id = c.tenant_id and le.id = c.legal_entity_id
       left join monetary_balances mb on mb.account_id = a.id
       left join active_reservations ar on ar.account_id = a.id
       where c.tenant_id = ${context.tenantId}
@@ -316,6 +376,26 @@ export async function getCustomerAccountsFromRequest(
         `)
       : [];
 
+    const stationRows = accountIds.length
+      ? await transaction.execute<CustomerAccountStationRow>(sql`
+          select account_id, station_id
+          from app.customer_account_stations
+          where tenant_id = ${context.tenantId}
+            and account_id in (${sql.join(
+              accountIds.map((id) => sql`${id}`),
+              sql`, `,
+            )})
+            and active = true
+          order by account_id, station_id
+        `)
+      : [];
+    const stationsByAccount = new Map<string, string[]>();
+    for (const station of stationRows) {
+      const current = stationsByAccount.get(station.account_id) ?? [];
+      current.push(station.station_id);
+      stationsByAccount.set(station.account_id, current);
+    }
+
     const transactionRows = query.customerId
       ? await transaction.execute<CustomerTransactionRow>(sql`
           select
@@ -355,13 +435,21 @@ export async function getCustomerAccountsFromRequest(
           accountReference: row.account_reference,
           displayName: row.display_name,
           status: row.customer_status,
+          version: Number(row.customer_version),
+          legalEntityId: row.customer_legal_entity_id,
+          legalEntityName: row.customer_legal_entity_name,
+          canManageConfiguration,
           contactMetadata: contactMetadata(row.contact_metadata),
           accounts: [],
           recentTransactions: transactionsByCustomer,
         };
         customerMap.set(row.customer_id, customer);
       }
-      const account = accountSummaryFromRow(row, products);
+      const account = accountSummaryFromRow(
+        row,
+        products,
+        stationsByAccount.get(row.account_id ?? '') ?? [],
+      );
       if (account) {
         (customer.accounts as CustomerAccountSummary[]).push(account);
       }

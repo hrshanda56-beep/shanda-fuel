@@ -147,7 +147,7 @@ describe('customer station scope validation (ADR-017)', () => {
     ).toBe(false);
   });
 
-  it('defaults a new account to all stations and checks its station list', () => {
+  it('allows an account to remain unconfigured until station scope is confirmed', () => {
     const account = {
       commandType: 'CreateCustomerAccount' as const,
       tenantId: ids.tenantId,

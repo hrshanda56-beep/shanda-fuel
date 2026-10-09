@@ -9,7 +9,16 @@ const context = {
         {
           id: tenantId,
           name: 'ShandaHR',
-          legalEntities: [{ id: 'entity-1', name: 'TEI Oils', stations: [] }],
+          legalEntities: [
+            {
+              id: 'entity-1',
+              name: 'TEI Oils',
+              stations: [
+                { id: 'station-1', code: 'SND', name: 'Sandawana', timezone: 'Africa/Harare' },
+                { id: 'station-2', code: 'HRE', name: 'Harare', timezone: 'Africa/Harare' },
+              ],
+            },
+          ],
         },
       ],
     },
@@ -31,12 +40,22 @@ const customer = {
   accountReference: 'ACME-001',
   displayName: 'Acme Transport',
   status: 'ACTIVE',
+  version: 0,
+  legalEntityId: null,
+  legalEntityName: null,
+  canManageConfiguration: true,
   contactMetadata: { contact: 'finance@acme.example' },
   accounts: [
     {
       accountId: 'account-1',
       accountType: 'CREDIT',
       status: 'ACTIVE',
+      version: 0,
+      legalEntityId: null,
+      stationScope: 'ALL',
+      stationScopeConfigured: false,
+      allowedStationIds: [],
+      ready: false,
       currency: 'USD',
       creditLimit: '1000.0000',
       balance: '250.0000',
@@ -49,6 +68,12 @@ const customer = {
       accountId: 'account-2',
       accountType: 'PREPAID_LITRES',
       status: 'ACTIVE',
+      version: 0,
+      legalEntityId: null,
+      stationScope: 'ALL',
+      stationScopeConfigured: false,
+      allowedStationIds: [],
+      ready: false,
       currency: 'USD',
       creditLimit: null,
       balance: null,
@@ -84,6 +109,22 @@ const customer = {
       note: null,
     },
   ],
+};
+
+const readyCustomer = {
+  ...customer,
+  version: 1,
+  legalEntityId: 'entity-1',
+  legalEntityName: 'TEI Oils',
+  accounts: customer.accounts.map((account) => ({
+    ...account,
+    version: 1,
+    legalEntityId: 'entity-1',
+    stationScope: 'SELECTED' as const,
+    stationScopeConfigured: true,
+    allowedStationIds: ['station-1'],
+    ready: true,
+  })),
 };
 
 async function mockCustomerApis(page: Page) {
@@ -135,5 +176,69 @@ test.describe('customer accounts Phase 0', () => {
     );
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
+  });
+
+  test('lets an owner or administrator confirm legal entity and explicit station scope', async ({
+    page,
+  }) => {
+    let scopeCommands = 0;
+    let saved = false;
+    const saveRequests: Array<Record<string, unknown>> = [];
+    await page.route('**/api/context**', (route) => route.fulfill({ status: 200, json: context }));
+    await page.route('**/api/customers/summary**', (route) =>
+      route.fulfill({ status: 200, json: { customers: [saved ? readyCustomer : customer] } }),
+    );
+    await page.route('**/api/customers/commands', async (route) => {
+      const request = route.request().postDataJSON() as Record<string, unknown>;
+      saveRequests.push(request);
+      if (request.commandType === 'SetCustomerAccountStations') scopeCommands += 1;
+      if (scopeCommands === 2) saved = true;
+      await route.fulfill({ status: 200, json: { ok: true } });
+    });
+
+    await page.goto('/customers/customer-1?tenantId=tenant-1&legalEntityId=entity-1');
+    await expect(page.getByText('Customer account is not ready')).toBeVisible();
+    await page.getByLabel('Customer legal entity').selectOption('entity-1');
+    await page.locator('select[id^="customer-station-scope-"]').nth(0).selectOption('SELECTED');
+    await page
+      .getByRole('checkbox', { name: /Sandawana/ })
+      .nth(0)
+      .check();
+    await page.locator('select[id^="customer-station-scope-"]').nth(1).selectOption('ALL');
+    await page.getByRole('button', { name: 'Save customer scope' }).click();
+
+    await expect(page.getByText('Customer access scope saved and confirmed.')).toBeVisible();
+    await expect(page.getByText('Ready').first()).toBeVisible();
+    expect(saveRequests.map((request) => request.commandType)).toEqual([
+      'SetCustomerLegalEntity',
+      'SetCustomerAccountStations',
+      'SetCustomerAccountStations',
+    ]);
+    expect(saveRequests[1]).toMatchObject({
+      stationScope: 'SELECTED',
+      stationIds: ['station-1'],
+    });
+    expect(saveRequests[2]).toMatchObject({ stationScope: 'ALL' });
+  });
+
+  test('keeps Finance read-only while historical customer reads remain available', async ({
+    page,
+  }) => {
+    const financeCustomer = {
+      ...readyCustomer,
+      canManageConfiguration: false,
+    };
+    await page.route('**/api/context**', (route) => route.fulfill({ status: 200, json: context }));
+    await page.route('**/api/customers/summary**', (route) =>
+      route.fulfill({ status: 200, json: { customers: [financeCustomer] } }),
+    );
+
+    await page.goto('/customers/customer-1?tenantId=tenant-1&legalEntityId=entity-1');
+    await expect(page.getByText('Configuration is restricted')).toBeVisible();
+    await expect(
+      page.getByText(/Finance access remains read-only, including historical account activity/),
+    ).toBeVisible();
+    await expect(page.getByText('Fuel charged')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save customer scope' })).toHaveCount(0);
   });
 });

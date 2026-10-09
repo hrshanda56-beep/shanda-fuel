@@ -500,13 +500,16 @@ export async function createCustomerAccountInTransaction(
     throw new AppError('VALIDATION_FAILED', 'Credit limits apply only to credit accounts');
   const legalEntityId = customer[0].legal_entity_id;
   const stationScope = input.stationScope ?? 'ALL';
-  const stationScopeConfigured = input.stationScope !== undefined;
   if (stationScope === 'SELECTED' && !legalEntityId) {
     throw new AppError(
       'CONFLICT',
       'Set the customer legal entity before choosing the stations an account may use',
     );
   }
+  // An omitted scope is deliberately not a confirmation. Keep the stored
+  // enum value at ALL for schema compatibility, but fail closed until the
+  // owner/admin explicitly submits SetCustomerAccountStations.
+  const stationScopeConfigured = input.stationScope !== undefined && legalEntityId !== null;
   await transaction.execute(sql`
     insert into app.customer_accounts (id, tenant_id, customer_id, account_type, currency, credit_limit, legal_entity_id, station_scope, station_scope_configured, created_by, updated_by)
     values (${accountId}, ${context.tenantId}, ${input.customerId}, ${input.accountType}, ${input.currency}, ${limit}, ${legalEntityId}, ${stationScope}, ${stationScopeConfigured}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})

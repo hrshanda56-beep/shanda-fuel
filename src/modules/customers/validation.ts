@@ -127,7 +127,7 @@ export const createCustomerAccountSchema = z
     accountType: customerAccountTypeSchema,
     currency,
     creditLimit: decimalText.optional(),
-    /** Defaults to every station of the customer's legal entity. */
+    /** Optional during onboarding; omitted scope remains unconfigured. */
     stationScope: customerAccountStationScopeSchema.optional(),
     stationIds: z.array(uuid).max(100).optional(),
   })
