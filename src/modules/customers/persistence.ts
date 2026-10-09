@@ -15,6 +15,7 @@ import {
   createCustomerPaymentEntry,
   createPrepaidTopUpEntry,
   assertSourceReferenceUnused,
+  assertCustomerAccountStationPolicyConfigured,
   assertCustomerAccountTransactionAllowed,
   assertStationAllowedForAccount,
   activateCustomer,
@@ -496,9 +497,10 @@ export async function createCustomerAccountInTransaction(
       'Set the customer legal entity before choosing the stations an account may use',
     );
   }
+  const stationScopeConfigured = legalEntityId !== null;
   await transaction.execute(sql`
-    insert into app.customer_accounts (id, tenant_id, customer_id, account_type, currency, credit_limit, legal_entity_id, station_scope, created_by, updated_by)
-    values (${accountId}, ${context.tenantId}, ${input.customerId}, ${input.accountType}, ${input.currency}, ${limit}, ${legalEntityId}, ${stationScope}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
+    insert into app.customer_accounts (id, tenant_id, customer_id, account_type, currency, credit_limit, legal_entity_id, station_scope, station_scope_configured, created_by, updated_by)
+    values (${accountId}, ${context.tenantId}, ${input.customerId}, ${input.accountType}, ${input.currency}, ${limit}, ${legalEntityId}, ${stationScope}, ${stationScopeConfigured}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
   `);
   if (stationScope === 'SELECTED' && legalEntityId) {
     await replaceAccountStations(
@@ -594,7 +596,7 @@ export async function setCustomerAccountStationsInTransaction(
   );
   const updated = await transaction.execute<{ version: number | string }>(sql`
     update app.customer_accounts
-    set station_scope = ${input.stationScope}, version = version + 1,
+    set station_scope = ${input.stationScope}, station_scope_configured = true, version = version + 1,
         updated_by = ${context.authority.membership.membershipId}, updated_at = now()
     where tenant_id = ${context.tenantId} and id = ${input.accountId} and version = ${input.expectedVersion}
     returning version
@@ -616,8 +618,9 @@ async function loadAccountStationPolicy(
   const rows = await transaction.execute<{
     legal_entity_id: string | null;
     station_scope: 'ALL' | 'SELECTED';
+    station_scope_configured: boolean;
   }>(sql`
-    select legal_entity_id, station_scope from app.customer_accounts
+    select legal_entity_id, station_scope, station_scope_configured from app.customer_accounts
     where tenant_id = ${context.tenantId} and id = ${accountId}
   `);
   const account = rows[0];
@@ -629,6 +632,7 @@ async function loadAccountStationPolicy(
   return {
     legalEntityId: account.legal_entity_id,
     scope: account.station_scope,
+    configured: account.station_scope_configured,
     allowedStationIds: stations.map((row) => row.station_id),
   };
 }
@@ -640,6 +644,9 @@ export async function recordCustomerPaymentInTransaction(
 ) {
   const loaded = await loadAccount(transaction, context, input.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
+  assertCustomerAccountStationPolicyConfigured(
+    await loadAccountStationPolicy(transaction, context, input.accountId),
+  );
   assertSourceReferenceUnused(loaded.entries, input.source);
   await assertReceivingStation(transaction, context, input.accountId, input.receivingStationId);
   const entry = createCustomerPaymentEntry({
@@ -698,6 +705,9 @@ export async function recordPrepaidTopUpInTransaction(
 ) {
   const loaded = await loadAccount(transaction, context, input.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
+  assertCustomerAccountStationPolicyConfigured(
+    await loadAccountStationPolicy(transaction, context, input.accountId),
+  );
   assertSourceReferenceUnused(loaded.entries, input.source);
   if (loaded.account.accountType !== input.accountType)
     throw new AppError(
@@ -797,6 +807,15 @@ async function loadAuthorization(
   return authorizationFromRow(rows[0]);
 }
 
+function assertAuthorizationStationMatchesContext(
+  authorization: CustomerFuelAuthorization,
+  context: CustomerCommandContext,
+): void {
+  if (!context.stationId || authorization.stationId !== context.stationId) {
+    throw new AppError('FORBIDDEN', 'The authorization belongs to another station');
+  }
+}
+
 async function activeReservations(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
@@ -827,8 +846,16 @@ export async function authorizeCustomerFuelInTransaction(
   input: { authorizationId: string; expectedVersion: number },
 ) {
   const initial = await loadAuthorization(transaction, context, input.authorizationId, false);
+  assertAuthorizationStationMatchesContext(initial, context);
   const loaded = await loadAccount(transaction, context, initial.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
+  const stationLegalEntityId = context.scope.legalEntityId;
+  if (!stationLegalEntityId)
+    throw new AppError('INVARIANT_VIOLATION', 'The station has no legal entity in this context');
+  assertStationAllowedForAccount(
+    await loadAccountStationPolicy(transaction, context, initial.accountId),
+    { stationId: context.stationId!, legalEntityId: stationLegalEntityId },
+  );
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   const next = reserveCustomerFuelAuthorization({
     authorization,
@@ -884,10 +911,18 @@ export async function completeCustomerFuelTransactionInTransaction(
   if (!context.stationId)
     throw new AppError('FORBIDDEN', 'A station context is required for fuel usage');
   const initial = await loadAuthorization(transaction, context, input.authorizationId, false);
+  assertAuthorizationStationMatchesContext(initial, context);
   if (initial.accountId !== input.accountId)
     throw new AppError('FORBIDDEN', 'The authorization does not belong to the requested account');
   const loaded = await loadAccount(transaction, context, input.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
+  const stationLegalEntityId = context.scope.legalEntityId;
+  if (!stationLegalEntityId)
+    throw new AppError('INVARIANT_VIOLATION', 'The station has no legal entity in this context');
+  assertStationAllowedForAccount(
+    await loadAccountStationPolicy(transaction, context, input.accountId),
+    { stationId: context.stationId, legalEntityId: stationLegalEntityId },
+  );
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   await assertPostedA5Evidence(
     transaction,
@@ -962,6 +997,7 @@ export async function cancelCustomerFuelAuthorizationInTransaction(
   input: { authorizationId: string; expectedVersion: number; reason: string },
 ) {
   const initial = await loadAuthorization(transaction, context, input.authorizationId, false);
+  assertAuthorizationStationMatchesContext(initial, context);
   const loaded = await loadAccount(transaction, context, initial.accountId);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   if (authorization.version !== input.expectedVersion)
@@ -979,6 +1015,7 @@ export async function expireCustomerFuelAuthorizationInTransaction(
   input: { authorizationId: string; expectedVersion: number },
 ) {
   const initial = await loadAuthorization(transaction, context, input.authorizationId, false);
+  assertAuthorizationStationMatchesContext(initial, context);
   const loaded = await loadAccount(transaction, context, initial.accountId);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   if (authorization.version !== input.expectedVersion)

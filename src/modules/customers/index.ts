@@ -8,6 +8,7 @@ export {
   CUSTOMER_SOURCE_TYPES,
   assertCustomerAccountTransactionAllowed,
   assertStationAllowedForAccount,
+  assertCustomerAccountStationPolicyConfigured,
   assertCreditAccountHasPositiveLimit,
   assertSourceReferenceUnused,
   activateCustomer,

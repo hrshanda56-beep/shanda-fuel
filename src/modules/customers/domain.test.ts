@@ -326,7 +326,7 @@ describe('customer account station policy (ADR-017)', () => {
   it('allows every station of the legal entity by default', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: entity, scope: 'ALL', allowedStationIds: [] },
+        { legalEntityId: entity, scope: 'ALL', configured: true, allowedStationIds: [] },
         here,
       ),
     ).not.toThrow();
@@ -335,7 +335,7 @@ describe('customer account station policy (ADR-017)', () => {
   it('refuses fuel until the customer has a legal entity', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: null, scope: 'ALL', allowedStationIds: [] },
+        { legalEntityId: null, scope: 'ALL', configured: false, allowedStationIds: [] },
         here,
       ),
     ).toThrow('no legal entity');
@@ -344,7 +344,7 @@ describe('customer account station policy (ADR-017)', () => {
   it('never crosses legal entities, even for an all-stations account', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: entity, scope: 'ALL', allowedStationIds: [] },
+        { legalEntityId: entity, scope: 'ALL', configured: true, allowedStationIds: [] },
         { stationId: 'station-9', legalEntityId: 'entity-b' },
       ),
     ).toThrow('another legal entity');
@@ -354,6 +354,7 @@ describe('customer account station policy (ADR-017)', () => {
     const policy = {
       legalEntityId: entity,
       scope: 'SELECTED' as const,
+      configured: true,
       allowedStationIds: ['station-1'],
     };
     expect(() => assertStationAllowedForAccount(policy, here)).not.toThrow();
@@ -365,9 +366,18 @@ describe('customer account station policy (ADR-017)', () => {
   it('allows nothing when a selected-stations account has an empty list', () => {
     expect(() =>
       assertStationAllowedForAccount(
-        { legalEntityId: entity, scope: 'SELECTED', allowedStationIds: [] },
+        { legalEntityId: entity, scope: 'SELECTED', configured: true, allowedStationIds: [] },
         here,
       ),
     ).toThrow('cannot be used at this station');
+  });
+
+  it('refuses a legal-entity account until its station scope is confirmed', () => {
+    expect(() =>
+      assertStationAllowedForAccount(
+        { legalEntityId: entity, scope: 'ALL', configured: false, allowedStationIds: [] },
+        here,
+      ),
+    ).toThrow('station scope');
   });
 });

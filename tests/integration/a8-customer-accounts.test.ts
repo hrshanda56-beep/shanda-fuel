@@ -640,6 +640,32 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
     expect(accountResponse.status).toBe(201);
     const account = await body(accountResponse);
 
+    const financeSetLegalEntity = await command(
+      {
+        commandType: 'SetCustomerLegalEntity',
+        tenantId: ids.tenant,
+        customerId: customer.customerId,
+        legalEntityId: ids.legal,
+        expectedVersion: 3,
+      },
+      'a8-permission-finance-set-legal-entity-denied',
+      'a8-finance-session-token',
+    );
+    expect(financeSetLegalEntity.status).toBe(403);
+
+    const financeSetStations = await command(
+      {
+        commandType: 'SetCustomerAccountStations',
+        tenantId: ids.tenant,
+        accountId: account.accountId,
+        expectedVersion: 0,
+        stationScope: 'ALL',
+      },
+      'a8-permission-finance-set-stations-denied',
+      'a8-finance-session-token',
+    );
+    expect(financeSetStations.status).toBe(403);
+
     const financeCreate = await command(
       {
         commandType: 'CreateCustomer',
@@ -745,6 +771,49 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       ),
     );
 
+    // Existing accounts are fail-closed until their legal entity and station
+    // scope are explicitly confirmed, including non-fuel ledger commands.
+    expect(
+      (
+        await command(
+          {
+            commandType: 'RecordPrepaidTopUp',
+            tenantId: ids.tenant,
+            accountId: open.accountId,
+            accountType: 'CREDIT',
+            amount: { amount: '1.0000', currency: 'USD' },
+            source: {
+              sourceType: 'PREPAID_TOPUP',
+              sourceId: 'a8b00000-0000-0000-0000-000000000701',
+            },
+            occurredAt: '2026-09-24T09:05:00+02:00',
+            businessDate: '2026-09-24',
+          },
+          'a8-scope-unconfigured-topup',
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await command(
+          {
+            commandType: 'RecordCustomerPayment',
+            tenantId: ids.tenant,
+            accountId: open.accountId,
+            receivingStationId: ids.station,
+            amount: { amount: '1.0000', currency: 'USD' },
+            source: {
+              sourceType: 'CUSTOMER_PAYMENT',
+              sourceId: 'a8b00000-0000-0000-0000-000000000702',
+            },
+            occurredAt: '2026-09-24T09:06:00+02:00',
+            businessDate: '2026-09-24',
+          },
+          'a8-scope-unconfigured-payment',
+        )
+      ).status,
+    ).toBe(409);
+
     // No legal entity yet: fuel is refused rather than guessed.
     expect((await authorize(open.accountId, 1)).status).toBe(409);
 
@@ -773,13 +842,25 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       'a8-scope-entity',
     );
     expect(entity.status).toBe(200);
-    // The existing account adopted the entity, so its version moved on.
+    // The existing account adopted the entity, but remains unconfigured.
     const [account] = await client`
-      select version from app.customer_accounts where id = ${open.accountId}
+      select version, station_scope_configured from app.customer_accounts where id = ${open.accountId}
     `;
     expect(Number(account?.version)).toBe(1);
+    expect(account?.station_scope_configured).toBe(false);
 
-    // All stations of the legal entity by default.
+    // An explicit ALL confirmation makes the existing account ready.
+    const confirmAll = await command(
+      {
+        commandType: 'SetCustomerAccountStations',
+        tenantId: ids.tenant,
+        accountId: open.accountId,
+        expectedVersion: 1,
+        stationScope: 'ALL',
+      },
+      'a8-scope-confirm-all',
+    );
+    expect(confirmAll.status).toBe(200);
     expect((await authorize(open.accountId, 2)).status).toBe(201);
 
     // Restricted to another station: refused here.
@@ -788,7 +869,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         commandType: 'SetCustomerAccountStations',
         tenantId: ids.tenant,
         accountId: open.accountId,
-        expectedVersion: 1,
+        expectedVersion: 2,
         stationScope: 'SELECTED',
         stationIds: [ids.secondStation],
       },
@@ -797,18 +878,39 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
     expect(restrict.status).toBe(200);
     expect((await authorize(open.accountId, 3)).status).toBe(403);
 
-    // A station of another legal entity cannot be added.
+    // A mixed allowed + forbidden request fails atomically.
     await client`
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status)
       values ('a8b00000-0000-4000-8000-000000000023', ${ids.tenant}, ${ids.otherLegal}, 'A8FOREIGN', 'A8 Foreign Station', 'ACTIVE')
       on conflict (id) do nothing
     `;
+    const mixed = await command(
+      {
+        commandType: 'SetCustomerAccountStations',
+        tenantId: ids.tenant,
+        accountId: open.accountId,
+        expectedVersion: 3,
+        stationScope: 'SELECTED',
+        stationIds: [ids.secondStation, 'a8b00000-0000-4000-8000-000000000023'],
+      },
+      'a8-scope-mixed',
+    );
+    expect(mixed.status).toBe(400);
+    const [afterMixed] = await client`
+      select version, station_scope, station_scope_configured
+      from app.customer_accounts where id = ${open.accountId}
+    `;
+    expect(Number(afterMixed?.version)).toBe(3);
+    expect(afterMixed?.station_scope).toBe('SELECTED');
+    expect(afterMixed?.station_scope_configured).toBe(true);
+
+    // A station of another legal entity cannot be added.
     const foreign = await command(
       {
         commandType: 'SetCustomerAccountStations',
         tenantId: ids.tenant,
         accountId: open.accountId,
-        expectedVersion: 2,
+        expectedVersion: 3,
         stationScope: 'SELECTED',
         stationIds: ['a8b00000-0000-4000-8000-000000000023'],
       },
@@ -822,7 +924,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         commandType: 'SetCustomerAccountStations',
         tenantId: ids.tenant,
         accountId: open.accountId,
-        expectedVersion: 2,
+        expectedVersion: 3,
         stationScope: 'ALL',
       },
       'a8-scope-all',
@@ -860,6 +962,50 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
     `;
     expect(entry?.receiving_station_id).toBe(ids.secondStation);
     expect((await pay('a8b00000-0000-4000-8000-000000000023', 2)).status).toBe(400);
+
+    // Every authorization lifecycle command remains bound to its originating
+    // station, even when the actor can operate at both stations.
+    const lifecycleAuthorizationId = 'a8b00000-0000-4000-8000-000000000551';
+    const lifecycleRequest = await command(
+      {
+        commandType: 'RequestCustomerFuelAuthorization',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        accountId: open.accountId,
+        authorizationId: lifecycleAuthorizationId,
+        requested: {
+          productId: ids.product,
+          litres: '1.000',
+          amount: { amount: '1.0000', currency: 'USD' },
+        },
+        requestedAt: '2026-09-24T11:00:00+02:00',
+        source: {
+          sourceType: 'A5_RECONCILIATION_CUSTOMER_FUEL',
+          sourceId: 'a8b00000-0000-4000-8000-000000000552',
+          sourceRevisionId: 'a8b00000-0000-4000-8000-000000000553',
+        },
+      },
+      'a8-scope-lifecycle-request',
+    );
+    expect(lifecycleRequest.status).toBe(201);
+    for (const [commandType, key, extra] of [
+      ['AuthorizeCustomerFuel', 'a8-scope-lifecycle-authorize', {}],
+      ['CancelCustomerFuelAuthorization', 'a8-scope-lifecycle-cancel', { reason: 'wrong station' }],
+      ['ExpireCustomerFuelAuthorization', 'a8-scope-lifecycle-expire', {}],
+    ] as const) {
+      const response = await command(
+        {
+          commandType,
+          tenantId: ids.tenant,
+          stationId: ids.secondStation,
+          authorizationId: lifecycleAuthorizationId,
+          expectedVersion: 0,
+          ...extra,
+        },
+        key,
+      );
+      expect(response.status).toBe(403);
+    }
 
     // A customer cannot be moved to another legal entity.
     const move = await command(

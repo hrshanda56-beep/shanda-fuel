@@ -321,8 +321,27 @@ export type CustomerAccountStationPolicy = Readonly<{
   legalEntityId: string | null;
   /** `ALL`: every station of the legal entity. `SELECTED`: only `allowedStationIds`. */
   scope: CustomerAccountStationScope;
+  /** Existing accounts require explicit onboarding confirmation. */
+  configured: boolean;
   allowedStationIds: readonly string[];
 }>;
+
+export function assertCustomerAccountStationPolicyConfigured(
+  policy: CustomerAccountStationPolicy,
+): void {
+  if (!policy.legalEntityId) {
+    throw new AppError(
+      'CONFLICT',
+      'The customer has no legal entity yet. Confirm it before authorising fuel.',
+    );
+  }
+  if (!policy.configured) {
+    throw new AppError(
+      'CONFLICT',
+      'Confirm the customer account station scope before posting customer credit activity',
+    );
+  }
+}
 
 /**
  * A customer account's balance is organisation-wide, but fuel may be drawn only
@@ -333,12 +352,7 @@ export function assertStationAllowedForAccount(
   policy: CustomerAccountStationPolicy,
   station: Readonly<{ stationId: string; legalEntityId: string }>,
 ): void {
-  if (!policy.legalEntityId) {
-    throw new AppError(
-      'CONFLICT',
-      'The customer has no legal entity yet. Confirm it before authorising fuel.',
-    );
-  }
+  assertCustomerAccountStationPolicyConfigured(policy);
   if (policy.legalEntityId !== station.legalEntityId) {
     throw new AppError(
       'FORBIDDEN',
