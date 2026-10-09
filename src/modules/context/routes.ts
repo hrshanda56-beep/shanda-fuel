@@ -52,6 +52,7 @@ export function contextRoutePolicy(pathname: string | null | undefined): Context
   if (/^\/suppliers(?:\/|$)/.test(path)) return LEGAL_ENTITY_ALL_STATIONS_POLICY;
   if (
     /^\/stations\/[^/]+(?:\/|$)/.test(path) ||
+    /^\/my-shift(?:\/|$)/.test(path) ||
     /^\/operations\/daily(?:\/|$)/.test(path) ||
     /^\/operations\/reconciliations(?:\/|$)/.test(path) ||
     /^\/inventory(?:\/|$)/.test(path)
