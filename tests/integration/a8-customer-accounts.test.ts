@@ -501,6 +501,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         accountType: 'CREDIT',
         currency: 'USD',
         creditLimit: '100.0000',
+        stationScope: 'ALL',
       },
       'a8-create-credit-account',
     );
@@ -721,7 +722,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         commandType: 'SetCustomerAccountStations',
         tenantId: ids.tenant,
         accountId: account.accountId,
-        expectedVersion: 1,
+        expectedVersion: 0,
         stationScope: 'ALL',
       },
       'a8-permission-admin-station-scope',

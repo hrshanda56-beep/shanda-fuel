@@ -775,6 +775,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         accountType: 'CREDIT',
         currency: 'USD',
         creditLimit: '100.0000',
+        stationScope: 'ALL',
       },
       'g5-credit-account',
     );
@@ -786,6 +787,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         customerId,
         accountType: 'PREPAID_VALUE',
         currency: 'USD',
+        stationScope: 'ALL',
       },
       'g5-prepaid-account',
     );
