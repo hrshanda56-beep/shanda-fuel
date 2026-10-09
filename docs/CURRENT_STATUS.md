@@ -26,12 +26,45 @@ Status labels:
   temporary nested knowledge-base copy is absent.
 - The documentation merge did not change deployed application behavior.
 
+### Current production security closeout — 2026-10-09
+
+The current production Stage 1 security closeout is **PASS**. The historical
+Stage 1 failure is preserved as historical evidence and is **SUPERSEDED** by
+the current verified result recorded in
+[`docs/release-readiness.md`](release-readiness.md).
+
+Current production release SHA:
+
+`2c7304916c191c66907d9582a3e7c26225c6eb59`
+
+Current production evidence:
+
+- The migration journal ends at `0024`.
+- Migrations `0022`, `0023`, and `0024` were each verified once with their
+  expected hashes.
+- Migration `0025` is **NOT APPLIED** and remains intentionally deferred.
+- An active `OWNER` exists and OWNER MFA enrollment is verified.
+- The `T.E.I Oils` tenant is active and four active stations are confirmed.
+- `app_runtime` least privilege is verified.
+- All 67 app tables use RLS and `FORCE ROW LEVEL SECURITY`.
+- `/api/health` returns HTTP 200 and `/api/readiness` returns HTTP 200 with
+  database readiness `ok`.
+
+Still open and not implied closed by this documentation update:
+
+- The `job_runtime` security release blocker remains open.
+- Authenticated final production smoke remains open.
+- The #114, #113, and #111 release work remains open as applicable.
+- Final production release readiness is not declared complete.
+
 ## 3. Production application baseline
 
 ### VERIFIED COMPLETE
 
-- The production application release before the documentation-only merge was
+- The historical production application release before the documentation-only merge was
   `53cf4382487271bed68160386cc41c447ab542e2`.
+- The current verified production release is
+  `2c7304916c191c66907d9582a3e7c26225c6eb59`.
 - The production Vercel deployment for that application release was reported
   READY and the production alias `https://fuel.shandahr.com` was verified.
 - Do not treat the documentation merge SHA as a deployed application release.
@@ -47,7 +80,9 @@ Status labels:
   - no PUBLIC bootstrap access,
   - no app_runtime bootstrap access,
   - bootstrap sentinel not consumed,
-  - no real production user created yet.
+  - the historical pre-provisioning checkpoint recorded no real production
+    user at that time; the current active OWNER state above supersedes that
+    checkpoint.
 
 ### Important release constraint
 
@@ -83,14 +118,18 @@ Verified production role state before provisioning:
 - The approved Neon membership is `migration_owner` →
   `first_user_provisioner`, granted by `cloud_admin`, with `admin=true`,
   `inherit=false`, and `set=false`.
-- No temporary provisioner password was assigned by the latest failed Stage 1
-  run.
+- No temporary provisioner password was assigned by the historical failed
+  Stage 1 run.
 
 The actual operator client is Homebrew `psql 16.15`. Human local validation
 against PostgreSQL 18.6 verified success exit code 0, deliberate failure exit
 code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
 
-### BLOCKED / IN PROGRESS
+### Historical Stage 1 attempt — superseded by current PASS
+
+The following entries preserve evidence from a prior fail-closed Stage 1
+attempt. They are not the current Stage 1 result; the current verified result
+is PASS as recorded above.
 
 - The latest Stage 1 production run passed exact checkout/SHA and local
   migration-hash checks, migration-owner identity, provisioner attributes,
@@ -110,13 +149,15 @@ code 3, fail-closed `ON_ERROR_STOP=1` behavior, and no false PASS continuation.
   its owner must apply and review the one-line correction before a human
   Stage 1 retry.
 - The failed run stopped before temporary provisioner password assignment.
-  No cleanup is required from that run, no first user exists, Stage 2 has not
-  run, real-provisioning approval has not been given, and authenticated
-  production smoke has not happened.
+  No cleanup is required from that historical run. Stage 2 had not run in
+  that checkpoint, real-provisioning approval was not recorded there, and
+  authenticated production smoke had not happened at that time.
 - Stage 2 has **not** been run against production.
-- No explicit human approval for real first-user provisioning has been recorded.
-- No real first production user has been created.
-- Authenticated production smoke (login/context/protected route/logout/re-login) has not been completed.
+- The historical pre-provisioning snapshot recorded no real first production
+  user; the current active OWNER is verified, while authenticated production
+  smoke remains open.
+- Authenticated production smoke (login/context/protected route/logout/re-login)
+  has not been completed.
 
 ## 5. UI shell / PR #92 work
 
@@ -328,15 +369,15 @@ Covered areas include:
 
 Final owner handoff is not green because the following remain open:
 
-1. apply and independently review the external helper's `cmd = 'ALL'`
-   correction, then rerun Stage 1,
-2. choose legitimate production scope and complete the Stage 2 read-only dry run,
-3. obtain explicit approval and provision the real first user,
-4. run authenticated production smoke,
-5. integrate PR #92 and Customers plus the verified A8 fix,
-6. integrate and review the Daily Operations timezone fix,
-7. run final release gates, deploy, and verify the exact production SHA,
-8. complete owner acceptance and remediate any P0/P1 finding.
+1. keep the `job_runtime` security release blocker open until provider-authorized
+   remediation and post-change verification are complete,
+2. complete authenticated final production smoke,
+3. complete the #114, #113, and #111 release work as applicable while keeping
+   `0025` deferred,
+4. integrate PR #92 and Customers plus the verified A8 fix,
+5. integrate and review the Daily Operations timezone fix,
+6. run final release gates, deploy, and verify the exact production SHA,
+7. complete owner acceptance and remediate any P0/P1 finding.
 
 Owner handoff must use only:
 
@@ -373,11 +414,12 @@ exception; that exception remains time-bounded and is not a production waiver.
 
 ### Active
 
-1. **Production Stage 1 fails closed in the RLS/policy preflight** with a
-   division-by-zero error caused by the historical `pg_policies.cmd = '*'
-   assertion`; the repository-local diagnostic is corrected, but the external
-   helper still needs its owner-applied correction and human retry.
-2. **Daily Operations timezone and A8 decimal corrections are present in the
+1. **Historical production Stage 1 attempt (SUPERSEDED):** it failed closed in
+   the RLS/policy preflight with a division-by-zero error caused by the
+   historical `pg_policies.cmd = '*'` assertion. The current production Stage 1
+   result is PASS; the historical evidence remains preserved above.
+2. **`job_runtime` remains an open security release blocker.**
+3. **Daily Operations timezone and A8 decimal corrections are present in the
    overnight Phase 0 integration candidate;** final release evidence remains
    dependent on the combined-candidate gates below.
 
@@ -401,10 +443,10 @@ open.
 - Existing owner-readiness documents contain stale historical SHAs and pre-candidate status.
 - Some implementation-status/parallel-execution/traceability documentation references older base SHAs.
 - Local integration harness setup is ownership-sensitive and should be documented clearly to avoid future false regressions.
-- The Stage 1 RLS/policy preflight normalization bug is diagnosed and the
-  repository-local diagnostic is corrected; the external helper correction
-  and human rerun remain open. The exhaustive function ACL-grantee validation
-  is already Access Review GREEN.
+- The historical Stage 1 RLS/policy preflight normalization bug is diagnosed
+  and preserved as superseded evidence; the current production Stage 1 result
+  is PASS. The exhaustive function ACL-grantee validation is already Access
+  Review GREEN.
 
 ## 17. Owner-resolved product decisions
 
@@ -440,9 +482,10 @@ The following remain unresolved and must not be silently invented:
 - formal performance/SLO targets;
 - which Phase 1 provider integrations are required first and their exact
   contracts;
-- cause of the Stage 1 RLS/policy preflight division-by-zero failure and the
-  exact predicate result that selected its intentional failure branch;
-- exact current production release SHA after the next integrated release.
+- historical cause of the Stage 1 RLS/policy preflight division-by-zero failure
+  and the exact predicate result that selected its intentional failure branch;
+- current production release SHA is verified above as
+  `2c7304916c191c66907d9582a3e7c26225c6eb59`.
 
 ### Newly unblocked planning work
 
@@ -467,14 +510,15 @@ The following remain unresolved and must not be silently invented:
   Full lifecycle writes remain gated by reviewed command, audit, permission,
   and migration contracts.
 
-These decisions do not alter the M0-T03 production diagnostic gate.
+These decisions do not alter the historical M0-T03 production diagnostic
+evidence. The current Stage 1 closeout is recorded above.
 
 ## 19. Open technical questions
 
 ### UNRESOLVED / needs verification
 
-- Human confirmation after the external helper correction and Stage 1 retry.
-- Exact current production release SHA after the next integrated release.
+- Provider-authorized `job_runtime` remediation and post-change verification.
+- Authenticated final production smoke and owner handoff.
 - Whether the dev-only dependency advisory now has an upstream fix.
 - Whether hosting/plan changes alter the observability exception.
 - Full background-job topology and current production `job_runtime` presence.
@@ -507,20 +551,12 @@ or customer-specific pricing behavior.
 
 Use this order unless a current human instruction changes it:
 
-1. Apply and independently review the external helper's normalized
-   `pg_policies.cmd = 'ALL'` assertion.
-2. Complete the fresh independent security review of the corrected
-   authorization projection on the combined Phase 0 candidate.
-3. Confirm the dependency-audit CI job is green with the scoped dev-only
-   exception and the patched dependency graph.
-4. Complete the disposable PostgreSQL 18.6 lifecycle gate against the exact
-   candidate.
-5. Human executes the already-reviewed production Stage 1 procedure.
-6. Select legitimate production scope and run the Stage 2 READ ONLY dry run.
-7. Verify zero writes, sentinel unchanged, and password-NULL cleanup.
-8. Obtain explicit human approval, provision the real first user, and run
-   authenticated smoke.
-9. FINAL RELEASE GO, merge/deploy through the approved workflow, verify the
+1. Keep the `job_runtime` security release blocker open pending
+   provider-authorized remediation and verification.
+2. Complete authenticated final production smoke and owner handoff.
+3. Complete the #114, #113, and #111 release work as applicable; keep `0025`
+   intentionally deferred.
+4. Run final release gates, deploy through the approved workflow, verify the
    exact production SHA, and complete owner handoff.
 
 ## 22. Things agents must not assume
@@ -529,8 +565,11 @@ Use this order unless a current human instruction changes it:
 - Do not assume the clean candidate HEAD includes later uncommitted A8/timezone fixes.
 - Do not assume an intentionally skipped provisioning suite is a passing provisioning suite.
 - Do not assume `job_runtime` exists in production.
-- Do not assume the latest Stage 1 run passed; it failed closed at the RLS/policy preflight because the historical assertion used raw `'*'` instead of normalized `'ALL'`.
-- Do not assume a temporary provisioner password was set by the failed Stage 1 run.
+- Do not treat the historical Stage 1 fail-closed attempt as the current
+  result; current verified Stage 1 status is PASS and the historical failure
+  is superseded.
+- Do not assume a temporary provisioner password was set by that historical
+  failed Stage 1 run.
 - Do not treat the earlier `\\quit 1`-ignored run as valid evidence.
 - Do not assume a Vercel deploy runs database migrations.
 - Do not assume environment-specific HTTP 500s are product defects without baseline/harness comparison.
