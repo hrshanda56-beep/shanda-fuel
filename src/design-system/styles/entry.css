@@ -42,11 +42,10 @@
   min-width: 0;
   gap: var(--space-6);
   padding: var(--space-8);
-  border: var(--border-width) solid var(--border-glass);
-  border-radius: var(--radius-2xl);
-  background: var(--bg-glass);
-  box-shadow: var(--shadow-glass);
-  backdrop-filter: blur(var(--glass-blur)) saturate(115%);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
 }
 
 @media (max-width: 30rem) {
@@ -347,8 +346,7 @@
 
   /* Opaque card: the same colours it has on desktop, now over the green. */
   .entry-column {
-    background: linear-gradient(var(--bg-glass), var(--bg-glass)), var(--bg-canvas);
-    backdrop-filter: none;
+    background: var(--bg-surface);
   }
 }
 
@@ -367,8 +365,8 @@
     justify-content: space-between;
     overflow: hidden;
     padding: var(--space-12);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-glass);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xs);
     background: linear-gradient(160deg, #0a3d33 0%, #072a24 55%, #101514 100%);
     color: #f1f6f4;
   }

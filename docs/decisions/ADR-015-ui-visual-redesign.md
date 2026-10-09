@@ -1,8 +1,14 @@
 # ADR-015: Owner-approved visual redesign of the design system and Product Shell
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-09-29
 - Owner: Product owner (sign-off 2026-09-29); implementation by Track B
+
+> **Historical record:** This decision is retained for traceability but is no
+> longer the current product or visual direction. The glass / blurred-surface
+> treatment, DM Sans requirement, and KPI-first Owner/Finance Overview were
+> superseded by the neutral, action-first, operationally focused Product Shell
+> and Today workflow on the current `main` branch.
 
 ## Context
 
