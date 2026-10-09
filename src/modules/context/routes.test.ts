@@ -23,6 +23,14 @@ describe('context route policy', () => {
     });
   });
 
+  it('requires one station for My Shift and never means all stations', () => {
+    expect(contextRoutePolicy('/my-shift')).toEqual({
+      legalEntity: 'required',
+      station: 'required',
+      allStationsAllowed: false,
+    });
+  });
+
   it('replaces a dynamic station route without leaving a stale station query', () => {
     expect(
       buildContextHref('/stations/old-station/cash', '?tenantId=old&stationId=old', selection),
