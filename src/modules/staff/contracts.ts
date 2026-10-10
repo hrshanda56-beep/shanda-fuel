@@ -8,7 +8,7 @@ export type StaffInvitationScope = Readonly<{
 
 export type StaffInvitationSummary = Readonly<{
   id: string;
-  email: string;
+  email: string | null;
   name: string;
   role: RoleCode;
   scopeType: ScopeType;
@@ -17,13 +17,16 @@ export type StaffInvitationSummary = Readonly<{
   status: 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
   expiresAt?: string;
   createdAt: string;
+  deliveryMethod: 'EMAIL' | 'MANUAL';
+  staffNumber?: string;
 }>;
 
 export type StaffMemberSummary = Readonly<{
   membershipId: string;
   identityId: string;
   name: string;
-  email: string;
+  email: string | null;
+  staffNumber?: string;
   status: 'ACTIVE' | 'DISABLED' | 'SUSPENDED' | 'LOCKED' | 'INVITED';
   roles: readonly RoleCode[];
   scopeLabels: readonly string[];

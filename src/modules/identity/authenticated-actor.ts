@@ -7,6 +7,11 @@ import {
   type SessionRecord,
 } from '../../platform/security';
 import { getAuth } from '../../platform/auth';
+import {
+  getAuthProviderName,
+  resolveClerkSession,
+  revokeClerkUserSessions,
+} from '../../platform/auth/provider';
 
 /**
  * Adapter boundary for Better Auth. Better Auth resolves identity/session
@@ -79,6 +84,26 @@ export async function resolveAuthenticatedActor(
   auth: BetterAuthSessionReader = getAuth(),
   now = new Date(),
 ): Promise<AuthenticatedActorContext | null> {
+  if (getAuthProviderName() === 'CLERK') {
+    const providerSession = await resolveClerkSession(request);
+    if (!providerSession) return null;
+    const session: SessionRecord = {
+      sessionId: providerSession.providerSessionId,
+      userId: providerSession.internalUserId,
+      expiresAt: providerSession.expiresAt,
+      strongAuthenticatedAt: providerSession.strongAuthenticatedAt,
+      strongAuthenticationExpiresAt: providerSession.strongAuthenticationExpiresAt,
+      strongAuthenticationVerified: providerSession.strongAuthenticationVerified,
+      stepUpLevel: providerSession.stepUpLevel,
+      stepUpExpiresAt: providerSession.stepUpExpiresAt,
+      stepUpTenantId: providerSession.stepUpTenantId,
+    };
+    assertSessionActive(session, now);
+    return {
+      identityId: providerSession.internalUserId,
+      session: invalidateExpiredAssurance(session, now),
+    };
+  }
   const result = await auth.api.getSession({
     headers: request.headers,
     query: { disableCookieCache: true },
@@ -109,6 +134,11 @@ export async function revokeIdentitySessions(
   request: Request,
   auth: BetterAuthSessionRevoker = getAuth(),
 ): Promise<void> {
+  if (getAuthProviderName() === 'CLERK') {
+    const session = await resolveClerkSession(request);
+    if (session) await revokeClerkUserSessions(session.providerUserId);
+    return;
+  }
   await auth.api.revokeSessions({ headers: request.headers });
 }
 

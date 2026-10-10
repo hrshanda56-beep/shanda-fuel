@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { z } from 'zod';
 
 import { AppError } from '../../platform/errors';
@@ -10,6 +10,7 @@ export const STAFF_INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 const emailSchema = z.string().trim().email().max(320);
 const roleSchema = z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']);
 const scopeSchema = z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']);
+const staffNumberSchema = z.string().regex(/^SF-[0-9]{8}$/);
 
 export function normalizeEmail(value: string): string {
   const email = emailSchema.parse(value).toLowerCase();
@@ -24,6 +25,20 @@ export function createInvitationToken(): { token: string; tokenHash: string } {
 
 export function hashInvitationToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+export function normalizeStaffNumber(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  return staffNumberSchema.parse(normalized);
+}
+
+export function createStaffNumber(): string {
+  return `SF-${randomInt(0, 100_000_000).toString().padStart(8, '0')}`;
+}
+
+export function createActivationCode(): { code: string; codeHash: string } {
+  const code = randomBytes(20).toString('hex').toUpperCase();
+  return { code, codeHash: hashInvitationToken(code.toLowerCase()) };
 }
 
 export function invitationExpiry(now = new Date()): Date {

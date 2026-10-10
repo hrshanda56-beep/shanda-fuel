@@ -21,7 +21,7 @@ type StaffTransaction = Parameters<Parameters<ReturnType<typeof getDatabase>['tr
 
 type InvitationRow = {
   id: string;
-  invited_email: string;
+  invited_email: string | null;
   invited_name: string;
   assigned_role: string;
   scope_type: string;
@@ -30,13 +30,16 @@ type InvitationRow = {
   expires_at: Date;
   created_at: Date;
   station_ids: string[] | null;
+  delivery_method: 'EMAIL' | 'MANUAL';
+  staff_number: string | null;
 };
 
 type StaffRow = {
   membership_id: string;
   identity_id: string;
   name: string;
-  email: string;
+  email: string | null;
+  staff_number: string | null;
   status: StaffMemberSummary['status'];
   roles: string[] | null;
   scope_labels: string[] | null;
@@ -62,6 +65,8 @@ function invitationSummary(row: InvitationRow): StaffInvitationSummary {
     status: row.status,
     ...(row.status === 'PENDING' ? { expiresAt: new Date(row.expires_at).toISOString() } : {}),
     createdAt: new Date(row.created_at).toISOString(),
+    deliveryMethod: row.delivery_method,
+    ...(row.staff_number ? { staffNumber: row.staff_number } : {}),
   };
 }
 
@@ -71,6 +76,7 @@ function staffSummary(row: StaffRow): StaffMemberSummary {
     identityId: row.identity_id,
     name: row.name,
     email: row.email,
+    ...(row.staff_number ? { staffNumber: row.staff_number } : {}),
     status: row.status,
     roles: (row.roles ?? []).map(role),
     scopeLabels: row.scope_labels ?? [],
@@ -124,6 +130,9 @@ async function readOverview(transaction: StaffTransaction): Promise<{
       end as status,
       invitation.expires_at,
       invitation.created_at,
+      invitation.delivery_method,
+      (select staff_number from app.resolve_staff_number_for_invitation(invitation.id) limit 1)
+        as staff_number,
       coalesce(
         (
           select array_agg(scope.station_id order by scope.station_id)
@@ -145,6 +154,8 @@ async function readOverview(transaction: StaffTransaction): Promise<{
       identity.id as identity_id,
       identity.name,
       identity.email,
+      (select staff_number from app.resolve_staff_number_for_user(identity.id) limit 1)
+        as staff_number,
       membership.status,
       coalesce(array_agg(distinct assignment.role_code) filter (where assignment.id is not null), '{}') as roles,
       coalesce(array_agg(distinct case

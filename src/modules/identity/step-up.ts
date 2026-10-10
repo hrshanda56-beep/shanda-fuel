@@ -6,6 +6,11 @@ import { getAuth } from '../../platform/auth';
 import { getAuditSigningKey } from '../../platform/config/env';
 import { type Database, withTenantTransaction } from '../../platform/db';
 import { AppError } from '../../platform/errors';
+import {
+  getAuthProviderName,
+  hasRecentClerkMfa,
+  resolveClerkSession,
+} from '../../platform/auth/provider';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authSession } from '../../platform/db/schema/auth';
 import type { TenantExecutionContext } from '../tenancy/authority';
@@ -143,6 +148,29 @@ export async function establishStepUp(input: {
   dependencies?: StepUpDependencies;
 }): Promise<StepUpResult> {
   const now = input.now ?? new Date();
+  if (getAuthProviderName() === 'CLERK') {
+    const session = await resolveClerkSession(input.request);
+    if (!session || !hasRecentClerkMfa(input.request)) {
+      throw new AppError('FORBIDDEN', 'Clerk reverification is required for this action');
+    }
+    const expiresAt = new Date(
+      Math.min(session.expiresAt.getTime(), now.getTime() + STEP_UP_TTL_MS),
+    );
+    await withTenantTransaction(input.context.transaction, async (transaction) => {
+      await appendStepUpEvent(transaction, input.context, now, 'SECURITY.STEP_UP_SUCCEEDED', {
+        outcome: 'success',
+        level: STEP_UP_LEVEL,
+        expiresAt: expiresAt.toISOString(),
+        tenantId: input.context.membership.tenantId,
+        authenticationMethod: 'clerk-reverification',
+      });
+    });
+    return {
+      level: STEP_UP_LEVEL,
+      tenantId: input.context.membership.tenantId,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
   const auth = input.dependencies?.auth ?? getAuth();
   const persistence = input.dependencies?.persistence ?? databaseStepUpPersistence;
   let failedFactor: 'password' | 'totp' = 'password';

@@ -14,13 +14,22 @@ import { appendSecurityEvent } from '../audit/contracts';
 import { authorize } from '../../platform/security/permissions';
 import { requireAuthenticatedActor } from '../identity';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
+import {
+  createClerkCredentialIdentity,
+  deleteClerkCredentialIdentity,
+  getAuthProviderName,
+  revokeClerkUserSessions,
+} from '../../platform/auth/provider';
 
 import {
   assertInvitationToken,
   createInvitationToken,
+  createActivationCode,
+  createStaffNumber,
   hashInvitationToken,
   invitationExpiry,
   normalizeEmail,
+  normalizeStaffNumber,
   parseRole,
   validateInvitationScope,
 } from './domain';
@@ -33,7 +42,8 @@ const createSchema = z.object({
   commandType: z.literal('CreateStaffInvitation'),
   tenantId: z.string().uuid(),
   invitedName: z.string().trim().min(1).max(160),
-  invitedEmail: z.string().trim().email().max(320),
+  invitedEmail: z.string().trim().email().max(320).optional(),
+  deliveryMethod: z.enum(['EMAIL', 'MANUAL']).default('EMAIL'),
   assignedRole: z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']),
   scopeType: z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']),
   legalEntityId: z.string().uuid().optional(),
@@ -60,10 +70,22 @@ const deactivateSchema = z.object({
 
 const acceptanceSchema = z.object({ token: z.string().min(1).max(256) });
 const signupSchema = z.object({ token: z.string().min(1).max(256), password: z.string().min(1) });
+const manualActivationSchema = z.object({
+  staffNumber: z.string().min(3).max(32),
+  activationCode: z.string().min(20).max(128),
+  password: z.string().min(8).max(256),
+});
+const manualConversionSchema = z.object({
+  commandType: z.literal('GenerateManualStaffActivation'),
+  tenantId: z.string().uuid(),
+  invitationId: z.string().uuid(),
+});
 
 export type StaffCommandDependencies = Readonly<{
   emailSender?: EmailSender;
   resolveAuthority?: typeof resolveTenantExecutionContext;
+  createClerkIdentity?: typeof createClerkCredentialIdentity;
+  deleteClerkIdentity?: typeof deleteClerkCredentialIdentity;
 }>;
 
 function transactionError(error: unknown): AppError {
@@ -182,24 +204,37 @@ export async function createStaffInvitationFromRequest(
   const authority = await resolveStaffAuthority(request, input.tenantId, deps);
   authorizeInvitation(authority, role, scope);
 
-  const email = normalizeEmail(input.invitedEmail);
-  const token = createInvitationToken();
+  const email = input.invitedEmail ? normalizeEmail(input.invitedEmail) : null;
+  if (input.deliveryMethod === 'EMAIL' && !email) {
+    throw new AppError('VALIDATION_FAILED', 'Email delivery requires an email address');
+  }
+  const token = input.deliveryMethod === 'EMAIL' ? createInvitationToken() : createActivationCode();
+  const tokenHash = 'codeHash' in token ? token.codeHash : token.tokenHash;
+  const rawToken = 'code' in token ? token.code : token.token;
+  const staffNumber = input.deliveryMethod === 'MANUAL' ? createStaffNumber() : undefined;
   const expiresAt = invitationExpiry();
-  let result: { invitationId: string; organisationName: string };
+  let result: {
+    invitationId: string;
+    organisationName: string;
+    staffNumber?: string;
+    activationCode?: string;
+  };
 
   try {
     result = await withTenantTransaction(authority.transaction, async (transaction) => {
       await transaction.execute(
         sql`select id from app.tenants where id = ${input.tenantId} for update`,
       );
-      const existingMembership = await transaction.execute<{ id: string; status: string }>(sql`
+      const existingMembership = email
+        ? await transaction.execute<{ id: string; status: string }>(sql`
         select membership.id, membership.status
         from app.memberships membership
         join auth."user" identity on identity.id = membership.identity_id
         where membership.tenant_id = ${input.tenantId}
           and lower(btrim(identity.email)) = ${email}
         for update
-      `);
+      `)
+        : [];
       if (existingMembership[0]) {
         throw new AppError(
           'CONFLICT',
@@ -207,14 +242,16 @@ export async function createStaffInvitationFromRequest(
         );
       }
 
-      const pending = await transaction.execute<{ id: string; expires_at: Date }>(sql`
+      const pending = email
+        ? await transaction.execute<{ id: string; expires_at: Date }>(sql`
         select id, expires_at
         from app.staff_invitations
         where tenant_id = ${input.tenantId}
           and invited_email = ${email}
           and status = 'PENDING'
         for update
-      `);
+      `)
+        : [];
       if (pending[0]) {
         if (new Date(pending[0].expires_at).getTime() > Date.now()) {
           throw new AppError('CONFLICT', 'That email already has a pending invitation');
@@ -254,16 +291,30 @@ export async function createStaffInvitationFromRequest(
       const rows = await transaction.execute<{ id: string; name: string }>(sql`
         insert into app.staff_invitations (
           tenant_id, invited_email, invited_name, assigned_role, scope_type,
-          legal_entity_id, token_hash, status, expires_at,
+          legal_entity_id, token_hash, status, expires_at, delivery_method,
           created_by_user_id, created_by_membership_id
         )
         select ${input.tenantId}, ${email}, ${input.invitedName.trim()}, ${role}, ${scope.scopeType},
-               ${scope.legalEntityId ?? null}, ${token.tokenHash}, 'PENDING', ${expiresAt.toISOString()},
+               ${scope.legalEntityId ?? null}, ${tokenHash}, 'PENDING', ${expiresAt.toISOString()}, 'EMAIL',
                ${authority.actor.identityId}, ${authority.membership.membershipId}
         returning id, (select name from app.tenants where id = ${input.tenantId})
       `);
       const invitation = rows[0];
       if (!invitation) throw new AppError('INTERNAL_ERROR', 'The invitation was not created');
+
+      if (input.deliveryMethod === 'MANUAL' && staffNumber) {
+        const registryRows = await transaction.execute<{ registry_id: string }>(sql`
+          select app.reserve_staff_number(${invitation.id}, ${staffNumber}) as registry_id
+        `);
+        const registry = registryRows[0];
+        if (!registry) throw new AppError('INTERNAL_ERROR', 'The Staff Number was not reserved');
+        await transaction.execute(sql`
+          update app.staff_invitations
+          set delivery_method = 'MANUAL', staff_number_registry_id = ${registry.registry_id},
+              updated_at = clock_timestamp()
+          where id = ${invitation.id}
+        `);
+      }
 
       if (scope.scopeType === 'STATION') {
         await transaction.execute(sql`
@@ -302,20 +353,119 @@ export async function createStaffInvitationFromRequest(
         getAuditSigningKey(),
         transaction,
       );
-      return { invitationId: invitation.id, organisationName: String(invitation.name) };
+      return {
+        invitationId: invitation.id,
+        organisationName: String(invitation.name),
+        ...(staffNumber ? { staffNumber, activationCode: rawToken } : {}),
+      };
     });
   } catch (error) {
     throw transactionError(error);
   }
 
+  if (input.deliveryMethod === 'MANUAL') {
+    return {
+      invitationId: result.invitationId,
+      deliveryMethod: 'MANUAL' as const,
+      staffNumber: result.staffNumber!,
+      activationCode: result.activationCode!,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
   const delivery = await sendInvitationEmail({
-    token: token.token,
-    email,
+    token: rawToken,
+    email: email!,
     name: input.invitedName.trim(),
     organisationName: result.organisationName,
     emailSender: deps.emailSender,
   });
-  return { invitationId: result.invitationId, delivery };
+  return { invitationId: result.invitationId, deliveryMethod: 'EMAIL' as const, delivery };
+}
+
+export async function generateManualStaffActivationFromRequest(
+  request: Request,
+  body: unknown,
+  deps: StaffCommandDependencies = {},
+) {
+  const input = manualConversionSchema.parse(body);
+  const authority = await resolveStaffAuthority(request, input.tenantId, deps);
+  authorize({
+    actor: authority.authorization,
+    permissionCode: 'membership.manage',
+    requestedScope: { tenantId: input.tenantId, scopeType: 'TENANT' },
+  });
+  const activation = createActivationCode();
+  const expiresAt = invitationExpiry();
+  const staffNumber = createStaffNumber();
+  try {
+    const result = await withTenantTransaction(authority.transaction, async (transaction) => {
+      const rows = await transaction.execute<{
+        id: string;
+        status: string;
+        delivery_method: string;
+        staff_number_registry_id: string | null;
+        staff_number: string | null;
+      }>(sql`
+        select invitation.id, invitation.status, invitation.delivery_method,
+               invitation.staff_number_registry_id,
+               (select staff_number from app.resolve_staff_number_for_invitation(invitation.id) limit 1)
+                 as staff_number
+        from app.staff_invitations invitation
+        where invitation.tenant_id = ${input.tenantId}
+          and invitation.id = ${input.invitationId}
+        for update
+      `);
+      const invitation = rows[0];
+      if (!invitation || invitation.status !== 'PENDING') {
+        throw new AppError('CONFLICT', 'That invitation is no longer available');
+      }
+      let registryId = invitation.staff_number_registry_id;
+      let resolvedStaffNumber = invitation.staff_number;
+      if (!registryId) {
+        const registryRows = await transaction.execute<{ id: string }>(sql`
+          select app.reserve_staff_number(${input.invitationId}, ${staffNumber}) as id
+        `);
+        registryId = registryRows[0]?.id ?? null;
+        resolvedStaffNumber = staffNumber;
+      }
+      if (!registryId || !resolvedStaffNumber) {
+        throw new AppError('INTERNAL_ERROR', 'The Staff Number reservation is unavailable');
+      }
+      await transaction.execute(sql`
+        update app.staff_invitations
+        set delivery_method = 'MANUAL',
+            staff_number_registry_id = ${registryId}, token_hash = ${activation.codeHash},
+            expires_at = ${expiresAt.toISOString()}, updated_at = clock_timestamp()
+        where id = ${input.invitationId}
+      `);
+      await appendSecurityEvent(
+        {
+          eventId: randomUUID(),
+          tenantId: input.tenantId,
+          membershipId: authority.membership.membershipId,
+          actorId: authority.actor.identityId,
+          actorType: 'HUMAN',
+          actionCode: 'STAFF.INVITATION_MANUAL_ACTIVATION_GENERATED',
+          subjectType: 'StaffInvitation',
+          subjectId: input.invitationId,
+          requestId: authority.transaction.requestId!,
+          occurredAt: new Date().toISOString(),
+          after: { deliveryMethod: 'MANUAL', staffNumber: resolvedStaffNumber },
+        },
+        getAuditSigningKey(),
+        transaction,
+      );
+      return {
+        invitationId: input.invitationId,
+        deliveryMethod: 'MANUAL' as const,
+        staffNumber: resolvedStaffNumber,
+        activationCode: activation.code,
+        expiresAt: expiresAt.toISOString(),
+      };
+    });
+  } catch (error) {
+    throw transactionError(error);
+  }
 }
 
 async function updateInvitationToken(
@@ -344,10 +494,11 @@ async function updateInvitationToken(
         invited_email: string;
         invited_name: string;
         status: string;
+        delivery_method: 'EMAIL' | 'MANUAL';
         tenant_name: string;
       }>(sql`
         select invitation.id, invitation.invited_email, invitation.invited_name,
-               invitation.status, tenant.name as tenant_name
+               invitation.status, invitation.delivery_method, tenant.name as tenant_name
         from app.staff_invitations invitation
         join app.tenants tenant on tenant.id = invitation.tenant_id
         where invitation.tenant_id = ${input.tenantId}
@@ -357,6 +508,12 @@ async function updateInvitationToken(
       const invitation = rows[0];
       if (!invitation || !['PENDING', 'EXPIRED'].includes(invitation.status)) {
         throw new AppError('CONFLICT', 'That invitation is no longer available');
+      }
+      if (nextToken && (invitation.delivery_method === 'MANUAL' || !invitation.invited_email)) {
+        throw new AppError(
+          'CONFLICT',
+          'Manual invitations must be regenerated from the Staff page',
+        );
       }
       if (nextToken) {
         await transaction.execute(sql`
@@ -439,7 +596,7 @@ export async function deactivateStaffMemberFromRequest(
   }
 
   try {
-    return await withTenantTransaction(authority.transaction, async (transaction) => {
+    const result = await withTenantTransaction(authority.transaction, async (transaction) => {
       await transaction.execute(
         sql`select id from app.tenants where id = ${input.tenantId} for update`,
       );
@@ -452,6 +609,12 @@ export async function deactivateStaffMemberFromRequest(
       if (!target) throw new AppError('NOT_FOUND', 'Staff member not found');
       if (target.status !== 'ACTIVE')
         throw new AppError('CONFLICT', 'Staff member is already inactive');
+
+      const providerRows = await transaction.execute<{ provider_user_id: string }>(sql`
+        select provider_user_id
+        from app.resolve_provider_identity('CLERK', ${target.identity_id})
+        limit 1
+      `);
 
       const ownerRows = await transaction.execute<{ count: string }>(sql`
         select count(*)::text as count
@@ -514,8 +677,20 @@ export async function deactivateStaffMemberFromRequest(
         getAuditSigningKey(),
         transaction,
       );
-      return { membershipId: input.membershipId, sessionsRevoked: true };
+      return {
+        membershipId: input.membershipId,
+        identityId: target.identity_id,
+        providerUserId: providerRows[0]?.provider_user_id,
+      };
     });
+    if (getAuthProviderName() === 'CLERK' && result.providerUserId) {
+      try {
+        await revokeClerkUserSessions(result.providerUserId);
+      } catch {
+        return { membershipId: result.membershipId, sessionsRevoked: false };
+      }
+    }
+    return { membershipId: result.membershipId, sessionsRevoked: true };
   } catch (error) {
     throw transactionError(error);
   }
@@ -590,4 +765,89 @@ export async function signUpFromInvitation(body: unknown) {
     throw transactionError(error);
   }
   return { email: view.email };
+}
+
+export async function activateManualStaffFromRequest(
+  body: unknown,
+  deps: StaffCommandDependencies = {},
+) {
+  if (getAuthProviderName() !== 'CLERK') {
+    throw new AppError('FORBIDDEN', 'Manual Staff Number activation is unavailable');
+  }
+  const input = manualActivationSchema.parse(body);
+  const staffNumber = normalizeStaffNumber(input.staffNumber);
+  const tokenHash = hashInvitationToken(input.activationCode.trim().toLowerCase());
+  const internalUserId = randomUUID();
+  const createIdentity = deps.createClerkIdentity ?? createClerkCredentialIdentity;
+  const deleteIdentity = deps.deleteClerkIdentity ?? deleteClerkCredentialIdentity;
+  let clerkUser: { providerUserId: string } | undefined;
+
+  try {
+    return await getDatabase().transaction(async (transaction) => {
+      const invitationRows = await transaction.execute<{
+        invitation_id: string;
+        tenant_id: string;
+        invited_name: string;
+        assigned_role: string;
+        scope_type: string;
+        legal_entity_id: string | null;
+        registry_id: string;
+        staff_number: string;
+      }>(sql`
+        select *
+        from app.resolve_manual_staff_invitation(${tokenHash}, ${staffNumber})
+      `);
+      const invitation = invitationRows[0];
+      if (!invitation) throw new AppError('FORBIDDEN', 'This activation is no longer available');
+
+      clerkUser = await createIdentity({
+        username: invitation.staff_number,
+        password: input.password,
+        firstName: invitation.invited_name,
+      });
+
+      await transaction.execute(sql`
+        insert into auth."user" (id, name, email, email_verified)
+        values (${internalUserId}, ${invitation.invited_name}, null, false)
+      `);
+      const acceptedRows = await transaction.execute<{
+        membership_id: string;
+        tenant_id: string;
+      }>(sql`
+        select *
+        from app.accept_manual_staff_invitation(
+          ${tokenHash}, ${internalUserId}, ${clerkUser.providerUserId}, ${randomUUID()}
+        )
+      `);
+      const accepted = acceptedRows[0];
+      if (!accepted) throw new AppError('FORBIDDEN', 'This activation is no longer available');
+      await appendSecurityEvent(
+        {
+          eventId: randomUUID(),
+          tenantId: accepted.tenant_id,
+          actorId: internalUserId,
+          actorType: 'HUMAN',
+          actionCode: 'STAFF.MANUAL_ACTIVATION_ACCEPTED',
+          subjectType: 'StaffInvitation',
+          subjectId: invitation.invitation_id,
+          requestId: randomUUID(),
+          occurredAt: new Date().toISOString(),
+          after: { role: invitation.assigned_role, scopeType: invitation.scope_type },
+        },
+        getAuditSigningKey(),
+        transaction,
+      );
+      return { activated: true, tenantId: accepted.tenant_id };
+    });
+  } catch (error) {
+    if (clerkUser) {
+      try {
+        await deleteIdentity(clerkUser.providerUserId);
+      } catch {
+        // The unmapped Clerk identity remains inaccessible and is handled by
+        // the operator reconciliation path.
+      }
+    }
+    throw transactionError(error);
+  }
 }

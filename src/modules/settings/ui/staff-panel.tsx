@@ -33,8 +33,14 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
   );
   const [legalEntityId, setLegalEntityId] = useState('');
   const [stationIds, setStationIds] = useState<string[]>([]);
+  const [deliveryMethod, setDeliveryMethod] = useState<'EMAIL' | 'MANUAL'>('EMAIL');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
+  const [manualActivation, setManualActivation] = useState<{
+    staffNumber: string;
+    activationCode: string;
+    expiresAt: string;
+  }>();
 
   const legalEntity = useMemo(
     () => overview.scopeOptions.find((option) => option.id === legalEntityId),
@@ -51,7 +57,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
     }
   }
 
-  async function command(body: Record<string, unknown>) {
+  async function command(body: Record<string, unknown>, reload = true) {
     setBusy(true);
     setMessage(undefined);
     try {
@@ -64,9 +70,10 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
         setMessage('That action could not be completed. Check your access or try again.');
         return false;
       }
+      const result = (await response.json().catch(() => null)) as unknown;
       setMessage('Saved.');
-      window.location.reload();
-      return true;
+      if (reload) window.location.reload();
+      return result;
     } catch {
       setMessage('That action could not be completed. Check your connection and try again.');
       return false;
@@ -78,15 +85,49 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
   async function submitInvite(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    await command({
-      commandType: 'CreateStaffInvitation',
-      invitedName: String(form.get('name') ?? ''),
-      invitedEmail: String(form.get('email') ?? ''),
-      assignedRole: role,
-      scopeType,
-      ...(legalEntityId ? { legalEntityId } : {}),
-      stationIds,
-    });
+    const result = await command(
+      {
+        commandType: 'CreateStaffInvitation',
+        invitedName: String(form.get('name') ?? ''),
+        ...(deliveryMethod === 'EMAIL'
+          ? { invitedEmail: String(form.get('email') ?? ''), deliveryMethod }
+          : { deliveryMethod }),
+        assignedRole: role,
+        scopeType,
+        ...(legalEntityId ? { legalEntityId } : {}),
+        stationIds,
+      },
+      false,
+    );
+    if (
+      result &&
+      typeof result === 'object' &&
+      'deliveryMethod' in result &&
+      result.deliveryMethod === 'MANUAL'
+    ) {
+      const manual = result as unknown as {
+        staffNumber: string;
+        activationCode: string;
+        expiresAt: string;
+      };
+      setManualActivation(manual);
+    } else if (result) {
+      window.location.reload();
+    }
+  }
+
+  async function generateManual(invitationId: string) {
+    const result = await command(
+      { commandType: 'GenerateManualStaffActivation', invitationId },
+      false,
+    );
+    if (result && typeof result === 'object' && 'activationCode' in result) {
+      setManualActivation(
+        result as unknown as { staffNumber: string; activationCode: string; expiresAt: string },
+      );
+    } else if (result) {
+      window.location.reload();
+    }
   }
 
   function toggleStation(stationId: string) {
@@ -114,9 +155,25 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             <input name="name" required maxLength={160} />
           </label>
           <label>
-            <span>Email</span>
-            <input name="email" type="email" required maxLength={320} />
+            <span>Delivery</span>
+            <select
+              value={deliveryMethod}
+              onChange={(event) => setDeliveryMethod(event.target.value as 'EMAIL' | 'MANUAL')}
+            >
+              <option value="EMAIL">Email invitation</option>
+              <option value="MANUAL">Manual activation</option>
+            </select>
           </label>
+          {deliveryMethod === 'EMAIL' ? (
+            <label>
+              <span>Email</span>
+              <input name="email" type="email" required maxLength={320} />
+            </label>
+          ) : (
+            <p className={styles.note}>
+              The Staff Number and activation code will be shown once after creation.
+            </p>
+          )}
           <label>
             <span>Role</span>
             <select value={role} onChange={(event) => changeRole(event.target.value as Role)}>
@@ -187,7 +244,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             </fieldset>
           ) : null}
           <Button type="submit" variant="primary" loading={busy}>
-            Send invitation
+            {deliveryMethod === 'EMAIL' ? 'Send invitation' : 'Generate manual activation'}
           </Button>
         </form>
         {message ? (
@@ -195,17 +252,78 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             {message}
           </p>
         ) : null}
+        {manualActivation ? (
+          <section
+            className={styles.card}
+            aria-labelledby="manual-activation-title"
+            aria-live="polite"
+          >
+            <h3 className={styles.cardTitle} id="manual-activation-title">
+              Staff invitation created
+            </h3>
+            <p className={styles.note}>
+              This activation code is shown once. Generate a new code if it is lost.
+            </p>
+            <dl>
+              <div>
+                <dt>Staff Number</dt>
+                <dd>{manualActivation.staffNumber}</dd>
+              </div>
+              <div>
+                <dt>Activation Code</dt>
+                <dd>{manualActivation.activationCode}</dd>
+              </div>
+              <div>
+                <dt>Expires</dt>
+                <dd>{new Date(manualActivation.expiresAt).toLocaleString()}</dd>
+              </div>
+            </dl>
+            <div className={styles.staffActions}>
+              <Button
+                type="button"
+                variant="quiet"
+                onClick={() =>
+                  navigator.clipboard?.writeText(
+                    `${manualActivation.staffNumber}\n${manualActivation.activationCode}`,
+                  )
+                }
+              >
+                Copy invitation
+              </Button>
+              <Button type="button" variant="quiet" onClick={() => window.print()}>
+                Print
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setManualActivation(undefined)}
+              >
+                Done
+              </Button>
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <StaffList
         title="Pending invitations"
         items={overview.pendingInvitations.map((invitation) => ({
           id: invitation.id,
-          title: `${invitation.name} · ${invitation.email}`,
-          detail: `${ROLE_LABELS[invitation.role]} · ${invitation.status === 'EXPIRED' ? 'Expired' : 'Pending'}`,
+          title: `${invitation.name} · ${invitation.email ?? invitation.staffNumber ?? 'Manual activation'}`,
+          detail: `${ROLE_LABELS[invitation.role]} · ${invitation.deliveryMethod === 'MANUAL' ? 'Manual activation' : invitation.status === 'EXPIRED' ? 'Expired' : 'Pending'}`,
           actions:
             invitation.status === 'PENDING' ? (
               <>
+                {invitation.deliveryMethod === 'EMAIL' ? (
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    size="sm"
+                    onClick={() => generateManual(invitation.id)}
+                  >
+                    Generate manual activation
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="quiet"
@@ -246,7 +364,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
         title="Active staff"
         items={overview.activeStaff.map((member) => ({
           id: member.membershipId,
-          title: `${member.name} · ${member.email}`,
+          title: `${member.name} · ${member.email ?? member.staffNumber ?? 'Staff Number'}`,
           detail: member.roles.map((item) => ROLE_LABELS[item]).join(', ') || 'No role',
           actions:
             member.membershipId === undefined ? null : (
@@ -271,7 +389,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
         title="Deactivated staff"
         items={overview.deactivatedStaff.map((member) => ({
           id: member.membershipId,
-          title: `${member.name} · ${member.email}`,
+          title: `${member.name} · ${member.email ?? member.staffNumber ?? 'Staff Number'}`,
           detail: 'Deactivated; history retained',
           actions: null,
         }))}
