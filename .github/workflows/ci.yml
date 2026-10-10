@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -82,7 +82,7 @@ jobs:
 
   dependency-audit:
     name: Dependency audit
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -115,7 +115,7 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -132,7 +132,7 @@ jobs:
 
   sast:
     name: SAST (Semgrep CE)
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -159,7 +159,7 @@ jobs:
     name: CodeQL
     # Enable only after GitHub Code Scanning/GHAS is enabled for this private repository.
     if: vars.CODEQL_ENABLED == 'true'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     permissions:
       actions: read
@@ -183,7 +183,7 @@ jobs:
 
   runtime-role:
     name: Runtime-role proof
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
