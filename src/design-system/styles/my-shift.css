@@ -18,10 +18,12 @@
 }
 
 .my-shift-header h1 {
-  font-size: var(--font-size-3xl);
+  /* Same fluid scale as the page title: a long station name stays readable on a phone. */
+  font-size: clamp(var(--font-size-2xl), 1.2rem + 1vw, var(--font-size-3xl));
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-tight);
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .my-shift-when {
@@ -31,6 +33,11 @@
 
 .my-shift-live {
   min-height: 0;
+}
+
+/* The announcer must stay in the DOM, but while empty it must not add a grid gap. */
+.my-shift-live:empty {
+  position: absolute;
 }
 
 .my-shift-notice {
@@ -161,10 +168,21 @@
   min-height: var(--touch-target-min);
 }
 
-.my-shift-form-help,
-.my-shift-empty {
+.my-shift-form-help {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+}
+
+/* Nothing to show yet: a quiet dashed card, same shape as the cards it stands in for. */
+.my-shift-empty {
+  padding: var(--space-5) var(--space-4);
+  border: var(--border-width) dashed var(--border-default);
+  border-radius: var(--radius-xl);
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  text-align: center;
+  text-wrap: balance;
 }
 
 @media (min-width: 48rem) {
