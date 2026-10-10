@@ -60,8 +60,8 @@ function invitationSummary(row: InvitationRow): StaffInvitationSummary {
     ...(row.legal_entity_id ? { legalEntityId: row.legal_entity_id } : {}),
     stationIds: row.station_ids ?? [],
     status: row.status,
-    ...(row.status === 'PENDING' ? { expiresAt: row.expires_at.toISOString() } : {}),
-    createdAt: row.created_at.toISOString(),
+    ...(row.status === 'PENDING' ? { expiresAt: new Date(row.expires_at).toISOString() } : {}),
+    createdAt: new Date(row.created_at).toISOString(),
   };
 }
 
@@ -87,7 +87,7 @@ export async function resolveInvitationView(token: string): Promise<InvitationVi
       invited_name: string;
       existing_identity: boolean;
     }>(sql`
-      select organisation_name, invited_email, existing_identity
+      select organisation_name, invited_email, invited_name, existing_identity
       from app.resolve_staff_invitation(${tokenHash})
     `);
     const row = rows[0];
@@ -194,7 +194,6 @@ export async function resolveStaffOverview(
     authority.authorization.roleAssignments.some(
       (assignment) => assignment.roleCode === 'OWNER' && assignment.scopeType === 'TENANT',
     );
-
   if (!canView) {
     return {
       canManage: false,

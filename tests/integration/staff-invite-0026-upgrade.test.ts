@@ -108,7 +108,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
         count(*)::int as migration_count,
         (select hash from drizzle.__drizzle_migrations order by created_at desc limit 1) as latest_hash,
         count(*) filter (
-          where hash = 'e82f6a98884435cc87867a9678d9543e3d3a11ff9038803ec7ee39cb7c476043'
+          where hash = '22f56a2cdd441a77a124e421e9c4a57b186bd1e773ee70b1897e5235f992bb83'
         )::int as exact_hash_count
       from drizzle.__drizzle_migrations
     `;
@@ -116,7 +116,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     expect(rows).toEqual([
       {
         migration_count: 27,
-        latest_hash: 'e82f6a98884435cc87867a9678d9543e3d3a11ff9038803ec7ee39cb7c476043',
+        latest_hash: '22f56a2cdd441a77a124e421e9c4a57b186bd1e773ee70b1897e5235f992bb83',
         exact_hash_count: 1,
       },
     ]);

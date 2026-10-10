@@ -138,6 +138,7 @@ export function buildSettingsView(
         current.stationId,
       ),
     },
+    ...(staff ? { staff } : {}),
   };
 }
 

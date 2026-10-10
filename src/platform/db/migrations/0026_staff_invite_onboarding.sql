@@ -92,6 +92,55 @@ CREATE INDEX staff_invitation_stations_station_idx
   ON app.staff_invitation_stations (tenant_id, station_id);
 --> statement-breakpoint
 
+-- Staff-management policies inspect role assignments while the active-membership
+-- helper inspects memberships. Cache one context-local result so those checks do
+-- not recurse through each other under forced RLS.
+CREATE OR REPLACE FUNCTION app.has_active_membership() RETURNS boolean
+LANGUAGE plpgsql VOLATILE AS $$
+DECLARE
+  context_key text;
+  cached_key text;
+  cached_result text;
+  active boolean;
+BEGIN
+  context_key := concat_ws(
+    '|',
+    coalesce(current_setting('app.tenant_id', true), ''),
+    coalesce(current_setting('app.actor_id', true), ''),
+    coalesce(current_setting('app.membership_id', true), '')
+  );
+  cached_key := current_setting('app.active_membership_check_key', true);
+  cached_result := current_setting('app.active_membership_check_result', true);
+
+  IF cached_key = context_key AND cached_result IN ('t', 'f') THEN
+    RETURN cached_result = 't';
+  END IF;
+
+  IF current_setting('app.active_membership_checking', true) = '1' THEN
+    RETURN false;
+  END IF;
+
+  PERFORM set_config('app.active_membership_checking', '1', true);
+  SELECT EXISTS (
+    SELECT 1
+    FROM app.memberships membership
+    WHERE membership.tenant_id = app.current_tenant_id()
+      AND membership.id = app.current_membership_id()
+      AND membership.identity_id = app.current_actor_id()
+      AND membership.status = 'ACTIVE'
+  ) INTO active;
+  PERFORM set_config('app.active_membership_checking', '0', true);
+  PERFORM set_config('app.active_membership_check_key', context_key, true);
+  PERFORM set_config('app.active_membership_check_result', active::text, true);
+  RETURN active;
+EXCEPTION
+  WHEN OTHERS THEN
+    PERFORM set_config('app.active_membership_checking', '0', true);
+    RAISE;
+END;
+$$;
+--> statement-breakpoint
+
 ALTER TABLE app.staff_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.staff_invitations FORCE ROW LEVEL SECURITY;
 ALTER TABLE app.staff_invitation_stations ENABLE ROW LEVEL SECURITY;
@@ -313,8 +362,8 @@ BEGIN
 
   SELECT * INTO existing_membership
   FROM app.memberships
-  WHERE tenant_id = invitation.tenant_id
-    AND identity_id = p_identity_id
+  WHERE app.memberships.tenant_id = invitation.tenant_id
+    AND app.memberships.identity_id = p_identity_id
   FOR UPDATE;
 
   IF FOUND THEN
@@ -331,7 +380,8 @@ BEGIN
   IF invitation.scope_type = 'STATION' THEN
     IF NOT EXISTS (
       SELECT 1 FROM app.staff_invitation_stations
-      WHERE tenant_id = invitation.tenant_id AND invitation_id = invitation.id
+      WHERE app.staff_invitation_stations.tenant_id = invitation.tenant_id
+        AND app.staff_invitation_stations.invitation_id = invitation.id
     ) THEN
       RAISE EXCEPTION 'station scope is incomplete' USING ERRCODE = 'P0001';
     END IF;

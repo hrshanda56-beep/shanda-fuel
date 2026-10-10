@@ -258,7 +258,7 @@ export async function createStaffInvitationFromRequest(
           created_by_user_id, created_by_membership_id
         )
         select ${input.tenantId}, ${email}, ${input.invitedName.trim()}, ${role}, ${scope.scopeType},
-               ${scope.legalEntityId ?? null}, ${token.tokenHash}, 'PENDING', ${expiresAt},
+               ${scope.legalEntityId ?? null}, ${token.tokenHash}, 'PENDING', ${expiresAt.toISOString()},
                ${authority.actor.identityId}, ${authority.membership.membershipId}
         returning id, (select name from app.tenants where id = ${input.tenantId})
       `);
@@ -271,7 +271,12 @@ export async function createStaffInvitationFromRequest(
             tenant_id, invitation_id, legal_entity_id, station_id
           )
           select ${input.tenantId}, ${invitation.id}, ${scope.legalEntityId}, selected.station_id
-          from unnest(${scope.stationIds}::uuid[]) as selected(station_id)
+          from unnest(
+            ARRAY[${sql.join(
+              scope.stationIds.map((stationId) => sql`${stationId}::uuid`),
+              sql`, `,
+            )}]::uuid[]
+          ) as selected(station_id)
         `);
       }
 
@@ -357,7 +362,7 @@ async function updateInvitationToken(
         await transaction.execute(sql`
           update app.staff_invitations
           set token_hash = ${nextToken.tokenHash}, status = 'PENDING',
-              expires_at = ${expiresAt!}, updated_at = clock_timestamp()
+              expires_at = ${expiresAt!.toISOString()}, updated_at = clock_timestamp()
           where id = ${input.invitationId}
         `);
         emailDetails = {
