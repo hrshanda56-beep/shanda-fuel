@@ -139,7 +139,10 @@ test.describe('My Shift states', () => {
       }),
     );
     await page.goto('/my-shift');
-    await expect(page.getByText('Record the closing reading for Pump 1 · Nozzle 1')).toBeVisible();
+    // The next-action card names the nozzle and the reading instead of a sentence.
+    const next = page.locator('.my-shift-next');
+    await expect(next).toContainText('Pump 1 · Nozzle 1');
+    await expect(next).toContainText('Closing reading');
     await expect(page.getByRole('button', { name: 'Record reading' })).toBeVisible();
   });
 
