@@ -8,14 +8,16 @@ import { PageContainer } from '@/design-system/layout';
 
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
+import { StaffPanel } from './staff-panel';
 import styles from './settings-workspace.module.css';
 
-type Tab = 'organisation' | 'companies' | 'stations' | 'account';
+type Tab = 'organisation' | 'companies' | 'stations' | 'staff' | 'account';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
   { value: 'companies', label: 'Companies', icon: 'receipt' },
   { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'staff', label: 'Staff', icon: 'users' },
   { value: 'account', label: 'Account', icon: 'users' },
 ];
 
@@ -108,14 +110,15 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
     );
   }
 
-  const active = TABS.find((item) => item.value === tab) ?? TABS[0]!;
+  const visibleTabs = TABS.filter((item) => item.value !== 'staff' || view.staff?.canManage);
+  const active = visibleTabs.find((item) => item.value === tab) ?? visibleTabs[0]!;
   const { selectedStation, legalEntities } = view.context;
 
   return (
     <PageContainer width="wide">
       <div className={styles.frame}>
         <nav className={styles.subnav} aria-label="Settings sections">
-          {TABS.map((item) => (
+          {visibleTabs.map((item) => (
             <button
               key={item.value}
               type="button"
@@ -178,6 +181,10 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
                 message="Pick a station at the top of the page to see its details."
               />
             )
+          ) : null}
+
+          {tab === 'staff' && view.staff?.canManage ? (
+            <StaffPanel tenantId={organisation.id} overview={view.staff} />
           ) : null}
 
           {tab === 'account' ? <AccountPanel view={view} /> : null}

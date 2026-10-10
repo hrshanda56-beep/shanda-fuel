@@ -14,6 +14,7 @@ import { getAuth } from '../../platform/auth';
 import { AppError } from '../../platform/errors';
 import { authorize } from '../../platform/security';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
+import { resolveStaffOverview } from '../staff';
 
 import type { SettingsAccount, SettingsView } from './contracts';
 
@@ -97,6 +98,7 @@ function buildStation(
 export function buildSettingsView(
   account: SettingsAccount,
   resolution: ContextResolution,
+  staff?: SettingsView['staff'],
 ): SettingsView {
   const current = resolution.current;
   if (!current) {
@@ -107,6 +109,7 @@ export function buildSettingsView(
         legalEntities: [],
         selectedStation: null,
       },
+      ...(staff ? { staff } : {}),
     };
   }
 
@@ -135,6 +138,7 @@ export function buildSettingsView(
         current.stationId,
       ),
     },
+    ...(staff ? { staff } : {}),
   };
 }
 
@@ -170,6 +174,8 @@ export async function resolveSettings(
       },
       now: dependencies.now,
     });
+    const staff = await resolveStaffOverview(authority, { now: dependencies.now });
+    return buildSettingsView(account, resolution, staff);
   }
 
   return buildSettingsView(account, resolution);

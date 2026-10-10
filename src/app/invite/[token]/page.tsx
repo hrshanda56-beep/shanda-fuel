@@ -3,7 +3,10 @@ import type { Metadata } from 'next';
 import { EntryShell } from '@/design-system/entry/entry-shell';
 import { resolveInvitationView } from '@/design-system/entry/invitation';
 import { InviteUnavailable } from '@/design-system/entry/invite-views';
+import { ExistingInviteFlow, NewInviteFlow } from '@/design-system/entry/invite-acceptance';
 import { LoginForm } from '@/design-system/entry/login-form';
+import { getAuth } from '@/platform/auth';
+import { headers } from 'next/headers';
 
 // The link carries a secret. Keep it out of referrers, caches and search indexes.
 export const metadata: Metadata = {
@@ -18,13 +21,25 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const { token } = await params;
   const view = await resolveInvitationView(token);
 
+  const session =
+    view.kind === 'existing-identity'
+      ? await getAuth().api.getSession({
+          headers: await headers(),
+          query: { disableCookieCache: true },
+        })
+      : null;
+
   return (
     <EntryShell>
       {view.kind === 'existing-identity' ? (
-        <LoginForm invited next={`/invite/${token}`} />
+        session ? (
+          <ExistingInviteFlow token={token} />
+        ) : (
+          <LoginForm invited next={`/invite/${token}`} />
+        )
+      ) : view.kind === 'new-identity' ? (
+        <NewInviteFlow token={token} organisationName={view.organisationName} email={view.email} />
       ) : (
-        // `new-identity` needs the invitation service's accept command; until it
-        // exists, resolveInvitationView only ever returns `unavailable`.
         <InviteUnavailable />
       )}
     </EntryShell>
