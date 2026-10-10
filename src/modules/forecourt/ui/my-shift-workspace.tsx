@@ -126,7 +126,7 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
   const shift = data.shift;
   const tz = data.station.timezone;
   const when = shift ? formatShiftWindow(shift.plannedStartAt, shift.plannedEndAt, tz) : null;
-  const shiftLine = shift ? `${shift.label ?? 'Shift'} · ${when}` : 'No shift right now';
+  const shiftLine = `${shift?.label ?? 'Shift'} · ${when}`;
 
   function openCapture(nozzleId: string) {
     setNotice(undefined);
@@ -197,8 +197,9 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
     <div className="my-shift">
       <header className="my-shift-header">
         <p className="eyebrow">My Shift</p>
-        <h1 id="page-title">{data.station.name}</h1>
-        <p className="my-shift-when">{shiftLine}</p>
+        {/* The shell's own heading owns #page-title; ids must be unique. */}
+        <h1>{data.station.name}</h1>
+        {shift ? <p className="my-shift-when">{shiftLine}</p> : null}
         <p className="my-shift-headline">
           <StatusBadge tone={view.phase === 'running' ? 'positive' : 'neutral'}>
             {view.headline}

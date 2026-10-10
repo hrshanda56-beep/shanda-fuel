@@ -1646,13 +1646,16 @@ body {
     padding: var(--space-2) var(--page-gutter) 0;
   }
 
-  .shell-page-heading,
-  .shell-header-controls {
-    flex-basis: 100%;
+  /* One quiet line: the page name on the left, the account on the right. */
+  .shell-page-heading {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .shell-header-controls {
-    justify-content: flex-start;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    margin-left: auto;
   }
 
   .shell-header-account,
@@ -1661,7 +1664,8 @@ body {
   }
 
   .shell-header-controls .shell-context-selector {
-    width: 100%;
+    width: auto;
+    flex: 0 0 0;
   }
 
   .shell-sheet {
