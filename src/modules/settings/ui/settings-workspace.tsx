@@ -62,6 +62,7 @@ function InfoCard({
 }
 
 function AccountPanel({ view }: { view: SettingsView }) {
+  const email = view.account.email ?? 'No email provided';
   return (
     <>
       <div className={`${styles.card} ${styles.profileCard}`}>
@@ -70,14 +71,14 @@ function AccountPanel({ view }: { view: SettingsView }) {
         </span>
         <div className={styles.profileText}>
           <p className={styles.profileName}>{view.account.name}</p>
-          <p className={styles.profileMeta}>{view.account.email}</p>
+          <p className={styles.profileMeta}>{email}</p>
         </div>
       </div>
       <InfoCard headingId="account-details" title="Your details">
         <Fields
           items={[
             { label: 'Name', value: view.account.name },
-            { label: 'Email', value: view.account.email },
+            { label: 'Email', value: email },
           ]}
         />
       </InfoCard>
