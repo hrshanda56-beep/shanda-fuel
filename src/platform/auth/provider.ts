@@ -31,7 +31,12 @@ export type ClerkCredentialIdentity = {
 const CLERK_STEP_UP_MAX_AGE_MINUTES = 10;
 
 export function getAuthProviderName(): AuthProviderName {
-  return getServerEnv().AUTH_PROVIDER;
+  const configured = assertAuthProviderName(process.env.AUTH_PROVIDER);
+  const env = getServerEnv();
+  if (env.AUTH_PROVIDER !== configured) {
+    throw new AppError('INVARIANT_VIOLATION', 'Authentication provider configuration is invalid');
+  }
+  return configured;
 }
 
 export function assertAuthProviderName(value: unknown): AuthProviderName {

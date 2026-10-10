@@ -553,7 +553,7 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
     });
     expect(Number(counts[0]?.user_count)).toBeGreaterThanOrEqual(3);
 
-    const auth = getAuth();
+    const auth = await getAuth();
     const signedSessionToken = `${authSessionToken}.${await makeSignature(authSessionToken, authSecret)}`;
     const signedExpiredSessionToken = `${expiredSessionToken}.${await makeSignature(expiredSessionToken, authSecret)}`;
     const request = new Request('http://127.0.0.1:3000/api/auth/get-session', {

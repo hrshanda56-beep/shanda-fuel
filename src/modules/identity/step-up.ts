@@ -171,7 +171,7 @@ export async function establishStepUp(input: {
       expiresAt: expiresAt.toISOString(),
     };
   }
-  const auth = input.dependencies?.auth ?? getAuth();
+  const auth = input.dependencies?.auth ?? (await getAuth());
   const persistence = input.dependencies?.persistence ?? databaseStepUpPersistence;
   let failedFactor: 'password' | 'totp' = 'password';
 
