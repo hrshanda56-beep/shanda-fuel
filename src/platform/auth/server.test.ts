@@ -30,5 +30,4 @@ describe('authentication access policy', () => {
     expect(plugin.endpoints.verifyTOTP).toBeDefined();
     expect(plugin.endpoints.enableTwoFactor).toBeDefined();
   });
-
 });

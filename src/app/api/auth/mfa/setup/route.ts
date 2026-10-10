@@ -23,7 +23,9 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
   if (getAuthProviderName() === 'CLERK') return new Response(null, { status: 404 });
   try {
     await requireAuthenticatedActor(request);
-    const result = await (await getAuth()).api.getSession({
+    const result = await (
+      await getAuth()
+    ).api.getSession({
       headers: request.headers,
       query: { disableCookieCache: true },
     });
@@ -43,7 +45,9 @@ export const POST = withRequestObservability(
     try {
       await requireAuthenticatedActor(request);
       const input = startSchema.parse(await request.json());
-      const result = await (await getAuth()).api.enableTwoFactor({
+      const result = await (
+        await getAuth()
+      ).api.enableTwoFactor({
         headers: request.headers,
         body: { password: input.password, method: 'totp', issuer: 'Shanda Fuel' },
       });
