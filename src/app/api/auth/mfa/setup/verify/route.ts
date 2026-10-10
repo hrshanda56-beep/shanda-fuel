@@ -39,7 +39,9 @@ export const POST = withRequestObservability(
     try {
       await requireAuthenticatedActor(request);
       const body = requestSchema.parse(await request.json());
-      const result = await (await getAuth()).api.verifyTOTP({
+      const result = await (
+        await getAuth()
+      ).api.verifyTOTP({
         headers: request.headers,
         body: { code: body.code },
         returnHeaders: true,

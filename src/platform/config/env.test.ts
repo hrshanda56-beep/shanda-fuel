@@ -12,7 +12,11 @@ function getServerEnv(input: Record<string, unknown> = {}) {
 describe('server environment validation', () => {
   it('accepts local development without production credentials', () => {
     expect(
-      getServerEnv({ APP_ENV: 'local', APP_URL: 'http://localhost:3000', AUTH_PROVIDER: 'BETTER_AUTH' }),
+      getServerEnv({
+        APP_ENV: 'local',
+        APP_URL: 'http://localhost:3000',
+        AUTH_PROVIDER: 'BETTER_AUTH',
+      }),
     ).toMatchObject({
       APP_ENV: 'local',
       APP_URL: 'http://localhost:3000',

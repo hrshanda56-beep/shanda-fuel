@@ -28,7 +28,9 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     view.kind === 'existing-identity'
       ? getAuthProviderName() === 'CLERK'
         ? await hasActiveSession(requestHeaders)
-        : await (await getAuth()).api.getSession({
+        : await (
+            await getAuth()
+          ).api.getSession({
             headers: requestHeaders,
             query: { disableCookieCache: true },
           })
