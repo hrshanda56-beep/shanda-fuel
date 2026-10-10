@@ -11,7 +11,7 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'APP_ENV=test pnpm dev --hostname 127.0.0.1 --port 3100',
+    command: 'APP_ENV=test AUTH_PROVIDER=BETTER_AUTH pnpm dev --hostname 127.0.0.1 --port 3100',
     url: 'http://127.0.0.1:3100',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
