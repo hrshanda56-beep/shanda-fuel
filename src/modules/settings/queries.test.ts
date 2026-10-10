@@ -152,6 +152,18 @@ describe('Settings read model', () => {
     ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
   });
 
+  it('preserves a nullable email for Staff Number identities', async () => {
+    await expect(
+      resolveSettings(request, {
+        ...dependencies(),
+        readSession: async () => ({
+          user: { id: ids.actor, name: 'Ava Operator', email: null },
+          session: { userId: ids.actor },
+        }),
+      }),
+    ).resolves.toMatchObject({ account: { name: 'Ava Operator', email: null } });
+  });
+
   it('rejects an actor without organisation-view permission', async () => {
     await expect(
       resolveSettings(request, dependencies(resolution, stationOnlyAuthorization)),

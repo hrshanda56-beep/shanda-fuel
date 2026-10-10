@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import {
@@ -10,7 +11,8 @@ import {
   type ContextResolution,
 } from '../context';
 import { resolveCurrentContext } from '../context/server';
-import { getAuth } from '../../platform/auth';
+import { resolveAuthenticatedActor } from '../identity';
+import { getDatabase } from '../../platform/db';
 import { AppError } from '../../platform/errors';
 import { authorize } from '../../platform/security';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
@@ -22,7 +24,7 @@ const sessionSchema = z.object({
   user: z.object({
     id: z.string().uuid(),
     name: z.string().trim().min(1),
-    email: z.string().email(),
+    email: z.string().email().nullable(),
   }),
   session: z.object({
     userId: z.string().uuid(),
@@ -150,11 +152,20 @@ export async function resolveSettings(
   const readSession =
     dependencies.readSession ??
     (async (currentRequest: Request) => {
-      const auth = getAuth();
-      return auth.api.getSession({
-        headers: currentRequest.headers,
-        query: { disableCookieCache: true },
-      });
+      const actor = await resolveAuthenticatedActor(currentRequest);
+      if (!actor) return null;
+      const rows = await getDatabase().execute<{ name: string; email: string | null }>(sql`
+        select name, email
+        from auth."user"
+        where id = ${actor.identityId}
+        limit 1
+      `);
+      const account = rows[0];
+      if (!account) throw new AppError('UNAUTHENTICATED', 'Authentication identity is unavailable');
+      return {
+        user: { id: actor.identityId, name: account.name, email: account.email },
+        session: { userId: actor.identityId },
+      };
     });
   const account = await readAccount(request, readSession);
   const resolution = await (dependencies.resolveContext ?? resolveCurrentContext)(request);

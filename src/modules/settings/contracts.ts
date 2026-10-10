@@ -3,7 +3,7 @@ import type { StaffOverview } from '../staff';
 
 export type SettingsAccount = Readonly<{
   name: string;
-  email: string;
+  email: string | null;
 }>;
 
 export type SettingsOrganisation = Readonly<{
