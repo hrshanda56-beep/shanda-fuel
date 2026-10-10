@@ -149,7 +149,11 @@ const envSchema = z
         message: 'Loopback APP_URL is not allowed in staging or production',
       });
     }
-    if (isDeployedEnvironment(value.APP_ENV) && !value.BETTER_AUTH_SECRET) {
+    if (
+      value.AUTH_PROVIDER === 'BETTER_AUTH' &&
+      isDeployedEnvironment(value.APP_ENV) &&
+      !value.BETTER_AUTH_SECRET
+    ) {
       context.addIssue({
         code: 'custom',
         path: ['BETTER_AUTH_SECRET'],
