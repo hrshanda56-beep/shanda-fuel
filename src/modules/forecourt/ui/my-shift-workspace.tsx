@@ -134,7 +134,6 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
   const shift = data.shift;
   const tz = data.station.timezone;
   const when = shift ? formatShiftWindow(shift.plannedStartAt, shift.plannedEndAt, tz) : null;
-  const shiftLine = `${shift?.label ?? 'Shift'} · ${when}`;
 
   function openCapture(nozzleId: string) {
     setNotice(undefined);
@@ -216,10 +215,11 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
         {/* The shell's own heading owns #page-title; ids must be unique. */}
         <h1>{data.station.name}</h1>
         <p className="my-shift-meta">
-          {shift ? <span className="my-shift-when">{shiftLine}</span> : null}
+          {shift ? <span className="my-shift-when numeric">{when}</span> : null}
           <StatusBadge tone={view.phase === 'running' ? 'positive' : 'neutral'}>
             {view.headline}
           </StatusBadge>
+          {shift?.label ? <span className="my-shift-label">{shift.label}</span> : null}
         </p>
       </header>
 
@@ -318,6 +318,13 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
           <h2 id="meters-title" className="my-shift-section-title">
             Meter readings
           </h2>
+          <div className="my-shift-columns" aria-hidden="true">
+            <span>Pump / Nozzle</span>
+            <span>Fuel</span>
+            <span>Opening</span>
+            <span>Closing</span>
+            <span />
+          </div>
           <ul className="my-shift-list">
             {view.meters.map((meterView) => (
               <MeterCard
@@ -448,8 +455,14 @@ function MeterCard({
         <Step title="Closing reading" step={view.closing} />
       </dl>
       {boundary && canCapture && !open ? (
-        <Button variant="secondary" size="lg" block onClick={onOpen}>
-          {boundary === 'SHIFT_OPEN' ? 'Record opening reading' : 'Record closing reading'}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="my-shift-record"
+          aria-label={`Record ${boundary === 'SHIFT_OPEN' ? 'opening' : 'closing'} reading for ${view.label}`}
+          onClick={onOpen}
+        >
+          Record →
         </Button>
       ) : null}
       {boundary && canCapture && open ? (

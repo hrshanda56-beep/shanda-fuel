@@ -79,7 +79,8 @@ test.describe('My Shift layout', () => {
       await page.goto('/my-shift');
 
       await expect(page.getByRole('heading', { level: 1, name: 'Bindura' })).toBeVisible();
-      await expect(page.getByText('Day shift · 06:00–18:00')).toBeVisible();
+      await expect(page.getByText('06:00–18:00')).toBeVisible();
+      await expect(page.getByText('Day shift', { exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'What to do next' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Pump 1 · Nozzle 1' })).toBeVisible();
       await expect(page.getByText('Opening reading', { exact: true })).toBeVisible();
