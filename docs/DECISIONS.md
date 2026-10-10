@@ -773,3 +773,32 @@ may proceed with positive credit-limit enforcement and active-customer/account
 guards. Role-permission migration alignment, lifecycle transition commands,
 monthly statement read-model details, and the explicitly deferred pricing,
 vehicle/driver, benefits, tax, and FX contracts remain separately scoped.
+
+## DEC-042 — Keep the non-runtime esbuild advisory under a narrow pre-production exception
+
+**Status:** TEMPORARY EXCEPTION
+
+**Context:** `pnpm audit --prod` reports the moderate `GHSA-67mh-4wv8-2f99`
+advisory for `esbuild@0.18.20` through the transitive path
+`.>better-auth>drizzle-kit>@esbuild-kit/esm-loader>@esbuild-kit/core-utils>esbuild`.
+The package is present through Better Auth's optional Drizzle Kit peer
+resolution, but the vulnerable component is deprecated build/development
+tooling and is not imported by the deployed application runtime. The existing
+CI dependency gate blocks unexcepted high and critical advisories; it does not
+block this moderate, non-runtime finding.
+
+**Chosen approach:** Accept this advisory for the pre-production release
+candidate only, with review by 2026-11-10. Do not add a broad audit suppression
+or force an override across the deprecated loader chain. Reassess when the
+upstream chain provides a safe `esbuild >=0.25.0` path.
+
+**Rationale:** A patched esbuild release exists, but forcing it beneath the
+deprecated `@esbuild-kit/core-utils` chain is a larger compatibility change
+than this release requires. The advisory concerns an esbuild development
+server capability, and the affected package is not reachable from the
+deployed application runtime.
+
+**Consequences:** The production-only high/critical audit remains clean and
+the existing scoped high-advisory exception remains unchanged. This exception
+must not be generalized to runtime dependencies or unrelated advisories, and
+must be revisited before production promotion if the dependency path changes.
