@@ -1,15 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getAuditSigningKey, getServerEnv } from './env';
+import { getAuditSigningKey, getServerEnv as parseServerEnv } from './env';
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+function getServerEnv(input: Record<string, unknown> = {}) {
+  return parseServerEnv({ AUTH_PROVIDER: 'BETTER_AUTH', ...input });
+}
+
 describe('server environment validation', () => {
   it('accepts local development without production credentials', () => {
-    expect(getServerEnv({ APP_ENV: 'local', APP_URL: 'http://localhost:3000' })).toMatchObject({
+    expect(
+      getServerEnv({ APP_ENV: 'local', APP_URL: 'http://localhost:3000', AUTH_PROVIDER: 'BETTER_AUTH' }),
+    ).toMatchObject({
       APP_ENV: 'local',
       APP_URL: 'http://localhost:3000',
+      AUTH_PROVIDER: 'BETTER_AUTH',
       REQUIRE_LOGIN_MFA: true,
       REQUIRE_PRIVILEGED_STEP_UP: true,
     });
@@ -189,6 +196,21 @@ describe('server environment validation', () => {
         DATABASE_URL: 'postgresql://configured',
       }),
     ).toThrow();
+  });
+
+  it('does not require Better Auth credentials when deployed Clerk is selected', () => {
+    expect(
+      getServerEnv({
+        APP_ENV: 'staging',
+        APP_URL: 'https://staging.shandahr.com',
+        AUTH_PROVIDER: 'CLERK',
+        DATABASE_URL: 'postgresql://configured',
+        CLERK_SECRET_KEY: 'sk_fake_clerk_fixture',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fake_clerk_fixture',
+        AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
+        AUDIT_SIGNING_KEY: 's'.repeat(32),
+      }),
+    ).toMatchObject({ AUTH_PROVIDER: 'CLERK' });
   });
 
   it('requires audit signing credentials in production', () => {

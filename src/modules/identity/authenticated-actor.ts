@@ -81,7 +81,7 @@ const betterAuthSessionSchema = z.object({
 /** Resolve the current server session from Better Auth; browser claims are ignored. */
 export async function resolveAuthenticatedActor(
   request: Request,
-  auth: BetterAuthSessionReader = getAuth(),
+  auth?: BetterAuthSessionReader,
   now = new Date(),
 ): Promise<AuthenticatedActorContext | null> {
   if (getAuthProviderName() === 'CLERK') {
@@ -104,7 +104,7 @@ export async function resolveAuthenticatedActor(
       session: invalidateExpiredAssurance(session, now),
     };
   }
-  const result = await auth.api.getSession({
+  const result = await (auth ?? (await getAuth())).api.getSession({
     headers: request.headers,
     query: { disableCookieCache: true },
   });
@@ -132,14 +132,14 @@ export async function resolveAuthenticatedActor(
 /** Revoke all Better Auth sessions for the authenticated identity on compromise. */
 export async function revokeIdentitySessions(
   request: Request,
-  auth: BetterAuthSessionRevoker = getAuth(),
+  auth?: BetterAuthSessionRevoker,
 ): Promise<void> {
   if (getAuthProviderName() === 'CLERK') {
     const session = await resolveClerkSession(request);
     if (session) await revokeClerkUserSessions(session.providerUserId);
     return;
   }
-  await auth.api.revokeSessions({ headers: request.headers });
+  await (auth ?? (await getAuth())).api.revokeSessions({ headers: request.headers });
 }
 
 export async function requireAuthenticatedActor(
