@@ -108,7 +108,11 @@ const summary = {
   },
 };
 
-async function mockCash(page: import('@playwright/test').Page, current = context()) {
+async function mockCash(
+  page: import('@playwright/test').Page,
+  current = context(),
+  cashSummary: typeof summary = summary,
+) {
   await page.route('**/api/context**', (route) =>
     route.fulfill({
       status: 200,
@@ -120,7 +124,7 @@ async function mockCash(page: import('@playwright/test').Page, current = context
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(summary),
+      body: JSON.stringify(cashSummary),
     }),
   );
 }
@@ -246,6 +250,30 @@ test.describe('Cash workspace', () => {
     await expect(
       page.getByText(/The cash collection is stale.*Refresh the station position/),
     ).toBeVisible();
+  });
+
+  test('a view-only role sees the cash position but no cash actions', async ({ page }) => {
+    await mockCash(page, context(), {
+      ...summary,
+      capabilities: {
+        viewDeposits: true,
+        recordCollection: false,
+        receiveCollection: false,
+        recordDeposit: false,
+        confirmDeposit: false,
+      },
+    });
+    await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await expect(page.getByLabel('Cash position')).toBeVisible();
+    for (const name of [
+      'New collection',
+      'Receive a collection',
+      'New bank deposit',
+      /Confirm deposits/,
+    ]) {
+      await expect(page.getByRole('button', { name })).toHaveCount(0);
+    }
+    await expect(page.getByRole('heading', { name: 'No cash actions available' })).toBeVisible();
   });
 
   test('asks before discarding an unsaved sheet', async ({ page }) => {
