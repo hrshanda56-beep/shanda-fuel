@@ -99,6 +99,7 @@ export function CustomerWorkspace() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(current?.organisationId);
@@ -153,6 +154,7 @@ export function CustomerWorkspace() {
         throw new Error(getErrorMessage(result, 'Customer accounts could not be loaded'));
       }
       setCustomers((result as CustomerAccountsResponse).customers);
+      setHasLoaded(true);
     } catch (cause) {
       if (!signal?.aborted) {
         setError(cause instanceof Error ? cause.message : 'Customer accounts could not be loaded');
@@ -205,6 +207,9 @@ export function CustomerWorkspace() {
     [customers],
   );
 
+  // Counts only once the list has loaded; a failed load is not "0 customers".
+  const countsReady = !loading && !error && hasLoaded;
+
   const customerHref = (customer: CustomerSummary) =>
     current
       ? buildContextHref(`/customers/${encodeURIComponent(customer.customerId)}`, search, current)
@@ -234,19 +239,19 @@ export function CustomerWorkspace() {
           <dl className="summary-strip content-span" aria-label="Customer summary">
             <div>
               <dt>Customers</dt>
-              <dd>{loading && customers.length === 0 ? '—' : customers.length}</dd>
+              <dd>{!countsReady ? '—' : customers.length}</dd>
             </div>
             <div>
               <dt>Active</dt>
-              <dd>{loading && customers.length === 0 ? '—' : counts.active}</dd>
+              <dd>{!countsReady ? '—' : counts.active}</dd>
             </div>
             <div data-tone={counts.suspended > 0 ? 'warning' : undefined}>
               <dt>Suspended</dt>
-              <dd>{loading && customers.length === 0 ? '—' : counts.suspended}</dd>
+              <dd>{!countsReady ? '—' : counts.suspended}</dd>
             </div>
             <div>
               <dt>Credit accounts</dt>
-              <dd>{loading && customers.length === 0 ? '—' : counts.credit}</dd>
+              <dd>{!countsReady ? '—' : counts.credit}</dd>
             </div>
           </dl>
 
