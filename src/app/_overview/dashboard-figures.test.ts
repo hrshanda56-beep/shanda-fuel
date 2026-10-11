@@ -146,3 +146,32 @@ describe('signed display', () => {
     expect(axisLabels(['a', 'b'])).toEqual(['a', 'b']);
   });
 });
+
+describe('configured products and unavailable stock variance', () => {
+  it('keeps product names exactly as configured and never infers a category', () => {
+    const rows = [
+      { businessDate: '2026-10-11', productName: 'ULP 95 – Tank B', litres: '10' },
+      { businessDate: '2026-10-11', productName: 'Blend E10', litres: '5' },
+    ];
+    expect(productTotals(rows).map((product) => product.name)).toEqual([
+      'Blend E10',
+      'ULP 95 – Tank B',
+    ]);
+    expect(litresSeries(rows, chartBuckets('7D', '2026-10-11').buckets).at(-1)?.products).toEqual([
+      { name: 'Blend E10', litres: '5' },
+      { name: 'ULP 95 – Tank B', litres: '10' },
+    ]);
+  });
+
+  it('ignores sales outside the chart range', () => {
+    const series = litresSeries(
+      [{ businessDate: '2026-10-04', productName: 'Diesel', litres: '99' }],
+      chartBuckets('7D', '2026-10-11').buckets,
+    );
+    expect(series.every((point) => point.litres === null)).toBe(true);
+  });
+
+  it('does not produce a stock variance figure at all', () => {
+    expect(dailyTotals([row()])).not.toHaveProperty('inventoryVariance');
+  });
+});

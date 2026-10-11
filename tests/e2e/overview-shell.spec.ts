@@ -146,6 +146,38 @@ test('key figures show approved totals with signed variances', async ({ page }) 
   );
 });
 
+test('daily figures are requested for the selected station and the server business date', async ({
+  page,
+}) => {
+  await mockToday(page, { daily: [dailyRow()] });
+  const request = page.waitForRequest('**/api/reports/daily**');
+  await page.goto(TODAY);
+  const url = new URL((await request).url());
+  expect(url.searchParams.get('tenantId')).toBe(TENANT);
+  expect(url.searchParams.get('stationIds')).toBe(STATION);
+  // The server resolves "today" in the station's business timezone.
+  expect(url.searchParams.has('fromDate')).toBe(false);
+  expect(url.searchParams.has('toDate')).toBe(false);
+});
+
+test('an approved zero is shown as zero, unlike a day with no approved report', async ({
+  page,
+}) => {
+  await mockToday(page, {
+    daily: [dailyRow({ salesValue: '0.0000', litresSold: '0', cashVariance: '0.0000' })],
+  });
+  await page.goto(TODAY);
+  const figures = page.locator('.today-figures');
+  await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+    'USD 0.00',
+  );
+  await expect(figures.locator('.today-figure', { hasText: 'Cash variance' })).toContainText(
+    'No cash variance',
+  );
+  await expect(figures).not.toContainText('No approved report yet');
+  await expect(figures).not.toContainText('Stock variance');
+});
+
 test('rows without an approved reconciliation are not shown as zero sales', async ({ page }) => {
   await mockToday(page, {
     daily: [
