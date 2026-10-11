@@ -352,9 +352,7 @@ test.describe('production reconciliation persistence', () => {
     );
 
     const controlRoom = page.locator('[aria-label="Operations control room"]');
-    await expect(
-      controlRoom.getByRole('heading', { name: 'Shift boundaries and team context' }),
-    ).toBeVisible();
+    await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
     await expect(controlRoom.getByText('Audit history restricted')).toBeVisible();
