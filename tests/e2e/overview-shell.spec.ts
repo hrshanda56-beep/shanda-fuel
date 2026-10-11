@@ -202,6 +202,23 @@ test('figures fit their cards without splitting a number, at every width', async
   }
 });
 
+test('the phone dock gives More the same tap target as the other tabs', async ({ page }) => {
+  await mockToday(page);
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(TODAY);
+    const dock = page.getByRole('navigation', { name: 'Mobile navigation' });
+    const sizes = await dock
+      .locator('a, button')
+      .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().width));
+    expect(sizes.length, `width ${width}`).toBeGreaterThan(1);
+    const more = sizes[sizes.length - 1] ?? 0;
+    expect(more, `width ${width}`).toBeGreaterThanOrEqual(44);
+    for (const size of sizes)
+      expect(Math.abs(size - more), `width ${width}`).toBeLessThanOrEqual(1);
+  }
+});
+
 test('a cash shortage stays readable on its pastel card in dark mode', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await mockToday(page, { daily: [dailyRow()] });

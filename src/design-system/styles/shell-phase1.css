@@ -407,6 +407,12 @@
     gap: 0.125rem;
   }
 
+  /* More is a <button>, which shrinks to its content unlike the tab links;
+     give it the full column so its tap target matches the other tabs. */
+  .shell-mobile-nav-more {
+    width: 100%;
+  }
+
   .shell-mobile-nav-link svg {
     width: 1.5rem;
     height: 1.5rem;
