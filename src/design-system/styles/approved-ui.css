@@ -1663,11 +1663,6 @@ body {
     display: none;
   }
 
-  .shell-header-controls .shell-context-selector {
-    width: auto;
-    flex: 0 0 0;
-  }
-
   .shell-sheet {
     min-height: calc(100dvh - 3.5rem);
     padding: var(--space-4) var(--page-gutter) var(--space-16);
