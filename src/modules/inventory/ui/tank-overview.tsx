@@ -35,6 +35,8 @@ type Load =
   | { status: 'error'; message: string; forbidden: boolean }
   | { status: 'ready'; report: InventoryReport };
 
+type Keyed = Load & { key?: string };
+
 async function fetchTanks(
   tenantId: string,
   stationId: string,
@@ -72,7 +74,13 @@ async function fetchTanks(
  * on record instead of looking full or empty.
  */
 export function TankOverview({ tenantId, stationId }: { tenantId: string; stationId: string }) {
-  const [state, setState] = useState<Load>({ status: 'loading' });
+  const key = `${tenantId}|${stationId}`;
+  const [loaded, setLoaded] = useState<Keyed>({ status: 'loading' });
+  // A result for another station is never shown while the new one loads.
+  const state: Load = useMemo(
+    () => (loaded.key === key ? loaded : { status: 'loading' }),
+    [loaded, key],
+  );
   const [product, setProduct] = useState<string>('all');
 
   const [attempt, setAttempt] = useState(0);
@@ -80,7 +88,7 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
   useEffect(() => {
     const controller = new AbortController();
     void fetchTanks(tenantId, stationId, controller.signal).then((next) => {
-      if (next) setState(next);
+      if (next) setLoaded({ ...next, key: `${tenantId}|${stationId}` });
     });
     return () => controller.abort();
   }, [tenantId, stationId, attempt]);
@@ -102,7 +110,9 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
     }
     return [...seen.values()];
   }, [tanks]);
-  const visible = product === 'all' ? tanks : tanks.filter((tank) => tank.productId === product);
+  // A product chosen at another station falls back to All.
+  const selected = products.some((entry) => entry.id === product) ? product : 'all';
+  const visible = selected === 'all' ? tanks : tanks.filter((tank) => tank.productId === selected);
 
   return (
     <Card as="section" className="panel tank-overview" aria-labelledby="tank-overview-title">
@@ -127,7 +137,7 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
             state.forbidden ? undefined : (
               <Button
                 onClick={() => {
-                  setState({ status: 'loading' });
+                  setLoaded({ status: 'loading', key });
                   setAttempt((value) => value + 1);
                 }}
               >
@@ -152,7 +162,7 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
               <button
                 type="button"
                 className="pill"
-                aria-pressed={product === 'all'}
+                aria-pressed={selected === 'all'}
                 onClick={() => setProduct('all')}
               >
                 All
@@ -162,7 +172,7 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
                   key={entry.id}
                   type="button"
                   className="pill"
-                  aria-pressed={product === entry.id}
+                  aria-pressed={selected === entry.id}
                   onClick={() => setProduct(entry.id)}
                 >
                   {entry.name}
