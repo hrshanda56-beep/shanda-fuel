@@ -275,8 +275,14 @@ button.my-shift-attention-row {
   transition: var(--transition-colors);
 }
 
-button.my-shift-attention-row:hover {
+button.my-shift-attention-row:hover,
+button.my-shift-attention-row:focus-visible {
   background: var(--bg-hover);
+}
+
+/* Rows sit edge to edge in a list, so the ring goes inside to stay clear of neighbours. */
+button.my-shift-attention-row:focus-visible {
+  outline-offset: calc(-1 * var(--focus-ring-width));
 }
 
 .my-shift-attention-icon {
