@@ -1626,10 +1626,11 @@ button.today-period {
   );
 }
 
-/* Between 1024 and 1359 px the sidebar and side column leave each of four
-   cards under about 90 px of content (70 px at 1280), too narrow for an
-   amount; show the figures two by two there. */
-@media (min-width: 64rem) and (max-width: 84.99rem) {
+/* Below 1440 px the sidebar and side column leave each of four cards under
+   about 105 px of content (70 px at 1280, 89 px at 1360): a six-figure amount
+   such as "120,000.00" would need a font below 1rem. Show the figures two by
+   two from 1024 to 1439 px. */
+@media (min-width: 64rem) and (max-width: 89.99rem) {
   .today-figures {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
