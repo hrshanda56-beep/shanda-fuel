@@ -86,6 +86,29 @@ describe('session security', () => {
     ).toThrow('step-up');
   });
 
+  it('allows the explicit Clerk no-MFA assertion only for its bound action', () => {
+    const clerkReverification = {
+      ...baseSession,
+      strongAuthenticationMethod: 'clerk-reverification' as const,
+      stepUpAction: 'LOCK_BUSINESS_DAY',
+    };
+    expect(() =>
+      assertStepUp(clerkReverification, 1, now, baseSession.stepUpTenantId!, 'LOCK_BUSINESS_DAY'),
+    ).not.toThrow();
+    expect(() => assertStepUp(clerkReverification, 1, now, baseSession.stepUpTenantId!)).toThrow(
+      'step-up',
+    );
+    expect(() =>
+      assertStepUp(
+        clerkReverification,
+        1,
+        now,
+        baseSession.stepUpTenantId!,
+        'APPROVE_RECONCILIATION',
+      ),
+    ).toThrow('step-up');
+  });
+
   it('invalidates expired assurance before authorization can reuse it', () => {
     const expired = invalidateExpiredAssurance(
       { ...baseSession, stepUpExpiresAt: new Date('2026-09-20T09:59:00.000Z') },

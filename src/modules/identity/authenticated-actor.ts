@@ -97,6 +97,8 @@ export async function resolveAuthenticatedActor(
       stepUpLevel: providerSession.stepUpLevel,
       stepUpExpiresAt: providerSession.stepUpExpiresAt,
       stepUpTenantId: providerSession.stepUpTenantId,
+      stepUpAction: providerSession.stepUpAction,
+      strongAuthenticationMethod: providerSession.strongAuthenticationMethod,
     };
     assertSessionActive(session, now);
     return {

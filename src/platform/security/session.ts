@@ -12,6 +12,8 @@ export type SessionRecord = {
   stepUpLevel?: 0 | 1 | 2;
   stepUpExpiresAt?: Date;
   stepUpTenantId?: string;
+  stepUpAction?: string;
+  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification' | 'better-auth-totp';
 };
 
 export function assertSessionActive(session: SessionRecord, now = new Date()): void {
@@ -37,13 +39,16 @@ export function assertStepUp(
   minimumLevel: 1 | 2,
   now = new Date(),
   tenantId: string,
+  requiredAction?: string,
 ): void {
   assertStrongAuthentication(session, now);
   if (
     !session.stepUpExpiresAt ||
     session.stepUpExpiresAt.getTime() <= now.getTime() ||
     (session.stepUpLevel ?? 0) < minimumLevel ||
-    session.stepUpTenantId !== tenantId
+    session.stepUpTenantId !== tenantId ||
+    (session.strongAuthenticationMethod === 'clerk-reverification' &&
+      session.stepUpAction !== requiredAction)
   ) {
     throw new AppError('FORBIDDEN', 'A current step-up authentication is required for this action');
   }

@@ -116,7 +116,14 @@ function actionAvailability(
 
   if (policy.assuranceRequirement === 'STEP_UP') {
     try {
-      assertStepUp(context.authority.actor.session, 1, new Date(), context.scope.tenantId);
+      const stepUpAction = 'stepUpAction' in policy ? policy.stepUpAction : undefined;
+      assertStepUp(
+        context.authority.actor.session,
+        1,
+        new Date(),
+        context.scope.tenantId,
+        stepUpAction,
+      );
     } catch (error) {
       if (error instanceof AppError && error.code === 'FORBIDDEN') {
         return { canExecute: false, permissionGranted: true, requiresStepUp: true };

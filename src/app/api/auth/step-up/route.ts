@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { establishStepUp, requireAuthenticatedActor } from '../../../../modules/identity';
+import {
+  ClerkReverificationRequiredError,
+  establishStepUp,
+  requireAuthenticatedActor,
+} from '../../../../modules/identity';
 import { resolveTenantExecutionContext } from '../../../../modules/tenancy/authority';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { AUTH_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
 import { getAuthProviderName } from '../../../../platform/auth/provider';
 import { AppError } from '../../../../platform/errors';
+import { reverificationErrorResponse } from '@clerk/nextjs/server';
+import { clerkStepUpCookieClearHeaders } from '../../../../platform/auth/clerk-step-up';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +22,7 @@ const requestSchema = z.object({
     .string()
     .regex(/^\d{6}$/)
     .optional(),
+  action: z.literal('LOCK_BUSINESS_DAY').optional(),
 });
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -46,8 +53,9 @@ export const POST = withRequestObservability(
         context,
         password: body.password ?? '',
         totpCode: body.totpCode ?? '',
+        action: body.action,
       });
-      return jsonResponse(
+      const response = jsonResponse(
         {
           status: 'active',
           stepUpLevel: result.level,
@@ -55,7 +63,20 @@ export const POST = withRequestObservability(
         },
         200,
       );
+      if (result.setCookie) {
+        response.headers.append('Set-Cookie', result.setCookie);
+        for (const header of clerkStepUpCookieClearHeaders()) {
+          response.headers.append('Set-Cookie', header);
+        }
+      }
+      return response;
     } catch (error) {
+      if (error instanceof ClerkReverificationRequiredError) {
+        const clerkResponse = reverificationErrorResponse(error.level);
+        const response = jsonResponse(await clerkResponse.json(), 403);
+        response.headers.append('Set-Cookie', error.challengeCookie);
+        return response;
+      }
       return apiErrorResponse(request, error, {
         includeDetails: true,
         headers: { 'Cache-Control': 'no-store' },

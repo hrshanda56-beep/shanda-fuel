@@ -1,13 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../../../platform/errors';
 
 const mocks = vi.hoisted(() => ({
   authenticate: vi.fn(),
   resolveContext: vi.fn(),
   establish: vi.fn(),
+  ClerkReverificationRequiredError: class ClerkReverificationRequiredError extends Error {
+    constructor(
+      readonly level: 'strict' | 'strict_mfa' = 'strict',
+      readonly challengeCookie = 'shanda-fuel.clerk-step-up-challenge=test',
+    ) {
+      super('Clerk reverification is required for this action');
+    }
+  },
 }));
 
 vi.mock('../../../../modules/identity', () => ({
+  ClerkReverificationRequiredError: mocks.ClerkReverificationRequiredError,
   establishStepUp: mocks.establish,
   requireAuthenticatedActor: mocks.authenticate,
 }));
@@ -30,6 +39,10 @@ function request(body: unknown): Request {
 }
 
 describe('POST /api/auth/step-up', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.authenticate.mockResolvedValue({});
@@ -70,6 +83,32 @@ describe('POST /api/auth/step-up', () => {
       error: 'FORBIDDEN',
       message: 'Step-up verification failed',
     });
+  });
+
+  it('returns Clerk’s reverification hint and challenge cookie', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'CLERK');
+    vi.stubEnv('APP_ENV', 'test');
+    vi.stubEnv('APP_URL', 'http://localhost:3000');
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_fake_clerk_fixture');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_fake_clerk_fixture');
+    mocks.establish.mockRejectedValueOnce(
+      new mocks.ClerkReverificationRequiredError(
+        'strict',
+        'shanda-fuel.clerk-step-up-challenge=test',
+      ),
+    );
+
+    const response = await POST(request({ tenantId, action: 'LOCK_BUSINESS_DAY' }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      clerk_error: {
+        type: 'forbidden',
+        reason: 'reverification-error',
+        metadata: { reverification: 'strict' },
+      },
+    });
+    expect(response.headers.get('Set-Cookie')).toContain('shanda-fuel.clerk-step-up-challenge');
   });
 
   it('does not parse an unauthenticated request body', async () => {

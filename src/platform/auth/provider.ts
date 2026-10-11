@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import { getServerEnv } from '../config/env';
 import { getDatabase } from '../db';
 import { AppError } from '../errors';
+import { readClerkStepUpAssertion } from './clerk-step-up';
 
 export type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 
@@ -21,6 +22,8 @@ export type ProviderSession = {
   stepUpLevel?: 0 | 1 | 2;
   stepUpExpiresAt?: Date;
   stepUpTenantId?: string;
+  stepUpAction?: string;
+  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification' | 'better-auth-totp';
 };
 
 export type ClerkCredentialIdentity = {
@@ -81,17 +84,41 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
   const strongAuthenticationExpiresAt = strongAuthenticatedAt
     ? new Date(strongAuthenticatedAt.getTime() + CLERK_STEP_UP_MAX_AGE_MINUTES * 60_000)
     : undefined;
+  const clerkAssertion = readClerkStepUpAssertion(request);
+  const assertionMatchesSession =
+    clerkAssertion?.providerSessionId === auth.sessionId &&
+    clerkAssertion.internalUserId === identity;
+  const assertionIsStrictMfa = assertionMatchesSession && clerkAssertion.level === 'strict_mfa';
+  const effectiveStrongAuthentication = hasRecentMfa || assertionMatchesSession;
+  const effectiveStrongAuthenticatedAt = hasRecentMfa
+    ? strongAuthenticatedAt
+    : assertionMatchesSession
+      ? clerkAssertion?.issuedAt
+      : undefined;
+  const effectiveStrongAuthenticationExpiresAt = hasRecentMfa
+    ? strongAuthenticationExpiresAt
+    : assertionMatchesSession
+      ? clerkAssertion?.expiresAt
+      : undefined;
   return {
     provider: 'CLERK',
     providerUserId: auth.userId,
     internalUserId: identity,
     providerSessionId: auth.sessionId,
     expiresAt,
-    strongAuthenticatedAt,
-    strongAuthenticationExpiresAt,
-    strongAuthenticationVerified: hasRecentMfa,
-    stepUpLevel: hasRecentMfa ? 1 : undefined,
-    stepUpExpiresAt: strongAuthenticationExpiresAt,
+    strongAuthenticatedAt: effectiveStrongAuthenticatedAt,
+    strongAuthenticationExpiresAt: effectiveStrongAuthenticationExpiresAt,
+    strongAuthenticationVerified: effectiveStrongAuthentication,
+    strongAuthenticationMethod:
+      hasRecentMfa || assertionIsStrictMfa
+        ? 'clerk-mfa'
+        : assertionMatchesSession
+          ? 'clerk-reverification'
+          : undefined,
+    stepUpLevel: effectiveStrongAuthentication ? 1 : undefined,
+    stepUpExpiresAt: effectiveStrongAuthenticationExpiresAt,
+    stepUpTenantId: assertionMatchesSession ? clerkAssertion?.tenantId : undefined,
+    stepUpAction: assertionMatchesSession ? clerkAssertion?.action : undefined,
   };
 }
 
@@ -99,6 +126,22 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
 export function hasRecentClerkMfa(request: Request): boolean {
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
   return auth.isAuthenticated && auth.has({ reverification: 'strict_mfa' });
+}
+
+export function hasRecentClerkReverification(
+  request: Request,
+  level: 'strict' | 'strict_mfa',
+): boolean {
+  const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
+  return auth.isAuthenticated && auth.has({ reverification: level });
+}
+
+export async function clerkUserHasMfa(providerUserId: string): Promise<boolean> {
+  const client = await clerkClient();
+  const user = await client.users.getUser(providerUserId);
+  return (
+    user.twoFactorEnabled === true || user.totpEnabled === true || user.backupCodeEnabled === true
+  );
 }
 
 export async function createClerkCredentialIdentity(input: {

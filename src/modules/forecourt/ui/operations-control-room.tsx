@@ -1,5 +1,6 @@
 'use client';
 
+import { useReverification } from '@clerk/nextjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
@@ -129,6 +130,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
   const [stepUpTotpCode, setStepUpTotpCode] = useState('');
   const [stepUpBusy, setStepUpBusy] = useState(false);
   const [stepUpError, setStepUpError] = useState<string>();
+  const [authProvider, setAuthProvider] = useState<'BETTER_AUTH' | 'CLERK'>();
   const [mfaEnabled, setMfaEnabled] = useState<boolean>();
   const [mfaSetupPassword, setMfaSetupPassword] = useState('');
   const [mfaSetupCode, setMfaSetupCode] = useState('');
@@ -180,7 +182,13 @@ export function OperationsControlRoom({ context }: { context: Context }) {
 
   const loadMfaStatus = useCallback(async () => {
     const response = await fetch('/api/auth/mfa/setup', { cache: 'no-store' });
+    if (response.status === 404) {
+      setAuthProvider('CLERK');
+      setMfaEnabled(false);
+      return;
+    }
     if (!response.ok) return;
+    setAuthProvider('BETTER_AUTH');
     const body = (await response.json()) as { enabled?: boolean };
     setMfaEnabled(body.enabled === true);
   }, []);
@@ -189,6 +197,28 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     const timer = window.setTimeout(() => void loadMfaStatus(), 0);
     return () => window.clearTimeout(timer);
   }, [loadMfaStatus]);
+
+  const clerkAwareStepUp = useReverification(
+    async (input: { tenantId: string; action: 'LOCK_BUSINESS_DAY' }) => {
+      const response = await fetch('/api/auth/step-up', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const body = (await response.json()) as {
+        message?: string;
+        clerk_error?: unknown;
+        status?: string;
+        stepUpLevel?: number;
+        expiresAt?: string;
+      };
+      if (!response.ok) {
+        if (body.clerk_error) return body;
+        throw new Error(body.message ?? 'Step-up verification failed.');
+      }
+      return body;
+    },
+  );
 
   function stableIdempotencyKey(
     commandType: string,
@@ -280,22 +310,32 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     setStepUpError(undefined);
     setNotice(undefined);
     try {
-      const response = await fetch('/api/auth/step-up', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: context.tenantId,
-          password: stepUpPassword,
-          totpCode: stepUpTotpCode,
-        }),
-      });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        throw new Error(body.message ?? 'Step-up verification failed.');
-      }
+      const body =
+        authProvider === 'CLERK'
+          ? await clerkAwareStepUp({ tenantId: context.tenantId, action: 'LOCK_BUSINESS_DAY' })
+          : await (async () => {
+              const response = await fetch('/api/auth/step-up', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  tenantId: context.tenantId,
+                  password: stepUpPassword,
+                  totpCode: stepUpTotpCode,
+                }),
+              });
+              const parsed = (await response.json()) as { message?: string };
+              if (!response.ok) {
+                throw new Error(parsed.message ?? 'Step-up verification failed.');
+              }
+              return parsed;
+            })();
       setStepUpPassword('');
       setStepUpTotpCode('');
-      setNotice('Step-up authentication verified. The lock action is now available briefly.');
+      setNotice(
+        authProvider === 'CLERK'
+          ? 'Clerk reverification succeeded. The lock action is now available briefly.'
+          : 'Step-up authentication verified. The lock action is now available briefly.',
+      );
       await load();
     } catch (caught) {
       setStepUpError(caught instanceof Error ? caught.message : 'Step-up verification failed.');
@@ -531,7 +571,33 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             lockBusinessDay.permissionGranted &&
             lockBusinessDay.requiresStepUp ? (
               <>
-                {mfaEnabled !== true ? (
+                {authProvider === 'CLERK' ? (
+                  <form
+                    className="step-up-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void establishStepUp();
+                    }}
+                    aria-describedby="lock-business-day-step-up-help"
+                  >
+                    <p className="semantic-note">
+                      Clerk will ask you to reverify your password before this privileged action.
+                    </p>
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={busy || stepUpBusy}
+                      loading={stepUpBusy}
+                    >
+                      Reverify with Clerk
+                    </Button>
+                    {stepUpError ? (
+                      <p className="state state-error" role="alert">
+                        {stepUpError}
+                      </p>
+                    ) : null}
+                  </form>
+                ) : mfaEnabled !== true ? (
                   <form
                     className="step-up-form"
                     onSubmit={(event) => {
@@ -664,9 +730,8 @@ export function OperationsControlRoom({ context }: { context: Context }) {
                   Lock business day
                 </Button>
                 <p className="semantic-note" id="lock-business-day-step-up-help" role="status">
-                  Locking this business day requires current password and authenticator
-                  verification. Secrets are verified by the server and are never stored by this
-                  form.
+                  Locking this business day requires current privileged reverification. Secrets are
+                  verified by the provider or server and are never stored by this form.
                 </p>
               </>
             ) : null}
