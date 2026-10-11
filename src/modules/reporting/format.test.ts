@@ -16,7 +16,14 @@ describe('formatTileMoney', () => {
   it('handles negatives and missing values', () => {
     expect(formatTileMoney('-1245.5')).toBe('USD -1,245.50');
     expect(formatTileMoney('-0.0001')).toBe('USD 0.00');
-    expect(formatTileMoney(null)).toBe('USD 0.00');
+  });
+
+  it('never turns a missing or malformed amount into zero', () => {
+    expect(formatTileMoney(null)).toBe('—');
+    expect(formatTileMoney(undefined)).toBe('—');
+    expect(formatTileMoney('')).toBe('—');
+    expect(formatTileMoney('not a number')).toBe('—');
+    expect(formatTileMoney(' 12.5 ', 'ZWG')).toBe('ZWG 12.50');
   });
 });
 

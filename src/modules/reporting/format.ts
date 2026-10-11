@@ -3,11 +3,15 @@ import { exact } from './domain';
 /**
  * Presentation only, for the Reports headline tiles: "USD 1,245.50". The value
  * is rounded half-up to cents for display; the report and its CSV keep the full
- * authoritative precision. Pure; used instead of the shared formatter so other
- * financial screens are unaffected.
+ * authoritative precision. Missing or malformed values render "—". Pure; used
+ * instead of the shared formatter so other financial screens are unaffected.
  */
 export function formatTileMoney(value: string | null | undefined, currency = 'USD'): string {
-  const fixed = exact(value).value.toDecimalPlaces(2).toFixed(2);
+  // A missing or malformed amount is unknown, never zero, and never throws in render.
+  if (value === null || value === undefined || !/^-?\d+(?:\.\d+)?$/.test(value.trim())) {
+    return '—';
+  }
+  const fixed = exact(value.trim()).value.toDecimalPlaces(2).toFixed(2);
   const negative = fixed.startsWith('-');
   const [whole = '0', cents = '00'] = (negative ? fixed.slice(1) : fixed).split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
