@@ -13,3 +13,21 @@ export function formatTileMoney(value: string | null | undefined, currency = 'US
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return `${currency} ${negative && Number(fixed) !== 0 ? '-' : ''}${grouped}.${cents}`;
 }
+
+/**
+ * Presentation only: whole litres with thousands separators, e.g. "1,284 L".
+ * Rounded half-up on the exact decimal; missing or malformed values render
+ * "—" so an unknown quantity is never shown as zero.
+ */
+export function formatTileLitres(value: string | null | undefined): string {
+  if (value === null || value === undefined || !/^-?\d+(?:\.\d+)?$/.test(value.trim())) {
+    return '—';
+  }
+  const fixed = exact(value.trim()).value.toDecimalPlaces(0).toFixed(0);
+  const negative = fixed.startsWith('-') && fixed !== '-0';
+  const whole = (fixed.startsWith('-') ? fixed.slice(1) : fixed).replace(
+    /\B(?=(\d{3})+(?!\d))/g,
+    ',',
+  );
+  return `${negative ? '−' : ''}${whole} L`;
+}
