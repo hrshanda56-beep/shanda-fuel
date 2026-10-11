@@ -10,7 +10,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
-import { eventLabel } from './operations-labels';
+import { eventLabel, isEarlierOpenDay } from './operations-labels';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
 type ActionAvailability = {
@@ -499,7 +499,7 @@ export function OperationsControlRoom({
   );
   // Built only from states the server returned; nothing is inferred.
   const attention: Array<{ key: string; title: string; detail: string; href?: string }> = [];
-  if (day && day.state === 'OPEN' && day.date < overview.currentBusinessDate) {
+  if (day && isEarlierOpenDay(day, overview.currentBusinessDate)) {
     attention.push({
       key: 'open-earlier-day',
       title: `Business day ${formatBusinessDate(day.date)} is still open`,
