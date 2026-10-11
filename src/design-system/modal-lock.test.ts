@@ -99,4 +99,43 @@ describe('modal page lock', () => {
     first.close();
     expect(body.style.overflow).toBe('auto');
   });
+
+  it('keeps only the top of three overlays interactive when the middle one closes', () => {
+    const { app, body, open } = page();
+    const switcher = open('switcher');
+    const search = open('search');
+    const confirm = open('confirm');
+    search.close();
+    expect(confirm.overlay.inert).toBe(false);
+    expect(switcher.overlay.inert).toBe(true);
+    confirm.close();
+    expect(switcher.overlay.inert).toBe(false);
+    expect(switcher.overlay.getAttribute('aria-hidden')).toBeNull();
+    expect(body.style.overflow).toBe('hidden');
+    switcher.close();
+    expect(body.style.overflow).toBe('auto');
+    expect(app.inert).toBe(false);
+  });
+
+  it('restores an element added while a modal was open to its own state', () => {
+    const { body, open } = page();
+    const first = open('first');
+    const banner = new FakeElement('banner', 'false');
+    body.children.push(banner);
+    const second = open('second');
+    expect(banner.inert).toBe(true);
+    second.close();
+    first.close();
+    expect(banner.inert).toBe(false);
+    expect(banner.getAttribute('aria-hidden')).toBe('false');
+  });
+
+  it('restores an empty overflow value exactly', () => {
+    const { body, open } = page();
+    body.style.overflow = '';
+    const modal = open('menu');
+    expect(body.style.overflow).toBe('hidden');
+    modal.close();
+    expect(body.style.overflow).toBe('');
+  });
 });
