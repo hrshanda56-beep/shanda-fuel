@@ -781,3 +781,35 @@ a.operations-attention-row:hover {
     grid-template-columns: minmax(0, 1.6fr) minmax(17rem, 1fr);
   }
 }
+
+/* Cash and banking (reference 04): four position cards, then the workspace;
+   record/receive/deposit forms open in a side sheet. */
+.operations-summary-note {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+}
+
+.cash-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cash-sheet-forms {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.cash-discard {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+}
+
+.cash-discard p {
+  margin: 0;
+  font-weight: 600;
+}

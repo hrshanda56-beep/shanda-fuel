@@ -132,13 +132,24 @@ test.describe('Cash workspace', () => {
     await mockCash(page);
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
 
-    await expect(page.getByRole('heading', { name: 'Collected is not banked' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Collections', exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: 'Station cash collections' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Bank deposits' })).toBeVisible();
+    const position = page.getByRole('definition').filter({ hasText: '—' });
+    await expect(position).toHaveCount(1);
+
+    // Forms live in a side sheet opened from the action bar.
+    await page.getByRole('button', { name: 'Receive a collection' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Receive a collection' });
+    await expect(sheet.getByRole('button', { name: 'Receive collection' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
+    await page.getByRole('button', { name: /^Confirm deposits/ }).click();
     await expect(
-      page.getByRole('heading', { name: 'Deposits remain distinct from confirmation' }),
+      page
+        .getByRole('dialog', { name: 'Confirm bank deposits' })
+        .getByRole('button', { name: 'Confirm deposit' }),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Receive collection' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Confirm deposit' })).toBeVisible();
   });
 
   test('fits the Cash workspace at 320px and 390px without page overflow', async ({ page }) => {
@@ -187,6 +198,7 @@ test.describe('Cash workspace', () => {
       });
     });
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await page.getByRole('button', { name: 'Receive a collection' }).click();
     await page.getByRole('combobox', { name: 'Recorded collection' }).selectOption('collection-1');
     await page
       .getByRole('combobox', { name: 'Receiving cash location' })
@@ -222,6 +234,7 @@ test.describe('Cash workspace', () => {
       }),
     );
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await page.getByRole('button', { name: 'New collection' }).click();
     await page
       .getByRole('combobox', { name: 'Approved reconciliation cash evidence' })
       .selectOption('reconciliation-1');
@@ -233,5 +246,20 @@ test.describe('Cash workspace', () => {
     await expect(
       page.getByText(/The cash collection is stale.*Refresh the station position/),
     ).toBeVisible();
+  });
+
+  test('asks before discarding an unsaved sheet', async ({ page }) => {
+    await mockCash(page);
+    await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await page.getByRole('button', { name: 'New collection' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Record a cash collection' });
+    await sheet.getByLabel('Collection reference').fill('COL-003');
+    await page.keyboard.press('Escape');
+    await expect(sheet.getByText('Discard what you have entered?')).toBeVisible();
+    await sheet.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(sheet.getByLabel('Collection reference')).toHaveValue('COL-003');
+    await page.keyboard.press('Escape');
+    await sheet.getByRole('button', { name: 'Discard' }).click();
+    await expect(sheet).toBeHidden();
   });
 });

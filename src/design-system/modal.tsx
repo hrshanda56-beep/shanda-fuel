@@ -18,8 +18,12 @@ export type ModalProps = {
   /** Actions row. Place the primary action last; it renders rightmost on wide screens. */
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
-  /** `drawer` slides in from the inline start edge (Product Shell menu). */
-  presentation?: 'dialog' | 'sheet' | 'drawer';
+  /**
+   * `drawer` slides in from the inline start edge (Product Shell menu).
+   * `side` is a full-height task sheet at the inline end edge on wider
+   * screens and a full-screen sheet on phones (record/receive forms).
+   */
+  presentation?: 'dialog' | 'sheet' | 'drawer' | 'side';
   /** `alertdialog` for confirmations that interrupt a workflow. */
   role?: 'dialog' | 'alertdialog';
   /** When false, Escape and backdrop clicks do nothing (e.g. while a command is pending). */
@@ -136,11 +140,12 @@ export function Modal({
 
   const sheet = presentation === 'sheet';
   const drawer = presentation === 'drawer';
+  const side = presentation === 'side';
 
   return createPortal(
     <div
       ref={overlayRef}
-      className={`dialog-backdrop ${sheet ? 'dialog-backdrop-sheet' : ''} ${drawer ? 'dialog-backdrop-drawer' : ''}`.trim()}
+      className={`dialog-backdrop ${sheet ? 'dialog-backdrop-sheet' : ''} ${drawer ? 'dialog-backdrop-drawer' : ''} ${side ? 'dialog-backdrop-side' : ''}`.trim()}
       data-modal-overlay="true"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && dismissibleRef.current) onCloseRef.current();
@@ -148,7 +153,7 @@ export function Modal({
     >
       <section
         ref={panelRef}
-        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''} ${drawer ? 'drawer' : ''} ${className}`.trim()}
+        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''} ${drawer ? 'drawer' : ''} ${side ? 'side-sheet' : ''} ${className}`.trim()}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
