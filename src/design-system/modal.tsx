@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom';
 
 import { Icon } from './icons';
+import { acquireModalLock } from './modal-lock';
 
 export const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
@@ -84,19 +85,9 @@ export function Modal({
         ? active
         : (returnFocusRef.current?.() ?? null);
 
-    const siblings = Array.from(document.body.children).filter((child) => child !== overlay);
-    const previous = siblings.map((child) => ({
-      child,
-      inert: (child as HTMLElement).inert ?? false,
-      ariaHidden: child.getAttribute('aria-hidden'),
-    }));
-    const bodyOverflow = document.body.style.overflow;
-
-    siblings.forEach((child) => {
-      (child as HTMLElement).inert = true;
-      child.setAttribute('aria-hidden', 'true');
-    });
-    document.body.style.overflow = 'hidden';
+    // One shared lock: overlapping modals can close in any order without
+    // leaving the page unscrollable or inert.
+    const releaseLock = acquireModalLock(overlay, document.body);
 
     const frame = window.requestAnimationFrame(() => {
       const panel = panelRef.current;
@@ -133,12 +124,7 @@ export function Modal({
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = bodyOverflow;
-      previous.forEach(({ child, inert, ariaHidden }) => {
-        (child as HTMLElement).inert = inert;
-        if (ariaHidden === null) child.removeAttribute('aria-hidden');
-        else child.setAttribute('aria-hidden', ariaHidden);
-      });
+      releaseLock();
       const target = restoreTarget?.isConnected ? restoreTarget : returnFocusRef.current?.();
       window.requestAnimationFrame(() => target?.focus());
     };
