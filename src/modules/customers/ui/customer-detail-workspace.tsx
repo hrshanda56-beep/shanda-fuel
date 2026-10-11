@@ -457,7 +457,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
       {!contextLoading && !contextError && !hasRequiredContext ? (
         <ContextRequiredState
           title="Select an organisation"
-          message="Choose an authorised organisation before customer detail can be loaded."
+          message="Use the work context selector above to choose an organisation."
         />
       ) : null}
       {error ? (

@@ -235,9 +235,7 @@ export function ValuationOverview({
   }, [load]);
   if (loading) return <LoadingState label="Loading valuation streams" />;
   if (error?.code === 'FORBIDDEN')
-    return (
-      <AccessDeniedState message="Inventory valuation is restricted to authorised station users." />
-    );
+    return <AccessDeniedState message="You don’t have access to stock value for this station." />;
   if (error) {
     const mapped = knownError(error.code, error.message);
     return (

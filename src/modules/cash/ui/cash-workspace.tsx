@@ -336,7 +336,7 @@ export function CashWorkspace() {
         <h2 id="cash-context-loading-title" className="sr-only">
           Cash context
         </h2>
-        <LoadingState label="Checking authorised station context" />
+        <LoadingState label="Loading" />
       </Card>
     );
   }
@@ -346,7 +346,7 @@ export function CashWorkspace() {
       <Card as="section" className="panel" aria-labelledby="cash-context-required-title">
         <ContextRequiredState
           title="Select a station to load cash"
-          message="Choose one authorised station in the work context control above. Cash does not fall back to an all-stations view."
+          message="Use the station selector above to choose a station. Cash is shown for one station at a time."
         />
       </Card>
     );
@@ -357,7 +357,7 @@ export function CashWorkspace() {
       <Card as="section" className="panel" aria-labelledby="cash-context-error-title">
         <h2 id="cash-context-error-title">Cash context unavailable</h2>
         <ErrorState
-          message={contextError ?? 'The authorised station context could not be loaded.'}
+          message={contextError ?? 'The station could not be loaded.'}
           action={<Button onClick={() => window.location.reload()}>Retry</Button>}
         />
       </Card>

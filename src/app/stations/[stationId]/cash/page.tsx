@@ -13,7 +13,7 @@ export default async function CashPage({ params }: { params: Promise<{ stationId
         fallback={
           <ContextRequiredState
             title="Checking station context"
-            message="Cash loads only after the shared work context has confirmed one authorised station."
+            message="Use the station selector above to choose a station."
           />
         }
       >
