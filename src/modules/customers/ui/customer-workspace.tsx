@@ -21,7 +21,8 @@ import {
   StatusBadge,
 } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
-import { formatLitres, formatMoney, formatStatusLabel } from '@/design-system/formatters';
+import { formatLitres, formatStatusLabel } from '@/design-system/formatters';
+import { formatTileMoney } from '@/modules/reporting/format';
 import type { CustomerAccount, CustomerAccountsResponse, CustomerSummary } from './types';
 
 function getErrorMessage(result: unknown, fallback: string): string {
@@ -49,14 +50,25 @@ function accountTypeLabel(type: CustomerAccount['accountType']): string {
   }
 }
 
+/** Two-decimal money for display; a balance that is not recorded shows "—", never zero. */
+function money(value: string | null, currency: string): string {
+  return value === null ? '—' : formatTileMoney(value, currency);
+}
+
 function accountIndicator(account: CustomerAccount): string {
   if (account.accountType === 'CREDIT') {
+    const outstanding =
+      account.balance === null
+        ? 'Balance not recorded'
+        : `${money(account.balance, account.currency)} outstanding`;
     return account.availableCredit === null
-      ? `Outstanding ${formatMoney(account.balance ?? '0', account.currency)} · limit not set`
-      : `${formatMoney(account.balance ?? '0', account.currency)} outstanding · ${formatMoney(account.availableCredit, account.currency)} available`;
+      ? `${outstanding} · limit not set`
+      : `${outstanding} · ${money(account.availableCredit, account.currency)} available`;
   }
   if (account.accountType === 'PREPAID_VALUE') {
-    return `${formatMoney(account.availableBalance ?? '0', account.currency)} available`;
+    return account.availableBalance === null
+      ? 'Balance not recorded'
+      : `${money(account.availableBalance, account.currency)} available`;
   }
   if (account.productBalances.length === 0) return 'No product balance';
   return account.productBalances
@@ -182,6 +194,17 @@ export function CustomerWorkspace() {
     });
   }, [customers, searchTerm]);
 
+  const counts = useMemo(
+    () => ({
+      active: customers.filter((customer) => customer.status === 'ACTIVE').length,
+      suspended: customers.filter((customer) => customer.status === 'SUSPENDED').length,
+      credit: customers.filter((customer) =>
+        customer.accounts.some((account) => account.accountType === 'CREDIT'),
+      ).length,
+    }),
+    [customers],
+  );
+
   const customerHref = (customer: CustomerSummary) =>
     current
       ? buildContextHref(`/customers/${encodeURIComponent(customer.customerId)}`, search, current)
@@ -194,7 +217,7 @@ export function CustomerWorkspace() {
         title="Customer accounts"
         headingLevel="h2"
         titleId="customer-accounts-title"
-        description="Review the customer identity, account state and balances already recorded for this organisation."
+        description="Balances and account status for each customer."
       />
 
       {contextLoading ? <LoadingState label="Loading authorised context" /> : null}
@@ -208,40 +231,49 @@ export function CustomerWorkspace() {
 
       {hasRequiredContext ? (
         <>
-          <Card as="section" className="panel" aria-labelledby="customer-search-title">
+          <dl className="summary-strip content-span" aria-label="Customer summary">
+            <div>
+              <dt>Customers</dt>
+              <dd>{loading && customers.length === 0 ? '—' : customers.length}</dd>
+            </div>
+            <div>
+              <dt>Active</dt>
+              <dd>{loading && customers.length === 0 ? '—' : counts.active}</dd>
+            </div>
+            <div data-tone={counts.suspended > 0 ? 'warning' : undefined}>
+              <dt>Suspended</dt>
+              <dd>{loading && customers.length === 0 ? '—' : counts.suspended}</dd>
+            </div>
+            <div>
+              <dt>Credit accounts</dt>
+              <dd>{loading && customers.length === 0 ? '—' : counts.credit}</dd>
+            </div>
+          </dl>
+
+          <Card as="section" className="panel content-span" aria-labelledby="customer-list-title">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Customer register</p>
-                <h2 id="customer-search-title">Find a customer</h2>
+                <h2 id="customer-list-title">Customers</h2>
               </div>
-              <StatusBadge tone="informational">Read-only view</StatusBadge>
+              <StatusBadge tone="neutral">
+                {filteredCustomers.length}{' '}
+                {filteredCustomers.length === 1 ? 'customer' : 'customers'}
+              </StatusBadge>
             </div>
             <Field
               id="customer-search"
               label="Search customers"
-              hint="Search by name, account reference or account type."
+              hint="Name, account reference or account type."
             >
               <input
                 id="customer-search"
                 type="search"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="e.g. customer name or reference"
+                placeholder="Customer name or reference"
                 autoComplete="off"
               />
             </Field>
-          </Card>
-
-          <Card as="section" className="panel content-span" aria-labelledby="customer-list-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Existing records</p>
-                <h2 id="customer-list-title">Customers</h2>
-              </div>
-              <StatusBadge tone="neutral">
-                {filteredCustomers.length} {filteredCustomers.length === 1 ? 'record' : 'records'}
-              </StatusBadge>
-            </div>
             {loading ? <LoadingState label="Loading customer accounts" /> : null}
             {error ? (
               <ErrorState
@@ -259,7 +291,7 @@ export function CustomerWorkspace() {
             {!loading && !error && customers.length === 0 ? (
               <EmptyState
                 title="No customer records"
-                message="Customer records will appear here after authorised onboarding. This view does not create master data."
+                message="Customers appear here once they have been set up."
               />
             ) : null}
             {!loading && !error && customers.length > 0 && filteredCustomers.length === 0 ? (
@@ -279,7 +311,7 @@ export function CustomerWorkspace() {
                       <th scope="col">Customer</th>
                       <th scope="col">Account type</th>
                       <th scope="col">Status</th>
-                      <th scope="col">Balance / available</th>
+                      <th scope="col">Balance</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -306,7 +338,7 @@ export function CustomerWorkspace() {
                             {formatStatusLabel(customer.status)}
                           </StatusBadge>
                         </td>
-                        <td data-label="Balance / available">
+                        <td data-label="Balance">
                           {customer.accounts.length > 0 ? (
                             <div className="stack-sm">
                               {customer.accounts.map((account) => (
@@ -325,10 +357,9 @@ export function CustomerWorkspace() {
             ) : null}
           </Card>
 
-          <Notice tone="info" title="What this view covers">
-            Balances and posted account activity come from the existing customer ledger. Customer
-            invoices, staff or management benefits, vehicle and driver controls, overdue ageing, and
-            statements are not represented in this Phase 0 surface.
+          <Notice tone="info" title="Not shown here yet">
+            Overdue ageing, invoices and statements are not recorded for customers yet, so they are
+            not shown.
           </Notice>
         </>
       ) : null}

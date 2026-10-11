@@ -330,14 +330,16 @@
 
 /* Daily Operations layout A: summary, then work (left) beside attention and
    closure (right), then history across the full width. */
-.operations-summary {
+.operations-summary,
+.summary-strip {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
   margin: 0;
 }
 
-.operations-summary > div {
+.operations-summary > div,
+.summary-strip > div {
   display: grid;
   min-width: 0;
   gap: var(--space-1);
@@ -347,12 +349,14 @@
   background: var(--color-surface);
 }
 
-.operations-summary dt {
+.operations-summary dt,
+.summary-strip dt {
   color: var(--color-ink-muted);
   font-size: 0.82rem;
 }
 
-.operations-summary dd {
+.operations-summary dd,
+.summary-strip dd {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
@@ -455,7 +459,8 @@ a.operations-attention-row:hover {
 }
 
 @media (min-width: 48rem) {
-  .operations-summary {
+  .operations-summary,
+  .summary-strip {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
@@ -925,4 +930,15 @@ a.operations-attention-row:hover {
   margin: 0;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+.summary-strip > div[data-tone='warning'] {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-soft);
+}
+
+.summary-strip-note {
+  margin: 0;
+  color: var(--color-ink-muted);
+  font-size: 0.82rem;
 }
