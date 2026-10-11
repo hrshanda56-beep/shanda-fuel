@@ -108,6 +108,14 @@ describe('POST /api/auth/step-up', () => {
         metadata: { reverification: 'strict' },
       },
     });
+    expect(mocks.establish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'LOCK_BUSINESS_DAY',
+        context,
+        password: '',
+        totpCode: '',
+      }),
+    );
     expect(response.headers.get('Set-Cookie')).toContain('shanda-fuel.clerk-step-up-challenge');
   });
 

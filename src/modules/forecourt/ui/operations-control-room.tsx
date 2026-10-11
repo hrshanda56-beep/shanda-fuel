@@ -93,6 +93,76 @@ type Overview = {
   }>;
 };
 
+function ClerkStepUpForm({
+  context,
+  busy,
+  onSuccess,
+}: {
+  context: Context;
+  busy: boolean;
+  onSuccess: () => Promise<void>;
+}) {
+  const [stepUpBusy, setStepUpBusy] = useState(false);
+  const [stepUpError, setStepUpError] = useState<string>();
+  const clerkAwareStepUp = useReverification(
+    async (input: { tenantId: string; action: 'LOCK_BUSINESS_DAY' }) => {
+      const response = await fetch('/api/auth/step-up', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const body = (await response.json()) as {
+        message?: string;
+        clerk_error?: unknown;
+        status?: string;
+        stepUpLevel?: number;
+        expiresAt?: string;
+      };
+      if (!response.ok) {
+        if (body.clerk_error) return body;
+        throw new Error(body.message ?? 'Step-up verification failed.');
+      }
+      return body;
+    },
+  );
+
+  async function establishStepUp() {
+    setStepUpBusy(true);
+    setStepUpError(undefined);
+    try {
+      await clerkAwareStepUp({ tenantId: context.tenantId, action: 'LOCK_BUSINESS_DAY' });
+      await onSuccess();
+    } catch (caught) {
+      setStepUpError(caught instanceof Error ? caught.message : 'Step-up verification failed.');
+    } finally {
+      setStepUpBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className="step-up-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void establishStepUp();
+      }}
+      aria-describedby="lock-business-day-step-up-help"
+    >
+      <p className="semantic-note">
+        Clerk will ask you to reverify your password before this privileged action.
+      </p>
+      <Button type="submit" variant="secondary" disabled={busy || stepUpBusy} loading={stepUpBusy}>
+        Reverify with Clerk
+      </Button>
+      {stepUpError ? (
+        <p className="state state-error" role="alert">
+          {stepUpError}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational' {
   if (state === 'LOCKED' || state === 'APPROVED' || state === 'COMPLETED') return 'locked';
   if (state === 'RETURNED' || state === 'CLOSED') return 'warning';
@@ -198,28 +268,6 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     return () => window.clearTimeout(timer);
   }, [loadMfaStatus]);
 
-  const clerkAwareStepUp = useReverification(
-    async (input: { tenantId: string; action: 'LOCK_BUSINESS_DAY' }) => {
-      const response = await fetch('/api/auth/step-up', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(input),
-      });
-      const body = (await response.json()) as {
-        message?: string;
-        clerk_error?: unknown;
-        status?: string;
-        stepUpLevel?: number;
-        expiresAt?: string;
-      };
-      if (!response.ok) {
-        if (body.clerk_error) return body;
-        throw new Error(body.message ?? 'Step-up verification failed.');
-      }
-      return body;
-    },
-  );
-
   function stableIdempotencyKey(
     commandType: string,
     values: Record<string, unknown>,
@@ -310,32 +358,20 @@ export function OperationsControlRoom({ context }: { context: Context }) {
     setStepUpError(undefined);
     setNotice(undefined);
     try {
-      const body =
-        authProvider === 'CLERK'
-          ? await clerkAwareStepUp({ tenantId: context.tenantId, action: 'LOCK_BUSINESS_DAY' })
-          : await (async () => {
-              const response = await fetch('/api/auth/step-up', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                  tenantId: context.tenantId,
-                  password: stepUpPassword,
-                  totpCode: stepUpTotpCode,
-                }),
-              });
-              const parsed = (await response.json()) as { message?: string };
-              if (!response.ok) {
-                throw new Error(parsed.message ?? 'Step-up verification failed.');
-              }
-              return parsed;
-            })();
+      const response = await fetch('/api/auth/step-up', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: context.tenantId,
+          password: stepUpPassword,
+          totpCode: stepUpTotpCode,
+        }),
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) throw new Error(body.message ?? 'Step-up verification failed.');
       setStepUpPassword('');
       setStepUpTotpCode('');
-      setNotice(
-        authProvider === 'CLERK'
-          ? 'Clerk reverification succeeded. The lock action is now available briefly.'
-          : 'Step-up authentication verified. The lock action is now available briefly.',
-      );
+      setNotice('Step-up authentication verified. The lock action is now available briefly.');
       await load();
     } catch (caught) {
       setStepUpError(caught instanceof Error ? caught.message : 'Step-up verification failed.');
@@ -572,31 +608,16 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             lockBusinessDay.requiresStepUp ? (
               <>
                 {authProvider === 'CLERK' ? (
-                  <form
-                    className="step-up-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void establishStepUp();
+                  <ClerkStepUpForm
+                    context={context}
+                    busy={busy}
+                    onSuccess={async () => {
+                      setNotice(
+                        'Clerk reverification succeeded. The lock action is now available briefly.',
+                      );
+                      await load();
                     }}
-                    aria-describedby="lock-business-day-step-up-help"
-                  >
-                    <p className="semantic-note">
-                      Clerk will ask you to reverify your password before this privileged action.
-                    </p>
-                    <Button
-                      type="submit"
-                      variant="secondary"
-                      disabled={busy || stepUpBusy}
-                      loading={stepUpBusy}
-                    >
-                      Reverify with Clerk
-                    </Button>
-                    {stepUpError ? (
-                      <p className="state state-error" role="alert">
-                        {stepUpError}
-                      </p>
-                    ) : null}
-                  </form>
+                  />
                 ) : mfaEnabled !== true ? (
                   <form
                     className="step-up-form"

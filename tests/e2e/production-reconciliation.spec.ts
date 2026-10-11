@@ -352,6 +352,9 @@ test.describe('production reconciliation persistence', () => {
     );
 
     const controlRoom = page.locator('[aria-label="Operations control room"]');
+    // This scenario runs with CI's Better Auth provider. Rendering the control
+    // room must not require a ClerkProvider or crash before its content loads.
+    await expect(controlRoom).toBeVisible();
     await expect(
       controlRoom.getByRole('heading', { name: 'Shift boundaries and team context' }),
     ).toBeVisible();
