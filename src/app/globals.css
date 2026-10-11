@@ -1001,3 +1001,29 @@ a.operations-attention-row:hover {
   flex-basis: 100%;
   font-weight: 400;
 }
+
+/* Long values and names wrap instead of overflowing narrow cards (320 px). */
+.operations-summary dd,
+.summary-strip dd,
+.today-hero-title,
+.tank-card-head h3,
+.tank-card-product,
+.provider-donut-name,
+.reconciliation-row-main {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 29.99rem) {
+  .operations-summary dd,
+  .summary-strip dd {
+    font-size: 1rem;
+  }
+
+  .provider-donut-legend {
+    min-width: 0;
+  }
+
+  .provider-donut-value {
+    white-space: normal;
+  }
+}
