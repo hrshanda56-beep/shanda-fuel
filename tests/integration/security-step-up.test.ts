@@ -213,7 +213,12 @@ describe('production TOTP step-up establishment', () => {
       stepUpRequest(ids.tenant, 'correct-password', totpCode(secret!), effectiveSessionCookie),
     );
     expect(success.status).toBe(200);
-    expect(await success.json()).toMatchObject({ status: 'active', stepUpLevel: 1 });
+    const successBody = (await success.json()) as {
+      status: string;
+      stepUpLevel: number;
+      expiresAt: string;
+    };
+    expect(successBody).toMatchObject({ status: 'active', stepUpLevel: 1 });
 
     const request = new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       headers: { cookie: effectiveSessionCookie },
@@ -229,10 +234,7 @@ describe('production TOTP step-up establishment', () => {
     `;
     expect(rows[0]?.step_up_tenant_id).toBe(ids.tenant);
     expect(rows[0]?.step_up_level).toBe(1);
-    const databaseClock = await client<{ now_ms: string }[]>`
-      select (extract(epoch from clock_timestamp()) * 1000)::text as now_ms
-    `;
-    expect(rows[0]?.expires_at.getTime()).toBeGreaterThan(Number(databaseClock[0]!.now_ms));
+    expect(rows[0]?.expires_at.toISOString()).toBe(successBody.expiresAt);
 
     assertStepUp(actor!.session, 1, new Date(), ids.tenant);
     expect(() => assertStepUp(actor!.session, 1, new Date(), ids.otherTenant)).toThrow(

@@ -47,8 +47,6 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
           DROP FUNCTION IF EXISTS app.resolve_provider_identity(text, uuid);
           DROP FUNCTION IF EXISTS app.resolve_auth_identity(text, text);
           DROP TABLE IF EXISTS app.auth_session_assurance;
-          DROP TABLE IF EXISTS app.staff_number_registry;
-          DROP TABLE IF EXISTS app.auth_identities;
           ALTER TABLE app.staff_invitations
             DROP CONSTRAINT IF EXISTS staff_invitations_staff_number_registry_fk,
             DROP CONSTRAINT IF EXISTS staff_invitations_manual_staff_number_ck,
@@ -57,6 +55,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
           ALTER TABLE app.staff_invitations
             DROP COLUMN IF EXISTS staff_number_registry_id,
             DROP COLUMN IF EXISTS delivery_method;
+          DROP TABLE IF EXISTS app.staff_number_registry;
+          DROP TABLE IF EXISTS app.auth_identities;
           ALTER TABLE auth."user" ALTER COLUMN email SET NOT NULL;
           DROP POLICY IF EXISTS membership_roles_staff_invitation_acceptance
             ON app.membership_role_assignments;
