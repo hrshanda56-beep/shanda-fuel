@@ -229,7 +229,10 @@ describe('production TOTP step-up establishment', () => {
     `;
     expect(rows[0]?.step_up_tenant_id).toBe(ids.tenant);
     expect(rows[0]?.step_up_level).toBe(1);
-    expect(rows[0]?.expires_at.getTime()).toBeGreaterThan(Date.now());
+    const databaseClock = await client<{ now_ms: string }[]>`
+      select (extract(epoch from clock_timestamp()) * 1000)::text as now_ms
+    `;
+    expect(rows[0]?.expires_at.getTime()).toBeGreaterThan(Number(databaseClock[0]!.now_ms));
 
     assertStepUp(actor!.session, 1, new Date(), ids.tenant);
     expect(() => assertStepUp(actor!.session, 1, new Date(), ids.otherTenant)).toThrow(

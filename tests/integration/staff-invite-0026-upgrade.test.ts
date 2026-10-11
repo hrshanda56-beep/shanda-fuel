@@ -15,6 +15,10 @@ const migrationPath = resolve(
   import.meta.dirname,
   '../../src/platform/db/migrations/0026_staff_invite_onboarding.sql',
 );
+const currentMigrationPath = resolve(
+  import.meta.dirname,
+  '../../src/platform/db/migrations/0027_clerk_staff_number_auth.sql',
+);
 
 describe('0025 to 0026 staff invitation database upgrade', () => {
   beforeAll(() => {
@@ -28,11 +32,32 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
   it('runs the unchanged migration from a 0025-shaped schema and rolls back safely', async () => {
     const migrationSql = await readFile(migrationPath, 'utf8');
     const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
+    const currentMigrationSql = await readFile(currentMigrationPath, 'utf8');
+    const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
     const rollback = new Error('rollback disposable 0025 to 0026 upgrade');
 
     await expect(
       client.begin(async (transaction) => {
         await transaction.unsafe(`
+          DROP FUNCTION IF EXISTS app.accept_manual_staff_invitation(text, uuid, text, uuid);
+          DROP FUNCTION IF EXISTS app.resolve_manual_staff_invitation(text, text);
+          DROP FUNCTION IF EXISTS app.resolve_staff_number_for_user(uuid);
+          DROP FUNCTION IF EXISTS app.resolve_staff_number_for_invitation(uuid);
+          DROP FUNCTION IF EXISTS app.reserve_staff_number(uuid, text);
+          DROP FUNCTION IF EXISTS app.resolve_provider_identity(text, uuid);
+          DROP FUNCTION IF EXISTS app.resolve_auth_identity(text, text);
+          DROP TABLE IF EXISTS app.auth_session_assurance;
+          DROP TABLE IF EXISTS app.staff_number_registry;
+          DROP TABLE IF EXISTS app.auth_identities;
+          ALTER TABLE app.staff_invitations
+            DROP CONSTRAINT IF EXISTS staff_invitations_staff_number_registry_fk,
+            DROP CONSTRAINT IF EXISTS staff_invitations_manual_staff_number_ck,
+            DROP CONSTRAINT IF EXISTS staff_invitations_delivery_method_ck;
+          DROP INDEX IF EXISTS app.staff_invitations_pending_staff_number_idx;
+          ALTER TABLE app.staff_invitations
+            DROP COLUMN IF EXISTS staff_number_registry_id,
+            DROP COLUMN IF EXISTS delivery_method;
+          ALTER TABLE auth."user" ALTER COLUMN email SET NOT NULL;
           DROP POLICY IF EXISTS membership_roles_staff_invitation_acceptance
             ON app.membership_role_assignments;
           DROP POLICY IF EXISTS memberships_staff_invitation_acceptance ON app.memberships;
@@ -44,7 +69,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
           DROP TABLE IF EXISTS app.staff_invitation_stations;
           DROP TABLE IF EXISTS app.staff_invitations;
           DROP INDEX IF EXISTS auth.auth_user_normalized_email_uidx;
-          DELETE FROM drizzle.__drizzle_migrations WHERE hash = '${migrationHash}';
+          DELETE FROM drizzle.__drizzle_migrations
+          WHERE hash IN ('${migrationHash}', '${currentMigrationHash}');
         `);
 
         const before = await transaction<{ migration_count: number; table_name: string }[]>`
@@ -97,6 +123,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
   });
 
   it('records 0026 exactly once with the migration source hash', async () => {
+    const currentMigrationSql = await readFile(currentMigrationPath, 'utf8');
+    const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
     const rows = await client<
       {
         migration_count: number;
@@ -115,8 +143,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     expect(rows).toEqual([
       {
-        migration_count: 27,
-        latest_hash: '22f56a2cdd441a77a124e421e9c4a57b186bd1e773ee70b1897e5235f992bb83',
+        migration_count: 28,
+        latest_hash: currentMigrationHash,
         exact_hash_count: 1,
       },
     ]);
