@@ -7,7 +7,12 @@ import type { MyShiftData, MyShiftMeter } from '@/modules/forecourt/my-shift-sta
  */
 export type ScenarioResult = { status: 200; body: MyShiftData } | { status: 403 | 500 | 'hang' };
 
-export type Scenario = { id: string; title: string; note: string; build: (now: number) => ScenarioResult };
+export type Scenario = {
+  id: string;
+  title: string;
+  note: string;
+  build: (now: number) => ScenarioResult;
+};
 
 const T = '00000000-0000-4000-8000-000000000001';
 const E = '00000000-0000-4000-8000-000000000002';
@@ -29,7 +34,11 @@ type Opts = {
 
 function data(now: number, o: Opts = {}): MyShiftData {
   return {
-    station: { id: S, name: o.stationName ?? 'Harare Central', timezone: o.timezone ?? 'Africa/Harare' },
+    station: {
+      id: S,
+      name: o.stationName ?? 'Harare Central',
+      timezone: o.timezone ?? 'Africa/Harare',
+    },
     tenantId: T,
     legalEntityId: E,
     now: iso(now),
@@ -51,7 +60,11 @@ function data(now: number, o: Opts = {}): MyShiftData {
   };
 }
 
-const recorded = (value: string, at: number) => ({ status: 'RECORDED' as const, value, recordedAt: iso(at) });
+const recorded = (value: string, at: number) => ({
+  status: 'RECORDED' as const,
+  value,
+  recordedAt: iso(at),
+});
 
 function meter(n: number, over: Partial<MyShiftMeter> = {}): MyShiftMeter {
   return {
@@ -74,7 +87,8 @@ function baseMeters(now: number): MyShiftMeter[] {
   ];
 }
 
-const LONG_STATION = 'Harare Central Forecourt and Convenience Complex (Samora Machel Avenue & Julius Nyerere Way Branch)';
+const LONG_STATION =
+  'Harare Central Forecourt and Convenience Complex (Samora Machel Avenue & Julius Nyerere Way Branch)';
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -124,7 +138,10 @@ export const SCENARIOS: Scenario[] = [
     id: 'one-meter',
     title: 'One nozzle',
     note: 'A single meter, opening due.',
-    build: (now) => ({ status: 200, body: data(now, { meters: [meter(1, { previousReading: '250.000' })] }) }),
+    build: (now) => ({
+      status: 200,
+      body: data(now, { meters: [meter(1, { previousReading: '250.000' })] }),
+    }),
   },
   {
     id: 'no-meters',
@@ -144,7 +161,12 @@ export const SCENARIOS: Scenario[] = [
     note: 'Planned shift waiting for the supervisor.',
     build: (now) => ({
       status: 200,
-      body: data(now, { state: 'PLANNED', start: now + HOUR, end: now + 9 * HOUR, label: 'Night shift' }),
+      body: data(now, {
+        state: 'PLANNED',
+        start: now + HOUR,
+        end: now + 9 * HOUR,
+        label: 'Night shift',
+      }),
     }),
   },
   {
@@ -158,7 +180,10 @@ export const SCENARIOS: Scenario[] = [
         end: now - 10 * 60_000,
         meters: [
           meter(1, { opening: recorded('1000.000', now - 9 * HOUR) }),
-          meter(2, { opening: recorded('5400.500', now - 9 * HOUR), closing: recorded('5812.750', now - 60_000) }),
+          meter(2, {
+            opening: recorded('5400.500', now - 9 * HOUR),
+            closing: recorded('5812.750', now - 60_000),
+          }),
         ],
       }),
     }),
@@ -174,8 +199,14 @@ export const SCENARIOS: Scenario[] = [
         start: now - 10 * HOUR,
         end: now - HOUR,
         meters: [
-          meter(1, { opening: recorded('1000.000', now - 10 * HOUR), closing: recorded('1480.125', now - HOUR) }),
-          meter(2, { opening: recorded('5400.500', now - 10 * HOUR), closing: recorded('5812.750', now - HOUR) }),
+          meter(1, {
+            opening: recorded('1000.000', now - 10 * HOUR),
+            closing: recorded('1480.125', now - HOUR),
+          }),
+          meter(2, {
+            opening: recorded('5400.500', now - 10 * HOUR),
+            closing: recorded('5812.750', now - HOUR),
+          }),
         ],
       }),
     }),
@@ -231,10 +262,21 @@ export const SCENARIOS: Scenario[] = [
       body: data(now, { meters: [meter(1, { previousReading: null })] }),
     }),
   },
-  { id: 'loading', title: 'Loading', note: 'The request never answers (skeleton).', build: () => ({ status: 'hang' }) },
-  { id: 'error', title: 'Error', note: 'The server fails (error state with retry).', build: () => ({ status: 500 }) },
+  {
+    id: 'loading',
+    title: 'Loading',
+    note: 'The request never answers (skeleton).',
+    build: () => ({ status: 'hang' }),
+  },
+  {
+    id: 'error',
+    title: 'Error',
+    note: 'The server fails (error state with retry).',
+    build: () => ({ status: 500 }),
+  },
   { id: 'forbidden', title: 'Forbidden', note: 'Access refused.', build: () => ({ status: 403 }) },
 ];
 
 export const SCENARIO_COOKIE = 'demo_scenario';
-export const findScenario = (id: string | undefined) => SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0]!;
+export const findScenario = (id: string | undefined) =>
+  SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0]!;

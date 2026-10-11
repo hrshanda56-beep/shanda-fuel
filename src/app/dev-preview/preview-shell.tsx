@@ -33,6 +33,21 @@ export function PreviewShell({ children }: { children: ReactNode }) {
   });
   return (
     <AppShell navigationProjection={PROJECTION} searchPlacement="header">
+      <p
+        role="note"
+        className="preview-sample-banner"
+        style={{
+          margin: '0 0 12px',
+          padding: '8px 12px',
+          border: '1px dashed currentColor',
+          borderRadius: 8,
+          fontSize: 14,
+          fontWeight: 600,
+        }}
+      >
+        SAMPLE DATA — development preview only. All figures are invented; none are business records.
+        Scenario: ?scenario=normal | attention | unapproved | empty | loading | error
+      </p>
       {children}
     </AppShell>
   );

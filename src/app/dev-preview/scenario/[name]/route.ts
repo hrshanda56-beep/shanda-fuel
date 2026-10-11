@@ -12,6 +12,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ name
   }
   return new Response(null, {
     status: 302,
-    headers: { location: to.pathname + to.search, 'set-cookie': `${SCENARIO_COOKIE}=${id}; Path=/; Max-Age=86400` },
+    headers: {
+      location: to.pathname + to.search,
+      'set-cookie': `${SCENARIO_COOKIE}=${id}; Path=/; Max-Age=86400`,
+    },
   });
 }
