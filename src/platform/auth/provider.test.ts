@@ -30,8 +30,8 @@ describe('provider selection', () => {
     vi.stubEnv('AUTH_PROVIDER', 'CLERK');
     vi.stubEnv('APP_ENV', 'test');
     vi.stubEnv('APP_URL', 'http://localhost:3000');
-    vi.stubEnv('CLERK_SECRET_KEY', 'sk_test_placeholder');
-    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k');
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_fake_clerk_fixture');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_fake_clerk_fixture');
 
     await expect(getAuth()).rejects.toThrow('Better Auth is unavailable');
     expect(createBetterAuth).not.toHaveBeenCalled();
