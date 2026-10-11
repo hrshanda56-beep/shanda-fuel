@@ -178,6 +178,42 @@ test('an approved zero is shown as zero, unlike a day with no approved report', 
   await expect(figures).not.toContainText('Stock variance');
 });
 
+test('figures fit their cards without splitting a number, at every width', async ({ page }) => {
+  await mockToday(page, {
+    daily: [dailyRow({ salesValue: '120000', cashVariance: '-12345.67' })],
+  });
+  for (const width of [320, 375, 1024, 1280, 1360, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(TODAY);
+    await expect(page.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+      'USD 120,000.00',
+    );
+    const overflow = await page.locator('.today-figure-value').evaluateAll((values) =>
+      values
+        .map((value) => {
+          const range = document.createRange();
+          range.selectNodeContents(value);
+          const widest = Math.max(...[...range.getClientRects()].map((rect) => rect.width));
+          return { text: value.textContent, widest, box: value.clientWidth };
+        })
+        .filter(({ widest, box }) => widest > box + 1),
+    );
+    expect(overflow, `width ${width}`).toEqual([]);
+  }
+});
+
+test('a cash shortage stays readable on its pastel card in dark mode', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await mockToday(page, { daily: [dailyRow()] });
+  for (const width of [375, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(TODAY);
+    const value = page.locator('.today-figure[data-tone="short"] .today-figure-value');
+    await expect(value).toHaveText('−USD 30.85');
+    await expect(value).toHaveCSS('color', 'rgb(143, 29, 29)');
+  }
+});
+
 test('rows without an approved reconciliation are not shown as zero sales', async ({ page }) => {
   await mockToday(page, {
     daily: [

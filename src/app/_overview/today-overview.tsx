@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { formatBusinessDate } from '@/design-system/formatters';
 import { Icon, type IconName } from '@/design-system/icons';
@@ -15,6 +15,7 @@ import {
   axisLabels,
   CHART_RANGES,
   chartBuckets,
+  figureChars,
   dailyTotals,
   litresSeries,
   plotValue,
@@ -219,6 +220,14 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
   const attentionLoading = operations.status === 'loading' || customers.status === 'loading';
 
   const totals = daily.status === 'ready' ? dailyTotals(daily.data.rows) : null;
+  const figureValues: (string | null)[] = totals
+    ? [
+        formatTileMoney(totals.salesValue),
+        formatTileLitres(totals.litresSold),
+        signedMoney(totals.cashVariance),
+        formatTileMoney(totals.accountSales),
+      ]
+    : [null, null, null, null];
   const figureState: FigureState =
     daily.status === 'ready' ? (totals ? 'ready' : 'none') : daily.status;
 
@@ -250,20 +259,30 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
             : 'today'}
           . Expected cash and stock variance are not available yet.
         </p>
-        <dl className="today-figures">
+        <dl
+          className="today-figures"
+          // One size for all four cards, from the longest figure shown.
+          style={
+            {
+              '--figure-chars': Math.max(
+                ...figureValues.map((value) => (value === null ? 6 : figureChars(value))),
+              ),
+            } as CSSProperties
+          }
+        >
           <Figure
             label="Sales today"
             href={reportsHref}
             icon="dollar"
             state={figureState}
-            value={totals ? formatTileMoney(totals.salesValue) : null}
+            value={figureValues[0] ?? null}
           />
           <Figure
             label="Litres sold"
             href={reportsHref}
             icon="drop"
             state={figureState}
-            value={totals ? formatTileLitres(totals.litresSold) : null}
+            value={figureValues[1] ?? null}
             sub={
               totals && !stationId
                 ? `${totals.stationCount} ${totals.stationCount === 1 ? 'station' : 'stations'} approved`
@@ -275,7 +294,7 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
             href={reportsHref}
             icon="wallet"
             state={figureState}
-            value={totals ? signedMoney(totals.cashVariance) : null}
+            value={figureValues[2] ?? null}
             sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
             tone={totals ? varianceTone(totals.cashVariance) : undefined}
           />
@@ -284,7 +303,7 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
             href={customersHref}
             icon="users"
             state={figureState}
-            value={totals ? formatTileMoney(totals.accountSales) : null}
+            value={figureValues[3] ?? null}
             sub={totals ? 'Credit and prepaid accounts' : null}
           />
         </dl>

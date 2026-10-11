@@ -5,6 +5,7 @@ import {
   dailyTotals,
   litresSeries,
   axisLabels,
+  figureChars,
   plotValue,
   productTotals,
   signedLitres,
@@ -173,5 +174,15 @@ describe('configured products and unavailable stock variance', () => {
 
   it('does not produce a stock variance figure at all', () => {
     expect(dailyTotals([row()])).not.toHaveProperty('inventoryVariance');
+  });
+});
+
+describe('figureChars', () => {
+  it('sizes figures by their longest word so numbers are never split', () => {
+    expect(figureChars('USD 2,096.72')).toBe(8);
+    expect(figureChars('−USD 12,345.67')).toBe(9);
+    expect(figureChars('USD 120,000.00')).toBe(10);
+    expect(figureChars('1,284 L')).toBe(6);
+    expect(figureChars('—')).toBe(6);
   });
 });

@@ -1598,26 +1598,34 @@ button.today-period {
   font-size: var(--font-size-sm);
 }
 
-.today-figure[data-state='none'] .today-figure-value {
-  color: var(--text-tertiary, var(--text-secondary));
+/* Figure cards keep fixed pastel backgrounds at every width and in both
+   themes, so a shortage uses a fixed dark red (about 6:1 on every tile). */
+.today-figure[data-tone='short'] .today-figure-value {
+  color: #8f1d1d;
 }
 
-.today-figure[data-tone='short'] .today-figure-value {
-  color: var(--color-critical);
+/* Size figures to the card, not the window, so an amount such as
+   "USD 2,096.72" wraps only at the space and never splits the number. */
+.today-figure {
+  container-type: inline-size;
 }
 
 .today-figure-value {
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  /* --figure-chars: longest word among the four figures (set on the list). */
+  font-size: clamp(
+    1rem,
+    calc(100cqi / (var(--figure-chars, 8) * 0.6)),
+    var(--font-size-4xl, 2.25rem)
+  );
 }
 
-@media (min-width: 64rem) {
-  .today-figure-value {
-    font-size: clamp(1.5rem, 2.1vw, var(--font-size-4xl, 2.25rem));
-  }
-
-  /* Figure cards keep fixed pastel backgrounds in both themes. */
-  .today-figure[data-tone='short'] .today-figure-value {
-    color: #8f1d1d;
+/* Between 1024 and 1359 px the sidebar and side column leave each of four
+   cards under about 90 px of content (70 px at 1280), too narrow for an
+   amount; show the figures two by two there. */
+@media (min-width: 64rem) and (max-width: 84.99rem) {
+  .today-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

@@ -184,3 +184,12 @@ export function axisLabels(labels: readonly string[], count = 6): string[] {
     (_, i) => labels[Math.round((i * (labels.length - 1)) / (count - 1))] ?? '',
   );
 }
+
+/**
+ * Width, in characters, that a figure needs on one line: its longest word,
+ * at least 6. The card sizes the figure from this so a value such as
+ * "USD 2,096.72" may wrap at the space but the number itself is never split.
+ */
+export function figureChars(value: string): number {
+  return Math.max(6, ...value.split(/\s+/).map((word) => word.length));
+}
