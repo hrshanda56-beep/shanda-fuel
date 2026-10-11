@@ -1,5 +1,6 @@
 'use client';
 
+import { useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -7,6 +8,8 @@ import { authClient } from '@/platform/auth/client';
 import { Button } from '../primitives';
 
 import type { WorkplaceOption } from './entry-logic';
+
+type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 
 /** Several accessible stations: one tap on a whole row picks it. */
 export function WorkplacePicker({ options }: { options: readonly WorkplaceOption[] }) {
@@ -71,7 +74,11 @@ export function WorkplacePicker({ options }: { options: readonly WorkplaceOption
 }
 
 /** Signed in, but no active membership grants a workplace. */
-export function NoWorkplace() {
+export function NoWorkplace({ provider = 'BETTER_AUTH' }: { provider?: AuthProviderName }) {
+  return provider === 'CLERK' ? <ClerkNoWorkplace /> : <BetterAuthNoWorkplace />;
+}
+
+function BetterAuthNoWorkplace() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -101,6 +108,46 @@ export function NoWorkplace() {
           block
           loading={loading}
           onClick={() => void signOut()}
+        >
+          Sign out
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function ClerkNoWorkplace() {
+  const { signOut } = useClerk();
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  async function signOutFromClerk() {
+    setLoading(true);
+    try {
+      await signOut();
+    } finally {
+      router.push('/login');
+      router.refresh();
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="entry-title">
+      <header className="entry-heading">
+        <h1 id="entry-title">You don&apos;t have a workplace yet</h1>
+        <p>
+          Your account is signed in, but it isn&apos;t linked to a station. Ask your manager to
+          check your access.
+        </p>
+      </header>
+      <div className="entry-form">
+        <Button
+          variant="secondary"
+          size="lg"
+          block
+          loading={loading}
+          onClick={() => void signOutFromClerk()}
         >
           Sign out
         </Button>

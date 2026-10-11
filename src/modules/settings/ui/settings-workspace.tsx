@@ -12,6 +12,7 @@ import { StaffPanel } from './staff-panel';
 import styles from './settings-workspace.module.css';
 
 type Tab = 'organisation' | 'companies' | 'stations' | 'staff' | 'account';
+type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
@@ -61,7 +62,7 @@ function InfoCard({
   );
 }
 
-function AccountPanel({ view }: { view: SettingsView }) {
+function AccountPanel({ view, provider }: { view: SettingsView; provider: AuthProviderName }) {
   const email = view.account.email ?? 'No email provided';
   return (
     <>
@@ -83,13 +84,19 @@ function AccountPanel({ view }: { view: SettingsView }) {
         />
       </InfoCard>
       <div className={styles.signOutRow}>
-        <SignOutButton />
+        <SignOutButton provider={provider} />
       </div>
     </>
   );
 }
 
-export function SettingsWorkspace({ view }: { view: SettingsView }) {
+export function SettingsWorkspace({
+  view,
+  provider,
+}: {
+  view: SettingsView;
+  provider: AuthProviderName;
+}) {
   const [tab, setTab] = useState<Tab>('organisation');
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
@@ -104,7 +111,7 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
             <InfoCard headingId="organisation-unavailable" title="Not available">
               <AccessDeniedState message="No organisation is available for this account." />
             </InfoCard>
-            <AccountPanel view={view} />
+            <AccountPanel view={view} provider={provider} />
           </div>
         </div>
       </PageContainer>
@@ -188,7 +195,7 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
             <StaffPanel tenantId={organisation.id} overview={view.staff} />
           ) : null}
 
-          {tab === 'account' ? <AccountPanel view={view} /> : null}
+          {tab === 'account' ? <AccountPanel view={view} provider={provider} /> : null}
         </div>
       </div>
     </PageContainer>
