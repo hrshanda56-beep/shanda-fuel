@@ -18,15 +18,35 @@ const row = (overrides: Partial<Parameters<typeof dailyTotals>[0][number]> = {})
   litresSold: '578.125',
   salesValue: '1100.10',
   cashVariance: '-0.10',
-  inventoryVariance: '0',
   customerCreditEvidence: '20.00',
   prepaidEvidence: '5.05',
+  reconciliationIds: ['r1'],
   ...overrides,
 });
 
 describe('dailyTotals', () => {
   it('is null without an approved report, never zero', () => {
     expect(dailyTotals([])).toBeNull();
+  });
+
+  it('ignores rows that only carry collections, deposits or dips', () => {
+    const unapproved = row({ salesValue: '0', litresSold: '0', cashVariance: '0' });
+    expect(dailyTotals([{ ...unapproved, reconciliationIds: [] }])).toBeNull();
+    const totals = dailyTotals([
+      row({ salesValue: '10', stationId: 's1' }),
+      { ...row({ salesValue: '0', stationId: 's2' }), reconciliationIds: [] },
+    ]);
+    expect(totals).toMatchObject({ stationCount: 1, salesValue: '10' });
+  });
+
+  it('keeps an approved zero as zero and a shortage negative', () => {
+    expect(dailyTotals([row({ cashVariance: '0.0000' })])?.cashVariance).toBe('0');
+    expect(
+      dailyTotals([
+        row({ cashVariance: '-30.85' }),
+        row({ stationId: 's2', cashVariance: '-0.15' }),
+      ])?.cashVariance,
+    ).toBe('-31');
   });
 
   it('sums stations with exact decimals', () => {

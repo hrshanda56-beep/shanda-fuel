@@ -56,7 +56,11 @@ async function mockToday(
   await page.route('**/api/reports/daily**', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({ report: 'DAILY_OPERATIONS', rows: options.daily ?? [] }),
+      body: JSON.stringify({
+        report: 'DAILY_OPERATIONS',
+        filters: { fromDate: '2026-10-08' },
+        rows: options.daily ?? [],
+      }),
     });
   });
   await page.route('**/api/reports/management**', async (route) => {
@@ -91,7 +95,7 @@ test('today asks for a station instead of showing empty figures', async ({ page 
   await expect(page.locator('.card')).toHaveCount(0);
 });
 
-function dailyRow(overrides: Record<string, string> = {}) {
+function dailyRow(overrides: Record<string, unknown> = {}) {
   return {
     reportDate: '2026-10-08',
     stationId: STATION,
@@ -102,6 +106,7 @@ function dailyRow(overrides: Record<string, string> = {}) {
     inventoryVariance: '0',
     customerCreditEvidence: '100',
     prepaidEvidence: '0',
+    reconciliationIds: ['rec-1'],
     ...overrides,
   };
 }
@@ -110,14 +115,14 @@ test('key figures say when no approved report exists yet', async ({ page }) => {
   await mockToday(page);
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
-  for (const label of ['Sales today', 'Litres sold', 'Cash variance', 'Stock variance']) {
+  for (const label of ['Sales today', 'Litres sold', 'Cash variance', 'Account sales']) {
     await expect(figures.locator('.today-figure', { hasText: label })).toContainText(
       'No approved report yet',
     );
   }
-  await expect(
-    page.getByText('Expected cash is not available yet.', { exact: false }),
-  ).toBeVisible();
+  const note = page.locator('.today-figures-note');
+  await expect(note).toContainText('Approved figures for 08 Oct 2026');
+  await expect(note).toContainText('Expected cash and stock variance are not available yet.');
   await expect(page.getByRole('heading', { name: 'Sales performance Litres' })).toBeVisible();
   await expect(page.getByText('No approved sales in this period yet.')).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);
@@ -136,8 +141,20 @@ test('key figures show approved totals with signed variances', async ({ page }) 
   const cash = figures.locator('.today-figure', { hasText: 'Cash variance' });
   await expect(cash).toContainText('−USD 30.85');
   await expect(cash).toContainText('Cash short');
-  await expect(figures.locator('.today-figure', { hasText: 'Stock variance' })).toContainText(
-    'No stock variance',
+  await expect(figures.locator('.today-figure', { hasText: 'Account sales' })).toContainText(
+    'USD 100.00',
+  );
+});
+
+test('rows without an approved reconciliation are not shown as zero sales', async ({ page }) => {
+  await mockToday(page, {
+    daily: [
+      dailyRow({ salesValue: '0', litresSold: '0', cashVariance: '0', reconciliationIds: [] }),
+    ],
+  });
+  await page.goto(TODAY);
+  await expect(page.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+    'No approved report yet',
   );
 });
 

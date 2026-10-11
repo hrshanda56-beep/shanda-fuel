@@ -14,9 +14,11 @@ export type DailyRow = Readonly<{
   litresSold: string;
   salesValue: string;
   cashVariance: string;
-  inventoryVariance: string;
   customerCreditEvidence: string;
   prepaidEvidence: string;
+  /** Approved reconciliations behind the row; empty when the row only carries
+   *  collections, deposits, settlements, deliveries or dips for that day. */
+  reconciliationIds: readonly string[];
 }>;
 
 export type DailyTotals = Readonly<{
@@ -24,21 +26,27 @@ export type DailyTotals = Readonly<{
   salesValue: string;
   litresSold: string;
   cashVariance: string;
-  inventoryVariance: string;
   accountSales: string;
 }>;
 
-/** Null when no approved report exists for the day, so tiles show "—". */
+/**
+ * Totals from approved reconciliations only. The daily report also returns
+ * rows for days that only have collections, deposits, settlements, deliveries
+ * or tank dips, with sales filled in as "0"; those rows are not approved
+ * figures and are ignored. Null when nothing is approved, so tiles show "—".
+ * Stock variance is not summed: the report's dip variance is not tied to an
+ * approved reconciliation and cannot tell "no dip" from a zero variance.
+ */
 export function dailyTotals(rows: readonly DailyRow[]): DailyTotals | null {
-  if (rows.length === 0) return null;
+  const approved = rows.filter((row) => (row.reconciliationIds ?? []).length > 0);
+  if (approved.length === 0) return null;
   return {
-    stationCount: new Set(rows.map((row) => row.stationId)).size,
-    salesValue: sumExact(rows.map((row) => row.salesValue)),
-    litresSold: sumExact(rows.map((row) => row.litresSold)),
-    cashVariance: sumExact(rows.map((row) => row.cashVariance)),
-    inventoryVariance: sumExact(rows.map((row) => row.inventoryVariance)),
+    stationCount: new Set(approved.map((row) => row.stationId)).size,
+    salesValue: sumExact(approved.map((row) => row.salesValue)),
+    litresSold: sumExact(approved.map((row) => row.litresSold)),
+    cashVariance: sumExact(approved.map((row) => row.cashVariance)),
     accountSales: sumExact(
-      rows.flatMap((row) => [row.customerCreditEvidence, row.prepaidEvidence]),
+      approved.flatMap((row) => [row.customerCreditEvidence, row.prepaidEvidence]),
     ),
   };
 }

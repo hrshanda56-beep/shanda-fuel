@@ -19,7 +19,6 @@ import {
   litresSeries,
   plotValue,
   productTotals,
-  signedLitres,
   signedMoney,
   varianceTone,
   type ChartRange,
@@ -101,7 +100,7 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
   const [customers, setCustomers] = useState<Section<{ customers: { status: string }[] }>>({
     status: 'loading',
   });
-  const [daily, setDaily] = useState<Section<{ rows: DailyRow[] }>>({ status: 'loading' });
+  const [daily, setDaily] = useState<Section<DailyReport>>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -117,7 +116,7 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
     // Today's approved figures; without a station, every station this person may see.
     const reportParams = new URLSearchParams({ tenantId });
     if (stationId) reportParams.set('stationIds', stationId);
-    load<{ rows: DailyRow[] }>(
+    load<DailyReport>(
       `/api/reports/daily?${reportParams}`,
       signal,
       'Today’s figures could not be loaded.',
@@ -173,6 +172,10 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
     return () => controller.abort();
   }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt]);
 
+  const customersHref = useMemo(
+    () => (tenantId ? `/customers?${new URLSearchParams({ tenantId })}` : '/customers'),
+    [tenantId],
+  );
   const reportsHref = useMemo(() => {
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
@@ -241,8 +244,11 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
       >
         <h2 id="today-figures-heading">Key figures</h2>
         <p className="today-figures-note">
-          {stationId ? 'Approved figures for today.' : 'All stations · Approved figures for today.'}{' '}
-          Expected cash is not available yet.
+          {stationId ? '' : 'All stations · '}Approved figures for{' '}
+          {daily.status === 'ready' && daily.data.filters?.fromDate
+            ? formatBusinessDate(daily.data.filters.fromDate)
+            : 'today'}
+          . Expected cash and stock variance are not available yet.
         </p>
         <dl className="today-figures">
           <Figure
@@ -251,7 +257,6 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
             icon="dollar"
             state={figureState}
             value={totals ? formatTileMoney(totals.salesValue) : null}
-            sub={totals ? `Account and prepaid ${formatTileMoney(totals.accountSales)}` : null}
           />
           <Figure
             label="Litres sold"
@@ -271,17 +276,16 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
             icon="wallet"
             state={figureState}
             value={totals ? signedMoney(totals.cashVariance) : null}
-            sub={totals ? VARIANCE_WORDS.cash[varianceTone(totals.cashVariance)] : null}
+            sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
             tone={totals ? varianceTone(totals.cashVariance) : undefined}
           />
           <Figure
-            label="Stock variance"
-            href={reportsHref}
-            icon="fuel"
+            label="Account sales"
+            href={customersHref}
+            icon="users"
             state={figureState}
-            value={totals ? signedLitres(totals.inventoryVariance) : null}
-            sub={totals ? VARIANCE_WORDS.stock[varianceTone(totals.inventoryVariance)] : null}
-            tone={totals ? varianceTone(totals.inventoryVariance) : undefined}
+            value={totals ? formatTileMoney(totals.accountSales) : null}
+            sub={totals ? 'Credit and prepaid accounts' : null}
           />
         </dl>
       </section>
@@ -413,10 +417,13 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
   );
 }
 
-const VARIANCE_WORDS = {
-  cash: { none: 'No cash variance', short: 'Cash short', over: 'Cash over' },
-  stock: { none: 'No stock variance', short: 'Stock short', over: 'Stock over' },
+const CASH_VARIANCE_WORDS = {
+  none: 'No cash variance',
+  short: 'Cash short',
+  over: 'Cash over',
 } as const;
+
+type DailyReport = { filters?: { fromDate?: string }; rows: DailyRow[] };
 
 type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'none';
 
