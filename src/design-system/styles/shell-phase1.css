@@ -349,11 +349,9 @@
     white-space: nowrap;
   }
 
+  /* The station pill in the header names the station; no second line. */
   .shell-station-line {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: none;
   }
 
   .shell-page-subtitle {
@@ -365,14 +363,18 @@
     margin-left: auto;
   }
 
-  /* The station is switched from More; the header keeps one quiet line. */
+  /* One row: title left; station switcher and avatar right. Long station
+     names truncate inside the pill instead of wrapping the header. */
   .shell-header-controls .shell-context-selector {
     width: auto;
-    flex: 0 0 0;
+    max-width: 44vw;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
-  .shell-context-pill {
-    display: none;
+  .shell-header-controls .shell-context-pill {
+    max-width: 100%;
+    padding: 0 var(--space-2-5);
   }
 
   .shell-header .global-search,
@@ -393,19 +395,21 @@
     top: calc(3.5rem + env(safe-area-inset-top));
   }
 
-  /* Bottom bar: two tabs, a raised scan button, two tabs. */
+  /* Bottom bar: the authorised everyday tabs plus More, evenly spaced. */
   .shell-mobile-nav-list {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    grid-template-columns: none;
   }
 
   .shell-mobile-nav-link {
-    min-height: 3.75rem;
-    gap: var(--space-1);
+    min-height: 3.5rem;
+    gap: 0.125rem;
   }
 
   .shell-mobile-nav-link svg {
-    width: 1.75rem;
-    height: 1.75rem;
+    width: 1.5rem;
+    height: 1.5rem;
   }
 }
 
@@ -1315,13 +1319,13 @@ button.today-period {
   padding: 0;
 }
 
-/* Floating bottom bar with a raised scan button in a notch (phones). */
+/* Floating labelled bottom bar (phones). */
 @media (max-width: 47.99rem) {
   .shell-mobile-nav {
     right: 0.75rem;
     bottom: calc(0.5rem + env(safe-area-inset-bottom));
     left: 0.75rem;
-    padding: 0.25rem 0.5rem;
+    padding: 0.25rem 0.375rem;
     border: 0;
     background: none;
     box-shadow: none;
@@ -1336,8 +1340,6 @@ button.today-period {
     background: #17211d;
     box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.3);
     content: '';
-    -webkit-mask: radial-gradient(circle 2.25rem at 50% 0, transparent 98%, #000 100%);
-    mask: radial-gradient(circle 2.25rem at 50% 0, transparent 98%, #000 100%);
   }
 
   .shell-mobile-nav-list {
@@ -1345,54 +1347,57 @@ button.today-period {
   }
 
   .shell-mobile-nav-link {
+    position: relative;
+    border-radius: 1.375rem;
     color: #9aa7a1;
   }
 
-  .shell-mobile-nav-link:hover,
-  .shell-mobile-nav-link[aria-current='page'] {
-    background: transparent;
+  /* Visible label under every icon; one line, never wider than its tab. */
+  .shell-mobile-nav-link > span:not(.visually-hidden) {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.6875rem;
+    font-weight: var(--font-weight-medium);
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Current page: brighter text and a soft accent pill, not colour alone. */
+  .shell-mobile-nav-link[aria-current='page'],
+  .shell-mobile-nav-more[data-current-section] {
+    background: rgb(95 195 163 / 0.16);
     box-shadow: none;
     color: #fff;
   }
 
-  .shell-mobile-nav-link span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
+  .shell-mobile-nav-link[aria-current='page'] > span:not(.visually-hidden),
+  .shell-mobile-nav-more[data-current-section] > span:not(.visually-hidden) {
+    font-weight: var(--font-weight-semibold);
   }
 
-  .shell-mobile-nav-scan-slot {
-    position: relative;
-    grid-column: 3;
+  .shell-mobile-nav-link[aria-current='page'] svg,
+  .shell-mobile-nav-more[data-current-section] svg {
+    color: #5fc3a3;
   }
 
-  .shell-mobile-nav-more {
-    grid-column: 5;
+  .shell-mobile-nav-link:focus-visible {
+    outline: 2px solid #5fc3a3;
+    outline-offset: -2px;
   }
 
-  .shell-mobile-nav-scan {
-    position: absolute;
-    top: -2.25rem;
-    left: 50%;
-    display: grid;
-    width: 3.75rem;
-    height: 3.75rem;
-    place-items: center;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-full);
-    background: #ecd57a;
-    box-shadow: 0 0.25rem 1rem rgb(236 213 122 / 0.35);
-    color: #17211d;
-    cursor: pointer;
-    transform: translateX(-50%);
+  @media (hover: hover) {
+    .shell-mobile-nav-link:hover {
+      background: rgb(255 255 255 / 0.06);
+      color: #fff;
+    }
   }
 
-  .shell-mobile-nav-scan svg {
-    width: 1.9rem;
-    height: 1.9rem;
+  @media (hover: none) {
+    .shell-mobile-nav-link:hover:not([aria-current='page']):not([data-current-section]) {
+      background: transparent;
+      color: #9aa7a1;
+    }
   }
 
   .shell-main {

@@ -398,13 +398,6 @@ export function AppShell({
           pathname={pathname}
           moreRef={moreButtonRef}
           moreOpen={menuOpen}
-          onScan={() =>
-            openWip({
-              feature: 'Document capture',
-              message:
-                'You will soon be able to scan documents with your camera or upload them from your device.',
-            })
-          }
           onMore={() => {
             setDrawerClosedGroups(new Set());
             setMenuOpen(true);
@@ -547,35 +540,19 @@ function MobileBottomNavigation({
   pathname,
   moreRef,
   moreOpen,
-  onScan,
   onMore,
 }: {
   items: readonly MobileNavigationItem[];
   pathname: string | null;
   moreRef: RefObject<HTMLButtonElement | null>;
   moreOpen: boolean;
-  onScan: () => void;
   onMore: () => void;
 }) {
   const navRef = useRef<HTMLElement>(null);
   const hidden = useHideOnScroll(navRef);
-  const left = items.slice(0, 2);
-  const right = items.slice(2);
-  const renderItem = (item: MobileNavigationItem) => {
-    const active = isNavigationItemActive(item, pathname);
-    return (
-      <li key={item.key}>
-        <Link
-          className="shell-mobile-nav-link"
-          href={item.href}
-          aria-current={active ? 'page' : undefined}
-        >
-          <Icon name={item.icon} />
-          <span>{item.mobileLabel}</span>
-        </Link>
-      </li>
-    );
-  };
+  // Pages without a tab of their own (Suppliers, Reports, Settings…) live
+  // behind More, so More carries the current-page marker for them.
+  const moreIsCurrent = !items.some((item) => isNavigationItemActive(item, pathname));
   return (
     <nav
       ref={navRef}
@@ -584,19 +561,21 @@ function MobileBottomNavigation({
       data-hidden={hidden || undefined}
     >
       <ul className="shell-mobile-nav-list">
-        {left.map(renderItem)}
-        <li className="shell-mobile-nav-scan-slot">
-          <button
-            type="button"
-            className="shell-mobile-nav-scan"
-            aria-haspopup="dialog"
-            onClick={onScan}
-          >
-            <Icon name="scan" />
-            <span className="visually-hidden">Scan or upload a document</span>
-          </button>
-        </li>
-        {right.map(renderItem)}
+        {items.map((item) => {
+          const active = isNavigationItemActive(item, pathname);
+          return (
+            <li key={item.key}>
+              <Link
+                className="shell-mobile-nav-link"
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon name={item.icon} />
+                <span>{item.mobileLabel}</span>
+              </Link>
+            </li>
+          );
+        })}
         <li>
           <button
             ref={moreRef}
@@ -604,10 +583,14 @@ function MobileBottomNavigation({
             className="shell-mobile-nav-link shell-mobile-nav-more"
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
+            data-current-section={moreIsCurrent || undefined}
             onClick={onMore}
           >
             <Icon name="more" />
             <span>More</span>
+            {moreIsCurrent ? (
+              <span className="visually-hidden">, current page is in this menu</span>
+            ) : null}
           </button>
         </li>
       </ul>
@@ -673,6 +656,7 @@ function NavigationSectionEntry({
           onContextRequired={onContextRequired}
           onNavigate={onNavigate}
           withIcon
+          tooltip={rail ? section.items[0]!.label : undefined}
         />
       </li>
     );
@@ -689,6 +673,7 @@ function NavigationSectionEntry({
         aria-expanded={open}
         aria-controls={listId}
         data-contains-current={containsCurrent || undefined}
+        title={rail ? section.label : undefined}
         onClick={() => (rail ? onExpandRail?.(section.key) : onToggleGroup(section.key))}
       >
         <Icon name={section.icon} className="nav-icon" />
@@ -724,6 +709,7 @@ function NavigationEntry({
   onNavigate,
   withIcon = false,
   tabIndex,
+  tooltip,
 }: {
   item: ResolvedNavigationItem;
   pathname: string | null;
@@ -732,6 +718,8 @@ function NavigationEntry({
   onNavigate?: () => void;
   withIcon?: boolean;
   tabIndex?: number;
+  /** Native hint for icon-only rail entries; the accessible name is unchanged. */
+  tooltip?: string;
 }) {
   const icon = withIcon ? <Icon name={item.icon} className="nav-icon" /> : null;
 
@@ -743,6 +731,7 @@ function NavigationEntry({
         href={item.href}
         aria-current={active ? 'page' : undefined}
         tabIndex={tabIndex}
+        title={tooltip}
         onClick={onNavigate}
       >
         {icon}
@@ -759,6 +748,7 @@ function NavigationEntry({
           className="nav-row nav-link"
           aria-haspopup="dialog"
           tabIndex={tabIndex}
+          title={tooltip}
           onClick={onContextRequired}
         >
           {icon}
@@ -772,6 +762,7 @@ function NavigationEntry({
         className="nav-row nav-link"
         aria-haspopup="dialog"
         tabIndex={tabIndex}
+        title={tooltip}
         onClick={() => onWip({ feature: item.feature, message: item.message })}
       >
         {icon}
@@ -782,7 +773,7 @@ function NavigationEntry({
   }
 
   return (
-    <span className="nav-row nav-row-restricted">
+    <span className="nav-row nav-row-restricted" title={tooltip}>
       {icon}
       <span className="nav-label">
         {item.label}
@@ -1086,7 +1077,7 @@ function SearchPalette({
       open={open}
       onClose={close}
       title="Search"
-      description="Pages and areas you can open. Record search arrives with each module."
+      description="Go to any page you have access to."
       size="md"
       className="modal-command-palette"
       initialFocusRef={inputRef}
@@ -1135,7 +1126,7 @@ function SearchPalette({
               <Icon name={item.icon} size="md" />
               <span>{item.searchLabel}</span>
               {item.state === 'wip' ? (
-                <span className="search-palette-meta">In progress</span>
+                <span className="search-palette-meta">Coming soon</span>
               ) : null}
             </li>
           ))}
