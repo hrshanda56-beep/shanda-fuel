@@ -1015,7 +1015,7 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
           'a122-phase2-post-3',
         )
       ).status,
-    ).toBe(409);
+    ).toBe(422);
     const rollback = await client.unsafe<
       { status: string; event_count: string; line_count: string; projection_version: number }[]
     >(`

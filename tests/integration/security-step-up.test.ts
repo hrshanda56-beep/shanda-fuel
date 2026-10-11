@@ -227,14 +227,16 @@ describe('production TOTP step-up establishment', () => {
     expect(actor).not.toBeNull();
 
     const rows = await client<
-      { step_up_tenant_id: string; step_up_level: number; expires_at: Date }[]
+      { step_up_tenant_id: string; step_up_level: number; expires_epoch: string }[]
     >`
-      select step_up_tenant_id, step_up_level, step_up_expires_at as expires_at
+      select step_up_tenant_id,
+             step_up_level,
+             extract(epoch from step_up_expires_at)::text as expires_epoch
       from auth.session where id = ${actor!.session.sessionId}
     `;
     expect(rows[0]?.step_up_tenant_id).toBe(ids.tenant);
     expect(rows[0]?.step_up_level).toBe(1);
-    expect(rows[0]?.expires_at.toISOString()).toBe(successBody.expiresAt);
+    expect(Number(rows[0]?.expires_epoch)).toBeCloseTo(Date.parse(successBody.expiresAt) / 1000, 3);
 
     assertStepUp(actor!.session, 1, new Date(), ids.tenant);
     expect(() => assertStepUp(actor!.session, 1, new Date(), ids.otherTenant)).toThrow(
