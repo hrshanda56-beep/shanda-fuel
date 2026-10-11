@@ -1590,3 +1590,51 @@ button.today-period {
     transition: none;
   }
 }
+
+/* F3-02/F3-03: approved figures, variance direction, litres trend. */
+.today-figures-note {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.today-figure[data-state='none'] .today-figure-value {
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.today-figure[data-tone='short'] .today-figure-value {
+  color: var(--color-critical);
+}
+
+.today-figure-value {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 64rem) {
+  .today-figure-value {
+    font-size: clamp(1.5rem, 2.1vw, var(--font-size-4xl, 2.25rem));
+  }
+
+  /* Figure cards keep fixed pastel backgrounds in both themes. */
+  .today-figure[data-tone='short'] .today-figure-value {
+    color: #8f1d1d;
+  }
+}
+
+.perf-chart-point {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-width: 2px;
+}
+
+.perf-chart-tip-detail {
+  color: #3f4b48;
+  font-size: var(--font-size-xs, 0.75rem);
+}
+
+.today-stats-summary {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}

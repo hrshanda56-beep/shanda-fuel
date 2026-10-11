@@ -46,8 +46,25 @@ function operationsOverview(close: string, approval = 'NO_REVISION') {
 
 async function mockToday(
   page: Page,
-  options: { operations?: { status: number; body: unknown }; customers?: unknown[] } = {},
+  options: {
+    operations?: { status: number; body: unknown };
+    customers?: unknown[];
+    daily?: unknown[];
+    sales?: unknown[];
+  } = {},
 ) {
+  await page.route('**/api/reports/daily**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ report: 'DAILY_OPERATIONS', rows: options.daily ?? [] }),
+    });
+  });
+  await page.route('**/api/reports/management**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ sales: { rows: options.sales ?? [] } }),
+    });
+  });
   await page.route('**/api/forecourt/operations/overview**', async (route) => {
     const { status, body } = options.operations ?? {
       status: 200,
@@ -74,21 +91,68 @@ test('today asks for a station instead of showing empty figures', async ({ page 
   await expect(page.locator('.card')).toHaveCount(0);
 });
 
-test('key figures show real counts and honest placeholders', async ({ page }) => {
-  await mockToday(page, {
-    customers: [{ status: 'ACTIVE' }, { status: 'ACTIVE' }, { status: 'SUSPENDED' }],
-  });
+function dailyRow(overrides: Record<string, string> = {}) {
+  return {
+    reportDate: '2026-10-08',
+    stationId: STATION,
+    stationCode: 'BIN',
+    litresSold: '1284.4',
+    salesValue: '2484.12',
+    cashVariance: '-30.85',
+    inventoryVariance: '0',
+    customerCreditEvidence: '100',
+    prepaidEvidence: '0',
+    ...overrides,
+  };
+}
+
+test('key figures say when no approved report exists yet', async ({ page }) => {
+  await mockToday(page);
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
-  await expect(figures.locator('.today-figure', { hasText: 'Shifts open' })).toContainText('1');
-  await expect(figures.locator('.today-figure', { hasText: 'Active customers' })).toContainText(
-    '2',
-  );
-  await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
-    'Not connected yet',
-  );
-  await expect(page.getByRole('heading', { name: 'Sales performance Statistic' })).toBeVisible();
+  for (const label of ['Sales today', 'Litres sold', 'Cash variance', 'Stock variance']) {
+    await expect(figures.locator('.today-figure', { hasText: label })).toContainText(
+      'No approved report yet',
+    );
+  }
+  await expect(
+    page.getByText('Expected cash is not available yet.', { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sales performance Litres' })).toBeVisible();
+  await expect(page.getByText('No approved sales in this period yet.')).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);
+});
+
+test('key figures show approved totals with signed variances', async ({ page }) => {
+  await mockToday(page, { daily: [dailyRow()] });
+  await page.goto(TODAY);
+  const figures = page.locator('.today-figures');
+  await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+    'USD 2,484.12',
+  );
+  await expect(figures.locator('.today-figure', { hasText: 'Litres sold' })).toContainText(
+    '1,284 L',
+  );
+  const cash = figures.locator('.today-figure', { hasText: 'Cash variance' });
+  await expect(cash).toContainText('−USD 30.85');
+  await expect(cash).toContainText('Cash short');
+  await expect(figures.locator('.today-figure', { hasText: 'Stock variance' })).toContainText(
+    'No stock variance',
+  );
+});
+
+test('sales trend offers business-day ranges and no hourly view', async ({ page }) => {
+  await mockToday(page);
+  await page.goto(TODAY);
+  const periods = page.getByRole('group', { name: 'Period' });
+  for (const option of ['7D', '30D', '90D', '12M']) {
+    await expect(periods.getByRole('button', { name: option })).toBeVisible();
+  }
+  await expect(periods.getByRole('button', { name: '24H' })).toHaveCount(0);
+  await expect(periods.getByRole('button', { name: '30D' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 });
 
 test('today shows the station day and calm attention list', async ({ page }) => {
