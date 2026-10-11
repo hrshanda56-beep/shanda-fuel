@@ -12,6 +12,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatTileLitres } from '../../reporting/format';
+import { effectiveProduct, tankProducts, tanksForStation } from './tank-overview-model';
 
 type TankRow = {
   stationId: string;
@@ -94,24 +95,12 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
   }, [tenantId, stationId, attempt]);
 
   const tanks = useMemo(
-    () =>
-      state.status === 'ready'
-        ? state.report.inventory.rows.filter((row) => row.stationId === stationId)
-        : [],
+    () => (state.status === 'ready' ? tanksForStation(state.report.inventory.rows, stationId) : []),
     [state, stationId],
   );
   // Products in the order the station's tanks list them; only configured ones.
-  const products = useMemo(() => {
-    const seen = new Map<string, { id: string; name: string; tanks: number }>();
-    for (const tank of tanks) {
-      const entry = seen.get(tank.productId);
-      if (entry) entry.tanks += 1;
-      else seen.set(tank.productId, { id: tank.productId, name: tank.productName, tanks: 1 });
-    }
-    return [...seen.values()];
-  }, [tanks]);
-  // A product chosen at another station falls back to All.
-  const selected = products.some((entry) => entry.id === product) ? product : 'all';
+  const products = useMemo(() => tankProducts(tanks), [tanks]);
+  const selected = effectiveProduct(products, product);
   const visible = selected === 'all' ? tanks : tanks.filter((tank) => tank.productId === selected);
 
   return (
