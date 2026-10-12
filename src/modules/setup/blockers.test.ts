@@ -5,6 +5,7 @@ import type { SetupOverview } from './contracts';
 const empty: Omit<SetupOverview, 'blockers'> = {
   tenantId: 't',
   stationId: 's',
+  legalEntityId: 'l',
   stationStatus: 'ONBOARDING',
   capabilities: {
     products: true,

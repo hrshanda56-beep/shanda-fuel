@@ -329,7 +329,10 @@ export async function saveReconciliationMeterReadingsFromRequest(request: Reques
         for share
       `);
         if (!price[0] || price[0].product_id !== reading.productId)
-          throw new AppError('CONFLICT', 'The selling price is not active for this product');
+          throw new AppError(
+            'CONFLICT',
+            'There is no active selling price for this product. Enter and activate it in Settings, Station setup, before reconciling sales.',
+          );
         const sold = closing
           .subtract(opening)
           .quantize({ name: 'Litres', precision: 18, scale: 3 });

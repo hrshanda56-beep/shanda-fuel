@@ -27,6 +27,9 @@ const ids = {
   ownerMembership: p(41),
   attendantMembership: p(42),
   ownerBMembership: p(43),
+  owner2User: p(34),
+  owner2Membership: p(44),
+  owner2Session: p(54),
   ownerSession: p(51),
   attendantSession: p(52),
   ownerBSession: p(53),
@@ -36,6 +39,7 @@ const tokens = {
   owner: `setup-a-owner-${run}`,
   attendant: `setup-a-attendant-${run}`,
   ownerB: `setup-a-ownerb-${run}`,
+  owner2: `setup-a-owner2-${run}`,
 };
 
 let client: Sql;
@@ -94,10 +98,12 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
       insert into auth."user" (id, name, email) values
         ('${ids.ownerUser}', 'Setup Owner', 'setup-a-owner-${run}@example.test'),
         ('${ids.attendantUser}', 'Setup Attendant', 'setup-a-attendant-${run}@example.test'),
+        ('${ids.owner2User}', 'Setup Owner 2', 'setup-a-owner2-${run}@example.test'),
         ('${ids.ownerBUser}', 'Setup Owner B', 'setup-a-ownerb-${run}@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.ownerMembership}', '${ids.tenantA}', '${ids.ownerUser}', 'ACTIVE'),
         ('${ids.attendantMembership}', '${ids.tenantA}', '${ids.attendantUser}', 'ACTIVE'),
+        ('${ids.owner2Membership}', '${ids.tenantA}', '${ids.owner2User}', 'ACTIVE'),
         ('${ids.ownerBMembership}', '${ids.tenantB}', '${ids.ownerBUser}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
         ('${ids.legalA}', '${ids.tenantA}', 'Setup Legal A'),
@@ -107,17 +113,20 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
         ('${ids.stationB}', '${ids.tenantB}', '${ids.legalB}', 'B${run}', 'Setup Station B', 'ONBOARDING') on conflict (id) do nothing;
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id) values
         ('${ids.tenantA}', '${ids.ownerMembership}', 'OWNER', 'TENANT', null, null),
+        ('${ids.tenantA}', '${ids.owner2Membership}', 'OWNER', 'TENANT', null, null),
         ('${ids.tenantA}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legalA}', '${ids.stationA}'),
         ('${ids.tenantB}', '${ids.ownerBMembership}', 'OWNER', 'TENANT', null, null)
         on conflict do nothing;
       insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at) values
         ('${ids.ownerSession}', '2030-01-01T00:00:00Z', '${tokens.owner}', '${ids.ownerUser}', true, now()),
         ('${ids.attendantSession}', '2030-01-01T00:00:00Z', '${tokens.attendant}', '${ids.attendantUser}', true, now()),
+        ('${ids.owner2Session}', '2030-01-01T00:00:00Z', '${tokens.owner2}', '${ids.owner2User}', true, now()),
         ('${ids.ownerBSession}', '2030-01-01T00:00:00Z', '${tokens.ownerB}', '${ids.ownerBUser}', true, now())
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
     await seedActiveStepUp(client, ids.ownerSession, ids.tenantA);
     await seedActiveStepUp(client, ids.attendantSession, ids.tenantA);
+    await seedActiveStepUp(client, ids.owner2Session, ids.tenantA);
     await seedActiveStepUp(client, ids.ownerBSession, ids.tenantB);
   });
 
@@ -148,14 +157,16 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     expect(replay.status).toBe(200);
     expect(replay.body.productId).toBe(state.diesel);
     const [{ n }] =
-      await client`select count(*)::int as n from app.products where tenant_id = ${ids.tenantA} and code = 'DSL'`;
+      (await client`select count(*)::int as n from app.products where tenant_id = ${ids.tenantA} and code = 'DSL'`) as [
+        { n: number },
+      ];
     expect(n).toBe(1);
     const reuse = await post(setupPost, 'owner', 'setup-prod-1', { ...body, name: 'Other' });
     expect(reuse.status).toBe(409);
     const dup = await post(setupPost, 'owner', 'setup-prod-2', body);
     expect(dup.status).toBe(409);
     const audit =
-      await client`select event_code from platform.security_events where tenant_id = ${ids.tenantA} and details->>'subjectId' = ${state.diesel}`;
+      await client`select event_code from platform.security_events where tenant_id = ${ids.tenantA} and details->>'subjectId' = ${state.diesel!}`;
     expect(audit.map((r) => r.event_code)).toEqual(['SETUP.PRODUCT_CREATED']);
     const petrol = await post(setupPost, 'owner', 'setup-prod-3', {
       ...body,
@@ -256,7 +267,9 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     const replay = await post(setupPost, 'owner', 'setup-noz-1', nozzleBody);
     expect(replay.body.nozzleId).toBe(nozzle.body.nozzleId);
     const [{ n }] =
-      await client`select count(*)::int as n from app.meter_installations where nozzle_id = ${nozzle.body.nozzleId}`;
+      (await client`select count(*)::int as n from app.meter_installations where nozzle_id = ${nozzle.body.nozzleId}`) as [
+        { n: number },
+      ];
     expect(n).toBe(1);
     // Duplicate meter serial rolls back the nozzle too.
     const dupMeter = await post(setupPost, 'owner', 'setup-noz-2', {
@@ -265,7 +278,9 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     });
     expect(dupMeter.status).toBe(409);
     const [{ nn }] =
-      await client`select count(*)::int as nn from app.nozzles where pump_id = ${state.pump}`;
+      (await client`select count(*)::int as nn from app.nozzles where pump_id = ${state.pump!}`) as [
+        { nn: number },
+      ];
     expect(nn).toBe(1);
     // A product from another tenant is not usable.
     const [other] =
@@ -351,6 +366,94 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     expect(ov.data.prices[0]).toMatchObject({ state: 'PENDING_APPROVAL' });
     // Still blocked: nothing is ACTIVE until the approval flow completes.
     expect(ov.data.blockers.map((b: { code: string }) => b.code)).toContain('NO_PRICE');
+  });
+
+  it('ActivateInitialPrice: maker-checker approval, then first price is ACTIVE; later prices must use boundaries', async () => {
+    const { body: ov } = await overview('owner');
+    const pending = ov.data.prices.find((x: { state: string }) => x.state === 'PENDING_APPROVAL');
+    const approve = await post(forecourtPost, 'owner2', 'setup-approve-1', {
+      commandType: 'ApprovePriceChange',
+      ...A,
+      priceId: pending.id,
+      expectedVersion: pending.version,
+    });
+    expect(approve.status).toBe(200);
+    const selfActivate = await post(setupPost, 'attendant', 'setup-init-0', {
+      commandType: 'ActivateInitialPrice',
+      ...A,
+      priceId: pending.id,
+      expectedVersion: pending.version + 1,
+    });
+    expect(selfActivate.status).toBe(403);
+    const activated = await post(setupPost, 'owner2', 'setup-init-1', {
+      commandType: 'ActivateInitialPrice',
+      ...A,
+      priceId: pending.id,
+      expectedVersion: pending.version + 1,
+    });
+    expect(activated.status).toBe(200);
+    expect(activated.body.state).toBe('ACTIVE');
+    const after = (await overview('owner')).body;
+    expect(after.data.blockers.map((b: { code: string }) => b.code)).not.toContain('NO_PRICE');
+    const audit =
+      await client`select 1 from platform.security_events where tenant_id = ${ids.tenantA} and event_code = 'SETUP.INITIAL_PRICE_ACTIVATED'`;
+    expect(audit).toHaveLength(1);
+    // A second price over a period the first one covers is refused cleanly
+    // (DB no-overlap rule) instead of a server error.
+    const overlapping = await post(setupPost, 'owner', 'setup-price-9', {
+      commandType: 'DraftPriceChange',
+      ...A,
+      productId: state.diesel,
+      unitPrice: '1.600000',
+      currency: 'USD',
+      effectiveFrom: '2026-11-01T00:00:00Z',
+    });
+    expect(overlapping.status).toBe(409);
+    expect(overlapping.body.message).toContain('already has a price');
+    // A product with earlier price history may not use the initial-price shortcut.
+    const [p2] =
+      await client`insert into app.products (tenant_id, code, name) values (${ids.tenantA}, 'PET2', 'Petrol 2') returning id`;
+    await client`insert into app.selling_prices (tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
+      values (${ids.tenantA}, ${ids.stationA}, ${p2!.id}, '2020-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 1.0, 'DRAFT', ${ids.ownerMembership})`;
+    const [old] = await client`select id from app.selling_prices where product_id = ${p2!.id}`;
+    for (const next of [
+      'PENDING_APPROVAL',
+      'APPROVED',
+      'PENDING_STATION_ACTIVATION',
+      'BOUNDARIES_IN_PROGRESS',
+      'ACTIVE',
+    ]) {
+      await client`update app.selling_prices set state = ${next} where id = ${old!.id}`;
+    }
+    const later = await post(setupPost, 'owner', 'setup-price-10', {
+      commandType: 'DraftPriceChange',
+      ...A,
+      productId: p2!.id,
+      unitPrice: '1.700000',
+      currency: 'USD',
+      effectiveFrom: '2026-12-01T00:00:00Z',
+    });
+    expect(later.status).toBe(200);
+    await post(forecourtPost, 'owner', 'setup-price-req-10', {
+      commandType: 'RequestPriceChange',
+      ...A,
+      priceId: later.body.priceId,
+      expectedVersion: 0,
+    });
+    await post(forecourtPost, 'owner2', 'setup-approve-10', {
+      commandType: 'ApprovePriceChange',
+      ...A,
+      priceId: later.body.priceId,
+      expectedVersion: 1,
+    });
+    const refused = await post(setupPost, 'owner2', 'setup-init-10', {
+      commandType: 'ActivateInitialPrice',
+      ...A,
+      priceId: later.body.priceId,
+      expectedVersion: 2,
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.message).toContain('already has a price or meter history');
   });
 
   it('UpdateSupplier edits and deactivates with optimistic versioning and audit', async () => {

@@ -6,7 +6,8 @@ export {
   createPumpFromRequest,
   draftPriceChangeFromRequest,
   updateSupplierFromRequest,
+  activateInitialPriceFromRequest,
 } from './commands';
-export { getSetupOverview } from './queries';
+export { getSetupOverview, listSetupStations } from './queries';
 export { computeSetupBlockers } from './blockers';
 export type * from './contracts';

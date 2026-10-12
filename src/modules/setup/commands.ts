@@ -33,6 +33,7 @@ export const SETUP_COMMAND_TYPES = [
   'CreateNozzle',
   'DraftPriceChange',
   'UpdateSupplier',
+  'ActivateInitialPrice',
 ] as const;
 export type SetupCommandType = (typeof SETUP_COMMAND_TYPES)[number];
 
@@ -275,15 +276,29 @@ export function draftPriceChangeCommand(
         throw new AppError('VALIDATION_FAILED', 'The selling price must be greater than zero');
       }
       const priceId = randomUUID();
-      await transaction.execute(sql`
-        insert into app.selling_prices
-          (id, tenant_id, station_id, product_id, effective_from, unit_price, currency,
-           state, requested_by, version)
-        values (${priceId}, ${context.tenantId}, ${context.stationId}, ${payload.productId},
-          ${payload.effectiveFrom}::timestamptz, ${price.toString()},
-          ${payload.currency.toUpperCase()}, 'DRAFT',
-          ${context.authority.membership.membershipId}, 0)
-      `);
+      try {
+        await transaction.execute(sql`
+          insert into app.selling_prices
+            (id, tenant_id, station_id, product_id, effective_from, unit_price, currency,
+             state, requested_by, version)
+          values (${priceId}, ${context.tenantId}, ${context.stationId}, ${payload.productId},
+            ${payload.effectiveFrom}::timestamptz, ${price.toString()},
+            ${payload.currency.toUpperCase()}, 'DRAFT',
+            ${context.authority.membership.membershipId}, 0)
+        `);
+      } catch (error) {
+        // selling_prices_effective_no_overlap: one non-cancelled price per product
+        // and period. Surface it plainly instead of as a server error.
+        const code = (error as { code?: string })?.code;
+        const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+        if (code === '23P01' || causeCode === '23P01') {
+          throw new AppError(
+            'CONFLICT',
+            'This product already has a price, or a price change in progress, covering that period. Changing a price that is in use needs meter readings and is not available here yet.',
+          );
+        }
+        throw error;
+      }
       return {
         priceId,
         productId: payload.productId,
@@ -378,4 +393,99 @@ export function updateSupplierCommand(
 export async function updateSupplierFromRequest(request: Request, input: unknown) {
   const payload = updateSupplierPayload.parse(input);
   return updateSupplierCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+const activateInitialPricePayload = authority.extend({
+  priceId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+});
+
+/**
+ * Activates the FIRST approved price of a product at a station. The normal
+ * ActivatePriceChange needs a sealed PRICE_CHANGE meter boundary per nozzle,
+ * which exists to split already-metered sales between the old and new price.
+ * When the product has never been sold at this station (no meter boundary on
+ * any of its nozzles, no earlier price) there is nothing to split, so the
+ * transition chain APPROVED -> PENDING_STATION_ACTIVATION ->
+ * BOUNDARIES_IN_PROGRESS -> ACTIVE is completed in one transaction. Any
+ * later price change must use the boundary flow. See ADR-018.
+ */
+export function activateInitialPriceCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof activateInitialPricePayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.ActivateInitialPrice',
+    permissionCode: 'price.change.activate',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.INITIAL_PRICE_ACTIVATED',
+      subjectType: 'SellingPrice',
+      subjectId: payload.priceId,
+    },
+    execute: async (transaction) => {
+      const rows = await transaction.execute<{
+        product_id: string;
+        state: string;
+        version: number;
+      }>(sql`
+        select product_id, state, version from app.selling_prices
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.priceId}
+        for update
+      `);
+      const price = rows[0];
+      if (!price) throw new AppError('NOT_FOUND', 'Selling price was not found');
+      if (Number(price.version) !== payload.expectedVersion) {
+        throw new AppError('CONFLICT', 'The price was changed by someone else. Reload it.');
+      }
+      if (price.state !== 'APPROVED') {
+        throw new AppError('CONFLICT', `An initial price must be APPROVED, not ${price.state}`);
+      }
+      const history = await transaction.execute<{ n: number }>(sql`
+        select (
+          (select count(*) from app.selling_prices
+            where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+              and product_id = ${price.product_id} and state in ('ACTIVE')) +
+          (select count(*) from app.meter_boundaries b
+            join app.nozzles n on n.tenant_id = b.tenant_id and n.station_id = b.station_id
+              and n.id = b.nozzle_id
+            where b.tenant_id = ${context.tenantId} and b.station_id = ${context.stationId}
+              and n.product_id = ${price.product_id})
+        )::int as n
+      `);
+      if (Number(history[0]?.n ?? 0) > 0) {
+        throw new AppError(
+          'CONFLICT',
+          'This product already has a price or meter history. Use the normal price change with meter readings.',
+        );
+      }
+      for (const [from, to] of [
+        ['APPROVED', 'PENDING_STATION_ACTIVATION'],
+        ['PENDING_STATION_ACTIVATION', 'BOUNDARIES_IN_PROGRESS'],
+        ['BOUNDARIES_IN_PROGRESS', 'ACTIVE'],
+      ] as const) {
+        await transaction.execute(sql`
+          update app.selling_prices
+          set state = ${to}, version = version + 1,
+            activated_at = case when ${to} = 'ACTIVE' then now() else activated_at end
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.priceId} and state = ${from}
+        `);
+      }
+      return {
+        priceId: payload.priceId,
+        state: 'ACTIVE' as const,
+        version: payload.expectedVersion + 3,
+      };
+    },
+  });
+}
+
+export async function activateInitialPriceFromRequest(request: Request, input: unknown) {
+  const payload = activateInitialPricePayload.parse(input);
+  return activateInitialPriceCommand(await contextFor(request, payload), payload, keyOf(request));
 }

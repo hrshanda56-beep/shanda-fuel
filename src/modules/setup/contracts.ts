@@ -66,6 +66,7 @@ export type SetupCapabilities = Readonly<{
 export type SetupOverview = Readonly<{
   tenantId: string;
   stationId: string;
+  legalEntityId: string;
   stationStatus: string;
   capabilities: SetupCapabilities;
   products: readonly SetupProduct[] | null;
@@ -76,4 +77,11 @@ export type SetupOverview = Readonly<{
   prices: readonly SetupPrice[] | null;
   suppliers: readonly SetupSupplier[] | null;
   blockers: readonly SetupBlocker[];
+}>;
+
+export type SetupStationOption = Readonly<{
+  id: string;
+  code: string;
+  name: string;
+  status: string;
 }>;

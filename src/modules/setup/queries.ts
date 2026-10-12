@@ -6,8 +6,9 @@ import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
 import { authorize, type PermissionCode } from '../../platform/security/permissions';
 import { resolveInventoryCommandContext } from '../inventory/application';
+import { resolveTenantExecutionContext } from '../tenancy/authority';
 import { computeSetupBlockers } from './blockers';
-import type { SetupOverview } from './contracts';
+import type { SetupOverview, SetupStationOption } from './contracts';
 
 const input = z.object({ tenantId: z.string().uuid(), stationId: z.string().uuid() });
 
@@ -155,6 +156,7 @@ export async function getSetupOverview(args: {
     const overview: Omit<SetupOverview, 'blockers'> = {
       tenantId,
       stationId,
+      legalEntityId: context.legalEntityId,
       stationStatus: station[0]?.status ?? 'UNKNOWN',
       capabilities,
       products:
@@ -215,4 +217,52 @@ export async function getSetupOverview(args: {
     };
     return { ...overview, blockers: computeSetupBlockers(overview) };
   });
+}
+
+/**
+ * Stations the caller may set up. The normal station context only lists ACTIVE
+ * stations, but a station is configured while it is still ONBOARDING, so setup
+ * has its own list (ONBOARDING and ACTIVE, filtered by station.view authority).
+ */
+export async function listSetupStations(args: {
+  request: Request;
+  tenantId: string;
+}): Promise<readonly SetupStationOption[]> {
+  const tenantId = z.string().uuid().parse(args.tenantId);
+  const authority = await resolveTenantExecutionContext({
+    request: args.request,
+    requestedTenantId: tenantId,
+  });
+  const rows = await withTenantTransaction(authority.transaction, (tx) =>
+    tx.execute<{
+      id: string;
+      code: string;
+      name: string;
+      status: string;
+      legal_entity_id: string;
+    }>(sql`
+      select id, code, name, status, legal_entity_id from app.stations
+      where tenant_id = ${tenantId} and status in ('ONBOARDING', 'ACTIVE')
+      order by code`),
+  );
+  return rows
+    .filter((row) => {
+      try {
+        authorize({
+          actor: authority.authorization,
+          permissionCode: 'station.view',
+          requestedScope: {
+            tenantId,
+            scopeType: 'STATION',
+            legalEntityId: row.legal_entity_id,
+            stationId: row.id,
+          },
+        });
+        return true;
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'FORBIDDEN') return false;
+        throw error;
+      }
+    })
+    .map((row) => ({ id: row.id, code: row.code, name: row.name, status: row.status }));
 }

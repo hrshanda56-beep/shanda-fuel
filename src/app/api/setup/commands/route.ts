@@ -7,6 +7,7 @@ import {
   createPumpFromRequest,
   draftPriceChangeFromRequest,
   updateSupplierFromRequest,
+  activateInitialPriceFromRequest,
 } from '../../../../modules/setup';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
@@ -33,6 +34,9 @@ export const POST = withRequestObservability(
           break;
         case 'DraftPriceChange':
           result = await draftPriceChangeFromRequest(request, body);
+          break;
+        case 'ActivateInitialPrice':
+          result = await activateInitialPriceFromRequest(request, body);
           break;
         case 'UpdateSupplier':
           result = await updateSupplierFromRequest(request, body);
