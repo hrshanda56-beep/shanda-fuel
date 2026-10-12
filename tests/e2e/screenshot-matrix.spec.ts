@@ -72,6 +72,17 @@ for (const screen of screens) {
         // still loading, so a capture never shows a loading state.
         await expect(page.getByText(/^Loading\b/)).toHaveCount(0);
         await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+        // Let transitions (e.g. the active navigation pill) finish so repeated
+        // captures are identical when nothing changed.
+        await page.waitForFunction(() =>
+          document
+            .getAnimations()
+            .every(
+              (animation) =>
+                animation.playState !== 'running' ||
+                animation.effect?.getComputedTiming().endTime === Infinity,
+            ),
+        );
         await page.screenshot({
           path: `${dir}/${screen.name}-${width}-${colorScheme}.png`,
           fullPage: true,
