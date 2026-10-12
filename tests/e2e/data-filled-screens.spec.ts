@@ -172,6 +172,17 @@ test.describe('data-filled screens', () => {
       ).toEqual([]);
       await expectNoSidewaysScroll(page, `settlements ${width}`);
 
+      if (width >= 1440) {
+        // Desktop: the settlement table keeps its Action column in view.
+        const settlements = page.locator('.responsive-table-wrap', {
+          has: page.getByRole('columnheader', { name: 'Action' }),
+        });
+        const hidden = await settlements.evaluate(
+          (element) => element.scrollWidth - element.clientWidth,
+        );
+        expect(hidden, `settlement table ${width}`).toBeLessThanOrEqual(0);
+      }
+
       if (width >= 1024) {
         // The matching table spans the row, so no column hides behind its scroll.
         const region = page.locator('.responsive-table-wrap', {

@@ -701,7 +701,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                         {row.reference ?? row.paymentId.slice(0, 12)}
                       </td>
                       <td data-label="Business date" className="numeric">
-                        {row.businessDate}
+                        <span className="numeric">{row.businessDate}</span>
                       </td>
                       <td data-label="Reconciliation">
                         <StatusBadge tone="informational">

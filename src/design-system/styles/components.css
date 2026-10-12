@@ -999,11 +999,10 @@ input[type='radio']:focus-visible {
   white-space: nowrap;
 }
 
-/* Wider screens: dates and amounts stay on one line; the table's scroll
- * region takes any extra width. Phones stack rows and wrap normally. */
+/* Wider screens: a value marked .numeric inside a cell (a date, a reference
+ * number) never breaks at its hyphens. Cells themselves still wrap between
+ * words, so wide tables keep every column in view. Phones stack rows. */
 @media (min-width: 48rem) {
-  .responsive-table td.numeric,
-  .responsive-table th.numeric,
   .responsive-table td .numeric {
     white-space: nowrap;
   }
