@@ -166,7 +166,7 @@ async function insertTank(
 ): Promise<{ tankId: string; code: string }> {
   await assertProductBelongsToTenant(transaction, context.tenantId, payload.productId);
   const capacity = litres(payload.capacityLitres);
-  if (!capacity.value.isPositive())
+  if (!capacity.value.gt(0))
     throw new AppError('VALIDATION_FAILED', 'Tank capacity must be positive');
   if (payload.reorderLevelLitres) {
     const reorder = litres(payload.reorderLevelLitres);
@@ -174,24 +174,39 @@ async function insertTank(
       throw new AppError('VALIDATION_FAILED', 'Reorder level must be between zero and capacity');
     }
   }
+  if (
+    payload.acceptableVarianceLitres &&
+    litres(payload.acceptableVarianceLitres).value.isNegative()
+  ) {
+    throw new AppError('VALIDATION_FAILED', 'Acceptable variance cannot be negative');
+  }
   const tankId = randomUUID();
-  await transaction.insert(tanks).values({
-    id: tankId,
-    tenantId: context.tenantId,
-    stationId: context.stationId,
-    code: payload.code,
-    productId: payload.productId,
-    capacityLitres: capacity.toString(),
-    reorderLevelLitres: payload.reorderLevelLitres
-      ? litres(payload.reorderLevelLitres).toString()
-      : null,
-    acceptableVarianceLitres: payload.acceptableVarianceLitres
-      ? litres(payload.acceptableVarianceLitres).toString()
-      : null,
-    status: 'ACTIVE',
-    createdBy: context.authority.membership.membershipId,
-    updatedBy: context.authority.membership.membershipId,
-  });
+  try {
+    await transaction.insert(tanks).values({
+      id: tankId,
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      code: payload.code,
+      productId: payload.productId,
+      capacityLitres: capacity.toString(),
+      reorderLevelLitres: payload.reorderLevelLitres
+        ? litres(payload.reorderLevelLitres).toString()
+        : null,
+      acceptableVarianceLitres: payload.acceptableVarianceLitres
+        ? litres(payload.acceptableVarianceLitres).toString()
+        : null,
+      status: 'ACTIVE',
+      createdBy: context.authority.membership.membershipId,
+      updatedBy: context.authority.membership.membershipId,
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+    if (code === '23505' || causeCode === '23505') {
+      throw new AppError('CONFLICT', 'A tank with this code already exists at the station');
+    }
+    throw error;
+  }
   return { tankId, code: payload.code };
 }
 
