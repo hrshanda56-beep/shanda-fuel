@@ -357,6 +357,8 @@ test.describe('authenticated Staff lifecycle', () => {
     page,
     browser,
   }) => {
+    // Cold `next dev` compiles of /invite/[token] can exceed the default 30s.
+    test.setTimeout(90_000);
     for (const token of ['not-a-valid-token', inviteTokens.revoked, inviteTokens.expired]) {
       await page.goto(`/invite/${token}`);
       await expect(

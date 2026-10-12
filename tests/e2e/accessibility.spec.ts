@@ -57,6 +57,10 @@ test('mobile shell remains accessible with valid navigation semantics', async ({
 // builds; see src/design-system/reference/availability.ts). Playwright runs
 // against `next dev` via playwright.config.ts, locally and in CI.
 test.describe('design-system foundation reference', () => {
+  // The first navigation to /design-system can trigger a cold `next dev`
+  // compile that alone approaches the default 30s limit; assertions unchanged.
+  test.describe.configure({ timeout: 90_000 });
+
   test('has no detectable accessibility violations in light theme', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto('/design-system');
