@@ -17,6 +17,10 @@ const migrationPath = resolve(
 );
 const currentMigrationPath = resolve(
   import.meta.dirname,
+  '../../src/platform/db/migrations/0028_clerk_target_identity_revocation.sql',
+);
+const previousMigrationPath = resolve(
+  import.meta.dirname,
   '../../src/platform/db/migrations/0027_clerk_staff_number_auth.sql',
 );
 
@@ -34,6 +38,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
     const currentMigrationSql = await readFile(currentMigrationPath, 'utf8');
     const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
+    const previousMigrationSql = await readFile(previousMigrationPath, 'utf8');
+    const previousMigrationHash = createHash('sha256').update(previousMigrationSql).digest('hex');
     const rollback = new Error('rollback disposable 0025 to 0026 upgrade');
 
     await expect(
@@ -70,7 +76,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
           DROP TABLE IF EXISTS app.staff_invitations;
           DROP INDEX IF EXISTS auth.auth_user_normalized_email_uidx;
           DELETE FROM drizzle.__drizzle_migrations
-          WHERE hash IN ('${migrationHash}', '${currentMigrationHash}');
+          WHERE hash IN ('${migrationHash}', '${previousMigrationHash}', '${currentMigrationHash}');
         `);
 
         const before = await transaction<{ migration_count: number; table_name: string }[]>`
@@ -143,7 +149,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     expect(rows).toEqual([
       {
-        migration_count: 28,
+        migration_count: 29,
         latest_hash: currentMigrationHash,
         exact_hash_count: 1,
       },
