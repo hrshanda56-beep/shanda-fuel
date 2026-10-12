@@ -3,6 +3,7 @@ import 'server-only';
 import { resolveCurrentContext } from '../modules/context/server';
 import { AppError } from '../platform/errors';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
+import { hasProviderSessionCookie } from './entry/session-cookie';
 import { buildNavigationProjection } from './navigation-projection';
 import { syntheticNavigationProjection, type NavigationProjection } from './navigation';
 import { allowsE2ENavigationFixture, E2E_NAVIGATION_FIXTURE_HEADER } from './navigation-projection';
@@ -93,9 +94,7 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
   if (!request) return { status: 'signed-out' };
   // No session cookie means signed out, whatever the database is doing. This
   // keeps a lookup failure from ever rendering product UI for a visitor.
-  if (!(requestHeaders.get('cookie') ?? '').includes('session_token')) {
-    return { status: 'signed-out' };
-  }
+  if (!hasProviderSessionCookie(requestHeaders)) return { status: 'signed-out' };
 
   try {
     const resolution = await resolveCurrentContext(request);

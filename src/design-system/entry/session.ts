@@ -2,7 +2,7 @@ import 'server-only';
 
 import { requestFromHeaders } from '../navigation-server';
 import { resolveAuthenticatedActor } from '@/modules/identity';
-import { getAuthProviderName } from '@/platform/auth/provider';
+import { hasProviderSessionCookie } from './session-cookie';
 
 /**
  * Cheap, fail-soft check used only to keep signed-in people off the sign-in
@@ -11,9 +11,7 @@ import { getAuthProviderName } from '@/platform/auth/provider';
  * no session cookie never touches the database.
  */
 export async function hasActiveSession(requestHeaders: Headers): Promise<boolean> {
-  const cookie = requestHeaders.get('cookie') ?? '';
-  if (getAuthProviderName() === 'BETTER_AUTH' && !cookie.includes('session_token')) return false;
-  if (getAuthProviderName() === 'CLERK' && !cookie.includes('__session')) return false;
+  if (!hasProviderSessionCookie(requestHeaders)) return false;
   const request = requestFromHeaders(requestHeaders);
   if (!request) return false;
   try {
