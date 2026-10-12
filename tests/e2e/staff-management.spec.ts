@@ -86,6 +86,9 @@ async function openSettings(page: Page, token: string) {
     if (!String(error).includes('ERR_ABORTED')) throw error;
   }
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+  // domcontentloaded returns before React attaches handlers, so an early click on a section
+  // tab is a no-op. The shell marks itself once hydration has finished.
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
 }
 
 async function submitStaffCommandAndWaitForReload(page: Page, action: () => Promise<void>) {
@@ -100,7 +103,8 @@ async function submitStaffCommandAndWaitForReload(page: Page, action: () => Prom
   await action();
 
   const response = await responsePromise;
-  expect(response.status()).toBe(200);
+  // Creating an invitation answers 201 Created; resend and revoke answer 200.
+  expect([200, 201]).toContain(response.status());
   await navigationPromise;
 }
 
