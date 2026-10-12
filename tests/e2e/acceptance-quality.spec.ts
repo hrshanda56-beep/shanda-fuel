@@ -1,12 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+import { mockContext, mockSettlements, STATION, TENANT } from './fixtures/data-filled';
+
 /** F4-07 shared quality: tablet 803 px, reduced motion, 16 px phone inputs, overlay cleanup. */
 
-const TENANT = '11111111-1111-4111-8111-111111111111';
+const DASH_TENANT = '11111111-1111-4111-8111-111111111111';
 const ENTITY = '33333333-3333-4333-8333-333333333333';
-const STATION = '22222222-2222-4222-8222-222222222222';
-const TODAY = `/?tenantId=${TENANT}&stationId=${STATION}`;
+const DASH_STATION = '22222222-2222-4222-8222-222222222222';
+const TODAY = `/?tenantId=${DASH_TENANT}&stationId=${DASH_STATION}`;
 
 const json = (body: unknown, status = 200) => ({
   status,
@@ -22,14 +24,14 @@ async function mockDashboard(page: Page) {
           available: {
             organisations: [
               {
-                id: TENANT,
+                id: DASH_TENANT,
                 name: 'Sample organisation',
                 legalEntities: [
                   {
                     id: ENTITY,
                     name: 'Sample legal entity',
                     stations: [
-                      { id: STATION, code: 'BIN', name: 'Bindura', timezone: 'Africa/Harare' },
+                      { id: DASH_STATION, code: 'BIN', name: 'Bindura', timezone: 'Africa/Harare' },
                     ],
                   },
                 ],
@@ -37,9 +39,9 @@ async function mockDashboard(page: Page) {
             ],
           },
           current: {
-            organisationId: TENANT,
+            organisationId: DASH_TENANT,
             legalEntityId: ENTITY,
-            stationId: STATION,
+            stationId: DASH_STATION,
             allStations: false,
           },
           route: {
@@ -54,8 +56,8 @@ async function mockDashboard(page: Page) {
   await page.route('**/api/forecourt/operations/overview**', (route) =>
     route.fulfill(
       json({
-        station: { id: STATION, code: 'BIN', name: 'Bindura', timezone: 'Africa/Harare' },
-        organisation: { id: TENANT, name: 'Sample organisation' },
+        station: { id: DASH_STATION, code: 'BIN', name: 'Bindura', timezone: 'Africa/Harare' },
+        organisation: { id: DASH_TENANT, name: 'Sample organisation' },
         currentBusinessDate: '2026-10-12',
         status: { close: 'IN_PROGRESS', approval: 'NO_REVISION' },
         shifts: [{ id: 'shift-1', state: 'OPEN' }],
@@ -118,14 +120,43 @@ test.describe('shared quality (F4-07)', () => {
   });
 
   test('phone text controls are at least 16 px so iOS does not zoom', async ({ page }) => {
-    await mockDashboard(page);
+    const fontSizes = () =>
+      page
+        .locator(
+          'input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select, textarea',
+        )
+        .evaluateAll((controls) =>
+          controls
+            .filter((control) => (control as HTMLElement).offsetParent !== null)
+            .map((control) => ({
+              name:
+                control.getAttribute('aria-label') ?? control.id ?? control.tagName.toLowerCase(),
+              size: parseFloat(getComputedStyle(control).fontSize),
+            })),
+        );
+
     await page.setViewportSize({ width: 390, height: 844 });
+
+    // Page search: the phone header has no search button by design (one-row
+    // header), so open the palette with its declared shortcut.
+    await mockDashboard(page);
     await page.goto(TODAY);
-    await page.getByRole('button', { name: 'Search pages' }).click();
-    const search = page.getByRole('combobox', { name: 'Search pages' });
-    await expect(search).toBeVisible();
-    const size = await search.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
-    expect(size).toBeGreaterThanOrEqual(16);
+    await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
+    await page.keyboard.press('Control+k');
+    await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeVisible();
+    const search = await fontSizes();
+    expect(search.length).toBeGreaterThan(0);
+    for (const control of search) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
+    await page.keyboard.press('Escape');
+
+    // A real phone form: matching EcoCash/POS payments on Provider Settlements.
+    await mockContext(page, `/stations/${STATION}/settlements`);
+    await mockSettlements(page);
+    await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
+    await expect(page.getByLabel('Allocation amount')).toBeVisible();
+    const form = await fontSizes();
+    expect(form.length).toBeGreaterThanOrEqual(3);
+    for (const control of form) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
   });
 
   test('overlapping overlays restore page scroll and interactivity', async ({ page }) => {
