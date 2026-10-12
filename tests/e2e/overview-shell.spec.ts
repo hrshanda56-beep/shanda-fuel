@@ -202,6 +202,51 @@ test('figures fit their cards without splitting a number, at every width', async
   }
 });
 
+test('the sales chart is also available as a keyboard-operable table', async ({ page }) => {
+  const harare = (offsetDays: number) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Harare' }).format(
+      new Date(Date.now() - offsetDays * 86_400_000),
+    );
+  const today = harare(0);
+  const yesterday = harare(1);
+  await mockToday(page, {
+    sales: [
+      { businessDate: yesterday, productName: 'Diesel 50ppm', litres: '578.400' },
+      { businessDate: yesterday, productName: 'ULP 95', litres: '706.000' },
+      { businessDate: today, productName: 'Diesel 50ppm', litres: '10' },
+    ],
+  });
+  await page.goto(TODAY);
+  await page.getByRole('group', { name: 'Period' }).getByRole('button', { name: '7D' }).click();
+
+  const summary = page.locator('.today-chart-table > summary');
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  const table = page.getByRole('table', { name: /Litres sold, 7D, from approved reports only/ });
+  await expect(table).toBeVisible();
+  await expect(table.getByRole('columnheader')).toHaveText([
+    'Business date',
+    'Litres sold',
+    'Diesel 50ppm',
+    'ULP 95',
+  ]);
+  const rows = table.locator('tbody tr');
+  await expect(rows).toHaveCount(7);
+  // Oldest day: no approved report, said in words rather than shown as 0.
+  await expect(rows.first()).toContainText('No approved report');
+  await expect(rows.first()).not.toContainText('0 L');
+  // Yesterday: exact totals per configured product.
+  await expect(rows.nth(5)).toContainText('1,284 L');
+  await expect(rows.nth(5)).toContainText('578 L');
+  await expect(rows.nth(5)).toContainText('706 L');
+  // Today: a product without an approved row is unavailable, not zero.
+  await expect(rows.nth(6)).toContainText('10 L');
+  await expect(rows.nth(6).locator('td').last()).toContainText('No approved figure');
+
+  const results = await new AxeBuilder({ page }).include('.today-chart-table').analyze();
+  expect(results.violations).toEqual([]);
+});
+
 test('the phone dock gives More the same tap target as the other tabs', async ({ page }) => {
   await mockToday(page);
   for (const width of [320, 390]) {

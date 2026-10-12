@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chartBuckets,
+  chartTable,
   dailyTotals,
   litresSeries,
   axisLabels,
@@ -184,5 +185,34 @@ describe('figureChars', () => {
     expect(figureChars('USD 120,000.00')).toBe(10);
     expect(figureChars('1,284 L')).toBe(6);
     expect(figureChars('—')).toBe(6);
+  });
+});
+
+describe('chartTable', () => {
+  const sales = [
+    { businessDate: '2026-10-10', productName: 'Petrol (sample)', litres: '706.000' },
+    { businessDate: '2026-10-10', productName: 'Diesel (sample)', litres: '578.400' },
+    { businessDate: '2026-10-11', productName: 'Diesel (sample)', litres: '10' },
+  ];
+  const table = chartTable(litresSeries(sales, chartBuckets('7D', '2026-10-11').buckets));
+
+  it('has one row per period with its business dates, in order', () => {
+    expect(table.rows).toHaveLength(7);
+    expect(table.rows[0]).toMatchObject({ from: '2026-10-05', to: '2026-10-05' });
+    expect(table.rows.at(-1)).toMatchObject({ from: '2026-10-11', to: '2026-10-11' });
+  });
+
+  it('keeps unapproved periods and missing products unavailable, never zero', () => {
+    expect(table.products).toEqual(['Diesel (sample)', 'Petrol (sample)']);
+    expect(table.rows[0]).toMatchObject({ total: null, byProduct: [null, null] });
+    expect(table.rows[5]).toMatchObject({ total: '1284.4', byProduct: ['578.4', '706'] });
+    expect(table.rows[6]).toMatchObject({ total: '10', byProduct: ['10', null] });
+  });
+
+  it('covers weeks and months with their full date span', () => {
+    const weeks = chartTable(litresSeries([], chartBuckets('90D', '2026-10-11').buckets));
+    expect(weeks.rows.at(-1)).toMatchObject({ from: '2026-10-05', to: '2026-10-11', total: null });
+    const months = chartTable(litresSeries([], chartBuckets('12M', '2026-10-11').buckets));
+    expect(months.rows[0]).toMatchObject({ from: '2025-10-12', to: '2025-10-31' });
   });
 });

@@ -1653,3 +1653,30 @@ button.today-period {
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 }
+
+/* F3-03: the sales chart as a table, collapsed by default under the chart. */
+.today-chart-table {
+  margin: 0 0 var(--space-2);
+}
+
+.today-chart-table > summary {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.today-chart-table > summary:focus-visible {
+  outline: 2px solid var(--focus-ring, currentColor);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.today-chart-table caption {
+  padding-bottom: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}

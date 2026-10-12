@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import { formatBusinessDate } from '@/design-system/formatters';
 import { Icon, type IconName } from '@/design-system/icons';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
+import { TableScrollRegion } from '@/design-system/table';
 
 import { businessToday } from '@/modules/reporting/period';
 import { addExact } from '@/modules/reporting/domain';
@@ -15,6 +16,7 @@ import {
   axisLabels,
   CHART_RANGES,
   chartBuckets,
+  chartTable,
   figureChars,
   dailyTotals,
   litresSeries,
@@ -24,6 +26,7 @@ import {
   varianceTone,
   type ChartRange,
   type DailyRow,
+  type LitresPoint,
   type SalesRow,
 } from './dashboard-figures';
 import { PerformanceChart } from './performance-chart';
@@ -426,6 +429,7 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
                 ))}
               </p>
             ) : null}
+            <ChartTableView points={points} range={range} />
           </>
         )}
         <p className="today-note">
@@ -521,5 +525,77 @@ function OperationsRow({ operations, href }: { operations: TodayOperations; href
         </span>
       </span>
     </Link>
+  );
+}
+
+function periodLabel(from: string, to: string): string {
+  return from === to
+    ? formatBusinessDate(from)
+    : `${formatBusinessDate(from)} – ${formatBusinessDate(to)}`;
+}
+
+/**
+ * The sales chart as a table (finish line F3-03): the same approved-report
+ * points, one row per period. A period without an approved report says so;
+ * nothing missing is shown as zero.
+ */
+function ChartTableView({ points, range }: { points: LitresPoint[]; range: ChartRange }) {
+  const table = chartTable(points);
+  return (
+    <details className="today-chart-table">
+      <summary>Show the chart as a table</summary>
+      <TableScrollRegion label={`Litres sold by period, ${range}`}>
+        <table className="responsive-table">
+          <caption>Litres sold, {range}, from approved reports only</caption>
+          <thead>
+            <tr>
+              <th scope="col">Business date</th>
+              <th scope="col">Litres sold</th>
+              {table.products.map((name) => (
+                <th scope="col" key={name}>
+                  {name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row) => (
+              <tr key={row.from}>
+                <th scope="row" data-label="Business date">
+                  {periodLabel(row.from, row.to)}
+                </th>
+                {row.total === null ? (
+                  <td data-label="Litres sold" colSpan={1 + table.products.length}>
+                    No approved report
+                  </td>
+                ) : (
+                  <>
+                    <td data-label="Litres sold" className="numeric">
+                      {formatTileLitres(row.total)}
+                    </td>
+                    {row.byProduct.map((litres, index) => (
+                      <td
+                        key={table.products[index]}
+                        data-label={table.products[index]}
+                        className="numeric"
+                      >
+                        {litres === null ? (
+                          <>
+                            <span aria-hidden="true">—</span>
+                            <span className="visually-hidden">No approved figure</span>
+                          </>
+                        ) : (
+                          formatTileLitres(litres)
+                        )}
+                      </td>
+                    ))}
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScrollRegion>
+    </details>
   );
 }

@@ -117,6 +117,9 @@ export type SalesRow = Readonly<{
 
 export type LitresPoint = Readonly<{
   label: string;
+  /** Inclusive business dates the point covers (one day, a week or a month). */
+  from: string;
+  to: string;
   /** Exact total litres, or null when no approved report covers the bucket. */
   litres: string | null;
   products: readonly { name: string; litres: string }[];
@@ -128,10 +131,14 @@ export function litresSeries(rows: readonly SalesRow[], buckets: readonly Bucket
     const inside = rows.filter(
       (row) => row.businessDate >= bucket.from && row.businessDate <= bucket.to,
     );
-    if (inside.length === 0) return { label: bucket.label, litres: null, products: [] };
+    if (inside.length === 0) {
+      return { label: bucket.label, from: bucket.from, to: bucket.to, litres: null, products: [] };
+    }
     const names = [...new Set(inside.map((row) => row.productName))].sort();
     return {
       label: bucket.label,
+      from: bucket.from,
+      to: bucket.to,
       litres: sumExact(inside.map((row) => row.litres)),
       products: names.map((name) => ({
         name,
@@ -192,4 +199,39 @@ export function axisLabels(labels: readonly string[], count = 6): string[] {
  */
 export function figureChars(value: string): number {
   return Math.max(6, ...value.split(/\s+/).map((word) => word.length));
+}
+
+export type ChartTable = Readonly<{
+  /** Product names exactly as configured, in a stable order. */
+  products: readonly string[];
+  rows: readonly Readonly<{
+    from: string;
+    to: string;
+    /** Exact total litres, or null when no approved report covers the period. */
+    total: string | null;
+    /** Exact litres per product; null when the product has no approved row. */
+    byProduct: readonly (string | null)[];
+  }>[];
+}>;
+
+/**
+ * The chart as a table, from the same points: one row per period. A period
+ * without an approved report keeps a null total (shown as unavailable), and
+ * a product without a row in an approved period stays null, never zero.
+ */
+export function chartTable(points: readonly LitresPoint[]): ChartTable {
+  const products = [
+    ...new Set(points.flatMap((point) => point.products.map((product) => product.name))),
+  ].sort();
+  return {
+    products,
+    rows: points.map((point) => ({
+      from: point.from,
+      to: point.to,
+      total: point.litres,
+      byProduct: products.map(
+        (name) => point.products.find((product) => product.name === name)?.litres ?? null,
+      ),
+    })),
+  };
 }
