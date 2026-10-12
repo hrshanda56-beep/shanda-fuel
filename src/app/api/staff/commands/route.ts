@@ -11,6 +11,7 @@ import {
 import { requireAuthenticatedActor } from '@/modules/identity';
 import { apiErrorResponse, withRequestObservability } from '@/platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '@/platform/security';
+import { staffDeactivationResponseStatus } from '../../../../modules/staff/revocation';
 
 export const runtime = 'nodejs';
 
@@ -38,8 +39,10 @@ export const POST = withRequestObservability(
           return response(await resendStaffInvitationFromRequest(request, body));
         case 'RevokeStaffInvitation':
           return response(await revokeStaffInvitationFromRequest(request, body));
-        case 'DeactivateStaffMember':
-          return response(await deactivateStaffMemberFromRequest(request, body));
+        case 'DeactivateStaffMember': {
+          const result = await deactivateStaffMemberFromRequest(request, body);
+          return response(result, staffDeactivationResponseStatus(result));
+        }
         default:
           return response(
             { error: 'VALIDATION_FAILED', message: 'Unsupported staff command' },

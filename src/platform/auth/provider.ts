@@ -31,6 +31,12 @@ export type ClerkCredentialIdentity = {
   providerSessionId?: string;
 };
 
+export type ClerkSessionRevocationResult = {
+  activeSessionsFound: number;
+  sessionsRevoked: number;
+  complete: boolean;
+};
+
 const CLERK_STEP_UP_MAX_AGE_MINUTES = 10;
 
 export function getAuthProviderName(): AuthProviderName {
@@ -165,11 +171,21 @@ export async function deleteClerkCredentialIdentity(providerUserId: string): Pro
   await client.users.deleteUser(providerUserId);
 }
 
-export async function revokeClerkUserSessions(providerUserId: string): Promise<void> {
+export async function revokeClerkUserSessions(
+  providerUserId: string,
+): Promise<ClerkSessionRevocationResult> {
   const client = await clerkClient();
   const sessions = await client.sessions.getSessionList({
     userId: providerUserId,
     status: 'active',
   });
-  await Promise.all(sessions.data.map((session) => client.sessions.revokeSession(session.id)));
+  const results = await Promise.allSettled(
+    sessions.data.map((session) => client.sessions.revokeSession(session.id)),
+  );
+  const sessionsRevoked = results.filter((result) => result.status === 'fulfilled').length;
+  return {
+    activeSessionsFound: sessions.data.length,
+    sessionsRevoked,
+    complete: sessionsRevoked === sessions.data.length,
+  };
 }

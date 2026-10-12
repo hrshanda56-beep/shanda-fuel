@@ -6,14 +6,45 @@ import {
   requireAuthenticatedActor,
 } from '../../../../modules/identity';
 import { resolveTenantExecutionContext } from '../../../../modules/tenancy/authority';
-import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
+import {
+  apiErrorResponse,
+  classifyError,
+  classifyStatus,
+  getRequestId,
+  withRequestObservability,
+} from '../../../../platform/observability';
 import { AUTH_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
 import { getAuthProviderName } from '../../../../platform/auth/provider';
 import { AppError } from '../../../../platform/errors';
+import { createLogger } from '../../../../platform/logging';
 import { reverificationErrorResponse } from '@clerk/nextjs/server';
-import { clerkStepUpCookieClearHeaders } from '../../../../platform/auth/clerk-step-up';
+import {
+  CLERK_DEACTIVATE_STAFF_ACTION,
+  CLERK_STEP_UP_ACTION,
+  clerkStepUpCookieClearHeaders,
+} from '../../../../platform/auth/clerk-step-up';
 
 export const runtime = 'nodejs';
+
+const stepUpDiagnosticLogger = createLogger({ component: 'auth.step-up' });
+const DEACTIVATE_ACTION = CLERK_DEACTIVATE_STAFF_ACTION;
+
+function logDeactivationStepUp(
+  request: Request,
+  stage: 'received' | 'challenge_required' | 'reverified' | 'rejected' | 'completed',
+  status: number | null,
+  errorCategory?: string,
+): void {
+  stepUpDiagnosticLogger.info('auth.step_up.diagnostic', {
+    signal: 'step_up_diagnostic',
+    requestId: getRequestId(request),
+    action: DEACTIVATE_ACTION,
+    stage,
+    status,
+    statusClass: status === null ? 'unknown' : classifyStatus(status),
+    ...(errorCategory ? { errorCategory } : {}),
+  });
+}
 
 const requestSchema = z.object({
   tenantId: z.string().uuid(),
@@ -22,7 +53,7 @@ const requestSchema = z.object({
     .string()
     .regex(/^\d{6}$/)
     .optional(),
-  action: z.literal('LOCK_BUSINESS_DAY').optional(),
+  action: z.enum([CLERK_STEP_UP_ACTION, CLERK_DEACTIVATE_STAFF_ACTION]).optional(),
 });
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -34,9 +65,12 @@ function jsonResponse(body: unknown, status: number): Response {
 
 export const POST = withRequestObservability(
   withPersistentRateLimit(async (request: Request): Promise<Response> => {
+    let deactivationAction = false;
     try {
       await requireAuthenticatedActor(request);
       const body = requestSchema.parse(await request.json());
+      deactivationAction = body.action === DEACTIVATE_ACTION;
+      if (deactivationAction) logDeactivationStepUp(request, 'received', null);
       if (getAuthProviderName() === 'BETTER_AUTH' && (!body.password || !body.totpCode)) {
         return apiErrorResponse(
           request,
@@ -55,6 +89,7 @@ export const POST = withRequestObservability(
         totpCode: body.totpCode ?? '',
         action: body.action,
       });
+      if (deactivationAction) logDeactivationStepUp(request, 'reverified', 200);
       const response = jsonResponse(
         {
           status: 'active',
@@ -69,13 +104,26 @@ export const POST = withRequestObservability(
           response.headers.append('Set-Cookie', header);
         }
       }
+      if (deactivationAction) logDeactivationStepUp(request, 'completed', 200);
       return response;
     } catch (error) {
       if (error instanceof ClerkReverificationRequiredError) {
+        if (deactivationAction) {
+          logDeactivationStepUp(
+            request,
+            'challenge_required',
+            403,
+            'CLERK_REVERIFICATION_REQUIRED',
+          );
+        }
         const clerkResponse = reverificationErrorResponse(error.level);
         const response = jsonResponse(await clerkResponse.json(), 403);
         response.headers.append('Set-Cookie', error.challengeCookie);
         return response;
+      }
+      if (deactivationAction) {
+        const status = error instanceof AppError ? error.httpStatus : 500;
+        logDeactivationStepUp(request, 'rejected', status, classifyError(error).toUpperCase());
       }
       return apiErrorResponse(request, error, {
         includeDetails: true,

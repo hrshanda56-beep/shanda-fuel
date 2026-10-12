@@ -1,14 +1,29 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useReverification } from '@clerk/nextjs';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/design-system/primitives';
+import { Modal } from '@/design-system/modal';
 
 import type { RoleCode } from '@/modules/authorization';
 import type { SettingsView } from '../contracts';
 import styles from './settings-workspace.module.css';
+import {
+  ApplicationStepUpError,
+  NetworkStepUpError,
+  classifyStepUpFailure,
+  stepUpFailureMessage,
+} from './staff-step-up-diagnostics';
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
+type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
+type StaffMember = StaffOverview['activeStaff'][number];
+
+type DeactivationOutcome =
+  | { kind: 'success'; message: string }
+  | { kind: 'provider'; message: string }
+  | { kind: 'blocked'; message: string };
 
 const ROLE_LABELS: Record<Role, string> = {
   OWNER: 'Owner',
@@ -26,7 +41,15 @@ function defaultScope(role: Role) {
       : 'STATION';
 }
 
-export function StaffPanel({ tenantId, overview }: { tenantId: string; overview: StaffOverview }) {
+export function StaffPanel({
+  tenantId,
+  overview,
+  provider,
+}: {
+  tenantId: string;
+  overview: StaffOverview;
+  provider: AuthProviderName;
+}) {
   const [role, setRole] = useState<Role>('ATTENDANT');
   const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
     defaultScope('ATTENDANT'),
@@ -41,6 +64,10 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
     activationCode: string;
     expiresAt: string;
   }>();
+  const [deactivationTarget, setDeactivationTarget] = useState<StaffMember>();
+  const [deactivationBusy, setDeactivationBusy] = useState(false);
+  const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
+  const deactivationInFlight = useRef(false);
 
   const legalEntity = useMemo(
     () => overview.scopeOptions.find((option) => option.id === legalEntityId),
@@ -136,6 +163,87 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
         ? current.filter((id) => id !== stationId)
         : [...current, stationId],
     );
+  }
+
+  function openDeactivation(member: StaffMember) {
+    setDeactivationTarget(member);
+    setDeactivationOutcome(undefined);
+  }
+
+  function closeDeactivation() {
+    if (deactivationBusy) return;
+    setDeactivationTarget(undefined);
+    setDeactivationOutcome(undefined);
+  }
+
+  async function submitDeactivation() {
+    const member = deactivationTarget;
+    if (!member || deactivationInFlight.current) return;
+    deactivationInFlight.current = true;
+    setDeactivationBusy(true);
+    try {
+      const response = await fetch('/api/staff/commands', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          tenantId,
+          commandType: 'DeactivateStaffMember',
+          membershipId: member.membershipId,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        message?: string;
+        sessionsRevoked?: boolean;
+        revocationStatus?: string;
+        activeSessionsFound?: number;
+        sessionsRevokedCount?: number;
+      } | null;
+
+      if (response.ok && body?.sessionsRevoked === true) {
+        setDeactivationOutcome({
+          kind: 'success',
+          message:
+            provider === 'CLERK'
+              ? 'Staff member deactivated and Clerk sessions revoked.'
+              : 'Staff member deactivated and sessions revoked.',
+        });
+        return;
+      }
+
+      if (response.status === 503 && body?.revocationStatus) {
+        const status = body.revocationStatus;
+        const sessionCounts =
+          typeof body.activeSessionsFound === 'number' &&
+          typeof body.sessionsRevokedCount === 'number'
+            ? ` (${body.sessionsRevokedCount} of ${body.activeSessionsFound} provider sessions revoked)`
+            : '';
+        const detail =
+          status === 'MAPPING_MISSING'
+            ? 'No Clerk identity mapping was found, so no provider session was revoked.'
+            : status === 'PARTIAL'
+              ? `Provider revocation was incomplete${sessionCounts}.`
+              : 'The provider revocation failed; no complete revocation is being reported.';
+        setDeactivationOutcome({
+          kind: 'provider',
+          message: `The membership was disabled, but ${detail} Retry only after reviewing the provider state.`,
+        });
+        return;
+      }
+
+      setDeactivationOutcome({
+        kind: 'blocked',
+        message:
+          body?.message ?? 'The deactivation was rejected. No membership change was reported.',
+      });
+    } catch {
+      setDeactivationOutcome({
+        kind: 'blocked',
+        message: 'The deactivation could not be submitted. No membership change was reported.',
+      });
+    } finally {
+      deactivationInFlight.current = false;
+      setDeactivationBusy(false);
+    }
   }
 
   return (
@@ -372,12 +480,8 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
                 type="button"
                 variant="danger"
                 size="sm"
-                onClick={() =>
-                  command({
-                    commandType: 'DeactivateStaffMember',
-                    membershipId: member.membershipId,
-                  })
-                }
+                onClick={() => openDeactivation(member)}
+                disabled={busy || deactivationBusy}
               >
                 Deactivate
               </Button>
@@ -394,7 +498,235 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
           actions: null,
         }))}
       />
+
+      <Modal
+        open={Boolean(deactivationTarget)}
+        onClose={closeDeactivation}
+        title="Deactivate staff member?"
+        description="This disables the selected membership and revokes its authentication sessions. The server will recheck your tenant authority before making any change."
+        role="alertdialog"
+        dismissible={!deactivationBusy}
+        footer={
+          deactivationOutcome ? (
+            <>
+              {deactivationOutcome.kind === 'provider' ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => setDeactivationOutcome(undefined)}
+                  disabled={deactivationBusy}
+                >
+                  Review and retry
+                </Button>
+              ) : null}
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const shouldReload = deactivationOutcome.kind === 'success';
+                  closeDeactivation();
+                  if (shouldReload) window.location.reload();
+                }}
+              >
+                Done
+              </Button>
+            </>
+          ) : (
+            <Button variant="secondary" onClick={closeDeactivation} disabled={deactivationBusy}>
+              Cancel
+            </Button>
+          )
+        }
+      >
+        {deactivationTarget ? (
+          <>
+            <p className="semantic-note">
+              {deactivationTarget.name} will lose workplace access immediately. This action cannot
+              be undone from this screen.
+            </p>
+            {deactivationOutcome ? (
+              <p
+                className={`state ${deactivationOutcome.kind === 'success' ? 'state-success' : 'state-error'}`}
+                role={deactivationOutcome.kind === 'success' ? 'status' : 'alert'}
+              >
+                {deactivationOutcome.message}
+              </p>
+            ) : provider === 'CLERK' ? (
+              <ClerkStaffDeactivationStepUp
+                tenantId={tenantId}
+                busy={deactivationBusy}
+                onVerified={submitDeactivation}
+              />
+            ) : (
+              <BetterAuthStaffDeactivationStepUp
+                tenantId={tenantId}
+                busy={deactivationBusy}
+                onVerified={submitDeactivation}
+              />
+            )}
+          </>
+        ) : null}
+      </Modal>
     </div>
+  );
+}
+
+function ClerkStaffDeactivationStepUp({
+  tenantId,
+  busy,
+  onVerified,
+}: {
+  tenantId: string;
+  busy: boolean;
+  onVerified: () => Promise<void>;
+}) {
+  const [stepUpBusy, setStepUpBusy] = useState(false);
+  const [stepUpError, setStepUpError] = useState<string>();
+  const clerkAwareStepUp = useReverification(async () => {
+    let response: Response;
+    try {
+      response = await fetch('/api/auth/step-up', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenantId, action: 'DEACTIVATE_STAFF_MEMBER' }),
+      });
+    } catch {
+      throw new NetworkStepUpError();
+    }
+    const body = (await response.json()) as { message?: string; clerk_error?: unknown };
+    if (!response.ok) {
+      if (body.clerk_error) return body;
+      throw new ApplicationStepUpError();
+    }
+    return body;
+  });
+
+  async function verify() {
+    setStepUpBusy(true);
+    setStepUpError(undefined);
+    try {
+      await clerkAwareStepUp();
+    } catch (error) {
+      setStepUpError(stepUpFailureMessage(classifyStepUpFailure(error)));
+      setStepUpBusy(false);
+      return;
+    }
+    try {
+      await onVerified();
+    } catch {
+      setStepUpError('The deactivation command could not be submitted. No change was reported.');
+    } finally {
+      setStepUpBusy(false);
+    }
+  }
+
+  return (
+    <div className="step-up-form" aria-describedby="staff-deactivation-step-up-help">
+      <p className="semantic-note" id="staff-deactivation-step-up-help">
+        Clerk will ask you to reverify your password before the deactivation command is submitted.
+      </p>
+      <Button
+        type="button"
+        variant="danger"
+        onClick={() => void verify()}
+        disabled={busy || stepUpBusy}
+        loading={stepUpBusy}
+      >
+        Reverify and deactivate
+      </Button>
+      {stepUpError ? (
+        <p className="state state-error" role="alert">
+          {stepUpError}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function BetterAuthStaffDeactivationStepUp({
+  tenantId,
+  busy,
+  onVerified,
+}: {
+  tenantId: string;
+  busy: boolean;
+  onVerified: () => Promise<void>;
+}) {
+  const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [stepUpBusy, setStepUpBusy] = useState(false);
+  const [stepUpError, setStepUpError] = useState<string>();
+
+  async function verify(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStepUpBusy(true);
+    setStepUpError(undefined);
+    try {
+      const response = await fetch('/api/auth/step-up', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          tenantId,
+          action: 'DEACTIVATE_STAFF_MEMBER',
+          password,
+          totpCode,
+        }),
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) throw new Error(body.message ?? 'Step-up verification failed.');
+      setPassword('');
+      setTotpCode('');
+      await onVerified();
+    } catch (error) {
+      setStepUpError(error instanceof Error ? error.message : 'Step-up verification failed.');
+    } finally {
+      setStepUpBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className="step-up-form"
+      onSubmit={(event) => void verify(event)}
+      aria-describedby="staff-deactivation-step-up-help"
+    >
+      <p className="semantic-note" id="staff-deactivation-step-up-help">
+        Confirm your Better Auth password and current authenticator code before the deactivation
+        command is submitted.
+      </p>
+      <label htmlFor="staff-deactivation-password">Current password</label>
+      <input
+        id="staff-deactivation-password"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        required
+        disabled={busy || stepUpBusy}
+      />
+      <label htmlFor="staff-deactivation-totp">Authenticator code</label>
+      <input
+        id="staff-deactivation-totp"
+        inputMode="numeric"
+        pattern="[0-9]{6}"
+        autoComplete="one-time-code"
+        value={totpCode}
+        onChange={(event) => setTotpCode(event.target.value)}
+        required
+        disabled={busy || stepUpBusy}
+      />
+      <Button
+        type="submit"
+        variant="danger"
+        disabled={busy || stepUpBusy || password.length === 0 || totpCode.length !== 6}
+        loading={stepUpBusy}
+      >
+        Verify and deactivate
+      </Button>
+      {stepUpError ? (
+        <p className="state state-error" role="alert">
+          {stepUpError}
+        </p>
+      ) : null}
+    </form>
   );
 }
 

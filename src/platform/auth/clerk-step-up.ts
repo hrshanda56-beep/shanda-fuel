@@ -7,7 +7,8 @@ import { getAuditSigningKey } from '../config/env';
 export const CLERK_STEP_UP_COOKIE = 'shanda-fuel.clerk-step-up';
 export const CLERK_STEP_UP_CHALLENGE_COOKIE = 'shanda-fuel.clerk-step-up-challenge';
 export const CLERK_STEP_UP_ACTION = 'LOCK_BUSINESS_DAY' as const;
-export type ClerkStepUpAction = typeof CLERK_STEP_UP_ACTION;
+export const CLERK_DEACTIVATE_STAFF_ACTION = 'DEACTIVATE_STAFF_MEMBER' as const;
+export type ClerkStepUpAction = typeof CLERK_STEP_UP_ACTION | typeof CLERK_DEACTIVATE_STAFF_ACTION;
 export type ClerkReverificationLevel = 'strict' | 'strict_mfa';
 
 const TOKEN_VERSION = 'v1';
@@ -61,7 +62,8 @@ function parse(value: string | undefined, now = Date.now()): SignedToken | null 
   try {
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as SignedToken;
     if (
-      payload.action !== CLERK_STEP_UP_ACTION ||
+      (payload.action !== CLERK_STEP_UP_ACTION &&
+        payload.action !== CLERK_DEACTIVATE_STAFF_ACTION) ||
       !Number.isSafeInteger(payload.issuedAt) ||
       !Number.isSafeInteger(payload.expiresAt) ||
       payload.expiresAt <= now ||

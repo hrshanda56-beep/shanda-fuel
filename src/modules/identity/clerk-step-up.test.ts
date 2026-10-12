@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLERK_DEACTIVATE_STAFF_ACTION,
   CLERK_STEP_UP_ACTION,
   type ClerkReverificationLevel,
 } from '../../platform/auth/clerk-step-up';
@@ -150,6 +151,48 @@ describe('Clerk privileged step-up policy', () => {
     expect(result.level).toBe(1);
     expect(result.setCookie).toContain('shanda-fuel.clerk-step-up=');
     expect(mocks.hasRecentClerkReverification).toHaveBeenCalledWith(expect.any(Request), 'strict');
+  });
+
+  it('fails closed when audit signing credentials are unavailable after reverification', async () => {
+    let challenge: ClerkReverificationRequiredError;
+    try {
+      await establish();
+      throw new Error('expected a reverification challenge');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ClerkReverificationRequiredError);
+      challenge = error as ClerkReverificationRequiredError;
+    }
+
+    const originalKeyId = process.env.AUDIT_SIGNING_KEY_ID;
+    const originalSecret = process.env.AUDIT_SIGNING_KEY;
+    delete process.env.AUDIT_SIGNING_KEY_ID;
+    delete process.env.AUDIT_SIGNING_KEY;
+    mocks.hasRecentClerkReverification.mockReturnValue(true);
+
+    try {
+      await expect(establish(cookieFromChallenge(challenge!))).rejects.toMatchObject({
+        code: 'DEPENDENCY_UNAVAILABLE',
+        httpStatus: 503,
+      });
+    } finally {
+      if (originalKeyId === undefined) delete process.env.AUDIT_SIGNING_KEY_ID;
+      else process.env.AUDIT_SIGNING_KEY_ID = originalKeyId;
+      if (originalSecret === undefined) delete process.env.AUDIT_SIGNING_KEY;
+      else process.env.AUDIT_SIGNING_KEY = originalSecret;
+    }
+  });
+
+  it('binds staff deactivation to its own no-MFA Owner step-up action', async () => {
+    await expect(
+      establishStepUp({
+        request: request(),
+        context: context(),
+        action: CLERK_DEACTIVATE_STAFF_ACTION,
+        password: '',
+        totpCode: '',
+        now,
+      }),
+    ).rejects.toMatchObject({ level: 'strict' });
   });
 
   it('requires strict MFA for a Clerk user with MFA enrolled', async () => {

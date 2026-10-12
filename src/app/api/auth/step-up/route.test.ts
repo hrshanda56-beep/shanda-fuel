@@ -119,6 +119,71 @@ describe('POST /api/auth/step-up', () => {
     expect(response.headers.get('Set-Cookie')).toContain('shanda-fuel.clerk-step-up-challenge');
   });
 
+  it('records only redacted diagnostic stages for the staff deactivation action', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    vi.stubEnv('AUTH_PROVIDER', 'CLERK');
+    vi.stubEnv('APP_ENV', 'test');
+    vi.stubEnv('APP_URL', 'http://localhost:3000');
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_fake_clerk_fixture');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_fake_clerk_fixture');
+    mocks.establish.mockRejectedValueOnce(
+      new mocks.ClerkReverificationRequiredError(
+        'strict',
+        'shanda-fuel.clerk-step-up-challenge=test',
+      ),
+    );
+
+    await POST(request({ tenantId, action: 'DEACTIVATE_STAFF_MEMBER' }));
+
+    const records = info.mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .filter((record) => record.message === 'auth.step_up.diagnostic');
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record.stage)).toEqual(['received', 'challenge_required']);
+    expect(records[0]).toMatchObject({
+      action: 'DEACTIVATE_STAFF_MEMBER',
+      status: null,
+      statusClass: 'unknown',
+    });
+    expect(JSON.stringify(records)).not.toContain('sk_fake_clerk_fixture');
+    expect(JSON.stringify(records)).not.toContain('test');
+    info.mockRestore();
+  });
+
+  it('records reverified and completed stages without provider details', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    vi.stubEnv('AUTH_PROVIDER', 'CLERK');
+    vi.stubEnv('APP_ENV', 'test');
+    vi.stubEnv('APP_URL', 'http://localhost:3000');
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_fake_clerk_fixture');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_fake_clerk_fixture');
+
+    const response = await POST(request({ tenantId, action: 'DEACTIVATE_STAFF_MEMBER' }));
+
+    expect(response.status).toBe(200);
+    const records = info.mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .filter((record) => record.message === 'auth.step_up.diagnostic');
+    expect(records.map((record) => record.stage)).toEqual(['received', 'reverified', 'completed']);
+    expect(records.every((record) => record.action === 'DEACTIVATE_STAFF_MEMBER')).toBe(true);
+    info.mockRestore();
+  });
+
+  it('accepts the dedicated staff deactivation step-up action', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'CLERK');
+    vi.stubEnv('APP_ENV', 'test');
+    vi.stubEnv('APP_URL', 'http://localhost:3000');
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_fake_clerk_fixture');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_fake_clerk_fixture');
+
+    const response = await POST(request({ tenantId, action: 'DEACTIVATE_STAFF_MEMBER' }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.establish).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'DEACTIVATE_STAFF_MEMBER', context }),
+    );
+  });
+
   it('does not parse an unauthenticated request body', async () => {
     mocks.authenticate.mockRejectedValueOnce(
       new AppError('UNAUTHENTICATED', 'Authentication is required'),

@@ -402,7 +402,28 @@ test.describe('authenticated Staff lifecycle', () => {
       .getByText('E2E Attendant · attendant.staff-e2e@example.test', { exact: true })
       .locator('xpath=../..');
     await attendantRow.getByRole('button', { name: 'Deactivate' }).click();
-    await page.waitForLoadState('networkidle');
+    const deactivationDialog = page.getByRole('alertdialog', {
+      name: 'Deactivate staff member?',
+    });
+    await expect(deactivationDialog).toBeVisible();
+    await deactivationDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(deactivationDialog).toHaveCount(0);
+
+    const deactivation = await page.request.post('/api/staff/commands', {
+      headers: {
+        cookie: `shanda-fuel.session_token=${await signedCookie(sessions.owner, authSecret!)}`,
+      },
+      data: {
+        tenantId: ids.tenant,
+        commandType: 'DeactivateStaffMember',
+        membershipId: ids.attendantMembership,
+      },
+    });
+    expect(deactivation.status()).toBe(200);
+    await expect(deactivation.json()).resolves.toMatchObject({
+      sessionsRevoked: true,
+    });
+
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(page.getByText('Deactivated; history retained', { exact: true })).toBeVisible();

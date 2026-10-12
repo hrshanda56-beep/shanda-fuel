@@ -12,8 +12,10 @@ import { AppError } from '../../platform/errors';
 import { createResendEmailSender, type EmailSender } from '../../platform/email';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authorize } from '../../platform/security/permissions';
+import { assertStepUp } from '../../platform/security';
 import { requireAuthenticatedActor } from '../identity';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
+import { CLERK_DEACTIVATE_STAFF_ACTION } from '../../platform/auth/clerk-step-up';
 import {
   createClerkCredentialIdentity,
   deleteClerkCredentialIdentity,
@@ -86,6 +88,8 @@ export type StaffCommandDependencies = Readonly<{
   resolveAuthority?: typeof resolveTenantExecutionContext;
   createClerkIdentity?: typeof createClerkCredentialIdentity;
   deleteClerkIdentity?: typeof deleteClerkCredentialIdentity;
+  getAuthProviderName?: typeof getAuthProviderName;
+  revokeClerkSessions?: typeof revokeClerkUserSessions;
 }>;
 
 function transactionError(error: unknown): AppError {
@@ -586,6 +590,13 @@ export async function deactivateStaffMemberFromRequest(
 ) {
   const input = deactivateSchema.parse(body);
   const authority = await resolveStaffAuthority(request, input.tenantId, deps);
+  assertStepUp(
+    authority.actor.session,
+    1,
+    new Date(),
+    input.tenantId,
+    CLERK_DEACTIVATE_STAFF_ACTION,
+  );
   authorize({
     actor: authority.authorization,
     permissionCode: 'membership.disable',
@@ -594,6 +605,9 @@ export async function deactivateStaffMemberFromRequest(
   if (input.membershipId === authority.membership.membershipId) {
     throw new AppError('FORBIDDEN', 'You cannot deactivate your own membership');
   }
+
+  const authProvider = deps.getAuthProviderName?.() ?? getAuthProviderName();
+  const revokeClerkSessions = deps.revokeClerkSessions ?? revokeClerkUserSessions;
 
   try {
     const result = await withTenantTransaction(authority.transaction, async (transaction) => {
@@ -607,14 +621,28 @@ export async function deactivateStaffMemberFromRequest(
       `);
       const target = targetRows[0];
       if (!target) throw new AppError('NOT_FOUND', 'Staff member not found');
-      if (target.status !== 'ACTIVE')
+      const retryingClerkRevocation = authProvider === 'CLERK' && target.status === 'DISABLED';
+      if (target.status !== 'ACTIVE' && !retryingClerkRevocation)
         throw new AppError('CONFLICT', 'Staff member is already inactive');
 
-      const providerRows = await transaction.execute<{ provider_user_id: string }>(sql`
-        select provider_user_id
-        from app.resolve_provider_identity('CLERK', ${target.identity_id})
-        limit 1
-      `);
+      const providerRows =
+        authProvider === 'CLERK'
+          ? await transaction.execute<{ provider_user_id: string }>(sql`
+              select provider_user_id
+              from app.resolve_provider_identity_for_membership(
+                'CLERK', ${input.tenantId}, ${input.membershipId}
+              )
+              limit 1
+            `)
+          : [];
+
+      if (retryingClerkRevocation) {
+        return {
+          membershipId: input.membershipId,
+          providerUserId: providerRows[0]?.provider_user_id,
+          retry: true,
+        };
+      }
 
       const ownerRows = await transaction.execute<{ count: string }>(sql`
         select count(*)::text as count
@@ -681,16 +709,50 @@ export async function deactivateStaffMemberFromRequest(
         membershipId: input.membershipId,
         identityId: target.identity_id,
         providerUserId: providerRows[0]?.provider_user_id,
+        retry: false,
       };
     });
-    if (getAuthProviderName() === 'CLERK' && result.providerUserId) {
-      try {
-        await revokeClerkUserSessions(result.providerUserId);
-      } catch {
-        return { membershipId: result.membershipId, sessionsRevoked: false };
-      }
+
+    if (authProvider !== 'CLERK') {
+      return { membershipId: result.membershipId, sessionsRevoked: true };
     }
-    return { membershipId: result.membershipId, sessionsRevoked: true };
+
+    if (!result.providerUserId) {
+      return {
+        membershipId: result.membershipId,
+        sessionsRevoked: false,
+        revocationStatus: 'MAPPING_MISSING' as const,
+      };
+    }
+
+    try {
+      const revocation = await revokeClerkSessions(result.providerUserId);
+      if (!revocation.complete) {
+        return {
+          membershipId: result.membershipId,
+          sessionsRevoked: false,
+          revocationStatus: 'PARTIAL' as const,
+          activeSessionsFound: revocation.activeSessionsFound,
+          sessionsRevokedCount: revocation.sessionsRevoked,
+        };
+      }
+      return {
+        membershipId: result.membershipId,
+        sessionsRevoked: true,
+        revocationStatus:
+          revocation.activeSessionsFound === 0
+            ? ('NO_ACTIVE_SESSIONS' as const)
+            : ('REVOKED' as const),
+        activeSessionsFound: revocation.activeSessionsFound,
+        sessionsRevokedCount: revocation.sessionsRevoked,
+      };
+    } catch {
+      return {
+        membershipId: result.membershipId,
+        sessionsRevoked: false,
+        revocationStatus: 'PROVIDER_ERROR' as const,
+      };
+    }
   } catch (error) {
     throw transactionError(error);
   }

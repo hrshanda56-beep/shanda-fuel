@@ -192,7 +192,7 @@ export function SettingsWorkspace({
           ) : null}
 
           {tab === 'staff' && view.staff?.canManage ? (
-            <StaffPanel tenantId={organisation.id} overview={view.staff} />
+            <StaffPanel tenantId={organisation.id} overview={view.staff} provider={provider} />
           ) : null}
 
           {tab === 'account' ? <AccountPanel view={view} provider={provider} /> : null}

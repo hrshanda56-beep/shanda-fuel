@@ -13,6 +13,7 @@ import {
   resolveClerkSession,
 } from '../../platform/auth/provider';
 import {
+  CLERK_DEACTIVATE_STAFF_ACTION,
   CLERK_STEP_UP_ACTION,
   type ClerkReverificationLevel,
   type ClerkStepUpAction,
@@ -39,6 +40,9 @@ export type StepUpResult = {
 
 export const CLERK_STEP_UP_POLICY = {
   [CLERK_STEP_UP_ACTION]: {
+    allowNoMfaOwner: true,
+  },
+  [CLERK_DEACTIVATE_STAFF_ACTION]: {
     allowNoMfaOwner: true,
   },
 } as const satisfies Record<ClerkStepUpAction, { allowNoMfaOwner: boolean }>;
