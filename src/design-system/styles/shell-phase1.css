@@ -421,6 +421,35 @@
 
 /* More menu -------------------------------------------------------------------- */
 
+/* Phone search entry (F1-05): the header search is hidden below 48rem. */
+.shell-more-search {
+  display: flex;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex: 0 0 auto;
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--border-control);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-more-search:hover {
+  color: var(--text-primary);
+}
+
+@media (min-width: 48rem) {
+  .shell-more-search {
+    display: none;
+  }
+}
+
 .shell-more-context {
   display: flex;
   width: 100%;

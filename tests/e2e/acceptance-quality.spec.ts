@@ -189,3 +189,103 @@ test.describe('shared quality (F4-07)', () => {
     await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible();
   });
 });
+
+/** F1-05: phones hide the header search, so the More drawer carries a search entry. */
+test.describe('phone search entry in the More drawer (F1-05)', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('is a named, visible button that announces its dialog and shortcut', async ({ page }) => {
+    await mockDashboard(page);
+    await page.goto(TODAY);
+    await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
+    await expect(page.locator('.shell-header .global-search')).toBeHidden();
+    await page.getByRole('button', { name: /^More/ }).tap();
+    const drawer = page.getByRole('dialog', { name: 'More' });
+    const entry = drawer.getByRole('button', { name: 'Search pages' });
+    await expect(entry).toBeVisible();
+    await expect(entry).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(entry).toHaveAttribute('aria-keyshortcuts', 'Meta+K Control+K');
+    // Layout size, not the bounding box: the drawer may still be scaling in.
+    const size = await entry.evaluate((element) => ({
+      height: (element as HTMLElement).offsetHeight,
+      width: (element as HTMLElement).offsetWidth,
+    }));
+    expect(size.height).toBeGreaterThanOrEqual(44);
+    expect(size.width).toBeLessThanOrEqual(390);
+    const results = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  test('a tap closes the drawer, opens search, and Escape returns focus to More', async ({
+    page,
+  }) => {
+    await mockDashboard(page);
+    await page.goto(TODAY);
+    await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
+    const more = page.getByRole('button', { name: /^More/ });
+    await more.tap();
+    await page
+      .getByRole('dialog', { name: 'More' })
+      .getByRole('button', { name: 'Search pages' })
+      .tap();
+
+    await expect(page.getByRole('dialog', { name: 'More' })).toHaveCount(0);
+    const palette = page.getByRole('dialog', { name: 'Search' });
+    const combobox = palette.getByRole('combobox', { name: 'Search pages' });
+    await expect(combobox).toBeFocused();
+    expect(
+      await combobox.evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
+    ).toBeGreaterThanOrEqual(16);
+    await combobox.fill('Cust');
+    await expect(palette.getByRole('option', { name: /Customers/ }).first()).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(more).toBeFocused();
+    const state = await page.evaluate(() => ({
+      overflow: document.body.style.overflow,
+      inert: document.querySelectorAll('[inert]').length,
+    }));
+    expect(state.overflow).not.toBe('hidden');
+    expect(state.inert).toBe(0);
+  });
+
+  test('works from the keyboard alone and keeps the Control+K shortcut', async ({ page }) => {
+    await mockDashboard(page);
+    await page.goto(TODAY);
+    await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
+    const more = page.getByRole('button', { name: /^More/ });
+    await more.focus();
+    await page.keyboard.press('Enter');
+    const entry = page
+      .getByRole('dialog', { name: 'More' })
+      .getByRole('button', { name: 'Search pages' });
+    // The entry is the first control in the drawer, so it takes the initial focus.
+    await expect(entry).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(more).toBeFocused();
+
+    // The shared shortcut still opens the same palette with the drawer closed.
+    await page.keyboard.press('Control+k');
+    await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
+test('the drawer search entry stays out of the tablet menu, where the header has search', async ({
+  page,
+}) => {
+  await mockDashboard(page);
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.goto(TODAY);
+  await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'tablet');
+  await page.locator('.shell-sidebar').getByRole('button', { name: 'Finance' }).click();
+  const drawer = page.getByRole('dialog', { name: 'More' });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator('.shell-more-search')).toBeHidden();
+});

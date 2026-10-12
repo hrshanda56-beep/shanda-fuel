@@ -284,6 +284,13 @@ export function AppShell({
     setContextSelectorOpen(true);
   }, []);
 
+  // Phones hide the header search, so the More drawer carries the entry.
+  // Close the drawer first so only one modal owns focus and Escape.
+  const openSearchFromMore = useCallback(() => {
+    setMenuOpen(false);
+    setSearchOpen(true);
+  }, []);
+
   const navigationProps = {
     sections,
     pathname,
@@ -411,6 +418,16 @@ export function AppShell({
           className="modal-more"
           returnFocus={() => moreButtonRef.current}
         >
+          <button
+            type="button"
+            className="shell-more-search"
+            aria-haspopup="dialog"
+            aria-keyshortcuts="Meta+K Control+K"
+            onClick={openSearchFromMore}
+          >
+            <Icon name="search" size="md" />
+            <span>Search pages</span>
+          </button>
           {contextLabel ? (
             <button
               type="button"
@@ -460,6 +477,7 @@ export function AppShell({
           onClose={() => setSearchOpen(false)}
           items={sections.flatMap((section) => section.items)}
           onWip={openWip}
+          returnFocus={() => moreButtonRef.current}
         />
 
         <WorkInProgressDialog
@@ -1042,11 +1060,14 @@ function SearchPalette({
   onClose,
   items,
   onWip,
+  returnFocus,
 }: {
   open: boolean;
   onClose: () => void;
   items: readonly ResolvedNavigationItem[];
   onWip: (request: WipRequest) => void;
+  /** Used when the control that opened search is gone, e.g. the closed More drawer. */
+  returnFocus?: () => HTMLElement | null | undefined;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -1081,6 +1102,7 @@ function SearchPalette({
       size="md"
       className="modal-command-palette"
       initialFocusRef={inputRef}
+      returnFocus={returnFocus}
     >
       <div className="search-palette">
         <input
