@@ -20,3 +20,15 @@ security exception. `job_runtime` is not fully remediated: provider-level
 permanent hardening remains mandatory, and the role must remain unbound until
 that hardening completes. This does not claim `0025` is applied or final
 production release readiness.
+
+## Milestone A: owner self-service station setup (branch `feat/milestone-a-setup-backend-20261012`)
+
+Local, unmerged. Settings now has a "Station setup" tab (products, tanks, pumps and
+nozzles with meters, shift templates, selling prices, supplier edit/deactivate). New named
+commands `CreateProduct`, `CreatePump`, `CreateNozzle`, `DraftPriceChange`, `UpdateSupplier`
+and `ActivateInitialPrice` (ADR-018, proposed) run through the shared tenant-context,
+idempotency and audit executor at `/api/setup/commands`; `CreateTank`, `DefineShiftTemplate`
+and the `RequestPriceChange`/`ApprovePriceChange` flow are reused. No migration. Open items:
+changing a price that is already in use still needs the unbuilt meter-boundary UI; ADR-018
+needs product-owner confirmation; the station context lists only ACTIVE stations, so setup
+has its own station list.

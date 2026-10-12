@@ -156,6 +156,8 @@ test.describe('Settings', () => {
         content(page).getByText('Settings E2E Legal Entity', { exact: true }),
       ).toBeVisible();
 
+      // Companies -> Stations -> Station setup -> Account
+      await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
       await expect(sectionButton(page, 'Account')).toBeFocused();

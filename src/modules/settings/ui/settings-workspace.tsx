@@ -9,15 +9,17 @@ import { PageContainer } from '@/design-system/layout';
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
 import { StaffPanel } from './staff-panel';
+import { SetupPanel } from '@/modules/setup/ui/setup-panel';
 import styles from './settings-workspace.module.css';
 
-type Tab = 'organisation' | 'companies' | 'stations' | 'staff' | 'account';
+type Tab = 'organisation' | 'companies' | 'stations' | 'setup' | 'staff' | 'account';
 type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
   { value: 'companies', label: 'Companies', icon: 'receipt' },
   { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'setup', label: 'Station setup', icon: 'fuel' },
   { value: 'staff', label: 'Staff', icon: 'users' },
   { value: 'account', label: 'Account', icon: 'users' },
 ];
@@ -143,9 +145,11 @@ export function SettingsWorkspace({
         <div className={styles.content}>
           <header className={styles.contentHeader}>
             <h2 className={styles.contentTitle}>{active.label}</h2>
-            <p className={styles.note}>
-              You can look at these details here. Ask your administrator to change them.
-            </p>
+            {tab !== 'setup' ? (
+              <p className={styles.note}>
+                You can look at these details here. Ask your administrator to change them.
+              </p>
+            ) : null}
           </header>
 
           {tab === 'organisation' ? (
@@ -189,6 +193,10 @@ export function SettingsWorkspace({
                 message="Pick a station at the top of the page to see its details."
               />
             )
+          ) : null}
+
+          {tab === 'setup' ? (
+            <SetupPanel tenantId={organisation.id} selectedStationId={selectedStation?.id} />
           ) : null}
 
           {tab === 'staff' && view.staff?.canManage ? (
