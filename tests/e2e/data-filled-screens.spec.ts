@@ -171,6 +171,18 @@ test.describe('data-filled screens', () => {
         `settlements ${width}`,
       ).toEqual([]);
       await expectNoSidewaysScroll(page, `settlements ${width}`);
+
+      if (width >= 1024) {
+        // The matching table spans the row, so no column hides behind its scroll.
+        const region = page.locator('.responsive-table-wrap', {
+          has: page.getByRole('columnheader', { name: 'Remaining' }),
+        });
+        const overflow = await region.evaluate(
+          (element) => element.scrollWidth - element.clientWidth,
+        );
+        expect(overflow, `matching table ${width}`).toBeLessThanOrEqual(0);
+        await expect(region.getByRole('columnheader', { name: 'Remaining' })).toBeVisible();
+      }
     }
   });
 });

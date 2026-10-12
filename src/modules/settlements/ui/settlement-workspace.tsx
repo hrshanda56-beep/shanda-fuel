@@ -668,7 +668,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         ) : null}
       </Card>
 
-      <Card as="section" className="panel" aria-labelledby="matching-title">
+      <Card as="section" className="panel content-span" aria-labelledby="matching-title">
         <div className="panel-heading">
           <h2 id="matching-title">Match payments to a settlement</h2>
         </div>
@@ -720,7 +720,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               </table>
             </TableScrollRegion>
             <form
-              className="demo-form"
+              className="demo-form settlement-match-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 void allocate();

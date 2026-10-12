@@ -948,6 +948,12 @@ a.operations-attention-row:hover {
   font-size: 0.82rem;
 }
 
+/* The matching card spans the row so its table shows every column; the form
+ * under it keeps a readable width. */
+.settlement-match-form {
+  max-width: 36rem;
+}
+
 .provider-donut {
   display: flex;
   flex-wrap: wrap;
