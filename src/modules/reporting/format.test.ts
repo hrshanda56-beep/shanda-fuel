@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatTileMoney } from './format';
+import { formatReportLitres, formatTileMoney } from './format';
+
+describe('formatReportLitres', () => {
+  it('distinguishes unavailable measurements from measured zero', () => {
+    expect(formatReportLitres(null)).toBe('Unavailable');
+    expect(formatReportLitres('0.000')).toBe('0.000 L');
+  });
+});
 
 describe('formatTileMoney', () => {
   it('shows two decimals with thousands separators', () => {

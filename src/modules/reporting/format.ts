@@ -1,4 +1,5 @@
 import { exact } from './domain';
+import { formatLitres } from '../../design-system/formatters';
 
 /**
  * Presentation only, for the Reports headline tiles: "USD 1,245.50". The value
@@ -12,4 +13,8 @@ export function formatTileMoney(value: string | null | undefined, currency = 'US
   const [whole = '0', cents = '00'] = (negative ? fixed.slice(1) : fixed).split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return `${currency} ${negative && Number(fixed) !== 0 ? '-' : ''}${grouped}.${cents}`;
+}
+
+export function formatReportLitres(value: string | null): string {
+  return value === null ? 'Unavailable' : formatLitres(value);
 }

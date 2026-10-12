@@ -16,6 +16,7 @@ import {
   formatLitres,
   formatMoney,
   subtractExact,
+  sumObservedExact,
   sumExact,
   uniqueIds,
 } from './domain';
@@ -649,8 +650,14 @@ async function readInventory(
   }));
   return {
     expectedLitres: formatLitres(sumExact(mapped.map((row) => row.expectedLitres))),
-    physicalLitres: formatLitres(sumExact(mapped.map((row) => row.physicalLitres))),
-    varianceLitres: formatLitres(sumExact(mapped.map((row) => row.varianceLitres))),
+    physicalLitres: (() => {
+      const total = sumObservedExact(mapped.map((row) => row.physicalLitres));
+      return total === null ? null : formatLitres(total);
+    })(),
+    varianceLitres: (() => {
+      const total = sumObservedExact(mapped.map((row) => row.varianceLitres));
+      return total === null ? null : formatLitres(total);
+    })(),
     deliveryLitres: formatLitres(sumExact(mapped.map((row) => row.deliveryLitres))),
     deliveryValue: formatMoney(sumExact(mapped.map((row) => row.deliveryValue))),
     rows: mapped,
@@ -703,7 +710,7 @@ async function readDaily(
     provider_settled: string;
     provider_outstanding: string;
     expenses: string;
-    inventory_variance: string;
+    inventory_variance: string | null;
     deliveries: string;
     credit_evidence: string;
     prepaid_evidence: string;
@@ -786,12 +793,24 @@ async function readDaily(
       from app.fuel_deliveries d where d.tenant_id = ${filters.tenantId} and d.status = 'CONFIRMED'
         and d.business_date between ${filters.fromDate} and ${filters.toDate}
       group by d.station_id, d.business_date
+    ), station_tanks as (
+      select t.station_id, count(*)::integer as tank_count
+      from app.tanks t
+      where t.tenant_id = ${filters.tenantId} and t.status <> 'RETIRED'
+        ${stationClause('t', filters.stationIds)}
+      group by t.station_id
     ), inventory_variance as (
       select d.station_id, d.business_date as report_date,
-        sum(d.physical_litres - coalesce((select sum(m.quantity_litres) from app.inventory_movements m
+        case when count(distinct d.tank_id) = max(st.tank_count)
+          then sum(d.physical_litres - coalesce((select sum(m.quantity_litres) from app.inventory_movements m
           where m.tenant_id = d.tenant_id and m.station_id = d.station_id and m.tank_id = d.tank_id
-            and m.effective_at <= d.measured_at), 0))::text as inventory_variance
-      from app.tank_dips d where d.tenant_id = ${filters.tenantId}
+            and m.effective_at <= d.measured_at), 0))::text
+          else null end as inventory_variance
+      from app.tank_dips d
+      join app.tanks t on t.tenant_id = d.tenant_id and t.station_id = d.station_id
+        and t.id = d.tank_id and t.status <> 'RETIRED'
+      join station_tanks st on st.station_id = d.station_id
+      where d.tenant_id = ${filters.tenantId}
         and d.business_date between ${filters.fromDate} and ${filters.toDate}
       group by d.station_id, d.business_date
     ), keys as (
@@ -807,7 +826,7 @@ async function readDaily(
       coalesce(p.provider_evidence, '0') as provider_evidence,
       coalesce(se.provider_settled, '0') as provider_settled,
       coalesce(se.provider_outstanding, '0') as provider_outstanding,
-      coalesce(e.expenses, '0') as expenses, coalesce(iv.inventory_variance, '0') as inventory_variance,
+      coalesce(e.expenses, '0') as expenses, iv.inventory_variance,
       coalesce(d.deliveries, '0') as deliveries, coalesce(p.credit_evidence, '0') as credit_evidence,
       coalesce(p.prepaid_evidence, '0') as prepaid_evidence,
       coalesce(s.reconciliation_ids, ARRAY[]::uuid[]) as reconciliation_ids,
@@ -867,7 +886,8 @@ async function readDaily(
     providerSettledAmount: formatMoney(row.provider_settled),
     providerOutstandingAmount: formatMoney(row.provider_outstanding),
     recordedExpenses: formatMoney(row.expenses),
-    inventoryVariance: formatLitres(row.inventory_variance),
+    inventoryVariance:
+      row.inventory_variance === null ? null : formatLitres(row.inventory_variance),
     deliveryLitres: formatLitres(row.deliveries),
     customerCreditEvidence: formatMoney(row.credit_evidence),
     prepaidEvidence: formatMoney(row.prepaid_evidence),

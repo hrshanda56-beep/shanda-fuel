@@ -804,6 +804,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
     });
     expect(body.inventory).toMatchObject({
       expectedLitres: '84.500',
+      physicalLitres: null,
+      varianceLitres: null,
       deliveryLitres: '20.000',
       deliveryValue: '40.0000',
     });
@@ -871,6 +873,10 @@ describe('A10 management reporting PostgreSQL read model', () => {
         }),
       ]),
     );
+    expect(
+      dailyBody.rows.find((row: Record<string, any>) => row.reportDate === '2026-09-20')
+        ?.inventoryVariance,
+    ).toBeNull();
     expect(dailyBody.rows.every((row: Record<string, any>) => !('businessDate' in row))).toBe(true);
   });
 

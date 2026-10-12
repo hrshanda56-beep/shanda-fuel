@@ -88,6 +88,22 @@ async function openSettings(page: Page, token: string) {
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 }
 
+async function submitStaffCommandAndWaitForReload(page: Page, action: () => Promise<void>) {
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/staff/commands') && response.request().method() === 'POST',
+  );
+  const navigationPromise = page.waitForEvent('framenavigated', {
+    predicate: (frame) => frame === page.mainFrame(),
+  });
+
+  await action();
+
+  const response = await responsePromise;
+  expect(response.status()).toBe(200);
+  await navigationPromise;
+}
+
 async function seed(client: Sql) {
   await client.unsafe(`
     delete from app.staff_invitation_stations where tenant_id = '${ids.tenant}';
@@ -217,8 +233,9 @@ test.describe('authenticated Staff lifecycle', () => {
             (input as HTMLInputElement).click();
           });
       }
-      await form.getByRole('button', { name: 'Send invitation' }).click();
-      await page.waitForLoadState('networkidle');
+      await submitStaffCommandAndWaitForReload(page, () =>
+        form.getByRole('button', { name: 'Send invitation' }).click(),
+      );
       await openSettings(page, sessions.owner);
       await page.getByRole('button', { name: 'Staff', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Invite staff', level: 3 })).toBeVisible();
@@ -249,13 +266,16 @@ test.describe('authenticated Staff lifecycle', () => {
     const existingRow = page
       .getByText('revoke-management.staff-e2e@example.test', { exact: false })
       .locator('xpath=../..');
-    await existingRow.getByRole('button', { name: 'Resend' }).click();
+    await submitStaffCommandAndWaitForReload(page, () =>
+      existingRow.getByRole('button', { name: 'Resend' }).click(),
+    );
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(
       page.getByText('revoke-management.staff-e2e@example.test', { exact: false }),
     ).toBeVisible();
-    await existingRow.getByRole('button', { name: 'Revoke' }).click();
-    await page.waitForLoadState('networkidle');
+    await submitStaffCommandAndWaitForReload(page, () =>
+      existingRow.getByRole('button', { name: 'Revoke' }).click(),
+    );
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(

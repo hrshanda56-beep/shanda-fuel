@@ -165,8 +165,8 @@ export type CustomerExposure = Readonly<{
 
 export type InventoryPosition = Readonly<{
   expectedLitres: ReportLitres;
-  physicalLitres: ReportLitres;
-  varianceLitres: ReportLitres;
+  physicalLitres: ReportLitres | null;
+  varianceLitres: ReportLitres | null;
   deliveryLitres: ReportLitres;
   deliveryValue: ReportMoney;
   rows: readonly {
@@ -243,7 +243,7 @@ export type DailyOperationsRow = Readonly<{
   providerSettledAmount: ReportMoney;
   providerOutstandingAmount: ReportMoney;
   recordedExpenses: ReportMoney;
-  inventoryVariance: ReportLitres;
+  inventoryVariance: ReportLitres | null;
   deliveryLitres: ReportLitres;
   customerCreditEvidence: ReportMoney;
   prepaidEvidence: ReportMoney;
