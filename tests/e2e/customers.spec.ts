@@ -134,7 +134,7 @@ async function mockCustomerApis(page: Page) {
   );
 }
 
-test.describe('customer accounts Phase 0', () => {
+test.describe('customer accounts', () => {
   test('lists, searches and opens existing customer account data', async ({ page }) => {
     await mockCustomerApis(page);
     await page.goto('/customers?tenantId=tenant-1&legalEntityId=entity-1');
@@ -144,7 +144,7 @@ test.describe('customer accounts Phase 0', () => {
       page.locator('.shell-sidebar').getByRole('link', { name: 'Customers', exact: true }),
     ).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('link', { name: /Acme Transport/ })).toBeVisible();
-    await expect(page.getByText('USD 250.0000 outstanding')).toBeVisible();
+    await expect(page.getByText('USD 250.00 outstanding')).toBeVisible();
 
     await page.getByLabel('Search customers').fill('does not exist');
     await expect(page.getByRole('heading', { name: 'No matching customers' })).toBeVisible();
@@ -155,7 +155,7 @@ test.describe('customer accounts Phase 0', () => {
     await expect(page.getByText('Available credit')).toBeVisible();
     await expect(page.getByText('Product balances')).toBeVisible();
     await expect(page.getByText('Fuel charged')).toBeVisible();
-    await expect(page.getByText('Phase 1 commercial gaps')).toBeVisible();
+    await expect(page.getByText('Not shown here yet')).toBeVisible();
   });
 
   test('keeps the customer detail usable on a phone and accessible', async ({ page }) => {

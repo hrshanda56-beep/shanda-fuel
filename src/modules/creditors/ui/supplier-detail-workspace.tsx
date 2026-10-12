@@ -22,6 +22,8 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 import { PageHeader, MetricCard } from '@/design-system/layout';
+import { exact } from '@/modules/reporting/domain';
+import { formatTileMoney } from '@/modules/reporting/format';
 import { TableScrollRegion } from '@/design-system/table';
 
 type SupplierSummary = {
@@ -313,7 +315,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
         headingLevel="h2"
         titleId="supplier-detail-title"
         description={
-          supplier ? `Supplier code ${supplier.code}` : 'Review the authorised supplier position.'
+          supplier ? `Supplier code ${supplier.code}` : 'Balance and statement for this supplier.'
         }
         actions={
           <Link className="button button-secondary" href={backHref}>
@@ -322,12 +324,12 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
         }
       />
 
-      {contextLoading ? <LoadingState label="Loading authorised context" /> : null}
+      {contextLoading ? <LoadingState label="Loading" /> : null}
       {contextError ? <ErrorState message={contextError} /> : null}
       {!contextLoading && !contextError && !hasRequiredContext ? (
         <ContextRequiredState
           title="Select a legal entity"
-          message="Choose an authorised legal-entity context before supplier detail can be loaded."
+          message="Choose a company from the work context to see this supplier."
         />
       ) : null}
       {error ? (
@@ -342,7 +344,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       {!loading && !error && hasRequiredContext && !supplier ? (
         <EmptyState
           title="Supplier not found in this context"
-          message="The supplier may not belong to the selected legal entity, or its balance has no available read model yet."
+          message="This supplier may belong to a different company, or it has no balance recorded yet."
           action={
             <Link className="button button-secondary" href={backHref}>
               Return to suppliers
@@ -354,9 +356,13 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       {supplier && hasRequiredContext && current ? (
         <>
           <section className="metric-grid" aria-label="Supplier balance summary">
-            <MetricCard label="Current" value={`$${supplier.current}`} />
-            <MetricCard label="Overdue" value={`$${supplier.overdue}`} tone="critical" />
-            <MetricCard label="Total" value={`$${supplier.total}`} />
+            <MetricCard label="Owed in total" value={formatTileMoney(supplier.total)} />
+            <MetricCard label="Not yet due" value={formatTileMoney(supplier.current)} />
+            <MetricCard
+              label="Overdue"
+              value={formatTileMoney(supplier.overdue)}
+              tone={exact(supplier.overdue).value.greaterThan(0) ? 'critical' : undefined}
+            />
           </section>
 
           {actionSuccess ? <SuccessState title="Submitted" message={actionSuccess} /> : null}
@@ -368,7 +374,6 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
                 <p className="eyebrow">Posted movements</p>
                 <h2 id="supplier-statement-title">Statement</h2>
               </div>
-              <StatusBadge tone="informational">Read-only history</StatusBadge>
             </div>
             {statement.length === 0 ? (
               <EmptyState
@@ -395,7 +400,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
                         <td data-label="Movement">{line.movementType}</td>
                         <td data-label="Posted">{line.postedAt}</td>
                         <td data-label="Amount" className="numeric">
-                          {line.currency} {line.amount}
+                          {formatTileMoney(line.amount, line.currency)}
                         </td>
                         <td data-label="Running balance" className="numeric">
                           {line.currency} {line.runningBalance}
@@ -550,8 +555,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
           </div>
 
           <p className="field-hint">
-            <Link href={supplierHref}>Refresh this supplier view</Link> to re-resolve authorised
-            context and reads.
+            <Link href={supplierHref}>Refresh</Link>
           </p>
         </>
       ) : null}

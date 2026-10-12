@@ -543,9 +543,7 @@ test.describe('KPIs', () => {
     await page.goto('/reports?tenantId=tenant-1');
     await page.getByRole('link', { name: /Cash collected/ }).click();
     await expect(page).toHaveURL(/\/reports\/cash\?tenantId=tenant-1/);
-    await expect(
-      page.getByRole('heading', { name: 'Evidence → collected → banked' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Cash: collected → banked' })).toBeVisible();
   });
 
   test('become one calm list on phones', async ({ page }) => {

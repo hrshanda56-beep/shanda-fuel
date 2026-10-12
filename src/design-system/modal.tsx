@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom';
 
 import { Icon } from './icons';
+import { acquireModalLock } from './modal-lock';
 
 export const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
@@ -17,8 +18,12 @@ export type ModalProps = {
   /** Actions row. Place the primary action last; it renders rightmost on wide screens. */
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
-  /** `drawer` slides in from the inline start edge (Product Shell menu). */
-  presentation?: 'dialog' | 'sheet' | 'drawer';
+  /**
+   * `drawer` slides in from the inline start edge (Product Shell menu).
+   * `side` is a full-height task sheet at the inline end edge on wider
+   * screens and a full-screen sheet on phones (record/receive forms).
+   */
+  presentation?: 'dialog' | 'sheet' | 'drawer' | 'side';
   /** `alertdialog` for confirmations that interrupt a workflow. */
   role?: 'dialog' | 'alertdialog';
   /** When false, Escape and backdrop clicks do nothing (e.g. while a command is pending). */
@@ -84,19 +89,9 @@ export function Modal({
         ? active
         : (returnFocusRef.current?.() ?? null);
 
-    const siblings = Array.from(document.body.children).filter((child) => child !== overlay);
-    const previous = siblings.map((child) => ({
-      child,
-      inert: (child as HTMLElement).inert ?? false,
-      ariaHidden: child.getAttribute('aria-hidden'),
-    }));
-    const bodyOverflow = document.body.style.overflow;
-
-    siblings.forEach((child) => {
-      (child as HTMLElement).inert = true;
-      child.setAttribute('aria-hidden', 'true');
-    });
-    document.body.style.overflow = 'hidden';
+    // One shared lock: overlapping modals can close in any order without
+    // leaving the page unscrollable or inert.
+    const releaseLock = acquireModalLock(overlay, document.body);
 
     const frame = window.requestAnimationFrame(() => {
       const panel = panelRef.current;
@@ -133,12 +128,7 @@ export function Modal({
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = bodyOverflow;
-      previous.forEach(({ child, inert, ariaHidden }) => {
-        (child as HTMLElement).inert = inert;
-        if (ariaHidden === null) child.removeAttribute('aria-hidden');
-        else child.setAttribute('aria-hidden', ariaHidden);
-      });
+      releaseLock();
       const target = restoreTarget?.isConnected ? restoreTarget : returnFocusRef.current?.();
       window.requestAnimationFrame(() => target?.focus());
     };
@@ -150,11 +140,12 @@ export function Modal({
 
   const sheet = presentation === 'sheet';
   const drawer = presentation === 'drawer';
+  const side = presentation === 'side';
 
   return createPortal(
     <div
       ref={overlayRef}
-      className={`dialog-backdrop ${sheet ? 'dialog-backdrop-sheet' : ''} ${drawer ? 'dialog-backdrop-drawer' : ''}`.trim()}
+      className={`dialog-backdrop ${sheet ? 'dialog-backdrop-sheet' : ''} ${drawer ? 'dialog-backdrop-drawer' : ''} ${side ? 'dialog-backdrop-side' : ''}`.trim()}
       data-modal-overlay="true"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && dismissibleRef.current) onCloseRef.current();
@@ -162,7 +153,7 @@ export function Modal({
     >
       <section
         ref={panelRef}
-        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''} ${drawer ? 'drawer' : ''} ${className}`.trim()}
+        className={`dialog-panel ${size !== 'md' ? `dialog-${size}` : ''} ${sheet ? 'bottom-sheet' : ''} ${drawer ? 'drawer' : ''} ${side ? 'side-sheet' : ''} ${className}`.trim()}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}

@@ -70,6 +70,10 @@ test.describe('supplier workflows', () => {
 
     await page.goto('/suppliers?tenantId=tenant-1&legalEntityId=entity-1');
     await expect(page.getByRole('link', { name: /SUP-0001/ })).toBeVisible();
+    const summary = page.getByLabel('Payables summary');
+    await expect(summary).toContainText('USD 185,000.00');
+    await expect(summary).toContainText('USD 65,000.00');
+    await expect(page.getByRole('button', { name: 'Add supplier' })).toHaveCount(1);
     await page.getByRole('button', { name: 'Add supplier' }).first().click();
     await page.getByLabel('Supplier code').fill('SUP-0002');
     await page.getByLabel('Legal name').fill('Harare Fuel Hauliers');

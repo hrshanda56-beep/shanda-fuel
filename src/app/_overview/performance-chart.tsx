@@ -4,7 +4,8 @@ import { useId, useState, type KeyboardEvent, type PointerEvent } from 'react';
 
 import { Icon } from '@/design-system/icons';
 
-export type ChartPoint = { label: string; value: number };
+/** A null value is a gap (no approved data), never drawn as zero. */
+export type ChartPoint = { label: string; value: number | null; detail?: string };
 
 const WIDTH = 700;
 const HEIGHT = 260;
@@ -36,37 +37,67 @@ export function smoothPath(points: XY[]): string {
   return d;
 }
 
+/** Consecutive runs of points that have a value, so gaps break the line. */
+export function runs<T>(items: readonly (T | null)[]): T[][] {
+  const result: T[][] = [];
+  let current: T[] = [];
+  for (const item of items) {
+    if (item === null) {
+      if (current.length > 0) result.push(current);
+      current = [];
+    } else current.push(item);
+  }
+  if (current.length > 0) result.push(current);
+  return result;
+}
+
 /**
  * Line-and-area chart with a value tooltip. It draws only the series it is
  * given: with no series it shows the empty axes and says so, never a sample.
+ * Points without a value leave a gap and say why in the tooltip.
  */
 export function PerformanceChart({
   series,
   xLabels,
   formatValue,
   emptyMessage,
+  gapMessage = 'No data',
   label,
 }: {
   series: ChartPoint[] | null;
   xLabels: string[];
   formatValue: (value: number) => string;
   emptyMessage: string;
+  gapMessage?: string;
   label: string;
 }) {
   const gradientId = useId();
   const [active, setActive] = useState<number | null>(null);
-  const data = series && series.length > 0 ? series : null;
+  const data = series && series.some((p) => p.value !== null) ? series : null;
+  const values = data ? data.flatMap((p) => (p.value === null ? [] : [p.value])) : [];
 
-  const top = data ? niceMax(Math.max(...data.map((p) => p.value))) : 1;
+  const top = data ? niceMax(Math.max(...values)) : 1;
   const ticks = Array.from({ length: GRID_LINES }, (_, i) => top - (top / (GRID_LINES - 1)) * i);
-  const coords = data
-    ? data.map((p, i) => ({
-        x: data.length === 1 ? WIDTH / 2 : (i / (data.length - 1)) * WIDTH,
-        y: HEIGHT - (p.value / top) * HEIGHT,
-      }))
+  const coords: (XY | null)[] = data
+    ? data.map((p, i) =>
+        p.value === null
+          ? null
+          : {
+              x: data.length === 1 ? WIDTH / 2 : (i / (data.length - 1)) * WIDTH,
+              y: HEIGHT - (p.value / top) * HEIGHT,
+            },
+      )
     : [];
-  const line = smoothPath(coords);
-  const area = data ? `${line} L ${WIDTH} ${HEIGHT} L 0 ${HEIGHT} Z` : '';
+  const segments = runs(coords);
+  const lines = segments.filter((run) => run.length > 1).map((run) => smoothPath(run));
+  const areas = segments
+    .filter((run) => run.length > 1)
+    .map((run) => {
+      const first = run[0] as XY;
+      const last = run[run.length - 1] as XY;
+      return `${smoothPath(run)} L ${last.x} ${HEIGHT} L ${first.x} ${HEIGHT} Z`;
+    });
+  const singles = segments.filter((run) => run.length === 1).map((run) => run[0] as XY);
 
   const select = (index: number) =>
     setActive(Math.max(0, Math.min(index, (data?.length ?? 1) - 1)));
@@ -89,8 +120,15 @@ export function PerformanceChart({
 
   const current = data && active !== null ? data[active] : null;
   const previous = data && active !== null && active > 0 ? data[active - 1] : null;
-  const change = current && previous ? current.value - previous.value : null;
-  const marker = active !== null ? coords[active] : null;
+  const change =
+    current?.value != null && previous?.value != null ? current.value - previous.value : null;
+  const x =
+    data && active !== null
+      ? data.length === 1
+        ? WIDTH / 2
+        : (active / (data.length - 1)) * WIDTH
+      : 0;
+  const markerY = current?.value != null ? HEIGHT - (current.value / top) * HEIGHT : HEIGHT;
 
   return (
     <div className="perf-chart" data-empty={data ? undefined : ''}>
@@ -128,50 +166,62 @@ export function PerformanceChart({
               vectorEffect="non-scaling-stroke"
             />
           ))}
-          {data ? (
-            <>
-              <path d={area} fill={`url(#${gradientId})`} />
-              <path className="perf-chart-line" d={line} vectorEffect="non-scaling-stroke" />
-            </>
-          ) : null}
+          {areas.map((d, i) => (
+            <path key={`a${i}`} d={d} fill={`url(#${gradientId})`} />
+          ))}
+          {lines.map((d, i) => (
+            <path
+              key={`l${i}`}
+              className="perf-chart-line"
+              d={d}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
         </svg>
 
-        {marker && current ? (
+        {singles.map((point, i) => (
+          <span
+            key={`p${i}`}
+            className="perf-chart-dot perf-chart-point"
+            style={{ left: `${(point.x / WIDTH) * 100}%`, top: `${(point.y / HEIGHT) * 100}%` }}
+            aria-hidden="true"
+          />
+        ))}
+
+        {current ? (
           <>
             <span
               className="perf-chart-guide"
-              style={{ left: `${(marker.x / WIDTH) * 100}%` }}
+              style={{ left: `${(x / WIDTH) * 100}%` }}
               aria-hidden="true"
             />
-            <span
-              className="perf-chart-dot"
-              style={{
-                left: `${(marker.x / WIDTH) * 100}%`,
-                top: `${(marker.y / HEIGHT) * 100}%`,
-              }}
-              aria-hidden="true"
-            />
+            {current.value !== null ? (
+              <span
+                className="perf-chart-dot"
+                style={{ left: `${(x / WIDTH) * 100}%`, top: `${(markerY / HEIGHT) * 100}%` }}
+                aria-hidden="true"
+              />
+            ) : null}
             <span
               className="perf-chart-tip"
               role="status"
               style={{
-                left: `${Math.min(Math.max((marker.x / WIDTH) * 100, 12), 88)}%`,
-                top: `${(marker.y / HEIGHT) * 100}%`,
+                left: `${Math.min(Math.max((x / WIDTH) * 100, 12), 88)}%`,
+                top: `${(Math.min(markerY, HEIGHT * 0.8) / HEIGHT) * 100}%`,
               }}
             >
               <span className="perf-chart-tip-row">
-                <span>
-                  {change === null
-                    ? current.label
-                    : `${change < 0 ? '−' : '+'}${formatValue(Math.abs(change))}`}
-                </span>
+                <span>{current.label}</span>
                 {change !== null ? (
                   <span className="perf-chart-tip-arrow" data-down={change < 0 || undefined}>
                     <Icon name="arrow-right" />
                   </span>
                 ) : null}
               </span>
-              <strong>{formatValue(current.value)}</strong>
+              <strong>{current.value !== null ? formatValue(current.value) : gapMessage}</strong>
+              {current.value !== null && current.detail ? (
+                <span className="perf-chart-tip-detail">{current.detail}</span>
+              ) : null}
             </span>
           </>
         ) : null}
@@ -180,8 +230,8 @@ export function PerformanceChart({
       </div>
 
       <ol className="perf-chart-x" aria-hidden="true">
-        {xLabels.map((text) => (
-          <li key={text}>{text}</li>
+        {xLabels.map((text, i) => (
+          <li key={`${text}-${i}`}>{text}</li>
         ))}
       </ol>
     </div>

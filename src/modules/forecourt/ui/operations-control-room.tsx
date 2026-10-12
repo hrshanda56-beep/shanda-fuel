@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
+import { eventLabel, isEarlierOpenDay } from './operations-labels';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
 type ActionAvailability = {
@@ -170,6 +171,14 @@ function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational'
   return 'informational';
 }
 
+/** Exceptions first: returned, then waiting for review, then drafts, then the rest. */
+function reconciliationRank(state: string) {
+  if (state === 'RETURNED') return 0;
+  if (state === 'SUBMITTED' || state === 'PENDING_APPROVAL') return 1;
+  if (state === 'DRAFT') return 2;
+  return 3;
+}
+
 function timeRange(start: string, end: string, timeZone: string) {
   const formatter = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
@@ -189,13 +198,21 @@ function formatTimestamp(value: string | null, timeZone: string) {
     : '—';
 }
 
-export function OperationsControlRoom({ context }: { context: Context }) {
+export function OperationsControlRoom({
+  context,
+  focus = 'operations',
+}: {
+  context: Context;
+  /** `reconciliations` leads with the station's reconciliations, exceptions first. */
+  focus?: 'operations' | 'reconciliations';
+}) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [reconciliationFilter, setReconciliationFilter] = useState<'action' | 'all'>('action');
   const [stepUpPassword, setStepUpPassword] = useState('');
   const [stepUpTotpCode, setStepUpTotpCode] = useState('');
   const [stepUpBusy, setStepUpBusy] = useState(false);
@@ -456,16 +473,145 @@ export function OperationsControlRoom({ context }: { context: Context }) {
   const openBusinessDay = overview.actions.OpenBusinessDay;
   const closeBusinessDay = overview.actions.CloseBusinessDay;
   const lockBusinessDay = overview.actions.LockBusinessDay;
+  const shiftsForDay = day ? overview.shifts : [];
+  const openShiftCount = shiftsForDay.filter((shift) => shift.state === 'OPEN').length;
+  const shiftSummary =
+    shiftsForDay.length === 0 ? 'None yet' : `${shiftsForDay.length} · ${openShiftCount} open`;
+  const waitingForReview = overview.reconciliations.filter(
+    (item) => item.state === 'SUBMITTED' || item.state === 'PENDING_APPROVAL',
+  ).length;
+  const returnedCount = overview.reconciliations.filter((item) => item.state === 'RETURNED').length;
+  const reviewHref = (reconciliationId: string, shiftId: string) =>
+    day
+      ? `/operations/reconciliations/${reconciliationId}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId }).toString()}`
+      : undefined;
+  const draftCount = overview.reconciliations.filter((item) => item.state === 'DRAFT').length;
+  const approvedCount = overview.reconciliations.filter((item) => item.state === 'APPROVED').length;
+  const visibleReconciliations = [...overview.reconciliations]
+    .filter((item) => reconciliationFilter === 'all' || reconciliationRank(item.state) < 2)
+    .sort((a, b) => reconciliationRank(a.state) - reconciliationRank(b.state));
+  const shiftLabel = (shiftId: string | null) => {
+    const shift = shiftId ? overview.shifts.find((item) => item.id === shiftId) : undefined;
+    return shift
+      ? timeRange(shift.plannedStartAt, shift.plannedEndAt, overview.station.timezone)
+      : 'Shift';
+  };
+  const reconciliationList = (
+    <Card as="section" className="panel" aria-labelledby="reconciliation-list-title">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">{day ? formatBusinessDate(day.date) : 'No day selected'}</p>
+          <h2 id="reconciliation-list-title">Reconciliations</h2>
+        </div>
+        <div className="pill-group" role="group" aria-label="Show reconciliations">
+          <button
+            type="button"
+            className="pill"
+            aria-pressed={reconciliationFilter === 'action'}
+            onClick={() => setReconciliationFilter('action')}
+          >
+            Needs action
+          </button>
+          <button
+            type="button"
+            className="pill"
+            aria-pressed={reconciliationFilter === 'all'}
+            onClick={() => setReconciliationFilter('all')}
+          >
+            All
+          </button>
+        </div>
+      </div>
+      {!overview.visibility.reconciliations ? (
+        <EmptyState
+          title="Reconciliation details restricted"
+          message="You do not have permission to view reconciliation details for this station."
+        />
+      ) : visibleReconciliations.length === 0 ? (
+        <EmptyState
+          title={
+            reconciliationFilter === 'action' && overview.reconciliations.length > 0
+              ? 'Nothing needs action'
+              : 'No reconciliations yet'
+          }
+          message={
+            reconciliationFilter === 'action' && overview.reconciliations.length > 0
+              ? 'Every reconciliation for this day is approved or not yet submitted. Choose All to see them.'
+              : 'A reconciliation appears here once one is started for a shift.'
+          }
+        />
+      ) : (
+        <ul className="reconciliation-list">
+          {visibleReconciliations.map((item) => (
+            <li key={item.id} className="reconciliation-row" data-state={item.state}>
+              <div className="reconciliation-row-main">
+                <strong>{shiftLabel(item.shiftId)}</strong>
+                <small>
+                  {item.state === 'RETURNED' && item.returnReason
+                    ? item.returnReason
+                    : `Updated ${formatTimestamp(item.updatedAt, overview.station.timezone)}`}
+                </small>
+              </div>
+              <StatusBadge tone={tone(item.state)}>{formatStatusLabel(item.state)}</StatusBadge>
+              <div className="inline-links">
+                {item.shiftId && day && (item.state === 'DRAFT' || item.state === 'RETURNED') ? (
+                  <a className="text-link" href={dayHref(day.id, item.shiftId)}>
+                    Open workspace
+                  </a>
+                ) : null}
+                {item.shiftId && day && item.state !== 'DRAFT' && item.state !== 'RETURNED' ? (
+                  <a className="text-link" href={reviewHref(item.id, item.shiftId)}>
+                    {item.state === 'SUBMITTED' || item.state === 'PENDING_APPROVAL'
+                      ? 'Review'
+                      : 'View'}
+                  </a>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+  // Built only from states the server returned; nothing is inferred.
+  const attention: Array<{ key: string; title: string; detail: string; href?: string }> = [];
+  if (day && isEarlierOpenDay(day, overview.currentBusinessDate)) {
+    attention.push({
+      key: 'open-earlier-day',
+      title: `Business day ${formatBusinessDate(day.date)} is still open`,
+      detail: `The station's current business date is ${formatBusinessDate(overview.currentBusinessDate)}.`,
+    });
+  }
+  if (overview.visibility.reconciliations) {
+    for (const item of overview.reconciliations) {
+      if (item.state === 'RETURNED') {
+        attention.push({
+          key: `returned-${item.id}`,
+          title: 'Reconciliation returned for changes',
+          detail:
+            item.returnReason ??
+            `Returned ${formatTimestamp(item.returnedAt, overview.station.timezone)}`,
+          href: item.shiftId && day ? dayHref(day.id, item.shiftId) : undefined,
+        });
+      } else if (item.state === 'SUBMITTED' || item.state === 'PENDING_APPROVAL') {
+        attention.push({
+          key: `review-${item.id}`,
+          title: 'Reconciliation waiting for review',
+          detail: `Submitted ${formatTimestamp(item.submittedAt, overview.station.timezone)}`,
+          href: item.shiftId ? reviewHref(item.id, item.shiftId) : undefined,
+        });
+      }
+    }
+  }
 
   return (
     <div className="operations-control-room" aria-label="Operations control room">
       <div className="page-header">
         <div>
           <p className="lede">
-            {overview.organisation.name} · {overview.station.name} · {overview.station.timezone}
+            {overview.organisation.name} · {overview.station.name}
           </p>
         </div>
-        <StatusBadge tone="informational">Server-backed</StatusBadge>
       </div>
 
       {error ? (
@@ -488,286 +634,501 @@ export function OperationsControlRoom({ context }: { context: Context }) {
         </p>
       ) : null}
 
-      <div className="content-grid operations-control-grid">
-        <Card as="section" className="panel" aria-labelledby="current-day-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Business day</p>
-              <h2 id="current-day-title">
-                {day
-                  ? formatBusinessDate(day.date)
-                  : formatBusinessDate(overview.currentBusinessDate)}
-              </h2>
-            </div>
-            <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
-              {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
-            </StatusBadge>
+      {focus === 'operations' ? (
+        <dl className="operations-summary" aria-label="Today at a glance">
+          <div>
+            <dt>Business day</dt>
+            <dd>
+              {day
+                ? formatBusinessDate(day.date)
+                : formatBusinessDate(overview.currentBusinessDate)}
+              <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
+                {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
+              </StatusBadge>
+            </dd>
           </div>
-          <p className="panel-detail">
-            Business date is derived by the server in {overview.station.timezone}. No browser date
-            is authoritative.
-          </p>
-          {day ? (
-            <dl className="operational-summary">
-              <div>
-                <dt>Version</dt>
-                <dd>v{day.version}</dd>
+          <div>
+            <dt>Shifts</dt>
+            <dd>{shiftSummary}</dd>
+          </div>
+          <div>
+            <dt>Waiting for review</dt>
+            <dd>{overview.visibility.reconciliations ? waitingForReview : '—'}</dd>
+          </div>
+          <div>
+            <dt>Returned for changes</dt>
+            <dd>{overview.visibility.reconciliations ? returnedCount : '—'}</dd>
+          </div>
+        </dl>
+      ) : (
+        <dl className="operations-summary" aria-label="Reconciliations at a glance">
+          <div>
+            <dt>Waiting for review</dt>
+            <dd>{overview.visibility.reconciliations ? waitingForReview : '—'}</dd>
+          </div>
+          <div>
+            <dt>Returned for changes</dt>
+            <dd>{overview.visibility.reconciliations ? returnedCount : '—'}</dd>
+          </div>
+          <div>
+            <dt>In draft</dt>
+            <dd>{overview.visibility.reconciliations ? draftCount : '—'}</dd>
+          </div>
+          <div>
+            <dt>Approved</dt>
+            <dd>{overview.visibility.reconciliations ? approvedCount : '—'}</dd>
+          </div>
+        </dl>
+      )}
+
+      <div className="operations-layout">
+        <div className="operations-layout-main">
+          {focus === 'operations' ? (
+            <Card as="section" className="panel" aria-labelledby="shifts-title">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">
+                    Shift board · {day ? formatBusinessDate(day.date) : 'No day selected'}
+                  </p>
+                  <h2 id="shifts-title">Shifts</h2>
+                </div>
               </div>
-              <div>
-                <dt>Opened</dt>
-                <dd>
-                  {day.openedAt
-                    ? formatTimestamp(day.openedAt, overview.station.timezone)
-                    : 'Not opened'}
-                </dd>
-              </div>
-              <div>
-                <dt>Closed</dt>
-                <dd>
-                  {day.closedAt
-                    ? formatTimestamp(day.closedAt, overview.station.timezone)
-                    : 'Not closed'}
-                </dd>
-              </div>
-            </dl>
+              {!day || overview.shifts.length === 0 ? (
+                <EmptyState
+                  title="No shifts recorded"
+                  message="Shifts appear here once they are planned for this business day."
+                />
+              ) : (
+                <div className="operations-list">
+                  {overview.shifts.map((shift) => {
+                    const reconciliation = overview.reconciliations.find(
+                      (item) => item.shiftId === shift.id,
+                    );
+                    const values = {
+                      tenantId: context.tenantId,
+                      stationId: context.stationId,
+                      businessDayId: day.id,
+                      shiftId: shift.id,
+                      expectedVersion: shift.version,
+                    };
+                    return (
+                      <article className="operations-list-row operations-shift-row" key={shift.id}>
+                        <div>
+                          <strong>
+                            {timeRange(
+                              shift.plannedStartAt,
+                              shift.plannedEndAt,
+                              overview.station.timezone,
+                            )}
+                          </strong>
+                          <small>
+                            {shift.attendantCount} attendant{shift.attendantCount === 1 ? '' : 's'}
+                          </small>
+                        </div>
+                        <StatusBadge tone={tone(shift.state)}>
+                          {formatStatusLabel(shift.state)}
+                        </StatusBadge>
+                        <div className="inline-links">
+                          {shift.state === 'PLANNED' && overview.actions.StartShift.canExecute ? (
+                            <Button
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() =>
+                                void runCommand(
+                                  'StartShift',
+                                  {
+                                    ...values,
+                                    plannedStartAt: shift.plannedStartAt,
+                                    plannedEndAt: shift.plannedEndAt,
+                                  },
+                                  shift.id,
+                                  'Start this shift and record its opening boundary?',
+                                  'Shift started.',
+                                )
+                              }
+                            >
+                              Start shift
+                            </Button>
+                          ) : null}
+                          {shift.state === 'OPEN' && overview.actions.CloseMeters.canExecute ? (
+                            <Button
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() =>
+                                void runCommand(
+                                  'CloseMeters',
+                                  values,
+                                  shift.id,
+                                  'Close meters for this shift? Meter evidence must already be complete.',
+                                  'Shift meters closed.',
+                                )
+                              }
+                            >
+                              Close meters
+                            </Button>
+                          ) : null}
+                          {shift.state === 'METER_CLOSED' &&
+                          overview.actions.CompleteShift.canExecute ? (
+                            <Button
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() =>
+                                void runCommand(
+                                  'CompleteShift',
+                                  values,
+                                  shift.id,
+                                  'Complete this shift? This records the close boundary as complete.',
+                                  'Shift completed.',
+                                )
+                              }
+                            >
+                              Complete shift
+                            </Button>
+                          ) : null}
+                          <a className="text-link" href={dayHref(day.id, shift.id)}>
+                            Open workspace
+                          </a>
+                          {reconciliation ? (
+                            <a
+                              className="text-link"
+                              href={`/operations/reconciliations/${reconciliation.id}?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: shift.id }).toString()}`}
+                            >
+                              Reconciliation
+                            </a>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedShift?.state === 'EXCEPTIONALLY_CLOSED' ? (
+                <p className="semantic-note">
+                  This shift was closed as an exception. A manager should review it.
+                </p>
+              ) : null}
+            </Card>
           ) : (
-            <EmptyState
-              title="No business day yet"
-              message="Open the server-derived current business date to begin operations."
-            />
+            reconciliationList
           )}
-          <div className="form-actions">
-            {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={() =>
-                  void runCommand(
-                    'OpenBusinessDay',
-                    {
-                      tenantId: context.tenantId,
-                      stationId: context.stationId,
-                      businessDayId: openDayId,
-                      expectedVersion: day?.version ?? 0,
-                    },
-                    openDayId,
-                    'Open this server-derived business day?',
-                    'Business day opened.',
-                  )
-                }
-              >
-                Open business day
-              </Button>
-            ) : null}
-            {day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={() =>
-                  void runCommand(
-                    'CloseBusinessDay',
-                    {
-                      tenantId: context.tenantId,
-                      stationId: context.stationId,
-                      businessDayId: day.id,
-                      expectedVersion: day.version,
-                    },
-                    day.id,
-                    'Close this business day? The server will require all operated shifts and meter evidence to be complete.',
-                    'Business day closed after server validation.',
-                  )
-                }
-              >
-                Close business day
-              </Button>
-            ) : null}
-            {day?.state === 'CLOSED' && lockBusinessDay.canExecute ? (
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={() =>
-                  void runCommand(
-                    'LockBusinessDay',
-                    {
-                      tenantId: context.tenantId,
-                      stationId: context.stationId,
-                      businessDayId: day.id,
-                      expectedVersion: day.version,
-                    },
-                    day.id,
-                    'Lock this business day? This is irreversible and prevents ordinary changes.',
-                    'Business day locked.',
-                  )
-                }
-              >
-                Lock business day
-              </Button>
-            ) : null}
-            {day?.state === 'CLOSED' &&
-            lockBusinessDay.permissionGranted &&
-            lockBusinessDay.requiresStepUp ? (
-              <>
-                {authProvider === 'CLERK' ? (
-                  <ClerkStepUpForm
-                    context={context}
-                    busy={busy}
-                    onSuccess={async () => {
-                      setNotice(
-                        'Clerk reverification succeeded. The lock action is now available briefly.',
-                      );
-                      await load();
-                    }}
-                  />
-                ) : mfaEnabled !== true ? (
-                  <form
-                    className="step-up-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (mfaSetup) void confirmMfaEnrollment();
-                      else void startMfaEnrollment();
-                    }}
-                    aria-describedby="lock-business-day-step-up-help"
+        </div>
+        <div className="operations-layout-side">
+          <Card as="section" className="panel" aria-labelledby="operations-attention-title">
+            <div className="panel-heading">
+              <div>
+                <h2 id="operations-attention-title">Needs attention</h2>
+              </div>
+            </div>
+            {attention.length === 0 ? (
+              <p className="panel-detail">
+                Nothing needs attention for this business day, its shifts or
+                {overview.visibility.reconciliations
+                  ? ' its reconciliations.'
+                  : ' the items you can see.'}
+              </p>
+            ) : (
+              <ul className="operations-attention">
+                {attention.map((item) => (
+                  <li key={item.key}>
+                    {item.href ? (
+                      <a className="operations-attention-row" href={item.href}>
+                        <strong>{item.title}</strong>
+                        <small>{item.detail}</small>
+                      </a>
+                    ) : (
+                      <div className="operations-attention-row">
+                        <strong>{item.title}</strong>
+                        <small>{item.detail}</small>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+          {focus === 'operations' ? (
+            <Card as="section" className="panel" aria-labelledby="current-day-title">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Business day</p>
+                  <h2 id="current-day-title">
+                    {day
+                      ? formatBusinessDate(day.date)
+                      : formatBusinessDate(overview.currentBusinessDate)}
+                  </h2>
+                </div>
+                <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
+                  {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
+                </StatusBadge>
+              </div>
+              <p className="panel-detail">
+                Times are shown in the station’s time zone ({overview.station.timezone}).
+              </p>
+              {day ? (
+                <dl className="operational-summary">
+                  <div>
+                    <dt>Opened</dt>
+                    <dd>
+                      {day.openedAt
+                        ? formatTimestamp(day.openedAt, overview.station.timezone)
+                        : 'Not opened'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Closed</dt>
+                    <dd>
+                      {day.closedAt
+                        ? formatTimestamp(day.closedAt, overview.station.timezone)
+                        : 'Not closed'}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <EmptyState
+                  title="No business day yet"
+                  message="Open the station’s current business day to begin."
+                />
+              )}
+              <div className="form-actions">
+                {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void runCommand(
+                        'OpenBusinessDay',
+                        {
+                          tenantId: context.tenantId,
+                          stationId: context.stationId,
+                          businessDayId: openDayId,
+                          expectedVersion: day?.version ?? 0,
+                        },
+                        openDayId,
+                        'Open this business day?',
+                        'Business day opened.',
+                      )
+                    }
                   >
-                    <p className="eyebrow">Authenticator setup required</p>
-                    <p className="semantic-note">
-                      Supervisor high-risk actions require password re-authentication plus an
-                      authenticator code. Set up TOTP once, then use the current six-digit code.
-                    </p>
-                    {!mfaSetup ? (
-                      <>
-                        <label htmlFor="mfa-setup-password">Current password</label>
+                    Open business day
+                  </Button>
+                ) : null}
+                {day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
+                  <Button
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() =>
+                      void runCommand(
+                        'CloseBusinessDay',
+                        {
+                          tenantId: context.tenantId,
+                          stationId: context.stationId,
+                          businessDayId: day.id,
+                          expectedVersion: day.version,
+                        },
+                        day.id,
+                        'Close this business day? Every operated shift must have complete meter readings.',
+                        'Business day closed.',
+                      )
+                    }
+                  >
+                    Close business day
+                  </Button>
+                ) : null}
+                {day?.state === 'CLOSED' && lockBusinessDay.canExecute ? (
+                  <Button
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() =>
+                      void runCommand(
+                        'LockBusinessDay',
+                        {
+                          tenantId: context.tenantId,
+                          stationId: context.stationId,
+                          businessDayId: day.id,
+                          expectedVersion: day.version,
+                        },
+                        day.id,
+                        'Lock this business day? This is irreversible and prevents ordinary changes.',
+                        'Business day locked.',
+                      )
+                    }
+                  >
+                    Lock business day
+                  </Button>
+                ) : null}
+                {day?.state === 'CLOSED' &&
+                lockBusinessDay.permissionGranted &&
+                lockBusinessDay.requiresStepUp ? (
+                  <>
+                    {authProvider === 'CLERK' ? (
+                      <ClerkStepUpForm
+                        context={context}
+                        busy={busy}
+                        onSuccess={async () => {
+                          setNotice(
+                            'Clerk reverification succeeded. The lock action is now available briefly.',
+                          );
+                          await load();
+                        }}
+                      />
+                    ) : mfaEnabled !== true ? (
+                      <form
+                        className="step-up-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          if (mfaSetup) void confirmMfaEnrollment();
+                          else void startMfaEnrollment();
+                        }}
+                        aria-describedby="lock-business-day-step-up-help"
+                      >
+                        <p className="eyebrow">Authenticator setup required</p>
+                        <p className="semantic-note">
+                          Supervisor high-risk actions require password re-authentication plus an
+                          authenticator code. Set up TOTP once, then use the current six-digit code.
+                        </p>
+                        {!mfaSetup ? (
+                          <>
+                            <label htmlFor="mfa-setup-password">Current password</label>
+                            <input
+                              id="mfa-setup-password"
+                              name="mfaSetupPassword"
+                              type="password"
+                              autoComplete="current-password"
+                              value={mfaSetupPassword}
+                              onChange={(event) => setMfaSetupPassword(event.target.value)}
+                              required
+                              disabled={busy || mfaBusy}
+                            />
+                            <Button
+                              type="submit"
+                              variant="secondary"
+                              disabled={busy || mfaBusy || mfaSetupPassword.length === 0}
+                              loading={mfaBusy}
+                            >
+                              Start authenticator setup
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <p className="semantic-note">
+                              Scan or enter this authenticator URI, save the backup codes securely,
+                              then confirm with the current six-digit code.
+                            </p>
+                            <code className="mfa-uri">{mfaSetup.totpURI}</code>
+                            <p className="semantic-note">
+                              Backup codes: {mfaSetup.backupCodes.join(' · ')}
+                            </p>
+                            <label htmlFor="mfa-setup-code">Authenticator code</label>
+                            <input
+                              id="mfa-setup-code"
+                              name="mfaSetupCode"
+                              inputMode="numeric"
+                              pattern="[0-9]{6}"
+                              autoComplete="one-time-code"
+                              value={mfaSetupCode}
+                              onChange={(event) => setMfaSetupCode(event.target.value)}
+                              required
+                              disabled={busy || mfaBusy}
+                            />
+                            <Button
+                              type="submit"
+                              variant="secondary"
+                              disabled={busy || mfaBusy || mfaSetupCode.length !== 6}
+                              loading={mfaBusy}
+                            >
+                              Confirm authenticator
+                            </Button>
+                          </>
+                        )}
+                        {mfaError ? (
+                          <p className="state state-error" role="alert">
+                            {mfaError}
+                          </p>
+                        ) : null}
+                      </form>
+                    ) : (
+                      <form
+                        className="step-up-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void establishStepUp();
+                        }}
+                        aria-describedby="lock-business-day-step-up-help"
+                      >
+                        <label htmlFor="lock-business-day-step-up-password">
+                          Confirm your password to unlock this action
+                        </label>
                         <input
-                          id="mfa-setup-password"
-                          name="mfaSetupPassword"
+                          id="lock-business-day-step-up-password"
+                          name="stepUpPassword"
                           type="password"
                           autoComplete="current-password"
-                          value={mfaSetupPassword}
-                          onChange={(event) => setMfaSetupPassword(event.target.value)}
+                          value={stepUpPassword}
+                          onChange={(event) => setStepUpPassword(event.target.value)}
                           required
-                          disabled={busy || mfaBusy}
+                          disabled={busy || stepUpBusy}
                         />
-                        <Button
-                          type="submit"
-                          variant="secondary"
-                          disabled={busy || mfaBusy || mfaSetupPassword.length === 0}
-                          loading={mfaBusy}
-                        >
-                          Start authenticator setup
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <p className="semantic-note">
-                          Scan or enter this authenticator URI, save the backup codes securely, then
-                          confirm with the current six-digit code.
-                        </p>
-                        <code className="mfa-uri">{mfaSetup.totpURI}</code>
-                        <p className="semantic-note">
-                          Backup codes: {mfaSetup.backupCodes.join(' · ')}
-                        </p>
-                        <label htmlFor="mfa-setup-code">Authenticator code</label>
+                        <label htmlFor="lock-business-day-step-up-totp">Authenticator code</label>
                         <input
-                          id="mfa-setup-code"
-                          name="mfaSetupCode"
+                          id="lock-business-day-step-up-totp"
+                          name="stepUpTotpCode"
                           inputMode="numeric"
                           pattern="[0-9]{6}"
                           autoComplete="one-time-code"
-                          value={mfaSetupCode}
-                          onChange={(event) => setMfaSetupCode(event.target.value)}
+                          value={stepUpTotpCode}
+                          onChange={(event) => setStepUpTotpCode(event.target.value)}
                           required
-                          disabled={busy || mfaBusy}
+                          disabled={busy || stepUpBusy}
                         />
                         <Button
                           type="submit"
                           variant="secondary"
-                          disabled={busy || mfaBusy || mfaSetupCode.length !== 6}
-                          loading={mfaBusy}
+                          disabled={
+                            busy ||
+                            stepUpBusy ||
+                            stepUpPassword.length === 0 ||
+                            stepUpTotpCode.length !== 6
+                          }
+                          loading={stepUpBusy}
                         >
-                          Confirm authenticator
+                          Verify step-up
                         </Button>
-                      </>
+                        {stepUpError ? (
+                          <p className="state state-error" role="alert">
+                            {stepUpError}
+                          </p>
+                        ) : null}
+                      </form>
                     )}
-                    {mfaError ? (
-                      <p className="state state-error" role="alert">
-                        {mfaError}
-                      </p>
-                    ) : null}
-                  </form>
-                ) : (
-                  <form
-                    className="step-up-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void establishStepUp();
-                    }}
-                    aria-describedby="lock-business-day-step-up-help"
-                  >
-                    <label htmlFor="lock-business-day-step-up-password">
-                      Confirm your password to unlock this action
-                    </label>
-                    <input
-                      id="lock-business-day-step-up-password"
-                      name="stepUpPassword"
-                      type="password"
-                      autoComplete="current-password"
-                      value={stepUpPassword}
-                      onChange={(event) => setStepUpPassword(event.target.value)}
-                      required
-                      disabled={busy || stepUpBusy}
-                    />
-                    <label htmlFor="lock-business-day-step-up-totp">Authenticator code</label>
-                    <input
-                      id="lock-business-day-step-up-totp"
-                      name="stepUpTotpCode"
-                      inputMode="numeric"
-                      pattern="[0-9]{6}"
-                      autoComplete="one-time-code"
-                      value={stepUpTotpCode}
-                      onChange={(event) => setStepUpTotpCode(event.target.value)}
-                      required
-                      disabled={busy || stepUpBusy}
-                    />
                     <Button
-                      type="submit"
-                      variant="secondary"
-                      disabled={
-                        busy ||
-                        stepUpBusy ||
-                        stepUpPassword.length === 0 ||
-                        stepUpTotpCode.length !== 6
-                      }
-                      loading={stepUpBusy}
+                      variant="danger"
+                      disabled
+                      aria-describedby="lock-business-day-step-up-help"
                     >
-                      Verify step-up
+                      Lock business day
                     </Button>
-                    {stepUpError ? (
-                      <p className="state state-error" role="alert">
-                        {stepUpError}
-                      </p>
-                    ) : null}
-                  </form>
-                )}
-                <Button variant="danger" disabled aria-describedby="lock-business-day-step-up-help">
-                  Lock business day
-                </Button>
-                <p className="semantic-note" id="lock-business-day-step-up-help" role="status">
-                  Locking this business day requires current privileged reverification. Secrets are
-                  verified by the provider or server and are never stored by this form.
+                    <p className="semantic-note" id="lock-business-day-step-up-help" role="status">
+                      Locking this business day requires current privileged reverification. Secrets
+                      are verified by the provider or server and are never stored by this form.
+                    </p>
+                  </>
+                ) : null}
+              </div>
+              {day?.state === 'CLOSED' ? (
+                <p className="semantic-note">
+                  <strong>Lock is irreversible.</strong> Corrections require named compensating
+                  workflows.
                 </p>
-              </>
-            ) : null}
-          </div>
-          {day?.state === 'CLOSED' ? (
-            <p className="semantic-note">
-              <strong>Lock is irreversible.</strong> Corrections require named compensating
-              workflows.
-            </p>
+              ) : null}
+              {isCurrentDay ? (
+                <p className="panel-detail">This is the station’s current business date.</p>
+              ) : null}
+            </Card>
           ) : null}
-          {isCurrentDay ? (
-            <p className="panel-detail">This is the station’s current business date.</p>
-          ) : null}
-        </Card>
+        </div>
+      </div>
 
+      <div className="content-grid operations-history-grid">
         <Card as="section" className="panel" aria-labelledby="day-history-title">
           <div className="panel-heading">
             <div>
@@ -778,7 +1139,7 @@ export function OperationsControlRoom({ context }: { context: Context }) {
           {overview.businessDays.length === 0 ? (
             <EmptyState
               title="No business-day history"
-              message="The server has not recorded a business day for this station."
+              message="No business days have been recorded for this station yet."
             />
           ) : (
             <div className="operations-list">
@@ -796,189 +1157,57 @@ export function OperationsControlRoom({ context }: { context: Context }) {
             </div>
           )}
         </Card>
-      </div>
-
-      <Card as="section" className="panel" aria-labelledby="shifts-title">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">
-              Shift board · {day ? formatBusinessDate(day.date) : 'No day selected'}
-            </p>
-            <h2 id="shifts-title">Shift boundaries and team context</h2>
-          </div>
-        </div>
-        {!day || overview.shifts.length === 0 ? (
-          <EmptyState
-            title="No shifts recorded"
-            message="Open a business day and start a server-defined shift when the station is ready."
-          />
-        ) : (
-          <div className="operations-list">
-            {overview.shifts.map((shift) => {
-              const reconciliation = overview.reconciliations.find(
-                (item) => item.shiftId === shift.id,
-              );
-              const values = {
-                tenantId: context.tenantId,
-                stationId: context.stationId,
-                businessDayId: day.id,
-                shiftId: shift.id,
-                expectedVersion: shift.version,
-              };
-              return (
-                <article className="operations-list-row operations-shift-row" key={shift.id}>
-                  <div>
-                    <strong>
-                      {timeRange(
-                        shift.plannedStartAt,
-                        shift.plannedEndAt,
-                        overview.station.timezone,
-                      )}
-                    </strong>
-                    <small>
-                      {shift.attendantCount} attendant{shift.attendantCount === 1 ? '' : 's'} ·{' '}
-                      {shift.id}
-                    </small>
-                  </div>
-                  <StatusBadge tone={tone(shift.state)}>
-                    {formatStatusLabel(shift.state)}
-                  </StatusBadge>
-                  <div className="inline-links">
-                    {shift.state === 'PLANNED' && overview.actions.StartShift.canExecute ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void runCommand(
-                            'StartShift',
-                            {
-                              ...values,
-                              plannedStartAt: shift.plannedStartAt,
-                              plannedEndAt: shift.plannedEndAt,
-                            },
-                            shift.id,
-                            'Start this shift and record its opening boundary?',
-                            'Shift started.',
-                          )
-                        }
-                      >
-                        Start shift
-                      </Button>
-                    ) : null}
-                    {shift.state === 'OPEN' && overview.actions.CloseMeters.canExecute ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void runCommand(
-                            'CloseMeters',
-                            values,
-                            shift.id,
-                            'Close meters for this shift? Meter evidence must already be complete.',
-                            'Shift meters closed.',
-                          )
-                        }
-                      >
-                        Close meters
-                      </Button>
-                    ) : null}
-                    {shift.state === 'METER_CLOSED' && overview.actions.CompleteShift.canExecute ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void runCommand(
-                            'CompleteShift',
-                            values,
-                            shift.id,
-                            'Complete this shift? This records the close boundary as complete.',
-                            'Shift completed.',
-                          )
-                        }
-                      >
-                        Complete shift
-                      </Button>
-                    ) : null}
-                    <a className="text-link" href={dayHref(day.id, shift.id)}>
-                      Open workspace
-                    </a>
-                    {reconciliation ? (
+        {focus === 'operations' ? (
+          <Card as="section" className="panel" aria-labelledby="approval-queue-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Review</p>
+                <h2 id="approval-queue-title">Reconciliations</h2>
+              </div>
+            </div>
+            {!overview.visibility.reconciliations ? (
+              <EmptyState
+                title="Reconciliation details restricted"
+                message="You do not have permission to view reconciliation details for this station."
+              />
+            ) : overview.reconciliations.length === 0 ? (
+              <EmptyState
+                title="No reconciliations yet"
+                message="A reconciliation appears here once one is started for a shift."
+              />
+            ) : (
+              <div className="operations-list">
+                {overview.reconciliations.map((item) => (
+                  <div className="operations-list-row" key={item.id}>
+                    <span>
+                      <strong>{formatStatusLabel(item.state)}</strong>
+                      <small>
+                        Revision {item.revision ?? '—'} · updated{' '}
+                        {formatTimestamp(item.updatedAt, overview.station.timezone)}
+                      </small>
+                    </span>
+                    <StatusBadge tone={tone(item.state)}>
+                      {item.revisionState ? formatStatusLabel(item.revisionState) : 'No revision'}
+                    </StatusBadge>
+                    {item.shiftId && day ? (
                       <a
                         className="text-link"
-                        href={`/operations/reconciliations/${reconciliation.id}?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: shift.id }).toString()}`}
+                        href={`/operations/reconciliations/${item.id}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: item.shiftId }).toString()}`}
                       >
-                        Reconciliation
+                        Review
                       </a>
                     ) : null}
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        {selectedShift?.state === 'EXCEPTIONALLY_CLOSED' ? (
-          <p className="semantic-note">
-            Exceptional close is not exposed by the production command route, so this board reports
-            the server state without inventing an action.
-          </p>
+                ))}
+              </div>
+            )}
+          </Card>
         ) : null}
-      </Card>
-
-      <div className="content-grid operations-control-grid">
-        <Card as="section" className="panel" aria-labelledby="approval-queue-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Approval queue</p>
-              <h2 id="approval-queue-title">Reconciliations</h2>
-            </div>
-          </div>
-          {!overview.visibility.reconciliations ? (
-            <EmptyState
-              title="Reconciliation details restricted"
-              message="You do not have permission to view reconciliation details for this station."
-            />
-          ) : overview.reconciliations.length === 0 ? (
-            <EmptyState
-              title="No reconciliations yet"
-              message="A production reconciliation appears here after a server-backed draft is created for a shift."
-            />
-          ) : (
-            <div className="operations-list">
-              {overview.reconciliations.map((item) => (
-                <div className="operations-list-row" key={item.id}>
-                  <span>
-                    <strong>{formatStatusLabel(item.state)}</strong>
-                    <small>
-                      Revision {item.revision ?? '—'} · updated{' '}
-                      {formatTimestamp(item.updatedAt, overview.station.timezone)}
-                    </small>
-                  </span>
-                  <StatusBadge tone={tone(item.state)}>
-                    {item.revisionState ? formatStatusLabel(item.revisionState) : 'No revision'}
-                  </StatusBadge>
-                  {item.shiftId && day ? (
-                    <a
-                      className="text-link"
-                      href={`/operations/reconciliations/${item.id}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: item.shiftId }).toString()}`}
-                    >
-                      Review
-                    </a>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="semantic-note">
-            <strong>Production lifecycle:</strong> approval posts the canonical sale evidence and
-            ends at APPROVED. Separate post and lock revision commands are not used here.
-          </p>
-        </Card>
-
         <Card as="section" className="panel" aria-labelledby="timeline-title">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Audit trail</p>
-              <h2 id="timeline-title">Actor and timestamp history</h2>
+              <p className="eyebrow">History</p>
+              <h2 id="timeline-title">Activity</h2>
             </div>
           </div>
           {!overview.visibility.auditTimeline ? (
@@ -989,16 +1218,16 @@ export function OperationsControlRoom({ context }: { context: Context }) {
           ) : overview.timeline.length === 0 ? (
             <EmptyState
               title="No recorded actions"
-              message="Authoritative commands will appear here with their actor and server timestamp."
+              message="Actions on this station will appear here with who did them and when."
             />
           ) : (
             <ol className="operations-timeline">
               {overview.timeline.map((event, index) => (
                 <li key={`${event.eventCode}-${event.occurredAt}-${index}`}>
                   <div>
-                    <strong>{formatStatusLabel(event.eventCode.replace('FORECOURT.', ''))}</strong>
+                    <strong>{eventLabel(event.eventCode)}</strong>
                     <small>
-                      {event.actorName ?? 'Unknown actor'} ·{' '}
+                      {event.actorName ?? 'Unknown person'} ·{' '}
                       {formatTimestamp(event.occurredAt, overview.station.timezone)}
                     </small>
                     {event.reason ? <p>{event.reason}</p> : null}
