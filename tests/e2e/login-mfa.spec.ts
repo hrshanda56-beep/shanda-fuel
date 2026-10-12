@@ -88,7 +88,8 @@ test.describe('password login MFA flow', () => {
 
     await page.getByLabel('Authenticator code').fill('123456');
     await page.getByRole('button', { name: 'Verify code' }).click();
-    await expect(page).toHaveURL(/\/workplace$/);
+    // /workplace is compiled on first request under `next dev`; allow for the cold compile.
+    await expect(page).toHaveURL(/\/workplace$/, { timeout: 30_000 });
     expect(challengeCookieSeen).toBe(true);
     expect(submittedCodes).toEqual(['000000', '123456']);
   });

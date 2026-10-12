@@ -643,6 +643,13 @@
   }
 }
 
+/* Narrowest phones: two columns leave ~106px, too little for "USD 120,000.00" at 24px. */
+@media (max-width: 22.5rem) {
+  .today-figure-value {
+    font-size: var(--font-size-xl);
+  }
+}
+
 /* Desktop dashboard: coloured figure cards, panels, and a side column. */
 @media (min-width: 64rem) {
   .today-dashboard {
