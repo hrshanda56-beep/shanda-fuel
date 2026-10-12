@@ -434,10 +434,11 @@ export function CashWorkspace() {
           </div>
           <div>
             <dt>Banked</dt>
-            <dd aria-describedby="cash-banked-unavailable">—</dd>
-            <small id="cash-banked-unavailable" className="operations-summary-note">
-              Not available on this page yet
-            </small>
+            {/* The note sits inside <dd>: a <dl> group may only hold <dt>/<dd>. */}
+            <dd>
+              <span aria-hidden="true">—</span>
+              <small className="operations-summary-note">Not available on this page yet</small>
+            </dd>
           </div>
         </dl>
       ) : null}

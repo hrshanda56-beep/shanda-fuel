@@ -794,6 +794,11 @@ a.operations-attention-row:hover {
   font-size: 0.78rem;
 }
 
+.operations-summary dd .operations-summary-note {
+  flex-basis: 100%;
+  font-weight: 400;
+}
+
 .cash-action-bar {
   display: flex;
   flex-wrap: wrap;
