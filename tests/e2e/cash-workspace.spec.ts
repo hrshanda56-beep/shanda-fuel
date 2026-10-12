@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 const context = (allStations = false) => ({
@@ -154,6 +155,24 @@ test.describe('Cash workspace', () => {
         .getByRole('dialog', { name: 'Confirm bank deposits' })
         .getByRole('button', { name: 'Confirm deposit' }),
     ).toBeVisible();
+  });
+
+  test('the cash position list is structurally valid once its figures load', async ({ page }) => {
+    await mockCash(page);
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+      const position = page.getByLabel('Cash position');
+      // Wait for the figures, so the scan sees the rendered list (not a skeleton).
+      await expect(position.getByRole('definition').filter({ hasText: '—' })).toContainText(
+        'Not available on this page yet',
+      );
+      const results = await new AxeBuilder({ page })
+        .include('[aria-label="Cash position"]')
+        .withRules(['definition-list', 'dlitem'])
+        .analyze();
+      expect(results.violations, `width ${width}`).toEqual([]);
+    }
   });
 
   test('fits the Cash workspace at 320px and 390px without page overflow', async ({ page }) => {
