@@ -1,11 +1,12 @@
 # Milestone A release runbook (production 0026 -> 0029)
 
-Status: PREPARED, NOT EXECUTED. Reconciled 2026-10-12 for the exact RC base
-`31e14e4ad8bdc49c1d9b6491e975589197a36b14`; the local release-engineering
-follow-up is recorded in the final handoff commit. Nothing in this document
-has been run against Neon production. Every production step is for a named
-human owner; no agent runs it. This runbook records no secrets and must never
-be extended with connection strings, tokens, cookies, or passwords.
+Status: PREPARED, NOT EXECUTED. Reconciled 2026-10-12 for final local RC
+`bb1e0dcc691b410db6b479cb6ca48642dcf3a3c1`; the migration-file hash baseline
+is the unchanged pre-follow-up RC `31e14e4ad8bdc49c1d9b6491e975589197a36b14`.
+Nothing in this document has been run against Neon production. Every production
+step is for a named human owner; no agent runs it. This runbook records no
+secrets and must never be extended with connection strings, tokens, cookies, or
+passwords.
 
 Release lock: production is verified at migration `0026`; `0027`, `0028`, and
 `0029` remain pending and must be applied exactly once, in that order, after
@@ -230,8 +231,9 @@ Never restore over production. To verify a restore (drill now, or incident):
 ## 3. Migration execution: 0027 -> 0028 -> 0029
 
 Source of truth: `src/platform/db/migrations/` and `meta/_journal.json` (entries
-27-29). SHA-256 of the files at the exact RC base `31e14e4`
-(drizzle records the content hash, so
+27-29). SHA-256 of the unchanged migration files at the pre-follow-up RC
+`31e14e4` (also present in final local RC `bb1e0dc`; drizzle records the content
+hash, so
 these must match what is recorded afterwards):
 
 | Migration | SHA-256 |
@@ -541,7 +543,7 @@ Further backend work may add `0030`. The journal is owned by A0
 (`src/platform/db/migrations/README.md`); feature work only proposes SQL. Rules:
 
 1. Do not interleave: land and apply 0027-0029 first (they are final on
-   `31e14e4`), then number the next migration `0030` strictly after them.
+   `bb1e0dc`), then number the next migration `0030` strictly after them.
 2. A new migration must not edit 0027-0029 (their hashes are recorded in
    production); corrections are a new forward migration.
 3. If 0030 is ready before the Milestone A window closes, either (a) hold it
