@@ -1680,3 +1680,20 @@ button.today-period {
   font-size: var(--font-size-sm);
   text-align: left;
 }
+
+/* F4-07: on phones every text control in the product (page and dialogs) is
+   at least 16 px, so iOS Safari does not zoom the page when it gets focus.
+   Measured before: form controls 14 px, page search 15 px. Sign-in pages
+   (entry.css) are outside .app-shell and dialogs and are not affected. */
+@media (max-width: 47.99rem) {
+  :is(.app-shell, .dialog-backdrop)
+    :is(
+      input:where(
+        :not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'])
+      ),
+      select,
+      textarea
+    ) {
+    font-size: max(1rem, 16px);
+  }
+}
