@@ -948,6 +948,14 @@ a.operations-attention-row:hover {
   font-size: 0.82rem;
 }
 
+/* Ten columns: multi-word headers ("Fees / deductions", "Reported net") wrap
+ * between words so every column, including Action, fits at desktop widths. */
+@media (min-width: 48rem) {
+  .settlement-table thead th {
+    white-space: normal;
+  }
+}
+
 /* The matching card spans the row so its table shows every column; the form
  * under it keeps a readable width. */
 .settlement-match-form {

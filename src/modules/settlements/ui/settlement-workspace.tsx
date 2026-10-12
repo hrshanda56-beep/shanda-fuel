@@ -544,7 +544,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         ) : null}
         {canShowSettlementRows ? (
           <TableScrollRegion label="Provider settlement reconciliation">
-            <table className="responsive-table">
+            <table className="responsive-table settlement-table">
               <caption className="visually-hidden">Provider settlement reconciliation</caption>
               <thead>
                 <tr>
