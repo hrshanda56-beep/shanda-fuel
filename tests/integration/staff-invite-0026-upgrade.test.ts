@@ -19,6 +19,10 @@ const currentMigrationPath = resolve(
   import.meta.dirname,
   '../../src/platform/db/migrations/0028_clerk_target_identity_revocation.sql',
 );
+const latestMigrationPath = resolve(
+  import.meta.dirname,
+  '../../src/platform/db/migrations/0029_staff_number_registry_rls.sql',
+);
 const previousMigrationPath = resolve(
   import.meta.dirname,
   '../../src/platform/db/migrations/0027_clerk_staff_number_auth.sql',
@@ -38,6 +42,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
     const currentMigrationSql = await readFile(currentMigrationPath, 'utf8');
     const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
+    const latestMigrationSql = await readFile(latestMigrationPath, 'utf8');
+    const latestMigrationHash = createHash('sha256').update(latestMigrationSql).digest('hex');
     const previousMigrationSql = await readFile(previousMigrationPath, 'utf8');
     const previousMigrationHash = createHash('sha256').update(previousMigrationSql).digest('hex');
     const rollback = new Error('rollback disposable 0025 to 0026 upgrade');
@@ -76,7 +82,10 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
           DROP TABLE IF EXISTS app.staff_invitations;
           DROP INDEX IF EXISTS auth.auth_user_normalized_email_uidx;
           DELETE FROM drizzle.__drizzle_migrations
-          WHERE hash IN ('${migrationHash}', '${previousMigrationHash}', '${currentMigrationHash}');
+          WHERE hash IN (
+            '${migrationHash}', '${previousMigrationHash}', '${currentMigrationHash}',
+            '${latestMigrationHash}'
+          );
         `);
 
         const before = await transaction<{ migration_count: number; table_name: string }[]>`
@@ -129,8 +138,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
   });
 
   it('records 0026 exactly once with the migration source hash', async () => {
-    const currentMigrationSql = await readFile(currentMigrationPath, 'utf8');
-    const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
+    const latestMigrationSql = await readFile(latestMigrationPath, 'utf8');
+    const latestMigrationHash = createHash('sha256').update(latestMigrationSql).digest('hex');
     const rows = await client<
       {
         migration_count: number;
@@ -149,8 +158,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     expect(rows).toEqual([
       {
-        migration_count: 29,
-        latest_hash: currentMigrationHash,
+        migration_count: 30,
+        latest_hash: latestMigrationHash,
         exact_hash_count: 1,
       },
     ]);

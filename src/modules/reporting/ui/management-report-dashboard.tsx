@@ -22,7 +22,7 @@ import {
   resolveReportFilters,
   type ReportFilters,
 } from '../filters';
-import { formatTileMoney } from '../format';
+import { formatReportLitres, formatTileMoney } from '../format';
 import { businessToday } from '../period';
 import { findReport, type ReportDefinition } from '../catalog';
 import { ReportFilterBar } from './report-filter-bar';
@@ -443,11 +443,11 @@ export function ManagementReportDashboard({
                   </div>
                   <div>
                     <dt>Physical stock</dt>
-                    <dd>{formatLitres(report.inventory.physicalLitres)}</dd>
+                    <dd>{formatReportLitres(report.inventory.physicalLitres)}</dd>
                   </div>
                   <div>
                     <dt>Inventory variance</dt>
-                    <dd>{formatLitres(report.inventory.varianceLitres)}</dd>
+                    <dd>{formatReportLitres(report.inventory.varianceLitres)}</dd>
                   </div>
                   <div>
                     <dt>Deliveries</dt>

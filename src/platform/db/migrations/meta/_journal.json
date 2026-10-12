@@ -204,6 +204,13 @@
       "when": 1791630000000,
       "tag": "0028_clerk_target_identity_revocation",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791816395000,
+      "tag": "0029_staff_number_registry_rls",
+      "breakpoints": true
     }
   ]
 }
