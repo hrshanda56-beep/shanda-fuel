@@ -3,6 +3,19 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { mockContext, mockSettlements, STATION, TENANT } from './fixtures/data-filled';
 
+/** Overlays fade and rise in; axe must sample their settled colours, not a frame mid-fade. */
+async function animationsSettled(page: Page) {
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== 'running' ||
+          animation.effect?.getComputedTiming().endTime === Infinity,
+      ),
+  );
+}
+
 /** F4-07 shared quality: tablet 803 px, reduced motion, 16 px phone inputs, overlay cleanup. */
 
 const DASH_TENANT = '11111111-1111-4111-8111-111111111111';
@@ -212,6 +225,7 @@ test.describe('phone search entry in the More drawer (F1-05)', () => {
     }));
     expect(size.height).toBeGreaterThanOrEqual(44);
     expect(size.width).toBeLessThanOrEqual(390);
+    await animationsSettled(page);
     const results = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
     expect(results.violations).toEqual([]);
   });
@@ -238,6 +252,7 @@ test.describe('phone search entry in the More drawer (F1-05)', () => {
     ).toBeGreaterThanOrEqual(16);
     await combobox.fill('Cust');
     await expect(palette.getByRole('option', { name: /Customers/ }).first()).toBeVisible();
+    await animationsSettled(page);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
     await page.keyboard.press('Escape');

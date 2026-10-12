@@ -1,6 +1,19 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+/** Overlays fade and rise in; axe must sample their settled colours, not a frame mid-fade. */
+async function animationsSettled(page: Page) {
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== 'running' ||
+          animation.effect?.getComputedTiming().endTime === Infinity,
+      ),
+  );
+}
+
 /** The overview stays truthful until live reporting data is available. */
 
 test.beforeEach(async ({ page }) => {
@@ -467,6 +480,7 @@ test.describe('today hardening', () => {
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer).toBeVisible();
 
+    await animationsSettled(page);
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
 
@@ -495,6 +509,7 @@ test.describe('today hardening', () => {
     await rail.getByRole('button', { name: 'Finance' }).click();
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toBeVisible();
+    await animationsSettled(page);
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
   });
@@ -533,6 +548,7 @@ test.describe('today hardening', () => {
     }
     await page.getByRole('button', { name: 'More' }).click();
     await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible();
+    await animationsSettled(page);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 });
