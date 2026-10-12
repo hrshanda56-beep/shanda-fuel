@@ -17,6 +17,7 @@ import {
   formatStatusLabel,
 } from '@/design-system/formatters';
 import { PageHeader, MetricCard } from '@/design-system/layout';
+import { formatTileMoney } from '@/modules/reporting/format';
 import {
   Card,
   ContextRequiredState,
@@ -43,6 +44,11 @@ type ScopeForm = {
 };
 
 type ScopeForms = Record<string, ScopeForm>;
+
+/** Two-decimal money for display; a balance that is not recorded shows "—", never zero. */
+function money(value: string | null | undefined, currency: string): string {
+  return value === null || value === undefined ? '—' : formatTileMoney(value, currency);
+}
 
 function scopeFormsForCustomer(customer: CustomerSummary): ScopeForms {
   return Object.fromEntries(
@@ -112,7 +118,7 @@ function transactionLabel(transaction: CustomerTransaction): string {
 }
 
 function transactionValue(transaction: CustomerTransaction): string {
-  if (transaction.amount !== null) return formatMoney(transaction.amount, transaction.currency);
+  if (transaction.amount !== null) return money(transaction.amount, transaction.currency);
   if (transaction.litres !== null) return formatLitres(transaction.litres);
   return '—';
 }
@@ -123,7 +129,7 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
       <section className="metric-grid metric-list" aria-label="Credit account position">
         <MetricCard
           label="Outstanding balance"
-          value={formatMoney(account.balance ?? '0', account.currency)}
+          value={money(account.balance, account.currency)}
           meta="Posted credit charges less payments"
         />
         <MetricCard
@@ -131,12 +137,12 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
           value={
             account.availableCredit === null
               ? 'Not set'
-              : formatMoney(account.availableCredit, account.currency)
+              : money(account.availableCredit, account.currency)
           }
           meta={
             account.creditLimit === null
               ? 'No credit limit is recorded'
-              : `Limit ${formatMoney(account.creditLimit, account.currency)}`
+              : `Limit ${money(account.creditLimit, account.currency)}`
           }
         />
       </section>
@@ -148,16 +154,16 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
       <section className="metric-grid metric-list" aria-label="Prepaid value account position">
         <MetricCard
           label="Available prepaid value"
-          value={formatMoney(account.availableBalance ?? '0', account.currency)}
+          value={money(account.availableBalance, account.currency)}
           meta="After active fuel reservations"
         />
         <MetricCard
           label="Posted balance"
-          value={formatMoney(account.balance ?? '0', account.currency)}
+          value={money(account.balance, account.currency)}
           meta={
             account.reservedAmount === '0'
               ? 'No active reservation'
-              : `${formatMoney(account.reservedAmount, account.currency)} reserved`
+              : `${money(account.reservedAmount, account.currency)} reserved`
           }
         />
       </section>
@@ -451,7 +457,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
       {!contextLoading && !contextError && !hasRequiredContext ? (
         <ContextRequiredState
           title="Select an organisation"
-          message="Choose an authorised organisation before customer detail can be loaded."
+          message="Use the work context selector above to choose an organisation."
         />
       ) : null}
       {error ? (
@@ -725,7 +731,6 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
                 <p className="eyebrow">Posted ledger activity</p>
                 <h2 id="customer-transactions-title">Recent account transactions</h2>
               </div>
-              <StatusBadge tone="informational">Read-only history</StatusBadge>
             </div>
             {customer.recentTransactions.length === 0 ? (
               <EmptyState
@@ -779,10 +784,9 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
             )}
           </Card>
 
-          <Notice tone="info" title="Phase 1 commercial gaps">
-            Invoices, formal statements, staff or management benefits, vehicle and driver rules,
-            customer-specific terms, and overdue ageing are not part of the currently modelled
-            customer account data and are intentionally not inferred here.
+          <Notice tone="info" title="Not shown here yet">
+            Invoices, statements, overdue ageing, customer terms, and vehicle or driver rules are
+            not recorded for customers yet, so they are not shown.
           </Notice>
         </>
       ) : null}

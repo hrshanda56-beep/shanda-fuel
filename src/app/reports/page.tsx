@@ -19,7 +19,7 @@ export default async function ReportsPage({
   return (
     <AppShell pageSubtitle="Operational financial position">
       <p className="lede">
-        A factual view across approved sales, custody, settlements, commercial exposure, and stock.
+        Approved sales, cash, settlements, balances and stock for the chosen period.
       </p>
       {tenantId ? (
         <Suspense>
@@ -31,16 +31,15 @@ export default async function ReportsPage({
               <ReportsRail tenantId={tenantId} />
             </div>
             <p className="metric-meta">
-              Figures come from posted source records, each on its own date basis. This is an
-              operational view, not a general ledger, statutory P&amp;L, balance sheet, tax report,
-              or bank statement.
+              Figures come from approved records, each dated by its own business date. This is not a
+              general ledger, statutory P&amp;L, balance sheet, tax report or bank statement.
             </p>
           </div>
         </Suspense>
       ) : (
         <ContextRequiredState
           title="Choose an organisation to view reports"
-          message="Use Change above to choose an authorised organisation before loading reporting data."
+          message="Use the work context selector above to choose an organisation."
         />
       )}
     </AppShell>

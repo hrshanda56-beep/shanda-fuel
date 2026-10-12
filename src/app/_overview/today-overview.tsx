@@ -1,18 +1,38 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { formatBusinessDate } from '@/design-system/formatters';
 import { Icon, type IconName } from '@/design-system/icons';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
+import { TableScrollRegion } from '@/design-system/table';
 
+import { businessToday } from '@/modules/reporting/period';
+import { addExact } from '@/modules/reporting/domain';
+import { formatTileLitres, formatTileMoney } from '@/modules/reporting/format';
+
+import {
+  axisLabels,
+  CHART_RANGES,
+  chartBuckets,
+  chartTable,
+  figureChars,
+  dailyTotals,
+  litresSeries,
+  plotValue,
+  productTotals,
+  signedMoney,
+  varianceTone,
+  type ChartRange,
+  type DailyRow,
+  type LitresPoint,
+  type SalesRow,
+} from './dashboard-figures';
 import { PerformanceChart } from './performance-chart';
 import {
   approvalLabel,
   CLOSE_STATUS_PRESENTATION,
-  countActiveCustomers,
-  countOpenShifts,
   countSuspendedCustomers,
   operationsAttention,
   shiftSummary,
@@ -84,6 +104,7 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
   const [customers, setCustomers] = useState<Section<{ customers: { status: string }[] }>>({
     status: 'loading',
   });
+  const [daily, setDaily] = useState<Section<DailyReport>>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -93,7 +114,17 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
     const reset = window.setTimeout(() => {
       setOperations({ status: 'loading' });
       setCustomers({ status: 'loading' });
+      setDaily({ status: 'loading' });
     }, 0);
+
+    // Today's approved figures; without a station, every station this person may see.
+    const reportParams = new URLSearchParams({ tenantId });
+    if (stationId) reportParams.set('stationIds', stationId);
+    load<DailyReport>(
+      `/api/reports/daily?${reportParams}`,
+      signal,
+      'Today’s figures could not be loaded.',
+    ).then(setDaily, () => {});
 
     if (stationId) {
       const params = new URLSearchParams({ tenantId, stationId });
@@ -117,7 +148,33 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
-  const [period, setPeriod] = useState('24H');
+  const [range, setRange] = useState<ChartRange>('30D');
+  const [chart, setChart] = useState<Section<{ sales: { rows: SalesRow[] } }> & { key?: string }>({
+    status: 'loading',
+  });
+  const [chartAttempt, setChartAttempt] = useState(0);
+  const chartKey = `${tenantId ?? ''}|${stationId ?? ''}|${range}`;
+  const rangeWindow = useMemo(() => chartBuckets(range, businessToday()), [range]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      tenantId,
+      fromDate: rangeWindow.fromDate,
+      toDate: rangeWindow.toDate,
+    });
+    if (stationId) params.set('stationIds', stationId);
+    load<{ sales: { rows: SalesRow[] } }>(
+      `/api/reports/management?${params}`,
+      controller.signal,
+      'Sales could not be loaded.',
+    ).then(
+      (section) => setChart({ ...section, key: chartKey }),
+      () => {},
+    );
+    return () => controller.abort();
+  }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt]);
 
   const customersHref = useMemo(
     () => (tenantId ? `/customers?${new URLSearchParams({ tenantId })}` : '/customers'),
@@ -165,6 +222,32 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
   }
   const attentionLoading = operations.status === 'loading' || customers.status === 'loading';
 
+  const totals = daily.status === 'ready' ? dailyTotals(daily.data.rows) : null;
+  const figureValues: (string | null)[] = totals
+    ? [
+        formatTileMoney(totals.salesValue),
+        formatTileLitres(totals.litresSold),
+        signedMoney(totals.cashVariance),
+        formatTileMoney(totals.accountSales),
+      ]
+    : [null, null, null, null];
+  const figureState: FigureState =
+    daily.status === 'ready' ? (totals ? 'ready' : 'none') : daily.status;
+
+  const chartReady = chart.status === 'ready' && chart.key === chartKey ? chart : null;
+  const salesRows = chartReady ? chartReady.data.sales.rows : [];
+  const points = litresSeries(salesRows, rangeWindow.buckets);
+  const series = chartReady
+    ? points.map((point) => ({
+        label: point.label,
+        value: plotValue(point.litres),
+        detail: point.products
+          .map((product) => `${product.name} ${formatTileLitres(product.litres)}`)
+          .join(' · '),
+      }))
+    : null;
+  const rangeSummary = productTotals(salesRows);
+
   return (
     <div className="today today-dashboard">
       <section
@@ -172,31 +255,60 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
         aria-labelledby="today-figures-heading"
       >
         <h2 id="today-figures-heading">Key figures</h2>
-        <dl className="today-figures">
-          <Figure
-            label="Shifts open"
-            href={dailyHref}
-            icon="today"
-            state={!stationId ? 'choose' : operations.status}
-            value={operations.status === 'ready' ? countOpenShifts(operations.data.shifts) : null}
-          />
-          <Figure
-            label="Active customers"
-            href={customersHref}
-            icon="users"
-            state={customers.status}
-            value={
-              customers.status === 'ready' ? countActiveCustomers(customers.data.customers) : null
-            }
-          />
+        <p className="today-figures-note">
+          {stationId ? '' : 'All stations · '}Approved figures for{' '}
+          {daily.status === 'ready' && daily.data.filters?.fromDate
+            ? formatBusinessDate(daily.data.filters.fromDate)
+            : 'today'}
+          . Expected cash and stock variance are not available yet.
+        </p>
+        <dl
+          className="today-figures"
+          // One size for all four cards, from the longest figure shown.
+          style={
+            {
+              '--figure-chars': Math.max(
+                ...figureValues.map((value) => (value === null ? 6 : figureChars(value))),
+              ),
+            } as CSSProperties
+          }
+        >
           <Figure
             label="Sales today"
             href={reportsHref}
             icon="dollar"
-            state="pending"
-            value={null}
+            state={figureState}
+            value={figureValues[0] ?? null}
           />
-          <Figure label="Litres sold" href={reportsHref} icon="drop" state="pending" value={null} />
+          <Figure
+            label="Litres sold"
+            href={reportsHref}
+            icon="drop"
+            state={figureState}
+            value={figureValues[1] ?? null}
+            sub={
+              totals && !stationId
+                ? `${totals.stationCount} ${totals.stationCount === 1 ? 'station' : 'stations'} approved`
+                : null
+            }
+          />
+          <Figure
+            label="Cash variance"
+            href={reportsHref}
+            icon="wallet"
+            state={figureState}
+            value={figureValues[2] ?? null}
+            sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
+            tone={totals ? varianceTone(totals.cashVariance) : undefined}
+          />
+          <Figure
+            label="Account sales"
+            href={customersHref}
+            icon="users"
+            state={figureState}
+            value={figureValues[3] ?? null}
+            sub={totals ? 'Credit and prepaid accounts' : null}
+          />
         </dl>
       </section>
 
@@ -259,30 +371,67 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
       <section className="today-section today-stats" aria-labelledby="today-stats-heading">
         <div className="today-stats-head">
           <h2 id="today-stats-heading">
-            Sales performance <span className="today-stats-sub">Statistic</span>
+            Sales performance <span className="today-stats-sub">Litres</span>
           </h2>
           <div className="today-periods" role="group" aria-label="Period">
-            {PERIODS.map((option) => (
+            {CHART_RANGES.map((option) => (
               <button
                 key={option}
                 type="button"
                 className="today-period"
-                aria-pressed={period === option}
-                data-active={period === option || undefined}
-                onClick={() => setPeriod(option)}
+                aria-pressed={range === option}
+                data-active={range === option || undefined}
+                onClick={() => setRange(option)}
               >
                 {option}
               </button>
             ))}
           </div>
         </div>
-        <PerformanceChart
-          series={null}
-          xLabels={PERIOD_LABELS[period] ?? []}
-          formatValue={String}
-          label={`Sales performance, ${period}`}
-          emptyMessage="Sales trends will appear here once reporting is connected."
-        />
+        {chart.status === 'error' && chart.key === chartKey ? (
+          <ErrorState
+            title="Sales trend unavailable"
+            message={chart.message}
+            action={
+              <Button variant="secondary" onClick={() => setChartAttempt((value) => value + 1)}>
+                Try again
+              </Button>
+            }
+          />
+        ) : chart.status === 'forbidden' && chart.key === chartKey ? (
+          <p className="today-note">You don’t have access to sales reports.</p>
+        ) : !chartReady ? (
+          <Skeleton lines={4} label="Loading sales trend" />
+        ) : (
+          <>
+            <PerformanceChart
+              series={series}
+              xLabels={axisLabels(points.map((point) => point.label))}
+              formatValue={(value) => formatTileLitres(String(Math.round(value)))}
+              label={`Litres sold, ${range}, approved days only`}
+              emptyMessage="No approved sales in this period yet."
+              gapMessage="No approved report"
+            />
+            {rangeSummary.length > 0 ? (
+              <p className="today-stats-summary">
+                {range} ·{' '}
+                {formatTileLitres(
+                  points.reduce(
+                    (sum, point) => (point.litres === null ? sum : addExact(sum, point.litres)),
+                    '0',
+                  ),
+                )}
+                {rangeSummary.map((product) => (
+                  <span key={product.name}>
+                    {' · '}
+                    {product.name} {formatTileLitres(product.litres)}
+                  </span>
+                ))}
+              </p>
+            ) : null}
+            <ChartTableView points={points} range={range} />
+          </>
+        )}
         <p className="today-note">
           <Link href={reportsHref}>Open reports</Link>
         </p>
@@ -291,21 +440,20 @@ export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }
   );
 }
 
-const PERIODS = ['24H', '1W', '1M', '1Y'];
-const PERIOD_LABELS: Record<string, string[]> = {
-  '24H': ['6 AM', '9 AM', '12 PM', '3 PM', '6 PM', '9 PM'],
-  '1W': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-  '1M': ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-  '1Y': ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov'],
-};
+const CASH_VARIANCE_WORDS = {
+  none: 'No cash variance',
+  short: 'Cash short',
+  over: 'Cash over',
+} as const;
 
-type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'choose' | 'pending';
+type DailyReport = { filters?: { fromDate?: string }; rows: DailyRow[] };
+
+type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'none';
 
 const FIGURE_CAPTION: Partial<Record<FigureState, string>> = {
   forbidden: 'No access',
   error: 'Unavailable',
-  choose: 'Choose a station',
-  pending: 'Not connected yet',
+  none: 'No approved report yet',
 };
 
 function Figure({
@@ -314,15 +462,19 @@ function Figure({
   icon,
   state,
   value,
+  sub = null,
+  tone,
 }: {
   label: string;
   href: string;
   icon: IconName;
   state: FigureState;
-  value: number | null;
+  value: string | null;
+  sub?: string | null;
+  tone?: 'none' | 'over' | 'short';
 }) {
   return (
-    <div className="today-figure" data-state={state}>
+    <div className="today-figure" data-state={state} data-tone={tone}>
       <span className="today-figure-icon" aria-hidden="true">
         <Icon name={icon} />
       </span>
@@ -336,7 +488,10 @@ function Figure({
         {state === 'loading' ? (
           <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
         ) : value !== null ? (
-          <span className="today-figure-value">{value}</span>
+          <>
+            <span className="today-figure-value">{value}</span>
+            {sub ? <span className="today-figure-caption">{sub}</span> : null}
+          </>
         ) : (
           <>
             <span className="today-figure-value" aria-hidden="true">
@@ -370,5 +525,77 @@ function OperationsRow({ operations, href }: { operations: TodayOperations; href
         </span>
       </span>
     </Link>
+  );
+}
+
+function periodLabel(from: string, to: string): string {
+  return from === to
+    ? formatBusinessDate(from)
+    : `${formatBusinessDate(from)} – ${formatBusinessDate(to)}`;
+}
+
+/**
+ * The sales chart as a table (finish line F3-03): the same approved-report
+ * points, one row per period. A period without an approved report says so;
+ * nothing missing is shown as zero.
+ */
+function ChartTableView({ points, range }: { points: LitresPoint[]; range: ChartRange }) {
+  const table = chartTable(points);
+  return (
+    <details className="today-chart-table">
+      <summary>Show the chart as a table</summary>
+      <TableScrollRegion label={`Litres sold by period, ${range}`}>
+        <table className="responsive-table">
+          <caption>Litres sold, {range}, from approved reports only</caption>
+          <thead>
+            <tr>
+              <th scope="col">Business date</th>
+              <th scope="col">Litres sold</th>
+              {table.products.map((name) => (
+                <th scope="col" key={name}>
+                  {name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row) => (
+              <tr key={row.from}>
+                <th scope="row" data-label="Business date">
+                  {periodLabel(row.from, row.to)}
+                </th>
+                {row.total === null ? (
+                  <td data-label="Litres sold" colSpan={1 + table.products.length}>
+                    No approved report
+                  </td>
+                ) : (
+                  <>
+                    <td data-label="Litres sold" className="numeric">
+                      {formatTileLitres(row.total)}
+                    </td>
+                    {row.byProduct.map((litres, index) => (
+                      <td
+                        key={table.products[index]}
+                        data-label={table.products[index]}
+                        className="numeric"
+                      >
+                        {litres === null ? (
+                          <>
+                            <span aria-hidden="true">—</span>
+                            <span className="visually-hidden">No approved figure</span>
+                          </>
+                        ) : (
+                          formatTileLitres(litres)
+                        )}
+                      </td>
+                    ))}
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScrollRegion>
+    </details>
   );
 }

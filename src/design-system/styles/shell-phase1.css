@@ -349,11 +349,9 @@
     white-space: nowrap;
   }
 
+  /* The station pill in the header names the station; no second line. */
   .shell-station-line {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: none;
   }
 
   .shell-page-subtitle {
@@ -365,14 +363,18 @@
     margin-left: auto;
   }
 
-  /* The station is switched from More; the header keeps one quiet line. */
+  /* One row: title left; station switcher and avatar right. Long station
+     names truncate inside the pill instead of wrapping the header. */
   .shell-header-controls .shell-context-selector {
     width: auto;
-    flex: 0 0 0;
+    max-width: 44vw;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
-  .shell-context-pill {
-    display: none;
+  .shell-header-controls .shell-context-pill {
+    max-width: 100%;
+    padding: 0 var(--space-2-5);
   }
 
   .shell-header .global-search,
@@ -393,23 +395,60 @@
     top: calc(3.5rem + env(safe-area-inset-top));
   }
 
-  /* Bottom bar: two tabs, a raised scan button, two tabs. */
+  /* Bottom bar: the authorised everyday tabs plus More, evenly spaced. */
   .shell-mobile-nav-list {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    grid-template-columns: none;
   }
 
   .shell-mobile-nav-link {
-    min-height: 3.75rem;
-    gap: var(--space-1);
+    min-height: 3.5rem;
+    gap: 0.125rem;
+  }
+
+  /* More is a <button>, which shrinks to its content unlike the tab links;
+     give it the full column so its tap target matches the other tabs. */
+  .shell-mobile-nav-more {
+    width: 100%;
   }
 
   .shell-mobile-nav-link svg {
-    width: 1.75rem;
-    height: 1.75rem;
+    width: 1.5rem;
+    height: 1.5rem;
   }
 }
 
 /* More menu -------------------------------------------------------------------- */
+
+/* Phone search entry (F1-05): the header search is hidden below 48rem. */
+.shell-more-search {
+  display: flex;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex: 0 0 auto;
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--border-control);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-more-search:hover {
+  color: var(--text-primary);
+}
+
+@media (min-width: 48rem) {
+  .shell-more-search {
+    display: none;
+  }
+}
 
 .shell-more-context {
   display: flex;
@@ -1315,13 +1354,13 @@ button.today-period {
   padding: 0;
 }
 
-/* Floating bottom bar with a raised scan button in a notch (phones). */
+/* Floating labelled bottom bar (phones). */
 @media (max-width: 47.99rem) {
   .shell-mobile-nav {
     right: 0.75rem;
     bottom: calc(0.5rem + env(safe-area-inset-bottom));
     left: 0.75rem;
-    padding: 0.25rem 0.5rem;
+    padding: 0.25rem 0.375rem;
     border: 0;
     background: none;
     box-shadow: none;
@@ -1336,8 +1375,6 @@ button.today-period {
     background: #17211d;
     box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.3);
     content: '';
-    -webkit-mask: radial-gradient(circle 2.25rem at 50% 0, transparent 98%, #000 100%);
-    mask: radial-gradient(circle 2.25rem at 50% 0, transparent 98%, #000 100%);
   }
 
   .shell-mobile-nav-list {
@@ -1345,54 +1382,57 @@ button.today-period {
   }
 
   .shell-mobile-nav-link {
+    position: relative;
+    border-radius: 1.375rem;
     color: #9aa7a1;
   }
 
-  .shell-mobile-nav-link:hover,
-  .shell-mobile-nav-link[aria-current='page'] {
-    background: transparent;
+  /* Visible label under every icon; one line, never wider than its tab. */
+  .shell-mobile-nav-link > span:not(.visually-hidden) {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.6875rem;
+    font-weight: var(--font-weight-medium);
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Current page: brighter text and a soft accent pill, not colour alone. */
+  .shell-mobile-nav-link[aria-current='page'],
+  .shell-mobile-nav-more[data-current-section] {
+    background: rgb(95 195 163 / 0.16);
     box-shadow: none;
     color: #fff;
   }
 
-  .shell-mobile-nav-link span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
+  .shell-mobile-nav-link[aria-current='page'] > span:not(.visually-hidden),
+  .shell-mobile-nav-more[data-current-section] > span:not(.visually-hidden) {
+    font-weight: var(--font-weight-semibold);
   }
 
-  .shell-mobile-nav-scan-slot {
-    position: relative;
-    grid-column: 3;
+  .shell-mobile-nav-link[aria-current='page'] svg,
+  .shell-mobile-nav-more[data-current-section] svg {
+    color: #5fc3a3;
   }
 
-  .shell-mobile-nav-more {
-    grid-column: 5;
+  .shell-mobile-nav-link:focus-visible {
+    outline: 2px solid #5fc3a3;
+    outline-offset: -2px;
   }
 
-  .shell-mobile-nav-scan {
-    position: absolute;
-    top: -2.25rem;
-    left: 50%;
-    display: grid;
-    width: 3.75rem;
-    height: 3.75rem;
-    place-items: center;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-full);
-    background: #ecd57a;
-    box-shadow: 0 0.25rem 1rem rgb(236 213 122 / 0.35);
-    color: #17211d;
-    cursor: pointer;
-    transform: translateX(-50%);
+  @media (hover: hover) {
+    .shell-mobile-nav-link:hover {
+      background: rgb(255 255 255 / 0.06);
+      color: #fff;
+    }
   }
 
-  .shell-mobile-nav-scan svg {
-    width: 1.9rem;
-    height: 1.9rem;
+  @media (hover: none) {
+    .shell-mobile-nav-link:hover:not([aria-current='page']):not([data-current-section]) {
+      background: transparent;
+      color: #9aa7a1;
+    }
   }
 
   .shell-main {
@@ -1583,5 +1623,106 @@ button.today-period {
 @media (max-width: 47.99rem) and (prefers-reduced-motion: reduce) {
   .shell-header {
     transition: none;
+  }
+}
+
+/* F3-02/F3-03: approved figures, variance direction, litres trend. */
+.today-figures-note {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Figure cards keep fixed pastel backgrounds at every width and in both
+   themes, so a shortage uses a fixed dark red (about 6:1 on every tile). */
+.today-figure[data-tone='short'] .today-figure-value {
+  color: #8f1d1d;
+}
+
+/* Size figures to the card, not the window, so an amount such as
+   "USD 2,096.72" wraps only at the space and never splits the number. */
+.today-figure {
+  container-type: inline-size;
+}
+
+.today-figure-value {
+  overflow-wrap: normal;
+  /* --figure-chars: longest word among the four figures (set on the list). */
+  font-size: clamp(
+    1rem,
+    calc(100cqi / (var(--figure-chars, 8) * 0.6)),
+    var(--font-size-4xl, 2.25rem)
+  );
+}
+
+/* Below 1440 px the sidebar and side column leave each of four cards under
+   about 105 px of content (70 px at 1280, 89 px at 1360): a six-figure amount
+   such as "120,000.00" would need a font below 1rem. Show the figures two by
+   two from 1024 to 1439 px. */
+@media (min-width: 64rem) and (max-width: 89.99rem) {
+  .today-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.perf-chart-point {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-width: 2px;
+}
+
+.perf-chart-tip-detail {
+  color: #3f4b48;
+  font-size: var(--font-size-xs, 0.75rem);
+}
+
+.today-stats-summary {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* F3-03: the sales chart as a table, collapsed by default under the chart. */
+.today-chart-table {
+  margin: 0 0 var(--space-2);
+}
+
+.today-chart-table > summary {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.today-chart-table > summary:focus-visible {
+  outline: 2px solid var(--focus-ring, currentColor);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.today-chart-table caption {
+  padding-bottom: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+
+/* F4-07: on phones every text control in the product (page and dialogs) is
+   at least 16 px, so iOS Safari does not zoom the page when it gets focus.
+   Measured before: form controls 14 px, page search 15 px. Sign-in pages
+   (entry.css) are outside .app-shell and dialogs and are not affected. */
+@media (max-width: 47.99rem) {
+  :is(.app-shell, .dialog-backdrop)
+    :is(
+      input:where(
+        :not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'])
+      ),
+      select,
+      textarea
+    ) {
+    font-size: max(1rem, 16px);
   }
 }

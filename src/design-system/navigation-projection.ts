@@ -16,12 +16,42 @@ export type NavigationProjectionInput = Readonly<{
 
 export const E2E_NAVIGATION_FIXTURE_HEADER = 'x-shanda-e2e-navigation-fixture';
 
+/**
+ * The synthetic navigation/My Shift fixture bypasses session and authorization to
+ * render a screen against mocked data routes. It is for local and CI browser tests
+ * only, so every condition must hold (fail closed on anything else):
+ *   - the request carries the explicit `synthetic` header,
+ *   - APP_ENV is exactly `test`,
+ *   - NODE_ENV is exactly `development` (`next dev`; never a built or started app,
+ *     and not an unset, `test` or mistyped value),
+ *   - the app is not running on Vercel, and
+ *   - APP_URL is a plain-HTTP loopback address (deployed environments must be
+ *     HTTPS and non-loopback), or unset (the local default).
+ */
 export function allowsE2ENavigationFixture(
   appEnv: string | undefined,
   header: string | null,
   nodeEnv: string | undefined = process.env.NODE_ENV,
+  appUrl: string | undefined = process.env.APP_URL,
+  vercel: string | undefined = process.env.VERCEL,
 ) {
-  return nodeEnv !== 'production' && appEnv === 'test' && header === 'synthetic';
+  return (
+    header === 'synthetic' &&
+    appEnv === 'test' &&
+    nodeEnv === 'development' &&
+    !vercel &&
+    isLoopbackAppUrl(appUrl)
+  );
+}
+
+function isLoopbackAppUrl(appUrl: string | undefined) {
+  if (appUrl === undefined) return true;
+  try {
+    const url = new URL(appUrl);
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly PermissionCode[]>> =

@@ -1,7 +1,12 @@
-/* Attendant "My Shift" workspace: one calm column, big targets, no tables. */
+/*
+ * Attendant "My Shift": the Dashboard's visual grammar at phone size. Compact
+ * header, three key figures, one obvious next action, exceptions only, then a
+ * scannable list of meters. Panels, radii, pastel figures, icon rings and
+ * hairline rows are the same tokens the Dashboard uses.
+ */
 .my-shift {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-4);
   width: 100%;
   max-width: 40rem;
   margin-inline: auto;
@@ -12,67 +17,376 @@
   margin: 0;
 }
 
+/* Header ------------------------------------------------------------------- */
+
 .my-shift-header {
   display: grid;
-  gap: var(--space-1-5);
+  gap: var(--space-1);
 }
 
 .my-shift-header h1 {
-  font-size: var(--font-size-3xl);
+  /* Same fluid scale as the page title: a long station name stays readable on a phone. */
+  font-size: clamp(var(--font-size-xl), 1rem + 1.4vw, var(--font-size-2xl));
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-tight);
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
+.my-shift-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+/* Time and status are the facts; the shift's own label is background. */
 .my-shift-when {
-  color: var(--text-secondary);
-  font-size: var(--font-size-lg);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.my-shift-label {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
 }
 
 .my-shift-live {
   min-height: 0;
 }
 
+/* The announcer must stay in the DOM, but while empty it must not add a grid gap. */
+.my-shift-live:empty {
+  position: absolute;
+}
+
 .my-shift-notice {
   padding: var(--space-3) var(--space-4);
   border: var(--border-width) solid var(--tone-positive-border, var(--border-default));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--tone-positive-bg);
   color: var(--tone-positive-text, var(--text-primary));
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-medium);
 }
 
-.my-shift-next,
-.my-shift-card {
+/* Key figures --------------------------------------------------------------- */
+
+.my-shift-figures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.my-shift-figure {
+  display: flex;
+  min-width: 0;
+  min-height: 5.25rem;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-1-5);
+  padding: var(--space-2-5, 0.625rem) var(--space-3);
+  border-radius: var(--radius-2xl);
+  background: var(--figure-bg);
+  color: #14201e;
+}
+
+.my-shift-figure[data-tone='done'] {
+  --figure-bg: #b5e6d0;
+}
+
+.my-shift-figure[data-tone='pending'] {
+  --figure-bg: #d9d2bd;
+}
+
+.my-shift-figure[data-tone='due'] {
+  --figure-bg: #ecd57a;
+}
+
+/* Nothing due: the card steps back instead of shouting a zero. */
+.my-shift-figure[data-tone='due']:not([data-active]) {
+  --figure-bg: #c3d9b8;
+  opacity: 0.8;
+}
+
+.my-shift-figure-icon {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(20 32 30 / 0.14);
+}
+
+.my-shift-figure-icon svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+
+.my-shift-figure dt {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.my-shift-figure dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-1-5);
+}
+
+.my-shift-figure-value {
+  font-size: var(--font-size-2xl, 1.5rem);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+}
+
+.my-shift-figure-caption {
+  font-size: var(--font-size-xs);
+  opacity: 0.7;
+}
+
+/* Panels ---------------------------------------------------------------------- */
+
+.my-shift-panel {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
+  border: var(--border-width) solid var(--border-glass);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-glass);
+  box-shadow: var(--shadow-glass);
 }
 
-.my-shift h2 {
-  font-size: var(--font-size-lg);
+/* Same quiet section label the Dashboard uses. */
+.my-shift-section-title {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.my-shift-side {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Next action -------------------------------------------------------------------- */
+
+.my-shift-next-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.my-shift-ring {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--palette-brand-400);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--palette-brand-400) 18%, transparent);
+  color: var(--palette-brand-400);
+}
+
+.my-shift-ring svg {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .my-shift-next-text {
-  color: var(--text-secondary);
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  color: var(--text-primary);
   font-size: var(--font-size-base);
-  line-height: var(--line-height-normal);
+  line-height: var(--line-height-snug);
+  overflow-wrap: anywhere;
+}
+
+.my-shift-next-text strong {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.my-shift-next-text span {
+  color: var(--text-secondary);
+}
+
+/* A message with no pump to name reads as plain text, not a caption. */
+.my-shift-next-text:not(:has(strong)) span {
+  color: var(--text-primary);
+}
+
+/* All clear: one quiet line, the heading stays for screen readers. */
+.my-shift-panel[data-empty] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+}
+
+.my-shift-panel[data-empty] .my-shift-section-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.my-shift-panel[data-empty] svg {
+  flex: 0 0 auto;
+  color: var(--tone-positive-text);
+}
+
+/* Needs attention ------------------------------------------------------------------ */
+
+.my-shift-attention {
+  padding: 0;
+  list-style: none;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.my-shift-attention > li {
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.my-shift-attention-row {
+  display: flex;
+  width: 100%;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+}
+
+button.my-shift-attention-row {
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+button.my-shift-attention-row:hover,
+button.my-shift-attention-row:focus-visible {
+  background: var(--bg-hover);
+}
+
+/* Rows sit edge to edge in a list, so the ring goes inside to stay clear of neighbours. */
+button.my-shift-attention-row:focus-visible {
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.my-shift-attention-icon {
+  flex: 0 0 auto;
+  color: var(--tone-warning-text);
+}
+
+.my-shift-attention-text {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.my-shift-attention-title {
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.my-shift-attention-detail {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.my-shift-attention-chevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.my-shift-attention-more {
+  padding: var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.my-shift-quiet {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Meters -------------------------------------------------------------------------- */
+
+.my-shift-columns {
+  display: none;
 }
 
 .my-shift-meters {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .my-shift-list {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: 0;
   list-style: none;
+}
+
+.my-shift-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border-glass);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-glass);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Due and problem meters carry an accent bar; finished ones recede. */
+.my-shift-card[data-tone='due'] {
+  box-shadow:
+    inset 4px 0 0 var(--tone-warning-text),
+    var(--shadow-glass);
+}
+
+.my-shift-card[data-tone='issue'] {
+  box-shadow:
+    inset 4px 0 0 var(--tone-critical-text),
+    var(--shadow-glass);
+}
+
+.my-shift-card[data-tone='done'] {
+  border-color: var(--border-subtle);
+  background: transparent;
+  box-shadow: none;
+}
+
+.my-shift-card[data-tone='done'] :is(h3, p, .my-shift-value) {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal, 400);
+}
+
+/* Waiting steps and finished steps are plain text, not pills; only due and problem states keep one. */
+.my-shift-card .status-neutral,
+.my-shift-card[data-tone='done'] .status {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-tertiary);
+}
+
+.my-shift-record {
+  justify-self: stretch;
 }
 
 .my-shift-card-head {
@@ -80,50 +394,60 @@
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-0-5, 2px) var(--space-3);
 }
 
 .my-shift-card-head h3 {
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
 }
 
 .my-shift-card-head p {
   color: var(--text-secondary);
   font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
 }
 
 .my-shift-steps {
   display: grid;
-  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
 .my-shift-step {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .my-shift-step dt {
   color: var(--text-secondary);
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
 }
 
 .my-shift-step dd {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
   min-width: 0;
 }
 
+/* Long state text wraps inside the card instead of forcing a sideways scroll. */
+.my-shift .status {
+  height: auto;
+  padding-block: 2px;
+  white-space: normal;
+}
+
 .my-shift-value {
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
   overflow-wrap: anywhere;
 }
+
+/* Capture form ------------------------------------------------------------------- */
 
 .my-shift-form {
   display: grid;
@@ -161,14 +485,158 @@
   min-height: var(--touch-target-min);
 }
 
-.my-shift-form-help,
-.my-shift-empty {
+.my-shift-form-help {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+}
+
+/* Nothing to show yet: a quiet dashed card, same shape as the cards it stands in for. */
+.my-shift-empty {
+  padding: var(--space-5) var(--space-4);
+  border: var(--border-width) dashed var(--border-default);
+  border-radius: var(--radius-2xl);
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  text-align: center;
+  text-wrap: balance;
+}
+
+@media (min-width: 40rem) {
+  .my-shift-figure {
+    min-height: 6rem;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .my-shift-figure-value {
+    font-size: var(--font-size-3xl, 1.875rem);
+  }
 }
 
 @media (min-width: 48rem) {
   .my-shift-form-actions {
     grid-template-columns: 1fr auto;
+  }
+}
+
+/* Desktop: meters on the left, what matters now (next action, attention) on the right. */
+@media (min-width: 64rem) {
+  .my-shift {
+    max-width: 72rem;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    grid-template-areas:
+      'header header'
+      'live live'
+      'figures figures'
+      'meters side';
+    align-items: start;
+    column-gap: var(--space-6);
+  }
+
+  .my-shift-header {
+    grid-area: header;
+  }
+
+  .my-shift-live {
+    grid-area: live;
+  }
+
+  .my-shift-figures {
+    grid-area: figures;
+  }
+
+  .my-shift-meters,
+  .my-shift-empty {
+    grid-area: meters;
+  }
+
+  /* The next action and exceptions stay in view while a long meter list scrolls. */
+  .my-shift-side {
+    grid-area: side;
+    position: sticky;
+    top: calc(var(--space-4) + var(--shell-header-height, 4rem));
+  }
+
+  /* One short row per nozzle: pump, fuel, opening, closing, action. */
+  .my-shift-meters {
+    --meter-cols: minmax(6rem, 0.9fr) minmax(0, 1.2fr) minmax(7rem, 1fr) minmax(8.5rem, 1.1fr)
+      5.5rem;
+    gap: var(--space-1);
+  }
+
+  .my-shift-meters > .my-shift-section-title {
+    margin-bottom: var(--space-1);
+  }
+
+  .my-shift-columns {
+    display: grid;
+    grid-template-columns: var(--meter-cols);
+    column-gap: var(--space-4);
+    padding-inline: var(--space-4);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .my-shift-list {
+    gap: var(--space-1-5);
+  }
+
+  .my-shift-card {
+    grid-template-columns: var(--meter-cols);
+    align-items: center;
+    column-gap: var(--space-4);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-xl);
+  }
+
+  .my-shift-card > .my-shift-form {
+    grid-column: 1 / -1;
+  }
+
+  /* The wrappers dissolve so name, fuel and both steps become the row's columns. */
+  .my-shift-card-head,
+  .my-shift-steps {
+    display: contents;
+  }
+
+  .my-shift-card-head h3,
+  .my-shift-card-head p {
+    min-width: 0;
+  }
+
+  .my-shift-card-head p {
+    font-size: var(--font-size-base);
+  }
+
+  /* The column header names each step, so the in-row label is for screen readers only. */
+  .my-shift-step dt {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .my-shift-step {
+    position: relative;
+    gap: 0;
+  }
+
+  .my-shift-step dd {
+    gap: 2px;
+  }
+
+  .my-shift .my-shift-record {
+    min-height: 2.25rem;
+    padding-inline: var(--space-2);
+    font-size: var(--font-size-sm);
+  }
+
+  .my-shift-card[data-tone='done'] {
+    padding-block: var(--space-1-5);
   }
 }

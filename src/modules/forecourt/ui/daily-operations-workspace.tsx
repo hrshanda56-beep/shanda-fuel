@@ -1555,7 +1555,7 @@ export function DailyOperationsContextRequired() {
     <>
       <div className="page-header">
         <div>
-          <p className="lede">Choose an authorised station to begin.</p>
+          <p className="lede">Choose a station to begin.</p>
         </div>
       </div>
       <Card as="section" className="panel" aria-labelledby="operations-context-title">
@@ -1563,7 +1563,7 @@ export function DailyOperationsContextRequired() {
           eyebrow="Station context"
           title="Choose a station"
           headingId="operations-context-title"
-          detail="Use Change above to choose an authorised station, business date, and shift."
+          detail="Use the station selector above to choose a station, business date and shift."
         />
         <p>The daily workspace will load once the selected work context is ready.</p>
       </Card>

@@ -712,7 +712,7 @@ export function InventoryContextRequired() {
       <ContextRequiredState
         headingLevel={2}
         title="Choose a station to view inventory"
-        message="Use Change above to choose an authorised organisation, legal entity, and station. Inventory is available for one station at a time."
+        message="Use the station selector above to choose a station. Inventory is shown for one station at a time."
       />
     </Card>
   );

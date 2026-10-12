@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { isDesignSystemReferenceAvailable } from './availability';
+import { isDesignSystemReferenceAvailable, isDevOnlySurfaceAvailable } from './availability';
 
-describe('design-system reference availability', () => {
-  it('is unavailable in production builds', () => {
-    expect(isDesignSystemReferenceAvailable('production')).toBe(false);
+describe('development-only surface availability', () => {
+  it('is available only under next dev', () => {
+    expect(isDevOnlySurfaceAvailable('development')).toBe(true);
+    expect(isDesignSystemReferenceAvailable('development')).toBe(true);
   });
 
-  it('is available in development and test', () => {
-    expect(isDesignSystemReferenceAvailable('development')).toBe(true);
-    expect(isDesignSystemReferenceAvailable('test')).toBe(true);
+  it('fails closed for production, test and anything unexpected', () => {
+    for (const nodeEnv of ['production', 'test', 'staging', 'Development', '', undefined]) {
+      expect(isDevOnlySurfaceAvailable(nodeEnv)).toBe(false);
+      expect(isDesignSystemReferenceAvailable(nodeEnv)).toBe(false);
+    }
   });
 });

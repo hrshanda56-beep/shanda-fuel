@@ -256,6 +256,10 @@ jobs:
           test -s runtime-readiness.json
           grep -q '"status":"ok"' runtime-readiness.json
           curl --fail --silent --show-error http://127.0.0.1:3100/api/health > runtime-health.json
+      - name: Assert development-only routes are denied by the production server
+        run: bash scripts/ci/assert-dev-routes-denied.sh http://127.0.0.1:3100
+      - name: Assert the synthetic E2E navigation fixture is denied by the production server
+        run: bash scripts/ci/assert-navigation-fixture-denied.sh http://127.0.0.1:3100
       - name: Stop runtime-role proof server
         if: always()
         run: |

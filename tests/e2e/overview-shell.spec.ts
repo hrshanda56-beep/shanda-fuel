@@ -1,6 +1,19 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+/** Overlays fade and rise in; axe must sample their settled colours, not a frame mid-fade. */
+async function animationsSettled(page: Page) {
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== 'running' ||
+          animation.effect?.getComputedTiming().endTime === Infinity,
+      ),
+  );
+}
+
 /** The overview stays truthful until live reporting data is available. */
 
 test.beforeEach(async ({ page }) => {
@@ -46,8 +59,29 @@ function operationsOverview(close: string, approval = 'NO_REVISION') {
 
 async function mockToday(
   page: Page,
-  options: { operations?: { status: number; body: unknown }; customers?: unknown[] } = {},
+  options: {
+    operations?: { status: number; body: unknown };
+    customers?: unknown[];
+    daily?: unknown[];
+    sales?: unknown[];
+  } = {},
 ) {
+  await page.route('**/api/reports/daily**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        report: 'DAILY_OPERATIONS',
+        filters: { fromDate: '2026-10-08' },
+        rows: options.daily ?? [],
+      }),
+    });
+  });
+  await page.route('**/api/reports/management**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ sales: { rows: options.sales ?? [] } }),
+    });
+  });
   await page.route('**/api/forecourt/operations/overview**', async (route) => {
     const { status, body } = options.operations ?? {
       status: 200,
@@ -74,21 +108,211 @@ test('today asks for a station instead of showing empty figures', async ({ page 
   await expect(page.locator('.card')).toHaveCount(0);
 });
 
-test('key figures show real counts and honest placeholders', async ({ page }) => {
+function dailyRow(overrides: Record<string, unknown> = {}) {
+  return {
+    reportDate: '2026-10-08',
+    stationId: STATION,
+    stationCode: 'BIN',
+    litresSold: '1284.4',
+    salesValue: '2484.12',
+    cashVariance: '-30.85',
+    inventoryVariance: '0',
+    customerCreditEvidence: '100',
+    prepaidEvidence: '0',
+    reconciliationIds: ['rec-1'],
+    ...overrides,
+  };
+}
+
+test('key figures say when no approved report exists yet', async ({ page }) => {
+  await mockToday(page);
+  await page.goto(TODAY);
+  const figures = page.locator('.today-figures');
+  for (const label of ['Sales today', 'Litres sold', 'Cash variance', 'Account sales']) {
+    await expect(figures.locator('.today-figure', { hasText: label })).toContainText(
+      'No approved report yet',
+    );
+  }
+  const note = page.locator('.today-figures-note');
+  await expect(note).toContainText('Approved figures for 08 Oct 2026');
+  await expect(note).toContainText('Expected cash and stock variance are not available yet.');
+  await expect(page.getByRole('heading', { name: 'Sales performance Litres' })).toBeVisible();
+  await expect(page.getByText('No approved sales in this period yet.')).toBeVisible();
+  await expect(page.locator('.card')).toHaveCount(0);
+});
+
+test('key figures show approved totals with signed variances', async ({ page }) => {
+  await mockToday(page, { daily: [dailyRow()] });
+  await page.goto(TODAY);
+  const figures = page.locator('.today-figures');
+  await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+    'USD 2,484.12',
+  );
+  await expect(figures.locator('.today-figure', { hasText: 'Litres sold' })).toContainText(
+    '1,284 L',
+  );
+  const cash = figures.locator('.today-figure', { hasText: 'Cash variance' });
+  await expect(cash).toContainText('−USD 30.85');
+  await expect(cash).toContainText('Cash short');
+  await expect(figures.locator('.today-figure', { hasText: 'Account sales' })).toContainText(
+    'USD 100.00',
+  );
+});
+
+test('daily figures are requested for the selected station and the server business date', async ({
+  page,
+}) => {
+  await mockToday(page, { daily: [dailyRow()] });
+  const request = page.waitForRequest('**/api/reports/daily**');
+  await page.goto(TODAY);
+  const url = new URL((await request).url());
+  expect(url.searchParams.get('tenantId')).toBe(TENANT);
+  expect(url.searchParams.get('stationIds')).toBe(STATION);
+  // The server resolves "today" in the station's business timezone.
+  expect(url.searchParams.has('fromDate')).toBe(false);
+  expect(url.searchParams.has('toDate')).toBe(false);
+});
+
+test('an approved zero is shown as zero, unlike a day with no approved report', async ({
+  page,
+}) => {
   await mockToday(page, {
-    customers: [{ status: 'ACTIVE' }, { status: 'ACTIVE' }, { status: 'SUSPENDED' }],
+    daily: [dailyRow({ salesValue: '0.0000', litresSold: '0', cashVariance: '0.0000' })],
   });
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
-  await expect(figures.locator('.today-figure', { hasText: 'Shifts open' })).toContainText('1');
-  await expect(figures.locator('.today-figure', { hasText: 'Active customers' })).toContainText(
-    '2',
-  );
   await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
-    'Not connected yet',
+    'USD 0.00',
   );
-  await expect(page.getByRole('heading', { name: 'Sales performance Statistic' })).toBeVisible();
-  await expect(page.locator('.card')).toHaveCount(0);
+  await expect(figures.locator('.today-figure', { hasText: 'Cash variance' })).toContainText(
+    'No cash variance',
+  );
+  await expect(figures).not.toContainText('No approved report yet');
+  await expect(figures).not.toContainText('Stock variance');
+});
+
+test('figures fit their cards without splitting a number, at every width', async ({ page }) => {
+  await mockToday(page, {
+    daily: [dailyRow({ salesValue: '120000', cashVariance: '-12345.67' })],
+  });
+  for (const width of [320, 375, 1024, 1280, 1360, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(TODAY);
+    await expect(page.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+      'USD 120,000.00',
+    );
+    const overflow = await page.locator('.today-figure-value').evaluateAll((values) =>
+      values
+        .map((value) => {
+          const range = document.createRange();
+          range.selectNodeContents(value);
+          const widest = Math.max(...[...range.getClientRects()].map((rect) => rect.width));
+          return { text: value.textContent, widest, box: value.clientWidth };
+        })
+        .filter(({ widest, box }) => widest > box + 1),
+    );
+    expect(overflow, `width ${width}`).toEqual([]);
+  }
+});
+
+test('the sales chart is also available as a keyboard-operable table', async ({ page }) => {
+  const harare = (offsetDays: number) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Harare' }).format(
+      new Date(Date.now() - offsetDays * 86_400_000),
+    );
+  const today = harare(0);
+  const yesterday = harare(1);
+  await mockToday(page, {
+    sales: [
+      { businessDate: yesterday, productName: 'Diesel 50ppm', litres: '578.400' },
+      { businessDate: yesterday, productName: 'ULP 95', litres: '706.000' },
+      { businessDate: today, productName: 'Diesel 50ppm', litres: '10' },
+    ],
+  });
+  await page.goto(TODAY);
+  await page.getByRole('group', { name: 'Period' }).getByRole('button', { name: '7D' }).click();
+
+  const summary = page.locator('.today-chart-table > summary');
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  const table = page.getByRole('table', { name: /Litres sold, 7D, from approved reports only/ });
+  await expect(table).toBeVisible();
+  await expect(table.getByRole('columnheader')).toHaveText([
+    'Business date',
+    'Litres sold',
+    'Diesel 50ppm',
+    'ULP 95',
+  ]);
+  const rows = table.locator('tbody tr');
+  await expect(rows).toHaveCount(7);
+  // Oldest day: no approved report, said in words rather than shown as 0.
+  await expect(rows.first()).toContainText('No approved report');
+  await expect(rows.first()).not.toContainText('0 L');
+  // Yesterday: exact totals per configured product.
+  await expect(rows.nth(5)).toContainText('1,284 L');
+  await expect(rows.nth(5)).toContainText('578 L');
+  await expect(rows.nth(5)).toContainText('706 L');
+  // Today: a product without an approved row is unavailable, not zero.
+  await expect(rows.nth(6)).toContainText('10 L');
+  await expect(rows.nth(6).locator('td').last()).toContainText('No approved figure');
+
+  const results = await new AxeBuilder({ page }).include('.today-chart-table').analyze();
+  expect(results.violations).toEqual([]);
+});
+
+test('the phone dock gives More the same tap target as the other tabs', async ({ page }) => {
+  await mockToday(page);
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(TODAY);
+    const dock = page.getByRole('navigation', { name: 'Mobile navigation' });
+    const sizes = await dock
+      .locator('a, button')
+      .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().width));
+    expect(sizes.length, `width ${width}`).toBeGreaterThan(1);
+    const more = sizes[sizes.length - 1] ?? 0;
+    expect(more, `width ${width}`).toBeGreaterThanOrEqual(44);
+    for (const size of sizes)
+      expect(Math.abs(size - more), `width ${width}`).toBeLessThanOrEqual(1);
+  }
+});
+
+test('a cash shortage stays readable on its pastel card in dark mode', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await mockToday(page, { daily: [dailyRow()] });
+  for (const width of [375, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(TODAY);
+    const value = page.locator('.today-figure[data-tone="short"] .today-figure-value');
+    await expect(value).toHaveText('−USD 30.85');
+    await expect(value).toHaveCSS('color', 'rgb(143, 29, 29)');
+  }
+});
+
+test('rows without an approved reconciliation are not shown as zero sales', async ({ page }) => {
+  await mockToday(page, {
+    daily: [
+      dailyRow({ salesValue: '0', litresSold: '0', cashVariance: '0', reconciliationIds: [] }),
+    ],
+  });
+  await page.goto(TODAY);
+  await expect(page.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
+    'No approved report yet',
+  );
+});
+
+test('sales trend offers business-day ranges and no hourly view', async ({ page }) => {
+  await mockToday(page);
+  await page.goto(TODAY);
+  const periods = page.getByRole('group', { name: 'Period' });
+  for (const option of ['7D', '30D', '90D', '12M']) {
+    await expect(periods.getByRole('button', { name: option })).toBeVisible();
+  }
+  await expect(periods.getByRole('button', { name: '24H' })).toHaveCount(0);
+  await expect(periods.getByRole('button', { name: '30D' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 });
 
 test('today shows the station day and calm attention list', async ({ page }) => {
@@ -256,6 +480,7 @@ test.describe('today hardening', () => {
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer).toBeVisible();
 
+    await animationsSettled(page);
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
 
@@ -284,6 +509,7 @@ test.describe('today hardening', () => {
     await rail.getByRole('button', { name: 'Finance' }).click();
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toBeVisible();
+    await animationsSettled(page);
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
   });
@@ -322,6 +548,7 @@ test.describe('today hardening', () => {
     }
     await page.getByRole('button', { name: 'More' }).click();
     await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible();
+    await animationsSettled(page);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 });

@@ -9,7 +9,8 @@ import {
   type ContextResolution,
   type ContextSelection,
 } from '@/modules/context';
-import { formatMoney } from '../../../design-system/formatters';
+import { formatStatusLabel } from '../../../design-system/formatters';
+import { formatTileMoney } from '@/modules/reporting/format';
 import {
   AccessDeniedState,
   Button,
@@ -24,6 +25,18 @@ import {
 } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
+import { ProviderDonut } from './provider-donut';
+import {
+  methodLabel,
+  methodTotals,
+  providerShares,
+  settlementCounts,
+  settlementStateLabel,
+} from './settlement-summary';
+
+function money(value: string, currency = 'USD'): string {
+  return formatTileMoney(value, currency);
+}
 
 type SettlementContext = ContextSelection & {
   canonicalHref: string;
@@ -65,10 +78,6 @@ function settlementTone(state: ProviderSettlementSummaryRow['state']) {
     default:
       return 'informational' as const;
   }
-}
-
-function settlementStateLabel(state: ProviderSettlementSummaryRow['state']): string {
-  return state.replaceAll('_', ' ');
 }
 
 function isApiError(value: unknown): value is ApiError {
@@ -143,11 +152,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         message?: string;
       } | null;
       if (!response.ok || !body?.data) {
-        throw apiError(
-          body?.message ?? 'The authorised station context could not be loaded.',
-          body?.error,
-          true,
-        );
+        throw apiError(body?.message ?? 'The station could not be loaded.', body?.error, true);
       }
 
       const current = body.data.current;
@@ -158,11 +163,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         !current.stationId ||
         current.stationId !== stationId
       ) {
-        throw apiError(
-          'Choose the authorised station for this settlement workspace before loading settlement data.',
-          'FORBIDDEN',
-          true,
-        );
+        throw apiError('Use the station selector above to choose a station.', 'FORBIDDEN', true);
       }
       const canonicalHref = buildContextHref(pathname, window.location.search, current);
       return { ...current, canonicalHref };
@@ -444,27 +445,16 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
     return (
       <div className="content-grid">
         <Card as="section" className="panel" aria-label="Provider settlements">
-          <div className="panel-heading">
-            <StatusBadge tone="pending">Station context required</StatusBadge>
-          </div>
-          <p>
-            Settlement evidence is always loaded for one authorised station. Provider setup and
-            settlement recording are unavailable until the required account details are available.
-          </p>
+          <p>Settlements are shown for one station at a time.</p>
           {workspaceState === 'loading' ? (
-            <LoadingState label="Resolving authorised station context" />
+            <LoadingState label="Loading" />
           ) : workspaceState === 'required' ? (
             <ContextRequiredState
-              title="Choose an authorised station"
-              message={
-                contextMessage ||
-                'Use the work-context control above to select one authorised station before loading settlement data.'
-              }
+              title="Choose a station"
+              message={contextMessage || 'Use the station selector above to choose a station.'}
             />
           ) : (
-            <ErrorState
-              message={contextMessage || 'The authorised station context is unavailable.'}
-            />
+            <ErrorState message={contextMessage || 'The station could not be loaded.'} />
           )}
         </Card>
       </div>
@@ -476,10 +466,54 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   const canShowUnmatchedRows =
     !loading && unmatched.length > 0 && (!error || errorKind === 'conflict');
 
+  const methods = methodTotals(unmatched);
+  const counts = settlementCounts(settlements);
+  const shares = providerShares(settlements);
+  const dataReady = !loading && !error;
+
   return (
     <div className="content-grid">
-      <Card as="section" className="panel" aria-label="Provider settlements">
+      {dataReady ? (
+        <dl className="summary-strip content-span" aria-label="Settlement summary">
+          {(['ECOCASH', 'POS'] as const).map((method) => {
+            const total = methods.find((row) => row.method === method);
+            return (
+              <div key={method} data-tone={total ? 'warning' : undefined}>
+                <dt>{methodLabel(method)} waiting to match</dt>
+                <dd>
+                  {total ? money(total.remaining) : money('0')}
+                  <span className="summary-strip-note">
+                    {total
+                      ? `${total.count} ${total.count === 1 ? 'payment' : 'payments'}`
+                      : 'Nothing waiting'}
+                  </span>
+                </dd>
+              </div>
+            );
+          })}
+          <div>
+            <dt>Settlements not reconciled</dt>
+            <dd>{counts.open}</dd>
+          </div>
+          <div data-tone={counts.exceptions > 0 ? 'warning' : undefined}>
+            <dt>Exceptions</dt>
+            <dd>{counts.exceptions}</dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {dataReady && shares.length > 0 ? (
+        <Card as="section" className="panel" aria-labelledby="settled-by-provider-title">
+          <div className="panel-heading">
+            <h2 id="settled-by-provider-title">Settled by provider</h2>
+          </div>
+          <ProviderDonut shares={shares} />
+        </Card>
+      ) : null}
+
+      <Card as="section" className="panel content-span" aria-labelledby="settlements-title">
         <div className="panel-heading">
+          <h2 id="settlements-title">Provider settlements</h2>
           <Button
             variant="secondary"
             type="button"
@@ -489,13 +523,9 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             Refresh
           </Button>
         </div>
-        <p>
-          POS and ECOCASH evidence is matched separately from cash custody and bank deposits. A
-          settlement date may lag the transaction date.
-        </p>
         <p className="field-hint">
-          Provider setup and settlement recording are unavailable in this view until the required
-          account details are available.
+          EcoCash and card (POS) payments are matched here, separately from cash and bank deposits.
+          A provider may settle a few days after the sale.
         </p>
         {loading ? <LoadingState label="Loading provider settlements" /> : null}
         {error && errorKind === 'conflict' ? <ConflictState message={error} /> : null}
@@ -509,12 +539,12 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         {!loading && !error && settlements.length === 0 ? (
           <EmptyState
             title="No provider settlements yet"
-            message="Record a provider statement or import after provider-account onboarding is available."
+            message="Settlements appear here once a provider statement has been recorded."
           />
         ) : null}
         {canShowSettlementRows ? (
           <TableScrollRegion label="Provider settlement reconciliation">
-            <table className="responsive-table">
+            <table className="responsive-table settlement-table">
               <caption className="visually-hidden">Provider settlement reconciliation</caption>
               <thead>
                 <tr>
@@ -545,34 +575,37 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                       <td data-label="Dates">
                         <span className="numeric">{row.transactionDate}</span>
                         <br />
-                        <small>Settled {row.settlementDate}</small>
+                        <small>
+                          Settled <span className="numeric">{row.settlementDate}</span>
+                        </small>
                       </td>
                       <td data-label="Gross" className="numeric">
-                        {formatMoney(row.grossAmount)}
+                        {money(row.grossAmount, row.currency)}
                       </td>
                       <td data-label="Allocated" className="numeric">
-                        {formatMoney(row.allocatedAmount)}
+                        {money(row.allocatedAmount, row.currency)}
                       </td>
                       <td data-label="Unallocated" className="numeric">
-                        {formatMoney(row.unallocatedProviderAmount)}
+                        {money(row.unallocatedProviderAmount, row.currency)}
                       </td>
                       <td data-label="Fees / deductions" className="numeric">
                         <span>
-                          Fee {row.providerFeeAmount ? formatMoney(row.providerFeeAmount) : '—'}
+                          Fee{' '}
+                          {row.providerFeeAmount ? money(row.providerFeeAmount, row.currency) : '—'}
                         </span>
                         <br />
                         <small>
                           Deduction{' '}
                           {row.providerDeductionAmount
-                            ? formatMoney(row.providerDeductionAmount)
+                            ? money(row.providerDeductionAmount, row.currency)
                             : '—'}
                         </small>
                       </td>
                       <td data-label="Reported net" className="numeric">
-                        {row.reportedNetAmount ? formatMoney(row.reportedNetAmount) : '—'}
+                        {row.reportedNetAmount ? money(row.reportedNetAmount, row.currency) : '—'}
                       </td>
                       <td data-label="Variance" className="numeric">
-                        {formatMoney(row.varianceAmount)}
+                        {money(row.varianceAmount, row.currency)}
                       </td>
                       <td data-label="Status">
                         <StatusBadge tone={settlementTone(row.state)}>
@@ -623,7 +656,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                             ) : null}
                           </div>
                         ) : (
-                          <span>Finalized</span>
+                          <span>Done</span>
                         )}
                       </td>
                     </tr>
@@ -635,18 +668,14 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         ) : null}
       </Card>
 
-      <Card as="section" className="panel" aria-labelledby="matching-title">
+      <Card as="section" className="panel content-span" aria-labelledby="matching-title">
         <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Named allocation</p>
-            <h2 id="matching-title">Match electronic payment evidence</h2>
-          </div>
-          <StatusBadge tone="informational">No automatic inference</StatusBadge>
+          <h2 id="matching-title">Match payments to a settlement</h2>
         </div>
         {!loading && !error && unmatched.length === 0 ? (
           <EmptyState
-            title="No unmatched POS or ECOCASH evidence"
-            message="Provider evidence from approved, posted, and locked reconciliations appears here until fully allocated."
+            title="No EcoCash or card payments waiting"
+            message="Payments from approved shift reports appear here until they are matched to a settlement."
           />
         ) : null}
         {canShowUnmatchedRows ? (
@@ -667,21 +696,23 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                   {unmatched.map((row) => (
                     <tr key={row.paymentId}>
                       <td data-label="Method / reference">
-                        <strong>{row.method}</strong>
+                        <strong>{methodLabel(row.method)}</strong>
                         <br />
                         {row.reference ?? row.paymentId.slice(0, 12)}
                       </td>
                       <td data-label="Business date" className="numeric">
-                        {row.businessDate}
+                        <span className="numeric">{row.businessDate}</span>
                       </td>
                       <td data-label="Reconciliation">
-                        <StatusBadge tone="informational">{row.reconciliationState}</StatusBadge>
+                        <StatusBadge tone="informational">
+                          {formatStatusLabel(row.reconciliationState)}
+                        </StatusBadge>
                       </td>
                       <td data-label="Evidence amount" className="numeric">
-                        {formatMoney(row.amount)}
+                        {money(row.amount)}
                       </td>
                       <td data-label="Remaining" className="numeric">
-                        {formatMoney(row.unallocatedAmount)}
+                        {money(row.unallocatedAmount)}
                       </td>
                     </tr>
                   ))}
@@ -689,7 +720,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               </table>
             </TableScrollRegion>
             <form
-              className="demo-form"
+              className="demo-form settlement-match-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 void allocate();
@@ -705,7 +736,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                   {settlements.map((row) => (
                     <option key={row.settlementId} value={row.settlementId}>
                       {row.providerName} · {row.settlementReference} ·{' '}
-                      {row.unallocatedProviderAmount}
+                      {money(row.unallocatedProviderAmount, row.currency)} left
                     </option>
                   ))}
                 </select>
@@ -719,8 +750,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                   <option value="">Select payment evidence</option>
                   {unmatched.map((row) => (
                     <option key={row.paymentId} value={row.paymentId}>
-                      {row.method} · {row.businessDate} · {row.unallocatedAmount} ·{' '}
-                      {row.reference ?? row.paymentId.slice(0, 8)}
+                      {methodLabel(row.method)} · {row.businessDate} ·{' '}
+                      {money(row.unallocatedAmount)} · {row.reference ?? row.paymentId.slice(0, 8)}
                     </option>
                   ))}
                 </select>
@@ -728,7 +759,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               <Field
                 id="allocation-amount"
                 label="Allocation amount"
-                hint="Use an exact decimal amount. The server checks both remaining capacities."
+                hint="Up to the amount left on both the payment and the settlement."
                 error={amountError}
                 required
               >
@@ -740,7 +771,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                     setAmount(event.target.value);
                     setAmountError(undefined);
                   }}
-                  placeholder="0.0000"
+                  placeholder="0.00"
                   required
                 />
               </Field>
@@ -757,9 +788,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         ) : null}
         {loading ? <LoadingState label="Loading unmatched payment evidence" /> : null}
         {error ? (
-          <p className="field-hint">
-            Matching actions are unavailable until the latest data loads.
-          </p>
+          <p className="field-hint">Matching is unavailable until the latest figures load.</p>
         ) : null}
       </Card>
     </div>

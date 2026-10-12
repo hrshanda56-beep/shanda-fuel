@@ -19,11 +19,12 @@ import {
   Field,
   LoadingState,
   SuccessState,
-  StatusBadge,
 } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
 import { PageHeader } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import { exact, sumExact } from '@/modules/reporting/domain';
+import { formatTileMoney } from '@/modules/reporting/format';
 
 type SupplierSummary = {
   supplierId: string;
@@ -234,6 +235,15 @@ export function SupplierWorkspace() {
   }
 
   const supplierSelection = current;
+  const totals = useMemo(
+    () => ({
+      current: sumExact(rows.map((row) => row.current)),
+      overdue: sumExact(rows.map((row) => row.overdue)),
+      total: sumExact(rows.map((row) => row.total)),
+      overdueCount: rows.filter((row) => exact(row.overdue).value.greaterThan(0)).length,
+    }),
+    [rows],
+  );
 
   return (
     <div className="content-grid">
@@ -257,7 +267,7 @@ export function SupplierWorkspace() {
         }
       />
 
-      {contextLoading ? <LoadingState label="Loading authorised context" /> : null}
+      {contextLoading ? <LoadingState label="Loading" /> : null}
       {contextError ? (
         <ErrorState
           message={contextError}
@@ -267,20 +277,46 @@ export function SupplierWorkspace() {
       {!contextLoading && !contextError && !hasRequiredContext ? (
         <ContextRequiredState
           title="Select a legal entity"
-          message="Choose an authorised legal-entity context before creditor balances can be loaded."
+          message="Choose a company from the work context to see what it owes suppliers."
         />
       ) : null}
 
       {createSuccess ? <SuccessState title="Supplier created" message={createSuccess} /> : null}
 
+      {hasRequiredContext && supplierSelection && !loading && !error && rows.length > 0 ? (
+        <dl className="summary-strip content-span" aria-label="Payables summary">
+          <div>
+            <dt>Owed to suppliers</dt>
+            <dd>{formatTileMoney(totals.total)}</dd>
+          </div>
+          <div>
+            <dt>Not yet due</dt>
+            <dd>{formatTileMoney(totals.current)}</dd>
+          </div>
+          <div data-tone={totals.overdueCount > 0 ? 'warning' : undefined}>
+            <dt>Overdue</dt>
+            <dd>{formatTileMoney(totals.overdue)}</dd>
+          </div>
+          <div>
+            <dt>Suppliers overdue</dt>
+            <dd>
+              {totals.overdueCount} of {rows.length}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
       {hasRequiredContext && supplierSelection ? (
-        <Card as="section" className="panel" aria-labelledby="supplier-creditors-title">
+        <Card
+          as="section"
+          className="panel content-span"
+          aria-labelledby="supplier-creditors-title"
+        >
           <div className="panel-heading">
             <div>
               <p className="eyebrow">{currentLegalEntityName ?? 'Legal entity'}</p>
               <h2 id="supplier-creditors-title">Supplier balances</h2>
             </div>
-            <StatusBadge tone="informational">Legal-entity scoped</StatusBadge>
           </div>
           {loading ? <LoadingState label="Loading supplier balances" /> : null}
           {error ? (
@@ -292,17 +328,7 @@ export function SupplierWorkspace() {
           {!loading && !error && rows.length === 0 ? (
             <EmptyState
               title="No suppliers yet"
-              message="Supplier records will appear after onboarding."
-              action={
-                <Button
-                  onClick={() => {
-                    resetCreateForm();
-                    setCreateOpen(true);
-                  }}
-                >
-                  Add supplier
-                </Button>
-              }
+              message="Use Add supplier to create the first one."
             />
           ) : null}
           {!loading && !error && rows.length > 0 ? (
@@ -312,7 +338,7 @@ export function SupplierWorkspace() {
                 <thead>
                   <tr>
                     <th scope="col">Supplier</th>
-                    <th scope="col">Current</th>
+                    <th scope="col">Not yet due</th>
                     <th scope="col">Overdue</th>
                     <th scope="col">Total</th>
                   </tr>
@@ -333,14 +359,14 @@ export function SupplierWorkspace() {
                           {row.legalName}
                         </Link>
                       </td>
-                      <td data-label="Current" className="numeric">
-                        ${row.current}
+                      <td data-label="Not yet due" className="numeric">
+                        {formatTileMoney(row.current)}
                       </td>
                       <td data-label="Overdue" className="numeric">
-                        ${row.overdue}
+                        {formatTileMoney(row.overdue)}
                       </td>
                       <td data-label="Total" className="numeric">
-                        ${row.total}
+                        {formatTileMoney(row.total)}
                       </td>
                     </tr>
                   ))}
@@ -357,7 +383,7 @@ export function SupplierWorkspace() {
           if (!creating) setCreateOpen(false);
         }}
         title="Add supplier"
-        description="Create a supplier record in the currently authorised legal entity."
+        description={`The supplier is added to ${currentLegalEntityName ?? 'the selected company'}.`}
         dismissible={!creating}
         footer={
           <>

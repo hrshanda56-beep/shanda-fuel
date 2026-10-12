@@ -33,7 +33,7 @@ export default async function ReportDetailPage({
       ) : (
         <ContextRequiredState
           title="Choose an organisation to view this report"
-          message="Use Change above to choose an authorised organisation before loading reporting data."
+          message="Use the work context selector above to choose an organisation."
         />
       )}
     </AppShell>
