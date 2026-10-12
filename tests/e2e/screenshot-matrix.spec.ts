@@ -39,7 +39,8 @@ const screens = [
   {
     name: 'reconciliations',
     url: `/stations/${STATION}/reconciliations?tenantId=${TENANT}`,
-    ready: 'Reconciliations',
+    // The list card heading, not the page title (which renders while loading).
+    ready: 'Needs attention',
     mock: async (page: import('@playwright/test').Page) => {
       await mockContext(page, `/stations/${STATION}/reconciliations`);
       await mockOverview(page);
@@ -67,6 +68,10 @@ for (const screen of screens) {
         await expect(
           page.getByRole('heading', { name: screen.ready, exact: true }).first(),
         ).toBeVisible();
+        // The page title can match before data arrives: wait until nothing is
+        // still loading, so a capture never shows a loading state.
+        await expect(page.getByText(/^Loading\b/)).toHaveCount(0);
+        await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
         await page.screenshot({
           path: `${dir}/${screen.name}-${width}-${colorScheme}.png`,
           fullPage: true,
