@@ -1,10 +1,18 @@
 # Milestone A release runbook (production 0026 -> 0029)
 
-Status: PREPARED, NOT EXECUTED. Written 2026-10-12 on branch
-`ops/milestone-a-release-prep-20261012` (from `0f038ad`). Nothing in this
-document has been run against Neon production. Every production step is for a
-named human owner; no agent runs it. This runbook records no secrets and must
-never be extended with connection strings, tokens, cookies, or passwords.
+Status: PREPARED, NOT EXECUTED. Reconciled 2026-10-12 for the exact RC base
+`31e14e4ad8bdc49c1d9b6491e975589197a36b14`; the local release-engineering
+follow-up is recorded in the final handoff commit. Nothing in this document
+has been run against Neon production. Every production step is for a named
+human owner; no agent runs it. This runbook records no secrets and must never
+be extended with connection strings, tokens, cookies, or passwords.
+
+Release lock: production is verified at migration `0026`; `0027`, `0028`, and
+`0029` remain pending and must be applied exactly once, in that order, after
+the pre-migration branch, logical backup, and production-branch rehearsal pass.
+The candidate uses `AUTH_PROVIDER=BETTER_AUTH`; no Clerk, provider account,
+station setup, opening balance, historical import, or placeholder financial
+value is implied by this runbook.
 
 Related: [`deployment.md`](deployment.md), [`backup-restore.md`](backup-restore.md),
 [`production-configuration.md`](production-configuration.md),
@@ -94,6 +102,28 @@ vercel env ls production --project shanda-fuel -S shanda-hr-s-projects   # names
 vercel ls shanda-fuel -S shanda-hr-s-projects
 vercel project inspect shanda-fuel -S shanda-hr-s-projects
 ```
+
+### 1.5 Environment verification matrix (owner/operator; names first, values never printed)
+
+Run the commands in 1.4 from a dedicated checkout linked to the production
+project. The `env ls` result verifies names and target scope only; verify secret
+values in the Vercel dashboard or secret manager without pulling them into a
+worktree, shell history, logs, or chat.
+
+| Classification | Production value to verify | Evidence / rule |
+| --- | --- | --- |
+| Required | `APP_ENV=production`, `APP_URL=https://...`, `AUTH_PROVIDER=BETTER_AUTH` | The first two must be valid for the production hostname; `AUTH_PROVIDER` is mandatory for deployed builds. |
+| Required secret | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `AUDIT_SIGNING_KEY_ID`, `AUDIT_SIGNING_KEY` | Runtime database URL and signing/auth secrets must be present; record only names and secret-manager references. |
+| Required security | `REQUIRE_PRIVILEGED_STEP_UP=true`; owner decision for `REQUIRE_LOGIN_MFA` | Step-up is fail-closed by the application. MFA must be explicitly confirmed; its Config-type value was not decoded by the read-only preflight. |
+| Conditional | `R2_*`, `RESEND_*`, `CRON_SECRET` | Required only if the approved release enables private object storage, invitation email delivery, or scheduled jobs; verify from the intended production operating procedure, not by assumption. |
+| Must not be runtime | `DATABASE_DIRECT_URL` and disposable/test secrets | Direct migration credentials stay with the migration operator and are never placed in the deployed runtime. |
+| Not required for this milestone | Clerk credentials | Do not add or select Clerk keys while the candidate is `BETTER_AUTH`; that is a separate approved rollout. |
+
+Minimum verification is: `AUTH_PROVIDER` appears in the production name list;
+the owner confirms the three required security decisions above without
+revealing values; and the deployed candidate's `/api/health` and
+`/api/readiness` checks pass after the approved deployment. Missing names or
+an unconfirmed assumption is a BLOCKED release, not a reason to guess.
 
 ## 2. Verified backup and restore procedure (Neon production)
 
@@ -200,7 +230,8 @@ Never restore over production. To verify a restore (drill now, or incident):
 ## 3. Migration execution: 0027 -> 0028 -> 0029
 
 Source of truth: `src/platform/db/migrations/` and `meta/_journal.json` (entries
-27-29). SHA-256 of the files at `0f038ad` (drizzle records the content hash, so
+27-29). SHA-256 of the files at the exact RC base `31e14e4`
+(drizzle records the content hash, so
 these must match what is recorded afterwards):
 
 | Migration | SHA-256 |
@@ -510,7 +541,7 @@ Further backend work may add `0030`. The journal is owned by A0
 (`src/platform/db/migrations/README.md`); feature work only proposes SQL. Rules:
 
 1. Do not interleave: land and apply 0027-0029 first (they are final on
-   `0f038ad`), then number the next migration `0030` strictly after them.
+   `31e14e4`), then number the next migration `0030` strictly after them.
 2. A new migration must not edit 0027-0029 (their hashes are recorded in
    production); corrections are a new forward migration.
 3. If 0030 is ready before the Milestone A window closes, either (a) hold it

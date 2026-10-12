@@ -403,7 +403,11 @@ test.describe('authenticated Staff lifecycle', () => {
       await newPage.getByLabel('Create password').fill('synthetic-password');
       await newPage.getByLabel('Confirm password').fill('synthetic-password');
       await newPage.getByRole('button', { name: 'Join workspace' }).click();
-      await expect(newPage).not.toHaveURL(new RegExp(`/invite/${inviteTokens.newUser}$`));
+      // Signup, Better Auth session establishment and the first acceptance
+      // request can each cold-compile under the serial browser suite.
+      await expect(newPage).not.toHaveURL(new RegExp(`/invite/${inviteTokens.newUser}$`), {
+        timeout: 30_000,
+      });
     } finally {
       await newContext.close();
     }

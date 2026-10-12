@@ -216,12 +216,16 @@ test.describe('Setup readiness and payment setup', () => {
     ).toBeVisible();
   });
 
-  test('bank accounts are read-only and say so', async ({ page }) => {
+  test('owner can open the bank-account setup path without exposing full account numbers', async ({
+    page,
+  }) => {
     await tab(page, 'Payments').click();
     await expect(page.getByText('No bank accounts entered')).toBeVisible();
-    await expect(
-      page.getByText('Adding bank accounts is not available in the app yet.'),
-    ).toBeVisible();
+    const bankForm = page.getByRole('form', { name: 'Add bank account' });
+    await expect(bankForm).toBeVisible();
+    await expect(bankForm.getByLabel('Masked account reference')).toBeVisible();
+    await expect(bankForm.getByText('Do not enter the full bank account number.')).toBeVisible();
+    await expect(bankForm.getByRole('button', { name: 'Add bank account' })).toBeVisible();
   });
 
   for (const width of WIDTHS) {

@@ -237,14 +237,28 @@ export async function resolveSetupOverview(
   request: Request,
   dependencies: SetupDependencies = {},
 ): Promise<SetupOverview> {
-  const resolution = await (dependencies.resolveContext ?? resolveCurrentContext)(request);
-  if (!resolution.current) return { status: 'unavailable' };
-  const tenantId = resolution.current.organisationId;
-  const authority = await (dependencies.resolveAuthority ?? resolveTenantExecutionContext)({
-    request,
-    requestedTenantId: tenantId,
-    now: dependencies.now,
-  });
+  const url = new URL(request.url);
+  const requestedTenantId =
+    url.searchParams.get('tenantId') ?? url.searchParams.get('organisationId');
+  let tenantId: string;
+  let authority: TenantExecutionContext;
+  if (requestedTenantId) {
+    tenantId = requestedTenantId;
+    authority = await (dependencies.resolveAuthority ?? resolveTenantExecutionContext)({
+      request,
+      requestedTenantId: tenantId,
+      now: dependencies.now,
+    });
+  } else {
+    const resolution = await (dependencies.resolveContext ?? resolveCurrentContext)(request);
+    if (!resolution.current) return { status: 'unavailable' };
+    tenantId = resolution.current.organisationId;
+    authority = await (dependencies.resolveAuthority ?? resolveTenantExecutionContext)({
+      request,
+      requestedTenantId: tenantId,
+      now: dependencies.now,
+    });
+  }
   const access = resolveSetupAccess(authority, dependencies.now);
   if (!access.canViewReadiness && !access.canViewPayments) return { status: 'unavailable' };
 

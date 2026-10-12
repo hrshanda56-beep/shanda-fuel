@@ -84,7 +84,10 @@ export function LoginForm({ next, invited = false }: { next?: string; invited?: 
         setError(ENTRY_MESSAGES.invalidCode);
         return;
       }
-      router.push(destination);
+      // The TOTP response establishes the session cookie on the server. A
+      // full navigation makes the first protected request observe that cookie
+      // reliably, including on a cold /workplace compile.
+      window.location.assign(destination);
     } catch {
       setError(ENTRY_MESSAGES.invalidCode);
     } finally {
