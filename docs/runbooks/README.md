@@ -20,6 +20,7 @@ evidence that the operational exercise has passed.
 | [`production-configuration.md`](production-configuration.md) | Repository checks ready; provider evidence open | Verify DNS, TLS, edge/WAF, environment binding, and runtime smoke with the provider/operator. |
 | [`codeql.md`](codeql.md) | Repository workflow prepared; provider availability open | Enable GitHub Code Scanning/GHAS support and record a successful CodeQL matrix run. |
 | [`tenant-recovery.md`](tenant-recovery.md) | Missing tested procedure | Define isolated extract tooling, repair ownership, and execute a drill. |
+| [`milestone-a-release.md`](milestone-a-release.md) | Prepared; owner execution open | Vercel access/plan decisions, pre-migration Neon branch + dump, rehearsal, then 0027-0029 and smoke. |
 | [`staging-recovery-rehearsal.md`](staging-recovery-rehearsal.md) | Repository rehearsal ready; provider execution open | Prepare the isolated Neon target, known-good timestamp, staging read-only session, and R2 controls, then run the two-phase rehearsal. |
 
 There is no separate job/outbox operations runbook yet. It should be added if
