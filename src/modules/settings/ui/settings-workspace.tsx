@@ -9,15 +9,20 @@ import { PageContainer } from '@/design-system/layout';
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
 import { StaffPanel } from './staff-panel';
+import { PaymentsPanel } from '../../setup/ui/payments-panel';
+import { ReadinessPanel } from '../../setup/ui/readiness-panel';
 import styles from './settings-workspace.module.css';
 
-type Tab = 'organisation' | 'companies' | 'stations' | 'staff' | 'account';
+type Tab =
+  'organisation' | 'companies' | 'stations' | 'readiness' | 'payments' | 'staff' | 'account';
 type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
   { value: 'companies', label: 'Companies', icon: 'receipt' },
   { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'readiness', label: 'Readiness', icon: 'check-circle' },
+  { value: 'payments', label: 'Payments', icon: 'receipt' },
   { value: 'staff', label: 'Staff', icon: 'users' },
   { value: 'account', label: 'Account', icon: 'users' },
 ];
@@ -118,7 +123,11 @@ export function SettingsWorkspace({
     );
   }
 
-  const visibleTabs = TABS.filter((item) => item.value !== 'staff' || view.staff?.canManage);
+  const visibleTabs = TABS.filter(
+    (item) =>
+      (item.value !== 'staff' && item.value !== 'readiness' && item.value !== 'payments') ||
+      view.staff?.canManage,
+  );
   const active = visibleTabs.find((item) => item.value === tab) ?? visibleTabs[0]!;
   const { selectedStation, legalEntities } = view.context;
 
@@ -189,6 +198,12 @@ export function SettingsWorkspace({
                 message="Pick a station at the top of the page to see its details."
               />
             )
+          ) : null}
+
+          {tab === 'readiness' && view.staff?.canManage ? <ReadinessPanel /> : null}
+
+          {tab === 'payments' && view.staff?.canManage ? (
+            <PaymentsPanel provider={provider} />
           ) : null}
 
           {tab === 'staff' && view.staff?.canManage ? (
