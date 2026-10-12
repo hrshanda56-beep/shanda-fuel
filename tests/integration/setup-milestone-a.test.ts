@@ -6,6 +6,7 @@ import { POST as setupPost } from '../../src/app/api/setup/commands/route';
 import { GET as overviewGet } from '../../src/app/api/setup/overview/route';
 import { POST as inventoryPost } from '../../src/app/api/inventory/commands/route';
 import { POST as forecourtPost } from '../../src/app/api/forecourt/commands/route';
+import { POST as settlementPost } from '../../src/app/api/settlements/commands/route';
 import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -147,15 +148,17 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     const replay = await post(setupPost, 'owner', 'setup-prod-1', body);
     expect(replay.status).toBe(200);
     expect(replay.body.productId).toBe(state.diesel);
-    const [{ n }] =
-      await client`select count(*)::int as n from app.products where tenant_id = ${ids.tenantA} and code = 'DSL'`;
-    expect(n).toBe(1);
+    const productCount = (await client`
+      select count(*)::int as n from app.products
+      where tenant_id = ${ids.tenantA} and code = 'DSL'
+    `) as unknown as Array<{ n: number }>;
+    expect(productCount[0]?.n).toBe(1);
     const reuse = await post(setupPost, 'owner', 'setup-prod-1', { ...body, name: 'Other' });
     expect(reuse.status).toBe(409);
     const dup = await post(setupPost, 'owner', 'setup-prod-2', body);
     expect(dup.status).toBe(409);
     const audit =
-      await client`select event_code from platform.security_events where tenant_id = ${ids.tenantA} and details->>'subjectId' = ${state.diesel}`;
+      await client`select event_code from platform.security_events where tenant_id = ${ids.tenantA} and details->>'subjectId' = ${state.diesel!}`;
     expect(audit.map((r) => r.event_code)).toEqual(['SETUP.PRODUCT_CREATED']);
     const petrol = await post(setupPost, 'owner', 'setup-prod-3', {
       ...body,
@@ -255,18 +258,21 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     expect(nozzle.status).toBe(200);
     const replay = await post(setupPost, 'owner', 'setup-noz-1', nozzleBody);
     expect(replay.body.nozzleId).toBe(nozzle.body.nozzleId);
-    const [{ n }] =
-      await client`select count(*)::int as n from app.meter_installations where nozzle_id = ${nozzle.body.nozzleId}`;
-    expect(n).toBe(1);
+    const installationCount = (await client`
+      select count(*)::int as n from app.meter_installations
+      where nozzle_id = ${nozzle.body.nozzleId!}
+    `) as unknown as Array<{ n: number }>;
+    expect(installationCount[0]?.n).toBe(1);
     // Duplicate meter serial rolls back the nozzle too.
     const dupMeter = await post(setupPost, 'owner', 'setup-noz-2', {
       ...nozzleBody,
       number: '2',
     });
     expect(dupMeter.status).toBe(409);
-    const [{ nn }] =
-      await client`select count(*)::int as nn from app.nozzles where pump_id = ${state.pump}`;
-    expect(nn).toBe(1);
+    const nozzleCount = (await client`
+      select count(*)::int as nn from app.nozzles where pump_id = ${state.pump!}
+    `) as unknown as Array<{ nn: number }>;
+    expect(nozzleCount[0]?.nn).toBe(1);
     // A product from another tenant is not usable.
     const [other] =
       await client`insert into app.products (tenant_id, code, name) values (${ids.tenantB}, 'FOREIGN', 'Foreign') returning id`;
@@ -351,6 +357,53 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     expect(ov.data.prices[0]).toMatchObject({ state: 'PENDING_APPROVAL' });
     // Still blocked: nothing is ACTIVE until the approval flow completes.
     expect(ov.data.blockers.map((b: { code: string }) => b.code)).toContain('NO_PRICE');
+  });
+
+  it('configures provider and bank accounts with tenant scope and step-up authority', async () => {
+    const provider = await post(settlementPost, 'owner', 'setup-provider-1', {
+      commandType: 'CreatePaymentProvider',
+      ...A,
+      code: 'POS1',
+      name: 'Station POS',
+      providerType: 'POS',
+      metadata: {},
+    });
+    expect(provider.status).toBe(201);
+    const providerAccount = await post(settlementPost, 'owner', 'setup-provider-account-1', {
+      commandType: 'ConfigureProviderAccount',
+      ...A,
+      providerId: provider.body.providerId,
+      accountReference: 'POS-ACCOUNT-1',
+      displayName: 'Station POS account',
+      currency: 'USD',
+      accountStationId: ids.stationA,
+      legalEntityId: ids.legalA,
+      metadata: {},
+    });
+    expect(providerAccount.status).toBe(201);
+    const bank = await post(settlementPost, 'owner', 'setup-bank-account-1', {
+      commandType: 'CreateBankAccount',
+      ...A,
+      legalEntityId: ids.legalA,
+      name: 'Primary operating account',
+      bankName: 'Verified bank',
+      accountReferenceMasked: '****1234',
+      currency: 'USD',
+    });
+    expect(bank.status).toBe(201);
+    const duplicate = await post(settlementPost, 'owner', 'setup-bank-account-2', {
+      commandType: 'CreateBankAccount',
+      ...A,
+      legalEntityId: ids.legalA,
+      name: 'Primary operating account',
+      bankName: 'Verified bank',
+      accountReferenceMasked: '****5678',
+      currency: 'USD',
+    });
+    expect(duplicate.status).toBe(409);
+    const { body: ov } = await overview('owner');
+    expect(ov.providerAccounts).toHaveLength(1);
+    expect(ov.bankAccounts).toHaveLength(1);
   });
 
   it('UpdateSupplier edits and deactivates with optimistic versioning and audit', async () => {

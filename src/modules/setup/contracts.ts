@@ -51,6 +51,75 @@ export type SetupSupplier = Readonly<{
 
 export type SetupBlocker = Readonly<{ code: string; message: string }>;
 
+export type ReadinessAreaCode = 'PRICES' | 'TANKS' | 'PUMPS' | 'SHIFTS' | 'PAYMENTS' | 'STAFF';
+export type ReadinessStatus = 'READY' | 'PARTIAL' | 'NOT_ENTERED';
+export type StationSetupFacts = Readonly<{
+  stationId: string;
+  stationCode: string;
+  stationName: string;
+  legalEntityId: string;
+  activeProducts: number;
+  pricedProducts: number;
+  activeTanks: number;
+  tanksMissingTolerance: number;
+  activePumps: number;
+  activeNozzles: number;
+  pumpsWithoutNozzle: number;
+  activeShiftTemplates: number;
+  providerAccounts: number;
+  bankAccounts: number;
+  assignedStaff: number;
+}>;
+export type ReadinessArea = Readonly<{
+  code: ReadinessAreaCode;
+  label: string;
+  status: ReadinessStatus;
+  detail: string;
+  blocks: string;
+}>;
+export type StationReadiness = Readonly<{
+  stationId: string;
+  stationCode: string;
+  stationName: string;
+  legalEntityId: string;
+  areas: readonly ReadinessArea[];
+  ready: boolean;
+  blockedSummary: string | null;
+}>;
+export type PaymentProviderRow = Readonly<{
+  id: string;
+  code: string;
+  name: string;
+  providerType: 'CARD_ACQUIRER' | 'POS' | 'MOBILE_MONEY' | 'OTHER_ELECTRONIC';
+  status: 'ACTIVE' | 'INACTIVE';
+}>;
+export type ProviderAccountRow = Readonly<{
+  id: string;
+  providerId: string;
+  providerName: string;
+  stationId: string | null;
+  legalEntityId: string | null;
+  accountReference: string;
+  displayName: string;
+  currency: string;
+  status: 'ACTIVE' | 'INACTIVE';
+}>;
+export type BankAccountRow = Readonly<{
+  id: string;
+  legalEntityId: string;
+  name: string;
+  bankName: string;
+  accountReferenceMasked: string;
+  currency: string;
+  status: 'ACTIVE' | 'INACTIVE';
+}>;
+export type SetupStationOption = Readonly<{
+  id: string;
+  code: string;
+  name: string;
+  legalEntityId: string;
+}>;
+
 export type SetupCapabilities = Readonly<{
   products: boolean;
   tanks: boolean;
@@ -63,7 +132,7 @@ export type SetupCapabilities = Readonly<{
 }>;
 
 /** A `null` section means the caller may not read it; `[]` means "Not entered". */
-export type SetupOverview = Readonly<{
+export type ConfigurationSetupOverview = Readonly<{
   tenantId: string;
   stationId: string;
   stationStatus: string;
@@ -77,3 +146,19 @@ export type SetupOverview = Readonly<{
   suppliers: readonly SetupSupplier[] | null;
   blockers: readonly SetupBlocker[];
 }>;
+
+export type SetupOverview =
+  | Readonly<{ status: 'unavailable' }>
+  | Readonly<{ status: 'error' }>
+  | Readonly<{
+      status: 'ready';
+      tenantId: string;
+      canViewReadiness: boolean;
+      canViewPayments: boolean;
+      canManagePayments: boolean;
+      stations: readonly StationReadiness[];
+      stationOptions: readonly SetupStationOption[];
+      providers: readonly PaymentProviderRow[];
+      providerAccounts: readonly ProviderAccountRow[];
+      bankAccounts: readonly BankAccountRow[];
+    }>;

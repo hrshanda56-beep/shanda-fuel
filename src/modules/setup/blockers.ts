@@ -1,4 +1,4 @@
-import type { SetupOverview } from './contracts';
+import type { ConfigurationSetupOverview } from './contracts';
 
 /**
  * Plain-language reasons the station cannot yet run dependent transactions.
@@ -7,7 +7,7 @@ import type { SetupOverview } from './contracts';
  * allocations need a tank; reconciliation readings need an ACTIVE price).
  */
 export function computeSetupBlockers(
-  data: Omit<SetupOverview, 'blockers'>,
+  data: Omit<ConfigurationSetupOverview, 'blockers'>,
 ): readonly { code: string; message: string }[] {
   const out: { code: string; message: string }[] = [];
   const productName = (id: string) => data.products?.find((p) => p.id === id)?.name ?? 'a product';

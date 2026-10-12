@@ -9,4 +9,5 @@ export {
 } from './commands';
 export { getSetupOverview } from './queries';
 export { computeSetupBlockers } from './blockers';
+export { resolveSetupOverview } from './readiness-queries';
 export type * from './contracts';

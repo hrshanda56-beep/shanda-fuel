@@ -7,7 +7,7 @@ import { AppError } from '../../platform/errors';
 import { authorize, type PermissionCode } from '../../platform/security/permissions';
 import { resolveInventoryCommandContext } from '../inventory/application';
 import { computeSetupBlockers } from './blockers';
-import type { SetupOverview } from './contracts';
+import type { ConfigurationSetupOverview } from './contracts';
 
 const input = z.object({ tenantId: z.string().uuid(), stationId: z.string().uuid() });
 
@@ -21,7 +21,7 @@ export async function getSetupOverview(args: {
   request: Request;
   tenantId: string;
   stationId: string;
-}): Promise<SetupOverview> {
+}): Promise<ConfigurationSetupOverview> {
   const parsed = input.parse(args);
   const context = await resolveInventoryCommandContext({
     request: args.request,
@@ -152,7 +152,7 @@ export async function getSetupOverview(args: {
     const station = await tx.execute<{ status: string }>(sql`
       select status from app.stations where tenant_id = ${tenantId} and id = ${stationId}`);
 
-    const overview: Omit<SetupOverview, 'blockers'> = {
+    const overview: Omit<ConfigurationSetupOverview, 'blockers'> = {
       tenantId,
       stationId,
       stationStatus: station[0]?.status ?? 'UNKNOWN',

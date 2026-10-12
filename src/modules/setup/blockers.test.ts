@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { computeSetupBlockers } from './blockers';
-import type { SetupOverview } from './contracts';
+import type { ConfigurationSetupOverview } from './contracts';
 
-const empty: Omit<SetupOverview, 'blockers'> = {
+const empty: Omit<ConfigurationSetupOverview, 'blockers'> = {
   tenantId: 't',
   stationId: 's',
   stationStatus: 'ONBOARDING',

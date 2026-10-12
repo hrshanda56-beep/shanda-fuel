@@ -374,7 +374,57 @@ function AccountSection({
   );
 }
 
-function BankSection({ overview }: { overview: Ready }) {
+function BankSection({
+  overview,
+  reload,
+  gate,
+  onDenied,
+}: {
+  overview: Ready;
+  reload: () => void;
+  gate: Gate;
+  onDenied: () => void;
+}) {
+  const { run, busy, outcome } = useCommand(reload, onDenied);
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const stationId = String(data.get('stationId') ?? '');
+    const station = overview.stationOptions.find((option) => option.id === stationId);
+    const name = String(data.get('name') ?? '').trim();
+    const bankName = String(data.get('bankName') ?? '').trim();
+    const accountReferenceMasked = String(data.get('accountReferenceMasked') ?? '').trim();
+    const next = {
+      stationId: station ? undefined : 'Choose a station.',
+      name: name ? undefined : 'Enter an account name.',
+      bankName: bankName ? undefined : 'Enter the bank name.',
+      accountReferenceMasked: accountReferenceMasked
+        ? undefined
+        : 'Enter the masked account reference only.',
+    };
+    setErrors(next);
+    if (Object.values(next).some(Boolean) || !station) return;
+    gate(async () => {
+      const saved = await run(
+        {
+          commandType: 'CreateBankAccount',
+          tenantId: overview.tenantId,
+          stationId: station.id,
+          legalEntityId: station.legalEntityId,
+          name,
+          bankName,
+          accountReferenceMasked,
+          currency: 'USD',
+        },
+        `${name} was added for ${station.name}'s legal entity.`,
+      );
+      if (saved) form.reset();
+    });
+  }
+
   return (
     <section className={styles.card} aria-labelledby="payments-banks">
       <h3 id="payments-banks" className={styles.cardTitle}>
@@ -402,9 +452,51 @@ function BankSection({ overview }: { overview: Ready }) {
           ))}
         </ul>
       )}
-      <p className={styles.note}>
-        Adding bank accounts is not available in the app yet. They are shown here as read-only.
-      </p>
+      {overview.canManagePayments ? (
+        <form className={styles.form} onSubmit={submit} noValidate aria-label="Add bank account">
+          <Field id="bank-station" label="Station" error={errors.stationId} required>
+            <Select
+              id="bank-station"
+              name="stationId"
+              defaultValue=""
+              placeholder="Choose a station"
+              options={overview.stationOptions.map((station) => ({
+                value: station.id,
+                label: `${station.name} (${station.code})`,
+              }))}
+            />
+          </Field>
+          <Field id="bank-account-name" label="Account name" error={errors.name} required>
+            <input id="bank-account-name" name="name" autoComplete="off" maxLength={160} />
+          </Field>
+          <Field id="bank-name" label="Bank name" error={errors.bankName} required>
+            <input id="bank-name" name="bankName" autoComplete="off" maxLength={160} />
+          </Field>
+          <Field
+            id="bank-reference-masked"
+            label="Masked account reference"
+            hint="Do not enter the full bank account number."
+            error={errors.accountReferenceMasked}
+            required
+          >
+            <input
+              id="bank-reference-masked"
+              name="accountReferenceMasked"
+              autoComplete="off"
+              maxLength={160}
+            />
+          </Field>
+          <Field id="bank-currency" label="Currency">
+            <input id="bank-currency" value="USD" readOnly aria-readonly="true" />
+          </Field>
+          <div className={styles.formActions}>
+            <Button type="submit" loading={busy} disabled={overview.stationOptions.length === 0}>
+              Add bank account
+            </Button>
+            <OutcomeMessage outcome={outcome} />
+          </div>
+        </form>
+      ) : null}
     </section>
   );
 }
@@ -436,7 +528,7 @@ export function PaymentsView({
     <div className={styles.stack}>
       <ProviderSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <AccountSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
-      <BankSection overview={overview} />
+      <BankSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <StepUpDialog
         open={pending !== null}
         tenantId={overview.tenantId}

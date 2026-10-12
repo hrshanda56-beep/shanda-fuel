@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import {
@@ -44,6 +45,17 @@ const configureAccountSchema = z.object({
   accountStationId: z.string().uuid().nullable().optional(),
   legalEntityId: z.string().uuid().nullable().optional(),
   metadata,
+});
+
+const createBankAccountSchema = z.object({
+  commandType: z.literal('CreateBankAccount'),
+  tenantId: z.string().uuid(),
+  stationId: z.string().uuid(),
+  legalEntityId: z.string().uuid(),
+  name: z.string().trim().min(1).max(160),
+  bankName: z.string().trim().min(1).max(160),
+  accountReferenceMasked: z.string().trim().min(1).max(160),
+  currency: z.literal('USD').optional(),
 });
 
 const recordSettlementSchema = z.object({
@@ -158,6 +170,75 @@ export async function configureProviderAccountFromRequest(request: Request, body
       }),
       after: { providerAccountId, providerId: input.providerId },
     }),
+  });
+}
+
+export async function createBankAccountFromRequest(request: Request, body: unknown) {
+  const input = createBankAccountSchema.parse(body);
+  const context = await resolveSettlementCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    stationId: input.stationId,
+  });
+  const bankAccountId = randomUUID();
+  return executeSettlementCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'provider.manage',
+    authorizeTenantScope: true,
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    subjectType: 'BankAccount',
+    subjectId: bankAccountId,
+    execute: async (transaction) => {
+      const legalEntity = await transaction.execute<{ id: string }>(sql`
+        select le.id
+        from app.legal_entities le
+        join app.stations s
+          on s.tenant_id = le.tenant_id and s.legal_entity_id = le.id
+        where le.tenant_id = ${context.tenantId}
+          and le.id = ${input.legalEntityId}
+          and s.id = ${input.stationId}
+        limit 1
+      `);
+      if (!legalEntity[0]) {
+        throw new AppError('NOT_FOUND', 'The legal entity was not found for this organisation');
+      }
+      try {
+        await transaction.execute(sql`
+          insert into app.bank_accounts
+            (id, tenant_id, legal_entity_id, name, bank_name, account_reference_masked, currency, status, version)
+          values
+            (${bankAccountId}, ${context.tenantId}, ${input.legalEntityId}, ${input.name},
+             ${input.bankName}, ${input.accountReferenceMasked}, ${input.currency ?? 'USD'}, 'ACTIVE', 0)
+        `);
+      } catch (error) {
+        const code = (error as { code?: string })?.code;
+        const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+        if (code === '23505' || causeCode === '23505') {
+          throw new AppError(
+            'CONFLICT',
+            'A bank account with this name already exists for the legal entity',
+          );
+        }
+        throw error;
+      }
+      return {
+        result: {
+          bankAccountId,
+          legalEntityId: input.legalEntityId,
+          status: 'ACTIVE' as const,
+        },
+        after: {
+          legalEntityId: input.legalEntityId,
+          name: input.name,
+          bankName: input.bankName,
+          accountReferenceMasked: input.accountReferenceMasked,
+          currency: input.currency ?? 'USD',
+          status: 'ACTIVE',
+        },
+      };
+    },
   });
 }
 
@@ -297,6 +378,7 @@ export function assertSettlementCommandType(
 ):
   | 'CreatePaymentProvider'
   | 'ConfigureProviderAccount'
+  | 'CreateBankAccount'
   | 'RecordProviderSettlement'
   | 'AllocateProviderSettlement'
   | 'ReverseProviderSettlementAllocation'
@@ -304,6 +386,7 @@ export function assertSettlementCommandType(
   if (
     value === 'CreatePaymentProvider' ||
     value === 'ConfigureProviderAccount' ||
+    value === 'CreateBankAccount' ||
     value === 'RecordProviderSettlement' ||
     value === 'AllocateProviderSettlement' ||
     value === 'ReverseProviderSettlementAllocation' ||
