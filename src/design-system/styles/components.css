@@ -999,6 +999,16 @@ input[type='radio']:focus-visible {
   white-space: nowrap;
 }
 
+/* Wider screens: dates and amounts stay on one line; the table's scroll
+ * region takes any extra width. Phones stack rows and wrap normally. */
+@media (min-width: 48rem) {
+  .responsive-table td.numeric,
+  .responsive-table th.numeric,
+  .responsive-table td .numeric {
+    white-space: nowrap;
+  }
+}
+
 .cell-muted {
   color: var(--text-secondary);
 }
@@ -1224,7 +1234,8 @@ tr:has(.row-link):active {
 
 .status {
   display: inline-flex;
-  min-width: 0;
+  /* Never narrower than its longest word: labels wrap only between words. */
+  min-width: min-content;
   min-height: 1.375rem;
   align-items: center;
   gap: var(--space-1-5);
@@ -1237,7 +1248,7 @@ tr:has(.row-link):active {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-snug);
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   white-space: normal;
 }
 

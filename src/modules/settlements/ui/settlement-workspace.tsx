@@ -575,7 +575,9 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                       <td data-label="Dates">
                         <span className="numeric">{row.transactionDate}</span>
                         <br />
-                        <small>Settled {row.settlementDate}</small>
+                        <small>
+                          Settled <span className="numeric">{row.settlementDate}</span>
+                        </small>
                       </td>
                       <td data-label="Gross" className="numeric">
                         {money(row.grossAmount, row.currency)}

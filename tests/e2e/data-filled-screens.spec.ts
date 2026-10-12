@@ -21,6 +21,31 @@ async function expectNoSidewaysScroll(page: Page, label: string) {
   expect(width, label).toBeLessThanOrEqual(page.viewportSize()?.width ?? 0);
 }
 
+/**
+ * Words that the browser broke across lines inside the matched elements, e.g.
+ * a status reading "App / rov / ed". Each word must lay out on one line.
+ */
+async function wordsSplitAcrossLines(page: Page, selector: string) {
+  return page.locator(selector).evaluateAll((elements) => {
+    const broken: string[] = [];
+    for (const element of elements) {
+      if (!(element as HTMLElement).offsetParent) continue;
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent ?? '';
+        for (const match of text.matchAll(/\S+/g)) {
+          const range = document.createRange();
+          range.setStart(node, match.index ?? 0);
+          range.setEnd(node, (match.index ?? 0) + match[0].length);
+          const tops = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top)));
+          if (tops.size > 1) broken.push(match[0]);
+        }
+      }
+    }
+    return broken;
+  });
+}
+
 test.describe('data-filled screens', () => {
   test('Daily Operations shows shifts, sourced alerts and activity', async ({ page }) => {
     await mockContext(page, '/operations/daily');
@@ -122,6 +147,30 @@ test.describe('data-filled screens', () => {
       await expectNoSidewaysScroll(page, `width ${width}`);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations, `width ${width}`).toEqual([]);
+    }
+  });
+
+  test('status labels, dates and amounts never split mid-word', async ({ page }) => {
+    for (const width of [803, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+
+      await mockContext(page, '/operations/daily');
+      await mockOverview(page);
+      await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
+      await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
+      await expect(page.locator('.status').first()).toBeVisible();
+      expect(await wordsSplitAcrossLines(page, '.status'), `daily ops ${width}`).toEqual([]);
+
+      await mockContext(page, `/stations/${STATION}/settlements`);
+      await mockSettlements(page);
+      await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
+      await expect(page.getByLabel('Settlement summary')).toContainText('USD 25.50');
+      await expect(page.locator('td[data-label="Dates"]').first()).toBeVisible();
+      expect(
+        await wordsSplitAcrossLines(page, '.status, td.numeric, td .numeric'),
+        `settlements ${width}`,
+      ).toEqual([]);
+      await expectNoSidewaysScroll(page, `settlements ${width}`);
     }
   });
 });
