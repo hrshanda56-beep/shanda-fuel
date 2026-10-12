@@ -24,7 +24,8 @@ describe('account menu sign-out item', () => {
   it('renders one accessible Sign out menu item for either provider', () => {
     for (const provider of ['BETTER_AUTH', 'CLERK'] as const) {
       const html = render(provider);
-      expect(html).toContain('role="menuitem"');
+      expect(html).toContain('class="account-menu-item"');
+      expect(html).not.toContain('role="menuitem"');
       expect(html).toContain('type="button"');
       expect(html).toContain('>Sign out<');
       expect(html).not.toContain('disabled');

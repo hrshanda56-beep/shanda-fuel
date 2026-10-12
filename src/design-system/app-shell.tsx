@@ -19,6 +19,7 @@ import {
 import { AccountSignOutItem, type AccountAuthProvider } from './account-sign-out';
 import { WorkInProgressDialog } from './dialogs';
 import { ContextSelector } from './context-selector';
+import { useLocationSearch } from './location-search';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
 import { BrandMark } from './brand-mark';
 import { Icon } from './icons';
@@ -920,6 +921,7 @@ function AccountMenu({
   authProvider?: AccountAuthProvider;
 }) {
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const displayName = displayableIdentity(userName);
@@ -953,8 +955,9 @@ function AccountMenu({
         ref={triggerRef}
         type="button"
         className="shell-account-trigger"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         aria-label={label}
         title={label}
         onClick={() => setOpen((current) => !current)}
@@ -969,10 +972,15 @@ function AccountMenu({
         <Icon name="chevron-down" className="shell-account-chevron" />
       </button>
       {open ? (
+        // A non-modal dialog, like the shell's other popovers (station, search, needs
+        // attention). It mixes identity, a theme radio group and actions, which an ARIA
+        // `menu` may not contain, and it promises arrow-key navigation the panel does not
+        // implement. Focus moves in on open, Escape closes and returns focus to the trigger.
         <div
           ref={panelRef}
+          id={panelId}
           className="account-menu-panel"
-          role="menu"
+          role="dialog"
           aria-label="Account menu"
           tabIndex={-1}
         >
@@ -985,11 +993,10 @@ function AccountMenu({
             <ThemeControl />
           </div>
           {settingsHref || authProvider ? (
-            <div role="none" className="account-menu-actions">
+            <div className="account-menu-actions">
               {settingsHref ? (
                 <Link
                   href={settingsHref}
-                  role="menuitem"
                   className="account-menu-item"
                   onClick={() => setOpen(false)}
                 >
@@ -1198,29 +1205,8 @@ function SearchPalette({
   );
 }
 
-/* Location search ------------------------------------------------------------ */
-
-/**
- * The current query string, read from the browser. Avoids `useSearchParams`,
- * which would force every statically rendered page behind a Suspense
- * boundary. The shell re-renders on every navigation (new page children), and
- * back/forward fires `popstate`, so the snapshot stays current.
- */
-function useLocationSearch() {
-  return useSyncExternalStore(subscribeToHistory, readLocationSearch, () => '');
-}
-
 function subscribeToNothing() {
   return () => {};
-}
-
-function subscribeToHistory(onChange: () => void) {
-  window.addEventListener('popstate', onChange);
-  return () => window.removeEventListener('popstate', onChange);
-}
-
-function readLocationSearch() {
-  return window.location.search;
 }
 
 function readKeyboardShortcut() {

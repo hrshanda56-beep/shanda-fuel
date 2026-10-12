@@ -2,7 +2,8 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 /*
- * Account menu (approved frozen AccountMenu + PR #120 provider-aware sign-out).
+ * Account menu (approved frozen AccountMenu look + PR #120 provider-aware sign-out). The panel is a
+ * non-modal dialog (not an ARIA menu: it holds a theme radio group), so items are plain links/buttons.
  * Database-free: runs on the synthetic navigation fixture with Better Auth selected
  * (AUTH_PROVIDER=BETTER_AUTH). Network calls are routed in the test; nothing real
  * is contacted. Clerk-mode sign-out has no automated path (needs a Clerk test
@@ -52,7 +53,7 @@ async function openMenu(page: Page) {
   await waitForHydration(page);
   const trigger = page.locator('.shell-account-trigger:visible');
   await trigger.click();
-  const menu = page.getByRole('menu', { name: 'Account menu' });
+  const menu = page.getByRole('dialog', { name: 'Account menu' });
   await expect(menu).toBeVisible();
   return { trigger, menu };
 }
@@ -65,15 +66,17 @@ test.describe('account menu items', () => {
   }) => {
     const { menu } = await openMenu(page);
     await expect(menu.locator('.account-menu-theme')).toBeVisible();
-    const items = menu.getByRole('menuitem');
+    const items = menu.locator('.account-menu-item');
     await expect(items).toHaveCount(2);
+    await expect(menu.getByRole('link', { name: 'Account settings' })).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Sign out' })).toBeVisible();
     await expect(items.nth(0)).toHaveText('Account settings');
     await expect(items.nth(1)).toHaveText('Sign out');
   });
 
   test('Account settings goes to /settings and keeps the work context', async ({ page }) => {
     const { menu } = await openMenu(page);
-    const link = menu.getByRole('menuitem', { name: 'Account settings' });
+    const link = menu.getByRole('link', { name: 'Account settings' });
     await expect(link).toHaveAttribute('href', /^\/settings(\?|$)/);
     expect(await link.getAttribute('href')).toContain('tenantId=t-1');
     await link.click();
@@ -81,16 +84,36 @@ test.describe('account menu items', () => {
     await expect(menu).toHaveCount(0);
   });
 
-  test('has no accessibility violations with the menu open', async ({ page }) => {
-    await openMenu(page);
-    // `aria-required-children` is excluded on purpose: the approved frozen AccountMenu
-    // puts the theme radio group inside role="menu" (pre-existing, reported to the
-    // frontend owner). Everything else must stay clean, including the new items.
-    const results = await new AxeBuilder({ page })
-      .include('.shell-account-menu')
-      .disableRules(['aria-required-children'])
-      .analyze();
-    expect(results.violations).toEqual([]);
+  test('has no accessibility violations with the panel open (light and dark, no rules disabled)', async ({
+    page,
+  }) => {
+    // Reduced motion removes the panel's fade-in, so axe measures settled colours (it would
+    // otherwise sample a half-transparent panel and report a false contrast failure).
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+      await openMenu(page);
+      const results = await new AxeBuilder({ page }).include('.shell-account-menu').analyze();
+      expect(results.violations, colorScheme).toEqual([]);
+    }
+  });
+
+  test('the trigger and panel are wired as a disclosure: haspopup, expanded and controls', async ({
+    page,
+  }) => {
+    await page.goto(`/reports${CONTEXT_QUERY}`);
+    await waitForHydration(page);
+    const trigger = page.locator('.shell-account-trigger:visible');
+    await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger).not.toHaveAttribute('aria-controls', /.+/);
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const panelId = await trigger.getAttribute('aria-controls');
+    expect(panelId).toBeTruthy();
+    await expect(page.locator(`[id="${panelId}"]`)).toHaveAttribute('role', 'dialog');
+    await page.keyboard.press('Escape');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger).toBeFocused();
   });
 
   test('keyboard: opens, moves through the items, Escape returns focus to the trigger', async ({
@@ -101,12 +124,12 @@ test.describe('account menu items', () => {
     const trigger = page.locator('.shell-account-trigger:visible');
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const menu = page.getByRole('menu', { name: 'Account menu' });
+    const menu = page.getByRole('dialog', { name: 'Account menu' });
     await expect(menu).toBeFocused();
 
     // Tab order inside the menu reaches both items, in order.
-    const settings = menu.getByRole('menuitem', { name: 'Account settings' });
-    const signOut = menu.getByRole('menuitem', { name: 'Sign out' });
+    const settings = menu.getByRole('link', { name: 'Account settings' });
+    const signOut = menu.getByRole('button', { name: 'Sign out' });
     await settings.focus();
     await expect(settings).toBeFocused();
     await page.keyboard.press('Tab');
@@ -140,7 +163,7 @@ test.describe('sign out (Better Auth selected on the server)', () => {
       });
     });
     const { menu } = await openMenu(page);
-    await menu.getByRole('menuitem', { name: 'Sign out' }).click();
+    await menu.getByRole('button', { name: 'Sign out' }).click();
     await page.waitForURL(/\/login$/);
     expect(signOutCalls).toBe(1);
     // Better Auth mode must not call Clerk at all.
@@ -156,7 +179,7 @@ test.describe('sign out (Better Auth selected on the server)', () => {
       return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
     });
     const { menu } = await openMenu(page);
-    const signOut = menu.getByRole('menuitem', { name: 'Sign out' });
+    const signOut = menu.getByRole('button', { name: 'Sign out' });
     await signOut.click();
     await expect(menu.getByRole('alert')).toHaveText('Sign out failed. Please try again.');
     await expect(signOut).toBeEnabled();
@@ -175,7 +198,7 @@ test.describe('responsive', () => {
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
-      for (const item of await menu.getByRole('menuitem').all()) {
+      for (const item of await menu.locator('.account-menu-item').all()) {
         // Layout height, not the animated bounding box (the panel scales in).
         expect(
           await item.evaluate((element) => (element as HTMLElement).offsetHeight),

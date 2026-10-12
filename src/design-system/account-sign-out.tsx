@@ -68,7 +68,6 @@ function SignOutItem({ run }: { run: () => Promise<void> }) {
     <>
       <button
         type="button"
-        role="menuitem"
         className="account-menu-item"
         onClick={() => void signOut()}
         disabled={pending}

@@ -337,7 +337,7 @@ test.describe('desktop sidebar', () => {
     await page.goto('/reports');
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Account' }).click();
-    const control = page.getByRole('menu', { name: 'Account menu' }).getByRole('group', {
+    const control = page.getByRole('dialog', { name: 'Account menu' }).getByRole('group', {
       name: 'Theme',
     });
     await expect(control.getByRole('radio', { name: /System/ })).toBeChecked();
@@ -357,7 +357,7 @@ test.describe('desktop sidebar', () => {
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Account' }).click();
     await page
-      .getByRole('menu', { name: 'Account menu' })
+      .getByRole('dialog', { name: 'Account menu' })
       .getByRole('group', { name: 'Theme' })
       .getByRole('radio', { name: /System/ })
       .check();
