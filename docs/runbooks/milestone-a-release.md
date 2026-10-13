@@ -308,6 +308,44 @@ baseline counts, and read-only schema/RLS/tenant checks. Quarantine or destroy
 the isolated target only under the owner’s retention decision; preserve the
 dump and evidence through release sign-off plus the agreed retention period.
 
+The complete read-only post-restore verification is:
+
+```sql
+BEGIN READ ONLY;
+SELECT current_database(), current_user, current_setting('server_version');
+SELECT count(*) AS journal_rows, min(id) AS first_id, max(id) AS last_id
+FROM drizzle.__drizzle_migrations;
+SELECT id, hash FROM drizzle.__drizzle_migrations ORDER BY id DESC LIMIT 3;
+SELECT t.name AS tenant, le.legal_name, s.code, s.name, s.status
+FROM app.tenants t
+JOIN app.legal_entities le ON le.tenant_id = t.id
+JOIN app.stations s ON s.legal_entity_id = le.id
+ORDER BY s.code;
+SELECT count(*) AS active_stations
+FROM app.stations WHERE status = 'ACTIVE';
+SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolinherit
+FROM pg_roles
+WHERE rolname IN ('migration_owner','app_runtime','job_runtime',
+                  'diagnostics_readonly','first_user_provisioner')
+ORDER BY rolname;
+SELECT count(*) AS app_tables,
+       count(*) FILTER (WHERE c.relrowsecurity AND c.relforcerowsecurity) AS rls_forced
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'app' AND c.relkind = 'r';
+SELECT tablename, policyname, cmd
+FROM pg_policies
+WHERE schemaname = 'app'
+ORDER BY tablename, policyname;
+COMMIT;
+```
+
+For a local restore using `--no-owner --no-privileges`, role names and safe
+attributes must be bootstrapped as no-password local roles before validation;
+the dump intentionally does not carry production passwords, ownership or ACLs.
+Record that bootstrap separately and do not treat it as production role-change
+evidence. The provider/source role query and the restored RLS/function topology
+must both pass.
+
 ## 3. Migration execution: 0027 -> 0028 -> 0029
 
 Source of truth: `src/platform/db/migrations/` and `meta/_journal.json` (entries
