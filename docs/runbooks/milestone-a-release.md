@@ -258,6 +258,20 @@ Required access and storage, supplied by the owner before execution:
   PostgreSQL 18 environment or approved recovery project), inaccessible to
   normal users during validation.
 
+Destination-specific encryption rule:
+
+- For AWS S3, use the owner-approved SSE-KMS bucket/key and retain the object
+  version/checksum evidence below.
+- For Cloudflare R2, do **not** send AWS SSE-KMS headers: R2's S3 API does not
+  implement them. R2 provides encryption at rest and supports bucket locks;
+  an approved R2 archive must use an existing owner-managed client-side
+  encryption recipient (or an already approved SSE-C key) in addition to its
+  private access policy. Never generate, print, or store a new key in this
+  repository. The documented `shanda-fuel-staging-recovery` bucket remains
+  staging-only unless the owner separately approves a production archive
+  target and retention policy. See [Cloudflare R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
+  and [R2 data security](https://developers.cloudflare.com/r2/reference/data-security/).
+
 Owner execution template. Inject libpq variables from the secret manager or a
 service file; do not place a URL, password, or key in argv, shell history,
 logs, tickets, or evidence:
@@ -287,6 +301,31 @@ aws s3 cp "$DUMP.sha256" "$APPROVED_BACKUP_OBJECT_URI.sha256" \
 aws s3api head-object --bucket "$APPROVED_BACKUP_BUCKET" \
   --key "$APPROVED_BACKUP_OBJECT_KEY" --checksum-mode ENABLED
 ```
+
+For an owner-approved Cloudflare R2 target, encrypt the dump before upload
+with the existing approved public recipient. The R2 S3 API path must not use
+the AWS-only `--sse aws:kms` flags:
+
+```sh
+: "${BACKUP_GPG_RECIPIENT:?Set the owner-approved public encryption recipient}"
+: "${R2_ENDPOINT:?Set the owner-approved R2 S3 endpoint}"
+: "${APPROVED_BACKUP_OBJECT_URI:?Set the owner-approved R2 object URI}"
+ENCRYPTED_DUMP="$DUMP.gpg"
+gpg --batch --trust-model always --recipient "$BACKUP_GPG_RECIPIENT" \
+  --output "$ENCRYPTED_DUMP" --encrypt "$DUMP"
+shasum -a 256 "$ENCRYPTED_DUMP" | tee "$ENCRYPTED_DUMP.sha256"
+aws s3 cp "$ENCRYPTED_DUMP" "$APPROVED_BACKUP_OBJECT_URI" \
+  --endpoint-url "$R2_ENDPOINT" --only-show-errors
+aws s3 cp "$ENCRYPTED_DUMP.sha256" "$APPROVED_BACKUP_OBJECT_URI.sha256" \
+  --endpoint-url "$R2_ENDPOINT" --only-show-errors
+```
+
+Record the encrypted object size and checksum. Before restore, download via
+the approved read path, verify the encrypted checksum, decrypt only inside the
+isolated restore workspace, then run `pg_restore --list` and `pg_restore` as
+shown below. The R2 object, recipient/key-management reference, retention and
+access evidence are required; a private bucket alone is not production
+approval.
 
 Restore only into the isolated target, using its separate libpq environment;
 never use production `PGHOST`/`PGDATABASE` for this block:
