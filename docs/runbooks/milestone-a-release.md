@@ -244,6 +244,20 @@ isolated Neon PITR/application/R2 drill, but it does not include a PostgreSQL
 18 custom-format logical dump, a secure archive object/checksum, or a restore
 from that dump. Do not mark this gate PASS until the owner records all three.
 
+Owner-approved production archive design — 2026-10-13:
+
+- Cloudflare R2 bucket: `shanda-fuel-production-backups`.
+- Visibility: private; retention/lifecycle: 30 days; archive encryption:
+  client-side before upload; budget: no incremental spend.
+- The existing `shanda-fuel-staging-recovery` bucket is outside this change and
+  must not be modified.
+- Account usage, free-tier headroom, bucket existence, and Cloudflare
+  permissions are not verifiable from the current operator environment. No
+  bucket was created or changed, and no production data was uploaded. Treat
+  this design as approved but the storage gate as **BLOCKED / NOT VERIFIED**
+  until non-secret account evidence proves the requested cost ceiling and
+  effective bucket settings.
+
 Required access and storage, supplied by the owner before execution:
 
 - production `migration_owner`/provider-admin access through the approved
