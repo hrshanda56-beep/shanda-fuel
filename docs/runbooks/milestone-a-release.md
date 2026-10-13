@@ -254,10 +254,40 @@ Owner-approved production archive design — 2026-10-13:
 - The existing `shanda-fuel-staging-recovery` bucket is outside this change and
   must not be modified.
 - The production recovery bucket's existence/private state and current
-  default multipart-abort rule are owner-supplied evidence. Effective
-  `postgres-backups/` lifecycle and Bucket Lock settings remain **NOT
-  VERIFIED**; no bucket policy was changed and no production data was
-  uploaded.
+  default multipart-abort rule were verified in the Cloudflare dashboard on
+  2026-10-13. The approved scoped policy was then applied and re-read: the
+  effective `postgres-backups/` lifecycle and Bucket Lock settings are
+  recorded below. No production data was uploaded.
+
+R2 verification evidence — 2026-10-13:
+
+- `shanda-fuel-production-recovery` exists in Western Europe (WEUR), uses the
+  Standard class, has public development URL disabled, no custom domain, and
+  no CORS policy. The Objects view reported `0` objects and `0 B`; no object
+  body was retrieved and no existing `recovery/v1/` object was modified.
+- The effective lifecycle table contains both the unchanged Cloudflare
+  `Default Multipart Abort Rule` (no prefix, abort after 7 days) and enabled
+  `Postgres backups 30-day expiry` (prefix `postgres-backups/`, delete after
+  30 days).
+- The effective Bucket Lock table contains enabled `Postgres backups 30-day
+  lock` (prefix `postgres-backups/`, 30 days). The matching lock prevents
+  overwrite/deletion during the retention window; lifecycle cleanup becomes
+  eligible after that window and may complete asynchronously.
+- Account billable-usage evidence showed `$0.00` total, `$0.00` projected
+  cycle cost, `198` Class A operations, `123` Class B operations, and `0
+  GB-months` storage for the observed cycle. All displayed usage was within
+  included R2 tiers; this does not guarantee future usage remains free.
+- The token inventory showed active bucket-scoped `Object Read & Write`
+  credentials for this bucket. Token values were not exposed or changed; the
+  credentials are not prefix-isolated and do not grant bucket-policy access.
+
+The R2 S3 upload/HEAD/download/cleanup test remains **NOT EVIDENCED**: no
+approved token value or secure S3 client is available in this execution
+environment. Do not create a test object under `postgres-backups/` merely to
+work around that gap: the newly verified 30-day Bucket Lock would correctly
+prevent its cleanup. The owner/operator must run the synthetic test through
+the approved secret path, or provide an approved temporary credential scoped
+to a disposable test prefix outside the locked production prefix.
 
 Required access and storage, supplied by the owner before execution:
 
