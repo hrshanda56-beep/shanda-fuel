@@ -246,17 +246,18 @@ from that dump. Do not mark this gate PASS until the owner records all three.
 
 Owner-approved production archive design — 2026-10-13:
 
-- Cloudflare R2 bucket: `shanda-fuel-production-backups`.
+- Cloudflare R2 bucket: `shanda-fuel-production-recovery`.
+- PostgreSQL archive prefix: `postgres-backups/`; existing recovery prefixes
+  remain outside this policy boundary.
 - Visibility: private; retention/lifecycle: 30 days; archive encryption:
   client-side before upload; budget: no incremental spend.
 - The existing `shanda-fuel-staging-recovery` bucket is outside this change and
   must not be modified.
-- Account usage, free-tier headroom, bucket existence, and Cloudflare
-  permissions are not verifiable from the current operator environment. No
-  bucket was created or changed, and no production data was uploaded. Treat
-  this design as approved but the storage gate as **BLOCKED / NOT VERIFIED**
-  until non-secret account evidence proves the requested cost ceiling and
-  effective bucket settings.
+- The production recovery bucket's existence/private state and current
+  default multipart-abort rule are owner-supplied evidence. Effective
+  `postgres-backups/` lifecycle and Bucket Lock settings remain **NOT
+  VERIFIED**; no bucket policy was changed and no production data was
+  uploaded.
 
 Required access and storage, supplied by the owner before execution:
 
@@ -285,6 +286,33 @@ Destination-specific encryption rule:
   staging-only unless the owner separately approves a production archive
   target and retention policy. See [Cloudflare R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
   and [R2 data security](https://developers.cloudflare.com/r2/reference/data-security/).
+
+R2 prefix-policy procedure for the existing production recovery bucket:
+
+1. List object keys and metadata under `postgres-backups/` and the other
+   top-level prefixes; do not retrieve object bodies. Any existing key under
+   `postgres-backups/` must be included in the retention decision because lock
+   rules apply to existing as well as new matching objects.
+2. Read the complete lifecycle and lock configurations before changing them.
+   The lifecycle `PUT` replaces the full rule set, so preserve the existing
+   seven-day incomplete-multipart rule and append, rather than replace it with,
+   an enabled rule whose condition is `prefix: postgres-backups/` and whose
+   `deleteObjectsTransition` is `Age`/`2592000` seconds.
+3. Add one enabled Bucket Lock rule with prefix `postgres-backups/` and
+   `Age`/`2592000` seconds. This prevents overwrite and deletion for at least
+   30 days; the matching lifecycle deletion runs only after the lock permits
+   it. Use unique immutable object keys and never overwrite an archive.
+4. Re-read both configurations and verify the exact prefix, enabled state,
+   age, and preserved multipart rule. Existing `recovery/v1/` objects are not
+   affected because R2 rules match keys beginning with the configured prefix.
+
+The existing Object Read & Write token is suitable for S3 object operations but
+is not a bucket-configuration credential and is not prefix-isolated. Bucket
+policy changes require the owner to use the dashboard or a separate approved
+configuration credential with R2 storage-write authority; do not widen or
+replace the existing object token. If least-privilege prefix access is
+required, use an owner-issued temporary credential scoped to
+`postgres-backups/` for the backup/restore window.
 
 Owner execution template. Inject libpq variables from the secret manager or a
 service file; do not place a URL, password, or key in argv, shell history,
