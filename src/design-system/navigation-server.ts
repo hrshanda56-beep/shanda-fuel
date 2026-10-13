@@ -1,7 +1,6 @@
 import 'server-only';
 
 import { resolveCurrentContext } from '../modules/context/server';
-import { AppError } from '../platform/errors';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
 import { hasProviderSessionCookie } from './entry/session-cookie';
 import { buildNavigationProjection } from './navigation-projection';
@@ -76,8 +75,9 @@ export type ServerShellAccess =
 /**
  * Server-side gate for the authenticated shell. A missing or expired session is
  * `signed-out` (the caller redirects before any product UI is produced); an
- * account with no active organisation is `no-workplace`; any other lookup
- * failure keeps the previous fail-closed behaviour of an empty projection.
+ * account with no active organisation is `no-workplace`; any unresolved
+ * navigation-context lookup is also `signed-out` so the shell never renders
+ * without verified authorization.
  */
 export async function getServerShellAccess(requestHeaders: Headers): Promise<ServerShellAccess> {
   if (
@@ -99,10 +99,13 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
   try {
     const resolution = await resolveCurrentContext(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
-  } catch (error) {
-    if (error instanceof AppError && error.code === 'UNAUTHENTICATED') {
-      return { status: 'signed-out' };
-    }
+  } catch {
+    // Any unresolved session/context/authorization error must fail closed.
+    // The shell redirects signed-out users and never renders product UI when
+    // access cannot be verified.
+    return { status: 'signed-out' };
   }
-  return { status: 'ready', projection: await getServerNavigationProjection(requestHeaders) };
+  const projection = await getServerNavigationProjection(requestHeaders);
+  if (projection === null) return { status: 'signed-out' };
+  return { status: 'ready', projection };
 }
