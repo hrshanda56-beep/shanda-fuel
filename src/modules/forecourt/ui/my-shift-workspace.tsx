@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { Icon, type IconName } from '@/design-system/icons';
 import {
   Button,
   ErrorState,
   Field,
   NumericInput,
   Skeleton,
+  SkeletonBlock,
   StatusBadge,
 } from '@/design-system/primitives';
 import type { StatusTone } from '@/design-system/primitives';
@@ -21,6 +23,12 @@ import {
   type MyShiftData,
   type StepState,
 } from '../my-shift-state';
+import {
+  ATTENTION_LIMIT,
+  summariseAttention,
+  summariseFigures,
+  type AttentionItem,
+} from '../my-shift-summary';
 
 type Scope = { tenantId: string; stationId: string };
 
@@ -126,7 +134,6 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
   const shift = data.shift;
   const tz = data.station.timezone;
   const when = shift ? formatShiftWindow(shift.plannedStartAt, shift.plannedEndAt, tz) : null;
-  const shiftLine = shift ? `${shift.label ?? 'Shift'} · ${when}` : 'No shift right now';
 
   function openCapture(nozzleId: string) {
     setNotice(undefined);
@@ -193,16 +200,26 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
     }
   }
 
+  const figures = summariseFigures(view);
+  const attention = summariseAttention(data, view);
+  const next = view.next;
+  const nextMeter =
+    next.kind === 'record'
+      ? view.meters.find((meterView) => meterView.meter.nozzleId === next.nozzleId)
+      : undefined;
+  const canCapture = data.canCapture && view.phase === 'running';
+
   return (
     <div className="my-shift">
       <header className="my-shift-header">
-        <p className="eyebrow">My Shift</p>
-        <h1 id="page-title">{data.station.name}</h1>
-        <p className="my-shift-when">{shiftLine}</p>
-        <p className="my-shift-headline">
+        {/* The shell's own heading owns #page-title; ids must be unique. */}
+        <h1>{data.station.name}</h1>
+        <p className="my-shift-meta">
+          {shift ? <span className="my-shift-when numeric">{when}</span> : null}
           <StatusBadge tone={view.phase === 'running' ? 'positive' : 'neutral'}>
             {view.headline}
           </StatusBadge>
+          {shift?.label ? <span className="my-shift-label">{shift.label}</span> : null}
         </p>
       </header>
 
@@ -210,32 +227,110 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
         {notice ? <p className="my-shift-notice">{notice}</p> : null}
       </div>
 
-      <section className="my-shift-next" aria-labelledby="next-title">
-        <h2 id="next-title">What to do next</h2>
-        {view.next.kind === 'record' ? (
-          <Button
-            variant="primary"
-            size="lg"
-            block
-            onClick={() => openCapture(view.next.kind === 'record' ? view.next.nozzleId : '')}
-          >
-            Record reading
-          </Button>
-        ) : null}
-        <p className="my-shift-next-text">
-          {view.next.kind === 'record' ? view.next.label : view.next.message}
-        </p>
-      </section>
+      {view.meters.length > 0 ? (
+        <dl className="my-shift-figures" aria-label="Shift progress">
+          <Figure
+            label="Completed"
+            value={figures.completed}
+            caption={`of ${figures.total}`}
+            icon="check-circle"
+            tone="done"
+          />
+          <Figure label="Pending" value={figures.pending} icon="clock" tone="pending" />
+          <Figure
+            label="Due now"
+            value={figures.due}
+            icon="alert"
+            tone="due"
+            active={figures.due > 0}
+          />
+        </dl>
+      ) : null}
+
+      <div className="my-shift-side">
+        <section className="my-shift-panel my-shift-next" aria-labelledby="next-title">
+          <h2 id="next-title" className="my-shift-section-title">
+            What to do next
+          </h2>
+          <div className="my-shift-next-main">
+            <span className="my-shift-ring" aria-hidden="true">
+              <Icon name={next.kind === 'record' ? 'fuel' : 'check-circle'} />
+            </span>
+            {next.kind === 'record' ? (
+              <p className="my-shift-next-text">
+                <strong>{nextMeter?.label ?? next.label}</strong>
+                <span>
+                  {nextMeter ? `${nextMeter.meter.productName} · ` : ''}
+                  {next.boundary === 'SHIFT_OPEN' ? 'Opening' : 'Closing'} reading
+                </span>
+              </p>
+            ) : (
+              <p className="my-shift-next-text">
+                <span>{next.message}</span>
+              </p>
+            )}
+          </div>
+          {next.kind === 'record' ? (
+            <Button
+              variant="primary"
+              size="lg"
+              block
+              aria-label={`Record reading for ${nextMeter?.label ?? 'the next nozzle'}`}
+              onClick={() => openCapture(next.nozzleId)}
+            >
+              Record reading
+            </Button>
+          ) : null}
+        </section>
+
+        <section
+          className="my-shift-panel"
+          aria-labelledby="attention-title"
+          data-empty={attention.length === 0 || undefined}
+        >
+          <h2 id="attention-title" className="my-shift-section-title">
+            Needs attention
+          </h2>
+          {attention.length > 0 ? (
+            <ul className="my-shift-attention">
+              {attention.slice(0, ATTENTION_LIMIT).map((item) => (
+                <li key={item.id}>
+                  <AttentionRow item={item} onOpen={openCapture} />
+                </li>
+              ))}
+              {attention.length > ATTENTION_LIMIT ? (
+                <li className="my-shift-attention-more">
+                  and {attention.length - ATTENTION_LIMIT} more
+                </li>
+              ) : null}
+            </ul>
+          ) : (
+            <>
+              <Icon name="check-circle" />
+              <p className="my-shift-quiet">Nothing needs attention.</p>
+            </>
+          )}
+        </section>
+      </div>
 
       {view.meters.length > 0 ? (
         <section aria-labelledby="meters-title" className="my-shift-meters">
-          <h2 id="meters-title">Meter readings</h2>
+          <h2 id="meters-title" className="my-shift-section-title">
+            Meter readings
+          </h2>
+          <div className="my-shift-columns" aria-hidden="true">
+            <span>Pump / Nozzle</span>
+            <span>Fuel</span>
+            <span>Opening</span>
+            <span>Closing</span>
+            <span />
+          </div>
           <ul className="my-shift-list">
             {view.meters.map((meterView) => (
               <MeterCard
                 key={meterView.meter.nozzleId}
                 view={meterView}
-                canCapture={data.canCapture && view.phase === 'running'}
+                canCapture={canCapture}
                 open={openFor === meterView.meter.nozzleId}
                 onOpen={() => openCapture(meterView.meter.nozzleId)}
                 onCancel={() => setOpenFor(null)}
@@ -250,6 +345,66 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
         </p>
       ) : null}
     </div>
+  );
+}
+
+type FigureTone = 'done' | 'pending' | 'due';
+
+/** A dashboard-style key figure: icon, short label, one strong number. */
+function Figure({
+  label,
+  value,
+  caption,
+  icon,
+  tone,
+  active = true,
+}: {
+  label: string;
+  value: number;
+  caption?: string;
+  icon: IconName;
+  tone: FigureTone;
+  active?: boolean;
+}) {
+  return (
+    <div className="my-shift-figure" data-tone={tone} data-active={active || undefined}>
+      <span className="my-shift-figure-icon" aria-hidden="true">
+        <Icon name={icon} />
+      </span>
+      <dt>{label}</dt>
+      <dd>
+        <span className="my-shift-figure-value numeric">{value}</span>
+        {caption ? <span className="my-shift-figure-caption">{caption}</span> : null}
+      </dd>
+    </div>
+  );
+}
+
+function AttentionRow({
+  item,
+  onOpen,
+}: {
+  item: AttentionItem;
+  onOpen: (nozzleId: string) => void;
+}) {
+  const nozzleId = item.nozzleId;
+  const text = (
+    <>
+      <Icon name="alert" className="my-shift-attention-icon" />
+      <span className="my-shift-attention-text">
+        <span className="my-shift-attention-title">{item.title}</span>
+        <span className="my-shift-attention-detail">{item.detail}</span>
+      </span>
+    </>
+  );
+  // Whole row is the target when the attendant can act on it from here.
+  return nozzleId ? (
+    <button type="button" className="my-shift-attention-row" onClick={() => onOpen(nozzleId)}>
+      {text}
+      <Icon name="chevron-right" className="my-shift-attention-chevron" />
+    </button>
+  ) : (
+    <div className="my-shift-attention-row">{text}</div>
   );
 }
 
@@ -279,9 +434,18 @@ function MeterCard({
         ? 'SHIFT_CLOSE'
         : null;
   const id = `meter-${view.meter.nozzleId}`;
+  const steps = [view.opening, view.closing];
+  // Completed meters recede; due ones stand out; problems are marked.
+  const tone = steps.some((step) => step.state === 'blocked' || step.state === 'needs_supervisor')
+    ? 'issue'
+    : boundary
+      ? 'due'
+      : steps.every((step) => step.state === 'done')
+        ? 'done'
+        : 'idle';
 
   return (
-    <li className="my-shift-card">
+    <li className="my-shift-card" data-tone={tone}>
       <div className="my-shift-card-head">
         <h3>{view.label}</h3>
         <p>{view.meter.productName}</p>
@@ -291,8 +455,14 @@ function MeterCard({
         <Step title="Closing reading" step={view.closing} />
       </dl>
       {boundary && canCapture && !open ? (
-        <Button variant="secondary" size="lg" block onClick={onOpen}>
-          {boundary === 'SHIFT_OPEN' ? 'Record opening reading' : 'Record closing reading'}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="my-shift-record"
+          aria-label={`Record ${boundary === 'SHIFT_OPEN' ? 'opening' : 'closing'} reading for ${view.label}`}
+          onClick={onOpen}
+        >
+          Record →
         </Button>
       ) : null}
       {boundary && canCapture && open ? (
@@ -313,11 +483,11 @@ function Step({ title, step }: { title: string; step: MeterView['opening'] }) {
     <div className="my-shift-step">
       <dt>{title}</dt>
       <dd>
+        {step.value ? <span className="my-shift-value numeric">{step.value}</span> : null}
         <StatusBadge tone={STEP_TONE[step.state]}>
           {step.state === 'done' ? '✓ ' : ''}
           {step.text}
         </StatusBadge>
-        {step.value ? <span className="my-shift-value numeric">{step.value}</span> : null}
       </dd>
     </div>
   );
@@ -438,7 +608,12 @@ function CaptureForm({
 function MyShiftSkeleton() {
   return (
     <div className="my-shift" aria-busy="true">
-      <Skeleton lines={3} label="Loading your shift" />
+      <Skeleton lines={2} label="Loading your shift" />
+      <div className="my-shift-figures" aria-hidden="true">
+        {[0, 1, 2].map((index) => (
+          <SkeletonBlock key={index} height="6rem" />
+        ))}
+      </div>
       <Skeleton lines={3} label="Loading meters" />
     </div>
   );

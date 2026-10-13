@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -35,6 +35,7 @@ jobs:
     env:
       APP_ENV: test
       APP_URL: http://127.0.0.1:3100
+      AUTH_PROVIDER: BETTER_AUTH
       BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
@@ -81,7 +82,7 @@ jobs:
 
   dependency-audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -114,7 +115,7 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -131,14 +132,17 @@ jobs:
 
   sast:
     name: SAST (Semgrep CE)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
-    container:
-      image: semgrep/semgrep@sha256:cef085245254d15c66d96be413c730f0b458823a1d0c39afbc12f705b664ce8f # Semgrep CE 1.102.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned Semgrep
+        run: python -m pip install --disable-pip-version-check --no-cache-dir setuptools==75.6.0 semgrep==1.102.0
       - name: Validate Semgrep rules
         run: semgrep --metrics off --validate --config .semgrep.yml
       - name: Run high-severity static analysis
@@ -158,7 +162,7 @@ jobs:
     name: CodeQL
     # Enable only after GitHub Code Scanning/GHAS is enabled for this private repository.
     if: vars.CODEQL_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       actions: read
@@ -182,7 +186,7 @@ jobs:
 
   runtime-role:
     name: Runtime-role proof
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -203,6 +207,7 @@ jobs:
     env:
       APP_ENV: test
       APP_URL: http://127.0.0.1:3100
+      AUTH_PROVIDER: BETTER_AUTH
       BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
@@ -251,6 +256,10 @@ jobs:
           test -s runtime-readiness.json
           grep -q '"status":"ok"' runtime-readiness.json
           curl --fail --silent --show-error http://127.0.0.1:3100/api/health > runtime-health.json
+      - name: Assert development-only routes are denied by the production server
+        run: bash scripts/ci/assert-dev-routes-denied.sh http://127.0.0.1:3100
+      - name: Assert the synthetic E2E navigation fixture is denied by the production server
+        run: bash scripts/ci/assert-navigation-fixture-denied.sh http://127.0.0.1:3100
       - name: Stop runtime-role proof server
         if: always()
         run: |

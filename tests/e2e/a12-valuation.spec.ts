@@ -13,6 +13,15 @@ test.describe('A12 inventory valuation operator surface', () => {
     await expect(page.getByRole('heading', { name: 'Inventory', level: 1 })).toBeVisible();
   });
 
+  test('the inventory entry route keeps the work context it was given', async ({ page }) => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    const stationId = '22222222-2222-4222-8222-222222222222';
+    await page.goto(`/inventory?tenantId=${tenantId}&stationId=${stationId}&ignored=1`);
+    await expect(page).toHaveURL(
+      new RegExp(`/inventory/valuation\\?tenantId=${tenantId}&stationId=${stationId}$`),
+    );
+  });
+
   test('valuation entry state has no detectable accessibility violations and supports keyboard focus', async ({
     page,
   }) => {

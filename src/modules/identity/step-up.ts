@@ -6,6 +6,21 @@ import { getAuth } from '../../platform/auth';
 import { getAuditSigningKey } from '../../platform/config/env';
 import { type Database, withTenantTransaction } from '../../platform/db';
 import { AppError } from '../../platform/errors';
+import {
+  clerkUserHasMfa,
+  getAuthProviderName,
+  hasRecentClerkReverification,
+  resolveClerkSession,
+} from '../../platform/auth/provider';
+import {
+  CLERK_DEACTIVATE_STAFF_ACTION,
+  CLERK_STEP_UP_ACTION,
+  type ClerkReverificationLevel,
+  type ClerkStepUpAction,
+  issueClerkStepUpAssertion,
+  issueClerkStepUpChallenge,
+  readClerkStepUpChallenge,
+} from '../../platform/auth/clerk-step-up';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authSession } from '../../platform/db/schema/auth';
 import type { TenantExecutionContext } from '../tenancy/authority';
@@ -20,7 +35,29 @@ export type StepUpResult = {
   level: typeof STEP_UP_LEVEL;
   tenantId: string;
   expiresAt: string;
+  setCookie?: string;
 };
+
+export const CLERK_STEP_UP_POLICY = {
+  [CLERK_STEP_UP_ACTION]: {
+    allowNoMfaOwner: true,
+  },
+  [CLERK_DEACTIVATE_STAFF_ACTION]: {
+    allowNoMfaOwner: true,
+  },
+} as const satisfies Record<ClerkStepUpAction, { allowNoMfaOwner: boolean }>;
+
+export class ClerkReverificationRequiredError extends Error {
+  readonly code = 'CLERK_REVERIFICATION_REQUIRED';
+
+  constructor(
+    readonly level: ClerkReverificationLevel,
+    readonly challengeCookie: string,
+  ) {
+    super('Clerk reverification is required for this action');
+    this.name = 'ClerkReverificationRequiredError';
+  }
+}
 
 type StepUpPersistence = {
   recordFailure: (
@@ -139,11 +176,72 @@ export async function establishStepUp(input: {
   context: TenantExecutionContext;
   password: string;
   totpCode: string;
+  action?: ClerkStepUpAction;
   now?: Date;
   dependencies?: StepUpDependencies;
 }): Promise<StepUpResult> {
   const now = input.now ?? new Date();
-  const auth = input.dependencies?.auth ?? getAuth();
+  if (getAuthProviderName() === 'CLERK') {
+    const session = await resolveClerkSession(input.request);
+    if (!session || !input.action || !(input.action in CLERK_STEP_UP_POLICY)) {
+      throw new AppError('FORBIDDEN', 'The privileged action is not eligible for Clerk step-up');
+    }
+    if (
+      session.internalUserId !== input.context.actor.identityId ||
+      session.providerSessionId !== input.context.actor.session.sessionId ||
+      input.context.membership.tenantId !== input.context.transaction.tenantId
+    ) {
+      throw new AppError('FORBIDDEN', 'Clerk step-up context is invalid');
+    }
+
+    const hasTenantOwnerRole = input.context.membership.roleAssignments.some(
+      (assignment) =>
+        assignment.roleCode === 'OWNER' &&
+        assignment.scopeType === 'TENANT' &&
+        assignment.tenantId === input.context.membership.tenantId,
+    );
+    const mfaEnrolled = await clerkUserHasMfa(session.providerUserId);
+    const allowNoMfaPath = CLERK_STEP_UP_POLICY[input.action].allowNoMfaOwner && hasTenantOwnerRole;
+    const level: ClerkReverificationLevel =
+      mfaEnrolled || !allowNoMfaPath ? 'strict_mfa' : 'strict';
+    const challengeInput = {
+      providerSessionId: session.providerSessionId,
+      internalUserId: session.internalUserId,
+      tenantId: input.context.membership.tenantId,
+      action: input.action,
+      level,
+    } as const;
+
+    if (!readClerkStepUpChallenge(input.request, challengeInput, now)) {
+      throw new ClerkReverificationRequiredError(
+        level,
+        issueClerkStepUpChallenge({ ...challengeInput, now }),
+      );
+    }
+    if (!hasRecentClerkReverification(input.request, level)) {
+      throw new AppError('FORBIDDEN', 'Clerk reverification is required for this action');
+    }
+    const expiresAt = new Date(
+      Math.min(session.expiresAt.getTime(), now.getTime() + STEP_UP_TTL_MS),
+    );
+    await withTenantTransaction(input.context.transaction, async (transaction) => {
+      await appendStepUpEvent(transaction, input.context, now, 'SECURITY.STEP_UP_SUCCEEDED', {
+        outcome: 'success',
+        level: STEP_UP_LEVEL,
+        expiresAt: expiresAt.toISOString(),
+        tenantId: input.context.membership.tenantId,
+        authenticationMethod: 'clerk-reverification',
+      });
+    });
+    const setCookie = issueClerkStepUpAssertion({ ...challengeInput, now });
+    return {
+      level: STEP_UP_LEVEL,
+      tenantId: input.context.membership.tenantId,
+      expiresAt: expiresAt.toISOString(),
+      ...(setCookie ? { setCookie } : {}),
+    };
+  }
+  const auth = input.dependencies?.auth ?? (await getAuth());
   const persistence = input.dependencies?.persistence ?? databaseStepUpPersistence;
   let failedFactor: 'password' | 'totp' = 'password';
 

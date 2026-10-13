@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AUTH_SECURITY_POLICY, buildTwoFactorPlugin } from './server';
+import { AUTH_SECURITY_POLICY, buildTwoFactorPlugin } from './better-auth';
 
 describe('authentication access policy', () => {
   it('disables public self-service signup', () => {

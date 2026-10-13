@@ -7,6 +7,11 @@ import {
   type SessionRecord,
 } from '../../platform/security';
 import { getAuth } from '../../platform/auth';
+import {
+  getAuthProviderName,
+  resolveClerkSession,
+  revokeClerkUserSessions,
+} from '../../platform/auth/provider';
 
 /**
  * Adapter boundary for Better Auth. Better Auth resolves identity/session
@@ -76,10 +81,32 @@ const betterAuthSessionSchema = z.object({
 /** Resolve the current server session from Better Auth; browser claims are ignored. */
 export async function resolveAuthenticatedActor(
   request: Request,
-  auth: BetterAuthSessionReader = getAuth(),
+  auth?: BetterAuthSessionReader,
   now = new Date(),
 ): Promise<AuthenticatedActorContext | null> {
-  const result = await auth.api.getSession({
+  if (getAuthProviderName() === 'CLERK') {
+    const providerSession = await resolveClerkSession(request);
+    if (!providerSession) return null;
+    const session: SessionRecord = {
+      sessionId: providerSession.providerSessionId,
+      userId: providerSession.internalUserId,
+      expiresAt: providerSession.expiresAt,
+      strongAuthenticatedAt: providerSession.strongAuthenticatedAt,
+      strongAuthenticationExpiresAt: providerSession.strongAuthenticationExpiresAt,
+      strongAuthenticationVerified: providerSession.strongAuthenticationVerified,
+      stepUpLevel: providerSession.stepUpLevel,
+      stepUpExpiresAt: providerSession.stepUpExpiresAt,
+      stepUpTenantId: providerSession.stepUpTenantId,
+      stepUpAction: providerSession.stepUpAction,
+      strongAuthenticationMethod: providerSession.strongAuthenticationMethod,
+    };
+    assertSessionActive(session, now);
+    return {
+      identityId: providerSession.internalUserId,
+      session: invalidateExpiredAssurance(session, now),
+    };
+  }
+  const result = await (auth ?? (await getAuth())).api.getSession({
     headers: request.headers,
     query: { disableCookieCache: true },
   });
@@ -107,9 +134,14 @@ export async function resolveAuthenticatedActor(
 /** Revoke all Better Auth sessions for the authenticated identity on compromise. */
 export async function revokeIdentitySessions(
   request: Request,
-  auth: BetterAuthSessionRevoker = getAuth(),
+  auth?: BetterAuthSessionRevoker,
 ): Promise<void> {
-  await auth.api.revokeSessions({ headers: request.headers });
+  if (getAuthProviderName() === 'CLERK') {
+    const session = await resolveClerkSession(request);
+    if (session) await revokeClerkUserSessions(session.providerUserId);
+    return;
+  }
+  await (auth ?? (await getAuth())).api.revokeSessions({ headers: request.headers });
 }
 
 export async function requireAuthenticatedActor(

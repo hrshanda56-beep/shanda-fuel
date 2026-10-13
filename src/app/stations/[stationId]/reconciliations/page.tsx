@@ -24,6 +24,7 @@ export default async function ReconciliationListPage({
       {search.tenantId ? (
         <OperationsControlRoom
           context={{ tenantId: search.tenantId, stationId, businessDayId: search.businessDayId }}
+          focus="reconciliations"
         />
       ) : (
         <DailyOperationsContextRequired />

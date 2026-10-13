@@ -193,7 +193,7 @@ export function NeedsAttention({
 /* Work in progress (inline) ---------------------------------------------- */
 
 /** Small marker for navigation items or actions that are not yet available. */
-export function WipBadge({ children = 'In progress' }: { children?: ReactNode }) {
+export function WipBadge({ children = 'Coming soon' }: { children?: ReactNode }) {
   return <span className="wip-badge">{children}</span>;
 }
 

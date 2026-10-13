@@ -352,9 +352,10 @@ test.describe('production reconciliation persistence', () => {
     );
 
     const controlRoom = page.locator('[aria-label="Operations control room"]');
-    await expect(
-      controlRoom.getByRole('heading', { name: 'Shift boundaries and team context' }),
-    ).toBeVisible();
+    // This scenario runs with CI's Better Auth provider. Rendering the control
+    // room must not require a ClerkProvider or crash before its content loads.
+    await expect(controlRoom).toBeVisible();
+    await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
     await expect(controlRoom.getByText('Audit history restricted')).toBeVisible();
@@ -394,8 +395,8 @@ test.describe('production reconciliation persistence', () => {
     );
 
     const shiftRow = page
-      .locator('article.operations-shift-row')
-      .filter({ hasText: ids.controlRoomShift });
+      // The approved layout no longer prints raw shift ids; rows carry data-shift-id.
+      .locator(`article.operations-shift-row[data-shift-id="${ids.controlRoomShift}"]`);
     const closeMeters = shiftRow.getByRole('button', { name: 'Close meters' });
     await expect(closeMeters).toBeVisible();
     await client.unsafe(

@@ -6,6 +6,8 @@ import { InviteUnavailable } from '@/design-system/entry/invite-views';
 import { ExistingInviteFlow, NewInviteFlow } from '@/design-system/entry/invite-acceptance';
 import { LoginForm } from '@/design-system/entry/login-form';
 import { getAuth } from '@/platform/auth';
+import { getAuthProviderName } from '@/platform/auth/provider';
+import { hasActiveSession } from '@/design-system/entry/session';
 import { headers } from 'next/headers';
 
 // The link carries a secret. Keep it out of referrers, caches and search indexes.
@@ -21,12 +23,17 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const { token } = await params;
   const view = await resolveInvitationView(token);
 
+  const requestHeaders = await headers();
   const session =
     view.kind === 'existing-identity'
-      ? await getAuth().api.getSession({
-          headers: await headers(),
-          query: { disableCookieCache: true },
-        })
+      ? getAuthProviderName() === 'CLERK'
+        ? await hasActiveSession(requestHeaders)
+        : await (
+            await getAuth()
+          ).api.getSession({
+            headers: requestHeaders,
+            query: { disableCookieCache: true },
+          })
       : null;
 
   return (

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthenticatedActor } from '../../../../../../modules/identity';
 import { getAuth } from '../../../../../../platform/auth';
+import { getAuthProviderName } from '../../../../../../platform/auth/provider';
 import {
   apiErrorResponse,
   withRequestObservability,
@@ -34,10 +35,13 @@ function jsonResponse(body: unknown, status: number): Response {
 
 export const POST = withRequestObservability(
   withPersistentRateLimit(async (request: Request): Promise<Response> => {
+    if (getAuthProviderName() === 'CLERK') return new Response(null, { status: 404 });
     try {
       await requireAuthenticatedActor(request);
       const body = requestSchema.parse(await request.json());
-      const result = await getAuth().api.verifyTOTP({
+      const result = await (
+        await getAuth()
+      ).api.verifyTOTP({
         headers: request.headers,
         body: { code: body.code },
         returnHeaders: true,

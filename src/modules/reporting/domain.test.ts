@@ -6,6 +6,7 @@ import {
   formatLitres,
   formatMoney,
   normalizeStationIds,
+  sumObservedExact,
   sumExact,
 } from './domain';
 
@@ -23,6 +24,12 @@ describe('management reporting exact arithmetic', () => {
   it('returns an empty zero report rather than null arithmetic', () => {
     expect(formatMoney(sumExact([]))).toBe('0.0000');
     expect(formatLitres(sumExact([]))).toBe('0.000');
+  });
+
+  it('keeps missing physical observations unavailable while preserving measured zero', () => {
+    expect(sumObservedExact([])).toBe('0');
+    expect(sumObservedExact(['0.000', '12.500'])).toBe('12.5');
+    expect(sumObservedExact(['12.500', null])).toBeNull();
   });
 
   it('keeps cash evidence, collection, and banking as separate facts', () => {

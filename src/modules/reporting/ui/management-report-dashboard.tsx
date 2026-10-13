@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { formatBusinessDate, formatLitres, formatMoney } from '../../../design-system/formatters';
+import { formatBusinessDate, formatLitres } from '../../../design-system/formatters';
 import { MetricCard } from '../../../design-system/layout';
 import {
   Card,
@@ -22,7 +22,7 @@ import {
   resolveReportFilters,
   type ReportFilters,
 } from '../filters';
-import { formatTileMoney } from '../format';
+import { formatReportLitres, formatTileMoney } from '../format';
 import { businessToday } from '../period';
 import { findReport, type ReportDefinition } from '../catalog';
 import { ReportFilterBar } from './report-filter-bar';
@@ -30,11 +30,21 @@ import { ReportActionStatus } from './report-action-status';
 import { useAvailableStations } from './use-available-stations';
 import { useReportActions } from './use-report-actions';
 
-function customerMoney(value: string | null): string {
-  return value === null ? 'Unavailable' : formatMoney(value);
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  POS: 'POS (card)',
+  ECOCASH: 'EcoCash',
+  CUSTOMER_CREDIT: 'Account',
+  PREPAID: 'Prepaid',
+};
+
+function paymentMethodLabel(method: string): string {
+  return PAYMENT_METHOD_LABELS[method] ?? method.replaceAll('_', ' ').toLowerCase();
 }
 
-const managementReportState: ManagementReport['state'] = 'POSTED';
+function customerMoney(value: string | null): string {
+  return value === null ? 'Unavailable' : formatTileMoney(value);
+}
 
 /**
  * `view` is `summary` (headline figures, used on the Reports list) or the slug
@@ -133,7 +143,7 @@ export function ManagementReportDashboard({
               <h2 id="report-filters-title">Report filters</h2>
             </div>
             <StatusBadge tone="positive" role="status" aria-live="polite">
-              {report?.state ?? managementReportState}
+              Approved figures
             </StatusBadge>
           </div>
           <ReportFilterBar stations={stations} filters={filters} onChange={changeFilters} />
@@ -143,9 +153,8 @@ export function ManagementReportDashboard({
             </p>
           ) : null}
           <p className="metric-meta">
-            Figures come from posted source records, each on its own date basis. This is an
-            operational view, not a general ledger, statutory P&amp;L, balance sheet, tax report, or
-            bank statement.
+            Figures come from approved records, each dated by its own business date. This is not a
+            general ledger, statutory P&amp;L, balance sheet, tax report or bank statement.
           </p>
         </Card>
       ) : null}
@@ -229,10 +238,12 @@ export function ManagementReportDashboard({
                             {formatLitres(row.litres)}
                           </td>
                           <td data-label="Sales value" className="numeric">
-                            {formatMoney(row.salesValue)}
+                            {formatTileMoney(row.salesValue)}
                           </td>
                           <td data-label="Average price" className="numeric">
-                            {row.averageRealizedPrice ? formatMoney(row.averageRealizedPrice) : '—'}
+                            {row.averageRealizedPrice
+                              ? formatTileMoney(row.averageRealizedPrice)
+                              : '—'}
                           </td>
                           <td data-label="IDs">
                             <small>{row.reconciliationIds.length} reconciliation</small>
@@ -249,13 +260,15 @@ export function ManagementReportDashboard({
                   />
                 ) : null}
                 <p className="metric-meta">
-                  Accounted sales and reading sales value are operational control evidence, not
-                  revenue authority. Canonical recognized revenue is{' '}
-                  {formatMoney(report.revenue.recognizedRevenue)}. Payment evidence:{' '}
+                  Sales value is the approved shift figure. Recognised revenue for the period is{' '}
+                  {formatTileMoney(report.revenue.recognizedRevenue)}. Payments:{' '}
                   {report.sales.payments
-                    .map((payment) => `${payment.method} ${formatMoney(payment.amount)}`)
+                    .map(
+                      (payment) =>
+                        `${paymentMethodLabel(payment.method)} ${formatTileMoney(payment.amount)}`,
+                    )
                     .join(' · ') || 'none'}{' '}
-                  · variance {formatMoney(report.sales.salesVariance)}
+                  · variance {formatTileMoney(report.sales.salesVariance)}
                 </p>
               </Card>
             ) : null}
@@ -270,33 +283,33 @@ export function ManagementReportDashboard({
                 <div className="panel-heading">
                   <div>
                     <p className="eyebrow">Cash position</p>
-                    <h2 id="cash-report-title">Evidence → collected → banked</h2>
+                    <h2 id="cash-report-title">Cash: collected → banked</h2>
                   </div>
                 </div>
                 <dl className="summary-list">
                   <div>
                     <dt>Cash declared in reconciliations</dt>
-                    <dd>{formatMoney(report.cash.cashEvidence)}</dd>
+                    <dd>{formatTileMoney(report.cash.cashEvidence)}</dd>
                   </div>
                   <div>
                     <dt>Collected</dt>
-                    <dd>{formatMoney(report.cash.collected)}</dd>
+                    <dd>{formatTileMoney(report.cash.collected)}</dd>
                   </div>
                   <div>
                     <dt>Awaiting collection</dt>
-                    <dd>{formatMoney(report.cash.awaitingCollection)}</dd>
+                    <dd>{formatTileMoney(report.cash.awaitingCollection)}</dd>
                   </div>
                   <div>
                     <dt>Banked / confirmed</dt>
-                    <dd>{formatMoney(report.cash.banked)}</dd>
+                    <dd>{formatTileMoney(report.cash.banked)}</dd>
                   </div>
                   <div>
                     <dt>Collected, not banked</dt>
-                    <dd>{formatMoney(report.cash.collectedButNotBanked)}</dd>
+                    <dd>{formatTileMoney(report.cash.collectedButNotBanked)}</dd>
                   </div>
                   <div>
                     <dt>Reconciliation cash variance</dt>
-                    <dd>{formatMoney(report.cash.cashVariance)}</dd>
+                    <dd>{formatTileMoney(report.cash.cashVariance)}</dd>
                   </div>
                 </dl>
                 <p className="metric-meta">
@@ -316,44 +329,45 @@ export function ManagementReportDashboard({
                 <div className="panel-heading">
                   <div>
                     <p className="eyebrow">Provider settlement position</p>
-                    <h2 id="provider-report-title">Electronic evidence and settlements</h2>
+                    <h2 id="provider-report-title">EcoCash and card settlements</h2>
                   </div>
                 </div>
                 <dl className="summary-list">
                   <div>
                     <dt>Provider payments in reconciliations</dt>
-                    <dd>{formatMoney(report.providers.paymentEvidence)}</dd>
+                    <dd>{formatTileMoney(report.providers.paymentEvidence)}</dd>
                   </div>
                   <div>
                     <dt>Settlement gross</dt>
-                    <dd>{formatMoney(report.providers.settlementGross)}</dd>
+                    <dd>{formatTileMoney(report.providers.settlementGross)}</dd>
                   </div>
                   <div>
                     <dt>Allocated</dt>
-                    <dd>{formatMoney(report.providers.allocatedAmount)}</dd>
+                    <dd>{formatTileMoney(report.providers.allocatedAmount)}</dd>
                   </div>
                   <div>
                     <dt>Unallocated provider amount</dt>
-                    <dd>{formatMoney(report.providers.unallocatedProviderAmount)}</dd>
+                    <dd>{formatTileMoney(report.providers.unallocatedProviderAmount)}</dd>
                   </div>
                   <div>
-                    <dt>Unmatched reconciliation evidence</dt>
-                    <dd>{formatMoney(report.providers.unmatchedEvidenceAmount)}</dd>
+                    <dt>Payments not yet matched</dt>
+                    <dd>{formatTileMoney(report.providers.unmatchedEvidenceAmount)}</dd>
                   </div>
                   <div>
-                    <dt>Fees / deductions evidence</dt>
-                    <dd>{formatMoney(report.providers.feesAndDeductions)}</dd>
+                    <dt>Fees and deductions</dt>
+                    <dd>{formatTileMoney(report.providers.feesAndDeductions)}</dd>
                   </div>
                 </dl>
                 {report.providers.rows.length === 0 ? (
                   <EmptyState
-                    title="No settlement evidence"
+                    title="No settlements"
                     message="No provider settlements fall in this settlement-date range."
                   />
                 ) : (
                   <p className="metric-meta">
-                    {report.providers.rows.length} settlement records with canonical IDs available
-                    for drill-down.
+                    {report.providers.rows.length}{' '}
+                    {report.providers.rows.length === 1 ? 'settlement' : 'settlements'} in this
+                    period.
                   </p>
                 )}
               </Card>
@@ -376,15 +390,15 @@ export function ManagementReportDashboard({
                 <dl className="summary-list">
                   <div>
                     <dt>Supplier invoices</dt>
-                    <dd>{formatMoney(report.suppliers.invoiceValue)}</dd>
+                    <dd>{formatTileMoney(report.suppliers.invoiceValue)}</dd>
                   </div>
                   <div>
                     <dt>Supplier credit notes</dt>
-                    <dd>{formatMoney(report.suppliers.creditNoteValue)}</dd>
+                    <dd>{formatTileMoney(report.suppliers.creditNoteValue)}</dd>
                   </div>
                   <div>
                     <dt>Supplier payments</dt>
-                    <dd>{formatMoney(report.suppliers.payments)}</dd>
+                    <dd>{formatTileMoney(report.suppliers.payments)}</dd>
                   </div>
                   <div>
                     <dt>Customer receivables</dt>
@@ -400,13 +414,11 @@ export function ManagementReportDashboard({
                   </div>
                 </dl>
                 <p className="metric-meta">
-                  Supplier exposure is a balance as of the selected toDate; customer exposure is
-                  also as of toDate when available.{' '}
+                  Balances are as of the end date.{' '}
                   {report.customers.availability === 'AVAILABLE'
-                    ? 'Customer balances are shown as of the selected toDate. '
-                    : 'Customer balances are unavailable at station scope because A8 balances are tenant-owned without a station dimension. '}
-                  Prepaid litres remain quantity evidence; this report does not convert them to
-                  money.
+                    ? ''
+                    : 'Customer balances are unavailable for a single station because they are kept for the whole organisation. '}
+                  Prepaid litres are shown as litres, not converted to money.
                 </p>
               </Card>
             ) : null}
@@ -431,11 +443,11 @@ export function ManagementReportDashboard({
                   </div>
                   <div>
                     <dt>Physical stock</dt>
-                    <dd>{formatLitres(report.inventory.physicalLitres)}</dd>
+                    <dd>{formatReportLitres(report.inventory.physicalLitres)}</dd>
                   </div>
                   <div>
                     <dt>Inventory variance</dt>
-                    <dd>{formatLitres(report.inventory.varianceLitres)}</dd>
+                    <dd>{formatReportLitres(report.inventory.varianceLitres)}</dd>
                   </div>
                   <div>
                     <dt>Deliveries</dt>
@@ -443,7 +455,7 @@ export function ManagementReportDashboard({
                   </div>
                   <div>
                     <dt>Landed-cost evidence</dt>
-                    <dd>{formatMoney(report.inventory.deliveryValue)}</dd>
+                    <dd>{formatTileMoney(report.inventory.deliveryValue)}</dd>
                   </div>
                 </dl>
                 <p className="metric-meta">

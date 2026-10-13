@@ -13,7 +13,8 @@ export default async function InventoryPage({
 }) {
   const search = await searchParams;
   const context = new URLSearchParams();
-  for (const name of ['organisationId', 'legalEntityId', 'stationId', 'allStations']) {
+  // Context links are built with tenantId (buildContextHref); keep it with the rest.
+  for (const name of ['tenantId', 'organisationId', 'legalEntityId', 'stationId', 'allStations']) {
     const value = first(search[name]);
     if (value) context.set(name, value);
   }

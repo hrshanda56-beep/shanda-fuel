@@ -9,14 +9,20 @@ import { PageContainer } from '@/design-system/layout';
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
 import { StaffPanel } from './staff-panel';
+import { PaymentsPanel } from '../../setup/ui/payments-panel';
+import { ReadinessPanel } from '../../setup/ui/readiness-panel';
 import styles from './settings-workspace.module.css';
 
-type Tab = 'organisation' | 'companies' | 'stations' | 'staff' | 'account';
+type Tab =
+  'organisation' | 'companies' | 'stations' | 'readiness' | 'payments' | 'staff' | 'account';
+type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
   { value: 'companies', label: 'Companies', icon: 'receipt' },
   { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'readiness', label: 'Readiness', icon: 'check-circle' },
+  { value: 'payments', label: 'Payments', icon: 'receipt' },
   { value: 'staff', label: 'Staff', icon: 'users' },
   { value: 'account', label: 'Account', icon: 'users' },
 ];
@@ -61,7 +67,8 @@ function InfoCard({
   );
 }
 
-function AccountPanel({ view }: { view: SettingsView }) {
+function AccountPanel({ view, provider }: { view: SettingsView; provider: AuthProviderName }) {
+  const email = view.account.email ?? 'No email provided';
   return (
     <>
       <div className={`${styles.card} ${styles.profileCard}`}>
@@ -70,25 +77,31 @@ function AccountPanel({ view }: { view: SettingsView }) {
         </span>
         <div className={styles.profileText}>
           <p className={styles.profileName}>{view.account.name}</p>
-          <p className={styles.profileMeta}>{view.account.email}</p>
+          <p className={styles.profileMeta}>{email}</p>
         </div>
       </div>
       <InfoCard headingId="account-details" title="Your details">
         <Fields
           items={[
             { label: 'Name', value: view.account.name },
-            { label: 'Email', value: view.account.email },
+            { label: 'Email', value: email },
           ]}
         />
       </InfoCard>
       <div className={styles.signOutRow}>
-        <SignOutButton />
+        <SignOutButton provider={provider} />
       </div>
     </>
   );
 }
 
-export function SettingsWorkspace({ view }: { view: SettingsView }) {
+export function SettingsWorkspace({
+  view,
+  provider,
+}: {
+  view: SettingsView;
+  provider: AuthProviderName;
+}) {
   const [tab, setTab] = useState<Tab>('organisation');
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
@@ -103,14 +116,18 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
             <InfoCard headingId="organisation-unavailable" title="Not available">
               <AccessDeniedState message="No organisation is available for this account." />
             </InfoCard>
-            <AccountPanel view={view} />
+            <AccountPanel view={view} provider={provider} />
           </div>
         </div>
       </PageContainer>
     );
   }
 
-  const visibleTabs = TABS.filter((item) => item.value !== 'staff' || view.staff?.canManage);
+  const visibleTabs = TABS.filter(
+    (item) =>
+      (item.value !== 'staff' && item.value !== 'readiness' && item.value !== 'payments') ||
+      view.staff?.canManage,
+  );
   const active = visibleTabs.find((item) => item.value === tab) ?? visibleTabs[0]!;
   const { selectedStation, legalEntities } = view.context;
 
@@ -183,11 +200,17 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
             )
           ) : null}
 
-          {tab === 'staff' && view.staff?.canManage ? (
-            <StaffPanel tenantId={organisation.id} overview={view.staff} />
+          {tab === 'readiness' && view.staff?.canManage ? <ReadinessPanel /> : null}
+
+          {tab === 'payments' && view.staff?.canManage ? (
+            <PaymentsPanel provider={provider} />
           ) : null}
 
-          {tab === 'account' ? <AccountPanel view={view} /> : null}
+          {tab === 'staff' && view.staff?.canManage ? (
+            <StaffPanel tenantId={organisation.id} overview={view.staff} provider={provider} />
+          ) : null}
+
+          {tab === 'account' ? <AccountPanel view={view} provider={provider} /> : null}
         </div>
       </div>
     </PageContainer>

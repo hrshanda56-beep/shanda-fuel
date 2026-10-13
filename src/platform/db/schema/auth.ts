@@ -10,7 +10,7 @@ const generatedUuid = () =>
 export const authUser = authSchema.table('user', {
   id: generatedUuid(),
   name: text('name').notNull(),
-  email: text('email').notNull().unique(),
+  email: text('email').unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
   image: text('image'),

@@ -54,6 +54,12 @@ describe('customer credit migration upgrade path', () => {
             DROP CONSTRAINT IF EXISTS customers_legal_entity_fk,
             DROP CONSTRAINT IF EXISTS customers_tenant_id_id_legal_entity_uidx,
             DROP COLUMN IF EXISTS legal_entity_id;
+          DELETE FROM drizzle.__drizzle_migrations
+          WHERE created_at >= (
+            SELECT created_at
+            FROM drizzle.__drizzle_migrations
+            WHERE hash = '${migrationHash}'
+          );
         `);
 
         const before = await transaction<
@@ -76,6 +82,11 @@ describe('customer credit migration upgrade path', () => {
         expect(before).toEqual([]);
 
         await transaction.unsafe(migrationSql);
+
+        await transaction`
+          insert into drizzle.__drizzle_migrations (hash, created_at)
+          values (${migrationHash}, ${Date.now()})
+        `;
 
         const after = await transaction<
           {

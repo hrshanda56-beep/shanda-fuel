@@ -139,7 +139,7 @@ test.describe('provider settlement workspace', () => {
 
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
-    await expect(page.getByRole('heading', { name: 'Choose an authorised station' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a station' })).toBeVisible();
     expect(summaryRequests).toBe(0);
     expect(unmatchedRequests).toBe(0);
   });
@@ -202,7 +202,7 @@ test.describe('provider settlement workspace', () => {
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'Reconcile', exact: true }).click();
-    await expect(page.getByText('RECONCILED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Reconciled', { exact: true })).toBeVisible();
     expect(commands.map(({ body }) => body.commandType)).toEqual([
       'AllocateProviderSettlement',
       'ReconcileProviderSettlement',
@@ -248,7 +248,7 @@ test.describe('provider settlement workspace', () => {
       .getByLabel('Variance reason')
       .fill('Provider statement differs from approved POS evidence.');
     await page.getByRole('button', { name: 'Confirm reconciliation' }).click();
-    await expect(page.getByText('EXCEPTION', { exact: true })).toBeVisible();
+    await expect(page.getByText('Exception', { exact: true })).toBeVisible();
     expect(commandBody).toBeTruthy();
     expect((commandBody as unknown as { reason?: unknown } | null)?.reason).toBe(
       'Provider statement differs from approved POS evidence.',
@@ -271,7 +271,7 @@ test.describe('provider settlement workspace', () => {
       `/stations/${stationId}/settlements?tenantId=${organisationId}&allStations=true`,
     );
     await waitForHydration(page);
-    await expect(page.getByRole('heading', { name: 'Choose an authorised station' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a station' })).toBeVisible();
     expect(settlementRequests).toBe(0);
   });
 

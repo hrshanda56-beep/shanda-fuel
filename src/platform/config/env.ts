@@ -33,9 +33,12 @@ const envSchema = z
   .object({
     APP_ENV: z.enum(['local', 'test', 'staging', 'production']).default('local'),
     APP_URL: z.string().url().default('http://localhost:3000'),
+    AUTH_PROVIDER: z.enum(['BETTER_AUTH', 'CLERK']).default('BETTER_AUTH'),
     DATABASE_URL: z.string().min(1).optional(),
     DATABASE_DIRECT_URL: z.string().min(1).optional(),
     BETTER_AUTH_SECRET: z.string().min(32).optional(),
+    CLERK_SECRET_KEY: z.string().startsWith('sk_').optional(),
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().startsWith('pk_').optional(),
     // Login MFA is an explicit, reversible policy switch. The secure default
     // keeps Better Auth's normal-login challenge enabled.
     REQUIRE_LOGIN_MFA: booleanEnvironmentFlag,
@@ -146,11 +149,29 @@ const envSchema = z
         message: 'Loopback APP_URL is not allowed in staging or production',
       });
     }
-    if (isDeployedEnvironment(value.APP_ENV) && !value.BETTER_AUTH_SECRET) {
+    if (
+      value.AUTH_PROVIDER === 'BETTER_AUTH' &&
+      isDeployedEnvironment(value.APP_ENV) &&
+      !value.BETTER_AUTH_SECRET
+    ) {
       context.addIssue({
         code: 'custom',
         path: ['BETTER_AUTH_SECRET'],
         message: 'Required in staging and production',
+      });
+    }
+    if (value.AUTH_PROVIDER === 'CLERK' && !value.CLERK_SECRET_KEY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['CLERK_SECRET_KEY'],
+        message: 'Required when AUTH_PROVIDER=CLERK',
+      });
+    }
+    if (value.AUTH_PROVIDER === 'CLERK' && !value.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'],
+        message: 'Required when AUTH_PROVIDER=CLERK',
       });
     }
     if (isDeployedEnvironment(value.APP_ENV) && !value.AUDIT_SIGNING_KEY_ID) {
@@ -190,6 +211,16 @@ const envSchema = z
 export type ServerEnv = z.infer<typeof envSchema>;
 
 export function getServerEnv(input: Record<string, unknown> = process.env): ServerEnv {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (input.APP_ENV === 'staging' || input.APP_ENV === 'production') &&
+    input.AUTH_PROVIDER === undefined
+  ) {
+    throw new AppError(
+      'INVARIANT_VIOLATION',
+      'AUTH_PROVIDER must be explicitly configured in deployed environments',
+    );
+  }
   if (process.env.NODE_ENV === 'production' && input.APP_ENV === undefined) {
     throw new AppError(
       'INVARIANT_VIOLATION',

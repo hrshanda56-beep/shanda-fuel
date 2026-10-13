@@ -26,12 +26,69 @@ function actor(roleCode: 'OWNER' | 'SUPERVISOR' | 'FINANCE' | 'ATTENDANT'): Auth
 }
 
 describe('server navigation projection', () => {
-  it('allows the synthetic projection only for the explicit non-production E2E fixture', () => {
-    expect(allowsE2ENavigationFixture('test', 'synthetic')).toBe(true);
-    expect(allowsE2ENavigationFixture('e2e', 'synthetic')).toBe(false);
-    expect(allowsE2ENavigationFixture('production', 'synthetic')).toBe(false);
-    expect(allowsE2ENavigationFixture('test', 'synthetic', 'production')).toBe(false);
-    expect(allowsE2ENavigationFixture('test', null)).toBe(false);
+  describe('synthetic E2E navigation fixture', () => {
+    const allowed = [
+      'test',
+      'synthetic',
+      'development',
+      'http://127.0.0.1:3100',
+      undefined,
+    ] as const;
+    const check = (...override: Array<[number, string | null | undefined]>) => {
+      const args: Array<string | null | undefined> = [...allowed];
+      for (const [index, value] of override) args[index] = value;
+      return allowsE2ENavigationFixture(
+        args[0] as string | undefined,
+        args[1] as string | null,
+        args[2] as string | undefined,
+        args[3] as string | undefined,
+        args[4] as string | undefined,
+      );
+    };
+
+    it('is allowed only for local/CI browser tests under next dev', () => {
+      expect(check()).toBe(true);
+      // The local default (APP_URL unset) and the other loopback spellings.
+      expect(check([3, undefined])).toBe(true);
+      expect(check([3, 'http://localhost:3100'])).toBe(true);
+      expect(check([3, 'http://[::1]:3100'])).toBe(true);
+    });
+
+    it('requires the exact synthetic header', () => {
+      for (const header of [null, '', 'none', 'true', 'Synthetic', 'synthetic ']) {
+        expect(check([1, header])).toBe(false);
+      }
+    });
+
+    it('requires APP_ENV=test exactly', () => {
+      for (const appEnv of [undefined, '', 'local', 'e2e', 'staging', 'production', 'Test']) {
+        expect(check([0, appEnv])).toBe(false);
+      }
+    });
+
+    it('is refused for every NODE_ENV except development (production, test, unset, odd values)', () => {
+      for (const nodeEnv of ['production', 'test', 'staging', 'Development', '', undefined]) {
+        expect(check([2, nodeEnv])).toBe(false);
+      }
+    });
+
+    it('is refused in production-like deployments even if APP_ENV and the header are set', () => {
+      // Vercel (preview, staging, production) sets VERCEL; NODE_ENV is production there too.
+      expect(check([4, '1'])).toBe(false);
+      expect(check([2, 'production'], [4, '1'])).toBe(false);
+      // Deployed environments are HTTPS and non-loopback.
+      for (const appUrl of [
+        'https://app.shandahr.example',
+        'https://127.0.0.1:3100',
+        'http://app.shandahr.example',
+        'http://127.0.0.1.evil.example',
+        'http://localhost.evil.example',
+        'not a url',
+        '',
+      ]) {
+        expect(check([3, appUrl])).toBe(false);
+      }
+    });
   });
 
   it('gives an attendant only My Shift and no management destination', () => {

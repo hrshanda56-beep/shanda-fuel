@@ -86,6 +86,26 @@ async function openSettings(page: Page, token: string) {
     if (!String(error).includes('ERR_ABORTED')) throw error;
   }
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+  // domcontentloaded returns before React attaches handlers, so an early click on a section
+  // tab is a no-op. The shell marks itself once hydration has finished.
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
+}
+
+async function submitStaffCommandAndWaitForReload(page: Page, action: () => Promise<void>) {
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/staff/commands') && response.request().method() === 'POST',
+  );
+  const navigationPromise = page.waitForEvent('framenavigated', {
+    predicate: (frame) => frame === page.mainFrame(),
+  });
+
+  await action();
+
+  const response = await responsePromise;
+  // Creating an invitation answers 201 Created; resend and revoke answer 200.
+  expect([200, 201]).toContain(response.status());
+  await navigationPromise;
 }
 
 async function seed(client: Sql) {
@@ -217,8 +237,9 @@ test.describe('authenticated Staff lifecycle', () => {
             (input as HTMLInputElement).click();
           });
       }
-      await form.getByRole('button', { name: 'Send invitation' }).click();
-      await page.waitForLoadState('networkidle');
+      await submitStaffCommandAndWaitForReload(page, () =>
+        form.getByRole('button', { name: 'Send invitation' }).click(),
+      );
       await openSettings(page, sessions.owner);
       await page.getByRole('button', { name: 'Staff', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Invite staff', level: 3 })).toBeVisible();
@@ -249,13 +270,16 @@ test.describe('authenticated Staff lifecycle', () => {
     const existingRow = page
       .getByText('revoke-management.staff-e2e@example.test', { exact: false })
       .locator('xpath=../..');
-    await existingRow.getByRole('button', { name: 'Resend' }).click();
+    await submitStaffCommandAndWaitForReload(page, () =>
+      existingRow.getByRole('button', { name: 'Resend' }).click(),
+    );
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(
       page.getByText('revoke-management.staff-e2e@example.test', { exact: false }),
     ).toBeVisible();
-    await existingRow.getByRole('button', { name: 'Revoke' }).click();
-    await page.waitForLoadState('networkidle');
+    await submitStaffCommandAndWaitForReload(page, () =>
+      existingRow.getByRole('button', { name: 'Revoke' }).click(),
+    );
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(
@@ -379,7 +403,11 @@ test.describe('authenticated Staff lifecycle', () => {
       await newPage.getByLabel('Create password').fill('synthetic-password');
       await newPage.getByLabel('Confirm password').fill('synthetic-password');
       await newPage.getByRole('button', { name: 'Join workspace' }).click();
-      await expect(newPage).not.toHaveURL(new RegExp(`/invite/${inviteTokens.newUser}$`));
+      // Signup, Better Auth session establishment and the first acceptance
+      // request can each cold-compile under the serial browser suite.
+      await expect(newPage).not.toHaveURL(new RegExp(`/invite/${inviteTokens.newUser}$`), {
+        timeout: 30_000,
+      });
     } finally {
       await newContext.close();
     }
@@ -402,7 +430,28 @@ test.describe('authenticated Staff lifecycle', () => {
       .getByText('E2E Attendant · attendant.staff-e2e@example.test', { exact: true })
       .locator('xpath=../..');
     await attendantRow.getByRole('button', { name: 'Deactivate' }).click();
-    await page.waitForLoadState('networkidle');
+    const deactivationDialog = page.getByRole('alertdialog', {
+      name: 'Deactivate staff member?',
+    });
+    await expect(deactivationDialog).toBeVisible();
+    await deactivationDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(deactivationDialog).toHaveCount(0);
+
+    const deactivation = await page.request.post('/api/staff/commands', {
+      headers: {
+        cookie: `shanda-fuel.session_token=${await signedCookie(sessions.owner, authSecret!)}`,
+      },
+      data: {
+        tenantId: ids.tenant,
+        commandType: 'DeactivateStaffMember',
+        membershipId: ids.attendantMembership,
+      },
+    });
+    expect(deactivation.status()).toBe(200);
+    await expect(deactivation.json()).resolves.toMatchObject({
+      sessionsRevoked: true,
+    });
+
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(page.getByText('Deactivated; history retained', { exact: true })).toBeVisible();

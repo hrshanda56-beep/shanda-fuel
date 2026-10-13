@@ -7,6 +7,8 @@ import type { ReactNode } from 'react';
 import { AppShell, type AppShellProps } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
 import { getServerShellAccess } from './navigation-server';
+import { getAuthProviderName } from '@/platform/auth/provider';
+
 import { EntryShell } from './entry/entry-shell';
 import { NoWorkplace } from './entry/workplace-views';
 
@@ -47,6 +49,10 @@ export async function AuthorizedAppShell({
     redirect('/my-shift');
   }
   return (
-    <AppShell {...props} navigationProjection={access.projection ?? emptyNavigationProjection} />
+    <AppShell
+      {...props}
+      authProvider={getAuthProviderName()}
+      navigationProjection={access.projection ?? emptyNavigationProjection}
+    />
   );
 }

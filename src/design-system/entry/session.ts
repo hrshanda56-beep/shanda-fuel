@@ -2,6 +2,7 @@ import 'server-only';
 
 import { requestFromHeaders } from '../navigation-server';
 import { resolveAuthenticatedActor } from '@/modules/identity';
+import { hasProviderSessionCookie } from './session-cookie';
 
 /**
  * Cheap, fail-soft check used only to keep signed-in people off the sign-in
@@ -10,7 +11,7 @@ import { resolveAuthenticatedActor } from '@/modules/identity';
  * no session cookie never touches the database.
  */
 export async function hasActiveSession(requestHeaders: Headers): Promise<boolean> {
-  if (!(requestHeaders.get('cookie') ?? '').includes('session_token')) return false;
+  if (!hasProviderSessionCookie(requestHeaders)) return false;
   const request = requestFromHeaders(requestHeaders);
   if (!request) return false;
   try {

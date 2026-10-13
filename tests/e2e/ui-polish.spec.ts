@@ -543,9 +543,7 @@ test.describe('KPIs', () => {
     await page.goto('/reports?tenantId=tenant-1');
     await page.getByRole('link', { name: /Cash collected/ }).click();
     await expect(page).toHaveURL(/\/reports\/cash\?tenantId=tenant-1/);
-    await expect(
-      page.getByRole('heading', { name: 'Evidence → collected → banked' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Cash: collected → banked' })).toBeVisible();
   });
 
   test('become one calm list on phones', async ({ page }) => {
@@ -581,7 +579,7 @@ test.describe('click targets', () => {
     expect(
       await cursorOver(
         page,
-        page.getByRole('menu', { name: 'Account menu' }).locator('.theme-option').first(),
+        page.getByRole('dialog', { name: 'Account menu' }).locator('.theme-option').first(),
       ),
     ).toBe('pointer');
     expect(await cursorOver(page, page.getByRole('button', { name: 'Open shift workflow' }))).toBe(

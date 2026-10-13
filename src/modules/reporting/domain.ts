@@ -8,6 +8,18 @@ export function sumExact(values: readonly (string | null | undefined)[]): string
   return values.reduce((total, value) => total.add(exact(value)), new ExactDecimal('0')).toString();
 }
 
+/**
+ * Aggregates an observed measure only when every supplied value is present.
+ * An empty set is a genuine zero; a null inside a non-empty set means the
+ * aggregate is unavailable rather than zero.
+ */
+export function sumObservedExact(values: readonly (string | null | undefined)[]): string | null {
+  if (values.length > 0 && values.some((value) => value === null || value === undefined)) {
+    return null;
+  }
+  return sumExact(values);
+}
+
 export function addExact(left: string, right: string): string {
   return exact(left).add(exact(right)).toString();
 }

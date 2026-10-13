@@ -575,6 +575,34 @@
   opacity: 0;
 }
 
+/* Side sheet (task forms): end edge on wider screens, full screen on phones. */
+
+.dialog-backdrop.dialog-backdrop-side {
+  place-items: stretch end;
+  padding: 0;
+}
+
+.side-sheet {
+  width: min(32rem, 100vw);
+  height: 100%;
+  max-height: none;
+  align-content: start;
+  padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom));
+  border-block: 0;
+  border-right: 0;
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  animation: ds-fade-in var(--duration-base) var(--ease-out);
+}
+
+@media (max-width: 47.99rem) {
+  .side-sheet {
+    width: 100vw;
+    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+    border: 0;
+    border-radius: 0;
+  }
+}
+
 /* Drawer (phone and tablet menu) -------------------------------------------- */
 
 .dialog-backdrop.dialog-backdrop-drawer {

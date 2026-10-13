@@ -2,11 +2,13 @@ import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
 const serverOnlyShim = fileURLToPath(new URL('./tests/vitest/server-only.ts', import.meta.url));
+const sourceRoot = fileURLToPath(new URL('./src', import.meta.url));
 
 export default defineConfig({
-  resolve: { alias: { 'server-only': serverOnlyShim } },
+  resolve: { alias: { 'server-only': serverOnlyShim, '@': sourceRoot } },
   test: {
     environment: 'node',
+    setupFiles: ['./tests/vitest/environment.ts'],
     include: ['src/**/*.test.ts', 'next.config.test.ts'],
     passWithNoTests: false,
   },

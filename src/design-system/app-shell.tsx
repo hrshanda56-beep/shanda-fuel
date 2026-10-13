@@ -16,8 +16,10 @@ import {
   type RefObject,
 } from 'react';
 
+import { AccountSignOutItem, type AccountAuthProvider } from './account-sign-out';
 import { WorkInProgressDialog } from './dialogs';
 import { ContextSelector } from './context-selector';
+import { useLocationSearch } from './location-search';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
 import { BrandMark } from './brand-mark';
 import { Icon } from './icons';
@@ -69,6 +71,12 @@ export type AppShellProps = {
   context?: ShellContext;
   role?: string;
   userName?: string;
+  /**
+   * Server-selected sign-in provider. When omitted (previews, reference pages,
+   * tests) the account menu offers no Sign out, so no provider hook can run
+   * outside its provider.
+   */
+  authProvider?: AccountAuthProvider;
   breadcrumbs?: readonly ShellBreadcrumb[];
   pageTitle?: string;
   pageSubtitle?: ReactNode;
@@ -145,6 +153,7 @@ export function AppShell({
   context,
   role,
   userName,
+  authProvider,
   breadcrumbs = [],
   pageTitle: pageTitleOverride,
   pageSubtitle,
@@ -163,6 +172,7 @@ export function AppShell({
     [navigationProjection, workContext],
   );
   const todayHref = findHref(sections, 'today') ?? '/';
+  const settingsHref = findHref(sections, 'settings');
   const shellMode = useShellMode();
 
   const collapsed = useSyncExternalStore(
@@ -284,6 +294,13 @@ export function AppShell({
     setContextSelectorOpen(true);
   }, []);
 
+  // Phones hide the header search, so the More drawer carries the entry.
+  // Close the drawer first so only one modal owns focus and Escape.
+  const openSearchFromMore = useCallback(() => {
+    setMenuOpen(false);
+    setSearchOpen(true);
+  }, []);
+
   const navigationProps = {
     sections,
     pathname,
@@ -368,7 +385,13 @@ export function AppShell({
                   onLabelChange={setContextLabel}
                 />
                 {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
-                <AccountMenu userName={userName} role={role} placement="desktop" />
+                <AccountMenu
+                  userName={userName}
+                  role={role}
+                  placement="desktop"
+                  settingsHref={settingsHref}
+                  authProvider={authProvider}
+                />
               </div>
             </div>
             <main
@@ -398,13 +421,6 @@ export function AppShell({
           pathname={pathname}
           moreRef={moreButtonRef}
           moreOpen={menuOpen}
-          onScan={() =>
-            openWip({
-              feature: 'Document capture',
-              message:
-                'You will soon be able to scan documents with your camera or upload them from your device.',
-            })
-          }
           onMore={() => {
             setDrawerClosedGroups(new Set());
             setMenuOpen(true);
@@ -418,6 +434,16 @@ export function AppShell({
           className="modal-more"
           returnFocus={() => moreButtonRef.current}
         >
+          <button
+            type="button"
+            className="shell-more-search"
+            aria-haspopup="dialog"
+            aria-keyshortcuts="Meta+K Control+K"
+            onClick={openSearchFromMore}
+          >
+            <Icon name="search" size="md" />
+            <span>Search pages</span>
+          </button>
           {contextLabel ? (
             <button
               type="button"
@@ -467,6 +493,7 @@ export function AppShell({
           onClose={() => setSearchOpen(false)}
           items={sections.flatMap((section) => section.items)}
           onWip={openWip}
+          returnFocus={() => moreButtonRef.current}
         />
 
         <WorkInProgressDialog
@@ -547,35 +574,19 @@ function MobileBottomNavigation({
   pathname,
   moreRef,
   moreOpen,
-  onScan,
   onMore,
 }: {
   items: readonly MobileNavigationItem[];
   pathname: string | null;
   moreRef: RefObject<HTMLButtonElement | null>;
   moreOpen: boolean;
-  onScan: () => void;
   onMore: () => void;
 }) {
   const navRef = useRef<HTMLElement>(null);
   const hidden = useHideOnScroll(navRef);
-  const left = items.slice(0, 2);
-  const right = items.slice(2);
-  const renderItem = (item: MobileNavigationItem) => {
-    const active = isNavigationItemActive(item, pathname);
-    return (
-      <li key={item.key}>
-        <Link
-          className="shell-mobile-nav-link"
-          href={item.href}
-          aria-current={active ? 'page' : undefined}
-        >
-          <Icon name={item.icon} />
-          <span>{item.mobileLabel}</span>
-        </Link>
-      </li>
-    );
-  };
+  // Pages without a tab of their own (Suppliers, Reports, Settings…) live
+  // behind More, so More carries the current-page marker for them.
+  const moreIsCurrent = !items.some((item) => isNavigationItemActive(item, pathname));
   return (
     <nav
       ref={navRef}
@@ -584,19 +595,21 @@ function MobileBottomNavigation({
       data-hidden={hidden || undefined}
     >
       <ul className="shell-mobile-nav-list">
-        {left.map(renderItem)}
-        <li className="shell-mobile-nav-scan-slot">
-          <button
-            type="button"
-            className="shell-mobile-nav-scan"
-            aria-haspopup="dialog"
-            onClick={onScan}
-          >
-            <Icon name="scan" />
-            <span className="visually-hidden">Scan or upload a document</span>
-          </button>
-        </li>
-        {right.map(renderItem)}
+        {items.map((item) => {
+          const active = isNavigationItemActive(item, pathname);
+          return (
+            <li key={item.key}>
+              <Link
+                className="shell-mobile-nav-link"
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon name={item.icon} />
+                <span>{item.mobileLabel}</span>
+              </Link>
+            </li>
+          );
+        })}
         <li>
           <button
             ref={moreRef}
@@ -604,10 +617,14 @@ function MobileBottomNavigation({
             className="shell-mobile-nav-link shell-mobile-nav-more"
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
+            data-current-section={moreIsCurrent || undefined}
             onClick={onMore}
           >
             <Icon name="more" />
             <span>More</span>
+            {moreIsCurrent ? (
+              <span className="visually-hidden">, current page is in this menu</span>
+            ) : null}
           </button>
         </li>
       </ul>
@@ -673,6 +690,7 @@ function NavigationSectionEntry({
           onContextRequired={onContextRequired}
           onNavigate={onNavigate}
           withIcon
+          tooltip={rail ? section.items[0]!.label : undefined}
         />
       </li>
     );
@@ -689,6 +707,7 @@ function NavigationSectionEntry({
         aria-expanded={open}
         aria-controls={listId}
         data-contains-current={containsCurrent || undefined}
+        title={rail ? section.label : undefined}
         onClick={() => (rail ? onExpandRail?.(section.key) : onToggleGroup(section.key))}
       >
         <Icon name={section.icon} className="nav-icon" />
@@ -724,6 +743,7 @@ function NavigationEntry({
   onNavigate,
   withIcon = false,
   tabIndex,
+  tooltip,
 }: {
   item: ResolvedNavigationItem;
   pathname: string | null;
@@ -732,6 +752,8 @@ function NavigationEntry({
   onNavigate?: () => void;
   withIcon?: boolean;
   tabIndex?: number;
+  /** Native hint for icon-only rail entries; the accessible name is unchanged. */
+  tooltip?: string;
 }) {
   const icon = withIcon ? <Icon name={item.icon} className="nav-icon" /> : null;
 
@@ -743,6 +765,7 @@ function NavigationEntry({
         href={item.href}
         aria-current={active ? 'page' : undefined}
         tabIndex={tabIndex}
+        title={tooltip}
         onClick={onNavigate}
       >
         {icon}
@@ -759,6 +782,7 @@ function NavigationEntry({
           className="nav-row nav-link"
           aria-haspopup="dialog"
           tabIndex={tabIndex}
+          title={tooltip}
           onClick={onContextRequired}
         >
           {icon}
@@ -772,6 +796,7 @@ function NavigationEntry({
         className="nav-row nav-link"
         aria-haspopup="dialog"
         tabIndex={tabIndex}
+        title={tooltip}
         onClick={() => onWip({ feature: item.feature, message: item.message })}
       >
         {icon}
@@ -782,7 +807,7 @@ function NavigationEntry({
   }
 
   return (
-    <span className="nav-row nav-row-restricted">
+    <span className="nav-row nav-row-restricted" title={tooltip}>
       {icon}
       <span className="nav-label">
         {item.label}
@@ -885,12 +910,18 @@ function AccountMenu({
   userName,
   role,
   placement,
+  settingsHref,
+  authProvider,
 }: {
   userName?: string;
   role?: string;
   placement: 'desktop' | 'mobile';
+  /** Present only when the server projection lets this person open Settings. */
+  settingsHref?: string;
+  authProvider?: AccountAuthProvider;
 }) {
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const displayName = displayableIdentity(userName);
@@ -924,8 +955,9 @@ function AccountMenu({
         ref={triggerRef}
         type="button"
         className="shell-account-trigger"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         aria-label={label}
         title={label}
         onClick={() => setOpen((current) => !current)}
@@ -940,10 +972,15 @@ function AccountMenu({
         <Icon name="chevron-down" className="shell-account-chevron" />
       </button>
       {open ? (
+        // A non-modal dialog, like the shell's other popovers (station, search, needs
+        // attention). It mixes identity, a theme radio group and actions, which an ARIA
+        // `menu` may not contain, and it promises arrow-key navigation the panel does not
+        // implement. Focus moves in on open, Escape closes and returns focus to the trigger.
         <div
           ref={panelRef}
+          id={panelId}
           className="account-menu-panel"
-          role="menu"
+          role="dialog"
           aria-label="Account menu"
           tabIndex={-1}
         >
@@ -955,6 +992,20 @@ function AccountMenu({
             <span className="account-menu-label">Theme</span>
             <ThemeControl />
           </div>
+          {settingsHref || authProvider ? (
+            <div className="account-menu-actions">
+              {settingsHref ? (
+                <Link
+                  href={settingsHref}
+                  className="account-menu-item"
+                  onClick={() => setOpen(false)}
+                >
+                  Account settings
+                </Link>
+              ) : null}
+              {authProvider ? <AccountSignOutItem provider={authProvider} /> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -1051,11 +1102,14 @@ function SearchPalette({
   onClose,
   items,
   onWip,
+  returnFocus,
 }: {
   open: boolean;
   onClose: () => void;
   items: readonly ResolvedNavigationItem[];
   onWip: (request: WipRequest) => void;
+  /** Used when the control that opened search is gone, e.g. the closed More drawer. */
+  returnFocus?: () => HTMLElement | null | undefined;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -1086,10 +1140,11 @@ function SearchPalette({
       open={open}
       onClose={close}
       title="Search"
-      description="Pages and areas you can open. Record search arrives with each module."
+      description="Go to any page you have access to."
       size="md"
       className="modal-command-palette"
       initialFocusRef={inputRef}
+      returnFocus={returnFocus}
     >
       <div className="search-palette">
         <input
@@ -1135,7 +1190,7 @@ function SearchPalette({
               <Icon name={item.icon} size="md" />
               <span>{item.searchLabel}</span>
               {item.state === 'wip' ? (
-                <span className="search-palette-meta">In progress</span>
+                <span className="search-palette-meta">Coming soon</span>
               ) : null}
             </li>
           ))}
@@ -1150,29 +1205,8 @@ function SearchPalette({
   );
 }
 
-/* Location search ------------------------------------------------------------ */
-
-/**
- * The current query string, read from the browser. Avoids `useSearchParams`,
- * which would force every statically rendered page behind a Suspense
- * boundary. The shell re-renders on every navigation (new page children), and
- * back/forward fires `popstate`, so the snapshot stays current.
- */
-function useLocationSearch() {
-  return useSyncExternalStore(subscribeToHistory, readLocationSearch, () => '');
-}
-
 function subscribeToNothing() {
   return () => {};
-}
-
-function subscribeToHistory(onChange: () => void) {
-  window.addEventListener('popstate', onChange);
-  return () => window.removeEventListener('popstate', onChange);
-}
-
-function readLocationSearch() {
-  return window.location.search;
 }
 
 function readKeyboardShortcut() {

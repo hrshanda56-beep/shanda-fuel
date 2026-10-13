@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthenticatedActor } from '../../../../../modules/identity';
 import { getAuth } from '../../../../../platform/auth';
+import { getAuthProviderName } from '../../../../../platform/auth/provider';
 import { apiErrorResponse, withRequestObservability } from '../../../../../platform/observability';
 import { AUTH_RATE_LIMIT, withPersistentRateLimit } from '../../../../../platform/security';
 
@@ -19,9 +20,12 @@ function jsonResponse(body: unknown, status: number): Response {
 }
 
 export const GET = withRequestObservability(async (request: Request): Promise<Response> => {
+  if (getAuthProviderName() === 'CLERK') return new Response(null, { status: 404 });
   try {
     await requireAuthenticatedActor(request);
-    const result = await getAuth().api.getSession({
+    const result = await (
+      await getAuth()
+    ).api.getSession({
       headers: request.headers,
       query: { disableCookieCache: true },
     });
@@ -37,10 +41,13 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
 
 export const POST = withRequestObservability(
   withPersistentRateLimit(async (request: Request): Promise<Response> => {
+    if (getAuthProviderName() === 'CLERK') return new Response(null, { status: 404 });
     try {
       await requireAuthenticatedActor(request);
       const input = startSchema.parse(await request.json());
-      const result = await getAuth().api.enableTwoFactor({
+      const result = await (
+        await getAuth()
+      ).api.enableTwoFactor({
         headers: request.headers,
         body: { password: input.password, method: 'totp', issuer: 'Shanda Fuel' },
       });

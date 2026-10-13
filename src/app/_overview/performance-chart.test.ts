@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/design-system/icons', () => ({ Icon: () => null }));
 
-import { niceMax, PerformanceChart, smoothPath } from './performance-chart';
+import { niceMax, PerformanceChart, runs, smoothPath } from './performance-chart';
 
-const render = (series: { label: string; value: number }[] | null) =>
+const render = (series: { label: string; value: number | null }[] | null) =>
   renderToStaticMarkup(
     createElement(PerformanceChart, {
       series,
@@ -59,7 +59,26 @@ describe('PerformanceChart', () => {
     expect(html).not.toContain('No data yet.');
   });
 
-  it('copes with a single point', () => {
-    expect(render([{ label: 'A', value: 5 }])).toContain('perf-chart-line');
+  it('draws a single point as a visible marker', () => {
+    expect(render([{ label: 'A', value: 5 }])).toContain('perf-chart-point');
+  });
+
+  it('treats an all-gap series as empty and breaks the line at gaps', () => {
+    expect(render([{ label: 'A', value: null }])).toContain('No data yet.');
+    const html = render([
+      { label: 'A', value: 1 },
+      { label: 'B', value: 2 },
+      { label: 'C', value: null },
+      { label: 'D', value: 4 },
+    ]);
+    expect(html.match(/perf-chart-line/g)).toHaveLength(1);
+    expect(html).toContain('perf-chart-point');
+  });
+});
+
+describe('runs', () => {
+  it('splits on nulls', () => {
+    expect(runs([1, 2, null, 3, null, null])).toEqual([[1, 2], [3]]);
+    expect(runs([null])).toEqual([]);
   });
 });

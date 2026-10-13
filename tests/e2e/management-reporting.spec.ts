@@ -89,7 +89,7 @@ test.describe('management reporting surface', () => {
       await expect(page.getByLabel('Stations: A10 E2E Main Station')).toBeVisible();
       await expect(page.getByText('Unavailable', { exact: true }).first()).toBeVisible();
       await expect(
-        page.getByText(/unavailable at station scope because A8 balances/),
+        page.getByText(/unavailable for a single station because they are kept/),
       ).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);

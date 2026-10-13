@@ -9,9 +9,12 @@ export {
   STAFF_INVITATION_TTL_MS,
   assertInvitationToken,
   createInvitationToken,
+  createActivationCode,
+  createStaffNumber,
   hashInvitationToken,
   invitationExpiry,
   normalizeEmail,
+  normalizeStaffNumber,
   parseRole,
   parseScopeType,
   validateInvitationScope,
@@ -23,7 +26,9 @@ export {
 } from './queries';
 export {
   acceptStaffInvitationFromRequest,
+  activateManualStaffFromRequest,
   createStaffInvitationFromRequest,
+  generateManualStaffActivationFromRequest,
   deactivateStaffMemberFromRequest,
   resendStaffInvitationFromRequest,
   revokeStaffInvitationFromRequest,

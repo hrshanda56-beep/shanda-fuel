@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, type RefObject, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, type RefObject, useMemo, useRef, useState } from 'react';
 
 import {
   buildContextHref,
@@ -13,6 +13,7 @@ import {
 import { Button } from './primitives';
 import { Icon } from './icons';
 import { Modal } from './modal';
+import { useLocationSearch } from './location-search';
 
 type FallbackShellContext = Readonly<{
   organisation: string;
@@ -451,17 +452,4 @@ function contextDisplay(
     ...(legalEntity ? [legalEntity.name] : []),
     current.allStations ? 'All stations' : (station?.name ?? 'No station selected'),
   ];
-}
-
-function useLocationSearch(): string {
-  return useSyncExternalStore(subscribeToHistory, readLocationSearch, () => '');
-}
-
-function subscribeToHistory(onChange: () => void) {
-  window.addEventListener('popstate', onChange);
-  return () => window.removeEventListener('popstate', onChange);
-}
-
-function readLocationSearch() {
-  return window.location.search;
 }

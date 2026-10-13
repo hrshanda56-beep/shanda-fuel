@@ -16,3 +16,4 @@ export * from './a9';
 export * from './a12';
 export * from './revenue';
 export * from './staff';
+export * from './identity';

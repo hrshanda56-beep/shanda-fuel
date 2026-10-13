@@ -235,7 +235,7 @@ test.describe('shared shell consistency', () => {
 
     const account = page.locator('.shell-account-trigger:visible');
     await account.click();
-    const menu = page.getByRole('menu', { name: 'Account menu' });
+    const menu = page.getByRole('dialog', { name: 'Account menu' });
     await expect(menu).toBeVisible();
     await expect(page.locator('.theme-control:visible')).toHaveCount(1);
     await expect(menu).not.toContainText('Current user');

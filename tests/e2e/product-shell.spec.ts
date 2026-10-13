@@ -311,7 +311,16 @@ test.describe('desktop sidebar', () => {
     await page.setViewportSize({ width: 320, height: 844 });
     await page.goto('/reports');
     await waitForHydration(page);
-    // On a phone the station is switched from More; the header carries no pill.
+    // On a phone the header row keeps the station switcher beside the avatar.
+    const headerSwitcher = page
+      .getByRole('region', { name: 'Page header and work context' })
+      .getByRole('button', { name: /^Work context/ });
+    await expect(headerSwitcher).toBeVisible();
+    await headerSwitcher.click();
+    await expect(page.getByRole('dialog', { name: 'Switch station' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Switch station' })).toBeHidden();
+    // It is also reachable from More.
     await page.getByRole('button', { name: 'More' }).click();
     await page
       .getByRole('dialog', { name: 'More' })
@@ -328,7 +337,7 @@ test.describe('desktop sidebar', () => {
     await page.goto('/reports');
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Account' }).click();
-    const control = page.getByRole('menu', { name: 'Account menu' }).getByRole('group', {
+    const control = page.getByRole('dialog', { name: 'Account menu' }).getByRole('group', {
       name: 'Theme',
     });
     await expect(control.getByRole('radio', { name: /System/ })).toBeChecked();
@@ -348,7 +357,7 @@ test.describe('desktop sidebar', () => {
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Account' }).click();
     await page
-      .getByRole('menu', { name: 'Account menu' })
+      .getByRole('dialog', { name: 'Account menu' })
       .getByRole('group', { name: 'Theme' })
       .getByRole('radio', { name: /System/ })
       .check();

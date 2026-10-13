@@ -280,6 +280,7 @@ export const FORECOURT_COMMAND_POLICY = {
     permissionCode: 'business_day.lock',
     requiredScopeType: 'STATION',
     assuranceRequirement: 'STEP_UP',
+    stepUpAction: 'LOCK_BUSINESS_DAY',
     requiresExpectedVersion: true,
   },
   CreateProductionReconciliation: {
@@ -366,6 +367,7 @@ export const FORECOURT_COMMAND_POLICY = {
     permissionCode: PermissionCode;
     requiredScopeType: 'STATION';
     assuranceRequirement: 'STANDARD' | 'STEP_UP';
+    stepUpAction?: 'LOCK_BUSINESS_DAY';
     requiresExpectedVersion: boolean;
     requiresAttendantEligibility?: boolean;
   }
@@ -389,7 +391,14 @@ function assertForecourtCommandAuthorization(
     throw new AppError('FORBIDDEN', 'The command policy requires station scope');
   }
   if (policy.assuranceRequirement === 'STEP_UP') {
-    assertStepUp(context.authority.actor.session, 1, new Date(), context.scope.tenantId);
+    const stepUpAction = 'stepUpAction' in policy ? policy.stepUpAction : undefined;
+    assertStepUp(
+      context.authority.actor.session,
+      1,
+      new Date(),
+      context.scope.tenantId,
+      stepUpAction,
+    );
   }
 }
 
