@@ -20,6 +20,11 @@ describe('provider session cookie detection', () => {
     expect(
       hasProviderSessionCookie(new Headers({ cookie: 'shanda-fuel.session_token=opaque' })),
     ).toBe(true);
+    expect(
+      hasProviderSessionCookie(
+        new Headers({ cookie: '__Secure-shanda-fuel.session_token=opaque' }),
+      ),
+    ).toBe(true);
     expect(hasProviderSessionCookie(new Headers({ cookie: 'session_token=opaque' }))).toBe(false);
     expect(
       hasProviderSessionCookie(new Headers({ cookie: 'shanda-fuel.session_token_extra=opaque' })),

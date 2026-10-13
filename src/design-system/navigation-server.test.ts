@@ -65,6 +65,54 @@ describe('server shell session gate', () => {
     ).resolves.toMatchObject({ status: 'ready' });
   });
 
+  it('keeps a production Secure-prefixed Better Auth session on the root-shell path after station selection', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+    mocks.resolveCurrentContext.mockResolvedValue({
+      available: {
+        organisations: [
+          {
+            id: 'tenant-1',
+            name: 'Tenant 1',
+            legalEntities: [
+              {
+                id: 'legal-entity-1',
+                name: 'Legal Entity 1',
+                stations: [
+                  {
+                    id: 'station-bindura',
+                    code: 'BND',
+                    name: 'Bindura',
+                    timezone: 'Africa/Harare',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      current: {
+        organisationId: 'tenant-1',
+        legalEntityId: 'legal-entity-1',
+        stationId: 'station-bindura',
+        allStations: false,
+      },
+    });
+    mocks.resolveTenantExecutionContext.mockResolvedValue({
+      authorization: {},
+      membership: {},
+      transaction: {},
+    });
+
+    await expect(
+      getServerShellAccess(
+        new Headers({
+          host: 'fuel.shandahr.com',
+          cookie: '__Secure-shanda-fuel.session_token=opaque; shanda-fuel-context=validated',
+        }),
+      ),
+    ).resolves.toMatchObject({ status: 'ready' });
+  });
+
   it('does not treat the unprefixed Better Auth cookie as authentication', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
 
