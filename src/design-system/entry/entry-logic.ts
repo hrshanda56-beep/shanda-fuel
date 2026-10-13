@@ -41,6 +41,21 @@ export function loginFailureMessage(failure: LoginFailure): string {
 const POST_SIGN_IN_DEFAULT = '/workplace';
 const INVITE_PATH = /^\/invite\/[A-Za-z0-9_-]{1,512}$/;
 
+function safeStationPath(next: string): string | undefined {
+  try {
+    const target = new URL(next, 'https://fuel.shandahr.com');
+    if (target.origin !== 'https://fuel.shandahr.com') return undefined;
+    if (decodeURIComponent(target.pathname).includes('\\')) return undefined;
+    if (!target.pathname.startsWith('/stations/')) return undefined;
+    if (!target.searchParams.get('tenantId') || !target.searchParams.get('stationId')) {
+      return undefined;
+    }
+    return `${target.pathname}${target.search}`;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Where to go after sign-in. Only the default route or an invitation path is
  * honoured, so a crafted `next` value cannot redirect off-site or into an
@@ -48,6 +63,7 @@ const INVITE_PATH = /^\/invite\/[A-Za-z0-9_-]{1,512}$/;
  */
 export function safePostSignInPath(next: string | null | undefined): string {
   if (typeof next === 'string' && INVITE_PATH.test(next)) return next;
+  if (typeof next === 'string') return safeStationPath(next) ?? POST_SIGN_IN_DEFAULT;
   return POST_SIGN_IN_DEFAULT;
 }
 
