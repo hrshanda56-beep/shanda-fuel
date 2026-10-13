@@ -1650,17 +1650,10 @@ button.today-period {
   /* --figure-chars: longest word among the four figures (set on the list). */
   font-size: clamp(
     1rem,
-    calc(100cqi / (var(--figure-chars, 8) * 0.6)),
+    /* Reserve enough width for proportional-font metrics across platforms. */
+    calc(100cqi / (var(--figure-chars, 8) * 0.7)),
     var(--font-size-4xl, 2.25rem)
   );
-}
-
-/* Narrowest phones: the final responsive figure rule must follow the
-   container-sized base rule so long currency values fit on hosted fonts. */
-@media (max-width: 22.5rem) {
-  .today-figure-value {
-    font-size: 1rem;
-  }
 }
 
 /* Below 1440 px the sidebar and side column leave each of four cards under
