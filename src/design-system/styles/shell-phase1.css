@@ -643,13 +643,6 @@
   }
 }
 
-/* Narrowest phones: two columns leave ~106px; keep long currency figures intact. */
-@media (max-width: 22.5rem) {
-  .today-figure-value {
-    font-size: 1.125rem;
-  }
-}
-
 /* Desktop dashboard: coloured figure cards, panels, and a side column. */
 @media (min-width: 64rem) {
   .today-dashboard {
@@ -1660,6 +1653,14 @@ button.today-period {
     calc(100cqi / (var(--figure-chars, 8) * 0.6)),
     var(--font-size-4xl, 2.25rem)
   );
+}
+
+/* Narrowest phones: the final responsive figure rule must follow the
+   container-sized base rule so long currency values fit on hosted fonts. */
+@media (max-width: 22.5rem) {
+  .today-figure-value {
+    font-size: 1rem;
+  }
 }
 
 /* Below 1440 px the sidebar and side column leave each of four cards under
