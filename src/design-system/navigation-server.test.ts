@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   resolveCurrentContext: vi.fn(),
@@ -39,6 +39,10 @@ describe('server shell session gate', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('keeps a prefixed Better Auth session on the authenticated root-shell path', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
     mocks.resolveCurrentContext.mockResolvedValue({
@@ -73,5 +77,27 @@ describe('server shell session gate', () => {
       ),
     ).resolves.toEqual({ status: 'signed-out' });
     expect(mocks.resolveCurrentContext).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when authenticated context resolution rejects', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+    mocks.resolveCurrentContext.mockRejectedValue(new Error('context unavailable'));
+
+    await expect(
+      getServerShellAccess(
+        new Headers({
+          host: 'fuel.shandahr.com',
+          cookie: 'shanda-fuel.session_token=opaque',
+        }),
+      ),
+    ).resolves.toEqual({ status: 'signed-out' });
+  });
+
+  it('returns signed-out for an unauthenticated request so the shell redirects', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+
+    await expect(getServerShellAccess(new Headers({ host: 'fuel.shandahr.com' }))).resolves.toEqual(
+      { status: 'signed-out' },
+    );
   });
 });

@@ -1,7 +1,6 @@
 import 'server-only';
 
 import { resolveCurrentContext } from '../modules/context/server';
-import { AppError } from '../platform/errors';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
 import { hasProviderSessionCookie } from './entry/session-cookie';
 import { buildNavigationProjection } from './navigation-projection';
@@ -99,10 +98,11 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
   try {
     const resolution = await resolveCurrentContext(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
-  } catch (error) {
-    if (error instanceof AppError && error.code === 'UNAUTHENTICATED') {
-      return { status: 'signed-out' };
-    }
+  } catch {
+    // Any unresolved session/context/authorization error must fail closed.
+    // The shell redirects signed-out users and never renders product UI when
+    // access cannot be verified.
+    return { status: 'signed-out' };
   }
   return { status: 'ready', projection: await getServerNavigationProjection(requestHeaders) };
 }
