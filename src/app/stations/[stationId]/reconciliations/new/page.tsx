@@ -1,4 +1,5 @@
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
+import { stationReconciliationsPath } from '@/app/stations/navigation';
 import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
 import {
   ProductionReconciliationWorkflow,
@@ -34,7 +35,10 @@ export default async function NewReconciliationPage({
   return (
     <AppShell
       breadcrumbs={[
-        { label: 'Reconciliations', href: '/stations/demo/reconciliations' },
+        {
+          label: 'Reconciliations',
+          href: stationReconciliationsPath(stationId, search.tenantId),
+        },
         { label: 'New' },
       ]}
     >
