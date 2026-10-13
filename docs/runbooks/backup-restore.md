@@ -108,6 +108,7 @@ Run before pilot/major database changes and at least quarterly thereafter:
 | Drill date/operator/approver | 2026-09-28; operator/approver not recorded in this documentation update. |
 | Source backup/PITR timestamp | Neon PITR isolated restore; exact source timestamp is not recorded here. |
 | Restored timestamp and target | Temporary Neon recovery branch `lane4-restore-drill-20260928`; auto-expiring after one day. |
+| PostgreSQL 18 logical backup and restore | **NOT EVIDENCED FOR MILESTONE A** — this record documents a PITR/branch restore, not a PostgreSQL 18 custom-format `pg_dump` archived with checksum and restored with `pg_restore`. Use the owner procedure in [`milestone-a-release.md`](milestone-a-release.md#25-postgresql-18-logical-backup-and-isolated-restore-gate). |
 | RPO achieved | **NOT DEMONSTRATED BY THIS DRILL**; RPO ≤15 minutes is not claimed. |
 | RTO achieved | **NOT DEMONSTRATED**; full RTO ≤4 hours is not claimed. |
 | Application/readiness/RLS checks | Isolated temporary Vercel Preview deployment `dpl_Ejf2DLRpiuQUnqg87FXwnvnhyLqY` of source commit `7ba5e683f751f92fbb39755f7d322bfdcc10a8e3` **VERIFIED** app-to-restored-DB readiness. `/api/health` returned HTTP 200 with application `ok`; `/api/readiness` returned HTTP 200 with database `ok`. |
@@ -115,9 +116,10 @@ Run before pilot/major database changes and at least quarterly thereafter:
 | Object-storage/checkpoint checks | **COMPLETE / PASSED FOR STAGING R2 DELETED-OBJECT RECOVERY** — separate private recovery bucket `shanda-fuel-staging-recovery`; 30-day Bucket Lock on `recovery/v1/objects/` and `recovery/v1/manifests/`; 30-day `recovery/v1/` lifecycle expiry; witnessed drill exit code 0; backup `a8e1cd42-cd34-4f73-a837-1710648d3c7e`; SHA-256 `146f8cd7a6a4435906f62232c7ee4586a0889181bd6424fe49d45f2f3264a2d7`; retained object and manifest present afterward; synthetic primary deleted; temporary primary-drill credential revoked. |
 | Exceptions and follow-ups | The earlier local readiness result was not classified as a restored-database failure. The isolated Vercel Preview verification invoked no auth, POST, financial, R2, email, cron, migration, smoke, or other write-capable route. The temporary Vercel project and deployments were deleted afterward. Do not claim RPO ≤15 minutes or RTO ≤4 hours from this drill. |
 
-Lane 4 provides evidence of the isolated database restore, independent
+Lane 4 provides evidence of the isolated database PITR restore, independent
 restored-database validation, isolated application connectivity to the
 recovered branch, and provider-configured staging R2 deleted-object recovery.
+It is not evidence of the separate PostgreSQL 18 logical-backup/restore gate.
 The exercised database/application/R2 recovery scope is complete. RPO ≤15
 minutes and RTO ≤4 hours remain unproven, and tenant-scoped recovery remains a
 separate exercise.

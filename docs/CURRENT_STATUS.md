@@ -26,10 +26,11 @@ Status labels:
   temporary nested knowledge-base copy is absent.
 - The documentation merge did not change deployed application behavior.
 
-### Current production security closeout — 2026-10-09
+### Historical production security closeout — 2026-10-09
 
-The current production Stage 1 security closeout is **PASS**. The historical
-Stage 1 failure is preserved as historical evidence and is **SUPERSEDED** by
+The production Stage 1 security closeout at the 2026-10-09 checkpoint was
+**PASS**. The historical Stage 1 failure is preserved as historical evidence
+and is **SUPERSEDED** by
 the current verified result recorded in
 [`docs/release-readiness.md`](release-readiness.md).
 
@@ -37,7 +38,7 @@ Current production release SHA:
 
 `2c7304916c191c66907d9582a3e7c26225c6eb59`
 
-Current production evidence:
+Historical production evidence at that checkpoint:
 
 - The migration journal ends at `0024`.
 - Migrations `0022`, `0023`, and `0024` were each verified once with their
@@ -50,7 +51,7 @@ Current production evidence:
 - `/api/health` returns HTTP 200 and `/api/readiness` returns HTTP 200 with
   database readiness `ok`.
 
-Still open and not implied closed by this documentation update:
+Still open in that historical snapshot and not implied closed by this documentation update:
 
 - `job_runtime` temporary quarantine is effective: its password was rotated,
   the replacement credential was not exposed, post-rotation sessions were `0`,
@@ -62,6 +63,29 @@ Still open and not implied closed by this documentation update:
 - Authenticated final production smoke remains open.
 - The #114, #113, and #111 release work remains open as applicable.
 - Final production release readiness is not declared complete.
+
+### Current Milestone A release preparation — 2026-10-13
+
+The current release candidate is `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf`.
+PR #122 remains open and draft. Hosted CI run
+[38353115180](https://github.com/hrshanda56-beep/shanda-fuel/actions/runs/38353115180)
+completed successfully for quality, dependency audit, secret scan, Semgrep
+SAST, and Runtime-role proof; CodeQL was skipped by repository configuration.
+
+Production is independently verified at migration `0026` as of the explicit
+read-only Neon `main` check at `2026-10-13T06:27:47Z` (27 journal rows,
+highest id `0026`, target relations absent); `0027`–`0029` are still pending.
+The isolated Neon rehearsal branch
+`restore-rehearsal-0027-0029-20261013` (`br-divine-paper-b2sgelew`) passed the
+canonical migration sequence with exactly 30 journal rows, matching hashes and
+order, 73/73 app tables under FORCE RLS, and the reviewed runtime privilege
+boundary. The backup branch `backup-0026-20261013` remains retained.
+
+The owner-approved temporary authentication exception is
+`REQUIRE_LOGIN_MFA=false`; `REQUIRE_PRIVILEGED_STEP_UP=true` remains mandatory.
+The application configuration and tests keep privileged step-up independent of
+normal-login MFA enforcement. A PostgreSQL 18 logical backup and isolated
+logical restore are not evidenced yet and remain a release gate.
 
 ## 3. Production application baseline
 

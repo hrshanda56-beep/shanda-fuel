@@ -355,7 +355,7 @@ define the scope, completion criteria, validation, evidence, and follow-up for
 each workstream. `TBD` means the value is not yet known or evidenced; it must
 not be replaced with an invented PR number, SHA, validation result, or owner.
 
-### Current production Stage 1 security closeout
+### Historical production Stage 1 security closeout — 2026-10-09
 
 **Evidence date:** 2026-10-09
 
@@ -365,12 +365,12 @@ not be replaced with an invented PR number, SHA, validation result, or owner.
 
 **Ready to record formal closeout:** **YES**
 
-The current production closeout is recorded against release SHA
+The historical production closeout is recorded against release SHA
 `2c7304916c191c66907d9582a3e7c26225c6eb59`.
 
 | Check | Current result |
 | --- | --- |
-| Migration journal and integrity | **PASS** — journal through `0024`; migrations `0022`, `0023`, and `0024` counts/hashes verified. |
+| Migration journal and integrity | **PASS at the 2026-10-09 checkpoint** — journal through `0024`; migrations `0022`, `0023`, and `0024` counts/hashes verified. This is historical evidence, not the current `0026` checkpoint. |
 | Tenant isolation and RLS | **PASS** — tenant isolation controls verified; all 67 app tables have RLS and `FORCE ROW LEVEL SECURITY`. |
 | `app_runtime` | **PASS** — least-privilege controls verified, including migration-table and rate-limit-table restrictions. |
 | Owner and MFA | **PASS** — active `OWNER` exists and OWNER MFA enrollment is verified. |
@@ -392,10 +392,22 @@ Required post-launch provider hardening remains mandatory: remove
 `neon_superuser` membership; enforce `NOLOGIN`, `NOINHERIT`, and
 `NOBYPASSRLS`; remove `CREATEROLE`, `CREATEDB`, and `REPLICATION`; remove
 obsolete legacy grants; and keep `job_runtime` unbound until completion is
-verified. This is a Stage 1 security closeout only: it makes no claim that
-migration `0025` is applied and does not declare final production release
+verified. This is a historical Stage 1 security closeout only: it does not
+describe the current `0026` checkpoint or declare final production release
 readiness. It does not run migrations, change production data, users, or
 database roles, or alter issues `#111`, `#113`, or `#114`.
+
+### Current Milestone A release-candidate evidence — 2026-10-13
+
+| Gate | Evidence / status |
+| --- | --- |
+| Exact RC | `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf` |
+| PR / hosted CI | [PR #122](https://github.com/hrshanda56-beep/shanda-fuel/pull/122) remains open/draft. [CI run 38353115180](https://github.com/hrshanda56-beep/shanda-fuel/actions/runs/38353115180) passed quality, dependency audit, secret scan, Semgrep SAST and Runtime-role proof; CodeQL was skipped. |
+| Production migration checkpoint | Read-only Neon `main` check at `2026-10-13T06:27:47Z`: database `shanda_fuel`, role `migration_owner`, PostgreSQL 18.6, 27 journal rows through `0026`, and target relations absent. `0027`–`0029` remain pending. |
+| Isolated migration rehearsal | PASS on `restore-rehearsal-0027-0029-20261013` (`br-divine-paper-b2sgelew`), child of `backup-0026-20261013` (`br-spring-paper-b29ugfnk`). Exactly 30 journal rows; target hashes/order, FORCE RLS, ownership and runtime privilege checks passed. |
+| MFA exception | Owner-approved temporary `REQUIRE_LOGIN_MFA=false`; `REQUIRE_PRIVILEGED_STEP_UP=true` remains enforced. Application configuration/tests verify step-up is independent of normal-login MFA enforcement. |
+| PostgreSQL 18 logical backup/restore | **OPEN / NOT EVIDENCED.** Existing evidence is an isolated PITR/application/R2 drill, not a PostgreSQL 18 logical dump plus isolated logical restore. |
+| Production state | Unchanged; PR remains unmerged and no production migration/deployment was performed. |
 
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -900,11 +912,12 @@ Do not:
 | Gate | Status | Evidence or owner action |
 | --- | --- | --- |
 | Merged implementation baseline | **RECORDED** | `docs/CURRENT_STATUS.md`; R2 recovery implementation baseline `fc10d01`. |
-| Repository quality gate | **DEFINED** | `.github/workflows/ci.yml`; attach the CI run for the RC commit. |
+| Repository quality gate | **PASS for RC** | [CI run 38353115180](https://github.com/hrshanda56-beep/shanda-fuel/actions/runs/38353115180) on `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf` passed all required enabled jobs; CodeQL was skipped. |
 | Authenticated staging smoke | **COMPLETE / PASSED** | Completed authenticated staging operator flow using the normal sign-in path and the approved staging procedure. |
 | Cross-module staging journeys | **DEFERRED** | Exercise station/day/shift, reconciliation approval, inventory/costing evidence, cash/provider distinction, reporting, and permission-denial paths with synthetic data. |
 | Tenant-isolation verification on deployed staging | **COMPLETE / PASSED** | Completed deployed-staging tenant-isolation and RLS verification. |
 | Backup/restore drill | **DATABASE, APP, AND R2 RECOVERY VERIFIED** | Lane 4 isolated PITR restore, restored-DB integrity/security validation, isolated application readiness, and provider-configured R2 deleted-object recovery are complete for the exercised staging scope. RPO/RTO planning targets remain unproven. |
+| PostgreSQL 18 logical backup/restore for Milestone A | **OPEN / NOT EVIDENCED** | No PostgreSQL 18 custom-format dump, secure archive URI/checksum, and isolated logical restore record is present. Use the owner procedure in `docs/runbooks/milestone-a-release.md`; do not treat the Lane 4 PITR drill as this gate. |
 | R2 deleted-object recovery | **COMPLETE / PASSED** | Separate private recovery bucket, 30-day Bucket Lock and lifecycle controls, recovery credentials, witnessed synthetic delete/restore drill, checksum verification, retained artifacts, and primary cleanup are evidenced. Production retention remains a separate owner/accounting decision. |
 | Performance verification | **PROCEDURE READY; EXECUTION OPEN** | Follow [`staging-performance-verification.md`](runbooks/staging-performance-verification.md) and record p50/p95 results against Blueprint planning goals. |
 | Monitoring and alert routing | **EXPECTATIONS RECORDED; INTEGRATION OPEN** | Follow [`observability.md`](runbooks/observability.md); connect the deployed platform to the approved log/alert destination. |

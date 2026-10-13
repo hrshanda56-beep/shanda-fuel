@@ -4,6 +4,12 @@ This is a review checklist for migration `0025_customer_credit_station_scope.sql
 It is documentation only. Do not run these checks or the migration against
 production from a development task.
 
+Historical status: this preflight is retained for the `0025` change record.
+Production is independently verified beyond this checkpoint at migration
+`0026`; the current release path is the `0027` → `0028` → `0029` procedure in
+[`milestone-a-release.md`](milestone-a-release.md). The `0024`/`0025` checks
+below must not be read as the current production state.
+
 ## Scope and change inventory
 
 Before scheduling, record counts from the target database for:

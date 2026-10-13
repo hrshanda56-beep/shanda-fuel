@@ -1,8 +1,8 @@
 # Milestone A release runbook (production 0026 -> 0029)
 
-Status: PREPARED, NOT EXECUTED. Reconciled 2026-10-12 for final local RC
-`bb1e0dcc691b410db6b479cb6ca48642dcf3a3c1`; the migration-file hash baseline
-is the unchanged pre-follow-up RC `31e14e4ad8bdc49c1d9b6491e975589197a36b14`.
+Status: PREPARED, NOT EXECUTED against production. Reconciled 2026-10-13
+for exact RC `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf`; the migration-file
+hash baseline is unchanged from `31e14e4ad8bdc49c1d9b6491e975589197a36b14`.
 Nothing in this document has been run against Neon production. Every production
 step is for a named human owner; no agent runs it. This runbook records no
 secrets and must never be extended with connection strings, tokens, cookies, or
@@ -20,11 +20,20 @@ Related: [`deployment.md`](deployment.md), [`backup-restore.md`](backup-restore.
 [`production-readonly-smoke.md`](production-readonly-smoke.md),
 [`../release-readiness.md`](../release-readiness.md).
 
-Known documentation drift (fix when closing the release): `docs/CURRENT_STATUS.md`
-and `docs/implementation-status.md` still say production is at `0024` with
-`0025` deferred. The release owner states production is now verified at `0026`.
-Re-verify with the SELECT in section 3.3 before treating either as true, and
-update both status files with the evidence afterwards.
+The former `0024`/`0025` statements are retained only as explicitly dated
+historical evidence in the status ledger. Current evidence is recorded against
+production `0026` and this exact RC.
+
+### Release-candidate evidence recorded 2026-10-13
+
+| Item | Evidence |
+| --- | --- |
+| RC / PR | `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf`; [PR #122](https://github.com/hrshanda56-beep/shanda-fuel/pull/122) remains open/draft. |
+| Hosted CI | [CI run 38353115180](https://github.com/hrshanda56-beep/shanda-fuel/actions/runs/38353115180): quality, dependency audit, secret scan, Semgrep SAST and Runtime-role proof passed; CodeQL skipped. |
+| Neon rehearsal | `restore-rehearsal-0027-0029-20261013`, branch `br-divine-paper-b2sgelew`, child of retained `backup-0026-20261013` (`br-spring-paper-b29ugfnk`). |
+| Migration result | Canonical `pnpm db:migrate` produced exactly 30 journal rows; 0027→0029 hashes/order, FORCE RLS, ownership and runtime privilege evidence passed. |
+| Authentication exception | Temporary owner-approved `REQUIRE_LOGIN_MFA=false`; `REQUIRE_PRIVILEGED_STEP_UP=true` remains enforced independently. |
+| Production | Read-only Neon `main` check at `2026-10-13T06:27:47Z`: `shanda_fuel`, `migration_owner`, PostgreSQL 18.6, 27 journal rows through `0026`, target relations absent. Unchanged by this work. |
 
 ## 1. Vercel administration access (read-only diagnosis, 2026-10-12)
 
@@ -89,7 +98,7 @@ actually stands in the way of "administration access":
 | V3 | If an agent or CI must act: create a **team-scoped, expiring Vercel access token** from the owner account (Account Settings -> Tokens, scope `shanda-hr-s-projects`, expiry <= 7 days), hand it over via the secret manager or process environment only, and revoke after the release. Never paste it in chat, argv, or evidence. | No non-interactive credential exists today. |
 | V4 | Link a dedicated production checkout: `vercel link --yes --team team_VMthg2WoTS6eeOP5BjRh3i8b --project shanda-fuel` (project id `prj_XnPOpr7OP4fEne29nQqyENRCQkvf`). | The existing link targets staging. |
 | V5 | Add `AUTH_PROVIDER=BETTER_AUTH` to the **production** scope (`vercel env add AUTH_PROVIDER production`, value entered interactively), after confirming the intended provider. Do not set `CLERK` for Milestone A unless the Clerk keys and rollout are separately approved. | Required by `getServerEnv`; see 1.2 item 4. |
-| V6 | Confirm in the dashboard that `REQUIRE_LOGIN_MFA` and `REQUIRE_PRIVILEGED_STEP_UP` have the intended production value (see section 5.1). Their values are Config-type and were not decoded here. | Decides which MFA smoke path applies. |
+| V6 | Confirm in the dashboard that the owner-approved temporary exception is `REQUIRE_LOGIN_MFA=false` and that `REQUIRE_PRIVILEGED_STEP_UP=true` remains set. | The exception is recorded; privileged step-up remains fail-closed. |
 
 Agents must still not run `vercel env pull` against production, `vercel env
 add/rm`, deploys, or promotes. The commands above are for the owner.
@@ -115,7 +124,7 @@ worktree, shell history, logs, or chat.
 | --- | --- | --- |
 | Required | `APP_ENV=production`, `APP_URL=https://...`, `AUTH_PROVIDER=BETTER_AUTH` | The first two must be valid for the production hostname; `AUTH_PROVIDER` is mandatory for deployed builds. |
 | Required secret | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `AUDIT_SIGNING_KEY_ID`, `AUDIT_SIGNING_KEY` | Runtime database URL and signing/auth secrets must be present; record only names and secret-manager references. |
-| Required security | `REQUIRE_PRIVILEGED_STEP_UP=true`; owner decision for `REQUIRE_LOGIN_MFA` | Step-up is fail-closed by the application. MFA must be explicitly confirmed; its Config-type value was not decoded by the read-only preflight. |
+| Required security | `REQUIRE_PRIVILEGED_STEP_UP=true`; temporary owner-approved `REQUIRE_LOGIN_MFA=false` exception | Login MFA is temporarily not mandatory; privileged step-up remains fail-closed and independently required. |
 | Conditional | `R2_*`, `RESEND_*`, `CRON_SECRET` | Required only if the approved release enables private object storage, invitation email delivery, or scheduled jobs; verify from the intended production operating procedure, not by assumption. |
 | Must not be runtime | `DATABASE_DIRECT_URL` and disposable/test secrets | Direct migration credentials stay with the migration operator and are never placed in the deployed runtime. |
 | Not required for this milestone | Clerk credentials | Do not add or select Clerk keys while the candidate is `BETTER_AUTH`; that is a separate approved rollout. |
@@ -189,8 +198,8 @@ COMMIT;
 `platform.security_events` is the audit-style table found in the migrations;
 if an additional audit table exists in the deployed schema, add its count too
 and do not skip the audit counts.
-The last block must show `rls_forced = app_tables` (67 at 0026; 70 after 0029
-because three tables are added).
+The last block must show `rls_forced = app_tables` (70 at the verified 0026
+checkpoint; 73 after 0029 because three tables are added).
 
 ### 2.3 Restore drill and real-incident restore
 
@@ -228,13 +237,83 @@ Never restore over production. To verify a restore (drill now, or incident):
   keep/delete explicitly and record it. They contain production data and
   should not live indefinitely.
 
+### 2.5 PostgreSQL 18 logical-backup and isolated-restore gate
+
+Status: **OPEN / NOT EVIDENCED**. The existing Lane 4 record proves an
+isolated Neon PITR/application/R2 drill, but it does not include a PostgreSQL
+18 custom-format logical dump, a secure archive object/checksum, or a restore
+from that dump. Do not mark this gate PASS until the owner records all three.
+
+Required access and storage, supplied by the owner before execution:
+
+- production `migration_owner`/provider-admin access through the approved
+  secret manager or libpq service file; never an application runtime secret;
+- a matching PostgreSQL 18 client (`pg_dump`, `pg_restore`, `psql`), verified
+  against `SHOW server_version` before the dump;
+- an existing owner-approved encrypted archive outside the runtime bucket and
+  its existing KMS/key-management reference. No new paid infrastructure is
+  requested. The archive URI is currently **not recorded** and must be named
+  before this gate can pass;
+- an isolated restore target controlled by the owner (existing disposable
+  PostgreSQL 18 environment or approved recovery project), inaccessible to
+  normal users during validation.
+
+Owner execution template. Inject libpq variables from the secret manager or a
+service file; do not place a URL, password, or key in argv, shell history,
+logs, tickets, or evidence:
+
+```sh
+set -eu
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+BACKUP_DIR=/secure/approved-backup-mount/shanda-fuel/$TS  # owner-supplied encrypted mount
+DUMP="$BACKUP_DIR/shanda-fuel-production-0026-$TS.dump"
+umask 077
+mkdir -p "$BACKUP_DIR"
+
+# PGHOST, PGPORT, PGDATABASE, PGUSER and PGPASSWORD/PGSERVICE come from the approved secret path.
+psql -XAt -v ON_ERROR_STOP=1 -c \
+  "SELECT current_database(), current_user, current_setting('server_version');"
+pg_dump --format=custom --no-owner --no-privileges --file "$DUMP"
+pg_restore --list "$DUMP" > "$DUMP.list"
+shasum -a 256 "$DUMP" | tee "$DUMP.sha256"
+wc -c "$DUMP"
+
+# Upload only through the already-approved encrypted archive. These values are
+# owner-supplied; do not invent a bucket, key, or retention policy.
+aws s3 cp "$DUMP" "$APPROVED_BACKUP_OBJECT_URI" \
+  --sse aws:kms --sse-kms-key-id "$APPROVED_BACKUP_KMS_KEY_ID" --only-show-errors
+aws s3 cp "$DUMP.sha256" "$APPROVED_BACKUP_OBJECT_URI.sha256" \
+  --sse aws:kms --sse-kms-key-id "$APPROVED_BACKUP_KMS_KEY_ID" --only-show-errors
+aws s3api head-object --bucket "$APPROVED_BACKUP_BUCKET" \
+  --key "$APPROVED_BACKUP_OBJECT_KEY" --checksum-mode ENABLED
+```
+
+Restore only into the isolated target, using its separate libpq environment;
+never use production `PGHOST`/`PGDATABASE` for this block:
+
+```sh
+# Set PGHOST, PGPORT, PGDATABASE, PGUSER and PGPASSWORD/PGSERVICE from the
+# isolated-target secret path; do not reuse the production variables.
+psql -XAt -v ON_ERROR_STOP=1 -c \
+  "SELECT current_database(), current_user, current_setting('server_version');"
+pg_restore --exit-on-error --no-owner --no-privileges --dbname "$PGDATABASE" "$DUMP"
+psql -XAt -v ON_ERROR_STOP=1 -c \
+  "BEGIN READ ONLY; SELECT count(*), min(id), max(id) FROM drizzle.__drizzle_migrations; SELECT count(*) FROM app.tenants; SELECT count(*) FROM app.stations; SELECT count(*) FROM platform.security_events; COMMIT;"
+```
+
+Pass evidence is the dump URI/version, byte size, SHA-256, PostgreSQL 18
+client/server versions, restore target identity, successful `pg_restore`,
+expected pre-migration journal level (`27` rows, through `0026`), matching
+baseline counts, and read-only schema/RLS/tenant checks. Quarantine or destroy
+the isolated target only under the owner’s retention decision; preserve the
+dump and evidence through release sign-off plus the agreed retention period.
+
 ## 3. Migration execution: 0027 -> 0028 -> 0029
 
 Source of truth: `src/platform/db/migrations/` and `meta/_journal.json` (entries
-27-29). SHA-256 of the unchanged migration files at the pre-follow-up RC
-`31e14e4` (also present in final local RC `bb1e0dc`; drizzle records the content
-hash, so
-these must match what is recorded afterwards):
+27-29). The exact RC is `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf`. The
+migration-file SHA-256 values are unchanged from the reviewed `31e14e4` base and
+must match what is recorded afterwards:
 
 | Migration | SHA-256 |
 | --- | --- |
@@ -430,6 +509,7 @@ for the client and must not be invented to pass a check.
 
 | ID | Check | Pass criterion |
 | --- | --- | --- |
+| P0 | Immediately before any production write, verify the approved RC checkout and production identity with `git rev-parse HEAD`, the project/branch from Neon metadata, and a read-only direct query for `current_database()`, `current_user`, PostgreSQL version, and the migration journal. | Exact RC `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf`; project `plain-paper-48449309`; branch `main`; expected production database; direct endpoint; PostgreSQL 18.x; exactly 27 journal rows through `0026`. If any value differs, stop. |
 | P1 | Candidate commit SHA is on the PR/branch with required CI green (section 4.2) and the four SHA-256 values above match. | Exact match. |
 | P2 | `SELECT count(*), max(id) FROM drizzle.__drizzle_migrations;` and top-5 rows | Exactly 27 rows (`0000`..`0026`), none of 0027-0029 present. If the count differs, stop and reconcile. |
 | P3 | `SELECT column_name FROM information_schema.columns WHERE table_schema='app' AND table_name='staff_invitations' AND column_name IN ('delivery_method','staff_number_registry_id');` and `SELECT to_regclass('app.auth_identities'), to_regclass('app.staff_number_registry'), to_regclass('app.auth_session_assurance');` | 0 rows / all NULL (objects not partially present). |
@@ -440,6 +520,25 @@ for the client and must not be invented to pass a check.
 | P8 | Auth/user baseline: `SELECT count(*) FROM auth."user";` and `SELECT count(*) FROM app.staff_invitations;` | Saved; expected post-migration `auth_identities` count equals `auth."user"` count. |
 | P9 | Production `AUTH_PROVIDER` decided and set (V5) and `/api/health`, `/api/readiness` currently 200. | Both 200. |
 | P10 | A rehearsal of 0027 -> 0029 succeeded on a Neon branch of production (section 3.6). | Success and post-checks pass. |
+
+P0 is repeated immediately before the migration window, even if the earlier
+preflight passed. The operator must use the production project and `main`
+branch explicitly; the connection string remains process-local:
+
+```sh
+test "$(git rev-parse HEAD)" = dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf
+neon branches list --project-id plain-paper-48449309 -o json \
+  | jq -e '.[] | select(.name == "main" and .primary == true and .default == true)'
+
+# Inject DATABASE_DIRECT_URL from the approved production secret path only.
+psql -XAt -v ON_ERROR_STOP=1 -c \
+  "BEGIN READ ONLY; SELECT current_database(), current_user, current_setting('server_version'); SELECT count(*), min(id), max(id) FROM drizzle.__drizzle_migrations; SELECT to_regclass('app.auth_identities'), to_regclass('app.staff_number_registry'), to_regclass('app.auth_session_assurance'); COMMIT;"
+```
+
+The expected final query result is the approved production database identity,
+PostgreSQL 18.x, journal count `27` with the highest row through `0026`, and
+NULL for all three target relations. A mismatch is a hard stop; do not point
+the command at a backup, rehearsal, pooled, or default connection.
 
 ### 3.4 Exact command sequence (operator, production, in a quiet window)
 
@@ -496,7 +595,7 @@ SELECT (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamesp
         WHERE n.nspname='app' AND c.relkind='r') AS app_tables,
        (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='app' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity) AS rls_forced;
-  -- expect equal (70 if 67 at 0026)
+  -- expect equal (73 if 70 at the verified 0026 checkpoint)
 COMMIT;
 ```
 
@@ -507,20 +606,73 @@ then the section 5 smoke. Record hashes: for each of 0027-0029 the row in
 `drizzle.__drizzle_migrations` must be present exactly once with the hash in
 the table above.
 
-### 3.6 Rehearsal on a production branch (recommended, owner executes)
+### 3.6 Rehearsal on a production branch (completed, isolated only)
 
-Create `rehearse-0027-$TS` from `main` in Neon (branch-only, production data
-copy-on-write, no effect on production), run the exact 3.4 sequence with the
-branch's direct connection, run 3.5, then delete the branch. This exercises
-real data, lock behaviour, and the applier's ownership privileges, which the
-local dry run could not.
+The approved rehearsal completed 2026-10-13 on child branch
+`restore-rehearsal-0027-0029-20261013` (`br-divine-paper-b2sgelew`), parent
+`backup-0026-20261013` (`br-spring-paper-b29ugfnk`), project
+`plain-paper-48449309`, database `shanda_fuel`, direct endpoint, PostgreSQL
+18.6, role `migration_owner`. The endpoint, project, branch and database were
+positively verified before the write. The branch remains ready and expires
+2026-10-20T06:04:48Z; neither it nor the backup was reset or deleted.
 
-### 3.7 Go/no-go checklist (all YES required)
+The exact canonical sequence was run:
 
-- [ ] Release commit/SHA approved; PR merged by a human; CI green (4.2).
-- [ ] 0027/0028/0029 SHA-256 match section 3.
-- [ ] P1-P10 pass; pre-migration branch and logical dump exist with evidence.
-- [ ] Rehearsal on production branch passed (3.6).
+```sh
+pnpm db:check
+# DATABASE_DIRECT_URL is injected from the verified rehearsal connection only.
+pnpm db:migrate
+```
+
+Result: 30 journal rows in order; 0027, 0028 and 0029 hashes matched exactly;
+the three new tables are owned by `migration_owner` and FORCE-RLS protected;
+all eight reviewed capability functions are SECURITY DEFINER with
+`app_runtime` EXECUTE and no PUBLIC EXECUTE; `app_runtime` has no direct SELECT
+on the protected tables; and baseline business counts and Triumph Energy,
+T.E.I Oils, and four ACTIVE station records remained present.
+
+This proves the migration rehearsal gate. It does not prove the separate
+PostgreSQL 18 logical-backup/restore gate.
+
+### 3.7 Controlled production sequence and recovery
+
+Owner-only execution order:
+
+1. Confirm P0 immediately before the window, freeze/announce writes, record UTC
+   checkpoint, retain the pre-migration branch, and complete the PostgreSQL 18
+   logical-backup gate.
+2. Run `pnpm db:check` from the exact RC checkout, then run `pnpm db:migrate`
+   with the approved direct `DATABASE_DIRECT_URL`. Do not run individual SQL
+   files or create journal rows manually.
+3. Stop on the first error. Preserve the failed production state and logs;
+   do not retry, edit migration history, or run a down-migration.
+4. Run section 3.5 read-only postchecks. Require 30 journal rows, matching
+   hashes/order, 73/73 forced-RLS app tables, role/function privileges, equal
+   identity/user counts, unchanged baseline counts, and `/api/health` plus
+   `/api/readiness` returning the required results.
+5. Only after postchecks pass, deploy the approved RC through the approved
+   Vercel workflow. Verify the deployment is the exact RC and run the smoke
+   checklist below.
+6. Observe the first 30 minutes using section 5.6. Any readiness failure,
+   migration/postcheck mismatch, RLS denial spike, auth configuration error,
+   or unhandled exception is a stop condition.
+
+Recovery decision: keep the pre-migration branch and dump for forensics. For a
+schema/postcheck failure, stop application promotion and page the incident
+owner. Do not reverse canonical migrations or modify production with ad hoc
+SQL. Under the incident owner’s separate approval, use the provider recovery
+procedure to restore/cut over an isolated recovery target, keep the failed
+branch unchanged, verify health/readiness/RLS and audit evidence, and record
+RPO/RTO. An application-only defect uses the previous immutable deployment;
+database recovery uses [`backup-restore.md`](backup-restore.md) and
+[`incident-response.md`](incident-response.md).
+
+### 3.8 Go/no-go checklist (all YES required)
+
+- [ ] Release commit/SHA approved; PR merged by a human; CI green (4.2). CI is green on the exact RC, but PR #122 is intentionally still unmerged.
+- [x] 0027/0028/0029 SHA-256 match section 3.
+- [ ] P1-P10 pass; the PostgreSQL 18 logical dump/archive/restore evidence is still missing.
+- [x] Isolated rehearsal passed on `br-divine-paper-b2sgelew` with 30 journal rows and postchecks (3.6).
 - [ ] Owner/operator present; quiet window; rollback owner named.
 - [ ] `AUTH_PROVIDER=BETTER_AUTH` set in production Vercel scope before promotion (V5).
 - [ ] The application candidate was built to tolerate pre- and post-migration
@@ -537,13 +689,14 @@ functions. If the release is a Better Auth-only rollout (`AUTH_PROVIDER=BETTER_A
 the 0027-0029 objects are not exercised until staff-number features are used,
 but they must still be applied before that code ships.
 
-### 3.8 Backend work that may add 0030
+### 3.9 Backend work that may add 0030
 
 Further backend work may add `0030`. The journal is owned by A0
 (`src/platform/db/migrations/README.md`); feature work only proposes SQL. Rules:
 
-1. Do not interleave: land and apply 0027-0029 first (they are final on
-   `bb1e0dc`), then number the next migration `0030` strictly after them.
+1. Do not interleave: land and apply 0027-0029 first (they are final on the
+   reviewed RC `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf`), then number the next
+   migration `0030` strictly after them.
 2. A new migration must not edit 0027-0029 (their hashes are recorded in
    production); corrections are a new forward migration.
 3. If 0030 is ready before the Milestone A window closes, either (a) hold it
@@ -562,7 +715,7 @@ Further backend work may add `0030`. The journal is owned by A0
 - Release branch/commit identified; working tree clean; no untracked
   evidence files committed by accident.
 - Status and release-readiness docs updated with the true production migration
-  level and this runbook linked (the stale 0024 text is corrected).
+  level and this runbook linked.
 - Rollout runbook (`docs/runbooks/production-rollout-120.md`, main checkout,
   untracked) reconciled with this runbook or intentionally superseded.
 
@@ -577,15 +730,18 @@ navigation-fixture denial).
 
 ### 4.3 Evidence list to attach (metadata only, no secrets)
 
-1. RC SHA, PR number, CI run URL with all jobs green.
+1. Exact RC `dadd9cd2f6efabcec30e36b939b6cdd84c0e4bcf`, PR #122, and CI run
+   [38353115180](https://github.com/hrshanda56-beep/shanda-fuel/actions/runs/38353115180)
+   with all required enabled jobs green; CodeQL skipped.
 2. Migration SHA-256 table (section 3) and `drizzle.__drizzle_migrations`
    before/after output.
-3. Neon pre-migration branch name/id/time, retention, dump size/checksum/location.
+3. Neon pre-migration branch name/id/time, retention, and PostgreSQL 18 logical
+   dump size/checksum/archive location. This item remains open until evidenced.
 4. Baseline vs post-migration count tables and the config script outputs.
-5. Rehearsal result on the production branch.
+5. Rehearsal result on `restore-rehearsal-0027-0029-20261013` / `br-divine-paper-b2sgelew`.
 6. Production `vercel env ls production` names list (no values) showing
-   `AUTH_PROVIDER` present, plus the owner's statement of the
-   `REQUIRE_LOGIN_MFA` value.
+   `AUTH_PROVIDER` present, plus the owner’s record of temporary
+   `REQUIRE_LOGIN_MFA=false` and required `REQUIRE_PRIVILEGED_STEP_UP=true`.
 7. Deployment id/alias and `/api/health`, `/api/readiness` results.
 8. Section 5 smoke results with timestamps and the operator.
 9. Rollback decision record and sign-offs (owner; accountant where finance data
@@ -602,15 +758,18 @@ as a legitimate outcome when onboarding data is genuinely missing.
 ### 5.1 Auth and MFA
 
 `REQUIRE_LOGIN_MFA` (`src/platform/config/env.ts`, enforced through the Better
-Auth two-factor plugin in `src/platform/auth/better-auth.ts`) decides the path.
-Prior rollout notes expect it to be `true` in production; the Vercel listing
-shows it as Config-type, so the owner must confirm the value (V6).
+Auth two-factor plugin in `src/platform/auth/better-auth.ts`) controls only the
+normal-login challenge. The owner-approved temporary exception sets it to
+`false`. `REQUIRE_PRIVILEGED_STEP_UP=true` is a separate invariant enforced by
+server configuration and the privileged command/session checks; disabling login
+MFA does not weaken it. The focused configuration and Better Auth tests verify
+this separation.
 
 | ID | Check | Pass criteria |
 | --- | --- | --- |
 | A1 | Unauthenticated request to a protected page and a protected API | Redirect to sign-in / 401; no data. |
-| A2 | OWNER sign-in with `REQUIRE_LOGIN_MFA=true` | After password, a TOTP/second-factor challenge is required; wrong code is rejected; correct code lands on the role home. |
-| A2b | If the flag were `false` (only with owner sign-off) | Sign-in succeeds without a challenge, and privileged actions still require step-up when `REQUIRE_PRIVILEGED_STEP_UP=true`. Record the exception. |
+| A2 | OWNER sign-in with the approved temporary `REQUIRE_LOGIN_MFA=false` exception | Password sign-in succeeds without a mandatory login challenge; normal MFA enrollment, verification, backup-code and lockout capabilities remain available. |
+| A2b | Privileged action under the exception | The action still requires a fresh tenant-bound step-up; a missing, expired or invalid step-up is rejected. Record the exception at the smoke timestamp. |
 | A3 | OWNER MFA enrollment present (verified earlier at the Stage 1 closeout) | Enrolled; no re-enrollment surprises. |
 | A4 | Session expiry/sign-out | Sign-out clears the session; protected route redirects again. |
 | A5 | No auth bootstrap/staging helper reachable | Dev and fixture routes return 404/denied (CI asserts the same; confirm once on the live alias). |
@@ -654,6 +813,23 @@ At 320, 375, 768, 1280 px (browser dev tools is acceptable):
 | H3 | `pnpm smoke:production-readonly` with `--environment production --confirm-readonly-production` (cookie via the secure environment only) | All checks PASS; evidence recorded. See `production-readonly-smoke.md`. |
 | H4 | Vercel runtime logs for the first 30 minutes | No unhandled exception, no `AUTH_PROVIDER must be explicitly configured`, no RLS denial spikes. |
 | H5 | Rate-limit and observability alerts | Alert routing still functional per `observability.md`; record any open launch exception. |
+
+### 5.6 First 30-minute observation sheet
+
+Record UTC timestamps, deployment id/alias, operator, and links to the
+read-only evidence. Do not perform financial writes to prove the launch.
+
+| Window | Required observation |
+| --- | --- |
+| T+0–5 min | `/api/health` and `/api/readiness` are 200; deployment reports READY; exact RC and `AUTH_PROVIDER=BETTER_AUTH` are confirmed; no startup/configuration errors. |
+| T+5–10 min | OWNER login follows the approved `REQUIRE_LOGIN_MFA=false` exception; a privileged setup action still presents/requires tenant-bound step-up; unauthenticated and forbidden routes remain denied. |
+| T+10–20 min | Read-only station/setup pages load at 320 px and desktop widths; empty/unconfigured states are explicit; no RLS denial or unhandled exception spike. |
+| T+20–30 min | Repeat health/readiness; inspect Vercel/runtime logs, database errors/locks, auth failures and rate-limit/alert delivery; record zero unexplained errors or stop and invoke recovery. |
+
+Stop conditions are any readiness failure, unexpected migration/journal state,
+auth-provider error, privilege/RLS regression, unhandled exception, or
+unexplained database lock/error. Preserve logs and use the recovery decision in
+section 3.7; do not retry a failed migration blindly.
 
 Final result: PASS only if every non-skipped item passes. Items skipped
 because the client has not supplied data are recorded as "NOT CONFIGURED
