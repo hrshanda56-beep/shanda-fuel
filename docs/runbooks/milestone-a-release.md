@@ -289,6 +289,62 @@ prevent its cleanup. The owner/operator must run the synthetic test through
 the approved secret path, or provide an approved temporary credential scoped
 to a disposable test prefix outside the locked production prefix.
 
+Synthetic R2 validation package — operator only:
+
+```sh
+set -eu
+umask 077
+: "${R2_ENDPOINT:?Inject the approved R2 endpoint from the secret manager}"
+: "${R2_BUCKET:?Use shanda-fuel-production-recovery}"
+: "${AWS_ACCESS_KEY_ID:?Inject the approved Object Read & Write access key}"
+: "${AWS_SECRET_ACCESS_KEY:?Inject the approved Object Read & Write secret}"
+TEST_DIR="$(mktemp -d)"
+TEST_KEY="synthetic-validation/$(date -u +%Y%m%dT%H%M%SZ)-$$.bin"
+printf 'synthetic-r2-validation\n' > "$TEST_DIR/source"
+aws s3api put-object --bucket "$R2_BUCKET" --key "$TEST_KEY" \
+  --body "$TEST_DIR/source" --endpoint-url "$R2_ENDPOINT" >/dev/null
+aws s3api head-object --bucket "$R2_BUCKET" --key "$TEST_KEY" \
+  --endpoint-url "$R2_ENDPOINT" >/dev/null
+aws s3 cp "s3://$R2_BUCKET/$TEST_KEY" "$TEST_DIR/download" \
+  --endpoint-url "$R2_ENDPOINT" --only-show-errors
+cmp "$TEST_DIR/source" "$TEST_DIR/download"
+aws s3api delete-object --bucket "$R2_BUCKET" --key "$TEST_KEY" \
+  --endpoint-url "$R2_ENDPOINT" >/dev/null
+if aws s3api head-object --bucket "$R2_BUCKET" --key "$TEST_KEY" \
+  --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
+  echo "synthetic object still exists" >&2; exit 1
+fi
+rm -rf "$TEST_DIR"
+```
+
+The test prefix is intentionally outside `postgres-backups/`, so the
+30-day lock does not apply. The operator must record only the HTTP operation
+results, object size, and UTC timestamps; never record credential values.
+
+GPG recipient validation package — operator only:
+
+```sh
+set -eu
+umask 077
+: "${BACKUP_GPG_RECIPIENT:?Inject the owner-approved public recipient reference}"
+: "${EXPECTED_GPG_FINGERPRINT:?Inject the separately recorded public fingerprint}"
+TEST_DIR="$(mktemp -d)"
+printf 'synthetic-gpg-validation\n' > "$TEST_DIR/plain"
+gpg --batch --with-colons --list-keys "$BACKUP_GPG_RECIPIENT" \
+  | awk -F: '$1 == "fpr" {print $10}' \
+  | grep -Fx "$EXPECTED_GPG_FINGERPRINT" >/dev/null
+gpg --batch --trust-model always --recipient "$BACKUP_GPG_RECIPIENT" \
+  --output "$TEST_DIR/plain.gpg" --encrypt "$TEST_DIR/plain"
+gpg --batch --output "$TEST_DIR/recovered" --decrypt "$TEST_DIR/plain.gpg"
+cmp "$TEST_DIR/plain" "$TEST_DIR/recovered"
+rm -rf "$TEST_DIR"
+```
+
+The recipient must resolve from the approved keyring/secret manager; the
+private key remains with the named recovery operator and is never placed in
+the repository, command line history, CI, R2, or chat. A successful local
+round-trip is required before any production archive is created.
+
 Required access and storage, supplied by the owner before execution:
 
 - production `migration_owner`/provider-admin access through the approved
