@@ -75,8 +75,9 @@ export type ServerShellAccess =
 /**
  * Server-side gate for the authenticated shell. A missing or expired session is
  * `signed-out` (the caller redirects before any product UI is produced); an
- * account with no active organisation is `no-workplace`; any other lookup
- * failure keeps the previous fail-closed behaviour of an empty projection.
+ * account with no active organisation is `no-workplace`; any unresolved
+ * navigation-context lookup is also `signed-out` so the shell never renders
+ * without verified authorization.
  */
 export async function getServerShellAccess(requestHeaders: Headers): Promise<ServerShellAccess> {
   if (
@@ -104,5 +105,7 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
     // access cannot be verified.
     return { status: 'signed-out' };
   }
-  return { status: 'ready', projection: await getServerNavigationProjection(requestHeaders) };
+  const projection = await getServerNavigationProjection(requestHeaders);
+  if (projection === null) return { status: 'signed-out' };
+  return { status: 'ready', projection };
 }

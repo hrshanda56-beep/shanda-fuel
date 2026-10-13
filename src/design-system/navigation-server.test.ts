@@ -93,6 +93,25 @@ describe('server shell session gate', () => {
     ).resolves.toEqual({ status: 'signed-out' });
   });
 
+  it('fails closed when the navigation projection cannot verify context', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+    mocks.resolveCurrentContext
+      .mockResolvedValueOnce({
+        available: availableContext,
+        current: { organisationId: 'tenant-1' },
+      })
+      .mockRejectedValueOnce(new Error('projection context unavailable'));
+
+    await expect(
+      getServerShellAccess(
+        new Headers({
+          host: 'fuel.shandahr.com',
+          cookie: 'shanda-fuel.session_token=opaque',
+        }),
+      ),
+    ).resolves.toEqual({ status: 'signed-out' });
+  });
+
   it('returns signed-out for an unauthenticated request so the shell redirects', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
 
