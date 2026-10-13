@@ -2,6 +2,7 @@ import 'server-only';
 
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { buildLoginRedirectPath } from '@/modules/workspaces/navigation';
 import { sql } from 'drizzle-orm';
 import { getDatabase } from '@/platform/db';
 import { withTenantTransaction } from '@/platform/db/transaction';
@@ -199,8 +200,7 @@ export async function resolveWebWorkspace(input: {
     actor = await requireAuthenticatedActor(input.request);
   } catch (error) {
     if (error instanceof AppError && error.code === 'UNAUTHENTICATED') {
-      const pathname = new URL(input.request.url).pathname;
-      redirect(`/login?next=${encodeURIComponent(pathname)}`);
+      redirect(buildLoginRedirectPath(input.request.url));
     }
     throw error;
   }

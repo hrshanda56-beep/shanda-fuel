@@ -8,9 +8,18 @@ import {
   workspaceRoleLabel,
 } from '@/modules/authorization/server';
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tenantId?: string; stationId?: string }>;
+}) {
   const request = await requestFromServerComponents('/');
-  const workspace = await resolveWebWorkspace({ request });
+  const search = await searchParams;
+  const workspace = await resolveWebWorkspace({
+    request,
+    requestedTenantId: search.tenantId,
+    requestedStationId: search.stationId,
+  });
 
   if (workspace.needsTenantSelection) {
     return <WorkspaceContextPage workspace={workspace} nextPath={workspace.landingPath} />;

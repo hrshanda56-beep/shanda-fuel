@@ -4,16 +4,12 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { authClient } from '@/platform/auth/client';
 import { Button, Card, Field } from '@/design-system/primitives';
+import { safeNextPath } from '@/modules/workspaces/navigation';
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
-
-  function safeNextPath() {
-    const next = new URLSearchParams(window.location.search).get('next');
-    return next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
-  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,7 +31,12 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(safeNextPath());
+      router.push(
+        safeNextPath(
+          new URLSearchParams(window.location.search).get('next'),
+          window.location.origin,
+        ),
+      );
     } catch {
       setError('Sign-in failed. Please try again.');
     } finally {

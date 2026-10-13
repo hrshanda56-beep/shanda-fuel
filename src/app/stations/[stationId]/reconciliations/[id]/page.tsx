@@ -8,6 +8,7 @@ import {
 } from '@/modules/authorization/server';
 import { WorkspaceContextPicker } from '@/modules/workspaces/ui/context-picker';
 import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
+import { stationReconciliationsPath } from '@/modules/workspaces/navigation';
 import {
   ProductionReconciliationWorkflow,
   type ProductionReconciliationContext,
@@ -59,7 +60,10 @@ export default async function ReconciliationPage({
       role={workspaceRoleLabel(workspace.role)}
       userName={workspace.actor.displayName ?? workspace.actor.email ?? 'Current user'}
       breadcrumbs={[
-        { label: 'Reconciliations', href: '/stations/demo/reconciliations' },
+        {
+          label: 'Reconciliations',
+          href: stationReconciliationsPath(stationId, workspace.tenant?.tenantId),
+        },
         { label: 'Morning shift' },
       ]}
     >
