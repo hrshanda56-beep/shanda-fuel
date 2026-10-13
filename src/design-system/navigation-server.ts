@@ -16,6 +16,34 @@ export function requestFromHeaders(requestHeaders: Headers): Request | null {
   });
 }
 
+async function buildServerNavigationProjection(
+  request: Request,
+  current: Awaited<ReturnType<typeof resolveCurrentContext>>['current'],
+): Promise<readonly NavigationProjection[] | null> {
+  if (!current) return null;
+
+  const authority = await resolveTenantExecutionContext({
+    request,
+    requestedTenantId: current.organisationId,
+  });
+  const scope = current.stationId
+    ? {
+        tenantId: current.organisationId,
+        scopeType: 'STATION' as const,
+        legalEntityId: current.legalEntityId,
+        stationId: current.stationId,
+      }
+    : current.legalEntityId
+      ? {
+          tenantId: current.organisationId,
+          scopeType: 'LEGAL_ENTITY' as const,
+          legalEntityId: current.legalEntityId,
+        }
+      : { tenantId: current.organisationId, scopeType: 'TENANT' as const };
+
+  return buildNavigationProjection({ actor: authority.authorization, scope });
+}
+
 /**
  * Resolve the navigation projection at the server authorization boundary.
  * Fail closed for missing session, missing context, or any authorization
@@ -39,29 +67,7 @@ export async function getServerNavigationProjection(
 
   try {
     const resolution = await resolveCurrentContext(request);
-    const current = resolution.current;
-    if (!current) return null;
-
-    const authority = await resolveTenantExecutionContext({
-      request,
-      requestedTenantId: current.organisationId,
-    });
-    const scope = current.stationId
-      ? {
-          tenantId: current.organisationId,
-          scopeType: 'STATION' as const,
-          legalEntityId: current.legalEntityId,
-          stationId: current.stationId,
-        }
-      : current.legalEntityId
-        ? {
-            tenantId: current.organisationId,
-            scopeType: 'LEGAL_ENTITY' as const,
-            legalEntityId: current.legalEntityId,
-          }
-        : { tenantId: current.organisationId, scopeType: 'TENANT' as const };
-
-    return buildNavigationProjection({ actor: authority.authorization, scope });
+    return await buildServerNavigationProjection(request, resolution.current);
   } catch {
     return null;
   }
@@ -99,13 +105,13 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
   try {
     const resolution = await resolveCurrentContext(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
+    const projection = await buildServerNavigationProjection(request, resolution.current);
+    if (projection === null) return { status: 'signed-out' };
+    return { status: 'ready', projection };
   } catch {
     // Any unresolved session/context/authorization error must fail closed.
     // The shell redirects signed-out users and never renders product UI when
     // access cannot be verified.
     return { status: 'signed-out' };
   }
-  const projection = await getServerNavigationProjection(requestHeaders);
-  if (projection === null) return { status: 'signed-out' };
-  return { status: 'ready', projection };
 }

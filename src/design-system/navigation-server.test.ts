@@ -95,12 +95,13 @@ describe('server shell session gate', () => {
 
   it('fails closed when the navigation projection cannot verify context', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    mocks.resolveCurrentContext
-      .mockResolvedValueOnce({
-        available: availableContext,
-        current: { organisationId: 'tenant-1' },
-      })
-      .mockRejectedValueOnce(new Error('projection context unavailable'));
+    mocks.resolveCurrentContext.mockResolvedValue({
+      available: availableContext,
+      current: { organisationId: 'tenant-1' },
+    });
+    mocks.resolveTenantExecutionContext.mockRejectedValue(
+      new Error('projection context unavailable'),
+    );
 
     await expect(
       getServerShellAccess(
@@ -110,6 +111,37 @@ describe('server shell session gate', () => {
         }),
       ),
     ).resolves.toEqual({ status: 'signed-out' });
+  });
+
+  it('uses the validated station selection for the shell projection without re-resolving context', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+    mocks.resolveCurrentContext.mockResolvedValue({
+      available: availableContext,
+      current: {
+        organisationId: 'tenant-1',
+        legalEntityId: 'legal-entity-1',
+        stationId: 'station-bindura',
+        allStations: false,
+      },
+    });
+    mocks.resolveTenantExecutionContext.mockResolvedValue({
+      authorization: {},
+      membership: {},
+      transaction: {},
+    });
+
+    await expect(
+      getServerShellAccess(
+        new Headers({
+          host: 'fuel.shandahr.com',
+          cookie: 'shanda-fuel.session_token=opaque; shanda-fuel-context=validated',
+        }),
+      ),
+    ).resolves.toMatchObject({ status: 'ready' });
+    expect(mocks.resolveCurrentContext).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveTenantExecutionContext).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedTenantId: 'tenant-1' }),
+    );
   });
 
   it('returns signed-out for an unauthenticated request so the shell redirects', async () => {
