@@ -17,7 +17,13 @@ describe('provider session cookie detection', () => {
 
   it('recognizes Better Auth sessions without accepting the Clerk cookie', () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    expect(hasProviderSessionCookie(new Headers({ cookie: 'session_token=opaque' }))).toBe(true);
+    expect(
+      hasProviderSessionCookie(new Headers({ cookie: 'shanda-fuel.session_token=opaque' })),
+    ).toBe(true);
+    expect(hasProviderSessionCookie(new Headers({ cookie: 'session_token=opaque' }))).toBe(false);
+    expect(
+      hasProviderSessionCookie(new Headers({ cookie: 'shanda-fuel.session_token_extra=opaque' })),
+    ).toBe(false);
     expect(hasProviderSessionCookie(new Headers({ cookie: '__session=opaque' }))).toBe(false);
   });
 });
