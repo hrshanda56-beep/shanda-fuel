@@ -643,10 +643,10 @@
   }
 }
 
-/* Narrowest phones: two columns leave ~106px, too little for "USD 120,000.00" at 24px. */
+/* Narrowest phones: two columns leave ~106px; keep long currency figures intact. */
 @media (max-width: 22.5rem) {
   .today-figure-value {
-    font-size: var(--font-size-xl);
+    font-size: 1.125rem;
   }
 }
 
