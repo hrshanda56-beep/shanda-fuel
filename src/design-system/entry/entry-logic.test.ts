@@ -60,9 +60,9 @@ describe('safePostSignInPath', () => {
     expect(safePostSignInPath('//evil.example')).toBe('/workplace');
     expect(safePostSignInPath('/invite/../settings')).toBe('/workplace');
     expect(safePostSignInPath('/settings')).toBe('/workplace');
-    expect(
-      safePostSignInPath('/stations/bindura?tenantId=tenant-1&stationId=station-2'),
-    ).toBe('/stations/bindura?tenantId=tenant-1&stationId=station-2');
+    expect(safePostSignInPath('/stations/bindura?tenantId=tenant-1&stationId=station-2')).toBe(
+      '/stations/bindura?tenantId=tenant-1&stationId=station-2',
+    );
     expect(safePostSignInPath('/%5Cevil.example?tenantId=t&stationId=s')).toBe('/workplace');
   });
 });
