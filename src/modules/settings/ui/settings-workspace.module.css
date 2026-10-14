@@ -1,28 +1,37 @@
-/* One rounded panel: section list on the left, details on the right. */
+/* Settings use the whole content width and sit close to the page header. */
+.page {
+  max-width: none;
+  padding-block: 0;
+}
+
+/* One rounded panel: a slim section list on the left, details on the right. */
 .frame {
   display: grid;
-  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+  grid-template-columns: 12rem minmax(0, 1fr);
   min-width: 0;
   border: var(--border-width) solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
   box-shadow: var(--shadow-xs);
-  overflow: hidden;
+  /* clip, not hidden: the section list below stays sticky. */
+  overflow: clip;
 }
 
 .subnav {
+  position: sticky;
+  top: var(--space-4);
+  align-self: start;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-4);
-  border-right: var(--border-width) solid var(--border-subtle);
+  padding: var(--space-3);
 }
 
 .subnavItem {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 2.75rem;
+  min-height: 2.5rem;
   padding: 0 var(--space-3);
   border: 0;
   border-radius: var(--radius-md);
@@ -55,7 +64,8 @@
   align-content: start;
   gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-6);
+  padding: var(--space-5);
+  border-left: var(--border-width) solid var(--border-subtle);
 }
 
 .contentHeader {
@@ -260,6 +270,7 @@
   }
 
   .subnav {
+    position: static;
     flex-direction: row;
     flex-wrap: wrap;
     padding: var(--space-3);
@@ -274,11 +285,227 @@
 
   .content {
     padding: var(--space-4);
+    border-left: 0;
   }
 }
 
 @media (max-width: 30rem) {
   .fields {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Staff: a searchable table with filter pills, in the same soft language as the rest of the app. */
+/* One row on wide screens; wraps on narrow ones. */
+.staffToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.staffSearch {
+  display: flex;
+  flex: 0 1 18rem;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.staffSearch input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.staffSearch:focus-within {
+  border-color: var(--accent);
+}
+
+.staffFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+}
+
+.staffFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.staffFilter span {
+  color: var(--text-muted, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.staffFilter[aria-pressed='true'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Last in the row, pushed to the right edge. */
+.staffInviteButton {
+  margin-left: auto;
+}
+
+.staffDanger {
+  color: var(--tone-critical-fg, #b42318);
+}
+
+.staffEmpty {
+  margin: 0;
+  padding: var(--space-6) 0;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.staffTable {
+  display: grid;
+  min-width: 0;
+}
+
+.staffHead,
+.staffTableRow {
+  display: grid;
+  grid-template-columns:
+    minmax(11rem, 1.3fr) minmax(0, 1.6fr) minmax(5.5rem, 0.8fr) minmax(0, 1.1fr)
+    minmax(5.5rem, 0.7fr) 8.5rem;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.staffHead {
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.staffRows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staffTableRow {
+  padding: var(--space-3) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.staffTableRow:last-child {
+  border-bottom: 0;
+}
+
+.staffName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.staffName > div {
+  display: grid;
+  min-width: 0;
+}
+
+.staffName strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.staffName small {
+  color: var(--text-secondary);
+}
+
+.staffAvatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--accent-muted);
+  color: var(--accent-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.staffCell {
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.staffTableRow .staffActions {
+  justify-content: flex-end;
+}
+
+/* Phone: each row becomes a small stack, with no sideways scroll. */
+@media (max-width: 48rem) {
+  .staffSearch {
+    max-width: none;
+  }
+
+  .staffInviteButton {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .staffHead {
+    display: none;
+  }
+
+  .staffTableRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .staffCell {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .staffCell::before {
+    content: attr(data-label);
+    min-width: 4.5rem;
+    color: var(--text-muted, var(--text-secondary));
+  }
+
+  .staffTableRow .staffActions {
+    justify-content: flex-start;
+    padding-top: var(--space-2);
   }
 }

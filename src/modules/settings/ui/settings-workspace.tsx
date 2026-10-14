@@ -107,7 +107,7 @@ export function SettingsWorkspace({
 
   if (!organisation) {
     return (
-      <PageContainer width="wide">
+      <PageContainer width="wide" className={`settings-page ${styles.page}`}>
         <div className={styles.frame}>
           <div className={styles.content}>
             <header className={styles.contentHeader}>
@@ -132,7 +132,7 @@ export function SettingsWorkspace({
   const { selectedStation, legalEntities } = view.context;
 
   return (
-    <PageContainer width="wide">
+    <PageContainer width="wide" className={`settings-page ${styles.page}`}>
       <div className={styles.frame}>
         <nav className={styles.subnav} aria-label="Settings sections">
           {visibleTabs.map((item) => (
@@ -152,9 +152,11 @@ export function SettingsWorkspace({
         <div className={styles.content}>
           <header className={styles.contentHeader}>
             <h2 className={styles.contentTitle}>{active.label}</h2>
-            <p className={styles.note}>
-              You can look at these details here. Ask your administrator to change them.
-            </p>
+            {tab === 'staff' ? null : (
+              <p className={styles.note}>
+                You can look at these details here. Ask your administrator to change them.
+              </p>
+            )}
           </header>
 
           {tab === 'organisation' ? (

@@ -204,7 +204,8 @@ test.describe('authenticated Staff lifecycle', () => {
   test('Owner can manage invitations and Staff remains accessible', async ({ page }) => {
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Invite staff', level: 3 })).toBeVisible();
+    await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Invite staff' })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
@@ -242,7 +243,8 @@ test.describe('authenticated Staff lifecycle', () => {
       );
       await openSettings(page, sessions.owner);
       await page.getByRole('button', { name: 'Staff', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Invite staff', level: 3 })).toBeVisible();
+      await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Invite staff' })).toBeVisible();
     }
 
     await invite('Owner invited attendant', 'owner-attendant.staff-e2e@example.test', 'ATTENDANT');
@@ -300,6 +302,7 @@ test.describe('authenticated Staff lifecycle', () => {
     const staffButton = page.getByRole('button', { name: 'Staff', exact: true });
     await expect(staffButton).toBeVisible();
     await staffButton.click();
+    await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
     await expect(page.getByLabel('Role').locator('option', { hasText: 'Owner' })).toHaveCount(0);
 
     const adminCookie = await signedCookie(sessions.administrator, authSecret!);

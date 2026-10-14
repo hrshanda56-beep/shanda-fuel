@@ -2102,3 +2102,14 @@ h3,
     border-top: 1px solid var(--border-subtle);
   }
 }
+
+/* Settings uses more of the screen on desktop: tighter margins around the content. */
+@media (min-width: 64rem) {
+  .shell-main:has(.settings-page) {
+    padding-inline: var(--space-3);
+  }
+
+  .shell-sheet:has(.settings-page) {
+    padding: var(--space-4) var(--space-4) var(--space-8);
+  }
+}
