@@ -56,22 +56,88 @@ profitability remain later phases or explicitly partial areas.
   responsive/mobile/dark/reduced-motion states, modal/sheet focus behavior,
   and accessibility scans.
 
+## Phase 2 integration-candidate validation
+
+The accepted Phase 1 baseline is `ff36870adacc22c422078ff4179765eeea6521d3`
+(`Merge PR #126 secure Better Auth production cookie hotfix`). During this
+review, `origin/main` advanced to
+`76b735a20c2624ff3a78681f97d5390bfe25c022` (`Merge performance optimization PR
+#127`), whose parents are the accepted Phase 1 baseline and the documented
+performance commit. The candidate was rebased onto that exact current main
+tip, without modifying either parent branch:
+
+- Worktree: `/Users/wolftech/.codex/worktrees/phase2-integration-candidate/shanda-fuel`
+- Branch: `codex/phase2-integration-candidate`
+- Candidate commits: the two documented Phase 2 commits only
+  (`69a102325ab47b176eda4bb54d62a5f8964d4da0` and
+  `37456c0b5dd8b02243c985e6d2bdc4c5a2eb1279`), cherry-picked as candidate
+  commits.
+- Candidate delta from accepted `main`: this audit and the forecourt command
+  route regression test only (90 added lines; no authentication, navigation,
+  tenant, or MFA implementation files).
+
+The A3 forecourt implementation was already present in accepted `main`,
+including its modules, routes, migrations, workspaces, and E2E coverage. No A3
+implementation was transferred from the isolated Phase 2 branch.
+
+A fresh disposable PostgreSQL 18 cluster was created locally with no paid or
+production resources. Canonical migrations and the seeded integration suite
+passed when migrations were applied under the correct disposable database owner:
+6 files and 62 tests passed, including tenant isolation/RLS, database smoke,
+forecourt lifecycle, segmented shifts, and production reconciliation. An
+earlier harness attempt used the application user as the migration owner and
+correctly tripped the meter-exception capability guard; this was a test-harness
+ownership issue, not a code change, and the clean owner-corrected run passed.
+
+The full seeded Chromium/browser and accessibility matrix ran with one worker:
+303 passed, 9 failed, 4 skipped, and 10 did not run. The failures were:
+
+- customer account detail navigation;
+- management report private-link confirmation;
+- My Shift at 320px;
+- production reconciliation persistence;
+- provider settlement refresh flow;
+- Settings sign-out;
+- setup readiness for an unentered station;
+- shared shell overflow at 390px;
+- existing invitation acceptance/fail-closed flow.
+
+The initial full run did not set `APP_URL` to the test origin, and the sign-out
+failure logged Better Auth's invalid-origin warning. A targeted rerun with the
+matching `APP_URL` could not start because the local Playwright web server timed
+out during recompilation; this remains an explicit follow-up rather than a
+passing result. The report-sharing and invitation failures also logged
+unexpected `SyntaxError` responses and need independent repair/retest.
+
+The `/api/context` investigation found only expected unauthenticated `401`
+responses from unauthenticated fixtures; no unexpected context error was seen
+under the seeded database. The browser run still emits a React hydration
+attribute mismatch on the `/foundation` dynamic form and a development-only
+`useInsertionEffect` warning from location search. These warnings did not fail
+the A3 assertions or accessibility scans and are retained as UI-quality follow-up
+items.
+
+The performance branch at
+`0c7e8d8492b0cea388f83c42c70df911b0b6fc3c` changes overview/navigation context
+files only. It has no file overlap with this candidate's two-file Phase 2 delta;
+the performance worktree and branch were not modified.
+
 ## Remaining gates
 
-The full browser matrix remains environment-dependent: this worktree has no
-authorized seeded local application environment for DB-backed journeys. The
-targeted run also emitted existing development-server hydration warnings and
-`/api/context` errors when no application database was provided; no targeted
-assertion failed. A later integration owner should run the complete browser
-matrix against an isolated seeded environment and review those server logs.
+The candidate is not release-ready until the nine browser failures above are
+repaired or dispositioned and the full matrix is rerun with matching
+`APP_URL`/Better Auth origin settings. No production database, paid resource,
+deployment, or live configuration was used.
 
 The supplied accepted Phase 1 baseline (`ff36870adacc22c422078ff4179765eeea6521d3`)
-is not an ancestor of this branch. It contains later authentication-cookie and
-navigation changes that are absent from the Phase 2 line. No rebase or merge
-was performed; those changes must be reconciled during integration before
-release validation.
+is an ancestor of this candidate through current `main`, preserving its
+authentication-cookie, navigation, tenant, and MFA fixes. The performance
+optimization is likewise present only through the current `main` base; the
+performance branch itself was not modified.
 
-No missing Phase 2 business decision was discovered. Later-phase gaps remain
-as documented in `docs/spec/REQUIREMENTS_TRACEABILITY.md`, including full cash
+No missing Phase 2 business decision was discovered. Onboarding still requires
+authoritative station, legal-entity, tank, bank, supplier, customer, threshold,
+and opening-position data; none was fabricated. Later-phase gaps remain as
+documented in `docs/spec/REQUIREMENTS_TRACEABILITY.md`, including full cash
 custody, expense lifecycle, broader profitability/exports, offline sync, and
 production hardening evidence.
