@@ -25,7 +25,7 @@ profitability remain later phases or explicitly partial areas.
 | Approval, posting, lock and correction semantics | Named commands and guarded transitions in `domain.ts` and `commands.ts` | Present |
 | Sale-recognition/output seams | `forecourt.meter_segment_sealed.v1`, reconciliation approval/post events, downstream sale-recognition integration | Present |
 | Basic daily report | `src/modules/forecourt/report.ts` and `/api/reports/daily` | Present |
-| Tenant safety, authorization, idempotency, audit and outbox | A1-resolved command context, command policy, transaction pipeline, RLS migration/tests | Present; DB proof requires a dedicated local PostgreSQL run |
+| Tenant safety, authorization, idempotency, audit and outbox | A1-resolved command context, command policy, transaction pipeline, RLS migration/tests | Present; clean disposable PostgreSQL proof passed |
 | Mobile/desktop workflow states | Forecourt workspaces, operations control room, reconciliation workflow and E2E coverage | Present |
 | Route dispatch regression coverage | `src/app/api/forecourt/commands/route.test.ts` now asserts both named meter-exception commands | Added in this branch |
 
@@ -38,15 +38,38 @@ profitability remain later phases or explicitly partial areas.
 - ESLint: passed.
 - Next.js production build: passed with synthetic local configuration
   (`APP_ENV=local`, `AUTH_PROVIDER=BETTER_AUTH`, local-only auth secret).
-- Database-backed A3 and production-reconciliation suites were attempted and
-  failed closed before running because no `DATABASE_URL` was configured and no
-  local PostgreSQL server was listening. No production credential was used.
+- Canonical migrations applied successfully to a disposable PostgreSQL 16
+  cluster using `scripts/db/bootstrap-test.sh` and `pnpm db:migrate:test`.
+- Database-backed A3 and production-reconciliation coverage passed: 4 files,
+  47 tests (`a3-business-day-lifecycle`, `a3-forecourt`,
+  `a3-segmented-shifts`, and `a5-production-reconciliation`).
+- Clean tenant-isolation and database smoke coverage passed against a fresh
+  disposable database configured with UTC timestamps: 2 files, 15 tests.
+  This included real role/RLS privilege checks, Better Auth persistence and
+  expired-session rejection. The local cluster was never connected to a
+  production or client database.
+- `pnpm db:check` passed (`Everything's fine`).
+- Targeted Playwright/axe validation passed: 18 tests across
+  `a3-forecourt-workspace.spec.ts`, `accessibility.spec.ts`, and
+  `business-day-lock.spec.ts`, using the isolated local development server.
+  The run covered forecourt rendering/actions, permission and step-up guards,
+  responsive/mobile/dark/reduced-motion states, modal/sheet focus behavior,
+  and accessibility scans.
 
 ## Remaining gates
 
-The remaining Phase 2 verification gate is a dedicated local PostgreSQL run
-with the repository's expected migration ownership/RLS prerequisites. The
-isolated session must not obtain or use production database credentials.
+The full browser matrix remains environment-dependent: this worktree has no
+authorized seeded local application environment for DB-backed journeys. The
+targeted run also emitted existing development-server hydration warnings and
+`/api/context` errors when no application database was provided; no targeted
+assertion failed. A later integration owner should run the complete browser
+matrix against an isolated seeded environment and review those server logs.
+
+The supplied accepted Phase 1 baseline (`ff36870adacc22c422078ff4179765eeea6521d3`)
+is not an ancestor of this branch. It contains later authentication-cookie and
+navigation changes that are absent from the Phase 2 line. No rebase or merge
+was performed; those changes must be reconciled during integration before
+release validation.
 
 No missing Phase 2 business decision was discovered. Later-phase gaps remain
 as documented in `docs/spec/REQUIREMENTS_TRACEABILITY.md`, including full cash
