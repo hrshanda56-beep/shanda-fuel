@@ -12,6 +12,7 @@ import {
   resolveClerkSession,
   revokeClerkUserSessions,
 } from '../../platform/auth/provider';
+import { withDevelopmentTiming } from '../../platform/observability/development-timing';
 
 /**
  * Adapter boundary for Better Auth. Better Auth resolves identity/session
@@ -85,7 +86,9 @@ export async function resolveAuthenticatedActor(
   now = new Date(),
 ): Promise<AuthenticatedActorContext | null> {
   if (getAuthProviderName() === 'CLERK') {
-    const providerSession = await resolveClerkSession(request);
+    const providerSession = await withDevelopmentTiming('auth.session.resolve.clerk', () =>
+      resolveClerkSession(request),
+    );
     if (!providerSession) return null;
     const session: SessionRecord = {
       sessionId: providerSession.providerSessionId,
@@ -106,10 +109,12 @@ export async function resolveAuthenticatedActor(
       session: invalidateExpiredAssurance(session, now),
     };
   }
-  const result = await (auth ?? (await getAuth())).api.getSession({
-    headers: request.headers,
-    query: { disableCookieCache: true },
-  });
+  const result = await withDevelopmentTiming('auth.session.resolve.better_auth', async () =>
+    (auth ?? (await getAuth())).api.getSession({
+      headers: request.headers,
+      query: { disableCookieCache: true },
+    }),
+  );
   if (!result) return null;
   const parsed = betterAuthSessionSchema.safeParse(result);
   if (!parsed.success || parsed.data.user.id !== parsed.data.session.userId) {

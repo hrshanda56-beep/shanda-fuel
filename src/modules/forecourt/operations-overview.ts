@@ -16,6 +16,7 @@ import {
 import { loadForecourtStation } from './persistence';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
 import { projectOperationsStatus } from './operations-status';
+import { withDevelopmentTiming } from '../../platform/observability/development-timing';
 
 const uuid = z.string().uuid();
 
@@ -183,29 +184,32 @@ async function loadOperationsOverview(
     canViewReconciliations: boolean;
   },
 ) {
-  const stationRows = await transaction.execute<{
-    id: string;
-    code: string;
-    name: string;
-    timezone: string;
-    tenantId: string;
-    tenantName: string;
-  }>(sql`
+  const stationRows = await withDevelopmentTiming('forecourt.overview.station_query', () =>
+    transaction.execute<{
+      id: string;
+      code: string;
+      name: string;
+      timezone: string;
+      tenantId: string;
+      tenantName: string;
+    }>(sql`
     select s.id, s.code, s.name, s.timezone,
            t.id as "tenantId", t.name as "tenantName"
     from app.stations s
     join app.tenants t on t.id = s.tenant_id
     where s.tenant_id=${context.tenantId} and s.id=${context.stationId}
-  `);
+  `),
+  );
   const station = stationRows[0];
   if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
 
-  const nowRows = await transaction.execute<{ now: Date | string }>(
-    sql`select clock_timestamp() as now`,
+  const nowRows = await withDevelopmentTiming('forecourt.overview.clock_query', () =>
+    transaction.execute<{ now: Date | string }>(sql`select clock_timestamp() as now`),
   );
   const currentBusinessDate = deriveBusinessDate(nowRows[0]?.now ?? new Date(), station.timezone);
 
-  const days = await transaction.execute<BusinessDayRow>(sql`
+  const days = await withDevelopmentTiming('forecourt.overview.business_days_query', () =>
+    transaction.execute<BusinessDayRow>(sql`
     select id, business_date as date, state, version,
            opened_at as "openedAt", closed_at as "closedAt",
            created_at as "createdAt", updated_at as "updatedAt"
@@ -213,11 +217,15 @@ async function loadOperationsOverview(
     where tenant_id=${context.tenantId} and station_id=${context.stationId}
     order by business_date desc
     limit 30
-  `);
+  `),
+  );
 
   let selectedDay: BusinessDayRow | null;
   if (input.businessDayId) {
-    const requestedDayRows = await transaction.execute<BusinessDayRow>(sql`
+    const requestedDayRows = await withDevelopmentTiming(
+      'forecourt.overview.requested_day_query',
+      () =>
+        transaction.execute<BusinessDayRow>(sql`
       select id, business_date as date, state, version,
              opened_at as "openedAt", closed_at as "closedAt",
              created_at as "createdAt", updated_at as "updatedAt"
@@ -226,7 +234,8 @@ async function loadOperationsOverview(
         and station_id=${context.stationId}
         and id=${input.businessDayId}
       limit 1
-    `);
+    `),
+    );
     selectedDay = requestedDayRows[0] ?? null;
     if (!selectedDay) {
       throw new AppError('NOT_FOUND', 'The requested business day was not found');
@@ -259,19 +268,20 @@ async function loadOperationsOverview(
     };
   }
 
-  const shifts = await transaction.execute<{
-    id: string;
-    state: string;
-    businessDate: string;
-    plannedStartAt: Date | string;
-    plannedEndAt: Date | string;
-    version: number | string;
-    openedAt: Date | string | null;
-    meterClosedAt: Date | string | null;
-    completedAt: Date | string | null;
-    notOperatedReason: string | null;
-    attendantCount: number | string;
-  }>(sql`
+  const shifts = await withDevelopmentTiming('forecourt.overview.shifts_query', () =>
+    transaction.execute<{
+      id: string;
+      state: string;
+      businessDate: string;
+      plannedStartAt: Date | string;
+      plannedEndAt: Date | string;
+      version: number | string;
+      openedAt: Date | string | null;
+      meterClosedAt: Date | string | null;
+      completedAt: Date | string | null;
+      notOperatedReason: string | null;
+      attendantCount: number | string;
+    }>(sql`
     select s.id, s.state, s.business_date as "businessDate",
            s.planned_start_at as "plannedStartAt", s.planned_end_at as "plannedEndAt",
            s.version, s.opened_at as "openedAt", s.meter_closed_at as "meterClosedAt",
@@ -286,23 +296,25 @@ async function loadOperationsOverview(
       and s.business_day_id=${selectedDay.id}
     group by s.id
     order by s.planned_start_at, s.id
-  `);
+  `),
+  );
 
   const reconciliations = permissions.canViewReconciliations
-    ? await transaction.execute<{
-        id: string;
-        shiftId: string | null;
-        state: string;
-        version: number | string;
-        createdAt: Date | string;
-        updatedAt: Date | string;
-        submittedAt: Date | string | null;
-        returnedAt: Date | string | null;
-        approvedAt: Date | string | null;
-        returnReason: string | null;
-        revision: number | string | null;
-        revisionState: string | null;
-      }>(sql`
+    ? await withDevelopmentTiming('forecourt.overview.reconciliations_query', () =>
+        transaction.execute<{
+          id: string;
+          shiftId: string | null;
+          state: string;
+          version: number | string;
+          createdAt: Date | string;
+          updatedAt: Date | string;
+          submittedAt: Date | string | null;
+          returnedAt: Date | string | null;
+          approvedAt: Date | string | null;
+          returnReason: string | null;
+          revision: number | string | null;
+          revisionState: string | null;
+        }>(sql`
     select r.id, r.shift_id as "shiftId", r.state, r.version,
            r.created_at as "createdAt", r.updated_at as "updatedAt",
            r.submitted_at as "submittedAt", r.returned_at as "returnedAt",
@@ -321,7 +333,8 @@ async function loadOperationsOverview(
     where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId}
       and r.business_day_id=${selectedDay.id}
     order by r.updated_at desc, r.id
-  `)
+  `),
+      )
     : [];
 
   const subjectIds = [
@@ -347,7 +360,8 @@ async function loadOperationsOverview(
     : sql``;
   const timeline =
     permissions.canViewAudit && subjectIds.length
-      ? await transaction.execute<TimelineRow>(sql`
+      ? await withDevelopmentTiming('forecourt.overview.timeline_query', () =>
+          transaction.execute<TimelineRow>(sql`
         select e.event_code as "eventCode", e.occurred_at as "occurredAt",
                coalesce(u.name, e.actor_id::text) as "actorName",
                e.membership_id as "membershipId",
@@ -365,7 +379,8 @@ async function loadOperationsOverview(
           )
         order by e.occurred_at desc
         limit 100
-      `)
+      `),
+        )
       : [];
 
   return {

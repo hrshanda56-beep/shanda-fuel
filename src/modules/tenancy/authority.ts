@@ -22,6 +22,7 @@ import {
   type AuthenticatedActorResolver,
 } from '../identity';
 import { assertActiveTenantMembership, type MembershipStatus } from './access';
+import { withDevelopmentTiming } from '../../platform/observability/development-timing';
 
 const membershipStatusSchema = z.enum(['INVITED', 'ACTIVE', 'SUSPENDED', 'LOCKED', 'DISABLED']);
 const roleCodeSchema = z.enum(ROLE_CODES);
@@ -123,9 +124,10 @@ export async function loadTenantMembershipWithDatabase(
   tenantId: string,
   database: Pick<Database, 'transaction'>,
 ): Promise<MembershipRecord | null> {
-  return database.transaction(async (transaction) => {
-    await transaction.execute(sql`select set_config('app.actor_id', ${identityId}, true)`);
-    const membershipRows = (await transaction.execute(sql`
+  return withDevelopmentTiming('db.authz.membership', () =>
+    database.transaction(async (transaction) => {
+      await transaction.execute(sql`select set_config('app.actor_id', ${identityId}, true)`);
+      const membershipRows = (await transaction.execute(sql`
       select
         m.tenant_id,
         m.id as membership_id,
@@ -136,35 +138,35 @@ export async function loadTenantMembershipWithDatabase(
         and m.identity_id = ${identityId}
       limit 1
     `)) as unknown as MembershipRow[];
-    const row = membershipRows[0];
-    if (!row) return null;
+      const row = membershipRows[0];
+      if (!row) return null;
 
-    const status = membershipStatusSchema.parse(row.status);
-    if (status !== 'ACTIVE') {
-      return {
-        tenantId: row.tenant_id,
-        membershipId: row.membership_id,
-        identityId: row.identity_id,
-        actorId: row.identity_id,
-        status,
-        roleAssignments: [],
-        temporaryGrants: [],
-      };
-    }
+      const status = membershipStatusSchema.parse(row.status);
+      if (status !== 'ACTIVE') {
+        return {
+          tenantId: row.tenant_id,
+          membershipId: row.membership_id,
+          identityId: row.identity_id,
+          actorId: row.identity_id,
+          status,
+          roleAssignments: [],
+          temporaryGrants: [],
+        };
+      }
 
-    await transaction.execute(sql`
+      await transaction.execute(sql`
       select
         set_config('app.tenant_id', ${row.tenant_id}, true),
         set_config('app.membership_id', ${row.membership_id}, true)
     `);
-    const roleRows = (await transaction.execute(sql`
+      const roleRows = (await transaction.execute(sql`
       select tenant_id, role_code, scope_type, legal_entity_id, station_id, expires_at
       from app.membership_role_assignments
       where tenant_id = ${tenantId}
         and membership_id = ${row.membership_id}
         and (expires_at is null or expires_at > now())
     `)) as unknown as RoleAssignmentRow[];
-    const grantRows = (await transaction.execute(sql`
+      const grantRows = (await transaction.execute(sql`
       select tenant_id, permission_code, scope_type, legal_entity_id, station_id,
              expires_at, revoked_at
       from app.temporary_permission_grants
@@ -174,16 +176,17 @@ export async function loadTenantMembershipWithDatabase(
         and expires_at > now()
     `)) as unknown as TemporaryGrantRow[];
 
-    return {
-      tenantId: row.tenant_id,
-      membershipId: row.membership_id,
-      identityId: row.identity_id,
-      actorId: row.identity_id,
-      status,
-      roleAssignments: roleRows.map(roleAssignmentFromRow),
-      temporaryGrants: grantRows.map(temporaryGrantFromRow),
-    };
-  });
+      return {
+        tenantId: row.tenant_id,
+        membershipId: row.membership_id,
+        identityId: row.identity_id,
+        actorId: row.identity_id,
+        status,
+        roleAssignments: roleRows.map(roleAssignmentFromRow),
+        temporaryGrants: grantRows.map(temporaryGrantFromRow),
+      };
+    }),
+  );
 }
 
 export const loadTenantMembership: TenantMembershipLoader = (identityId, tenantId) =>

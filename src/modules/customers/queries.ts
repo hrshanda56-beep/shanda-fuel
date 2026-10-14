@@ -14,6 +14,7 @@ import { deriveAccountBalance } from './domain';
 import { loadAccount } from './persistence';
 import { isPermissionGranted } from '../../platform/security/permissions';
 import { sql } from 'drizzle-orm';
+import { withDevelopmentTiming } from '../../platform/observability/development-timing';
 
 export type CustomerStatementLine = Readonly<{
   entry: CustomerLedgerEntry;
@@ -296,7 +297,8 @@ export async function getCustomerAccountsFromRequest(
     });
 
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
-    const rows = await transaction.execute<CustomerAccountSummaryRow>(sql`
+    const rows = await withDevelopmentTiming('customers.summary.accounts_query', () =>
+      transaction.execute<CustomerAccountSummaryRow>(sql`
       with monetary_balances as (
         select account_id,
           sum(case when direction = 'INCREASE' then amount else -amount end)::text as balance
@@ -341,11 +343,13 @@ export async function getCustomerAccountsFromRequest(
       where c.tenant_id = ${context.tenantId}
         ${query.customerId ? sql`and c.id = ${query.customerId}` : sql``}
       order by c.display_name, c.account_reference, a.account_type, a.id
-    `);
+    `),
+    );
 
     const accountIds = rows.flatMap((row) => (row.account_id ? [row.account_id] : []));
     const products = accountIds.length
-      ? await transaction.execute<CustomerProductBalanceRow>(sql`
+      ? await withDevelopmentTiming('customers.summary.products_query', () =>
+          transaction.execute<CustomerProductBalanceRow>(sql`
           with active_litre_reservations as (
             select account_id, product_id, sum(remaining_litres)::text as reserved_litres
             from app.customer_fuel_authorizations
@@ -373,11 +377,13 @@ export async function getCustomerAccountsFromRequest(
             )})
           group by e.account_id, e.product_id, p.code, p.name, r.reserved_litres
           order by e.account_id, p.code, e.product_id
-        `)
+        `),
+        )
       : [];
 
     const stationRows = accountIds.length
-      ? await transaction.execute<CustomerAccountStationRow>(sql`
+      ? await withDevelopmentTiming('customers.summary.stations_query', () =>
+          transaction.execute<CustomerAccountStationRow>(sql`
           select account_id, station_id
           from app.customer_account_stations
           where tenant_id = ${context.tenantId}
@@ -387,7 +393,8 @@ export async function getCustomerAccountsFromRequest(
             )})
             and active = true
           order by account_id, station_id
-        `)
+        `),
+        )
       : [];
     const stationsByAccount = new Map<string, string[]>();
     for (const station of stationRows) {
@@ -397,7 +404,8 @@ export async function getCustomerAccountsFromRequest(
     }
 
     const transactionRows = query.customerId
-      ? await transaction.execute<CustomerTransactionRow>(sql`
+      ? await withDevelopmentTiming('customers.summary.transactions_query', () =>
+          transaction.execute<CustomerTransactionRow>(sql`
           select
             e.id,
             e.account_id,
@@ -422,7 +430,8 @@ export async function getCustomerAccountsFromRequest(
             and e.customer_id = ${query.customerId}
           order by e.occurred_at desc, e.id desc
           limit 50
-        `)
+        `),
+        )
       : [];
 
     const transactionsByCustomer = query.customerId ? transactionRows.map(transactionFromRow) : [];

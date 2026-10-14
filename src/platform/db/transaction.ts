@@ -4,6 +4,7 @@ import {
   assertTrustedTenantTransactionContext,
   type TenantTransactionContext,
 } from './tenant-context';
+import { withDevelopmentTiming } from '../observability/development-timing';
 
 export async function withTenantTransaction<T>(
   context: TenantTransactionContext,
@@ -13,10 +14,11 @@ export async function withTenantTransaction<T>(
   const validContext = context;
   const database = getDatabase();
 
-  return database.transaction(async (transaction) => {
-    // Every key is set, including absent optional values, so a pooled
-    // connection can never retain a broader context from another command.
-    await transaction.execute(sql`
+  return withDevelopmentTiming('db.tenant_transaction', () =>
+    database.transaction(async (transaction) => {
+      // Every key is set, including absent optional values, so a pooled
+      // connection can never retain a broader context from another command.
+      await transaction.execute(sql`
       select
         set_config('app.tenant_id', ${validContext.tenantId}, true),
         set_config('app.actor_id', ${validContext.actorId}, true),
@@ -25,6 +27,7 @@ export async function withTenantTransaction<T>(
         set_config('app.station_id', ${validContext.stationId ?? ''}, true),
         set_config('app.request_id', ${validContext.requestId ?? ''}, true)
     `);
-    return work(transaction);
-  });
+      return work(transaction);
+    }),
+  );
 }

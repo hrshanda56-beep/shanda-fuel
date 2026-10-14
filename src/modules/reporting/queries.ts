@@ -7,6 +7,7 @@ import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-
 import { authorize } from '../../platform/security/permissions';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
+import { withDevelopmentTiming } from '../../platform/observability/development-timing';
 import { calculateGrossMargin, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
@@ -925,7 +926,9 @@ export async function authorizeManagementReportRequest(request: Request, input: 
     requestedTenantId: filters.tenantId,
   });
   const stations = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStations(transaction, filters),
+    withDevelopmentTiming('report.authorization.selected_stations_query', () =>
+      selectedStations(transaction, filters),
+    ),
   );
   authorizeStations(authority.authorization, filters, stations);
   return { filters, authority, stations };
@@ -961,16 +964,30 @@ export async function getManagementReportFromRequest(
       costing,
       revenue,
     ] = await Promise.all([
-      listStations(transaction, filters),
-      readSales(transaction, filters),
-      readCash(transaction, filters),
-      readProviders(transaction, filters),
-      readSuppliers(transaction, filters, legalEntityIds),
-      readCustomers(transaction, filters),
-      readInventory(transaction, filters),
-      readExpenses(transaction, filters),
-      readRestatedCogs(transaction, filters),
-      readCanonicalRevenue(transaction, filters),
+      withDevelopmentTiming('report.management.list_stations', () =>
+        listStations(transaction, filters),
+      ),
+      withDevelopmentTiming('report.management.sales', () => readSales(transaction, filters)),
+      withDevelopmentTiming('report.management.cash', () => readCash(transaction, filters)),
+      withDevelopmentTiming('report.management.providers', () =>
+        readProviders(transaction, filters),
+      ),
+      withDevelopmentTiming('report.management.suppliers', () =>
+        readSuppliers(transaction, filters, legalEntityIds),
+      ),
+      withDevelopmentTiming('report.management.customers', () =>
+        readCustomers(transaction, filters),
+      ),
+      withDevelopmentTiming('report.management.inventory', () =>
+        readInventory(transaction, filters),
+      ),
+      withDevelopmentTiming('report.management.expenses', () => readExpenses(transaction, filters)),
+      withDevelopmentTiming('report.management.costing', () =>
+        readRestatedCogs(transaction, filters),
+      ),
+      withDevelopmentTiming('report.management.revenue', () =>
+        readCanonicalRevenue(transaction, filters),
+      ),
     ]);
     return {
       report: 'MANAGEMENT_OVERVIEW',
@@ -1014,7 +1031,9 @@ export async function getDailyOperationsFromRequest(
     requestedTenantId: filters.tenantId,
   });
   const stations = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStations(transaction, filters),
+    withDevelopmentTiming('report.authorization.selected_stations_query', () =>
+      selectedStations(transaction, filters),
+    ),
   );
   authorizeStations(authority.authorization, filters, stations);
   return withTenantTransaction(authority.transaction, async (transaction) => ({
@@ -1027,6 +1046,6 @@ export async function getDailyOperationsFromRequest(
       toDate: filters.toDate,
     },
     dateBasis,
-    rows: await readDaily(transaction, filters),
+    rows: await withDevelopmentTiming('report.daily.read', () => readDaily(transaction, filters)),
   }));
 }
