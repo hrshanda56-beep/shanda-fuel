@@ -40,7 +40,7 @@ import {
   type TodayOperations,
 } from './today-overview-model';
 
-type Scope = { tenantId?: string; stationId?: string };
+export type Scope = { tenantId?: string; stationId?: string };
 
 type Section<T> =
   | { status: 'loading' }
@@ -96,10 +96,15 @@ function useCurrentContext(enabled: boolean): Scope | null {
  * nothing is computed or defaulted here, and nothing appears as zero while a
  * request is still loading.
  */
-export function TodayOverview({ tenantId: urlTenantId, stationId: urlStationId }: Scope) {
-  const fallback = useCurrentContext(!urlTenantId);
-  const tenantId = urlTenantId ?? fallback?.tenantId;
-  const stationId = urlTenantId ? urlStationId : fallback?.stationId;
+export function TodayOverview({
+  tenantId: urlTenantId,
+  stationId: urlStationId,
+  initialContext,
+}: Scope & { initialContext?: Scope }) {
+  const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
+  const resolvedContext = initialContext ?? fallback;
+  const tenantId = urlTenantId ?? resolvedContext?.tenantId;
+  const stationId = urlTenantId ? urlStationId : resolvedContext?.stationId;
   const [operations, setOperations] = useState<Section<TodayOperations>>({ status: 'loading' });
   const [customers, setCustomers] = useState<Section<{ customers: { status: string }[] }>>({
     status: 'loading',

@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 
 import { AppShell, type AppShellProps } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
-import { getServerShellAccess } from './navigation-server';
+import { getServerShellAccess, type ServerShellAccess } from './navigation-server';
 import { getAuthProviderName } from '@/platform/auth/provider';
 
 import { EntryShell } from './entry/entry-shell';
@@ -16,6 +16,8 @@ export type AuthorizedAppShellProps = Omit<AppShellProps, 'navigationProjection'
   children: ReactNode;
   /** Set only by the attendant workspace itself, the one page they may use. */
   attendantHome?: boolean;
+  /** Reuse access already verified by the parent server page in the same request. */
+  shellAccess?: ServerShellAccess;
 };
 
 /**
@@ -26,9 +28,10 @@ export type AuthorizedAppShellProps = Omit<AppShellProps, 'navigationProjection'
  */
 export async function AuthorizedAppShell({
   attendantHome = false,
+  shellAccess: providedShellAccess,
   ...props
 }: AuthorizedAppShellProps) {
-  const access = await getServerShellAccess(await headers());
+  const access = providedShellAccess ?? (await getServerShellAccess(await headers()));
   // Resolve before producing any product UI: no dashboard flash, no client spinner.
   if (access.status === 'signed-out') redirect('/login');
   if (access.status === 'no-workplace') {

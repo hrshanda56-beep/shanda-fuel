@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { resolveCurrentContext } from '../modules/context/server';
+import type { CurrentContext } from '../modules/context/contracts';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
 import { hasProviderSessionCookie } from './entry/session-cookie';
 import { buildNavigationProjection } from './navigation-projection';
@@ -76,7 +77,12 @@ export async function getServerNavigationProjection(
 export type ServerShellAccess =
   | { status: 'signed-out' }
   | { status: 'no-workplace' }
-  | { status: 'ready'; projection: readonly NavigationProjection[] | null };
+  | {
+      status: 'ready';
+      projection: readonly NavigationProjection[] | null;
+      /** The same request-verified scope used to build the projection. */
+      current: CurrentContext | null;
+    };
 
 /**
  * Server-side gate for the authenticated shell. A missing or expired session is
@@ -93,7 +99,7 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
       process.env.NODE_ENV,
     )
   ) {
-    return { status: 'ready', projection: syntheticNavigationProjection };
+    return { status: 'ready', projection: syntheticNavigationProjection, current: null };
   }
 
   const request = requestFromHeaders(requestHeaders);
@@ -105,9 +111,10 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
   try {
     const resolution = await resolveCurrentContext(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
+    if (!resolution.current) return { status: 'signed-out' };
     const projection = await buildServerNavigationProjection(request, resolution.current);
     if (projection === null) return { status: 'signed-out' };
-    return { status: 'ready', projection };
+    return { status: 'ready', projection, current: resolution.current };
   } catch {
     // Any unresolved session/context/authorization error must fail closed.
     // The shell redirects signed-out users and never renders product UI when

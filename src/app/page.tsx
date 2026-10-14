@@ -5,6 +5,7 @@ import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-s
 import { getServerShellAccess } from '@/design-system/navigation-server';
 
 import { TodayOverview } from './_overview/today-overview';
+import { dashboardScopeFromCurrentContext } from './_overview/today-overview-model';
 
 export const metadata = {
   title: { absolute: 'Dashboard · Shanda Fuel' },
@@ -33,9 +34,14 @@ export default async function OverviewPage({
     redirect(search ? `/my-shift?${search}` : '/my-shift');
   }
 
+  const initialContext =
+    access.status === 'ready' && !tenantId
+      ? dashboardScopeFromCurrentContext(access.current)
+      : undefined;
+
   return (
-    <AppShell searchPlacement="header">
-      <TodayOverview tenantId={tenantId} stationId={stationId} />
+    <AppShell searchPlacement="header" shellAccess={access}>
+      <TodayOverview tenantId={tenantId} stationId={stationId} initialContext={initialContext} />
     </AppShell>
   );
 }

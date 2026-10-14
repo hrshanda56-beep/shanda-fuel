@@ -3,6 +3,20 @@ import type {
   OperationsApprovalStatus,
   OperationsCloseStatus,
 } from '@/modules/forecourt/operations-status';
+import type { CurrentContext } from '@/modules/context/contracts';
+
+export type DashboardScope = { tenantId: string; stationId?: string };
+
+/** Convert only the server-verified current scope into dashboard input. */
+export function dashboardScopeFromCurrentContext(
+  current: CurrentContext | null,
+): DashboardScope | undefined {
+  if (!current) return undefined;
+  return {
+    tenantId: current.organisationId,
+    ...(current.stationId ? { stationId: current.stationId } : {}),
+  };
+}
 
 /**
  * Presentation of the server-projected Daily Operations status. The server

@@ -5,6 +5,7 @@ import {
   countActiveCustomers,
   countOpenShifts,
   countSuspendedCustomers,
+  dashboardScopeFromCurrentContext,
   operationsAttention,
   shiftSummary,
   type TodayOperations,
@@ -72,5 +73,22 @@ describe('figure counts', () => {
     ).toBe(1);
     expect(countOpenShifts([{ state: 'OPEN' }, { state: 'CLOSED' }])).toBe(1);
     expect(countOpenShifts([])).toBe(0);
+  });
+});
+
+describe('server-provided dashboard scope', () => {
+  it('preserves only the already verified tenant and station scope', () => {
+    expect(
+      dashboardScopeFromCurrentContext({
+        organisationId: 'tenant-1',
+        legalEntityId: 'legal-entity-1',
+        stationId: 'station-bindura',
+        allStations: false,
+      }),
+    ).toEqual({ tenantId: 'tenant-1', stationId: 'station-bindura' });
+  });
+
+  it('does not invent a scope when the server has no current context', () => {
+    expect(dashboardScopeFromCurrentContext(null)).toBeUndefined();
   });
 });
