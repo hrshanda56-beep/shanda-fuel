@@ -3,6 +3,7 @@ import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { GET as dailyOperationsGet } from '../../src/app/api/forecourt/operations/daily/route';
 import { GET as operationsOverviewGet } from '../../src/app/api/forecourt/operations/overview/route';
+import { installDevelopmentTimingSinkForTests } from '../../src/platform/observability/development-timing';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -309,6 +310,47 @@ describe('A11 daily operations composition read', () => {
     expect(wrongStationDay.status).toBe(404);
     expect([403, 404]).toContain(outsideStation.status);
     expect([403, 404]).toContain(crossTenant.status);
+  });
+
+  it('fails closed for missing or invalid station context', async () => {
+    const signedToken = `a11-supervisor-session-token.${await makeSignature(
+      'a11-supervisor-session-token',
+      process.env.BETTER_AUTH_SECRET!,
+    )}`;
+    const missingStation = await operationsOverviewGet(
+      new Request(
+        `http://127.0.0.1:3000/api/forecourt/operations/overview?tenantId=${ids.tenant}`,
+        { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      ),
+    );
+    const invalidStation = await operationsOverviewGet(
+      new Request(
+        `http://127.0.0.1:3000/api/forecourt/operations/overview?tenantId=${ids.tenant}&stationId=not-a-uuid`,
+        { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      ),
+    );
+
+    expect(missingStation.status).toBe(400);
+    expect(invalidStation.status).toBe(400);
+  });
+
+  it('resolves the session and tenant transaction once per authorized overview request', async () => {
+    const spans: Array<{ stage: string; durationMs: number }> = [];
+    const restore = installDevelopmentTimingSinkForTests((span) => spans.push(span));
+    try {
+      const response = await operationsOverviewGet(
+        await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.day),
+      );
+      expect(response.status).toBe(200);
+    } finally {
+      restore();
+    }
+
+    expect(spans.filter((span) => span.stage === 'auth.session.resolve.better_auth')).toHaveLength(
+      1,
+    );
+    expect(spans.filter((span) => span.stage === 'db.authz.membership')).toHaveLength(1);
+    expect(spans.filter((span) => span.stage === 'db.tenant_transaction')).toHaveLength(1);
   });
 
   it('enforces reconciliation and audit visibility for the operations overview', async () => {

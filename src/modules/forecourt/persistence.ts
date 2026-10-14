@@ -8,6 +8,7 @@ import { databaseForecourtTransactionPort } from './application';
 import { forecourtIdempotencyRecords, forecourtOutbox } from '../../platform/db/schema/a3';
 import { signAuditEvent } from '../audit/contracts';
 import { withTenantTransaction } from '../../platform/db/transaction';
+import { assertTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import type { TenantExecutionContext } from '../tenancy/authority';
 import type {
   ForecourtAuditPort,
@@ -307,19 +308,31 @@ export function databaseForecourtPorts(): ForecourtCommandPorts {
 }
 
 /** Load the station under the same trusted A1 tenant context used by commands. */
-export async function loadForecourtStation(
+export async function loadForecourtStationInTransaction(
+  transaction: ForecourtTransaction,
   authority: TenantExecutionContext,
   stationId: string,
 ): Promise<{ id: string; tenantId: string; legalEntityId: string } | null> {
-  return withTenantTransaction(authority.transaction, async (transaction) => {
-    const rows = await transaction.execute<{ id: string; tenantId: string; legalEntityId: string }>(
-      sql`
+  assertTrustedTenantTransactionContext(authority.transaction);
+  const rows = await transaction.execute<{
+    id: string;
+    tenantId: string;
+    legalEntityId: string;
+  }>(sql`
       select id, tenant_id as "tenantId", legal_entity_id as "legalEntityId"
       from app.stations
       where tenant_id = ${authority.membership.tenantId} and id = ${stationId}
       limit 1
-      `,
-    );
-    return rows[0] ?? null;
-  });
+    `);
+  return rows[0] ?? null;
+}
+
+/** Load a station in its caller's already-established tenant transaction. */
+export async function loadForecourtStation(
+  authority: TenantExecutionContext,
+  stationId: string,
+): Promise<{ id: string; tenantId: string; legalEntityId: string } | null> {
+  return withTenantTransaction(authority.transaction, (transaction) =>
+    loadForecourtStationInTransaction(transaction, authority, stationId),
+  );
 }
