@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const e2eBaseUrl = 'http://127.0.0.1:3100';
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -7,12 +9,13 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:3100',
+    baseURL: e2eBaseUrl,
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'APP_ENV=test AUTH_PROVIDER=BETTER_AUTH pnpm dev --hostname 127.0.0.1 --port 3100',
-    url: 'http://127.0.0.1:3100',
+    // Keep Better Auth's trusted origin identical to Playwright's base URL.
+    command: `APP_URL=${e2eBaseUrl} APP_ENV=test AUTH_PROVIDER=BETTER_AUTH pnpm dev --webpack --hostname 127.0.0.1 --port 3100`,
+    url: e2eBaseUrl,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

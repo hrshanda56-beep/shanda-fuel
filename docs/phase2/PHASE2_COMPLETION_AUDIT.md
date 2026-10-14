@@ -38,6 +38,7 @@ profitability remain later phases or explicitly partial areas.
 - ESLint: passed.
 - Next.js production build: passed with synthetic local configuration
   (`APP_ENV=local`, `AUTH_PROVIDER=BETTER_AUTH`, local-only auth secret).
+- Prettier format check: passed.
 - Canonical migrations applied successfully to a disposable PostgreSQL 16
   cluster using `scripts/db/bootstrap-test.sh` and `pnpm db:migrate:test`.
 - Database-backed A3 and production-reconciliation coverage passed: 4 files,
@@ -81,53 +82,66 @@ including its modules, routes, migrations, workspaces, and E2E coverage. No A3
 implementation was transferred from the isolated Phase 2 branch.
 
 A fresh disposable PostgreSQL 18 cluster was created locally with no paid or
-production resources. Canonical migrations and the seeded integration suite
-passed when migrations were applied under the correct disposable database owner:
-6 files and 62 tests passed, including tenant isolation/RLS, database smoke,
-forecourt lifecycle, segmented shifts, and production reconciliation. An
-earlier harness attempt used the application user as the migration owner and
-correctly tripped the meter-exception capability guard; this was a test-harness
-ownership issue, not a code change, and the clean owner-corrected run passed.
+production resources. Canonical migrations applied successfully under the
+correct disposable database owner. The serialized relevant integration gate
+passed 5 of 6 files and 61 of 62 tests, covering tenant isolation/RLS, database
+smoke, forecourt lifecycle, segmented shifts, and production reconciliation.
+The sole failure is the existing A1 expired-session assertion: the Better Auth
+adapter refreshed that manually expired fixture instead of returning null; it
+is retained as an unresolved test/auth-fixture compatibility defect and was
+not bypassed. An earlier harness attempt used the application user as the
+migration owner and correctly tripped the meter-exception capability guard;
+this was a test-harness ownership issue, not a code change.
 
-The full seeded Chromium/browser and accessibility matrix ran with one worker:
-303 passed, 9 failed, 4 skipped, and 10 did not run. The failures were:
+The Playwright harness was corrected locally to use one explicit
+`http://127.0.0.1:3100` origin for both `baseURL` and the child Next process,
+to select the stable webpack dev server, and to allow the local server 120
+seconds to become ready. With that origin, the nine previously reported
+scenarios passed in targeted reruns: customer detail, report sharing, My Shift
+at 320px, production reconciliation, provider settlements, sign-out, setup
+readiness, 390px shell overflow, and invitation acceptance. The invitation
+scenario first needed one warm-server rerun; it then passed without changing
+the assertion or product code.
 
-- customer account detail navigation;
-- management report private-link confirmation;
-- My Shift at 320px;
-- production reconciliation persistence;
-- provider settlement refresh flow;
-- Settings sign-out;
-- setup readiness for an unentered station;
-- shared shell overflow at 390px;
-- existing invitation acceptance/fail-closed flow.
+The authoritative clean seeded Chromium/browser and accessibility matrix ran
+with one worker and all tests enabled: 303 passed, 6 failed, 4 skipped, and 13
+did not run. The six residual failures were independently rerun against a new
+clean database and all passed. Five were development-server/hydration timing
+effects (phone-control font check, production control room, setup readiness,
+320px empty-state route loop, and attention-item navigation). The sixth was a
+test defect: the Staff lifecycle helper waited for a reload navigation but
+clicked the Staff tab before React hydration. The helper now waits for
+`.app-shell[data-hydrated="true"]`; the complete Staff lifecycle spec then
+passed 3/3, including invitation acceptance.
 
-The initial full run did not set `APP_URL` to the test origin, and the sign-out
-failure logged Better Auth's invalid-origin warning. A targeted rerun with the
-matching `APP_URL` could not start because the local Playwright web server timed
-out during recompilation; this remains an explicit follow-up rather than a
-passing result. The report-sharing and invitation failures also logged
-unexpected `SyntaxError` responses and need independent repair/retest.
+The 4 skipped tests are the opt-in screenshot matrix, which requires visual
+baseline/update authorization and was not silently enabled. The 13 not-run
+tests were serial-suite dependents after the isolated production/setup/Staff
+failures; their independent representative cases passed after isolation. The
+full aggregate is therefore recorded as PARTIALLY READY pending one clean
+matrix run in a production-like or otherwise stable test-server environment,
+not as a product-security failure.
 
 The `/api/context` investigation found only expected unauthenticated `401`
 responses from unauthenticated fixtures; no unexpected context error was seen
 under the seeded database. The browser run still emits a React hydration
 attribute mismatch on the `/foundation` dynamic form and a development-only
 `useInsertionEffect` warning from location search. These warnings did not fail
-the A3 assertions or accessibility scans and are retained as UI-quality follow-up
-items.
+the A3 assertions or accessibility scans and remain UI-quality follow-up items.
 
 The performance branch at
 `0c7e8d8492b0cea388f83c42c70df911b0b6fc3c` changes overview/navigation context
-files only. It has no file overlap with this candidate's two-file Phase 2 delta;
-the performance worktree and branch were not modified.
+files only. It has no file overlap with this candidate's Phase 2 implementation
+or closure-test delta; the performance worktree and branch were not modified.
 
 ## Remaining gates
 
-The candidate is not release-ready until the nine browser failures above are
-repaired or dispositioned and the full matrix is rerun with matching
-`APP_URL`/Better Auth origin settings. No production database, paid resource,
-deployment, or live configuration was used.
+The candidate is not release-ready until the full matrix is green in a stable
+test-server environment. The nine named browser failures are dispositioned as
+test-environment timing/configuration or the documented Staff test-helper
+hydration defect; no product defect or security weakening was introduced. No
+production database, paid resource, deployment, or live configuration was
+used.
 
 The supplied accepted Phase 1 baseline (`ff36870adacc22c422078ff4179765eeea6521d3`)
 is an ancestor of this candidate through current `main`, preserving its
