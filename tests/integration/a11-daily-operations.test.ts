@@ -311,6 +311,28 @@ describe('A11 daily operations composition read', () => {
     expect([403, 404]).toContain(crossTenant.status);
   });
 
+  it('fails closed for missing or invalid station context', async () => {
+    const signedToken = `a11-supervisor-session-token.${await makeSignature(
+      'a11-supervisor-session-token',
+      process.env.BETTER_AUTH_SECRET!,
+    )}`;
+    const missingStation = await operationsOverviewGet(
+      new Request(
+        `http://127.0.0.1:3000/api/forecourt/operations/overview?tenantId=${ids.tenant}`,
+        { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      ),
+    );
+    const invalidStation = await operationsOverviewGet(
+      new Request(
+        `http://127.0.0.1:3000/api/forecourt/operations/overview?tenantId=${ids.tenant}&stationId=not-a-uuid`,
+        { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      ),
+    );
+
+    expect(missingStation.status).toBe(400);
+    expect(invalidStation.status).toBe(400);
+  });
+
   it('enforces reconciliation and audit visibility for the operations overview', async () => {
     const supervisorResponse = await operationsOverviewGet(
       await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.day),

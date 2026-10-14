@@ -8,6 +8,7 @@ import { AppError } from '../../platform/errors';
 import {
   PERMISSION_CODES,
   ROLE_CODES,
+  assertSessionActive,
   assertValidScope,
   type AuthorizationActor,
   type PermissionCode,
@@ -192,12 +193,16 @@ export const loadTenantMembership: TenantMembershipLoader = (identityId, tenantI
 export async function resolveTenantExecutionContext(input: {
   request: Request;
   requestedTenantId: string;
+  authenticatedActor?: AuthenticatedActorContext;
   resolveActor?: AuthenticatedActorResolver;
   loadMembership?: TenantMembershipLoader;
   now?: Date;
 }): Promise<TenantExecutionContext> {
   const now = input.now ?? new Date();
-  const actor = await requireAuthenticatedActor(input.request, input.resolveActor, now);
+  const actor = input.authenticatedActor
+    ? input.authenticatedActor
+    : await requireAuthenticatedActor(input.request, input.resolveActor, now);
+  if (input.authenticatedActor) assertSessionActive(actor.session, now);
   const tenantResult = z.string().uuid().safeParse(input.requestedTenantId);
   if (!tenantResult.success) {
     throw new AppError('FORBIDDEN', 'A valid requested tenant is required');

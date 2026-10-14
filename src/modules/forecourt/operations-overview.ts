@@ -8,14 +8,17 @@ import { assertStepUp } from '../../platform/security';
 import { authorize, isPermissionGranted } from '../../platform/security/permissions';
 import {
   FORECOURT_COMMAND_POLICY,
-  resolveForecourtCommandContext,
+  createForecourtCommandContext,
   type ForecourtCommandContext,
   type ForecourtCommandType,
   type ForecourtTransaction,
 } from './application';
-import { loadForecourtStation } from './persistence';
+import { loadForecourtStationInTransaction } from './persistence';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
 import { projectOperationsStatus } from './operations-status';
+import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
+import { type AuthenticatedActorContext } from '../identity';
+import { resolveTenantExecutionContext } from '../tenancy/authority';
 
 const uuid = z.string().uuid();
 
@@ -67,20 +70,23 @@ type BusinessDayRow = {
   updatedAt: Date | string;
 };
 
-async function resolveContext(
-  request: Request,
-  input: OperationsOverviewInput,
-): Promise<ForecourtCommandContext> {
-  return resolveForecourtCommandContext({
-    request,
-    requestedTenantId: input.tenantId,
-    stationId: input.stationId,
-    loadStation: loadForecourtStation,
-  });
-}
-
 function iso(value: Date | string | null): string | null {
   return value ? new Date(value).toISOString() : null;
+}
+
+async function applyStationTransactionContext(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+): Promise<void> {
+  await transaction.execute(sql`
+    select
+      set_config('app.tenant_id', ${context.authority.transaction.tenantId}, true),
+      set_config('app.actor_id', ${context.authority.transaction.actorId}, true),
+      set_config('app.membership_id', ${context.authority.transaction.membershipId}, true),
+      set_config('app.legal_entity_id', ${context.authority.transaction.legalEntityId ?? ''}, true),
+      set_config('app.station_id', ${context.authority.transaction.stationId ?? ''}, true),
+      set_config('app.request_id', ${context.authority.transaction.requestId ?? ''}, true)
+  `);
 }
 
 function hasPermission(
@@ -147,30 +153,56 @@ function loadControlRoomActions(context: ForecourtCommandContext): ControlRoomAc
 export async function getOperationsOverviewFromRequest(
   request: Request,
   input: OperationsOverviewInput,
+  authenticatedActor?: AuthenticatedActorContext,
 ) {
-  const context = await resolveContext(request, input);
-  authorize({
-    actor: context.authority.authorization,
-    permissionCode: 'business_day.view',
-    requestedScope: context.scope,
-  });
-  authorize({
-    actor: context.authority.authorization,
-    permissionCode: 'shift.view',
-    requestedScope: context.scope,
+  const authority = await resolveTenantExecutionContext({
+    request,
+    requestedTenantId: input.tenantId,
+    ...(authenticatedActor ? { authenticatedActor } : {}),
   });
 
-  const canViewReconciliations = hasPermission(context, 'reconciliation.view');
-  const canViewAudit = hasPermission(context, 'audit.view');
-  const actions = loadControlRoomActions(context);
+  return withTenantTransaction(authority.transaction, async (transaction) => {
+    const station = await loadForecourtStationInTransaction(
+      transaction,
+      authority,
+      input.stationId,
+    );
+    if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
 
-  return withTenantTransaction(context.authority.transaction, (transaction) =>
-    loadOperationsOverview(transaction, context, input, {
+    const context = createForecourtCommandContext({
+      authority: {
+        ...authority,
+        transaction: createTrustedTenantTransactionContext({
+          ...authority.transaction,
+          legalEntityId: station.legalEntityId,
+          stationId: station.id,
+        }),
+      },
+      station,
+    });
+    await applyStationTransactionContext(transaction, context);
+
+    authorize({
+      actor: context.authority.authorization,
+      permissionCode: 'business_day.view',
+      requestedScope: context.scope,
+    });
+    authorize({
+      actor: context.authority.authorization,
+      permissionCode: 'shift.view',
+      requestedScope: context.scope,
+    });
+
+    const canViewReconciliations = hasPermission(context, 'reconciliation.view');
+    const canViewAudit = hasPermission(context, 'audit.view');
+    const actions = loadControlRoomActions(context);
+
+    return loadOperationsOverview(transaction, context, input, {
       actions,
       canViewAudit,
       canViewReconciliations,
-    }),
-  );
+    });
+  });
 }
 
 async function loadOperationsOverview(

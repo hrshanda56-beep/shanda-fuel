@@ -439,6 +439,7 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
           'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '{}'::jsonb, 'test-key',
           'hmac-sha256', 'test-signature'
         )
+        on conflict (id) do nothing
       `;
       await expect(
         client`update platform.security_events set event_code = 'MUTATED' where id = ${eventId}`,
@@ -505,21 +506,33 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
     const authSecret = process.env.BETTER_AUTH_SECRET;
     if (!authSecret) throw new Error('BETTER_AUTH_SECRET is required for this integration test');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    const expiredAt = new Date(Date.now() - 60 * 1000);
+    const expiredAt = new Date('2020-01-01T00:00:00.000Z');
     await client`
       insert into auth.session (id, expires_at, token, user_id, ip_address, user_agent)
       values (${authSessionId}, ${expiresAt}, ${authSessionToken}, ${actorA}, '127.0.0.1', 'vitest')
-      on conflict (id) do update set expires_at = excluded.expires_at
+      on conflict (id) do update set
+        expires_at = excluded.expires_at,
+        token = excluded.token,
+        user_id = excluded.user_id,
+        revoked_at = null
     `;
     await client`
       insert into auth.session (id, expires_at, token, user_id)
       values (${expiredSessionId}, ${expiredAt}, ${expiredSessionToken}, ${actorA})
-      on conflict (id) do update set expires_at = excluded.expires_at
+      on conflict (id) do update set
+        expires_at = excluded.expires_at,
+        token = excluded.token,
+        user_id = excluded.user_id,
+        revoked_at = null
     `;
     await client`
       insert into auth.session (id, expires_at, token, user_id)
       values (${noMembershipSessionId}, ${expiresAt}, ${noMembershipSessionToken}, ${actorWithoutMembership})
-      on conflict (id) do update set expires_at = excluded.expires_at
+      on conflict (id) do update set
+        expires_at = excluded.expires_at,
+        token = excluded.token,
+        user_id = excluded.user_id,
+        revoked_at = null
     `;
     await client`
       insert into auth.account (id, account_id, provider_id, user_id, password)
