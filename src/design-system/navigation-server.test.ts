@@ -62,7 +62,10 @@ describe('server shell session gate', () => {
           cookie: 'shanda-fuel.session_token=opaque',
         }),
       ),
-    ).resolves.toMatchObject({ status: 'ready' });
+    ).resolves.toMatchObject({
+      status: 'ready',
+      current: { organisationId: 'tenant-1', legalEntityId: 'legal-entity-1' },
+    });
   });
 
   it('keeps a production Secure-prefixed Better Auth session on the root-shell path after station selection', async () => {
@@ -110,7 +113,14 @@ describe('server shell session gate', () => {
           cookie: '__Secure-shanda-fuel.session_token=opaque; shanda-fuel-context=validated',
         }),
       ),
-    ).resolves.toMatchObject({ status: 'ready' });
+    ).resolves.toMatchObject({
+      status: 'ready',
+      current: {
+        organisationId: 'tenant-1',
+        legalEntityId: 'legal-entity-1',
+        stationId: 'station-bindura',
+      },
+    });
   });
 
   it('does not treat the unprefixed Better Auth cookie as authentication', async () => {
