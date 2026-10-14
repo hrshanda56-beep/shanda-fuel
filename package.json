@@ -28,7 +28,7 @@
     "db:migrate:test": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1146.0",
+    "@aws-sdk/client-s3": "^3.1149.0",
     "@aws-sdk/s3-request-presigner": "^3.1146.0",
     "@clerk/backend": "^3.23.1",
     "@clerk/nextjs": "^7.9.13",
