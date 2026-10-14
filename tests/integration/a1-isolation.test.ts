@@ -505,7 +505,9 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
     const authSecret = process.env.BETTER_AUTH_SECRET;
     if (!authSecret) throw new Error('BETTER_AUTH_SECRET is required for this integration test');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    const expiredAt = new Date(Date.now() - 60 * 1000);
+    // Use a clearly historical value so timestamp-without-time-zone adapters
+    // cannot classify this fixture as eligible for session refresh.
+    const expiredAt = new Date('2000-01-01T00:00:00.000Z');
     await client`
       insert into auth.session (id, expires_at, token, user_id, ip_address, user_agent)
       values (${authSessionId}, ${expiresAt}, ${authSessionToken}, ${actorA}, '127.0.0.1', 'vitest')

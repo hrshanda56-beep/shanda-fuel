@@ -43,10 +43,13 @@ const STEP_UP_REUSE_MS = 5 * 60_000;
  */
 function useCommand(onDone: () => void, onDenied: () => void) {
   const keys = useRef(new Map<string, string>());
+  const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>();
 
   async function run(body: Record<string, unknown>, success: string): Promise<boolean> {
+    if (busyRef.current) return false;
+    busyRef.current = true;
     const logical = JSON.stringify(body);
     const key = keys.current.get(logical) ?? `setup-ui-${crypto.randomUUID()}`;
     keys.current.set(logical, key);
@@ -80,6 +83,7 @@ function useCommand(onDone: () => void, onDenied: () => void) {
       });
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

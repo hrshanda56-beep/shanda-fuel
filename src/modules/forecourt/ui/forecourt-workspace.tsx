@@ -1,5 +1,4 @@
 import { Button, Card, ErrorState, StatusBadge } from '../../../design-system/primitives';
-import Link from 'next/link';
 
 export type ForecourtWorkspaceProps = {
   businessDate: string;
@@ -91,9 +90,9 @@ export function ForecourtWorkspace({
               Review reconciliation
             </Button>
             {reconciliationHref ? (
-              <Link className="button button-quiet" href={reconciliationHref}>
+              <a className="button button-quiet" href={reconciliationHref}>
                 Open guided workflow
-              </Link>
+              </a>
             ) : null}
             <Button variant="quiet" disabled={!canAuthoritativelyAct}>
               View exceptions

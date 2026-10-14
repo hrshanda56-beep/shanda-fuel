@@ -477,9 +477,10 @@ test.describe('phones never scroll sideways', () => {
 
   for (const width of PHONE_WIDTHS) {
     test(`empty and entry states fit ${width}px`, async ({ page }) => {
+      test.setTimeout(90_000);
       await page.setViewportSize({ width, height: 800 });
       for (const route of routes) {
-        await page.goto(route);
+        await page.goto(route, { timeout: 60_000 });
         await expect(page.locator('h1').first(), route).toBeVisible();
         await expectFitsWidth(page);
       }
@@ -543,7 +544,9 @@ test.describe('KPIs', () => {
     await page.goto('/reports?tenantId=tenant-1');
     await page.getByRole('link', { name: /Cash collected/ }).click();
     await expect(page).toHaveURL(/\/reports\/cash\?tenantId=tenant-1/);
-    await expect(page.getByRole('heading', { name: 'Cash: collected → banked' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Cash: collected → banked' })).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test('become one calm list on phones', async ({ page }) => {

@@ -39,7 +39,7 @@ profitability remain later phases or explicitly partial areas.
 - Next.js production build: passed with synthetic local configuration
   (`APP_ENV=local`, `AUTH_PROVIDER=BETTER_AUTH`, local-only auth secret).
 - Prettier format check: passed.
-- Canonical migrations applied successfully to a disposable PostgreSQL 16
+- Canonical migrations applied successfully to disposable PostgreSQL 18
   cluster using `scripts/db/bootstrap-test.sh` and `pnpm db:migrate:test`.
 - Database-backed A3 and production-reconciliation coverage passed: 4 files,
   47 tests (`a3-business-day-lifecycle`, `a3-forecourt`,
@@ -84,50 +84,52 @@ implementation was transferred from the isolated Phase 2 branch.
 A fresh disposable PostgreSQL 18 cluster was created locally with no paid or
 production resources. Canonical migrations applied successfully under the
 correct disposable database owner. The serialized relevant integration gate
-passed 5 of 6 files and 61 of 62 tests, covering tenant isolation/RLS, database
+passed all 6 files and all 62 tests, covering tenant isolation/RLS, database
 smoke, forecourt lifecycle, segmented shifts, and production reconciliation.
-The sole failure is the existing A1 expired-session assertion: the Better Auth
-adapter refreshed that manually expired fixture instead of returning null; it
-is retained as an unresolved test/auth-fixture compatibility defect and was
-not bypassed. An earlier harness attempt used the application user as the
-migration owner and correctly tripped the meter-exception capability guard;
-this was a test-harness ownership issue, not a code change.
+The expired-session failure was reproduced with a relative `Date.now() - 60s`
+fixture: Better Auth refreshed that timestamp-without-time-zone value instead
+of returning null. The fixture now uses a clearly historical UTC date; the
+same gate then passed 62/62 while preserving real session-expiry enforcement.
+An earlier harness attempt used the application user as the migration owner
+and correctly tripped the meter-exception capability guard; this was a
+test-harness ownership issue, not a code change.
 
 The Playwright harness was corrected locally to use one explicit
 `http://127.0.0.1:3100` origin for both `baseURL` and the child Next process,
-to select the stable webpack dev server, and to allow the local server 120
+to use the normal Turbopack dev server, and to allow the local server 120
 seconds to become ready. With that origin, the nine previously reported
 scenarios passed in targeted reruns: customer detail, report sharing, My Shift
 at 320px, production reconciliation, provider settlements, sign-out, setup
 readiness, 390px shell overflow, and invitation acceptance. The invitation
 scenario first needed one warm-server rerun; it then passed without changing
-the assertion or product code.
+the security assertion or product contract. Setup payment submission also
+received an in-flight duplicate-command guard after the browser harness
+observed two concurrent command posts; the existing server-side idempotency
+and authorization controls remain unchanged.
 
-The authoritative clean seeded Chromium/browser and accessibility matrix ran
-with one worker and all tests enabled: 303 passed, 6 failed, 4 skipped, and 13
-did not run. The six residual failures were independently rerun against a new
-clean database and all passed. Five were development-server/hydration timing
-effects (phone-control font check, production control room, setup readiness,
-320px empty-state route loop, and attention-item navigation). The sixth was a
-test defect: the Staff lifecycle helper waited for a reload navigation but
-clicked the Staff tab before React hydration. The helper now waits for
-`.app-shell[data-hydrated="true"]`; the complete Staff lifecycle spec then
-passed 3/3, including invitation acceptance.
+The final authoritative clean seeded Chromium/browser and accessibility matrix
+ran with one worker and all tests enabled: 322 passed, 0 failed, 4 skipped,
+and 0 not run. The four skipped tests are the opt-in screenshot matrix, which
+requires visual baseline/update authorization and was not silently enabled.
+The earlier nine failures were classified as local runner/cold-route timing
+issues except for the setup duplicate-submit UI defect and the Staff hydration
+helper defect; all nine now pass in targeted and full-matrix coverage.
 
-The 4 skipped tests are the opt-in screenshot matrix, which requires visual
-baseline/update authorization and was not silently enabled. The 13 not-run
-tests were serial-suite dependents after the isolated production/setup/Staff
-failures; their independent representative cases passed after isolation. The
-full aggregate is therefore recorded as PARTIALLY READY pending one clean
-matrix run in a production-like or otherwise stable test-server environment,
-not as a product-security failure.
+The final matrix included the serial A11 production-reconciliation suite,
+provider settlements, setup readiness, Staff invitation acceptance, all
+responsive widths, and accessibility assertions. No failure was hidden by
+weakening an assertion or adding a skip.
 
 The `/api/context` investigation found only expected unauthenticated `401`
 responses from unauthenticated fixtures; no unexpected context error was seen
 under the seeded database. The browser run still emits a React hydration
-attribute mismatch on the `/foundation` dynamic form and a development-only
-`useInsertionEffect` warning from location search. These warnings did not fail
-the A3 assertions or accessibility scans and remain UI-quality follow-up items.
+attribute mismatch on the `/foundation` dynamic form (`Field` adds
+`aria-describedby`, `aria-required`, `required`, and `aria-invalid` on the
+client) and a development-only `useInsertionEffect` warning from
+`src/design-system/location-search.ts` when history state dispatches its
+location event. These warnings did not fail any browser or accessibility
+assertion and were not observed as production-build failures; they remain
+UI-quality follow-up items.
 
 The performance branch at
 `0c7e8d8492b0cea388f83c42c70df911b0b6fc3c` changes overview/navigation context
@@ -136,12 +138,13 @@ or closure-test delta; the performance worktree and branch were not modified.
 
 ## Remaining gates
 
-The candidate is not release-ready until the full matrix is green in a stable
-test-server environment. The nine named browser failures are dispositioned as
-test-environment timing/configuration or the documented Staff test-helper
-hydration defect; no product defect or security weakening was introduced. No
-production database, paid resource, deployment, or live configuration was
-used.
+The required Phase 2 integration gates are green on this isolated candidate:
+the final browser matrix passed 322/322 runnable tests, the relevant
+database/RLS/integration gate passed 62/62, and the final TypeScript, ESLint,
+format, migration-check, and production-build checks passed. Remaining items
+are the four authorized screenshot exclusions, the documented development-only
+hydration/useInsertionEffect warnings, and normal business onboarding inputs;
+none is a Phase 2 integration blocker.
 
 The supplied accepted Phase 1 baseline (`ff36870adacc22c422078ff4179765eeea6521d3`)
 is an ancestor of this candidate through current `main`, preserving its

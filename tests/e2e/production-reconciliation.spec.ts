@@ -42,7 +42,9 @@ const managerToken = 'a5e-manager-session-token';
 
 test.describe('production reconciliation persistence', () => {
   test.skip(!databaseUrl, 'production persistence E2E requires CI PostgreSQL');
-  test.describe.configure({ mode: 'serial' });
+  // This serial suite performs several real server round-trips and its final
+  // review route can be cold after the preceding state transitions.
+  test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
   let client: Sql;
 
@@ -354,7 +356,7 @@ test.describe('production reconciliation persistence', () => {
     const controlRoom = page.locator('[aria-label="Operations control room"]');
     // This scenario runs with CI's Better Auth provider. Rendering the control
     // room must not require a ClerkProvider or crash before its content loads.
-    await expect(controlRoom).toBeVisible();
+    await expect(controlRoom).toBeVisible({ timeout: 30_000 });
     await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);

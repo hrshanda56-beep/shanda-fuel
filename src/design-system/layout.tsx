@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
@@ -116,9 +115,9 @@ export function MetricCard({
     </>
   );
   return href ? (
-    <Link className="card metric-card" href={href}>
+    <a className="card metric-card" href={href}>
       {content}
-    </Link>
+    </a>
   ) : (
     <div className="card metric-card">{content}</div>
   );

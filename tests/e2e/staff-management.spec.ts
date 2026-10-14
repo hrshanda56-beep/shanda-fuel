@@ -189,7 +189,9 @@ test.describe('authenticated Staff lifecycle', () => {
     'Staff lifecycle E2E requires the disposable PostgreSQL database and Better Auth secret',
   );
   test.describe.configure({ mode: 'serial' });
-  test.setTimeout(90_000);
+  // Invitation acceptance spans several cold Better Auth and route
+  // compilations when this serial suite runs against the local dev server.
+  test.setTimeout(180_000);
 
   let client: Sql;
 
@@ -372,7 +374,9 @@ test.describe('authenticated Staff lifecycle', () => {
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Accept invitation' })).toBeVisible();
     await page.getByRole('button', { name: 'Accept invitation' }).click();
-    await expect(page).not.toHaveURL(new RegExp(`/invite/${inviteTokens.existing}$`));
+    await expect(page).not.toHaveURL(new RegExp(`/invite/${inviteTokens.existing}$`), {
+      timeout: 90_000,
+    });
     await expect(
       page.getByRole('heading', { name: 'This invitation is no longer available', level: 1 }),
     ).toHaveCount(0);
