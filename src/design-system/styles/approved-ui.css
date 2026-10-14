@@ -34,8 +34,8 @@
   --border-strong: rgb(20 32 30 / 24%);
   --border-glass: rgb(255 255 255 / 60%);
   --border-outline: rgb(20 32 30 / 45%);
-  --action-bg: #14201e;
-  --action-hover: #2a3835;
+  --action-bg: var(--accent);
+  --action-hover: var(--accent-hover);
   --action-text: #ffffff;
   --tone-positive-text: #0b7250;
   --tone-warning-text: #8a5300;

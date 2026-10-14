@@ -18,7 +18,7 @@ import {
 } from '../../../design-system/primitives';
 import { Modal } from '../../../design-system/modal';
 import { TableScrollRegion } from '../../../design-system/table';
-import { formatTileMoney } from '../../reporting/format';
+import { CashDonut, CashWallet, MASK, sumDecimals, type DonutSlice } from './cash-visuals';
 
 type CashCapabilities = {
   viewDeposits: boolean;
@@ -32,7 +32,7 @@ type CashSheet = 'record' | 'receive' | 'deposit' | 'confirm';
 
 const SHEET_TITLES: Readonly<Record<CashSheet, string>> = {
   record: 'Record a cash collection',
-  receive: 'Receive a collection',
+  receive: 'Receive a Collection',
   deposit: 'Record a bank deposit',
   confirm: 'Confirm bank deposits',
 };
@@ -137,6 +137,40 @@ function displayState(value: string): string {
     .replace(/^\w/, (letter) => letter.toUpperCase());
 }
 
+type SummaryCollection = CashSummary['collections'][number];
+
+/** The four cash positions, each drawn as a slice: blue at station, purple unbanked, yellow pending, green banked. */
+const POSITIONS: ReadonlyArray<{
+  key: string;
+  label: string;
+  tone: number;
+  includes: (collection: SummaryCollection) => boolean;
+}> = [
+  {
+    key: 'at-station',
+    label: 'Cash at station',
+    tone: 1,
+    includes: (c) => isPositive(c.availableAtStation),
+  },
+  {
+    key: 'unbanked',
+    label: 'Collected, not banked',
+    tone: 3,
+    includes: (c) => isPositive(c.collectedButUnbanked),
+  },
+  {
+    key: 'pending',
+    label: 'Awaiting bank confirmation',
+    tone: 2,
+    includes: (c) => isPositive(c.pendingBankConfirmation),
+  },
+  { key: 'banked', label: 'Banked', tone: 0, includes: (c) => isPositive(c.confirmedAmount) },
+];
+
+function isPositive(value: string): boolean {
+  return sumDecimals([value]) !== '0.00' && !value.trim().startsWith('-');
+}
+
 function optionLabel(value: string, fallback: string): string {
   return value || fallback;
 }
@@ -159,6 +193,8 @@ export function CashWorkspace() {
   const [loadedRouteKey, setLoadedRouteKey] = useState<string | null>(null);
   const [receiveCollectionId, setReceiveCollectionId] = useState('');
   const [depositRows, setDepositRows] = useState([{ collectionId: '', amount: '' }]);
+  const [historyKey, setHistoryKey] = useState<string | null>(null);
+  const [amountsHidden, setAmountsHidden] = useState(false);
   const [sheet, setSheet] = useState<CashSheet | null>(null);
   const [sheetDirty, setSheetDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -384,6 +420,23 @@ export function CashWorkspace() {
     label: `${collection.collectionReference} · ${collection.availableAtStation} USD available`,
   }));
 
+  const collectionsList = summary?.collections ?? [];
+  const positionTotals: Record<string, string> = {
+    'at-station': summary?.totals.availableAtStation ?? '0',
+    unbanked: summary?.totals.collectedButUnbanked ?? '0',
+    pending: summary?.totals.pendingBankConfirmation ?? '0',
+    banked: sumDecimals(collectionsList.map((collection) => collection.confirmedAmount)),
+  };
+  const custodySlices: DonutSlice[] = POSITIONS.map((position) => ({
+    key: position.key,
+    label: position.label,
+    tone: position.tone,
+    total: positionTotals[position.key] ?? '0',
+    count: collectionsList.filter(position.includes).length,
+  }));
+  const historyGroup = POSITIONS.find((position) => position.key === historyKey) ?? null;
+  const historyItems = historyGroup ? collectionsList.filter(historyGroup.includes) : [];
+
   function openSheet(next: CashSheet) {
     setError(null);
     setSuccess(null);
@@ -405,107 +458,59 @@ export function CashWorkspace() {
     else closeSheet();
   }
 
-  const sheetActions: Array<{ key: CashSheet; label: string; available: boolean }> = [
-    { key: 'record', label: 'New collection', available: capabilities.recordCollection },
-    { key: 'receive', label: 'Receive a collection', available: capabilities.receiveCollection },
-    { key: 'deposit', label: 'New bank deposit', available: capabilities.recordDeposit },
+  const sheetActions: Array<{
+    key: CashSheet;
+    label: string;
+    shortLabel: string;
+    available: boolean;
+  }> = [
+    {
+      key: 'record',
+      label: 'New Collection',
+      shortLabel: 'New Collection',
+      available: capabilities.recordCollection,
+    },
+    {
+      key: 'receive',
+      label: 'Receive a Collection',
+      shortLabel: 'Receive Collection',
+      available: capabilities.receiveCollection,
+    },
+    {
+      key: 'deposit',
+      label: 'New Bank Deposit',
+      shortLabel: 'New Deposit',
+      available: capabilities.recordDeposit,
+    },
     {
       key: 'confirm',
-      label: `Confirm deposits (${confirmableDeposits.length})`,
+      label: `Confirm Deposits (${confirmableDeposits.length})`,
+      shortLabel: `Confirm Deposits (${confirmableDeposits.length})`,
       available: capabilities.confirmDeposit && confirmableDeposits.length > 0,
     },
   ];
 
+  const plain = (value: string) => (amountsHidden ? `${MASK} USD` : `${value} USD`);
+
   return (
     <div className="content-grid cash-workspace">
-      {summary ? (
-        <dl className="operations-summary content-span" aria-label="Cash position">
-          <div>
-            <dt>Cash at station</dt>
-            <dd>{formatTileMoney(summary.totals.availableAtStation, summary.currency)}</dd>
-          </div>
-          <div>
-            <dt>Collected, not banked</dt>
-            <dd>{formatTileMoney(summary.totals.collectedButUnbanked, summary.currency)}</dd>
-          </div>
-          <div>
-            <dt>Awaiting bank confirmation</dt>
-            <dd>{formatTileMoney(summary.totals.pendingBankConfirmation, summary.currency)}</dd>
-          </div>
-          <div>
-            <dt>Banked</dt>
-            {/* The note sits inside <dd>: a <dl> group may only hold <dt>/<dd>. */}
-            <dd>
-              <span aria-hidden="true">—</span>
-              <small className="operations-summary-note">Not available on this page yet</small>
-            </dd>
-          </div>
-        </dl>
-      ) : null}
-      <Card as="section" className="panel" aria-labelledby="cash-position-title">
+      <Card as="section" className="panel cash-panel" aria-labelledby="cash-actions-title">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Cash custody</p>
-            <h2 id="cash-position-title">Collections</h2>
+            <h2 id="cash-actions-title">Move/ Bank Cash</h2>
           </div>
         </div>
-        {loading ? <LoadingState label="Loading cash position" /> : null}
-        {error && sheet === null ? (
-          <ErrorState
-            message={error.message}
-            action={<Button onClick={() => void refresh()}>Retry</Button>}
+        {summary ? (
+          <CashWallet
+            accounts={summary.bankAccounts}
+            deposits={summary.deposits}
+            amount={summary.totals.availableAtStation}
+            currency={summary.currency}
+            hidden={amountsHidden}
+            onToggleHidden={() => setAmountsHidden((value) => !value)}
           />
         ) : null}
-        {success ? <SuccessState message={success} /> : null}
-        {summary ? (
-          <>
-            {summary.collections.length === 0 ? (
-              <EmptyState
-                title="No collections yet"
-                message="Collections appear here once cash from an approved reconciliation is recorded."
-              />
-            ) : (
-              <TableScrollRegion label="Station cash collections">
-                <table className="data-table">
-                  <caption className="sr-only">Station cash collections</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Reference</th>
-                      <th scope="col">Amount</th>
-                      <th scope="col">Unbanked</th>
-                      <th scope="col">Custody</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.collections.map((collection) => (
-                      <tr key={collection.collectionId}>
-                        <th scope="row">{collection.collectionReference}</th>
-                        <td data-label="Amount">{collection.amount} USD</td>
-                        <td data-label="Unbanked">{collection.collectedButUnbanked} USD</td>
-                        <td data-label="Custody">
-                          <StatusBadge
-                            tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
-                          >
-                            {displayState(collection.custodyState)}
-                          </StatusBadge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableScrollRegion>
-            )}
-          </>
-        ) : null}
-      </Card>
-
-      <Card as="section" className="panel" aria-labelledby="cash-actions-title">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Actions</p>
-            <h2 id="cash-actions-title">Move or bank cash</h2>
-          </div>
-        </div>
         <div className="cash-action-bar">
           {sheetActions
             .filter((action) => action.available)
@@ -516,7 +521,8 @@ export function CashWorkspace() {
                 aria-haspopup="dialog"
                 onClick={() => openSheet(action.key)}
               >
-                {action.label}
+                <span className="cash-action-full">{action.label}</span>
+                <span className="cash-action-short">{action.shortLabel}</span>
               </Button>
             ))}
         </div>
@@ -813,12 +819,122 @@ export function CashWorkspace() {
         ) : null}
       </Card>
 
+      <Card as="section" className="panel cash-panel" aria-labelledby="cash-split-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Overview</p>
+            <h2 id="cash-split-title">Cash Position</h2>
+          </div>
+        </div>
+        {summary ? (
+          <CashDonut
+            slices={custodySlices}
+            currency={summary.currency}
+            hidden={amountsHidden}
+            onSelect={setHistoryKey}
+            centreValue={String(summary.collections.length)}
+            centreLabel={summary.collections.length === 1 ? 'collection' : 'collections'}
+          />
+        ) : (
+          <LoadingState label="Loading cash position" />
+        )}
+        <Modal
+          open={historyGroup !== null}
+          onClose={() => setHistoryKey(null)}
+          title={historyGroup ? `${historyGroup.label} history` : 'History'}
+          presentation="side"
+        >
+          <ul className="cash-history-list">
+            {historyItems.map((collection) => (
+              <li key={collection.collectionId}>
+                <div>
+                  <strong>{collection.collectionReference}</strong>
+                  <StatusBadge tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}>
+                    {displayState(collection.custodyState)}
+                  </StatusBadge>
+                </div>
+                <span>{plain(collection.amount)}</span>
+                <small>Unbanked {plain(collection.collectedButUnbanked)}</small>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      </Card>
+
+      <Card as="section" className="panel content-span" aria-labelledby="cash-position-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Cash custody</p>
+            <h2 id="cash-position-title">Collections</h2>
+          </div>
+        </div>
+        {loading ? <LoadingState label="Loading cash position" /> : null}
+        {error && sheet === null ? (
+          <ErrorState
+            message={error.message}
+            action={<Button onClick={() => void refresh()}>Retry</Button>}
+          />
+        ) : null}
+        {success ? <SuccessState message={success} /> : null}
+        {summary ? (
+          <>
+            {summary.collections.length === 0 ? (
+              <EmptyState
+                title="No collections yet"
+                message="Approved collections show up here."
+                action={
+                  capabilities.recordCollection ? (
+                    <Button
+                      variant="secondary"
+                      aria-haspopup="dialog"
+                      onClick={() => openSheet('record')}
+                    >
+                      New Collection
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <TableScrollRegion label="Station cash collections">
+                <table className="data-table">
+                  <caption className="sr-only">Station cash collections</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Reference</th>
+                      <th scope="col">Amount</th>
+                      <th scope="col">Unbanked</th>
+                      <th scope="col">Custody</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.collections.map((collection) => (
+                      <tr key={collection.collectionId}>
+                        <th scope="row">{collection.collectionReference}</th>
+                        <td data-label="Amount">{plain(collection.amount)}</td>
+                        <td data-label="Unbanked">{plain(collection.collectedButUnbanked)}</td>
+                        <td data-label="Custody">
+                          <StatusBadge
+                            tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
+                          >
+                            {displayState(collection.custodyState)}
+                          </StatusBadge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableScrollRegion>
+            )}
+          </>
+        ) : null}
+      </Card>
+
       {capabilities.viewDeposits ? (
         <Card as="section" className="panel content-span" aria-labelledby="deposit-list-title">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Banking</p>
-              <h2 id="deposit-list-title">Bank deposits</h2>
+              <h2 id="deposit-list-title">Bank Deposits</h2>
             </div>
           </div>
           {summary?.deposits.length ? (
@@ -839,7 +955,7 @@ export function CashWorkspace() {
                     <tr key={deposit.depositId}>
                       <th scope="row">{deposit.depositReference}</th>
                       <td data-label="Account">{deposit.bankAccountName}</td>
-                      <td data-label="Amount">{deposit.amount} USD</td>
+                      <td data-label="Amount">{plain(deposit.amount)}</td>
                       <td data-label="State">
                         <StatusBadge tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}>
                           {displayState(deposit.state)}
@@ -847,7 +963,7 @@ export function CashWorkspace() {
                       </td>
                       <td data-label="Confirmation variance">
                         {deposit.confirmationVariance
-                          ? `${deposit.confirmationVariance} USD`
+                          ? plain(deposit.confirmationVariance)
                           : 'Pending'}
                       </td>
                     </tr>
@@ -858,7 +974,18 @@ export function CashWorkspace() {
           ) : (
             <EmptyState
               title="No bank deposits yet"
-              message="Recorded deposits will appear here before and after bank confirmation."
+              message="Deposits show up here once recorded."
+              action={
+                capabilities.recordDeposit ? (
+                  <Button
+                    variant="secondary"
+                    aria-haspopup="dialog"
+                    onClick={() => openSheet('deposit')}
+                  >
+                    New Bank Deposit
+                  </Button>
+                ) : undefined
+              }
             />
           )}
         </Card>

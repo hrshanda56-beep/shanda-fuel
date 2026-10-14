@@ -1386,3 +1386,719 @@ a.operations-attention-row:hover {
   width: 0.3125rem;
   height: 0.3125rem;
 }
+
+/* Cash and banking: soft position cards, a wallet of linked bank accounts and
+   a ring of collections by custody, in the same card language as the tanks. */
+.cash-workspace {
+  --cash-tone-0: #1d8a6f;
+  --cash-tone-1: #4c7be0;
+  --cash-tone-2: #e0a52c;
+  --cash-tone-3: #8b6bd9;
+  --cash-tone-4: #d9577f;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+@media (min-width: 64rem) {
+  .cash-workspace {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cash-workspace .operations-summary {
+  gap: var(--space-4);
+}
+
+.cash-workspace .operations-summary > div {
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    180deg,
+    var(--bg-surface) 40%,
+    color-mix(in srgb, var(--accent) 6%, var(--bg-surface))
+  );
+}
+
+.cash-workspace .operations-summary dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cash-workspace .operations-summary dd {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.cash-workspace .operations-summary dd .operations-summary-note {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.cash-panel {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  border-radius: var(--radius-xl);
+}
+
+.cash-panel > .panel-heading {
+  margin-bottom: 0;
+}
+
+/* Wallet: modelled on a physical card wallet. Everything scales from one unit
+   (--u, 1/583 of the wallet width) so the proportions hold at any width. */
+.cash-wallet-block {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: center;
+}
+
+.cash-wallet {
+  --shell-top: #a3aaa8;
+  --shell-bottom: #838b88;
+  --shell-hi: rgb(255 255 255 / 0.9);
+  --shell-shadow: rgb(30 50 44 / 0.35);
+  --pocket-top: #fdfdfc;
+  --pocket-bottom: #e6eae8;
+  --pocket-edge: rgb(30 50 44 / 0.14);
+  --pocket-stitch: rgb(30 50 44 / 0.3);
+  --pocket-fg: #16201c;
+  --pocket-muted: rgb(22 32 28 / 0.58);
+  --pocket-hover: rgb(22 32 28 / 0.08);
+  width: min(100%, 28rem);
+  container-type: inline-size;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .cash-wallet {
+    --shell-top: #6a6a68;
+    --shell-bottom: #4b4b49;
+    --shell-hi: rgb(255 255 255 / 0.22);
+    --shell-shadow: rgb(0 0 0 / 0.55);
+    --pocket-top: #3b3e37;
+    --pocket-bottom: #262823;
+    --pocket-edge: transparent;
+    --pocket-stitch: rgb(255 255 255 / 0.28);
+    --pocket-fg: #fff;
+    --pocket-muted: rgb(255 255 255 / 0.55);
+    --pocket-hover: rgb(255 255 255 / 0.12);
+  }
+}
+
+:root[data-theme='dark'] .cash-wallet {
+  --shell-top: #6a6a68;
+  --shell-bottom: #4b4b49;
+  --shell-hi: rgb(255 255 255 / 0.22);
+  --shell-shadow: rgb(0 0 0 / 0.55);
+  --pocket-top: #3b3e37;
+  --pocket-bottom: #262823;
+  --pocket-edge: transparent;
+  --pocket-stitch: rgb(255 255 255 / 0.28);
+  --pocket-fg: #fff;
+  --pocket-muted: rgb(255 255 255 / 0.55);
+  --pocket-hover: rgb(255 255 255 / 0.12);
+}
+
+.cash-wallet-stage {
+  --u: calc(100cqw / 583);
+  --card-top: calc((120 - var(--s, 0)) * var(--u));
+  position: relative;
+  height: calc((490 - var(--s, 0)) * var(--u));
+}
+
+.cash-wallet-shell {
+  position: absolute;
+  inset: calc((85 - var(--s, 0)) * var(--u)) 0 0;
+  border-radius: calc(64 * var(--u));
+  background: linear-gradient(180deg, var(--shell-top), var(--shell-bottom));
+  box-shadow:
+    inset 0 2px 0 var(--shell-hi),
+    0 28px 36px -22px var(--shell-shadow);
+}
+
+.cash-wallet-card {
+  --tone: #c5e56e;
+  position: absolute;
+  left: calc(28 * var(--u));
+  top: calc(var(--card-top) - var(--pos, 0) * 40 * var(--u));
+  width: calc(525 * var(--u));
+  height: calc(280 * var(--u));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: calc(24 * var(--u)) calc(24 * var(--u)) 0 0;
+  background: var(--tone);
+  color: #1c2a14;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4);
+  text-align: left;
+  transition:
+    top 0.5s cubic-bezier(0.3, 0.9, 0.3, 1),
+    opacity 0.3s ease;
+}
+
+.cash-wallet-card::after,
+.cash-wallet-card-front[data-empty='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .45 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: multiply;
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.cash-wallet-card[data-tone='1'] {
+  --tone: #a77ef0;
+}
+.cash-wallet-card[data-tone='2'] {
+  --tone: #f3b27c;
+}
+.cash-wallet-card[data-tone='3'] {
+  --tone: #7a9cf0;
+}
+.cash-wallet-card[data-tone='4'] {
+  --tone: #f08fb0;
+}
+
+.cash-wallet-card[data-brand='cbz'] {
+  --tone: linear-gradient(135deg, #f4f6f7 0%, #bcc2c9 34%, #e9ecee 52%, #a3aab2 78%, #d3d8dc 100%);
+  color: #2a2f35;
+}
+.cash-wallet-card[data-brand='stanbic'] {
+  --tone: linear-gradient(135deg, #f0d996 0%, #cfa850 36%, #ecd085 54%, #b98c33 80%, #d9b765 100%);
+  color: #3a2a08;
+}
+.cash-wallet-card[data-brand='fbc'] {
+  --tone: linear-gradient(135deg, #53565c 0%, #2a2c30 48%, #3f4247 70%, #232529 100%);
+  color: #f4f5f6;
+}
+.cash-wallet-card[data-brand] {
+  background: var(--tone);
+}
+.cash-wallet-card[data-brand] .cash-wallet-next {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.cash-wallet-logo {
+  position: absolute;
+  z-index: 2;
+  top: calc(30 * var(--u));
+  right: calc(90 * var(--u));
+  display: grid;
+  height: calc(46 * var(--u));
+  min-height: 1.75rem;
+  place-items: center;
+}
+.cash-wallet-logo[data-solo='true'] {
+  right: calc(30 * var(--u));
+}
+.cash-wallet-logo img {
+  display: block;
+  height: calc(44 * var(--u));
+  min-height: 1.5rem;
+  width: auto;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.25));
+}
+.cash-wallet-logo-strip {
+  top: 50%;
+  right: 0;
+  height: calc(30 * var(--u));
+  min-height: 1.1rem;
+  transform: translateY(-50%);
+}
+.cash-wallet-logo-strip img {
+  height: calc(22 * var(--u));
+  min-height: 0.9rem;
+}
+.cash-wallet-logo-strip {
+  top: 50%;
+  right: 0;
+  height: calc(30 * var(--u));
+  min-height: 1.1rem;
+  transform: translateY(-50%);
+}
+
+.cash-wallet-card[data-state='hidden'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cash-wallet-card-behind {
+  cursor: pointer;
+}
+
+.cash-wallet-card-behind:hover {
+  filter: brightness(1.06);
+}
+
+.cash-wallet-card-behind:focus-visible,
+.cash-wallet-next:focus-visible,
+.cash-wallet-eye:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cash-wallet-strip {
+  position: absolute;
+  inset: 0 calc(24 * var(--u)) auto;
+  height: calc(40 * var(--u));
+  display: flex;
+  align-items: center;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
+.cash-wallet-card-front {
+  display: grid;
+  align-content: start;
+  gap: 0.125rem;
+  padding: calc(22 * var(--u)) calc(32 * var(--u));
+}
+
+.cash-wallet-card-front[data-empty='true'] {
+  left: calc(28 * var(--u));
+  top: var(--card-top);
+  border: 1px dashed color-mix(in srgb, #1c2a14 40%, transparent);
+  border-bottom: 0;
+  background: #d8e9a8;
+  z-index: 2;
+}
+
+.cash-wallet-card-name {
+  position: relative;
+  z-index: 1;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.cash-wallet-card-name small {
+  font-size: inherit;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.cash-wallet-card-ref {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: clamp(0.9rem, calc(30 * var(--u)), 1.4rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.cash-wallet-next {
+  position: absolute;
+  z-index: 2;
+  top: calc(30 * var(--u));
+  right: calc(30 * var(--u));
+  display: grid;
+  width: calc(46 * var(--u));
+  min-width: 1.75rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(28 42 20 / 0.14);
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.cash-wallet-next:hover {
+  background: rgb(28 42 20 / 0.26);
+}
+
+.cash-wallet-pocket-shape {
+  position: absolute;
+  z-index: 6;
+  left: calc(13 * var(--u));
+  top: calc((225 - var(--s, 0)) * var(--u));
+  width: calc(557 * var(--u));
+  height: calc(265 * var(--u));
+  overflow: visible;
+  filter: drop-shadow(0 -2px 5px var(--shell-shadow)) drop-shadow(0 0 0.5px var(--pocket-edge));
+}
+
+.cash-pocket-stitch {
+  stroke: var(--pocket-stitch);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.cash-wallet-pocket {
+  position: absolute;
+  z-index: 7;
+  left: calc(13 * var(--u));
+  top: calc((225 - var(--s, 0)) * var(--u));
+  display: grid;
+  width: calc(557 * var(--u));
+  height: calc(265 * var(--u));
+  align-content: start;
+  justify-items: center;
+  gap: 0.125rem;
+  padding-top: calc(52 * var(--u));
+  color: var(--pocket-fg);
+}
+
+.cash-wallet-amount {
+  font-size: clamp(1.25rem, calc(40 * var(--u)), 2.25rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.cash-wallet-caption {
+  color: var(--pocket-muted);
+  font-size: var(--font-size-sm);
+}
+
+.cash-wallet-eye {
+  position: absolute;
+  bottom: calc(26 * var(--u));
+  left: 50%;
+  display: inline-grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pocket-muted);
+  cursor: pointer;
+  transform: translateX(-50%);
+}
+
+.cash-wallet-eye:hover {
+  background: var(--pocket-hover);
+  color: var(--pocket-fg);
+}
+
+.cash-wallet-detail {
+  display: grid;
+  margin: 0;
+  gap: 0.125rem;
+  text-align: center;
+}
+
+.cash-wallet-detail span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cash-wallet-card {
+    transition: none;
+  }
+}
+
+/* Donut */
+.cash-donut {
+  display: grid;
+  gap: var(--space-5);
+  justify-items: center;
+}
+
+.cash-donut-ring {
+  position: relative;
+  width: min(100%, 12.5rem);
+  aspect-ratio: 1;
+}
+
+.cash-donut-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.cash-donut-track,
+.cash-donut-slice {
+  fill: none;
+  stroke-width: 14;
+}
+
+.cash-donut-track {
+  stroke: color-mix(in srgb, var(--text-secondary) 14%, transparent);
+  stroke-dasharray: 4 5;
+}
+
+.cash-donut-slice {
+  stroke: var(--cash-tone-0);
+  stroke-linecap: round;
+}
+
+.cash-donut-slice[data-tone='1'],
+.cash-donut-dot[data-tone='1'] {
+  stroke: var(--cash-tone-1);
+  background: var(--cash-tone-1);
+}
+.cash-donut-slice[data-tone='2'],
+.cash-donut-dot[data-tone='2'] {
+  stroke: var(--cash-tone-2);
+  background: var(--cash-tone-2);
+}
+.cash-donut-slice[data-tone='3'],
+.cash-donut-dot[data-tone='3'] {
+  stroke: var(--cash-tone-3);
+  background: var(--cash-tone-3);
+}
+.cash-donut-slice[data-tone='4'],
+.cash-donut-dot[data-tone='4'] {
+  stroke: var(--cash-tone-4);
+  background: var(--cash-tone-4);
+}
+
+.cash-donut-centre {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+}
+
+.cash-donut-centre strong {
+  font-size: var(--font-size-3xl);
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-donut-centre span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.cash-donut-legend {
+  display: grid;
+  width: 100%;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cash-donut-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md, 0.75rem);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.cash-donut-row:hover {
+  background: color-mix(in srgb, var(--text-secondary) 9%, transparent);
+}
+
+.cash-history-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cash-history-list li {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 18%, transparent);
+  border-radius: var(--radius-md, 0.75rem);
+}
+
+.cash-history-list li > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cash-history-list small {
+  color: var(--text-secondary);
+}
+
+.cash-donut-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--cash-tone-0);
+}
+
+.cash-donut-name {
+  display: grid;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.cash-donut-name small {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+
+.cash-donut-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tables and empty states sit in the same soft language. */
+.cash-workspace .state-block {
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--bg-subtle) 60%, transparent);
+}
+
+.cash-workspace .panel {
+  border-radius: var(--radius-xl);
+}
+
+.cash-workspace .data-table thead th {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cash-donut-slice {
+    animation: cash-ring-in 0.7s ease-out both;
+  }
+}
+
+@keyframes cash-ring-in {
+  from {
+    stroke-dasharray: 0 400;
+  }
+}
+
+.cash-donut-empty {
+  max-width: 18rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+/* Cash actions: compact pills in the same shape as the other soft controls. */
+.cash-panel .cash-action-bar {
+  gap: var(--space-2);
+}
+
+.cash-panel .cash-action-bar .button {
+  min-height: 0;
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+/* Title-style capitals for headings, buttons, navigation and card names across the site. */
+h1,
+h2,
+h3,
+.button,
+.nav-label,
+[role='tab'],
+.cash-wallet-card-name,
+.cash-wallet-detail strong,
+.cash-wallet-caption,
+.cash-donut-name {
+  text-transform: capitalize;
+}
+
+/* On phones the Collections and Bank Deposits sections sit on the page, not in cards. */
+@media (max-width: 40rem) {
+  .cash-workspace .panel.content-span {
+    padding-inline: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .cash-workspace .state-block {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+  }
+}
+
+/* On phones the three cash actions share one row and shrink to fit it. */
+@media (max-width: 40rem) {
+  .cash-panel .cash-action-bar {
+    flex-wrap: nowrap;
+    gap: var(--space-1);
+  }
+
+  .cash-panel .cash-action-bar .button {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.375rem 0.5rem;
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    text-align: center;
+  }
+}
+
+/* Two-word labels on phones, full labels elsewhere. */
+.cash-action-short {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .cash-action-full {
+    display: none;
+  }
+
+  .cash-action-short {
+    display: inline;
+  }
+}
+
+/* Phone: the two lower sections read as quiet text on the page, divided by a hairline. */
+@media (max-width: 40rem) {
+  .cash-workspace .panel.content-span .state {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    text-align: left;
+  }
+
+  .cash-workspace .panel.content-span .state h3 {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+  }
+
+  .cash-workspace .panel.content-span .state p {
+    font-size: var(--font-size-sm);
+    color: var(--text-muted, var(--text-secondary));
+  }
+
+  .cash-workspace .panel.content-span + .panel.content-span {
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--border-subtle);
+  }
+}
