@@ -1854,29 +1854,40 @@ a.operations-attention-row:hover {
   stroke-linecap: butt;
 }
 
-.cash-donut-slice[data-tone='1'],
-.cash-donut-dot[data-tone='1'] {
+.cash-donut-slice[data-tone='1'] {
   stroke: var(--cash-tone-1);
+}
+.cash-donut-slice[data-tone='2'] {
+  stroke: var(--cash-tone-2);
+}
+.cash-donut-slice[data-tone='3'] {
+  stroke: var(--cash-tone-3);
+}
+.cash-donut-slice[data-tone='4'] {
+  stroke: var(--cash-tone-4);
+}
+.cash-donut-slice[data-tone='5'] {
+  stroke: var(--cash-tone-5);
+}
+
+/* Dots are HTML and take a background. Slices are SVG shapes, which never paint
+   CSS background, so they must not carry one: it only misleads contrast tooling. */
+.cash-donut-dot[data-tone='0'] {
+  background: var(--cash-tone-0);
+}
+.cash-donut-dot[data-tone='1'] {
   background: var(--cash-tone-1);
 }
-.cash-donut-slice[data-tone='2'],
 .cash-donut-dot[data-tone='2'] {
-  stroke: var(--cash-tone-2);
   background: var(--cash-tone-2);
 }
-.cash-donut-slice[data-tone='3'],
 .cash-donut-dot[data-tone='3'] {
-  stroke: var(--cash-tone-3);
   background: var(--cash-tone-3);
 }
-.cash-donut-slice[data-tone='4'],
 .cash-donut-dot[data-tone='4'] {
-  stroke: var(--cash-tone-4);
   background: var(--cash-tone-4);
 }
-.cash-donut-slice[data-tone='5'],
 .cash-donut-dot[data-tone='5'] {
-  stroke: var(--cash-tone-5);
   background: var(--cash-tone-5);
 }
 
@@ -3247,7 +3258,7 @@ h3,
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding-bottom: 1.75rem;
+  padding-bottom: var(--recon-label-h, 1.75rem);
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
@@ -3264,7 +3275,7 @@ h3,
   background: repeating-linear-gradient(
     to bottom,
     var(--border-subtle) 0 1px,
-    transparent 1px calc((100% - 1.75rem) / 2)
+    transparent 1px calc((100% - var(--recon-label-h, 1.75rem)) / 2)
   );
 }
 
@@ -3287,7 +3298,7 @@ h3,
 }
 
 .recon-bar {
-  width: min(1.75rem, 40%);
+  width: min(var(--recon-label-h, 1.75rem), 40%);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: var(--accent);
 }
@@ -3296,8 +3307,24 @@ h3,
   background: color-mix(in srgb, var(--text-secondary) 40%, transparent);
 }
 
+.recon-bars {
+  --recon-label-h: 1.75rem;
+}
+
+@media (max-width: 29.99rem) {
+  /* Two shift times no longer fit side by side at 320 px: wrap them. */
+  .recon-bars {
+    --recon-label-h: 2.75rem;
+  }
+
+  .recon-bars-label {
+    white-space: normal;
+    line-height: 1.25;
+  }
+}
+
 .recon-bars-label {
-  height: 1.75rem;
+  height: var(--recon-label-h, 1.75rem);
   padding-top: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -3705,6 +3732,122 @@ h3,
   font-size: var(--font-size-sm);
 }
 
+/* Figures that are absent say so in words; colour is never the only signal. */
+.recon-statement [data-missing='true'] {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.recon-statement-note[data-missing='true'] {
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-style: normal;
+}
+
+.recon-statement,
+.recon-statement > * {
+  min-width: 0;
+}
+
+/* Narrow screens: each shift of the summary becomes a small labelled block
+   instead of a four-column table that would be wider than the card. */
+@media (max-width: 40rem) {
+  .recon-summary thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .recon-summary,
+  .recon-summary tbody,
+  .recon-summary tfoot {
+    display: block;
+  }
+
+  .recon-summary tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+
+  .recon-summary tfoot tr {
+    border-top: 2px solid var(--border-default);
+    border-bottom: 0;
+  }
+
+  .recon-summary th,
+  .recon-summary td,
+  .recon-summary tfoot th,
+  .recon-summary tfoot td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .recon-summary tr > th {
+    grid-column: 1 / -1;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .recon-summary td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .recon-summary td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .recon-ledger {
+    padding: var(--space-3);
+  }
+
+  .recon-ledger td {
+    padding-left: var(--space-3);
+    white-space: nowrap;
+  }
+
+  .recon-ledger th {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Phones: one label/value line per figure so no label breaks mid-word. */
+@media (max-width: 29.99rem) {
+  .recon-summary tr {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recon-summary td[data-label] {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .recon-summary td[data-label]::before {
+    display: inline;
+    flex: 0 0 auto;
+  }
+}
+
+@page {
+  margin: 14mm;
+}
+
 @media print {
   body * {
     visibility: hidden;
@@ -3741,7 +3884,8 @@ h3,
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .recon-ledger {
+  .recon-ledger,
+  .recon-summary tr {
     break-inside: avoid;
   }
 }

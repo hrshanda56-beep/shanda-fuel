@@ -46,11 +46,16 @@ export type Statement = Readonly<{
   /** Shifts whose figures could not be loaded; they are listed, never counted as zero. */
   missing: readonly StatementShift[];
   totals: Readonly<{
-    expectedSales: string;
-    accountedSales: string;
-    salesVariance: string;
+    /** Null when no shift has figures: "nothing to add" is not the same as zero. */
+    expectedSales: string | null;
+    accountedSales: string | null;
+    salesVariance: string | null;
     countedCash: string | null;
     cashVariance: string | null;
+    /** True when every shift's figures loaded, so the totals cover the whole day. */
+    complete: boolean;
+    /** Shifts with figures but no counted cash; their cash is absent from the cash totals. */
+    shiftsWithoutCash: number;
   }>;
 }>;
 
@@ -106,18 +111,26 @@ export function buildStatement(
   const cashVariances = sections.flatMap((section) =>
     section.cashVariance === null ? [] : [section.cashVariance],
   );
+  const add = (pick: (section: StatementSection) => string) =>
+    sections.length > 0 ? sumDecimals(sections.map(pick)) : null;
   return {
     sections,
     missing,
     totals: {
-      expectedSales: sumDecimals(sections.map((section) => section.expectedSales)),
-      accountedSales: sumDecimals(sections.map((section) => section.accountedSales)),
-      salesVariance: sumDecimals(sections.map((section) => section.salesVariance)),
+      expectedSales: add((section) => section.expectedSales),
+      accountedSales: add((section) => section.accountedSales),
+      salesVariance: add((section) => section.salesVariance),
       countedCash: counted.length > 0 ? sumDecimals(counted) : null,
       cashVariance: cashVariances.length > 0 ? sumDecimals(cashVariances) : null,
+      complete: missing.length === 0 && sections.length > 0,
+      shiftsWithoutCash: sections.length - counted.length,
     },
   };
 }
+
+/** Wording for a figure that is absent, never a zero. */
+export const NOT_RECORDED = 'Not recorded';
+export const NOT_AVAILABLE = 'Not available';
 
 function csvCell(value: string): string {
   // A leading = + - @ would be read as a formula by a spreadsheet; amounts keep their sign, so they are left alone.
@@ -144,7 +157,7 @@ export function statementToCsv(input: {
   ];
   for (const section of statement.sections) {
     const add = (part: string, description: string, amount: string | null) => {
-      if (amount !== null) rows.push([section.label, part, description, amount]);
+      rows.push([section.label, part, description, amount ?? NOT_RECORDED]);
     };
     add(
       'Sales',
@@ -160,15 +173,28 @@ export function statementToCsv(input: {
     add('Cash', 'Cash variance', section.cashVariance);
   }
   for (const shift of statement.missing) {
-    rows.push([shift.label, 'Sales', 'Figures could not be loaded', '']);
+    rows.push([shift.label, 'Sales', 'Figures could not be loaded', NOT_AVAILABLE]);
   }
+  const { totals } = statement;
   rows.push([]);
-  rows.push(['Total', 'Sales', 'Expected sales', statement.totals.expectedSales]);
-  rows.push(['Total', 'Sales', 'Accounted sales', statement.totals.accountedSales]);
-  rows.push(['Total', 'Sales', 'Sales variance', statement.totals.salesVariance]);
-  if (statement.totals.countedCash !== null)
-    rows.push(['Total', 'Cash', 'Counted cash', statement.totals.countedCash]);
-  if (statement.totals.cashVariance !== null)
-    rows.push(['Total', 'Cash', 'Cash variance', statement.totals.cashVariance]);
+  rows.push(['Total', 'Sales', 'Expected sales', totals.expectedSales ?? NOT_AVAILABLE]);
+  rows.push(['Total', 'Sales', 'Accounted sales', totals.accountedSales ?? NOT_AVAILABLE]);
+  rows.push(['Total', 'Sales', 'Sales variance', totals.salesVariance ?? NOT_AVAILABLE]);
+  rows.push(['Total', 'Cash', 'Counted cash', totals.countedCash ?? NOT_RECORDED]);
+  rows.push(['Total', 'Cash', 'Cash variance', totals.cashVariance ?? NOT_RECORDED]);
+  if (statement.missing.length > 0)
+    rows.push([
+      'Note',
+      '',
+      `Totals exclude ${statement.missing.length} shift(s) whose figures could not be loaded`,
+      '',
+    ]);
+  if (totals.shiftsWithoutCash > 0)
+    rows.push([
+      'Note',
+      '',
+      `Cash totals exclude ${totals.shiftsWithoutCash} shift(s) with no counted cash`,
+      '',
+    ]);
   return rows.map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

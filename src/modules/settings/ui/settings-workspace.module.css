@@ -122,6 +122,11 @@
   border-radius: var(--radius-xl);
 }
 
+/* A lone tile (an odd last one) takes the full row so long names don't wrap in a half-width box. */
+.fields > div:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .fields dt {
   position: absolute;
   top: 0;

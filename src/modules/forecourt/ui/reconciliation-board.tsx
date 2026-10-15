@@ -9,6 +9,8 @@ import { CashDonut, sumDecimals, type DonutSlice } from '../../cash/ui/cash-visu
 import { formatTileMoney } from '../../reporting/format';
 import {
   buildStatement,
+  NOT_AVAILABLE,
+  NOT_RECORDED,
   statementToCsv,
   type ReconciliationDetail,
   type Statement,
@@ -168,11 +170,15 @@ function LedgerRow({
   strong?: boolean;
   tone?: 'critical';
 }) {
-  if (value === null) return null;
+  // An absent figure stays on the page and says so; it is never hidden or shown as 0.00.
   return (
     <tr data-strong={strong || undefined}>
       <th scope="row">{label}</th>
-      <td data-tone={tone}>{money(value)}</td>
+      {value === null ? (
+        <td data-missing="true">{NOT_RECORDED}</td>
+      ) : (
+        <td data-tone={tone}>{money(value)}</td>
+      )}
     </tr>
   );
 }
@@ -180,10 +186,13 @@ function LedgerRow({
 const nonZero = (value: string | null) => value !== null && Number(value) !== 0;
 
 function StatementShiftBlock({ section }: { section: StatementSection }) {
+  // A labelled group, not a region: shifts can share a time label, and repeated
+  // landmarks with the same name are not distinguishable to assistive technology.
+  const headingId = `recon-ledger-${section.id}`;
   return (
-    <section className="recon-ledger" aria-label={`Shift ${section.label}`}>
+    <div className="recon-ledger" role="group" aria-labelledby={headingId}>
       <div className="recon-ledger-head">
-        <h3>{section.label}</h3>
+        <h3 id={headingId}>{section.label}</h3>
         <span>{formatStatusLabel(section.state)}</span>
       </div>
       <table>
@@ -224,7 +233,7 @@ function StatementShiftBlock({ section }: { section: StatementSection }) {
           />
         </tbody>
       </table>
-    </section>
+    </div>
   );
 }
 
@@ -326,22 +335,42 @@ function StatementView({
               {statement.sections.map((section) => (
                 <tr key={section.id}>
                   <th scope="row">{section.label}</th>
-                  <td>{money(section.expectedSales)}</td>
-                  <td>{money(section.accountedSales)}</td>
-                  <td data-tone={nonZero(section.salesVariance) ? 'critical' : undefined}>
+                  <td data-label="Expected">{money(section.expectedSales)}</td>
+                  <td data-label="Accounted">{money(section.accountedSales)}</td>
+                  <td
+                    data-label="Variance"
+                    data-tone={nonZero(section.salesVariance) ? 'critical' : undefined}
+                  >
                     {money(section.salesVariance)}
                   </td>
+                </tr>
+              ))}
+              {statement.missing.map((shift) => (
+                <tr key={shift.id} data-missing="true">
+                  <th scope="row">{shift.label}</th>
+                  <td colSpan={3}>{NOT_AVAILABLE} · figures could not be loaded</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
-                <th scope="row">Total</th>
-                <td>{money(totals.expectedSales)}</td>
-                <td>{money(totals.accountedSales)}</td>
-                <td data-tone={nonZero(totals.salesVariance) ? 'critical' : undefined}>
-                  {money(totals.salesVariance)}
-                </td>
+                <th scope="row">{totals.complete ? 'Total' : 'Total of shifts shown'}</th>
+                {totals.expectedSales === null ? (
+                  <td colSpan={3} data-missing="true">
+                    {NOT_AVAILABLE}
+                  </td>
+                ) : (
+                  <>
+                    <td data-label="Expected">{money(totals.expectedSales)}</td>
+                    <td data-label="Accounted">{money(totals.accountedSales)}</td>
+                    <td
+                      data-label="Variance"
+                      data-tone={nonZero(totals.salesVariance) ? 'critical' : undefined}
+                    >
+                      {money(totals.salesVariance)}
+                    </td>
+                  </>
+                )}
               </tr>
             </tfoot>
           </table>
@@ -359,9 +388,17 @@ function StatementView({
           )}
 
           {statement.missing.length > 0 ? (
-            <p className="recon-statement-note">
+            <p className="recon-statement-note" data-missing="true" role="note">
               Figures could not be loaded for {statement.missing.map((s) => s.label).join(', ')}.
-              They are left out of the totals above, not counted as zero.
+              They are left out of the totals above, not counted as zero, so the totals do not cover
+              the whole day.
+            </p>
+          ) : null}
+          {totals.shiftsWithoutCash > 0 ? (
+            <p className="recon-statement-note" data-missing="true" role="note">
+              {totals.shiftsWithoutCash}{' '}
+              {totals.shiftsWithoutCash === 1 ? 'shift has' : 'shifts have'} no counted cash. Marked
+              “{NOT_RECORDED}” above, not counted as zero.
             </p>
           ) : null}
           <p className="recon-statement-note">
@@ -549,7 +586,11 @@ export function ReconciliationBoard({
           <p className="recon-highlight-note">
             {variance === null
               ? 'Shown once shift figures load'
-              : `${money(statement.totals.accountedSales)} accounted of ${money(statement.totals.expectedSales)} expected`}
+              : `${money(statement.totals.accountedSales)} accounted of ${money(statement.totals.expectedSales)} expected${
+                  statement.missing.length > 0
+                    ? ` · excludes ${statement.missing.length} ${statement.missing.length === 1 ? 'shift' : 'shifts'} without figures`
+                    : ''
+                }`}
           </p>
         </article>
         <article
@@ -561,7 +602,11 @@ export function ReconciliationBoard({
           <p className="recon-highlight-note">
             {cashVariance === null
               ? 'No cash has been counted yet'
-              : `${money(statement.totals.countedCash)} counted across the shifts`}
+              : `${money(statement.totals.countedCash)} counted across the shifts${
+                  statement.totals.shiftsWithoutCash > 0
+                    ? ` · ${statement.totals.shiftsWithoutCash} not counted`
+                    : ''
+                }`}
           </p>
         </article>
       </div>
