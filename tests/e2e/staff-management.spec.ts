@@ -272,16 +272,18 @@ test.describe('authenticated Staff lifecycle', () => {
     const existingRow = page
       .getByText('revoke-management.staff-e2e@example.test', { exact: false })
       .locator('xpath=../..');
-    await submitStaffCommandAndWaitForReload(page, () =>
-      existingRow.getByRole('button', { name: 'Resend' }).click(),
-    );
+    await submitStaffCommandAndWaitForReload(page, async () => {
+      await existingRow.click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Resend' }).click();
+    });
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(
       page.getByText('revoke-management.staff-e2e@example.test', { exact: false }),
     ).toBeVisible();
-    await submitStaffCommandAndWaitForReload(page, () =>
-      existingRow.getByRole('button', { name: 'Revoke' }).click(),
-    );
+    await submitStaffCommandAndWaitForReload(page, async () => {
+      await existingRow.click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Revoke' }).click();
+    });
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(

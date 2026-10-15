@@ -394,7 +394,7 @@
   display: grid;
   grid-template-columns:
     minmax(11rem, 1.3fr) minmax(0, 1.6fr) minmax(5.5rem, 0.8fr) minmax(0, 1.1fr)
-    minmax(5.5rem, 0.7fr) 8.5rem;
+    minmax(5.5rem, 0.7fr);
   align-items: center;
   gap: var(--space-3);
 }
@@ -417,13 +417,87 @@
 }
 
 .staffTableRow {
-  padding: var(--space-3) 0;
+  position: relative;
+  padding: var(--space-3) var(--space-2);
   border-bottom: var(--border-width) solid var(--border-subtle);
   font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.staffTableRow::after {
+  content: '›';
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  color: var(--accent);
+  font-size: 1.25rem;
+  line-height: 1;
+  opacity: 0;
+  transform: translate(-4px, -50%);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.staffTableRow:hover::after,
+.staffTableRow:focus-within::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.staffTableRow:hover .staffOpen {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.staffOpen {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.staffDetail {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+}
+
+.staffFacts {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  margin: 0;
+}
+
+.staffFacts dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.staffFacts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .staffTableRow:last-child {
   border-bottom: 0;
+}
+
+.staffTableRow:hover {
+  background: var(--bg-subtle);
+}
+
+.staffTableRow button:not(:disabled) {
+  cursor: pointer;
 }
 
 .staffName {
@@ -469,10 +543,6 @@
   overflow-wrap: anywhere;
 }
 
-.staffTableRow .staffActions {
-  justify-content: flex-end;
-}
-
 /* Phone: each row becomes a small stack, with no sideways scroll. */
 @media (max-width: 48rem) {
   .staffSearch {
@@ -502,10 +572,5 @@
     content: attr(data-label);
     min-width: 4.5rem;
     color: var(--text-muted, var(--text-secondary));
-  }
-
-  .staffTableRow .staffActions {
-    justify-content: flex-start;
-    padding-top: var(--space-2);
   }
 }

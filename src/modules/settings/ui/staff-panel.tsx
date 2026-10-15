@@ -3,7 +3,7 @@
 import { useReverification } from '@clerk/nextjs';
 import { useMemo, useRef, useState } from 'react';
 import { Icon } from '@/design-system/icons';
-import { Button, StatusBadge } from '@/design-system/primitives';
+import { Button, EmptyState, StatusBadge } from '@/design-system/primitives';
 import type { StatusTone } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
 
@@ -84,6 +84,7 @@ export function StaffPanel({
   const [filter, setFilter] = useState<StaffFilter>('all');
   const [query, setQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string>();
   const [role, setRole] = useState<Role>('ATTENDANT');
   const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
     defaultScope('ATTENDANT'),
@@ -404,6 +405,8 @@ export function StaffPanel({
     })),
   ];
 
+  const selectedRow = rows.find((row) => row.id === selectedId);
+
   const needle = query.trim().toLowerCase();
   const visibleRows = rows.filter(
     (row) =>
@@ -461,9 +464,26 @@ export function StaffPanel({
       ) : null}
 
       {visibleRows.length === 0 ? (
-        <p className={styles.staffEmpty}>
-          {rows.length === 0 ? 'No staff yet. Invite your first team member.' : 'No staff match.'}
-        </p>
+        rows.length === 0 ? (
+          <EmptyState
+            layout="block"
+            icon="users"
+            title="No staff yet"
+            message="Invite your first team member to get started."
+            action={
+              <Button type="button" variant="primary" onClick={() => setInviteOpen(true)}>
+                Invite Staff
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            layout="block"
+            icon="search"
+            title="No staff match"
+            message="Try a different name, email or role."
+          />
+        )
       ) : (
         <div className={styles.staffTable}>
           <div className={styles.staffHead} aria-hidden="true">
@@ -472,17 +492,30 @@ export function StaffPanel({
             <span>Role</span>
             <span>Scope</span>
             <span>Status</span>
-            <span />
           </div>
           <ul className={styles.staffRows}>
             {visibleRows.map((row) => (
-              <li key={row.id} className={styles.staffTableRow}>
+              <li
+                key={row.id}
+                className={styles.staffTableRow}
+                onClick={() => setSelectedId(row.id)}
+              >
                 <div className={styles.staffName}>
                   <span className={styles.staffAvatar} aria-hidden="true">
                     {initials(row.name)}
                   </span>
                   <div>
-                    <strong>{row.name}</strong>
+                    <button
+                      type="button"
+                      className={styles.staffOpen}
+                      aria-haspopup="dialog"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedId(row.id);
+                      }}
+                    >
+                      {row.name}
+                    </button>
                     {row.staffNumber ? <small>{row.staffNumber}</small> : null}
                   </div>
                 </div>
@@ -498,12 +531,51 @@ export function StaffPanel({
                 <div className={styles.staffCell} data-label="Status">
                   <StatusBadge tone={row.tone}>{row.statusLabel}</StatusBadge>
                 </div>
-                <div className={styles.staffActions}>{row.actions}</div>
               </li>
             ))}
           </ul>
         </div>
       )}
+
+      <Modal
+        open={selectedRow !== undefined}
+        onClose={() => setSelectedId(undefined)}
+        title={selectedRow?.name ?? 'Staff member'}
+        description={selectedRow?.staffNumber}
+        presentation="side"
+      >
+        {selectedRow ? (
+          <div className={styles.staffDetail}>
+            <StatusBadge tone={selectedRow.tone}>{selectedRow.statusLabel}</StatusBadge>
+            <dl className={styles.staffFacts}>
+              <div>
+                <dt>Email</dt>
+                <dd>{selectedRow.email ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Role</dt>
+                <dd>{selectedRow.role}</dd>
+              </div>
+              <div>
+                <dt>Scope</dt>
+                <dd>{selectedRow.scope}</dd>
+              </div>
+            </dl>
+            {selectedRow.actions ? (
+              <div
+                className={styles.staffActions}
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest('button')) setSelectedId(undefined);
+                }}
+              >
+                {selectedRow.actions}
+              </div>
+            ) : (
+              <p className={styles.note}>No actions available for this staff member.</p>
+            )}
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={inviteOpen}

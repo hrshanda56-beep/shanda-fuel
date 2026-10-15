@@ -140,6 +140,7 @@ const paths = {
   building: <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />,
   dollar: <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />,
   trend: <path d="m22 7-8.5 8.5-5-5L2 17M16 7h6v6" />,
+  filter: <path d="M3 5h18l-7 8.2V19l-4 2v-7.8Z" />,
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

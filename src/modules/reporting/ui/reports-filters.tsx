@@ -2,24 +2,20 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo } from 'react';
-import {
-  applyReportFilters,
-  parseReportFilters,
-  resolveReportFilters,
-  type ReportFilters,
-} from '../filters';
-import { businessToday } from '../period';
+import { Dropdown } from '../../../design-system/dropdown';
+import { REPORT_CATALOG, REPORT_CATEGORIES, reportsInCategory } from '../catalog';
+import { categoryHref, parseCategoryParam } from '../rail';
+import { applyReportFilters, parseReportFilters, type ReportFilters } from '../filters';
 import { ReportFilterBar } from './report-filter-bar';
 import { useAvailableStations } from './use-available-stations';
 
-/** Page-level stations and period for the Reports list, kept in the URL. */
+/** Page-level station choice for the Reports list, kept in the URL. Each row picks its own period. */
 export function ReportsFilters({ tenantId }: { tenantId: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const filters = useMemo(() => parseReportFilters(searchParams), [searchParams]);
   const stations = useAvailableStations(tenantId);
-  const range = resolveReportFilters(filters, businessToday());
 
   function change(next: ReportFilters) {
     const params = applyReportFilters(new URLSearchParams(searchParams.toString()), next);
@@ -28,12 +24,40 @@ export function ReportsFilters({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="reports-filters">
-      <ReportFilterBar stations={stations} filters={filters} onChange={change} />
-      {!range ? (
-        <p className="field-hint" role="status">
-          Choose both dates, with the start on or before the end.
-        </p>
-      ) : null}
+      <ReportFilterBar stations={stations} filters={filters} onChange={change} showPeriod={false} />
     </div>
+  );
+}
+
+/** Narrows the report list to one category. Sits beside the station picker as a Filters button. */
+export function ReportCategoryFilter() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const active = parseCategoryParam(searchParams.get('category'));
+  const activeLabel = REPORT_CATEGORIES.find((category) => category.id === active)?.label;
+
+  return (
+    <Dropdown
+      className="category-filter"
+      align="end"
+      aria-label="Filter reports by category"
+      triggerIcon="filter"
+      triggerLabel={activeLabel ? `Filters: ${activeLabel}` : 'Filters'}
+      value={active ?? ''}
+      options={[
+        { value: '', label: `All Reports (${REPORT_CATALOG.length})` },
+        ...REPORT_CATEGORIES.map((category) => ({
+          value: category.id,
+          label: `${category.label} (${reportsInCategory(category.id).length})`,
+        })),
+      ]}
+      onValueChange={(value) => {
+        const next = new URLSearchParams(searchParams.toString());
+        router.replace(categoryHref(pathname, next, parseCategoryParam(value || null)), {
+          scroll: false,
+        });
+      }}
+    />
   );
 }

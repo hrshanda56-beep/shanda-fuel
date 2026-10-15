@@ -25,7 +25,6 @@ export default async function ReportDetailPage({
           ← All reports
         </Link>
       </p>
-      <p className="lede">{report.description}</p>
       {tenantId ? (
         <Suspense>
           <ManagementReportDashboard tenantId={tenantId} view={report.slug} />
