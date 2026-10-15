@@ -258,6 +258,8 @@ export type DonutSlice = {
   label: string;
   total: string;
   count: number;
+  /** Replaces the collection count under the label. */
+  detail?: string;
   /** Colour slot: 0 green, 1 blue, 2 yellow. */
   tone: number;
 };
@@ -277,6 +279,7 @@ export function CashDonut({
   centreValue,
   hidden = false,
   onSelect,
+  emptyMessage = 'Collections appear here once cash from an approved reconciliation is recorded.',
 }: {
   slices: readonly DonutSlice[];
   currency: string;
@@ -284,6 +287,7 @@ export function CashDonut({
   centreValue: string;
   hidden?: boolean;
   onSelect?: (key: string) => void;
+  emptyMessage?: string;
 }) {
   const weights = slices.map((slice) => Math.max(Number(slice.total), 0));
   const sum = weights.reduce((a, b) => a + b, 0);
@@ -322,30 +326,42 @@ export function CashDonut({
         </div>
       </div>
       {slices.length === 0 ? (
-        <p className="cash-donut-empty">
-          Collections appear here once cash from an approved reconciliation is recorded.
-        </p>
+        <p className="cash-donut-empty">{emptyMessage}</p>
       ) : (
         <ul className="cash-donut-legend">
           {slices.map((slice) => (
             <li key={slice.key}>
-              <button
-                type="button"
-                className="cash-donut-row"
-                onClick={() => onSelect?.(slice.key)}
-                aria-haspopup="dialog"
-              >
-                <span className="cash-donut-dot" data-tone={slice.tone} aria-hidden="true" />
-                <span className="cash-donut-name">
-                  {slice.label}
-                  <small>
-                    {slice.count} {slice.count === 1 ? 'collection' : 'collections'}
-                  </small>
-                </span>
-                <span className="cash-donut-value">
-                  {hidden ? `${currency} ${MASK}` : formatTileMoney(slice.total, currency)}
-                </span>
-              </button>
+              {(() => {
+                const row = (
+                  <>
+                    <span className="cash-donut-dot" data-tone={slice.tone} aria-hidden="true" />
+                    <span className="cash-donut-name">
+                      {slice.label}
+                      <small>
+                        {slice.detail ??
+                          `${slice.count} ${slice.count === 1 ? 'collection' : 'collections'}`}
+                      </small>
+                    </span>
+                    <span className="cash-donut-value">
+                      {hidden ? `${currency} ${MASK}` : formatTileMoney(slice.total, currency)}
+                    </span>
+                  </>
+                );
+                return onSelect ? (
+                  <button
+                    type="button"
+                    className="cash-donut-row"
+                    onClick={() => onSelect(slice.key)}
+                    aria-haspopup="dialog"
+                  >
+                    {row}
+                  </button>
+                ) : (
+                  <div className="cash-donut-row" data-static="true">
+                    {row}
+                  </div>
+                );
+              })()}
             </li>
           ))}
         </ul>

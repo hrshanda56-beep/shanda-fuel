@@ -14,6 +14,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
+import { CashDonut, type DonutSlice } from '../../cash/ui/cash-visuals';
 import type { ContextResolution } from '../../context/contracts';
 import type { ManagementReport } from '../contracts';
 import {
@@ -262,6 +263,8 @@ export function ManagementReportDashboard({
               />
             ) : null}
 
+            {view === 'providers' ? <ProviderCards providers={report.providers} /> : null}
+
             {view === 'sales' ? (
               <Card
                 as="section"
@@ -328,6 +331,102 @@ export function ManagementReportDashboard({
           </div>
         </>
       ) : null}
+    </>
+  );
+}
+
+function ProviderCards({ providers }: { providers: ManagementReport['providers'] }) {
+  const slices: DonutSlice[] = [
+    {
+      key: 'allocated',
+      label: 'Allocated',
+      detail: 'Matched to payments',
+      total: providers.allocatedAmount,
+      tone: 0,
+    },
+    {
+      key: 'unallocated',
+      label: 'Not yet allocated',
+      detail: 'Received, awaiting a match',
+      total: providers.unallocatedProviderAmount,
+      tone: 2,
+    },
+    {
+      key: 'unmatched',
+      label: 'Payments not yet matched',
+      detail: 'No settlement received yet',
+      total: providers.unmatchedEvidenceAmount,
+      tone: 1,
+    },
+  ].map((slice) => ({ ...slice, count: 0 }));
+  const count = providers.rows.length;
+  return (
+    <>
+      <Card
+        as="section"
+        className="panel cash-panel content-span"
+        aria-labelledby="provider-split-title"
+      >
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Overview</p>
+            <h2 id="provider-split-title">Settlement Position</h2>
+          </div>
+        </div>
+        <CashDonut
+          slices={slices}
+          currency="USD"
+          centreValue={String(count)}
+          centreLabel={count === 1 ? 'settlement' : 'settlements'}
+          emptyMessage="Settlements appear here once provider payments are received."
+        />
+      </Card>
+
+      <Card as="section" className="panel content-span" aria-labelledby="provider-list-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Provider settlements</p>
+            <h2 id="provider-list-title">Settlements</h2>
+          </div>
+        </div>
+        {count === 0 ? (
+          <EmptyState
+            title="No settlements yet"
+            message="Settlements received in this period show up here."
+          />
+        ) : (
+          <TableScrollRegion label="Provider settlements">
+            <table className="data-table">
+              <caption className="sr-only">Provider settlements</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Settled</th>
+                  <th scope="col">Gross</th>
+                  <th scope="col">Allocated</th>
+                  <th scope="col">Not allocated</th>
+                  <th scope="col">Fees</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providers.rows.map((row) => (
+                  <tr key={row.settlementId}>
+                    <th scope="row">
+                      {row.providerName}
+                      <small>{row.settlementReference}</small>
+                    </th>
+                    <td data-label="Settled">{formatBusinessDate(row.settlementDate)}</td>
+                    <td data-label="Gross">{formatTileMoney(row.grossAmount)}</td>
+                    <td data-label="Allocated">{formatTileMoney(row.allocatedAmount)}</td>
+                    <td data-label="Not allocated">{formatTileMoney(row.unallocatedAmount)}</td>
+                    <td data-label="Fees">{formatTileMoney(row.feesAndDeductions)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScrollRegion>
+        )}
+      </Card>
     </>
   );
 }
