@@ -171,22 +171,35 @@ export async function resolveSettings(
   const resolution = await (dependencies.resolveContext ?? resolveCurrentContext)(request);
 
   if (resolution.current) {
-    const authority = await (dependencies.resolveAuthority ?? resolveTenantExecutionContext)({
-      request,
-      requestedTenantId: resolution.current.organisationId,
-      now: dependencies.now,
-    });
-    authorize({
-      actor: authority.authorization,
-      permissionCode: 'tenant.view',
-      requestedScope: {
-        tenantId: resolution.current.organisationId,
-        scopeType: 'TENANT',
-      },
-      now: dependencies.now,
-    });
-    const staff = await resolveStaffOverview(authority, { now: dependencies.now });
-    return buildSettingsView(account, resolution, staff);
+    try {
+      const authority = await (dependencies.resolveAuthority ?? resolveTenantExecutionContext)({
+        request,
+        requestedTenantId: resolution.current.organisationId,
+        now: dependencies.now,
+      });
+      authorize({
+        actor: authority.authorization,
+        permissionCode: 'tenant.view',
+        requestedScope: {
+          tenantId: resolution.current.organisationId,
+          scopeType: 'TENANT',
+        },
+        now: dependencies.now,
+      });
+      const staff = await resolveStaffOverview(authority, { now: dependencies.now });
+      return buildSettingsView(account, resolution, staff);
+    } catch (error) {
+      // Station-level roles cannot see the organisation, so they get their own
+      // account only: no organisation, company, station or staff data.
+      if (error instanceof AppError && error.code === 'FORBIDDEN') {
+        return {
+          account,
+          context: { status: 'unavailable', legalEntities: [], selectedStation: null },
+          accountOnly: true,
+        };
+      }
+      throw error;
+    }
   }
 
   return buildSettingsView(account, resolution);
