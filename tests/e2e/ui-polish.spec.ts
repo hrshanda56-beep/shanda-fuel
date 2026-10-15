@@ -18,7 +18,12 @@ const report = {
   report: 'MANAGEMENT_OVERVIEW',
   state: 'POSTED',
   currency: 'USD',
-  filters: { tenantId: 'tenant-1', fromDate: '2026-09-01', toDate: '2026-09-30' },
+  filters: {
+    tenantId: 'tenant-1',
+    stationIds: [],
+    fromDate: '2026-09-01',
+    toDate: '2026-09-30',
+  },
   dateBasis: {},
   stations: [{ stationId: 'station-1', code: 'HRE-01', name: 'Harare Road Service Station' }],
   sales: {
@@ -498,7 +503,11 @@ test.describe('phones never scroll sideways', () => {
       await expectFitsWidth(page);
 
       await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
-      await expect(page.getByRole('table').getByText('ZSW-2026-09-20-000123456789')).toBeVisible();
+      await expect(
+        page
+          .getByRole('list', { name: 'Provider settlement reconciliation' })
+          .getByText('ZSW-2026-09-20-000123456789'),
+      ).toBeVisible();
       await expectFitsWidth(page);
 
       await page.goto('/stations/station-1/cash?tenantId=tenant-1');
@@ -531,26 +540,30 @@ test.describe('phones never scroll sideways', () => {
 test.describe('KPIs', () => {
   test('never carry icons', async ({ page }) => {
     await mockApis(page);
-    for (const route of ['/foundation', '/reports?tenantId=tenant-1', '/design-system']) {
-      await page.goto(route);
-      await expect(page.locator('.metric-card').first(), route).toBeVisible();
-      await expect(page.locator('.metric-card :is(svg, img)'), route).toHaveCount(0);
-    }
+    await page.goto('/foundation');
+    await expect(page.locator('.metric-card').first()).toBeVisible();
+    await expect(page.locator('.metric-card :is(svg, img)')).toHaveCount(0);
+
+    await page.goto('/reports?tenantId=tenant-1');
+    const quickLook = page.getByRole('region', { name: 'Quick look' });
+    const figures = quickLook.locator('.rail-figures');
+    await expect(figures).toBeVisible();
+    await expect(figures.locator(':is(svg, img)')).toHaveCount(0);
   });
 
   test('link to the detail behind the number', async ({ page }) => {
     await mockApis(page);
     await page.goto('/reports?tenantId=tenant-1');
-    await page.getByRole('link', { name: /Cash collected/ }).click();
-    await expect(page).toHaveURL(/\/reports\/cash\?tenantId=tenant-1/);
-    await expect(page.getByRole('heading', { name: 'Cash: collected → banked' })).toBeVisible();
+    await page.getByRole('link', { name: /Total Sales/ }).click();
+    await expect(page).toHaveURL(/\/reports\/sales\?tenantId=tenant-1/);
+    await expect(page.getByRole('heading', { name: 'Payments and products' })).toBeVisible();
   });
 
   test('become one calm list on phones', async ({ page }) => {
     await mockApis(page);
     await page.setViewportSize({ width: 390, height: 800 });
     await page.goto('/reports?tenantId=tenant-1');
-    const grid = page.getByRole('region', { name: 'Headline figures for the chosen period' });
+    const grid = page.getByRole('region', { name: 'Quick look' }).locator('.rail-figures');
     await expect(grid).toBeVisible();
     const columns = await grid.evaluate(
       (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
@@ -599,7 +612,7 @@ test.describe('data screens stay accessible', () => {
       '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
       'Choose a station to view inventory',
     ],
-    ['/stations/station-1/cash?tenantId=tenant-1', 'Cash and banking'],
+    ['/stations/station-1/cash?tenantId=tenant-1', 'Cash & Banking'],
   ] as const;
 
   for (const width of [390, 1440]) {

@@ -259,6 +259,8 @@ test.describe('authenticated Staff lifecycle', () => {
       'owner-admin.staff-e2e@example.test',
       'ADMINISTRATOR',
     );
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('heading', { name: 'Invite staff' })).toBeHidden();
 
     const created = await client.unsafe<
       { id: string; invited_email: string; status: string; token_hash: string }[]
@@ -282,7 +284,7 @@ test.describe('authenticated Staff lifecycle', () => {
     ).toBeVisible();
     await submitStaffCommandAndWaitForReload(page, async () => {
       await existingRow.click();
-      await page.getByRole('dialog').getByRole('button', { name: 'Revoke' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Revoke', exact: true }).click();
     });
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
@@ -440,10 +442,10 @@ test.describe('authenticated Staff lifecycle', () => {
 
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
-    const attendantRow = page
-      .getByText('E2E Attendant · attendant.staff-e2e@example.test', { exact: true })
-      .locator('xpath=../..');
-    await attendantRow.getByRole('button', { name: 'Deactivate' }).click();
+    await page.getByRole('button', { name: 'E2E Attendant', exact: true }).click();
+    const attendantDialog = page.getByRole('dialog', { name: 'E2E Attendant' });
+    await expect(attendantDialog).toBeVisible();
+    await attendantDialog.getByRole('button', { name: 'Deactivate', exact: true }).click();
     const deactivationDialog = page.getByRole('alertdialog', {
       name: 'Deactivate staff member?',
     });
@@ -468,7 +470,7 @@ test.describe('authenticated Staff lifecycle', () => {
 
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
-    await expect(page.getByText('Deactivated; history retained', { exact: true })).toBeVisible();
+    await expect(page.getByText('Deactivated', { exact: true })).toBeVisible();
 
     const deactivated = await client.unsafe<
       { status: string; revoked_at: Date | null; audit_count: string }[]

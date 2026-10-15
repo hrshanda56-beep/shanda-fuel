@@ -1452,6 +1452,7 @@ a.operations-attention-row:hover {
 
 .cash-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: var(--space-5);
   border-radius: var(--radius-xl);

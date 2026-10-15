@@ -41,6 +41,10 @@ test.describe('management reporting surface', () => {
     test.beforeAll(async () => {
       client = postgres(databaseUrl!, { max: 1, prepare: false });
       await client.unsafe(`
+        delete from platform.security_events
+        where tenant_id = '${ids.tenant}'
+          and actor_id = '${ids.actor}'
+          and event_code in ('REPORT.SHARED', 'REPORT.EXPORTED');
         insert into app.tenants (id, name, slug) values
           ('${ids.tenant}', 'A10 E2E Reporting Tenant', 'a10-e2e-reporting-tenant')
           on conflict (id) do nothing;
@@ -95,10 +99,10 @@ test.describe('management reporting surface', () => {
       );
       await page.getByRole('button', { name: 'Report filters' }).click();
       await expect(page.getByRole('dialog', { name: 'Report filters' })).toBeVisible();
-      await expect(page.getByLabel('Stations: A10 E2E Main Station')).toBeVisible();
+      await expect(page.getByRole('checkbox', { name: /A10 E2E Main Station/ })).toBeVisible();
       await expect(page.getByText('Unavailable', { exact: true }).first()).toBeVisible();
       await expect(
-        page.getByText(/unavailable for a single station because they are kept/),
+        page.getByText(/Customer balances are kept for the whole organisation/),
       ).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
@@ -115,9 +119,9 @@ test.describe('management reporting surface', () => {
       await page.getByLabel('Period', { exact: true }).first().click();
       await page.getByRole('option', { name: 'Last month' }).click();
       await expect(page.getByLabel('Period', { exact: true }).first()).toHaveText('Last month');
-      await page.getByRole('link', { name: /Cash & Banking/ }).click();
-      await expect(page).toHaveURL(/period=3m.*category=cash|category=cash.*period=3m/);
-      await expect(page.locator('.report-row')).toHaveCount(1);
+      await page.getByRole('link', { name: 'Cash Evidence to Bank' }).click();
+      await expect(page).toHaveURL(/\/reports\/cash\?.*period=3m/);
+      await expect(page.getByRole('region', { name: 'Cash Evidence to Bank' })).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });
@@ -182,7 +186,7 @@ test.describe('management reporting surface', () => {
         }),
       );
       await gotoAndWaitForHydration(page, `/reports?tenantId=${ids.tenant}`);
-      await expect(page.getByText('Report unavailable')).toBeVisible();
+      await expect(page.getByText('Figures are unavailable right now.')).toBeVisible();
       await expect(page.getByText('Accounted sales')).toHaveCount(0);
     });
   });

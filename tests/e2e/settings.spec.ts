@@ -132,7 +132,9 @@ test.describe('Settings', () => {
       await sectionButton(page, 'Account').click();
       await expectOnlyPressed(page, 'Account');
       await expect(content(page).getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
-      await expect(content(page).getByRole('heading', { name: 'Your details' })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Profile', level: 3 })).toBeVisible();
+      await expect(content(page).getByText('Name', { exact: true })).toBeVisible();
+      await expect(content(page).getByText('Email', { exact: true })).toBeVisible();
       // The email is shown in the profile card and again in the details list.
       await expect(
         content(page).getByText('settings-e2e@example.test', { exact: true }).first(),
