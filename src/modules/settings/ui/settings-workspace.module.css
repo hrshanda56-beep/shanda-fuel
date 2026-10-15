@@ -4,37 +4,31 @@
   padding-block: 0;
 }
 
-/* One rounded panel: a slim section list on the left, details on the right. */
-.frame {
+/* Section pills on the left, one rounded panel with the details on the right. */
+.layout {
   display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
+  grid-template-columns: 13rem minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-5);
   min-width: 0;
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-xs);
-  /* clip, not hidden: the section list below stays sticky. */
-  overflow: clip;
 }
 
 .subnav {
   position: sticky;
   top: var(--space-4);
-  align-self: start;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3);
+  gap: var(--space-2);
 }
 
 .subnavItem {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 2.5rem;
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: var(--radius-md);
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-xl);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -45,13 +39,15 @@
 }
 
 .subnavItem:hover {
+  border-color: var(--border-strong);
   background: var(--bg-subtle);
   color: var(--text-primary);
 }
 
 .subnavItem[aria-pressed='true'] {
+  border-color: var(--accent);
   background: var(--bg-selected);
-  color: var(--accent-text);
+  color: var(--text-primary);
   font-weight: var(--font-weight-medium);
 }
 
@@ -62,10 +58,13 @@
 .content {
   display: grid;
   align-content: start;
-  gap: var(--space-4);
+  gap: var(--space-5);
   min-width: 0;
   padding: var(--space-5);
-  border-left: var(--border-width) solid var(--border-subtle);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
 }
 
 .contentHeader {
@@ -86,79 +85,80 @@
   font-size: var(--font-size-sm);
 }
 
-.card {
+/* Blocks inside the panel: a heading, then outlined fields. */
+.section {
   display: grid;
   gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-5);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--border-subtle);
 }
 
-.cardTitle {
+.sectionHead {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sectionTitle {
   margin: 0;
   color: var(--text-primary);
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
 }
 
+/* Read-only values as outlined fields with the label sitting on the border. */
 .fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4) var(--space-6);
+  gap: var(--space-5) var(--space-4);
   margin: 0;
 }
 
+.fields > div {
+  position: relative;
+  min-width: 0;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-xl);
+}
+
 .fields dt {
+  position: absolute;
+  top: 0;
+  left: var(--space-3);
+  padding: 0 var(--space-2);
+  background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  transform: translateY(-50%);
 }
 
 .fields dd {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   color: var(--text-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   overflow-wrap: anywhere;
 }
 
-.profileCard {
-  grid-auto-flow: column;
-  grid-template-columns: auto minmax(0, 1fr);
+.profileRow {
+  display: flex;
   align-items: center;
   gap: var(--space-4);
 }
 
 .avatar {
   display: inline-grid;
+  flex: none;
   place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 4.5rem;
+  height: 4.5rem;
   border-radius: 50%;
   background: var(--accent-muted);
   color: var(--accent-text);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
-}
-
-.profileText {
-  min-width: 0;
-}
-
-.profileName {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  overflow-wrap: anywhere;
-}
-
-.profileMeta {
-  margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-md);
-  overflow-wrap: anywhere;
 }
 
 .signOutRow {
@@ -265,7 +265,7 @@
 
 /* Phone: the section list becomes wrapping pills above the details. */
 @media (max-width: 48rem) {
-  .frame {
+  .layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -273,9 +273,6 @@
     position: static;
     flex-direction: row;
     flex-wrap: wrap;
-    padding: var(--space-3);
-    border-right: 0;
-    border-bottom: var(--border-width) solid var(--border-subtle);
   }
 
   .subnavItem {
@@ -285,13 +282,17 @@
 
   .content {
     padding: var(--space-4);
-    border-left: 0;
   }
 }
 
 @media (max-width: 30rem) {
   .fields {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profileRow {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

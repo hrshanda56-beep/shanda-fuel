@@ -260,6 +260,8 @@ export type DonutSlice = {
   count: number;
   /** Replaces the collection count under the label. */
   detail?: string;
+  /** Replaces the formatted amount on the right of the legend row, for slices that are counts. */
+  display?: string;
   /** Colour slot: 0 teal, 1 blue, 2 yellow, 3 indigo, 4 pink, 5 orange. */
   tone: number;
 };
@@ -279,6 +281,7 @@ export function CashDonut({
   centreValue,
   hidden = false,
   onSelect,
+  selectOpensDialog = true,
   emptyMessage = 'Collections appear here once cash from an approved reconciliation is recorded.',
 }: {
   slices: readonly DonutSlice[];
@@ -287,6 +290,8 @@ export function CashDonut({
   centreValue: string;
   hidden?: boolean;
   onSelect?: (key: string) => void;
+  /** False when choosing a row filters the page instead of opening a dialog. */
+  selectOpensDialog?: boolean;
   emptyMessage?: string;
 }) {
   const weights = slices.map((slice) => Math.max(Number(slice.total), 0));
@@ -343,7 +348,8 @@ export function CashDonut({
                       </small>
                     </span>
                     <span className="cash-donut-value">
-                      {hidden ? `${currency} ${MASK}` : formatTileMoney(slice.total, currency)}
+                      {slice.display ??
+                        (hidden ? `${currency} ${MASK}` : formatTileMoney(slice.total, currency))}
                     </span>
                   </>
                 );
@@ -352,7 +358,7 @@ export function CashDonut({
                     type="button"
                     className="cash-donut-row"
                     onClick={() => onSelect(slice.key)}
-                    aria-haspopup="dialog"
+                    aria-haspopup={selectOpensDialog ? 'dialog' : undefined}
                   >
                     {row}
                   </button>
