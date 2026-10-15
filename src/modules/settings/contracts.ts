@@ -34,6 +34,8 @@ export type SettingsView = Readonly<{
   account: SettingsAccount;
   context: SettingsContext;
   staff?: StaffOverview;
+  /** Set when the actor may see their own account but not the organisation. */
+  accountOnly?: boolean;
 }>;
 
 export type SettingsContextResolution = ContextResolution;
