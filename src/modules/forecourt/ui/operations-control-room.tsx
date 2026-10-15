@@ -899,39 +899,6 @@ export function OperationsControlRoom({
                   />
                 )}
                 <div className="form-actions">
-                  {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
-                    <Button
-                      variant="primary"
-                      disabled={busy}
-                      onClick={() =>
-                        askCommand({
-                          commandType: 'OpenBusinessDay',
-                          values: {
-                            tenantId: context.tenantId,
-                            stationId: context.stationId,
-                            businessDayId: openDayId,
-                            expectedVersion: day?.version ?? 0,
-                          },
-                          subjectId: openDayId,
-                          title: 'Open business day?',
-                          lines: [
-                            { label: 'Station', value: overview.station.name },
-                            {
-                              label: 'Date',
-                              value: formatBusinessDate(
-                                day ? day.date : overview.currentBusinessDate,
-                              ),
-                            },
-                          ],
-                          confirmLabel: 'Open day',
-                          success: 'Business day opened',
-                          where: 'day',
-                        })
-                      }
-                    >
-                      Open business day
-                    </Button>
-                  ) : null}
                   {day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
                     <Button
                       variant="primary"
