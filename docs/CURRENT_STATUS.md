@@ -1,5 +1,28 @@
 # Shanda Fuel — Current Status
 
+## Integrated owner workflow — local candidate 2026-10-15
+
+The isolated branch `codex/workflow-integrated-verification-20261015` combines
+operational fixes through `60b063d`, Claude's frontend through `d941bdd`, the
+authorized independent quality tests and demo tooling (equivalent local
+cherry-picks), and the Quick Actions CSS correction. It also corrects submitter
+projection/self-review identity, duplicate draft creation during reload, and
+Close Meters partial-write/reload recovery without changing server controls.
+
+Combined local evidence: PostgreSQL 18.6; 31 migrations under migration_owner;
+73/73 application tables with FORCE RLS; 64 focused financial/authorization tests
+and four browser scenarios passed. The browser journey covers Supervisor,
+two-nozzle Close Meters, lost-response/reload recovery, fixed payment methods,
+reconciliation return/resubmit, real Better Auth MFA approval and immutable
+post-approval evidence. Independent bounded review is GREEN.
+
+See [the integration report](reports/INTEGRATED_OWNER_WORKFLOW_2026-10-15.md)
+for test evidence, earlier failed-attempt classification and release limits.
+This is local verification only. No production/staging contact, production
+migration, push, merge or deployment occurred; release authorization and
+production migration sequencing remain separate gates. The earlier snapshots
+below are retained as history and do not supersede this local integration.
+
 ## Operational workflow correctness candidate — 2026-10-15
 
 Current human scope is real operational completion toward production; synthetic

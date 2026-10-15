@@ -14,6 +14,7 @@ import {
   userMessage,
 } from '../../../design-system/user-messages';
 import { shiftLabel } from './shift-labels';
+import { replayCloseMeters, type CloseMetersJournal } from './close-meters-retry';
 
 type Nozzle = {
   nozzleId: string;
@@ -37,7 +38,8 @@ export const closedMetersKey = (shiftId: string) => `sf-closed-meters:${shiftId}
 function toDecimal(value: string): Decimal | null {
   const trimmed = value.trim();
   if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
-  return new Decimal(trimmed);
+  const reading = new Decimal(trimmed);
+  return reading.decimalPlaces() <= 3 && reading.lte('999999999999999.999') ? reading : null;
 }
 
 /**
@@ -74,6 +76,9 @@ export function CloseMetersSheet({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<UserMessage | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(false);
+  const journal = useRef<CloseMetersJournal | null>(null);
+  const journalKey = `sf-close-attempt:v1:${tenantId}:${stationId}:${shiftId}`;
   const [closing, setClosing] = useState<Record<string, string>>({});
   const [opening, setOpening] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState(false);
@@ -118,6 +123,27 @@ export function CloseMetersSheet({
   }, [businessDayId, shiftId, stationId, tenantId]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = sessionStorage.getItem(journalKey);
+        if (saved) {
+          journal.current = { ...(JSON.parse(saved) as CloseMetersJournal), uncertain: true };
+          setClosing(
+            Object.fromEntries(journal.current.readings.map((row) => [row.nozzleId, row.closing])),
+          );
+          setOpening(
+            Object.fromEntries(journal.current.readings.map((row) => [row.nozzleId, row.opening])),
+          );
+          setPending(true);
+        }
+      } catch {
+        /* The current mounted attempt still supports retries. */
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [journalKey]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
@@ -137,7 +163,8 @@ export function CloseMetersSheet({
   );
 
   const computed = rows.map((row) => {
-    const openingValue = row.previousReading ?? opening[row.nozzleId] ?? '';
+    const openingValue =
+      (pending ? opening[row.nozzleId] : row.previousReading) ?? opening[row.nozzleId] ?? '';
     const open = toDecimal(openingValue);
     const close = toDecimal(closing[row.nozzleId] ?? '');
     const below = open !== null && close !== null && close.lt(open);
@@ -175,12 +202,20 @@ export function CloseMetersSheet({
         error?: string;
         message?: string;
       };
-      throw describeFailure(response.status, failure.error, failure.message);
+      throw {
+        ...describeFailure(response.status, failure.error, failure.message),
+        definitiveRejection: [400, 401, 403, 404, 409, 422].includes(response.status),
+      };
     }
   }
 
   async function submit() {
     setTouched(true);
+    if (busy) return;
+    if (journal.current) {
+      await finishAttempt(journal.current);
+      return;
+    }
     if (!complete || !context) return;
     const defaultAttendant = context.attendants[0];
     if (!defaultAttendant) {
@@ -193,13 +228,13 @@ export function CloseMetersSheet({
         ? chosen!
         : defaultAttendant.id;
     };
-    setBusy(true);
-    setError(null);
+    const commands: CloseMetersJournal['commands'] = [];
+    const enqueue = async (body: Record<string, unknown>, key: string) => {
+      commands.push({ body, key });
+    };
     const base = { tenantId, stationId, businessDayId, shiftId };
     // A segment can only be sealed once its interval has ended, so it ends now (or at the planned end).
-    const segmentEnd = new Date(
-      Math.min(Date.now() - 5_000, new Date(plannedEndAt).getTime()),
-    ).toISOString();
+    const segmentEnd = closingIntervalEnd(plannedEndAt);
     try {
       for (const item of computed) {
         const { row } = item;
@@ -214,7 +249,7 @@ export function CloseMetersSheet({
           // Boundary and segment commands are versioned against the shift they belong to.
           expectedVersion: shiftVersion,
         };
-        await post(
+        await enqueue(
           {
             commandType: 'ConfirmBoundary',
             ...base,
@@ -229,7 +264,7 @@ export function CloseMetersSheet({
           },
           `close-meters-open-${id.open}`,
         );
-        await post(
+        await enqueue(
           {
             commandType: 'ConfirmBoundary',
             ...base,
@@ -240,7 +275,7 @@ export function CloseMetersSheet({
           },
           `close-meters-close-${id.close}`,
         );
-        await post(
+        await enqueue(
           {
             commandType: 'SealSegment',
             ...base,
@@ -259,31 +294,72 @@ export function CloseMetersSheet({
           `close-meters-seal-${id.segment}`,
         );
       }
-      await post(
+      await enqueue(
         { commandType: 'CloseMeters', ...base, expectedVersion: shiftVersion },
         `close-meters-shift-${shiftId}-${shiftVersion}`,
       );
-      await post(
+      await enqueue(
         { commandType: 'CompleteShift', ...base, expectedVersion: shiftVersion + 1 },
         `close-shift-${shiftId}-${shiftVersion + 1}`,
       );
+      const attempt: CloseMetersJournal = {
+        commands,
+        readings: computed.map((item) => ({
+          nozzleId: item.row.nozzleId,
+          opening: item.open!.toFixed(),
+          closing: item.close!.toFixed(),
+        })),
+      };
+      // Persist before the first request; an ambiguous response must replay identical bodies and keys.
+      try {
+        sessionStorage.setItem(journalKey, JSON.stringify(attempt));
+      } catch {
+        /* Keep in memory. */
+      }
+      journal.current = attempt;
+      setPending(true);
+      await finishAttempt(attempt);
+    } catch (caught) {
+      setError(isUserMessage(caught) ? caught : userMessage('UNKNOWN'));
+    }
+  }
+
+  async function finishAttempt(attempt: CloseMetersJournal) {
+    setBusy(true);
+    setError(null);
+    try {
+      await replayCloseMeters(attempt, post);
       try {
         // The figures wizard shows these on its Pumps step.
-        sessionStorage.setItem(
-          closedMetersKey(shiftId),
-          JSON.stringify(
-            computed.map((item) => ({
-              nozzleId: item.row.nozzleId,
-              opening: item.open!.toFixed(),
-              closing: item.close!.toFixed(),
-            })),
-          ),
-        );
+        sessionStorage.setItem(closedMetersKey(shiftId), JSON.stringify(attempt.readings));
       } catch {
         /* private mode: the Pumps step simply asks again */
       }
+      try {
+        sessionStorage.removeItem(journalKey);
+      } catch {
+        /* In-memory state is cleared below. */
+      }
+      journal.current = null;
+      setPending(false);
       onClosed();
     } catch (caught) {
+      if (!(attempt.confirmedCount ?? 0) && !attempt.uncertain) {
+        // A definitive rejection of the first command made no writes; allow correction.
+        journal.current = null;
+        setPending(false);
+        try {
+          sessionStorage.removeItem(journalKey);
+        } catch {
+          /* No persisted attempt. */
+        }
+      } else {
+        try {
+          sessionStorage.setItem(journalKey, JSON.stringify(attempt));
+        } catch {
+          /* Keep in memory. */
+        }
+      }
       setError(isUserMessage(caught) ? caught : userMessage('UNKNOWN'));
     } finally {
       setBusy(false);
@@ -297,22 +373,22 @@ export function CloseMetersSheet({
       title="Close meters"
       description={shiftLabel(plannedStartAt, plannedEndAt, timezone)}
       presentation="side"
-      dismissible={!busy}
+      dismissible={!busy && !pending}
       initialFocusRef={firstInput}
       className="close-meters-sheet"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={busy}>
+          <Button variant="secondary" onClick={onClose} disabled={busy || pending}>
             Cancel
           </Button>
           <Button
             variant="primary"
             onClick={() => void submit()}
             loading={busy}
-            disabled={!complete && touched}
+            disabled={!pending && !complete && touched}
             aria-describedby="close-meters-reason"
           >
-            Close meters
+            {pending ? 'Retry close meters' : 'Close meters'}
           </Button>
         </>
       }
@@ -344,7 +420,7 @@ export function CloseMetersSheet({
                         }))
                       }
                       options={attendants.map((entry) => ({ value: entry.id, label: entry.name }))}
-                      disabled={busy}
+                      disabled={busy || pending}
                     />
                   </Field>
                 ) : attendants.length === 1 ? (
@@ -363,7 +439,7 @@ export function CloseMetersSheet({
                         }))
                       }
                       unit="L"
-                      disabled={busy}
+                      disabled={busy || pending}
                     />
                   ) : (
                     <div className="close-meters-readonly">
@@ -379,7 +455,7 @@ export function CloseMetersSheet({
                       setClosing((current) => ({ ...current, [row.nozzleId]: event.target.value }))
                     }
                     unit="L"
-                    disabled={busy}
+                    disabled={busy || pending}
                     error={touched && problem ? problem : undefined}
                   />
                   <div className="close-meters-readonly">
@@ -392,6 +468,11 @@ export function CloseMetersSheet({
               </li>
             ))}
           </ul>
+        ) : null}
+        {pending ? (
+          <p role="status">
+            A meter close is in progress. Retry to finish the same readings safely.
+          </p>
         ) : null}
         <InlineError error={error} onRetry={() => void submit()} />
         {!complete && !loading ? (
@@ -406,4 +487,8 @@ export function CloseMetersSheet({
 
 function isUserMessage(value: unknown): value is UserMessage {
   return typeof value === 'object' && value !== null && 'title' in value && 'code' in value;
+}
+
+function closingIntervalEnd(plannedEndAt: string) {
+  return new Date(Math.min(Date.now() - 5_000, new Date(plannedEndAt).getTime())).toISOString();
 }

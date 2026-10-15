@@ -4258,12 +4258,7 @@ a.operations-attention-row:hover {
 }
 
 .next-step .eyebrow::before {
-  content: '';
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+  content: none;
 }
 
 .next-step h2 {
@@ -4283,8 +4278,8 @@ a.operations-attention-row:hover {
 
 .next-step .next-step-action {
   justify-self: end;
-  min-width: 12rem;
-  min-height: 3rem;
+  min-width: 10rem;
+  min-height: 2.5rem;
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--accent) 80%, black);

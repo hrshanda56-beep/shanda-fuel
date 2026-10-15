@@ -580,7 +580,8 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
   }
 
   useEffect(() => {
-    if (loading || loadError || !operation || record || creating.current) return;
+    if (loading || loadError || !operation || record || activeReconciliationId || creating.current)
+      return;
     if (operation.shift.state === 'PLANNED') return;
     creating.current = true;
     // Not cancelled on cleanup: `creating` already guards against a second run (including React's
@@ -588,7 +589,7 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
     window.setTimeout(() => void createDraft(), 0);
     // createDraft only reads state that is stable once the first load has finished.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, loadError, operation, record]);
+  }, [loading, loadError, operation, record, activeReconciliationId]);
 
   /** Saves the draft; resolves to the new revision version, or null when nothing was saved. */
   async function saveDraft(): Promise<number | null> {
