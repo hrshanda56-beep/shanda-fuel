@@ -260,13 +260,13 @@ export type DonutSlice = {
   count: number;
   /** Replaces the collection count under the label. */
   detail?: string;
-  /** Colour slot: 0 green, 1 blue, 2 yellow. */
+  /** Colour slot: 0 teal, 1 blue, 2 yellow, 3 indigo, 4 pink, 5 orange. */
   tone: number;
 };
 
-const RADIUS = 52;
+const RADIUS = 50;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-const GAP = 2.5;
+const GAP = 4;
 
 /**
  * Ring of the station's collections split by custody state. Slice sizes are
@@ -297,7 +297,7 @@ export function CashDonut({
     <div className="cash-donut">
       <div className="cash-donut-ring">
         <svg viewBox="0 0 140 140" aria-hidden="true" focusable="false">
-          <circle className="cash-donut-track" cx="70" cy="70" r={RADIUS} />
+          {sum > 0 ? null : <circle className="cash-donut-track" cx="70" cy="70" r={RADIUS} />}
           {sum > 0
             ? slices.map((slice, index) => {
                 const share = (weights[index] ?? 0) / sum;

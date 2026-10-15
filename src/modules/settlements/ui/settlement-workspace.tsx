@@ -24,9 +24,16 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
+import { EcoCashMark, MastercardMark, VisaMark } from './provider-logos';
+import { Modal } from '../../../design-system/modal';
+import { Select } from '../../../design-system/forms';
+import { Icon } from '../../../design-system/icons';
+import { CashDonut, type DonutSlice } from '@/modules/cash/ui/cash-visuals';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 import { ProviderDonut } from './provider-donut';
 import {
+  allocatedPercent,
+  initials,
   methodLabel,
   methodTotals,
   providerShares,
@@ -107,6 +114,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<ErrorKind>('error');
   const [message, setMessage] = useState<string | null>(null);
+  const [matchOpen, setMatchOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pendingReconciliationId, setPendingReconciliationId] = useState('');
   const [reconciliationReason, setReconciliationReason] = useState('');
   const attemptKeys = useRef(new Map<string, AttemptKeys>());
@@ -364,6 +373,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       }
       forgetAttempt(logicalKey);
       setAmount('');
+      setMatchOpen(false);
       setMessage('Allocation saved and the settlement view was refreshed from the server.');
     } catch (cause) {
       const failure = isApiError(cause)
@@ -443,8 +453,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
 
   if (workspaceState !== 'ready') {
     return (
-      <div className="content-grid">
-        <Card as="section" className="panel" aria-label="Provider settlements">
+      <div className="content-grid cash-workspace">
+        <Card as="section" className="panel content-span" aria-label="Provider settlements">
           <p>Settlements are shown for one station at a time.</p>
           {workspaceState === 'loading' ? (
             <LoadingState label="Loading" />
@@ -470,50 +480,91 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   const counts = settlementCounts(settlements);
   const shares = providerShares(settlements);
   const dataReady = !loading && !error;
+  const canMatch = dataReady && unmatched.length > 0 && settlements.length > 0 && Boolean(context);
+
+  const shareCurrencies = new Set(shares.map((share) => share.currency));
+  const providerSlices: DonutSlice[] = shares.map((share, index) => {
+    const count = settlements.filter(
+      (row) => `${row.providerName}|${row.currency}` === share.key,
+    ).length;
+    return {
+      key: share.key,
+      label: share.name,
+      total: share.gross,
+      count,
+      detail: `${count} ${count === 1 ? 'settlement' : 'settlements'}`,
+      tone: index % 6,
+    };
+  });
+
+  const stateNotice = (
+    <>
+      {loading ? <LoadingState label="Loading provider settlements" /> : null}
+      {error && errorKind === 'conflict' ? <ConflictState message={error} /> : null}
+      {error && errorKind === 'access' ? <AccessDeniedState message={error} /> : null}
+      {error && errorKind === 'error' ? <ErrorState message={error} /> : null}
+    </>
+  );
 
   return (
-    <div className="content-grid">
-      {dataReady ? (
-        <dl className="summary-strip content-span" aria-label="Settlement summary">
-          {(['ECOCASH', 'POS'] as const).map((method) => {
-            const total = methods.find((row) => row.method === method);
-            return (
-              <div key={method} data-tone={total ? 'warning' : undefined}>
-                <dt>{methodLabel(method)} waiting to match</dt>
-                <dd>
-                  {total ? money(total.remaining) : money('0')}
-                  <span className="summary-strip-note">
-                    {total
-                      ? `${total.count} ${total.count === 1 ? 'payment' : 'payments'}`
-                      : 'Nothing waiting'}
-                  </span>
-                </dd>
-              </div>
-            );
-          })}
-          <div>
-            <dt>Settlements not reconciled</dt>
-            <dd>{counts.open}</dd>
-          </div>
-          <div data-tone={counts.exceptions > 0 ? 'warning' : undefined}>
-            <dt>Exceptions</dt>
-            <dd>{counts.exceptions}</dd>
-          </div>
-        </dl>
-      ) : null}
-
-      {dataReady && shares.length > 0 ? (
-        <Card as="section" className="panel" aria-labelledby="settled-by-provider-title">
-          <div className="panel-heading">
-            <h2 id="settled-by-provider-title">Settled by provider</h2>
-          </div>
-          <ProviderDonut shares={shares} />
-        </Card>
-      ) : null}
-
-      <Card as="section" className="panel content-span" aria-labelledby="settlements-title">
+    <div className="content-grid cash-workspace">
+      <Card as="section" className="panel cash-panel" aria-labelledby="settlement-actions-title">
         <div className="panel-heading">
-          <h2 id="settlements-title">Provider settlements</h2>
+          <div>
+            <p className="eyebrow">Provider payments</p>
+            <h2 id="settlement-actions-title">Match Payments</h2>
+          </div>
+        </div>
+        {dataReady ? (
+          <div className="settlement-overview">
+            <ul className="channel-cards" aria-label="Payments waiting to match">
+              {(['ECOCASH', 'POS'] as const).map((method) => {
+                const total = methods.find((row) => row.method === method);
+                return (
+                  <li
+                    key={method}
+                    className="channel-card"
+                    data-waiting={total ? 'true' : undefined}
+                  >
+                    <div className="channel-logos">
+                      {method === 'ECOCASH' ? (
+                        <EcoCashMark />
+                      ) : (
+                        <>
+                          <VisaMark />
+                          <MastercardMark />
+                        </>
+                      )}
+                    </div>
+                    <p className="channel-label">{methodLabel(method)} waiting to match</p>
+                    <p className="channel-amount">{total ? money(total.remaining) : money('0')}</p>
+                    <span className="channel-pill">
+                      {total
+                        ? `${total.count} ${total.count === 1 ? 'payment' : 'payments'}`
+                        : 'All matched'}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <dl className="settlement-status-strip" aria-label="Settlement summary">
+              <div data-tone={counts.open > 0 ? 'info' : undefined}>
+                <dt>Settlements not reconciled</dt>
+                <dd>{counts.open}</dd>
+              </div>
+              <div data-tone={counts.exceptions > 0 ? 'warning' : 'ok'}>
+                <dt>Exceptions</dt>
+                <dd>{counts.exceptions}</dd>
+              </div>
+            </dl>
+          </div>
+        ) : (
+          <LoadingState label="Loading settlement summary" />
+        )}
+        <div className="cash-action-bar">
+          <Button aria-haspopup="dialog" onClick={() => setMatchOpen(true)} disabled={!canMatch}>
+            Match a payment
+          </Button>
           <Button
             variant="secondary"
             type="button"
@@ -523,15 +574,125 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             Refresh
           </Button>
         </div>
+
+        <Modal
+          open={matchOpen}
+          onClose={() => setMatchOpen(false)}
+          title="Match a payment to a settlement"
+          presentation="side"
+          dismissible={!working}
+          className="cash-sheet"
+        >
+          {error ? (
+            <ErrorState
+              message={error}
+              action={<Button onClick={() => void refresh()}>Refresh</Button>}
+            />
+          ) : null}
+          <form
+            className="form-stack"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void allocate();
+            }}
+          >
+            <Field id="settlement" label="Provider settlement" required>
+              <Select
+                id="settlement"
+                value={settlementId}
+                onChange={(event) => setSettlementId(event.target.value)}
+                options={settlements.map((row) => ({
+                  value: row.settlementId,
+                  label: `${row.providerName} · ${row.settlementReference} · ${money(row.unallocatedProviderAmount, row.currency)} left`,
+                }))}
+                placeholder="Select a settlement"
+              />
+            </Field>
+            <Field id="payment" label="Payment evidence" required>
+              <Select
+                id="payment"
+                value={paymentId}
+                onChange={(event) => setPaymentId(event.target.value)}
+                options={unmatched.map((row) => ({
+                  value: row.paymentId,
+                  label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
+                }))}
+                placeholder="Select payment evidence"
+              />
+            </Field>
+            <Field
+              id="allocation-amount"
+              label="Allocation amount"
+              hint="Up to the amount left on both the payment and the settlement."
+              error={amountError}
+              required
+            >
+              <input
+                id="allocation-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(event) => {
+                  setAmount(event.target.value);
+                  setAmountError(undefined);
+                }}
+                placeholder="0.00"
+                required
+              />
+            </Field>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={working}
+              disabled={!selectedSettlement || !paymentId || !context}
+            >
+              Allocate evidence
+            </Button>
+          </form>
+        </Modal>
+      </Card>
+
+      <Card as="section" className="panel cash-panel" aria-labelledby="settled-by-provider-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Overview</p>
+            <h2 id="settled-by-provider-title">Settled By Provider</h2>
+          </div>
+        </div>
+        {!dataReady ? (
+          <LoadingState label="Loading settlements" />
+        ) : shares.length === 0 ? (
+          <CashDonut
+            slices={[]}
+            currency="USD"
+            centreValue="0"
+            centreLabel="settlements"
+            emptyMessage="Settled amounts appear here once a provider statement has been recorded."
+          />
+        ) : shareCurrencies.size === 1 ? (
+          <CashDonut
+            slices={providerSlices}
+            currency={shares[0]?.currency ?? 'USD'}
+            centreValue={String(settlements.length)}
+            centreLabel={settlements.length === 1 ? 'settlement' : 'settlements'}
+          />
+        ) : (
+          <ProviderDonut shares={shares} />
+        )}
+      </Card>
+
+      <Card as="section" className="panel content-span" aria-labelledby="settlements-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Provider statements</p>
+            <h2 id="settlements-title">Provider Settlements</h2>
+          </div>
+        </div>
         <p className="field-hint">
           EcoCash and card (POS) payments are matched here, separately from cash and bank deposits.
           A provider may settle a few days after the sale.
         </p>
-        {loading ? <LoadingState label="Loading provider settlements" /> : null}
-        {error && errorKind === 'conflict' ? <ConflictState message={error} /> : null}
-        {error && errorKind === 'access' ? <AccessDeniedState message={error} /> : null}
-        {error && errorKind === 'error' ? <ErrorState message={error} /> : null}
-        {message ? (
+        {matchOpen ? null : stateNotice}
+        {message && !matchOpen ? (
           <p role="status" aria-live="polite">
             {message}
           </p>
@@ -543,134 +704,172 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           />
         ) : null}
         {canShowSettlementRows ? (
-          <TableScrollRegion label="Provider settlement reconciliation">
-            <table className="responsive-table settlement-table">
-              <caption className="visually-hidden">Provider settlement reconciliation</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Provider / reference</th>
-                  <th scope="col">Dates</th>
-                  <th scope="col">Gross</th>
-                  <th scope="col">Allocated</th>
-                  <th scope="col">Unallocated</th>
-                  <th scope="col">Fees / deductions</th>
-                  <th scope="col">Reported net</th>
-                  <th scope="col">Variance</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settlements.map((row) => {
-                  const isPendingReason = pendingReconciliationId === row.settlementId;
-                  return (
-                    <tr key={row.settlementId}>
-                      <td data-label="Provider / reference">
-                        <strong>{row.providerName}</strong>
-                        <br />
-                        {row.settlementReference}
-                        <br />
-                        <small>{row.accountReference}</small>
-                      </td>
-                      <td data-label="Dates">
-                        <span className="numeric">{row.transactionDate}</span>
-                        <br />
-                        <small>
-                          Settled <span className="numeric">{row.settlementDate}</span>
-                        </small>
-                      </td>
-                      <td data-label="Gross" className="numeric">
-                        {money(row.grossAmount, row.currency)}
-                      </td>
-                      <td data-label="Allocated" className="numeric">
-                        {money(row.allocatedAmount, row.currency)}
-                      </td>
-                      <td data-label="Unallocated" className="numeric">
-                        {money(row.unallocatedProviderAmount, row.currency)}
-                      </td>
-                      <td data-label="Fees / deductions" className="numeric">
-                        <span>
-                          Fee{' '}
-                          {row.providerFeeAmount ? money(row.providerFeeAmount, row.currency) : '—'}
+          <div className="list-table settlement-list">
+            <div className="list-head" aria-hidden="true">
+              <span>Provider</span>
+              <span>Settled</span>
+              <span>Gross</span>
+              <span>Allocated</span>
+              <span>Status</span>
+              <span>Action</span>
+              <span />
+            </div>
+            <ul className="list-rows" aria-label="Provider settlement reconciliation">
+              {settlements.map((row) => {
+                const isPendingReason = pendingReconciliationId === row.settlementId;
+                const open = expandedId === row.settlementId;
+                const hasVariance = !isZeroAmount(row.varianceAmount);
+                const detailsId = `settlement-details-${row.settlementId}`;
+                return (
+                  <li
+                    key={row.settlementId}
+                    className="settlement-item"
+                    data-open={open || undefined}
+                  >
+                    <div
+                      className="list-row settlement-row"
+                      onClick={() => setExpandedId(open ? null : row.settlementId)}
+                    >
+                      <span className="list-name">
+                        <span className="list-avatar" aria-hidden="true">
+                          {initials(row.providerName)}
                         </span>
-                        <br />
-                        <small>
-                          Deduction{' '}
-                          {row.providerDeductionAmount
-                            ? money(row.providerDeductionAmount, row.currency)
-                            : '—'}
-                        </small>
-                      </td>
-                      <td data-label="Reported net" className="numeric">
-                        {row.reportedNetAmount ? money(row.reportedNetAmount, row.currency) : '—'}
-                      </td>
-                      <td data-label="Variance" className="numeric">
-                        {money(row.varianceAmount, row.currency)}
-                      </td>
-                      <td data-label="Status">
+                        <span>
+                          <strong>{row.providerName}</strong>
+                          <small>{row.settlementReference}</small>
+                        </span>
+                      </span>
+                      <span className="list-cell" data-label="Settled">
+                        {row.settlementDate}
+                      </span>
+                      <span className="list-cell list-amount" data-label="Gross">
+                        {money(row.grossAmount, row.currency)}
+                      </span>
+                      <span className="list-cell list-status" data-label="Allocated">
+                        <span className="balance-bar" data-kind="progress" aria-hidden="true">
+                          <span style={{ width: `${allocatedPercent(row)}%` }} />
+                        </span>
+                        <span>{money(row.unallocatedProviderAmount, row.currency)} left</span>
+                      </span>
+                      <span className="list-cell" data-label="Status">
                         <StatusBadge tone={settlementTone(row.state)}>
                           {settlementStateLabel(row.state)}
                         </StatusBadge>
-                      </td>
-                      <td data-label="Action">
+                      </span>
+                      <span className="list-cell" data-label="Action">
                         {row.state !== 'RECONCILED' ? (
-                          <div>
-                            <Button
-                              variant="quiet"
-                              type="button"
-                              onClick={() => void reconcile(row)}
-                              disabled={working}
-                            >
-                              {isPendingReason ? 'Confirm reconciliation' : 'Reconcile'}
-                            </Button>
-                            {isPendingReason ? (
-                              <div className="demo-form">
-                                <Field
-                                  id={`reconcile-reason-${row.settlementId}`}
-                                  label="Variance reason"
-                                  hint="Required because allocated evidence differs from the settlement gross amount."
-                                  required
-                                >
-                                  <input
-                                    id={`reconcile-reason-${row.settlementId}`}
-                                    value={reconciliationReason}
-                                    onChange={(event) =>
-                                      setReconciliationReason(event.target.value)
-                                    }
-                                    maxLength={500}
-                                    required
-                                  />
-                                </Field>
-                                <Button
-                                  variant="quiet"
-                                  type="button"
-                                  onClick={() => {
-                                    setPendingReconciliationId('');
-                                    setReconciliationReason('');
-                                  }}
-                                  disabled={working}
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
-                            ) : null}
-                          </div>
+                          <Button
+                            variant="quiet"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void reconcile(row);
+                            }}
+                            disabled={working}
+                          >
+                            {isPendingReason ? 'Confirm reconciliation' : 'Reconcile'}
+                          </Button>
                         ) : (
                           <span>Done</span>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </TableScrollRegion>
+                      </span>
+                      <button
+                        type="button"
+                        className="settlement-toggle"
+                        aria-expanded={open}
+                        aria-controls={detailsId}
+                        aria-label={`${open ? 'Hide' : 'Show'} details for ${row.settlementReference}`}
+                      >
+                        <Icon name="chevron-down" />
+                      </button>
+                    </div>
+                    {open ? (
+                      <dl className="settlement-details" id={detailsId}>
+                        <div>
+                          <dt>Account</dt>
+                          <dd>{row.accountReference}</dd>
+                        </div>
+                        <div>
+                          <dt>Transaction date</dt>
+                          <dd>{row.transactionDate}</dd>
+                        </div>
+                        <div>
+                          <dt>Allocated</dt>
+                          <dd>{money(row.allocatedAmount, row.currency)}</dd>
+                        </div>
+                        <div>
+                          <dt>Provider fee</dt>
+                          <dd>
+                            {row.providerFeeAmount
+                              ? money(row.providerFeeAmount, row.currency)
+                              : '—'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Deduction</dt>
+                          <dd>
+                            {row.providerDeductionAmount
+                              ? money(row.providerDeductionAmount, row.currency)
+                              : '—'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Reported net</dt>
+                          <dd>
+                            {row.reportedNetAmount
+                              ? money(row.reportedNetAmount, row.currency)
+                              : '—'}
+                          </dd>
+                        </div>
+                        <div data-tone={hasVariance ? 'warning' : undefined}>
+                          <dt>Variance</dt>
+                          <dd>{money(row.varianceAmount, row.currency)}</dd>
+                        </div>
+                      </dl>
+                    ) : null}
+                    {isPendingReason ? (
+                      <div className="settlement-reason">
+                        <Field
+                          id={`reconcile-reason-${row.settlementId}`}
+                          label="Variance reason"
+                          hint="Required because allocated evidence differs from the settlement gross amount."
+                          required
+                        >
+                          <input
+                            id={`reconcile-reason-${row.settlementId}`}
+                            value={reconciliationReason}
+                            onChange={(event) => setReconciliationReason(event.target.value)}
+                            maxLength={500}
+                            required
+                          />
+                        </Field>
+                        <Button
+                          variant="quiet"
+                          type="button"
+                          onClick={() => {
+                            setPendingReconciliationId('');
+                            setReconciliationReason('');
+                          }}
+                          disabled={working}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         ) : null}
       </Card>
 
       <Card as="section" className="panel content-span" aria-labelledby="matching-title">
         <div className="panel-heading">
-          <h2 id="matching-title">Match payments to a settlement</h2>
+          <div>
+            <p className="eyebrow">Waiting for a settlement</p>
+            <h2 id="matching-title">Unmatched Payments</h2>
+          </div>
         </div>
         {!loading && !error && unmatched.length === 0 ? (
           <EmptyState
@@ -679,112 +878,45 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           />
         ) : null}
         {canShowUnmatchedRows ? (
-          <>
-            <TableScrollRegion label="Unmatched provider payment evidence">
-              <table className="responsive-table">
-                <caption className="visually-hidden">Unmatched provider payment evidence</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Method / reference</th>
-                    <th scope="col">Business date</th>
-                    <th scope="col">Reconciliation</th>
-                    <th scope="col">Evidence amount</th>
-                    <th scope="col">Remaining</th>
+          <TableScrollRegion label="Unmatched provider payment evidence">
+            <table className="data-table">
+              <caption className="sr-only">Unmatched provider payment evidence</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Method / reference</th>
+                  <th scope="col">Business date</th>
+                  <th scope="col">Reconciliation</th>
+                  <th scope="col">Evidence amount</th>
+                  <th scope="col">Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unmatched.map((row) => (
+                  <tr key={row.paymentId}>
+                    <th scope="row" data-label="Method / reference">
+                      <strong>{methodLabel(row.method)}</strong>
+                      <br />
+                      {row.reference ?? row.paymentId.slice(0, 12)}
+                    </th>
+                    <td data-label="Business date" className="numeric">
+                      <span className="numeric">{row.businessDate}</span>
+                    </td>
+                    <td data-label="Reconciliation">
+                      <StatusBadge tone="informational">
+                        {formatStatusLabel(row.reconciliationState)}
+                      </StatusBadge>
+                    </td>
+                    <td data-label="Evidence amount" className="numeric">
+                      {money(row.amount)}
+                    </td>
+                    <td data-label="Remaining" className="numeric">
+                      {money(row.unallocatedAmount)}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {unmatched.map((row) => (
-                    <tr key={row.paymentId}>
-                      <td data-label="Method / reference">
-                        <strong>{methodLabel(row.method)}</strong>
-                        <br />
-                        {row.reference ?? row.paymentId.slice(0, 12)}
-                      </td>
-                      <td data-label="Business date" className="numeric">
-                        <span className="numeric">{row.businessDate}</span>
-                      </td>
-                      <td data-label="Reconciliation">
-                        <StatusBadge tone="informational">
-                          {formatStatusLabel(row.reconciliationState)}
-                        </StatusBadge>
-                      </td>
-                      <td data-label="Evidence amount" className="numeric">
-                        {money(row.amount)}
-                      </td>
-                      <td data-label="Remaining" className="numeric">
-                        {money(row.unallocatedAmount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableScrollRegion>
-            <form
-              className="demo-form settlement-match-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void allocate();
-              }}
-            >
-              <Field id="settlement" label="Provider settlement" required>
-                <select
-                  id="settlement"
-                  value={settlementId}
-                  onChange={(event) => setSettlementId(event.target.value)}
-                >
-                  <option value="">Select a settlement</option>
-                  {settlements.map((row) => (
-                    <option key={row.settlementId} value={row.settlementId}>
-                      {row.providerName} · {row.settlementReference} ·{' '}
-                      {money(row.unallocatedProviderAmount, row.currency)} left
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field id="payment" label="Payment evidence" required>
-                <select
-                  id="payment"
-                  value={paymentId}
-                  onChange={(event) => setPaymentId(event.target.value)}
-                >
-                  <option value="">Select payment evidence</option>
-                  {unmatched.map((row) => (
-                    <option key={row.paymentId} value={row.paymentId}>
-                      {methodLabel(row.method)} · {row.businessDate} ·{' '}
-                      {money(row.unallocatedAmount)} · {row.reference ?? row.paymentId.slice(0, 8)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field
-                id="allocation-amount"
-                label="Allocation amount"
-                hint="Up to the amount left on both the payment and the settlement."
-                error={amountError}
-                required
-              >
-                <input
-                  id="allocation-amount"
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(event) => {
-                    setAmount(event.target.value);
-                    setAmountError(undefined);
-                  }}
-                  placeholder="0.00"
-                  required
-                />
-              </Field>
-              <Button
-                type="submit"
-                variant="primary"
-                loading={working}
-                disabled={!selectedSettlement || !paymentId || !context}
-              >
-                Allocate evidence
-              </Button>
-            </form>
-          </>
+                ))}
+              </tbody>
+            </table>
+          </TableScrollRegion>
         ) : null}
         {loading ? <LoadingState label="Loading unmatched payment evidence" /> : null}
         {error ? (
