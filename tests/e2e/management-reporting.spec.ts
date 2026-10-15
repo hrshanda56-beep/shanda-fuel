@@ -79,13 +79,22 @@ test.describe('management reporting surface', () => {
       ]);
     }
 
+    async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {
+      await page.goto(url);
+      await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
+    }
+
     test('a station filter shows customer balances as unavailable and passes accessibility', async ({
       context,
       page,
     }) => {
       await signIn(context);
-      await page.goto(`/reports/commercial?tenantId=${ids.tenant}&stations=${ids.station}`);
-      await expect(page.getByRole('group', { name: 'Report filters' })).toBeVisible();
+      await gotoAndWaitForHydration(
+        page,
+        `/reports/commercial?tenantId=${ids.tenant}&stations=${ids.station}`,
+      );
+      await page.getByRole('button', { name: 'Report filters' }).click();
+      await expect(page.getByRole('dialog', { name: 'Report filters' })).toBeVisible();
       await expect(page.getByLabel('Stations: A10 E2E Main Station')).toBeVisible();
       await expect(page.getByText('Unavailable', { exact: true }).first()).toBeVisible();
       await expect(
@@ -100,7 +109,7 @@ test.describe('management reporting surface', () => {
       page,
     }) => {
       await signIn(context);
-      await page.goto(`/reports?tenantId=${ids.tenant}&period=3m`);
+      await gotoAndWaitForHydration(page, `/reports?tenantId=${ids.tenant}&period=3m`);
       await expect(page.getByRole('heading', { name: 'Available reports' })).toBeVisible();
       await expect(page.getByText('Nothing shared or exported yet.')).toBeVisible();
       await page.getByLabel('Period', { exact: true }).first().click();
@@ -119,7 +128,7 @@ test.describe('management reporting surface', () => {
     }) => {
       await signIn(context);
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-      await page.goto(`/reports?tenantId=${ids.tenant}&period=last-month`);
+      await gotoAndWaitForHydration(page, `/reports?tenantId=${ids.tenant}&period=last-month`);
       const menuButton = page.getByRole('button', { name: 'More actions for Sales & Payments' });
 
       // Keyboard: opens with ArrowDown, items move with arrows, Escape returns focus.
@@ -172,7 +181,7 @@ test.describe('management reporting surface', () => {
           body: JSON.stringify({ message: 'Report could not be loaded' }),
         }),
       );
-      await page.goto(`/reports?tenantId=${ids.tenant}`);
+      await gotoAndWaitForHydration(page, `/reports?tenantId=${ids.tenant}`);
       await expect(page.getByText('Report unavailable')).toBeVisible();
       await expect(page.getByText('Accounted sales')).toHaveCount(0);
     });
