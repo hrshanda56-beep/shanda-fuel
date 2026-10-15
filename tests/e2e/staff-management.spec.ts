@@ -204,7 +204,8 @@ test.describe('authenticated Staff lifecycle', () => {
   test('Owner can manage invitations and Staff remains accessible', async ({ page }) => {
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Invite staff', level: 3 })).toBeVisible();
+    await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Invite staff' })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
@@ -242,7 +243,8 @@ test.describe('authenticated Staff lifecycle', () => {
       );
       await openSettings(page, sessions.owner);
       await page.getByRole('button', { name: 'Staff', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Invite staff', level: 3 })).toBeVisible();
+      await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Invite staff' })).toBeVisible();
     }
 
     await invite('Owner invited attendant', 'owner-attendant.staff-e2e@example.test', 'ATTENDANT');
@@ -257,6 +259,8 @@ test.describe('authenticated Staff lifecycle', () => {
       'owner-admin.staff-e2e@example.test',
       'ADMINISTRATOR',
     );
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('heading', { name: 'Invite staff' })).toBeHidden();
 
     const created = await client.unsafe<
       { id: string; invited_email: string; status: string; token_hash: string }[]
@@ -270,16 +274,18 @@ test.describe('authenticated Staff lifecycle', () => {
     const existingRow = page
       .getByText('revoke-management.staff-e2e@example.test', { exact: false })
       .locator('xpath=../..');
-    await submitStaffCommandAndWaitForReload(page, () =>
-      existingRow.getByRole('button', { name: 'Resend' }).click(),
-    );
+    await submitStaffCommandAndWaitForReload(page, async () => {
+      await existingRow.click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Resend' }).click();
+    });
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(
       page.getByText('revoke-management.staff-e2e@example.test', { exact: false }),
     ).toBeVisible();
-    await submitStaffCommandAndWaitForReload(page, () =>
-      existingRow.getByRole('button', { name: 'Revoke' }).click(),
-    );
+    await submitStaffCommandAndWaitForReload(page, async () => {
+      await existingRow.click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Revoke', exact: true }).click();
+    });
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await expect(
@@ -300,6 +306,7 @@ test.describe('authenticated Staff lifecycle', () => {
     const staffButton = page.getByRole('button', { name: 'Staff', exact: true });
     await expect(staffButton).toBeVisible();
     await staffButton.click();
+    await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
     await expect(page.getByLabel('Role').locator('option', { hasText: 'Owner' })).toHaveCount(0);
 
     const adminCookie = await signedCookie(sessions.administrator, authSecret!);
@@ -370,7 +377,16 @@ test.describe('authenticated Staff lifecycle', () => {
       page.getByRole('heading', { name: 'Join your new workspace', level: 1 }),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Accept invitation' })).toBeVisible();
+    const acceptResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/invite/${inviteTokens.existing}/accept`) &&
+        response.request().method() === 'POST',
+    );
     await page.getByRole('button', { name: 'Accept invitation' }).click();
+    const acceptResponse = await acceptResponsePromise;
+    expect(acceptResponse.ok(), `Invitation acceptance returned ${acceptResponse.status()}`).toBe(
+      true,
+    );
     await expect(page).not.toHaveURL(new RegExp(`/invite/${inviteTokens.existing}$`));
     await expect(
       page.getByRole('heading', { name: 'This invitation is no longer available', level: 1 }),
@@ -426,10 +442,10 @@ test.describe('authenticated Staff lifecycle', () => {
 
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
-    const attendantRow = page
-      .getByText('E2E Attendant · attendant.staff-e2e@example.test', { exact: true })
-      .locator('xpath=../..');
-    await attendantRow.getByRole('button', { name: 'Deactivate' }).click();
+    await page.getByRole('button', { name: 'E2E Attendant', exact: true }).click();
+    const attendantDialog = page.getByRole('dialog', { name: 'E2E Attendant' });
+    await expect(attendantDialog).toBeVisible();
+    await attendantDialog.getByRole('button', { name: 'Deactivate', exact: true }).click();
     const deactivationDialog = page.getByRole('alertdialog', {
       name: 'Deactivate staff member?',
     });
@@ -454,7 +470,7 @@ test.describe('authenticated Staff lifecycle', () => {
 
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
-    await expect(page.getByText('Deactivated; history retained', { exact: true })).toBeVisible();
+    await expect(page.getByText('Deactivated', { exact: true })).toBeVisible();
 
     const deactivated = await client.unsafe<
       { status: string; revoked_at: Date | null; audit_count: string }[]

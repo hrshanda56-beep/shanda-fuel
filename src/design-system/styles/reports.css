@@ -14,78 +14,6 @@
   gap: var(--space-1);
 }
 
-.station-picker {
-  position: relative;
-}
-
-.station-picker > summary {
-  display: flex;
-  min-height: var(--control-height-md);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding-inline: var(--space-3);
-  border: var(--border-width) solid var(--border-control);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  list-style: none;
-  cursor: pointer;
-}
-
-.station-picker > summary::-webkit-details-marker {
-  display: none;
-}
-
-.station-picker > summary > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.station-picker[open] > summary .icon {
-  transform: rotate(180deg);
-}
-
-.station-picker-panel {
-  position: absolute;
-  z-index: 20;
-  inset-inline: 0;
-  top: calc(100% + var(--space-1));
-  display: grid;
-  max-height: 18rem;
-  overflow-y: auto;
-  padding: var(--space-1);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-md);
-}
-
-.station-option {
-  display: flex;
-  min-height: var(--control-height-md);
-  align-items: center;
-  gap: var(--space-2);
-  padding-inline: var(--space-2);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.station-option:hover {
-  background: var(--bg-hover);
-}
-
-.station-option-code,
-.station-option-empty {
-  color: var(--text-tertiary);
-  font-size: var(--font-size-xs);
-}
-
-.station-option-empty {
-  padding: var(--space-2);
-}
-
 /* Available reports: one row per report type ------------------------------ */
 .report-rows {
   display: grid;
@@ -97,17 +25,18 @@
 .report-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem) auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(9rem, 11rem) auto;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-3);
   margin-inline: calc(var(--space-3) * -1);
   border-top: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .report-row:first-child {
-  border-top: 0;
+  border-top-color: transparent;
 }
 
 .report-row:has(.row-link:focus-visible) {
@@ -120,21 +49,64 @@
   z-index: 1;
 }
 
+/* Icon tile shared by report rows and the category list. */
+.report-tile {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+.report-tile-sm {
+  width: 2rem;
+  height: 2rem;
+}
+
+.report-count {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
 @media (hover: hover) {
   .report-row:has(.row-link):hover {
-    background: var(--bg-hover);
+    background: var(--bg-subtle);
+  }
+
+  .report-row:has(.row-link):hover .report-tile {
+    background: var(--accent-muted);
   }
 
   .report-row:has(.row-link):hover .row-link {
+    color: var(--accent-text);
     text-decoration: underline;
+    text-underline-offset: 3px;
   }
 }
 
-.report-row-main,
+.report-row-main {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-0-5);
+}
+
 .report-row-period {
   display: grid;
   min-width: 0;
   gap: var(--space-1);
+}
+
+/* The period label is spoken to screen readers; sighted users see the value. */
+.report-row-period > .field-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .report-row-title {
@@ -143,13 +115,16 @@
 
 .report-row-description {
   margin: 0;
+  overflow: hidden;
   color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* The category is shown by the icon and the category list. */
 .report-row-category {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--font-size-xs);
+  display: none;
 }
 
 .report-row-dates {
@@ -159,12 +134,17 @@
 
 @media (max-width: 47.99rem) {
   .report-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: var(--space-3);
   }
 
-  .report-row-actions > .button {
-    flex: 1;
+  .report-row-period {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .report-row-description {
+    white-space: normal;
   }
 }
 
@@ -172,6 +152,10 @@
 .reports-filters {
   display: grid;
   gap: var(--space-2);
+}
+
+.reports-filters .report-filter-bar {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 15rem));
 }
 
 .reports-layout {
@@ -183,7 +167,7 @@
 
 @media (min-width: 64rem) {
   .reports-layout {
-    grid-template-columns: minmax(0, 1fr) 15rem;
+    grid-template-columns: minmax(0, 1fr) 20rem;
   }
 }
 
@@ -192,49 +176,108 @@
   gap: var(--space-5);
 }
 
-.rail-heading {
-  margin: 0 0 var(--space-2);
-  color: var(--text-tertiary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.rail-card {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
 }
 
-.rail-list {
+.rail-heading {
+  margin: 0 0 var(--space-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-md, 1rem);
+  font-weight: var(--font-weight-semibold);
+}
+
+.rail-list,
+.rail-actions {
   display: grid;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .rail-link {
+  position: relative;
   display: flex;
-  min-height: var(--control-height-md);
+  min-height: 3rem;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding-inline: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
   margin-inline: calc(var(--space-2) * -1);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
   cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.rail-link-text {
+  display: grid;
+  min-width: 0;
+}
+
+.rail-link-text > small {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.rail-link::after {
+  content: '›';
+  margin-inline-start: auto;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-lg, 1.25rem);
+  line-height: 1;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
 }
 
 .rail-link:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+
+.rail-link:hover::after {
+  color: var(--accent);
+  transform: translateX(2px);
 }
 
 .rail-link[aria-current='true'] {
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
+  background: var(--accent-subtle);
 }
 
-.rail-count {
-  color: var(--text-tertiary);
-  font-size: var(--font-size-xs);
+.rail-link[aria-current='true'] .report-tile {
+  background: var(--accent-muted);
+}
+
+.rail-link[aria-current='true']::after {
+  color: var(--accent);
+}
+
+.rail-action {
+  display: flex;
+  min-height: var(--control-height-md);
+  align-items: center;
+  padding-inline: var(--space-3);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.rail-action:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
 }
 
 .reports-stack {
@@ -332,8 +375,21 @@
 }
 
 .rail-activity li {
+  position: relative;
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-0-5);
+  padding-inline-start: var(--space-4);
+}
+
+.rail-activity li::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0.4em;
+  inset-inline-start: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .rail-activity-headline {
@@ -344,4 +400,920 @@
 .rail-activity-detail {
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
+}
+
+/* Row period picker: quiet until used. */
+.report-row-period .dropdown-trigger {
+  min-height: 2.25rem;
+  color: var(--text-secondary);
+}
+
+.report-row-period .dropdown-trigger:hover {
+  color: var(--text-primary);
+}
+
+/* Page filters: a compact picker with a small label. */
+.reports-filters .report-filter-bar {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 13rem));
+  gap: var(--space-3);
+}
+
+.reports-filters .field-label {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Headline figures: one connected strip instead of four separate cards. */
+.reports-stack > .metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    180deg,
+    var(--bg-surface) 40%,
+    color-mix(in srgb, var(--accent) 7%, var(--bg-surface))
+  );
+}
+
+.reports-stack > .metric-grid > .metric-card {
+  padding: var(--space-4) var(--space-5);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.reports-stack > .metric-grid > .metric-card + .metric-card {
+  border-inline-start: var(--border-width) solid var(--border-subtle);
+}
+
+.reports-stack > .metric-grid > a.metric-card:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.reports-stack > .metric-grid .metric-label {
+  color: var(--text-secondary);
+}
+
+/* The summary view renders no detail cards; an empty grid would add a gap. */
+.reports-stack > .content-grid:empty {
+  display: none;
+}
+
+.reports-stack > .metric-grid .metric-meta {
+  font-size: var(--font-size-xs);
+}
+
+@media (max-width: 63.99rem) {
+  .reports-stack > .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reports-stack > .metric-grid > .metric-card:nth-child(3) {
+    border-inline-start: 0;
+  }
+
+  .reports-stack > .metric-grid > .metric-card:nth-child(n + 3) {
+    border-top: var(--border-width) solid var(--border-subtle);
+  }
+}
+
+@media (max-width: 39.99rem) {
+  .reports-stack > .metric-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reports-stack > .metric-grid > .metric-card + .metric-card {
+    border-inline-start: 0;
+    border-top: var(--border-width) solid var(--border-subtle);
+  }
+}
+
+/* Accounting statements: a title block, then one ruled column of amounts. */
+.statement-card {
+  max-width: 46rem;
+  margin-inline: auto;
+  width: 100%;
+  padding: var(--space-8) var(--space-8) var(--space-6);
+}
+
+.statement-header {
+  text-align: center;
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
+  border-bottom: 2px solid var(--text-primary);
+}
+
+.statement-header h2 {
+  margin: 0;
+  font-size: var(--font-size-xl, 1.25rem);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.01em;
+}
+
+.statement-header p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.statement-header .statement-basis {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary, var(--text-secondary));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.statement {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-md);
+}
+
+.statement thead th {
+  padding: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.statement .statement-amount {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.statement-heading th {
+  padding: var(--space-5) 0 var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  color: var(--accent-text);
+}
+
+.statement-line th,
+.statement-line td {
+  padding: var(--space-2) 0;
+  text-align: left;
+  font-weight: var(--font-weight-regular, 400);
+  border-bottom: 1px dotted var(--border-subtle);
+}
+
+.statement-line th {
+  padding-left: var(--space-4);
+  color: var(--text-primary);
+}
+
+.statement-line td {
+  text-align: right;
+  color: var(--text-primary);
+}
+
+.statement-line th small {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.statement-line td[data-unavailable] {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.statement-subtotal th,
+.statement-subtotal td {
+  padding-left: 0;
+  font-weight: var(--font-weight-semibold);
+  border-top: 1px solid var(--text-secondary);
+  border-bottom: 0;
+}
+
+.statement-subtotal th {
+  padding-left: var(--space-4);
+}
+
+.statement-total th,
+.statement-total td {
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+  font-weight: var(--font-weight-semibold);
+  background: var(--accent-subtle);
+  border-top: 1px solid var(--text-secondary);
+  border-bottom: 3px double var(--text-secondary);
+}
+
+.statement-total th {
+  padding-left: var(--space-3);
+}
+
+.statement-total td {
+  padding-right: var(--space-3);
+}
+
+.statement-notes {
+  margin: var(--space-5) 0 0;
+  padding: var(--space-3) 0 0 var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.statement-notes li + li {
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 40rem) {
+  .statement-card {
+    padding: var(--space-5) var(--space-4);
+  }
+}
+
+@media print {
+  .statement-card {
+    max-width: none;
+    border: 0;
+    box-shadow: none;
+  }
+}
+
+/* Station picker sits at the right of the list heading. */
+.reports-layout .panel-heading {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.report-heading-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.report-heading-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+
+.report-heading-tools .reports-filters {
+  width: 12rem;
+}
+
+.report-heading-tools .category-filter {
+  width: auto;
+}
+
+.report-heading-tools .category-filter .dropdown-trigger {
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.report-heading-tools .category-filter .dropdown-trigger > .icon:first-child {
+  color: var(--text-secondary);
+}
+
+.report-heading-tools .category-filter .dropdown-value {
+  max-width: 11rem;
+}
+
+@media (max-width: 40rem) {
+  .report-heading-tools {
+    flex-wrap: wrap;
+    width: 100%;
+    margin-inline-start: 0;
+  }
+
+  .report-heading-tools .reports-filters {
+    flex: 1 1 7rem;
+    width: auto;
+    min-width: 0;
+  }
+
+  .report-heading-tools .category-filter {
+    flex: 0 1 auto;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .report-heading-tools .category-filter .dropdown-trigger {
+    max-width: 100%;
+  }
+}
+
+.reports-layout .panel-heading .reports-filters .report-filter-bar {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The station picker carries no label and is tinted so it reads apart from the row periods. */
+.reports-layout .panel-heading .reports-filters .field-label {
+  display: none;
+}
+
+.reports-layout .panel-heading .station-picker > summary {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.reports-layout .panel-heading .station-picker > summary:hover {
+  border-color: var(--accent);
+}
+
+.reports-layout .panel-heading .station-picker > summary > .icon {
+  color: var(--accent-text);
+}
+
+/* Quick look: first-glance figures, each a link to its report. */
+.rail-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.rail-heading-row .rail-heading {
+  margin: 0;
+}
+
+.rail-heading-row .dropdown {
+  width: 9.5rem;
+}
+
+.rail-heading-row .dropdown-trigger {
+  min-height: 2rem;
+  padding-block: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.rail-figures {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-figure {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.rail-figure strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rail-figures li + li .rail-figure {
+  border-top: 1px solid var(--border-subtle);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.rail-figure:hover {
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+.rail-figure-skeleton {
+  display: block;
+  width: 4rem;
+  height: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+/* Income statement: a comparative table with folding groups and a ruled result row. */
+.income-card {
+  width: 100%;
+  padding: var(--space-5) var(--space-6) var(--space-5);
+}
+
+.income-tabs {
+  display: flex;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.income-tabs a {
+  padding: var(--space-2) 0 var(--space-3);
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+}
+
+.income-tabs a:hover {
+  color: var(--text-primary);
+}
+
+.income-tabs a[aria-current='page'] {
+  color: var(--accent-text);
+  border-bottom-color: var(--accent);
+}
+
+.income-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.income-title h2 {
+  margin: 0;
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold);
+}
+
+.income-title p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.income-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.income-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.income-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.income-switch-track {
+  position: relative;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--border-strong, var(--border-subtle));
+  transition: background 0.15s ease;
+}
+
+.income-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.15s ease;
+}
+
+.income-switch input:checked + .income-switch-track {
+  background: var(--accent);
+}
+
+.income-switch input:checked + .income-switch-track::after {
+  transform: translateX(1rem);
+}
+
+.income-switch input:focus-visible + .income-switch-track {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.income {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--font-size-md);
+}
+
+.income thead th {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  padding: var(--space-3) var(--space-4);
+  text-align: right;
+  border-left: 1px solid var(--bg-surface, #fff);
+}
+
+.income thead .income-name {
+  text-align: left;
+  border-left: 0;
+  border-top-left-radius: var(--radius-md);
+  vertical-align: middle;
+}
+
+.income thead tr:first-child th:last-child {
+  border-top-right-radius: var(--radius-md);
+}
+
+.income thead .income-group {
+  padding-bottom: 0;
+  color: var(--text-primary);
+}
+
+.income thead .income-dates {
+  padding-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.income tbody th,
+.income tbody td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  font-weight: var(--font-weight-regular, 400);
+  vertical-align: top;
+}
+
+.income .income-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.income td[data-unavailable] {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.income td[data-muted] {
+  color: var(--text-secondary);
+}
+
+.income small {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.income-section th,
+.income-section td {
+  font-weight: var(--font-weight-semibold);
+}
+
+.income-section .income-label {
+  display: block;
+  padding-left: calc(1rem + var(--space-2));
+}
+
+.income-detail th {
+  padding-left: calc(var(--space-4) + 1rem + var(--space-2) + var(--space-4));
+  color: var(--text-secondary);
+}
+
+.income-detail td {
+  color: var(--text-secondary);
+}
+
+.income-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.income-fold:disabled {
+  cursor: default;
+}
+
+.income-fold .icon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.income-fold[aria-expanded='false'] .icon {
+  transform: rotate(-90deg);
+}
+
+.income-total th,
+.income-total td {
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+  font-weight: var(--font-weight-semibold);
+  border-bottom: 1px solid var(--accent-border);
+}
+
+.income-total .income-label {
+  display: block;
+  padding-left: calc(1rem + var(--space-2));
+}
+
+.income-total small {
+  color: var(--accent-text);
+  opacity: 0.8;
+}
+
+.income-change [data-sign='1'] {
+  color: var(--success-text, var(--text-primary));
+}
+
+.income-change [data-sign='-1'] {
+  color: var(--danger-text, var(--text-primary));
+}
+
+@media (max-width: 40rem) {
+  .income-card {
+    padding: var(--space-4);
+  }
+
+  .income .income-prev {
+    display: none;
+  }
+
+  .income tbody th,
+  .income tbody td,
+  .income thead th {
+    padding-inline: var(--space-2);
+  }
+
+  .income .income-detail th {
+    padding-left: calc(var(--space-2) + 1.5rem);
+  }
+
+  .income-tabs {
+    gap: var(--space-4);
+    overflow-x: auto;
+  }
+}
+
+@media print {
+  .income-tabs,
+  .income-actions {
+    display: none;
+  }
+
+  .income-card {
+    border: 0;
+    box-shadow: none;
+  }
+}
+
+/* The report page's single Filters button and its panel. */
+.report-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.report-toolbar-summary {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.filters-menu .dropdown-trigger {
+  min-width: 8rem;
+}
+
+.filters-panel {
+  position: absolute;
+  z-index: 30;
+  inset-inline: auto 0;
+  top: calc(100% + var(--space-1));
+  width: min(20rem, calc(100vw - 2 * var(--space-4)));
+  max-height: min(32rem, 70vh);
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg, var(--shadow-md));
+  animation: dropdown-in var(--duration-fast) var(--ease-standard);
+}
+
+.filters-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.filters-group + .filters-group {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.filters-group legend {
+  padding: 0 var(--space-3) var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.filters-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.filters-dates label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* Income statement, calmer: quieter header, lighter rules, no stray indents. */
+.income-period {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.income-foot {
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.income thead th {
+  background: transparent;
+  border-left: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-block: var(--space-2);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: var(--font-weight-medium);
+}
+
+.income tbody th,
+.income tbody td {
+  padding-block: var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
+}
+
+.income-section .income-label,
+.income-total .income-label {
+  padding-left: 0;
+}
+
+.income[data-foldable] :is(.income-section, .income-total) .income-label {
+  padding-left: calc(1rem + var(--space-2));
+}
+
+.income .income-detail th {
+  padding-left: calc(var(--space-4) + var(--space-5) + 1rem);
+}
+
+.income-total th,
+.income-total td {
+  border-bottom: 0;
+}
+
+.income-total th {
+  border-top-left-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
+}
+
+.income-total td:last-child {
+  border-top-right-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+.income-tabs a {
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.income-tabs a[aria-current='page'] {
+  font-weight: var(--font-weight-medium);
+}
+
+/* Phone: the statement card uses the width instead of padding it away. */
+@media (max-width: 47.99rem) {
+  .income-card {
+    margin-inline: calc(var(--space-2) * -1);
+    width: auto;
+    padding: var(--space-3) var(--space-1);
+  }
+
+  .income-tabs,
+  .income-toolbar {
+    padding-inline: var(--space-2);
+  }
+
+  .income-foot {
+    padding-inline: var(--space-2);
+  }
+}
+
+/* Income statement: a compact title row. */
+.income-card {
+  padding-block: var(--space-4);
+}
+
+.income-tabs {
+  margin-bottom: var(--space-3);
+}
+
+.income-tabs a {
+  padding-block: var(--space-1) var(--space-2);
+}
+
+.income-toolbar {
+  margin-bottom: var(--space-1);
+  gap: var(--space-3);
+}
+
+.income-actions {
+  gap: var(--space-3);
+}
+
+.income-actions .dropdown-trigger {
+  min-height: 2rem;
+  padding-block: 0;
+}
+
+.income-actions .filters-menu .dropdown-trigger {
+  min-width: 7rem;
+}
+
+/* Statement workspace: headings, subtotals and notes under each line. */
+.income-heading th {
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  border-bottom: 0;
+}
+
+.income-heading td {
+  border-bottom: 0;
+}
+
+.income-heading .income-fold {
+  font-size: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.income-subtotal th,
+.income-subtotal td {
+  font-weight: var(--font-weight-semibold);
+}
+
+.income-detail small {
+  display: none;
+}
+
+.income-heading + .income-detail th,
+.income-heading ~ .income-detail th {
+  font-weight: var(--font-weight-regular, 400);
 }

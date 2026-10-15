@@ -191,12 +191,19 @@ test.describe('provider settlement workspace', () => {
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
     await expect(
-      page.getByRole('row').filter({ hasText: settlementReference }).first(),
+      page
+        .getByRole('list', { name: 'Provider settlement reconciliation' })
+        .getByText(settlementReference),
     ).toBeVisible();
-    await expect(page.getByRole('row').filter({ hasText: paymentReference }).first()).toBeVisible();
+    await expect(page.getByText(paymentReference)).toBeVisible();
 
-    await page.getByLabel('Allocation amount').fill('40.0000');
-    await page.getByRole('button', { name: 'Allocate evidence' }).click();
+    await page.getByRole('button', { name: 'Match a payment' }).click();
+    const matchDialog = page.getByRole('dialog', { name: 'Match a payment to a settlement' });
+    await expect(matchDialog).toBeVisible();
+    await matchDialog.getByLabel('Provider settlement').selectOption('settlement-1');
+    await matchDialog.getByLabel('Payment evidence').selectOption('payment-1');
+    await matchDialog.getByLabel('Allocation amount').fill('40.0000');
+    await matchDialog.getByRole('button', { name: 'Allocate evidence' }).click();
     await expect(
       page.locator('p[role="status"]').filter({ hasText: 'Allocation saved' }),
     ).toBeVisible();
@@ -311,8 +318,12 @@ test.describe('provider settlement workspace', () => {
 
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
-    await page.getByLabel('Allocation amount').fill('40.0000');
-    await page.getByRole('button', { name: 'Allocate evidence' }).click();
+    await page.getByRole('button', { name: 'Match a payment' }).click();
+    const matchDialog = page.getByRole('dialog', { name: 'Match a payment to a settlement' });
+    await matchDialog.getByLabel('Provider settlement').selectOption('settlement-1');
+    await matchDialog.getByLabel('Payment evidence').selectOption('payment-1');
+    await matchDialog.getByLabel('Allocation amount').fill('40.0000');
+    await matchDialog.getByRole('button', { name: 'Allocate evidence' }).click();
     await expect(page.getByText('The provider settlement is stale')).toBeVisible();
     await page.getByRole('button', { name: 'Allocate evidence' }).click();
     await expect(

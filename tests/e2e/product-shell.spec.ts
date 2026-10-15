@@ -85,10 +85,10 @@ test.describe('desktop sidebar', () => {
     );
     await finance.click();
     await expect(finance).toHaveAttribute('aria-expanded', 'true');
-    await expect(nav.getByRole('button', { name: 'Cash and banking' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Cash & Banking' })).toBeVisible();
     await finance.click();
     await expect(finance).toHaveAttribute('aria-expanded', 'false');
-    await expect(nav.getByRole('button', { name: 'Cash and banking' })).toBeHidden();
+    await expect(nav.getByRole('button', { name: 'Cash & Banking' })).toBeHidden();
 
     await page.reload();
     await expect(sidebarNav(page).getByRole('button', { name: 'Finance' })).toHaveAttribute(
@@ -198,7 +198,7 @@ test.describe('desktop sidebar', () => {
     await waitForHydration(page);
     const reportsNav = sidebarNav(page);
     await reportsNav.getByRole('button', { name: 'Finance' }).click();
-    await reportsNav.getByRole('button', { name: 'Cash and banking' }).click();
+    await reportsNav.getByRole('button', { name: 'Cash & Banking' }).click();
     await expect(page.getByRole('dialog', { name: 'Switch station' })).toBeVisible();
     await expect(
       page.getByRole('dialog', { name: 'Station selection is in progress' }),
@@ -208,7 +208,7 @@ test.describe('desktop sidebar', () => {
     await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
     await waitForHydration(page);
     const nav = sidebarNav(page);
-    await expect(nav.getByRole('link', { name: 'Cash and banking' })).toHaveAttribute(
+    await expect(nav.getByRole('link', { name: 'Cash & Banking' })).toHaveAttribute(
       'href',
       '/stations/station-1/cash?tenantId=tenant-1',
     );

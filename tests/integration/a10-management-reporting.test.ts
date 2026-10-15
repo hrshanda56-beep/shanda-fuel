@@ -1235,7 +1235,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       const ownerText = await owner.text();
       const ownerItems = (JSON.parse(ownerText) as { data: Record<string, string>[] }).data;
       expect(ownerItems.length).toBeGreaterThan(0);
-      expect(ownerItems.map((item) => item.headline)).toContain('Sales and payments exported');
+      expect(ownerItems.map((item) => item.headline)).toContain('Sales & Payments exported');
       expect(ownerItems[0]?.detail ?? '').toMatch(/·/);
       // No station or tenant id appears in anything shown (the event id is only a list key).
       expect(ownerText.replace(/"id":"[^"]+",/g, '')).not.toMatch(

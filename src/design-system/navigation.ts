@@ -138,8 +138,8 @@ export const navigationSections: readonly NavigationSection[] = [
     items: [
       {
         key: 'cash',
-        label: 'Cash and banking',
-        searchLabel: 'Cash and banking',
+        label: 'Cash & Banking',
+        searchLabel: 'Cash & Banking',
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'cash' },
         availability: 'station-context',

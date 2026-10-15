@@ -48,22 +48,28 @@ function Fields({ items }: { items: ReadonlyArray<{ label: string; value: ReactN
   );
 }
 
-function InfoCard({
+/** A titled block inside the settings panel: heading, optional intro, then its fields. */
+function Section({
   headingId,
   title,
+  intro,
   children,
 }: {
   headingId: string;
   title: string;
+  intro?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={styles.card}>
-      <h3 id={headingId} className={styles.cardTitle}>
-        {title}
-      </h3>
+    <section className={styles.section} aria-labelledby={headingId}>
+      <div className={styles.sectionHead}>
+        <h3 id={headingId} className={styles.sectionTitle}>
+          {title}
+        </h3>
+        {intro ? <p className={styles.note}>{intro}</p> : null}
+      </div>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -71,26 +77,32 @@ function AccountPanel({ view, provider }: { view: SettingsView; provider: AuthPr
   const email = view.account.email ?? 'No email provided';
   return (
     <>
-      <div className={`${styles.card} ${styles.profileCard}`}>
-        <span className={styles.avatar} aria-hidden="true">
-          {initialsOf(view.account.name)}
-        </span>
-        <div className={styles.profileText}>
-          <p className={styles.profileName}>{view.account.name}</p>
-          <p className={styles.profileMeta}>{email}</p>
+      <Section headingId="account-profile" title="Profile">
+        <div className={styles.profileRow}>
+          <span className={styles.avatar} aria-hidden="true">
+            {initialsOf(view.account.name)}
+          </span>
+          <p className={styles.note}>
+            Your name and email come from your sign-in account. Ask your administrator to change
+            them.
+          </p>
         </div>
-      </div>
-      <InfoCard headingId="account-details" title="Your details">
         <Fields
           items={[
             { label: 'Name', value: view.account.name },
             { label: 'Email', value: email },
           ]}
         />
-      </InfoCard>
-      <div className={styles.signOutRow}>
-        <SignOutButton provider={provider} />
-      </div>
+      </Section>
+      <Section
+        headingId="account-session"
+        title="Session"
+        intro="Sign out of Shanda Fuel on this device."
+      >
+        <div className={styles.signOutRow}>
+          <SignOutButton provider={provider} />
+        </div>
+      </Section>
     </>
   );
 }
@@ -107,15 +119,15 @@ export function SettingsWorkspace({
 
   if (!organisation) {
     return (
-      <PageContainer width="wide">
-        <div className={styles.frame}>
+      <PageContainer width="wide" className={`settings-page ${styles.page}`}>
+        <div className={styles.layout}>
           <div className={styles.content}>
             <header className={styles.contentHeader}>
               <h2 className={styles.contentTitle}>Organisation</h2>
             </header>
-            <InfoCard headingId="organisation-unavailable" title="Not available">
+            <Section headingId="organisation-unavailable" title="Not available">
               <AccessDeniedState message="No organisation is available for this account." />
-            </InfoCard>
+            </Section>
             <AccountPanel view={view} provider={provider} />
           </div>
         </div>
@@ -132,8 +144,8 @@ export function SettingsWorkspace({
   const { selectedStation, legalEntities } = view.context;
 
   return (
-    <PageContainer width="wide">
-      <div className={styles.frame}>
+    <PageContainer width="wide" className={`settings-page ${styles.page}`}>
+      <div className={styles.layout}>
         <nav className={styles.subnav} aria-label="Settings sections">
           {visibleTabs.map((item) => (
             <button
@@ -152,38 +164,37 @@ export function SettingsWorkspace({
         <div className={styles.content}>
           <header className={styles.contentHeader}>
             <h2 className={styles.contentTitle}>{active.label}</h2>
-            <p className={styles.note}>
-              You can look at these details here. Ask your administrator to change them.
-            </p>
+            {tab === 'staff' ? null : (
+              <p className={styles.note}>
+                You can look at these details here. Ask your administrator to change them.
+              </p>
+            )}
           </header>
 
           {tab === 'organisation' ? (
-            <InfoCard headingId="organisation" title="Organisation details">
+            <Section headingId="organisation" title="Organisation details">
               <Fields items={[{ label: 'Name', value: organisation.name }]} />
-            </InfoCard>
+            </Section>
           ) : null}
 
           {tab === 'companies' ? (
-            legalEntities.length > 0 ? (
-              legalEntities.map((legalEntity) => (
-                <InfoCard
-                  key={legalEntity.id}
-                  headingId={`company-${legalEntity.id}`}
-                  title="Company"
-                >
-                  <Fields items={[{ label: 'Name', value: legalEntity.name }]} />
-                </InfoCard>
-              ))
-            ) : (
-              <InfoCard headingId="legal-entities" title="Companies">
+            <Section headingId="companies" title="Companies">
+              {legalEntities.length > 0 ? (
+                <Fields
+                  items={legalEntities.map((legalEntity, index) => ({
+                    label: legalEntities.length > 1 ? `Company ${index + 1}` : 'Company',
+                    value: legalEntity.name,
+                  }))}
+                />
+              ) : (
                 <p className={styles.note}>No companies are available to you.</p>
-              </InfoCard>
-            )
+              )}
+            </Section>
           ) : null}
 
           {tab === 'stations' ? (
             selectedStation ? (
-              <InfoCard headingId="stations" title="Station details">
+              <Section headingId="stations" title="Station details">
                 <Fields
                   items={[
                     { label: 'Name', value: selectedStation.name },
@@ -191,7 +202,7 @@ export function SettingsWorkspace({
                     { label: 'Time zone', value: selectedStation.timezone },
                   ]}
                 />
-              </InfoCard>
+              </Section>
             ) : (
               <ContextRequiredState
                 title="Choose a station"

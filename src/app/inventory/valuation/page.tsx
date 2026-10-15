@@ -98,7 +98,11 @@ export default async function InventoryValuationPage({
     <AppShell>
       {context ? (
         <div className="inventory-page">
-          <TankOverview tenantId={context.tenantId} stationId={context.stationId} />
+          <TankOverview
+            tenantId={context.tenantId}
+            stationId={context.stationId}
+            contextHref={contextHref}
+          />
           <ValuationOverview context={context} contextHref={contextHref} />
         </div>
       ) : (

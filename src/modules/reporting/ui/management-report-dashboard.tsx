@@ -14,6 +14,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
+import { CashDonut, type DonutSlice } from '../../cash/ui/cash-visuals';
 import type { ContextResolution } from '../../context/contracts';
 import type { ManagementReport } from '../contracts';
 import {
@@ -22,10 +23,22 @@ import {
   resolveReportFilters,
   type ReportFilters,
 } from '../filters';
-import { formatReportLitres, formatTileMoney } from '../format';
-import { businessToday } from '../period';
+import { formatTileMoney } from '../format';
+import { businessToday, precedingRange } from '../period';
 import { findReport, type ReportDefinition } from '../catalog';
-import { ReportFilterBar } from './report-filter-bar';
+import {
+  buildCashMovement,
+  buildCommercialStatement,
+  buildIncomeStatement,
+  buildProfitAndLoss,
+  compareStatement,
+  buildProviderStatement,
+  buildSalesByPayment,
+  buildStockStatement,
+  type Statement,
+} from '../statements';
+import { StatementWorkspace } from './statement-workspace';
+import { ReportFiltersMenu } from './report-filters-menu';
 import { ReportActionStatus } from './report-action-status';
 import { useAvailableStations } from './use-available-stations';
 import { useReportActions } from './use-report-actions';
@@ -42,8 +55,22 @@ function paymentMethodLabel(method: string): string {
   return PAYMENT_METHOD_LABELS[method] ?? method.replaceAll('_', ' ').toLowerCase();
 }
 
-function customerMoney(value: string | null): string {
-  return value === null ? 'Unavailable' : formatTileMoney(value);
+function statementFor(slug: ReportDefinition['slug'], report: ManagementReport): Statement {
+  switch (slug) {
+    case 'profit-loss':
+      return buildProfitAndLoss(report);
+    case 'cash-movement':
+    case 'cash':
+      return buildCashMovement(report);
+    case 'sales':
+      return buildSalesByPayment(report, paymentMethodLabel);
+    case 'providers':
+      return buildProviderStatement(report);
+    case 'commercial':
+      return buildCommercialStatement(report);
+    default:
+      return buildStockStatement(report);
+  }
 }
 
 /**
@@ -78,10 +105,12 @@ export function ManagementReportDashboard({
   const stations = useAvailableStations(tenantId, view !== 'summary');
   const range = resolveReportFilters(filters, businessToday());
   const actions = useReportActions();
-  const reportTitle = findReport(view)?.title ?? '';
+  const definition = view === 'summary' ? undefined : findReport(view);
   const [report, setReport] = useState<ManagementReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [previous, setPrevious] = useState<ManagementReport | null>(null);
+  const [comparing, setComparing] = useState(false);
 
   function detailHref(slug: string) {
     return `/reports/${slug}?${searchParams.toString()}`;
@@ -123,6 +152,37 @@ export function ManagementReportDashboard({
     }
   }
 
+  const before = fromDate && toDate ? precedingRange(fromDate, toDate) : null;
+  const beforeFrom = before?.fromDate;
+  const beforeTo = before?.toDate;
+
+  // The income statement sets each figure beside the period before it.
+  useEffect(() => {
+    if (view === 'summary' || !beforeFrom || !beforeTo) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setComparing(true);
+      setPrevious(null);
+      const query = new URLSearchParams({ tenantId, fromDate: beforeFrom, toDate: beforeTo });
+      if (stationKey) query.set('stationIds', stationKey);
+      try {
+        const response = await fetch(`/api/reports/management?${query.toString()}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (response.ok) setPrevious((await response.json()) as ManagementReport);
+      } catch {
+        // The statement still shows the chosen period without a comparison.
+      } finally {
+        if (!controller.signal.aborted) setComparing(false);
+      }
+    }, 0);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [view, tenantId, stationKey, beforeFrom, beforeTo]);
+
   useEffect(() => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => void load(controller.signal), 0);
@@ -134,29 +194,16 @@ export function ManagementReportDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, stationKey, fromDate, toDate]);
 
+  const filtersMenu = (
+    <ReportFiltersMenu stations={stations} filters={filters} onChange={changeFilters} />
+  );
+
   return (
     <>
-      {view !== 'summary' ? (
-        <Card as="section" className="panel" aria-labelledby="report-filters-title">
-          <div className="panel-heading">
-            <div>
-              <h2 id="report-filters-title">Report filters</h2>
-            </div>
-            <StatusBadge tone="positive" role="status" aria-live="polite">
-              Approved figures
-            </StatusBadge>
-          </div>
-          <ReportFilterBar stations={stations} filters={filters} onChange={changeFilters} />
-          {!range ? (
-            <p className="field-hint" role="status">
-              Choose both dates, with the start on or before the end.
-            </p>
-          ) : null}
-          <p className="metric-meta">
-            Figures come from approved records, each dated by its own business date. This is not a
-            general ledger, statutory P&amp;L, balance sheet, tax report or bank statement.
-          </p>
-        </Card>
+      {!range ? (
+        <p className="field-hint" role="status">
+          Choose both dates, with the start on or before the end.
+        </p>
       ) : null}
 
       {loading && view === 'summary' ? <SummarySkeleton /> : null}
@@ -194,6 +241,30 @@ export function ManagementReportDashboard({
           ) : null}
 
           <div className="content-grid">
+            {definition ? (
+              <StatementWorkspace
+                id={`${definition.slug}-statement`}
+                title={definition.title}
+                slug={definition.slug}
+                statement={
+                  definition.slug === 'profit-loss'
+                    ? buildIncomeStatement(report, previous)
+                    : compareStatement(
+                        statementFor(definition.slug, report),
+                        previous ? statementFor(definition.slug, previous) : null,
+                      )
+                }
+                report={report}
+                previous={previous}
+                previousRange={before}
+                comparing={comparing}
+                query={searchParams.toString()}
+                filtersMenu={filtersMenu}
+              />
+            ) : null}
+
+            {view === 'providers' ? <ProviderCards providers={report.providers} /> : null}
+
             {view === 'sales' ? (
               <Card
                 as="section"
@@ -202,11 +273,7 @@ export function ManagementReportDashboard({
                 aria-labelledby="sales-report-title"
               >
                 <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Sales performance</p>
-                    <h2 id="sales-report-title">Payments and products</h2>
-                  </div>
-                  <StatusBadge tone="informational">Business date</StatusBadge>
+                  <h2 id="sales-report-title">Payments and products</h2>
                 </div>
                 <TableScrollRegion label="Payments and products table">
                   <table className="responsive-table">
@@ -259,214 +326,107 @@ export function ManagementReportDashboard({
                     message="No approved reconciliation facts match this period."
                   />
                 ) : null}
-                <p className="metric-meta">
-                  Sales value is the approved shift figure. Recognised revenue for the period is{' '}
-                  {formatTileMoney(report.revenue.recognizedRevenue)}. Payments:{' '}
-                  {report.sales.payments
-                    .map(
-                      (payment) =>
-                        `${paymentMethodLabel(payment.method)} ${formatTileMoney(payment.amount)}`,
-                    )
-                    .join(' · ') || 'none'}{' '}
-                  · variance {formatTileMoney(report.sales.salesVariance)}
-                </p>
-              </Card>
-            ) : null}
-
-            {view === 'cash' ? (
-              <Card
-                as="section"
-                className="panel"
-                id="cash-report"
-                aria-labelledby="cash-report-title"
-              >
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Cash position</p>
-                    <h2 id="cash-report-title">Cash: collected → banked</h2>
-                  </div>
-                </div>
-                <dl className="summary-list">
-                  <div>
-                    <dt>Cash declared in reconciliations</dt>
-                    <dd>{formatTileMoney(report.cash.cashEvidence)}</dd>
-                  </div>
-                  <div>
-                    <dt>Collected</dt>
-                    <dd>{formatTileMoney(report.cash.collected)}</dd>
-                  </div>
-                  <div>
-                    <dt>Awaiting collection</dt>
-                    <dd>{formatTileMoney(report.cash.awaitingCollection)}</dd>
-                  </div>
-                  <div>
-                    <dt>Banked / confirmed</dt>
-                    <dd>{formatTileMoney(report.cash.banked)}</dd>
-                  </div>
-                  <div>
-                    <dt>Collected, not banked</dt>
-                    <dd>{formatTileMoney(report.cash.collectedButNotBanked)}</dd>
-                  </div>
-                  <div>
-                    <dt>Reconciliation cash variance</dt>
-                    <dd>{formatTileMoney(report.cash.cashVariance)}</dd>
-                  </div>
-                </dl>
-                <p className="metric-meta">
-                  {report.cash.collectionIds.length} collection records ·{' '}
-                  {report.cash.depositIds.length} deposit records
-                </p>
-              </Card>
-            ) : null}
-
-            {view === 'providers' ? (
-              <Card
-                as="section"
-                className="panel"
-                id="provider-report"
-                aria-labelledby="provider-report-title"
-              >
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Provider settlement position</p>
-                    <h2 id="provider-report-title">EcoCash and card settlements</h2>
-                  </div>
-                </div>
-                <dl className="summary-list">
-                  <div>
-                    <dt>Provider payments in reconciliations</dt>
-                    <dd>{formatTileMoney(report.providers.paymentEvidence)}</dd>
-                  </div>
-                  <div>
-                    <dt>Settlement gross</dt>
-                    <dd>{formatTileMoney(report.providers.settlementGross)}</dd>
-                  </div>
-                  <div>
-                    <dt>Allocated</dt>
-                    <dd>{formatTileMoney(report.providers.allocatedAmount)}</dd>
-                  </div>
-                  <div>
-                    <dt>Unallocated provider amount</dt>
-                    <dd>{formatTileMoney(report.providers.unallocatedProviderAmount)}</dd>
-                  </div>
-                  <div>
-                    <dt>Payments not yet matched</dt>
-                    <dd>{formatTileMoney(report.providers.unmatchedEvidenceAmount)}</dd>
-                  </div>
-                  <div>
-                    <dt>Fees and deductions</dt>
-                    <dd>{formatTileMoney(report.providers.feesAndDeductions)}</dd>
-                  </div>
-                </dl>
-                {report.providers.rows.length === 0 ? (
-                  <EmptyState
-                    title="No settlements"
-                    message="No provider settlements fall in this settlement-date range."
-                  />
-                ) : (
-                  <p className="metric-meta">
-                    {report.providers.rows.length}{' '}
-                    {report.providers.rows.length === 1 ? 'settlement' : 'settlements'} in this
-                    period.
-                  </p>
-                )}
-              </Card>
-            ) : null}
-
-            {view === 'commercial' ? (
-              <Card
-                as="section"
-                className="panel"
-                id="commercial-report"
-                aria-labelledby="commercial-report-title"
-              >
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Commercial exposure</p>
-                    <h2 id="commercial-report-title">Suppliers and customers</h2>
-                  </div>
-                  <StatusBadge tone="informational">As of end date</StatusBadge>
-                </div>
-                <dl className="summary-list">
-                  <div>
-                    <dt>Supplier invoices</dt>
-                    <dd>{formatTileMoney(report.suppliers.invoiceValue)}</dd>
-                  </div>
-                  <div>
-                    <dt>Supplier credit notes</dt>
-                    <dd>{formatTileMoney(report.suppliers.creditNoteValue)}</dd>
-                  </div>
-                  <div>
-                    <dt>Supplier payments</dt>
-                    <dd>{formatTileMoney(report.suppliers.payments)}</dd>
-                  </div>
-                  <div>
-                    <dt>Customer receivables</dt>
-                    <dd>{customerMoney(report.customers.receivableBalance)}</dd>
-                  </div>
-                  <div>
-                    <dt>Prepaid value balance</dt>
-                    <dd>{customerMoney(report.customers.prepaidValueBalance)}</dd>
-                  </div>
-                  <div>
-                    <dt>Reserved amount</dt>
-                    <dd>{customerMoney(report.customers.reservedAmount)}</dd>
-                  </div>
-                </dl>
-                <p className="metric-meta">
-                  Balances are as of the end date.{' '}
-                  {report.customers.availability === 'AVAILABLE'
-                    ? ''
-                    : 'Customer balances are unavailable for a single station because they are kept for the whole organisation. '}
-                  Prepaid litres are shown as litres, not converted to money.
-                </p>
-              </Card>
-            ) : null}
-
-            {view === 'inventory' ? (
-              <Card
-                as="section"
-                className="panel"
-                id="inventory-report"
-                aria-labelledby="inventory-report-title"
-              >
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Stock position</p>
-                    <h2 id="inventory-report-title">Tanks, deliveries, and variance</h2>
-                  </div>
-                </div>
-                <dl className="summary-list">
-                  <div>
-                    <dt>Expected stock</dt>
-                    <dd>{formatLitres(report.inventory.expectedLitres)}</dd>
-                  </div>
-                  <div>
-                    <dt>Physical stock</dt>
-                    <dd>{formatReportLitres(report.inventory.physicalLitres)}</dd>
-                  </div>
-                  <div>
-                    <dt>Inventory variance</dt>
-                    <dd>{formatReportLitres(report.inventory.varianceLitres)}</dd>
-                  </div>
-                  <div>
-                    <dt>Deliveries</dt>
-                    <dd>{formatLitres(report.inventory.deliveryLitres)}</dd>
-                  </div>
-                  <div>
-                    <dt>Landed-cost evidence</dt>
-                    <dd>{formatTileMoney(report.inventory.deliveryValue)}</dd>
-                  </div>
-                </dl>
-                <p className="metric-meta">
-                  {report.inventory.rows.length} tank/product rows · movement and delivery IDs are
-                  returned by the API.
-                </p>
               </Card>
             ) : null}
           </div>
         </>
       ) : null}
+    </>
+  );
+}
+
+function ProviderCards({ providers }: { providers: ManagementReport['providers'] }) {
+  const slices: DonutSlice[] = [
+    {
+      key: 'allocated',
+      label: 'Allocated',
+      detail: 'Matched to payments',
+      total: providers.allocatedAmount,
+      tone: 0,
+    },
+    {
+      key: 'unallocated',
+      label: 'Not yet allocated',
+      detail: 'Received, awaiting a match',
+      total: providers.unallocatedProviderAmount,
+      tone: 2,
+    },
+    {
+      key: 'unmatched',
+      label: 'Payments not yet matched',
+      detail: 'No settlement received yet',
+      total: providers.unmatchedEvidenceAmount,
+      tone: 1,
+    },
+  ].map((slice) => ({ ...slice, count: 0 }));
+  const count = providers.rows.length;
+  return (
+    <>
+      <Card
+        as="section"
+        className="panel cash-panel content-span"
+        aria-labelledby="provider-split-title"
+      >
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Overview</p>
+            <h2 id="provider-split-title">Settlement Position</h2>
+          </div>
+        </div>
+        <CashDonut
+          slices={slices}
+          currency="USD"
+          centreValue={String(count)}
+          centreLabel={count === 1 ? 'settlement' : 'settlements'}
+          emptyMessage="Settlements appear here once provider payments are received."
+        />
+      </Card>
+
+      <Card as="section" className="panel content-span" aria-labelledby="provider-list-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Provider settlements</p>
+            <h2 id="provider-list-title">Settlements</h2>
+          </div>
+        </div>
+        {count === 0 ? (
+          <EmptyState
+            title="No settlements yet"
+            message="Settlements received in this period show up here."
+          />
+        ) : (
+          <TableScrollRegion label="Provider settlements">
+            <table className="data-table">
+              <caption className="sr-only">Provider settlements</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Settled</th>
+                  <th scope="col">Gross</th>
+                  <th scope="col">Allocated</th>
+                  <th scope="col">Not allocated</th>
+                  <th scope="col">Fees</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providers.rows.map((row) => (
+                  <tr key={row.settlementId}>
+                    <th scope="row">
+                      {row.providerName}
+                      <small>{row.settlementReference}</small>
+                    </th>
+                    <td data-label="Settled">{formatBusinessDate(row.settlementDate)}</td>
+                    <td data-label="Gross">{formatTileMoney(row.grossAmount)}</td>
+                    <td data-label="Allocated">{formatTileMoney(row.allocatedAmount)}</td>
+                    <td data-label="Not allocated">{formatTileMoney(row.unallocatedAmount)}</td>
+                    <td data-label="Fees">{formatTileMoney(row.feesAndDeductions)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScrollRegion>
+        )}
+      </Card>
     </>
   );
 }
