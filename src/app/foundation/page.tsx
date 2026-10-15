@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { isDesignSystemReferenceAvailable } from '@/design-system/reference/availability';
+import { FoundationFormShowcase } from '@/design-system/reference/foundation-form-showcase';
 import { FoundationModalShowcase } from '@/design-system/reference/foundation-modal-showcase';
 import { ForecourtWorkspace } from '@/modules/forecourt/ui/forecourt-workspace';
 import {
@@ -18,10 +19,8 @@ import {
   EvidenceFile,
   EmptyState,
   ErrorState,
-  Field,
   LoadingState,
   NotFoundState,
-  NumericInput,
   OfflineBanner,
   RiskConfirmation,
   Skeleton,
@@ -243,31 +242,7 @@ export default function FoundationPreviewPage() {
           <p className="eyebrow">Form pattern</p>
           <h2 id="form-title">Persistent labels, clear help</h2>
         </div>
-        <form className="demo-form">
-          <Field id="note" label="Draft note" hint="This is local-only synthetic content." required>
-            <input id="note" name="note" type="text" placeholder="Add a short note" />
-          </Field>
-          <Field id="reason" label="Reason" error="A reason is required before submission.">
-            <textarea id="reason" name="reason" rows={3} placeholder="Explain the exception" />
-          </Field>
-          <NumericInput
-            id="quantity"
-            name="quantity"
-            label="Quantity"
-            hint="Use the unit shown; authoritative validation happens on the server."
-            unit="L"
-            placeholder="0.000"
-            optional
-          />
-          <div className="form-actions">
-            <Button type="button" variant="primary">
-              Save draft
-            </Button>
-            <Button type="button" variant="quiet">
-              Cancel
-            </Button>
-          </div>
-        </form>
+        <FoundationFormShowcase />
       </Card>
 
       <section className="component-grid" aria-labelledby="component-title">

@@ -2,7 +2,9 @@
 
 import { useReverification } from '@clerk/nextjs';
 import { useMemo, useRef, useState } from 'react';
-import { Button } from '@/design-system/primitives';
+import { Icon } from '@/design-system/icons';
+import { Button, EmptyState, StatusBadge } from '@/design-system/primitives';
+import type { StatusTone } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
 
 import type { RoleCode } from '@/modules/authorization';
@@ -41,6 +43,35 @@ function defaultScope(role: Role) {
       : 'STATION';
 }
 
+type StaffFilter = 'all' | 'active' | 'invited' | 'deactivated';
+
+const FILTERS: ReadonlyArray<{ value: StaffFilter; label: string }> = [
+  { value: 'all', label: 'All Staff' },
+  { value: 'active', label: 'Active' },
+  { value: 'invited', label: 'Invited' },
+  { value: 'deactivated', label: 'Deactivated' },
+];
+
+type StaffRowModel = {
+  id: string;
+  group: Exclude<StaffFilter, 'all'>;
+  name: string;
+  email: string | null;
+  staffNumber?: string;
+  role: string;
+  scope: string;
+  statusLabel: string;
+  tone: StatusTone;
+  actions: React.ReactNode;
+};
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (
+    (parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '')
+  ).toUpperCase();
+}
+
 export function StaffPanel({
   tenantId,
   overview,
@@ -50,6 +81,10 @@ export function StaffPanel({
   overview: StaffOverview;
   provider: AuthProviderName;
 }) {
+  const [filter, setFilter] = useState<StaffFilter>('all');
+  const [query, setQuery] = useState('');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string>();
   const [role, setRole] = useState<Role>('ATTENDANT');
   const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
     defaultScope('ATTENDANT'),
@@ -138,6 +173,7 @@ export function StaffPanel({
         expiresAt: string;
       };
       setManualActivation(manual);
+      setInviteOpen(false);
     } else if (result) {
       window.location.reload();
     }
@@ -246,17 +282,308 @@ export function StaffPanel({
     }
   }
 
+  const stationNames = new Map(
+    overview.scopeOptions.flatMap((option) => option.stations.map((item) => [item.id, item.name])),
+  );
+  const entityNames = new Map(overview.scopeOptions.map((option) => [option.id, option.name]));
+
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  const scopeText = (labels: readonly string[]) =>
+    labels
+      .map((label) =>
+        label
+          .replace(/^Station\s+(?=[0-9a-f]{8}-)/i, '')
+          .replace(uuid, (id) => stationNames.get(id) ?? entityNames.get(id) ?? 'Station'),
+      )
+      .join(', ') || '—';
+
+  function invitationScope(invitation: (typeof overview.pendingInvitations)[number]) {
+    if (invitation.scopeType === 'TENANT') return 'All stations';
+    if (invitation.scopeType === 'LEGAL_ENTITY')
+      return entityNames.get(invitation.legalEntityId ?? '') ?? 'Legal entity';
+    return invitation.stationIds.map((id) => stationNames.get(id) ?? 'Station').join(', ') || '—';
+  }
+
+  const rows: StaffRowModel[] = [
+    ...overview.activeStaff.map((member): StaffRowModel => ({
+      id: member.membershipId,
+      group: 'active',
+      name: member.name,
+      email: member.email,
+      ...(member.staffNumber ? { staffNumber: member.staffNumber } : {}),
+      role: member.roles.map((item) => ROLE_LABELS[item]).join(', ') || 'No role',
+      scope: scopeText(member.scopeLabels),
+      statusLabel: 'Active',
+      tone: 'positive',
+      actions: (
+        <Button
+          type="button"
+          variant="quiet"
+          className={styles.staffDanger}
+          size="sm"
+          onClick={() => openDeactivation(member)}
+          disabled={busy || deactivationBusy}
+        >
+          Deactivate
+        </Button>
+      ),
+    })),
+    ...overview.pendingInvitations.map((invitation): StaffRowModel => ({
+      id: invitation.id,
+      group: 'invited',
+      name: invitation.name,
+      email: invitation.email,
+      ...(invitation.staffNumber ? { staffNumber: invitation.staffNumber } : {}),
+      role: ROLE_LABELS[invitation.role],
+      scope: invitationScope(invitation),
+      statusLabel:
+        invitation.status === 'EXPIRED'
+          ? 'Expired'
+          : invitation.deliveryMethod === 'MANUAL'
+            ? 'Manual Activation'
+            : 'Invited',
+      tone: invitation.status === 'EXPIRED' ? 'warning' : 'informational',
+      actions:
+        invitation.status === 'PENDING' ? (
+          <>
+            {invitation.deliveryMethod === 'EMAIL' ? (
+              <Button
+                type="button"
+                variant="quiet"
+                size="sm"
+                onClick={() => generateManual(invitation.id)}
+              >
+                Generate manual activation
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="quiet"
+              size="sm"
+              onClick={() =>
+                command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
+              }
+            >
+              Resend
+            </Button>
+            <Button
+              type="button"
+              variant="quiet"
+              className={styles.staffDanger}
+              size="sm"
+              onClick={() =>
+                command({ commandType: 'RevokeStaffInvitation', invitationId: invitation.id })
+              }
+            >
+              Revoke
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            onClick={() =>
+              command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
+            }
+          >
+            Resend
+          </Button>
+        ),
+    })),
+    ...overview.deactivatedStaff.map((member): StaffRowModel => ({
+      id: member.membershipId,
+      group: 'deactivated',
+      name: member.name,
+      email: member.email,
+      ...(member.staffNumber ? { staffNumber: member.staffNumber } : {}),
+      role: member.roles.map((item) => ROLE_LABELS[item]).join(', ') || '—',
+      scope: scopeText(member.scopeLabels),
+      statusLabel: 'Deactivated',
+      tone: 'neutral',
+      actions: null,
+    })),
+  ];
+
+  const selectedRow = rows.find((row) => row.id === selectedId);
+
+  const needle = query.trim().toLowerCase();
+  const visibleRows = rows.filter(
+    (row) =>
+      (filter === 'all' || row.group === filter) &&
+      (needle === '' ||
+        [row.name, row.email ?? '', row.staffNumber ?? '', row.role, row.scope].some((value) =>
+          value.toLowerCase().includes(needle),
+        )),
+  );
+  const countFor = (value: StaffFilter) =>
+    value === 'all' ? rows.length : rows.filter((row) => row.group === value).length;
+
   return (
     <div className={styles.staffPanel}>
-      <div className={styles.card}>
-        <div className={styles.staffHeader}>
-          <div>
-            <h3 className={styles.cardTitle}>Invite staff</h3>
-            <p className={styles.note}>
-              Invitations expire after 72 hours and can be resent or revoked.
-            </p>
-          </div>
+      <div className={styles.staffToolbar}>
+        <label className={styles.staffSearch}>
+          <Icon name="search" />
+          <input
+            type="search"
+            placeholder="Search staff…"
+            aria-label="Search staff"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div className={styles.staffFilters} role="group" aria-label="Filter staff">
+          {FILTERS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={styles.staffFilter}
+              aria-pressed={filter === item.value}
+              onClick={() => setFilter(item.value)}
+            >
+              {item.label}
+              <span>{countFor(item.value)}</span>
+            </button>
+          ))}
         </div>
+        <Button
+          type="button"
+          variant="primary"
+          className={styles.staffInviteButton}
+          aria-haspopup="dialog"
+          onClick={() => setInviteOpen(true)}
+        >
+          Invite Staff
+        </Button>
+      </div>
+
+      {message ? (
+        <p className={styles.staffMessage} role="status">
+          {message}
+        </p>
+      ) : null}
+
+      {visibleRows.length === 0 ? (
+        rows.length === 0 ? (
+          <EmptyState
+            layout="block"
+            icon="users"
+            title="No staff yet"
+            message="Invite your first team member to get started."
+            action={
+              <Button type="button" variant="primary" onClick={() => setInviteOpen(true)}>
+                Invite Staff
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            layout="block"
+            icon="search"
+            title="No staff match"
+            message="Try a different name, email or role."
+          />
+        )
+      ) : (
+        <div className={styles.staffTable}>
+          <div className={styles.staffHead} aria-hidden="true">
+            <span>Name</span>
+            <span>Email</span>
+            <span>Role</span>
+            <span>Scope</span>
+            <span>Status</span>
+          </div>
+          <ul className={styles.staffRows}>
+            {visibleRows.map((row) => (
+              <li
+                key={row.id}
+                className={styles.staffTableRow}
+                onClick={() => setSelectedId(row.id)}
+              >
+                <div className={styles.staffName}>
+                  <span className={styles.staffAvatar} aria-hidden="true">
+                    {initials(row.name)}
+                  </span>
+                  <div>
+                    <button
+                      type="button"
+                      className={styles.staffOpen}
+                      aria-haspopup="dialog"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedId(row.id);
+                      }}
+                    >
+                      {row.name}
+                    </button>
+                    {row.staffNumber ? <small>{row.staffNumber}</small> : null}
+                  </div>
+                </div>
+                <div className={styles.staffCell} data-label="Email">
+                  <span>{row.email ?? '—'}</span>
+                </div>
+                <div className={styles.staffCell} data-label="Role">
+                  <span>{row.role}</span>
+                </div>
+                <div className={styles.staffCell} data-label="Scope">
+                  <span>{row.scope}</span>
+                </div>
+                <div className={styles.staffCell} data-label="Status">
+                  <StatusBadge tone={row.tone}>{row.statusLabel}</StatusBadge>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <Modal
+        open={selectedRow !== undefined}
+        onClose={() => setSelectedId(undefined)}
+        title={selectedRow?.name ?? 'Staff member'}
+        description={selectedRow?.staffNumber}
+        presentation="side"
+      >
+        {selectedRow ? (
+          <div className={styles.staffDetail}>
+            <StatusBadge tone={selectedRow.tone}>{selectedRow.statusLabel}</StatusBadge>
+            <dl className={styles.staffFacts}>
+              <div>
+                <dt>Email</dt>
+                <dd>{selectedRow.email ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Role</dt>
+                <dd>{selectedRow.role}</dd>
+              </div>
+              <div>
+                <dt>Scope</dt>
+                <dd>{selectedRow.scope}</dd>
+              </div>
+            </dl>
+            {selectedRow.actions ? (
+              <div
+                className={styles.staffActions}
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest('button')) setSelectedId(undefined);
+                }}
+              >
+                {selectedRow.actions}
+              </div>
+            ) : (
+              <p className={styles.note}>No actions available for this staff member.</p>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        title="Invite staff"
+        description="Invitations expire after 72 hours and can be resent or revoked."
+        presentation="side"
+      >
         <form className={styles.staffForm} onSubmit={submitInvite}>
           <label>
             <span>Name</span>
@@ -355,149 +682,53 @@ export function StaffPanel({
             {deliveryMethod === 'EMAIL' ? 'Send invitation' : 'Generate manual activation'}
           </Button>
         </form>
-        {message ? (
-          <p className={styles.staffMessage} role="status">
-            {message}
-          </p>
-        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(manualActivation)}
+        onClose={() => setManualActivation(undefined)}
+        title="Staff invitation created"
+        description="This activation code is shown once. Generate a new code if it is lost."
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="quiet"
+              onClick={() =>
+                manualActivation &&
+                navigator.clipboard?.writeText(
+                  `${manualActivation.staffNumber}\n${manualActivation.activationCode}`,
+                )
+              }
+            >
+              Copy invitation
+            </Button>
+            <Button type="button" variant="quiet" onClick={() => window.print()}>
+              Print
+            </Button>
+            <Button type="button" variant="primary" onClick={() => setManualActivation(undefined)}>
+              Done
+            </Button>
+          </>
+        }
+      >
         {manualActivation ? (
-          <section
-            className={styles.card}
-            aria-labelledby="manual-activation-title"
-            aria-live="polite"
-          >
-            <h3 className={styles.cardTitle} id="manual-activation-title">
-              Staff invitation created
-            </h3>
-            <p className={styles.note}>
-              This activation code is shown once. Generate a new code if it is lost.
-            </p>
-            <dl>
-              <div>
-                <dt>Staff Number</dt>
-                <dd>{manualActivation.staffNumber}</dd>
-              </div>
-              <div>
-                <dt>Activation Code</dt>
-                <dd>{manualActivation.activationCode}</dd>
-              </div>
-              <div>
-                <dt>Expires</dt>
-                <dd>{new Date(manualActivation.expiresAt).toLocaleString()}</dd>
-              </div>
-            </dl>
-            <div className={styles.staffActions}>
-              <Button
-                type="button"
-                variant="quiet"
-                onClick={() =>
-                  navigator.clipboard?.writeText(
-                    `${manualActivation.staffNumber}\n${manualActivation.activationCode}`,
-                  )
-                }
-              >
-                Copy invitation
-              </Button>
-              <Button type="button" variant="quiet" onClick={() => window.print()}>
-                Print
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => setManualActivation(undefined)}
-              >
-                Done
-              </Button>
+          <dl>
+            <div>
+              <dt>Staff Number</dt>
+              <dd>{manualActivation.staffNumber}</dd>
             </div>
-          </section>
+            <div>
+              <dt>Activation Code</dt>
+              <dd>{manualActivation.activationCode}</dd>
+            </div>
+            <div>
+              <dt>Expires</dt>
+              <dd>{new Date(manualActivation.expiresAt).toLocaleString()}</dd>
+            </div>
+          </dl>
         ) : null}
-      </div>
-
-      <StaffList
-        title="Pending invitations"
-        items={overview.pendingInvitations.map((invitation) => ({
-          id: invitation.id,
-          title: `${invitation.name} · ${invitation.email ?? invitation.staffNumber ?? 'Manual activation'}`,
-          detail: `${ROLE_LABELS[invitation.role]} · ${invitation.deliveryMethod === 'MANUAL' ? 'Manual activation' : invitation.status === 'EXPIRED' ? 'Expired' : 'Pending'}`,
-          actions:
-            invitation.status === 'PENDING' ? (
-              <>
-                {invitation.deliveryMethod === 'EMAIL' ? (
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    size="sm"
-                    onClick={() => generateManual(invitation.id)}
-                  >
-                    Generate manual activation
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="quiet"
-                  size="sm"
-                  onClick={() =>
-                    command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
-                  }
-                >
-                  Resend
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  onClick={() =>
-                    command({ commandType: 'RevokeStaffInvitation', invitationId: invitation.id })
-                  }
-                >
-                  Revoke
-                </Button>
-              </>
-            ) : (
-              <Button
-                type="button"
-                variant="quiet"
-                size="sm"
-                onClick={() =>
-                  command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
-                }
-              >
-                Resend
-              </Button>
-            ),
-        }))}
-      />
-
-      <StaffList
-        title="Active staff"
-        items={overview.activeStaff.map((member) => ({
-          id: member.membershipId,
-          title: `${member.name} · ${member.email ?? member.staffNumber ?? 'Staff Number'}`,
-          detail: member.roles.map((item) => ROLE_LABELS[item]).join(', ') || 'No role',
-          actions:
-            member.membershipId === undefined ? null : (
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                onClick={() => openDeactivation(member)}
-                disabled={busy || deactivationBusy}
-              >
-                Deactivate
-              </Button>
-            ),
-        }))}
-      />
-
-      <StaffList
-        title="Deactivated staff"
-        items={overview.deactivatedStaff.map((member) => ({
-          id: member.membershipId,
-          title: `${member.name} · ${member.email ?? member.staffNumber ?? 'Staff Number'}`,
-          detail: 'Deactivated; history retained',
-          actions: null,
-        }))}
-      />
+      </Modal>
 
       <Modal
         open={Boolean(deactivationTarget)}
@@ -727,34 +958,5 @@ function BetterAuthStaffDeactivationStepUp({
         </p>
       ) : null}
     </form>
-  );
-}
-
-function StaffList({
-  title,
-  items,
-}: {
-  title: string;
-  items: readonly { id: string; title: string; detail: string; actions: React.ReactNode }[];
-}) {
-  return (
-    <div className={styles.card}>
-      <h3 className={styles.cardTitle}>{title}</h3>
-      {items.length ? (
-        <div className={styles.staffList}>
-          {items.map((item) => (
-            <div className={styles.staffRow} key={item.id}>
-              <div>
-                <strong>{item.title}</strong>
-                <span>{item.detail}</span>
-              </div>
-              <div className={styles.staffActions}>{item.actions}</div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className={styles.note}>None.</p>
-      )}
-    </div>
   );
 }

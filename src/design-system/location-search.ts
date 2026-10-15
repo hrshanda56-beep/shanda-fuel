@@ -23,7 +23,9 @@ function announceHistoryWrites() {
     const original = window.history[method];
     window.history[method] = function (this: History, ...args: Parameters<History['pushState']>) {
       const result = original.apply(this, args);
-      window.dispatchEvent(new Event(LOCATION_EVENT));
+      // Next writes history from inside `useInsertionEffect`, where React forbids scheduling
+      // updates. The address has already changed, so announcing it a microtask later is safe.
+      queueMicrotask(() => window.dispatchEvent(new Event(LOCATION_EVENT)));
       return result;
     } as History['pushState'];
   }

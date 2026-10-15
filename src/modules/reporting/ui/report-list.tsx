@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { parseCategoryParam } from '../rail';
+import { Dropdown } from '../../../design-system/dropdown';
+import { Icon } from '../../../design-system/icons';
 import { Card } from '../../../design-system/primitives';
+import { CATEGORY_ICONS } from './report-icons';
+import { ReportCategoryFilter, ReportsFilters } from './reports-filters';
 import { ReportActionMenu } from './report-action-menu';
 import { ReportActionStatus } from './report-action-status';
 import { useReportActions, type ReportActionTarget } from './use-report-actions';
@@ -26,7 +30,16 @@ export function ReportList({ tenantId }: { tenantId: string }) {
   return (
     <Card as="section" className="panel" aria-labelledby="available-reports-title">
       <div className="panel-heading">
-        <h2 id="available-reports-title">Available reports</h2>
+        <div className="report-heading-main">
+          <h2 id="available-reports-title">Available reports</h2>
+          <span className="report-count">
+            {reports.length} {reports.length === 1 ? 'report' : 'reports'}
+          </span>
+        </div>
+        <div className="report-heading-tools">
+          <ReportsFilters tenantId={tenantId} />
+          <ReportCategoryFilter />
+        </div>
       </div>
       <ReportActionStatus status={actions.status} onDismiss={actions.dismiss} />
       <ul className="report-rows">
@@ -95,6 +108,9 @@ function ReportRow({
 
   return (
     <li className="report-row">
+      <span className="report-tile" aria-hidden="true">
+        <Icon name={CATEGORY_ICONS[report.category]} size="md" />
+      </span>
       <div className="report-row-main">
         {ready ? (
           <Link className="row-link" href={href}>
@@ -110,19 +126,16 @@ function ReportRow({
         <label className="field-label" htmlFor={`${id}-period`}>
           Period
         </label>
-        <select
+        <Dropdown
           id={`${id}-period`}
+          align="end"
           value={rowPeriod.period}
-          onChange={(event) =>
-            onPeriod({ ...rowPeriod, period: event.target.value as ReportPeriod })
-          }
-        >
-          {REPORT_PERIODS.map((period) => (
-            <option key={period} value={period}>
-              {REPORT_PERIOD_LABELS[period]}
-            </option>
-          ))}
-        </select>
+          options={REPORT_PERIODS.map((period) => ({
+            value: period,
+            label: REPORT_PERIOD_LABELS[period],
+          }))}
+          onValueChange={(period) => onPeriod({ ...rowPeriod, period: period as ReportPeriod })}
+        />
         {rowPeriod.period === 'custom' ? (
           <div className="report-row-dates">
             <input
@@ -143,15 +156,6 @@ function ReportRow({
         ) : null}
       </div>
       <div className="report-row-actions">
-        {ready ? (
-          <Link className="button button-secondary" href={href}>
-            View
-          </Link>
-        ) : (
-          <button className="button button-secondary" type="button" disabled>
-            View
-          </button>
-        )}
         <ReportActionMenu
           reportTitle={report.title}
           disabled={!target || busy}
@@ -160,7 +164,15 @@ function ReportRow({
               ? [
                   { kind: 'link', label: 'View', href },
                   { kind: 'action', label: 'Share private link', onSelect: () => onShare(target) },
-                  { kind: 'action', label: 'Export CSV', onSelect: () => onExport(target) },
+                  ...(report.exportable
+                    ? [
+                        {
+                          kind: 'action' as const,
+                          label: 'Export CSV',
+                          onSelect: () => onExport(target),
+                        },
+                      ]
+                    : []),
                 ]
               : []
           }

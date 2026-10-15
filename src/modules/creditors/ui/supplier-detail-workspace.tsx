@@ -18,13 +18,12 @@ import {
   ErrorState,
   Field,
   LoadingState,
-  StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
-import { PageHeader, MetricCard } from '@/design-system/layout';
-import { exact } from '@/modules/reporting/domain';
+import { Modal } from '@/design-system/modal';
+import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
-import { TableScrollRegion } from '@/design-system/table';
+import { initials, isOverdue, movementLabel, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
   supplierId: string;
@@ -111,6 +110,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [openForm, setOpenForm] = useState<'document' | 'payment' | null>(null);
 
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(
@@ -119,9 +119,6 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
     (SUPPLIER_ROUTE_POLICY.allStationsAllowed || current.stationId),
   );
   const backHref = current ? buildContextHref('/suppliers', search, current) : '/suppliers';
-  const supplierHref = current
-    ? buildContextHref(`/suppliers/${encodeURIComponent(supplierId)}`, search, current)
-    : `/suppliers/${encodeURIComponent(supplierId)}`;
 
   const contextLabel = useMemo(() => {
     if (!context || !current) return null;
@@ -231,8 +228,8 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
     commandType: 'SubmitSupplierDocument' | 'SubmitSupplierPayment',
     body: Record<string, unknown>,
     successMessage: string,
-  ) {
-    if (!current?.legalEntityId) return;
+  ): Promise<boolean> {
+    if (!current?.legalEntityId) return false;
     setAction(commandType);
     setActionError(null);
     setActionSuccess(null);
@@ -256,8 +253,10 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       if (!response.ok) throw new Error(getErrorMessage(result, 'The supplier command failed'));
       setActionSuccess(successMessage);
       await loadDetails(current);
+      return true;
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'The supplier command failed');
+      return false;
     } finally {
       setAction(null);
     }
@@ -274,7 +273,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       setActionError('Due date cannot be before the document date.');
       return;
     }
-    await submitCommand(
+    const submitted = await submitCommand(
       'SubmitSupplierDocument',
       {
         documentType: form.documentType,
@@ -285,7 +284,10 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       },
       'Supplier document submitted for posting review.',
     );
-    setDocumentForm(EMPTY_DOCUMENT_FORM);
+    if (submitted) {
+      setDocumentForm(EMPTY_DOCUMENT_FORM);
+      setOpenForm(null);
+    }
   }
 
   async function submitPayment(event: FormEvent<HTMLFormElement>) {
@@ -295,7 +297,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       setActionError('Payment date, reference, and an exact decimal amount are required.');
       return;
     }
-    await submitCommand(
+    const submitted = await submitCommand(
       'SubmitSupplierPayment',
       {
         paymentDate: form.paymentDate,
@@ -304,26 +306,28 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       },
       'Supplier payment submitted for posting review.',
     );
-    setPaymentForm(EMPTY_PAYMENT_FORM);
+    if (submitted) {
+      setPaymentForm(EMPTY_PAYMENT_FORM);
+      setOpenForm(null);
+    }
   }
 
-  return (
-    <div className="content-grid">
-      <PageHeader
-        eyebrow={contextLabel ?? 'Supplier creditors'}
-        title={supplier ? supplier.legalName : 'Supplier detail'}
-        headingLevel="h2"
-        titleId="supplier-detail-title"
-        description={
-          supplier ? `Supplier code ${supplier.code}` : 'Balance and statement for this supplier.'
-        }
-        actions={
-          <Link className="button button-secondary" href={backHref}>
-            Back to suppliers
-          </Link>
-        }
-      />
+  function openSubmitForm(form: 'document' | 'payment') {
+    setActionError(null);
+    setActionSuccess(null);
+    setOpenForm(form);
+  }
 
+  function closeSubmitForm() {
+    if (action) return;
+    setActionError(null);
+    setOpenForm(null);
+  }
+
+  const late = supplier ? isOverdue(supplier) : false;
+
+  return (
+    <div className="content-grid wide-workspace">
       {contextLoading ? <LoadingState label="Loading" /> : null}
       {contextError ? <ErrorState message={contextError} /> : null}
       {!contextLoading && !contextError && !hasRequiredContext ? (
@@ -353,210 +357,273 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
         />
       ) : null}
 
+      {actionSuccess ? <SuccessState title="Submitted" message={actionSuccess} /> : null}
+
       {supplier && hasRequiredContext && current ? (
         <>
-          <section className="metric-grid" aria-label="Supplier balance summary">
-            <MetricCard label="Owed in total" value={formatTileMoney(supplier.total)} />
-            <MetricCard label="Not yet due" value={formatTileMoney(supplier.current)} />
-            <MetricCard
-              label="Overdue"
-              value={formatTileMoney(supplier.overdue)}
-              tone={exact(supplier.overdue).value.greaterThan(0) ? 'critical' : undefined}
-            />
-          </section>
+          <Card
+            as="section"
+            className="panel content-span supplier-hero"
+            aria-labelledby="supplier-detail-title"
+          >
+            <div className="supplier-hero-top">
+              <div className="supplier-hero-actions">
+                <Button variant="secondary" onClick={() => openSubmitForm('payment')}>
+                  Submit payment
+                </Button>
+                <Button onClick={() => openSubmitForm('document')}>Submit document</Button>
+              </div>
+            </div>
+            <div className="supplier-hero-id">
+              <span className="list-avatar supplier-hero-avatar" aria-hidden="true">
+                {initials(supplier.legalName)}
+              </span>
+              <div>
+                <h2 id="supplier-detail-title">{supplier.legalName}</h2>
+                <p>
+                  {supplier.code}
+                  {contextLabel ? ` · ${contextLabel}` : ''}
+                </p>
+              </div>
+            </div>
+            <dl className="supplier-figures" aria-label="Supplier balance summary">
+              <div>
+                <dt>Owed in total</dt>
+                <dd>{formatTileMoney(supplier.total)}</dd>
+              </div>
+              <div>
+                <dt>Not yet due</dt>
+                <dd>{formatTileMoney(supplier.current)}</dd>
+              </div>
+              <div data-tone={late ? 'warning' : undefined}>
+                <dt>Overdue</dt>
+                <dd>{formatTileMoney(supplier.overdue)}</dd>
+              </div>
+              <div className="list-status">
+                <dt>Status</dt>
+                <dd>
+                  <span className="balance-bar" aria-hidden="true">
+                    <span style={{ width: `${late ? overduePercent(supplier) : 0}%` }} />
+                  </span>
+                  <span data-tone={late ? 'warning' : undefined}>
+                    {late ? `${overduePercent(supplier)}% overdue` : 'Up to date'}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </Card>
 
-          {actionSuccess ? <SuccessState title="Submitted" message={actionSuccess} /> : null}
-          {actionError ? <ErrorState message={actionError} /> : null}
-
-          <Card as="section" className="panel" aria-labelledby="supplier-statement-title">
+          <Card
+            as="section"
+            className="panel content-span"
+            aria-labelledby="supplier-statement-title"
+          >
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Posted movements</p>
                 <h2 id="supplier-statement-title">Statement</h2>
               </div>
+              <Button variant="secondary" onClick={() => void loadDetails(current)}>
+                Refresh
+              </Button>
             </div>
             {statement.length === 0 ? (
               <EmptyState
+                layout="block"
+                icon="receipt"
                 title="No posted movements"
                 message="Submitted documents and payments appear here only after they are posted."
               />
             ) : (
-              <TableScrollRegion label="Supplier statement">
-                <table className="responsive-table">
-                  <caption className="visually-hidden">Posted supplier statement movements</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Effective date</th>
-                      <th scope="col">Movement</th>
-                      <th scope="col">Posted</th>
-                      <th scope="col">Amount</th>
-                      <th scope="col">Running balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {statement.map((line) => (
-                      <tr key={`${line.sourceId}-${line.postedAt}`}>
-                        <td data-label="Effective date">{line.effectiveDate}</td>
-                        <td data-label="Movement">{line.movementType}</td>
-                        <td data-label="Posted">{line.postedAt}</td>
-                        <td data-label="Amount" className="numeric">
-                          {formatTileMoney(line.amount, line.currency)}
-                        </td>
-                        <td data-label="Running balance" className="numeric">
-                          {line.currency} {line.runningBalance}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableScrollRegion>
+              <div className="list-table ledger-table">
+                <div className="list-head" aria-hidden="true">
+                  <span>Effective date</span>
+                  <span>Movement</span>
+                  <span>Posted</span>
+                  <span>Amount</span>
+                  <span>Running balance</span>
+                </div>
+                <ul className="list-rows" aria-label="Posted supplier statement movements">
+                  {statement.map((line) => (
+                    <li key={`${line.sourceId}-${line.postedAt}`} className="list-row ledger-row">
+                      <span className="list-cell" data-label="Effective date">
+                        {line.effectiveDate}
+                      </span>
+                      <span className="list-cell ledger-movement" data-label="Movement">
+                        {movementLabel(line.movementType)}
+                      </span>
+                      <span className="list-cell" data-label="Posted">
+                        {line.postedAt}
+                      </span>
+                      <span className="list-cell list-amount" data-label="Amount">
+                        {formatTileMoney(line.amount, line.currency)}
+                      </span>
+                      <span className="list-cell list-amount" data-label="Running balance">
+                        {formatTileMoney(line.runningBalance, line.currency)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </Card>
 
-          <div className="content-grid content-span">
-            <Card as="section" className="panel" aria-labelledby="submit-document-title">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Supplier documents</p>
-                  <h2 id="submit-document-title">Submit document</h2>
-                </div>
-                <StatusBadge tone="pending">Posting review</StatusBadge>
-              </div>
-              <p>
-                Submit an invoice or credit note. Posting and correction actions remain separate
-                controls.
-              </p>
-              <form className="stack" onSubmit={(event) => void submitDocument(event)}>
-                <Field id="document-type" label="Document type" required>
-                  <select
-                    id="document-type"
-                    value={documentForm.documentType}
-                    onChange={(event) =>
-                      setDocumentForm((form) => ({
-                        ...form,
-                        documentType: event.target.value as DocumentForm['documentType'],
-                      }))
-                    }
-                  >
-                    <option value="INVOICE">Invoice</option>
-                    <option value="CREDIT_NOTE">Credit note</option>
-                  </select>
-                </Field>
-                <Field id="document-reference" label="Reference number" required>
-                  <input
-                    id="document-reference"
-                    value={documentForm.referenceNumber}
-                    maxLength={120}
-                    onChange={(event) =>
-                      setDocumentForm((form) => ({ ...form, referenceNumber: event.target.value }))
-                    }
-                  />
-                </Field>
-                <div className="form-grid">
-                  <Field id="document-date" label="Document date" required>
-                    <input
-                      id="document-date"
-                      type="date"
-                      value={documentForm.documentDate}
-                      onChange={(event) =>
-                        setDocumentForm((form) => ({ ...form, documentDate: event.target.value }))
-                      }
-                    />
-                  </Field>
-                  <Field id="document-due-date" label="Due date" optional>
-                    <input
-                      id="document-due-date"
-                      type="date"
-                      value={documentForm.dueDate}
-                      onChange={(event) =>
-                        setDocumentForm((form) => ({ ...form, dueDate: event.target.value }))
-                      }
-                    />
-                  </Field>
-                </div>
-                <Field
-                  id="document-amount"
-                  label="Amount"
-                  hint="Enter an exact decimal amount; binary floating point is not used."
-                  required
+          <Modal
+            open={openForm === 'document'}
+            onClose={closeSubmitForm}
+            title="Submit document"
+            description="Submit an invoice or credit note for posting review. Posting and correction actions remain separate controls."
+            dismissible={!action}
+            footer={
+              <>
+                <Button variant="secondary" onClick={closeSubmitForm} disabled={Boolean(action)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  form="submit-document-form"
+                  loading={action === 'SubmitSupplierDocument'}
                 >
+                  Submit document
+                </Button>
+              </>
+            }
+          >
+            {actionError ? <ErrorState message={actionError} /> : null}
+            <form
+              id="submit-document-form"
+              className="stack"
+              onSubmit={(event) => void submitDocument(event)}
+            >
+              <Field id="document-type" label="Document type" required>
+                <select
+                  id="document-type"
+                  value={documentForm.documentType}
+                  onChange={(event) =>
+                    setDocumentForm((form) => ({
+                      ...form,
+                      documentType: event.target.value as DocumentForm['documentType'],
+                    }))
+                  }
+                >
+                  <option value="INVOICE">Invoice</option>
+                  <option value="CREDIT_NOTE">Credit note</option>
+                </select>
+              </Field>
+              <Field id="document-reference" label="Reference number" required>
+                <input
+                  id="document-reference"
+                  value={documentForm.referenceNumber}
+                  maxLength={120}
+                  onChange={(event) =>
+                    setDocumentForm((form) => ({ ...form, referenceNumber: event.target.value }))
+                  }
+                />
+              </Field>
+              <div className="form-grid">
+                <Field id="document-date" label="Document date" required>
                   <input
-                    id="document-amount"
-                    inputMode="decimal"
-                    value={documentForm.amount}
-                    onChange={(event) =>
-                      setDocumentForm((form) => ({ ...form, amount: event.target.value }))
-                    }
-                  />
-                </Field>
-                <div className="form-actions">
-                  <Button type="submit" loading={action === 'SubmitSupplierDocument'}>
-                    Submit document
-                  </Button>
-                </div>
-              </form>
-            </Card>
-
-            <Card as="section" className="panel" aria-labelledby="submit-payment-title">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Supplier payments</p>
-                  <h2 id="submit-payment-title">Submit payment</h2>
-                </div>
-                <StatusBadge tone="pending">Posting review</StatusBadge>
-              </div>
-              <p>
-                Record payment evidence for posting. Allocation is available only after payment
-                posting.
-              </p>
-              <form className="stack" onSubmit={(event) => void submitPayment(event)}>
-                <Field id="payment-date" label="Payment date" required>
-                  <input
-                    id="payment-date"
+                    id="document-date"
                     type="date"
-                    value={paymentForm.paymentDate}
+                    value={documentForm.documentDate}
                     onChange={(event) =>
-                      setPaymentForm((form) => ({ ...form, paymentDate: event.target.value }))
+                      setDocumentForm((form) => ({ ...form, documentDate: event.target.value }))
                     }
                   />
                 </Field>
-                <Field id="payment-reference" label="Reference" required>
+                <Field id="document-due-date" label="Due date" optional>
                   <input
-                    id="payment-reference"
-                    value={paymentForm.reference}
-                    maxLength={120}
+                    id="document-due-date"
+                    type="date"
+                    value={documentForm.dueDate}
                     onChange={(event) =>
-                      setPaymentForm((form) => ({ ...form, reference: event.target.value }))
+                      setDocumentForm((form) => ({ ...form, dueDate: event.target.value }))
                     }
                   />
                 </Field>
-                <Field
-                  id="payment-amount"
-                  label="Amount"
-                  hint="Enter an exact decimal amount; payment method metadata is not yet supported by the command contract."
-                  required
-                >
-                  <input
-                    id="payment-amount"
-                    inputMode="decimal"
-                    value={paymentForm.amount}
-                    onChange={(event) =>
-                      setPaymentForm((form) => ({ ...form, amount: event.target.value }))
-                    }
-                  />
-                </Field>
-                <div className="form-actions">
-                  <Button type="submit" loading={action === 'SubmitSupplierPayment'}>
-                    Submit payment
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </div>
+              </div>
+              <Field
+                id="document-amount"
+                label="Amount"
+                hint="Enter an exact decimal amount; binary floating point is not used."
+                required
+              >
+                <input
+                  id="document-amount"
+                  inputMode="decimal"
+                  value={documentForm.amount}
+                  onChange={(event) =>
+                    setDocumentForm((form) => ({ ...form, amount: event.target.value }))
+                  }
+                />
+              </Field>
+            </form>
+          </Modal>
 
-          <p className="field-hint">
-            <Link href={supplierHref}>Refresh</Link>
-          </p>
+          <Modal
+            open={openForm === 'payment'}
+            onClose={closeSubmitForm}
+            title="Submit payment"
+            description="Record payment evidence for posting review. Allocation is available only after payment posting."
+            dismissible={!action}
+            footer={
+              <>
+                <Button variant="secondary" onClick={closeSubmitForm} disabled={Boolean(action)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  form="submit-payment-form"
+                  loading={action === 'SubmitSupplierPayment'}
+                >
+                  Submit payment
+                </Button>
+              </>
+            }
+          >
+            {actionError ? <ErrorState message={actionError} /> : null}
+            <form
+              id="submit-payment-form"
+              className="stack"
+              onSubmit={(event) => void submitPayment(event)}
+            >
+              <Field id="payment-date" label="Payment date" required>
+                <input
+                  id="payment-date"
+                  type="date"
+                  value={paymentForm.paymentDate}
+                  onChange={(event) =>
+                    setPaymentForm((form) => ({ ...form, paymentDate: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field id="payment-reference" label="Reference" required>
+                <input
+                  id="payment-reference"
+                  value={paymentForm.reference}
+                  maxLength={120}
+                  onChange={(event) =>
+                    setPaymentForm((form) => ({ ...form, reference: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field
+                id="payment-amount"
+                label="Amount"
+                hint="Enter an exact decimal amount; payment method metadata is not yet supported by the command contract."
+                required
+              >
+                <input
+                  id="payment-amount"
+                  inputMode="decimal"
+                  value={paymentForm.amount}
+                  onChange={(event) =>
+                    setPaymentForm((form) => ({ ...form, amount: event.target.value }))
+                  }
+                />
+              </Field>
+            </form>
+          </Modal>
         </>
       ) : null}
     </div>

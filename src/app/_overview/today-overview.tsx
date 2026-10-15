@@ -1,5 +1,6 @@
 'use client';
 
+import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
@@ -254,194 +255,199 @@ export function TodayOverview({
   const rangeSummary = productTotals(salesRows);
 
   return (
-    <div className="today today-dashboard">
-      <section
-        className="today-section today-figures-section"
-        aria-labelledby="today-figures-heading"
-      >
-        <h2 id="today-figures-heading">Key figures</h2>
-        <p className="today-figures-note">
-          {stationId ? '' : 'All stations · '}Approved figures for{' '}
-          {daily.status === 'ready' && daily.data.filters?.fromDate
-            ? formatBusinessDate(daily.data.filters.fromDate)
-            : 'today'}
-          . Expected cash and stock variance are not available yet.
-        </p>
-        <dl
-          className="today-figures"
-          // One size for all four cards, from the longest figure shown.
-          style={
-            {
-              '--figure-chars': Math.max(
-                ...figureValues.map((value) => (value === null ? 6 : figureChars(value))),
-              ),
-            } as CSSProperties
-          }
+    <>
+      {stationId ? <NextStepCard tenantId={tenantId} stationId={stationId} /> : null}
+      <div className="today today-dashboard">
+        <section
+          className="today-section today-figures-section"
+          aria-labelledby="today-figures-heading"
         >
-          <Figure
-            label="Sales today"
-            href={reportsHref}
-            icon="dollar"
-            state={figureState}
-            value={figureValues[0] ?? null}
-          />
-          <Figure
-            label="Litres sold"
-            href={reportsHref}
-            icon="drop"
-            state={figureState}
-            value={figureValues[1] ?? null}
-            sub={
-              totals && !stationId
-                ? `${totals.stationCount} ${totals.stationCount === 1 ? 'station' : 'stations'} approved`
-                : null
+          <h2 id="today-figures-heading">Key figures</h2>
+          <p className="today-figures-note">
+            {stationId ? '' : 'All stations · '}Approved figures for{' '}
+            {daily.status === 'ready' && daily.data.filters?.fromDate
+              ? formatBusinessDate(daily.data.filters.fromDate)
+              : 'today'}
+            . Expected cash and stock variance are not available yet.
+          </p>
+          <dl
+            className="today-figures"
+            // One size for all four cards, from the longest figure shown.
+            style={
+              {
+                '--figure-chars': Math.max(
+                  ...figureValues.map((value) => (value === null ? 6 : figureChars(value))),
+                ),
+              } as CSSProperties
             }
-          />
-          <Figure
-            label="Cash variance"
-            href={reportsHref}
-            icon="wallet"
-            state={figureState}
-            value={figureValues[2] ?? null}
-            sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
-            tone={totals ? varianceTone(totals.cashVariance) : undefined}
-          />
-          <Figure
-            label="Account sales"
-            href={customersHref}
-            icon="users"
-            state={figureState}
-            value={figureValues[3] ?? null}
-            sub={totals ? 'Credit and prepaid accounts' : null}
-          />
-        </dl>
-      </section>
+          >
+            <Figure
+              label="Sales today"
+              href={reportsHref}
+              icon="dollar"
+              state={figureState}
+              value={figureValues[0] ?? null}
+            />
+            <Figure
+              label="Litres sold"
+              href={reportsHref}
+              icon="drop"
+              state={figureState}
+              value={figureValues[1] ?? null}
+              sub={
+                totals && !stationId
+                  ? `${totals.stationCount} ${totals.stationCount === 1 ? 'station' : 'stations'} approved`
+                  : null
+              }
+            />
+            <Figure
+              label="Cash variance"
+              href={reportsHref}
+              icon="wallet"
+              state={figureState}
+              value={figureValues[2] ?? null}
+              sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
+              tone={totals ? varianceTone(totals.cashVariance) : undefined}
+            />
+            <Figure
+              label="Account sales"
+              href={customersHref}
+              icon="users"
+              state={figureState}
+              value={figureValues[3] ?? null}
+              sub={totals ? 'Credit and prepaid accounts' : null}
+            />
+          </dl>
+        </section>
 
-      <div className="today-side">
-        <section className="today-section" aria-labelledby="today-ops-heading">
-          <h2 id="today-ops-heading">Daily operations</h2>
-          {!stationId ? (
-            <p className="today-note">Choose a station to see today’s operations.</p>
-          ) : operations.status === 'loading' ? (
-            <Skeleton lines={2} label="Loading daily operations" />
-          ) : operations.status === 'forbidden' ? (
-            <p className="today-note">
-              You don’t have access to daily operations for this station.
-            </p>
-          ) : operations.status === 'error' ? (
+        <div className="today-side">
+          <section className="today-section" aria-labelledby="today-ops-heading">
+            <h2 id="today-ops-heading">Daily operations</h2>
+            {!stationId ? (
+              <p className="today-note">Choose a station to see today’s operations.</p>
+            ) : operations.status === 'loading' ? (
+              <Skeleton lines={2} label="Loading daily operations" />
+            ) : operations.status === 'forbidden' ? (
+              <p className="today-note">
+                You don’t have access to daily operations for this station.
+              </p>
+            ) : operations.status === 'error' ? (
+              <ErrorState
+                title="Daily operations unavailable"
+                message={operations.message}
+                action={
+                  <Button variant="secondary" onClick={retry}>
+                    Try again
+                  </Button>
+                }
+              />
+            ) : (
+              <OperationsRow operations={operations.data} href={dailyHref} />
+            )}
+          </section>
+
+          <section className="today-section" aria-labelledby="today-attention-heading">
+            <h2 id="today-attention-heading">Needs attention</h2>
+            {attentionLoading && attention.length === 0 ? (
+              <Skeleton lines={2} label="Checking for items that need attention" />
+            ) : attention.length > 0 ? (
+              <ul className="today-list">
+                {attention.map((row) => (
+                  <li key={row.id}>
+                    <Link className="today-row" href={row.href}>
+                      <span className="today-row-text">
+                        <span className="today-row-title">{row.title}</span>
+                        <span className="today-row-detail">{row.detail}</span>
+                      </span>
+                      <Icon name="chevron-right" className="today-row-chevron" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="today-note">Nothing needs attention.</p>
+            )}
+            {customers.status === 'forbidden' ? (
+              <p className="today-note">
+                Customer alerts are hidden because you don’t have access.
+              </p>
+            ) : null}
+            {operations.status === 'error' || customers.status === 'error' ? (
+              <p className="today-note">Some items could not be checked.</p>
+            ) : null}
+          </section>
+        </div>
+
+        <section className="today-section today-stats" aria-labelledby="today-stats-heading">
+          <div className="today-stats-head">
+            <h2 id="today-stats-heading">
+              Sales performance <span className="today-stats-sub">Litres</span>
+            </h2>
+            <div className="today-periods" role="group" aria-label="Period">
+              {CHART_RANGES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className="today-period"
+                  aria-pressed={range === option}
+                  data-active={range === option || undefined}
+                  onClick={() => setRange(option)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+          {chart.status === 'error' && chart.key === chartKey ? (
             <ErrorState
-              title="Daily operations unavailable"
-              message={operations.message}
+              title="Sales trend unavailable"
+              message={chart.message}
               action={
-                <Button variant="secondary" onClick={retry}>
+                <Button variant="secondary" onClick={() => setChartAttempt((value) => value + 1)}>
                   Try again
                 </Button>
               }
             />
+          ) : chart.status === 'forbidden' && chart.key === chartKey ? (
+            <p className="today-note">You don’t have access to sales reports.</p>
+          ) : !chartReady ? (
+            <Skeleton lines={4} label="Loading sales trend" />
           ) : (
-            <OperationsRow operations={operations.data} href={dailyHref} />
-          )}
-        </section>
-
-        <section className="today-section" aria-labelledby="today-attention-heading">
-          <h2 id="today-attention-heading">Needs attention</h2>
-          {attentionLoading && attention.length === 0 ? (
-            <Skeleton lines={2} label="Checking for items that need attention" />
-          ) : attention.length > 0 ? (
-            <ul className="today-list">
-              {attention.map((row) => (
-                <li key={row.id}>
-                  <Link className="today-row" href={row.href}>
-                    <span className="today-row-text">
-                      <span className="today-row-title">{row.title}</span>
-                      <span className="today-row-detail">{row.detail}</span>
+            <>
+              <PerformanceChart
+                series={series}
+                xLabels={axisLabels(points.map((point) => point.label))}
+                formatValue={(value) => formatTileLitres(String(Math.round(value)))}
+                label={`Litres sold, ${range}, approved days only`}
+                emptyMessage="No approved sales in this period yet."
+                gapMessage="No approved report"
+              />
+              {rangeSummary.length > 0 ? (
+                <p className="today-stats-summary">
+                  {range} ·{' '}
+                  {formatTileLitres(
+                    points.reduce(
+                      (sum, point) => (point.litres === null ? sum : addExact(sum, point.litres)),
+                      '0',
+                    ),
+                  )}
+                  {rangeSummary.map((product) => (
+                    <span key={product.name}>
+                      {' · '}
+                      {product.name} {formatTileLitres(product.litres)}
                     </span>
-                    <Icon name="chevron-right" className="today-row-chevron" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="today-note">Nothing needs attention.</p>
+                  ))}
+                </p>
+              ) : null}
+              <ChartTableView points={points} range={range} />
+            </>
           )}
-          {customers.status === 'forbidden' ? (
-            <p className="today-note">Customer alerts are hidden because you don’t have access.</p>
-          ) : null}
-          {operations.status === 'error' || customers.status === 'error' ? (
-            <p className="today-note">Some items could not be checked.</p>
-          ) : null}
+          <p className="today-note">
+            <Link href={reportsHref}>Open reports</Link>
+          </p>
         </section>
       </div>
-
-      <section className="today-section today-stats" aria-labelledby="today-stats-heading">
-        <div className="today-stats-head">
-          <h2 id="today-stats-heading">
-            Sales performance <span className="today-stats-sub">Litres</span>
-          </h2>
-          <div className="today-periods" role="group" aria-label="Period">
-            {CHART_RANGES.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className="today-period"
-                aria-pressed={range === option}
-                data-active={range === option || undefined}
-                onClick={() => setRange(option)}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        </div>
-        {chart.status === 'error' && chart.key === chartKey ? (
-          <ErrorState
-            title="Sales trend unavailable"
-            message={chart.message}
-            action={
-              <Button variant="secondary" onClick={() => setChartAttempt((value) => value + 1)}>
-                Try again
-              </Button>
-            }
-          />
-        ) : chart.status === 'forbidden' && chart.key === chartKey ? (
-          <p className="today-note">You don’t have access to sales reports.</p>
-        ) : !chartReady ? (
-          <Skeleton lines={4} label="Loading sales trend" />
-        ) : (
-          <>
-            <PerformanceChart
-              series={series}
-              xLabels={axisLabels(points.map((point) => point.label))}
-              formatValue={(value) => formatTileLitres(String(Math.round(value)))}
-              label={`Litres sold, ${range}, approved days only`}
-              emptyMessage="No approved sales in this period yet."
-              gapMessage="No approved report"
-            />
-            {rangeSummary.length > 0 ? (
-              <p className="today-stats-summary">
-                {range} ·{' '}
-                {formatTileLitres(
-                  points.reduce(
-                    (sum, point) => (point.litres === null ? sum : addExact(sum, point.litres)),
-                    '0',
-                  ),
-                )}
-                {rangeSummary.map((product) => (
-                  <span key={product.name}>
-                    {' · '}
-                    {product.name} {formatTileLitres(product.litres)}
-                  </span>
-                ))}
-              </p>
-            ) : null}
-            <ChartTableView points={points} range={range} />
-          </>
-        )}
-        <p className="today-note">
-          <Link href={reportsHref}>Open reports</Link>
-        </p>
-      </section>
-    </div>
+    </>
   );
 }
 
