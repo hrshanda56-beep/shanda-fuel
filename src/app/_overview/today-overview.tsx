@@ -101,7 +101,8 @@ export function TodayOverview({
   tenantId: urlTenantId,
   stationId: urlStationId,
   initialContext,
-}: Scope & { initialContext?: Scope }) {
+  showQuickActions = true,
+}: Scope & { initialContext?: Scope; showQuickActions?: boolean }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
   const tenantId = urlTenantId ?? resolvedContext?.tenantId;
@@ -256,7 +257,7 @@ export function TodayOverview({
 
   return (
     <>
-      {stationId ? <NextStepCard tenantId={tenantId} stationId={stationId} /> : null}
+      {showQuickActions && stationId ? <NextStepCard tenantId={tenantId} stationId={stationId} /> : null}
       <div className="today today-dashboard">
         <section
           className="today-section today-figures-section"

@@ -18,7 +18,7 @@ type Props = Readonly<{
 }>;
 
 /**
- * "Your next step": one clear thing to do, with a button that does it. It reads the
+ * "Quick actions": one clear thing to do, with a button that does it. It reads the
  * same overview as the Daily Operations page and sends the same named commands.
  */
 export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
@@ -117,9 +117,8 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
       aria-labelledby="next-step-title"
       data-done={step.stage === null || undefined}
     >
-      <p className="eyebrow">Your next step</p>
+      <p className="eyebrow">Quick actions</p>
       <h2 id="next-step-title">{step.title}</h2>
-      <p className="next-step-detail">{step.detail}</p>
       {error ? (
         <p className="field-error" role="alert">
           {error}
