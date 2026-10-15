@@ -19,6 +19,7 @@ import { AppError } from '../../../../platform/errors';
 import { createLogger } from '../../../../platform/logging';
 import { reverificationErrorResponse } from '@clerk/nextjs/server';
 import {
+  CLERK_APPROVE_RECONCILIATION_ACTION,
   CLERK_DEACTIVATE_STAFF_ACTION,
   CLERK_STEP_UP_ACTION,
   clerkStepUpCookieClearHeaders,
@@ -53,7 +54,13 @@ const requestSchema = z.object({
     .string()
     .regex(/^\d{6}$/)
     .optional(),
-  action: z.enum([CLERK_STEP_UP_ACTION, CLERK_DEACTIVATE_STAFF_ACTION]).optional(),
+  action: z
+    .enum([
+      CLERK_STEP_UP_ACTION,
+      CLERK_DEACTIVATE_STAFF_ACTION,
+      CLERK_APPROVE_RECONCILIATION_ACTION,
+    ])
+    .optional(),
 });
 
 function jsonResponse(body: unknown, status: number): Response {

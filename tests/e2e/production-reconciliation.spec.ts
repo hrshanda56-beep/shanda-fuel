@@ -1,16 +1,19 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { makeSignature } from 'better-auth/crypto';
+import { hashPassword, makeSignature } from 'better-auth/crypto';
+import { totpCode } from '../integration/synthetic-totp';
 import postgres, { type Sql } from 'postgres';
 import { ExactDecimal } from '../../src/platform/domain/primitives';
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_FIXTURE_URL ?? process.env.DATABASE_URL;
 
 const ids = {
   tenant: 'a5e00000-0000-4000-8000-000000000001',
   legal: 'a5e00000-0000-4000-8000-000000000011',
   station: 'a5e00000-0000-4000-8000-000000000021',
+  attendantActor: 'a5e00000-0000-4000-8000-000000000033',
+  attendantMembership: 'a5e00000-0000-4000-8000-000000000043',
   supervisorActor: 'a5e00000-0000-4000-8000-000000000031',
   supervisorMembership: 'a5e00000-0000-4000-8000-000000000041',
   supervisorSession: 'a5e00000-0000-4000-8000-000000000051',
@@ -39,6 +42,8 @@ const ids = {
 
 const supervisorToken = 'a5e-supervisor-session-token';
 const managerToken = 'a5e-manager-session-token';
+let managerMfaSecret: string | undefined;
+let managerCookieValue: string | undefined;
 
 test.describe('production reconciliation persistence', () => {
   test.skip(!databaseUrl, 'production persistence E2E requires CI PostgreSQL');
@@ -48,17 +53,20 @@ test.describe('production reconciliation persistence', () => {
 
   test.beforeAll(async () => {
     client = postgres(databaseUrl!, { max: 1, prepare: false });
+    const ownerPassword = await hashPassword('synthetic-e2e-owner-password');
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A5 E2E Tenant', 'a5-e2e-tenant')
         on conflict (id) do nothing;
       insert into auth."user" (id, name, email) values
         ('${ids.supervisorActor}', 'A5 E2E Supervisor', 'a5e-supervisor@example.test'),
-        ('${ids.managerActor}', 'A5 E2E Manager', 'a5e-manager@example.test')
+        ('${ids.managerActor}', 'A5 E2E Owner', 'a5e-manager@example.test'),
+        ('${ids.attendantActor}', 'A5 E2E Attendant', 'a5e-attendant@example.test')
         on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.supervisorMembership}', '${ids.tenant}', '${ids.supervisorActor}', 'ACTIVE'),
-        ('${ids.managerMembership}', '${ids.tenant}', '${ids.managerActor}', 'ACTIVE')
+        ('${ids.managerMembership}', '${ids.tenant}', '${ids.managerActor}', 'ACTIVE'),
+        ('${ids.attendantMembership}', '${ids.tenant}', '${ids.attendantActor}', 'ACTIVE')
         on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
         ('${ids.legal}', '${ids.tenant}', 'A5 E2E Legal') on conflict (id) do nothing;
@@ -69,8 +77,8 @@ test.describe('production reconciliation persistence', () => {
         (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
       values
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
-        ('${ids.tenant}', '${ids.supervisorMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}'),
-        ('${ids.tenant}', '${ids.managerMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}')
+        ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}'),
+        ('${ids.tenant}', '${ids.managerMembership}', 'OWNER', 'TENANT', null, null)
         on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name)
         values ('${ids.product}', '${ids.tenant}', 'A5E2E-DIESEL', 'A5 E2E Diesel') on conflict (id) do nothing;
@@ -166,6 +174,9 @@ test.describe('production reconciliation persistence', () => {
           step_up_expires_at=excluded.step_up_expires_at,
           step_up_tenant_id=excluded.step_up_tenant_id;
     `);
+    await client`insert into auth.account(account_id,provider_id,user_id,password)
+      values (${ids.managerActor},'credential',${ids.managerActor},${ownerPassword})
+      on conflict(provider_id,account_id) do update set password=excluded.password`;
   });
 
   test.afterAll(async () => {
@@ -183,11 +194,47 @@ test.describe('production reconciliation persistence', () => {
     await context.addCookies([
       {
         name: 'shanda-fuel.session_token',
-        value: await signedCookie(token),
+        value:
+          token === managerToken && managerCookieValue
+            ? managerCookieValue
+            : await signedCookie(token),
         domain: '127.0.0.1',
         path: '/',
       },
     ]);
+    if (token === managerToken && !managerMfaSecret) {
+      const setup = await context.request.post('/api/auth/mfa/setup', {
+        data: { password: 'synthetic-e2e-owner-password' },
+      });
+      expect(setup.ok(), await setup.text()).toBe(true);
+      const enrollment = (await setup.json()) as { totpURI: string };
+      managerMfaSecret = new URL(enrollment.totpURI).searchParams.get('secret')!;
+      const verified = await context.request.post('/api/auth/mfa/setup/verify', {
+        data: { code: totpCode(managerMfaSecret) },
+      });
+      expect(verified.ok(), await verified.text()).toBe(true);
+      managerCookieValue = (await context.cookies()).find(
+        (cookie) => cookie.name === 'shanda-fuel.session_token',
+      )?.value;
+    }
+  }
+
+  async function verifyApproval(page: import('@playwright/test').Page) {
+    const dialog = page.getByRole('dialog', { name: 'Verify identity for approval' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel('Current password').fill('incorrect-password');
+    await dialog.getByLabel('Authenticator code').fill(totpCode(managerMfaSecret!));
+    const failed = page.waitForResponse((response) => response.url().includes('/api/auth/step-up'));
+    await dialog.getByRole('button', { name: 'Verify identity', exact: true }).click();
+    expect((await failed).status()).toBe(403);
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    await dialog.getByLabel('Current password').fill('synthetic-e2e-owner-password');
+    await dialog.getByLabel('Authenticator code').fill(totpCode(managerMfaSecret!));
+    await dialog.getByRole('button', { name: 'Verify identity', exact: true }).click();
   }
 
   async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {
@@ -256,7 +303,7 @@ test.describe('production reconciliation persistence', () => {
         meterInstallationId: ids.installation,
         businessDayId: ids.day,
         shiftId,
-        responsibleAttendantId: ids.supervisorMembership,
+        responsibleAttendantId: ids.attendantMembership,
         reason: 'SHIFT_OPEN',
         readingStatus: 'AVAILABLE',
         readingValue: openingReading,
@@ -277,7 +324,7 @@ test.describe('production reconciliation persistence', () => {
         meterInstallationId: ids.installation,
         businessDayId: ids.day,
         shiftId,
-        responsibleAttendantId: ids.supervisorMembership,
+        responsibleAttendantId: ids.attendantMembership,
         reason: 'SHIFT_CLOSE',
         readingStatus: 'AVAILABLE',
         readingValue: closingReading,
@@ -321,7 +368,7 @@ test.describe('production reconciliation persistence', () => {
         openingBoundaryId,
         closingBoundaryId,
         productId: ids.product,
-        responsibleAttendantId: ids.supervisorMembership,
+        responsibleAttendantId: ids.attendantMembership,
         startAt: openingBoundary.effective_at.toISOString(),
         endAt: closingBoundary.effective_at.toISOString(),
         expectedVersion: 0,
@@ -535,6 +582,7 @@ test.describe('production reconciliation persistence', () => {
     );
     page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
+    await verifyApproval(page);
     const approveResponse = await approveResponsePromise;
     expect(approveResponse.ok(), await approveResponse.text()).toBe(true);
     await expect
@@ -625,6 +673,24 @@ test.describe('production reconciliation persistence', () => {
       `a11-${randomUUID()}`,
       shiftInterval,
     );
+    const overviewQuery = new URLSearchParams({
+      tenantId: ids.tenant,
+      stationId: ids.station,
+      businessDayId: ids.day,
+    });
+    await gotoAndWaitForHydration(page, `/operations/daily?${overviewQuery}`);
+    const closeRow = page.locator(`article.operations-shift-row[data-shift-id="${activeShiftId}"]`);
+    page.once('dialog', (dialog) => void dialog.accept());
+    const closedResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/forecourt/commands') &&
+        response.request().postData()?.includes('CloseMeters') === true,
+    );
+    await closeRow.getByRole('button', { name: 'Close meters', exact: true }).click();
+    const closed = await closedResponse;
+    expect(closed.ok(), await closed.text()).toBe(true);
+    const shiftRows = await client`select state from app.shifts where id=${activeShiftId}`;
+    expect(shiftRows[0]?.state).toBe('METER_CLOSED');
     await gotoAndWaitForHydration(page, `/operations/daily?${query.toString()}`);
     const createResponsePromise = page.waitForResponse(
       (response) =>
@@ -675,6 +741,7 @@ test.describe('production reconciliation persistence', () => {
       reconciliationId,
     };
 
+    await page.getByRole('checkbox', { name: /A5 E2E Attendant/ }).check();
     await page.locator('input[id^="opening-"]').first().fill(sealedEvidence.openingReading);
     await page.locator('input[id^="closing-"]').first().fill(sealedEvidence.closingReading);
     await page.getByRole('button', { name: 'Add payment evidence' }).click();
@@ -763,8 +830,11 @@ test.describe('production reconciliation persistence', () => {
     );
     page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
+    await verifyApproval(page);
     await expect(page.getByText('Approved', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Canonical sale evidence has been posted/)).toBeVisible();
+    await expect(
+      page.getByText(/^Approved: Canonical sale evidence has been posted/),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save persisted draft' })).toBeDisabled();
     const accessibility = await new AxeBuilder({ page })
       .include('[aria-label="Daily station operations workspace"]')

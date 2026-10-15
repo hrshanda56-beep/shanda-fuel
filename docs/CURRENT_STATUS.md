@@ -1,5 +1,30 @@
 # Shanda Fuel — Current Status
 
+## Operational workflow correctness candidate — 2026-10-15
+
+Current human scope is real operational completion toward production; synthetic
+data is used only for isolated validation, not as a separate demo product.
+The isolated branch is `codex/operational-workflow-fixes`, based on the fetched
+`origin/main` SHA `99bbe34cd9e978288f4ffb55fcad9f144e127922`.
+
+The candidate fixes Supervisor attendant visibility/eligibility, missing
+identifier-only row-lock privileges, read-only projection/immutable revenue
+lock failures, and provider-backed MFA verification on both reconciliation
+review routes. Migration 0030 is catalog-only, retains RLS/FORCE RLS and all
+history guards, and grants no table-wide UPDATE/DELETE. Clerk approval uses its
+own strict-MFA action; Better Auth uses actual password/TOTP enrollment and
+verification, including normal session rotation.
+
+Independent code review found no material security/concurrency defects. Fresh
+PostgreSQL 18 integration and real-runtime browser checks have passed; final
+candidate evidence and remaining hosted Clerk/release gates are recorded in
+`docs/reports/OPERATIONAL_WORKFLOW_VALIDATION_2026-10-15.md`. Provisioning opt-in
+skips remain skips. This is not production release approval: no production or
+staging data operation, push, merge, or deployment was performed. Claude's
+worktree remains untouched; the shared API/UI contract is in
+`docs/contracts/RECONCILIATION_APPROVAL_UI_HANDOFF.md`.
+
+
 ## 1. Snapshot
 
 This file is a conservative status snapshot based on the latest project conversation. It is intentionally stricter than a progress report: discussion alone does not count as implementation, and implementation alone does not count as release completion.

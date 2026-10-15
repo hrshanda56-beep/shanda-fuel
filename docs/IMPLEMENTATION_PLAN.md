@@ -875,6 +875,15 @@ required security, reconciliation, exception, or authorization behavior.
 
 ## M4-T03 — Expand Daily Operations workflow where owner semantics are confirmed — DECOMPOSED / READY FOR SCOPED IMPLEMENTATION REVIEW
 
+**2026-10-15 correctness candidate:** The assigned operational blocker slice
+repairs existing attendant selection, runtime row-lock privileges, and secure
+reconciliation MFA UI on `codex/operational-workflow-fixes`. See DEC-042 and
+`docs/reports/OPERATIONAL_WORKFLOW_VALIDATION_2026-10-15.md`. This is production
+implementation validated with isolated synthetic data; no Phase 2 feature,
+production mutation, merge, or deployment is included. Hosted Clerk verification
+and release/integration approval remain explicit gates.
+
+
 **Objective**
 
 Move beyond Phase 0 composition into approved workflow depth.

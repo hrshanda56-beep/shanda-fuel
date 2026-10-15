@@ -130,7 +130,7 @@ async function loadDailyOperationsContext(
 
   const [attendants, readings] = await Promise.all([
     transaction.execute<{ id: string; name: string; email: string }>(sql`
-      select m.id, u.name, u.email
+      select distinct m.id, u.name, u.email
       from app.memberships m
       join auth."user" u on u.id = m.identity_id
       join app.membership_role_assignments a
@@ -140,7 +140,7 @@ async function loadDailyOperationsContext(
         and a.scope_type = 'STATION'
         and a.station_id = ${input.stationId}
         and a.role_code = 'ATTENDANT'
-        and (a.expires_at is null or a.expires_at > ${shiftStart}::timestamptz)
+        and (a.expires_at is null or a.expires_at > now())
       order by u.name, m.id
     `),
     transaction.execute<DailyOperationsContext['availableReadings'][number]>(sql`

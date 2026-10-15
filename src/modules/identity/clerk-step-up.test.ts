@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLERK_APPROVE_RECONCILIATION_ACTION,
   CLERK_DEACTIVATE_STAFF_ACTION,
   CLERK_STEP_UP_ACTION,
   type ClerkReverificationLevel,
@@ -193,6 +194,20 @@ describe('Clerk privileged step-up policy', () => {
         now,
       }),
     ).rejects.toMatchObject({ level: 'strict' });
+  });
+
+  it('requires strict MFA for reconciliation approval even for an unenrolled tenant Owner', async () => {
+    await expect(
+      establishStepUp({
+        request: request(),
+        context: context(),
+        action: CLERK_APPROVE_RECONCILIATION_ACTION,
+        password: '',
+        totpCode: '',
+        now,
+      }),
+    ).rejects.toMatchObject({ level: 'strict_mfa' });
+    expect(mocks.appendSecurityEvent).not.toHaveBeenCalled();
   });
 
   it('requires strict MFA for a Clerk user with MFA enrolled', async () => {

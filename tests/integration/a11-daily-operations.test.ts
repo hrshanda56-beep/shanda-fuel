@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { closeDatabase } from '../../src/platform/db/client';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
 import { makeSignature } from 'better-auth/crypto';
 import { GET as dailyOperationsGet } from '../../src/app/api/forecourt/operations/daily/route';
@@ -99,6 +100,15 @@ async function signedOverviewRequest(
     },
   });
 }
+
+beforeEach(() => {
+  if (process.env.TEST_RUNTIME_DATABASE_URL)
+    process.env.DATABASE_URL = process.env.TEST_RUNTIME_DATABASE_URL;
+});
+afterAll(async () => {
+  await closeDatabase();
+  process.env.DATABASE_URL = databaseUrl;
+});
 
 describe('A11 daily operations composition read', () => {
   beforeAll(async () => {

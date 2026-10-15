@@ -249,7 +249,7 @@ async function assertAttendantEligibility(
       AND assignment.station_id = ${stationId}
       AND assignment.role_code = 'ATTENDANT'
       AND (assignment.expires_at IS NULL OR assignment.expires_at > now())
-    FOR SHARE
+    FOR SHARE OF assignment
   `);
   if (rows.length === 0) {
     throw new AppError('FORBIDDEN', 'The responsible attendant is not eligible for this station');

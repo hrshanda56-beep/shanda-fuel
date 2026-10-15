@@ -1,7 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { closeDatabase } from '../../src/platform/db/client';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
+import { hashPassword, makeSignature } from 'better-auth/crypto';
+import { totpCode } from './synthetic-totp';
+import { POST as mfaSetupPost } from '../../src/app/api/auth/mfa/setup/route';
+import { POST as mfaVerifyPost } from '../../src/app/api/auth/mfa/setup/verify/route';
+import { POST as stepUpPost } from '../../src/app/api/auth/step-up/route';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
@@ -49,6 +54,7 @@ const ids = {
 };
 
 let client: Sql;
+let managerSessionCookie: string | undefined;
 
 async function postCommand(
   input: Record<string, unknown>,
@@ -60,7 +66,10 @@ async function postCommand(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        cookie:
+          token === 'a5-manager-session-token' && managerSessionCookie
+            ? managerSessionCookie
+            : `shanda-fuel.session_token=${signedToken}`,
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -79,7 +88,10 @@ async function postInventoryCommand(
     new Request('http://127.0.0.1:3000/api/inventory/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        cookie:
+          token === 'a5-manager-session-token' && managerSessionCookie
+            ? managerSessionCookie
+            : `shanda-fuel.session_token=${signedToken}`,
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -362,6 +374,15 @@ async function createPopulatedProductionReconciliation(
   };
 }
 
+beforeEach(() => {
+  if (process.env.TEST_RUNTIME_DATABASE_URL)
+    process.env.DATABASE_URL = process.env.TEST_RUNTIME_DATABASE_URL;
+});
+afterAll(async () => {
+  await closeDatabase();
+  process.env.DATABASE_URL = databaseUrl;
+});
+
 describe('A5 production daily reconciliation persistence and approval', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
@@ -393,7 +414,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
       values
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
-        ('${ids.tenant}', '${ids.managerMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
+        ('${ids.tenant}', '${ids.managerMembership}', 'OWNER', 'TENANT', null, null),
         ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
         on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name)
@@ -486,11 +507,61 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
     await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
-    await seedActiveStepUp(client, ids.managerSession, ids.tenant);
+    const passwordHash = await hashPassword('synthetic-owner-demo-password');
+    await client`insert into auth.account(account_id,provider_id,user_id,password)
+      values (${ids.managerActor},'credential',${ids.managerActor},${passwordHash})
+      on conflict(provider_id,account_id) do update set password=excluded.password`;
   });
 
   afterAll(async () => {
     await client?.end();
+  });
+
+  it('establishes Owner approval assurance through real password and enrolled TOTP', async () => {
+    const token = 'a5-manager-session-token';
+    let cookie = `shanda-fuel.session_token=${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+    const authRequest = (path: string, body: unknown) =>
+      new Request(`http://127.0.0.1:3000${path}`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const setup = await mfaSetupPost(
+      authRequest('/api/auth/mfa/setup', { password: 'synthetic-owner-demo-password' }),
+    );
+    expect(setup.status).toBe(200);
+    const enrollment = (await setup.json()) as { totpURI: string };
+    const secret = new URL(enrollment.totpURI).searchParams.get('secret');
+    expect(secret).toBeTruthy();
+    const verified = await mfaVerifyPost(
+      authRequest('/api/auth/mfa/setup/verify', { code: totpCode(secret!) }),
+    );
+    expect(verified.status).toBe(200);
+    const rotatedCookie = verified.headers
+      .get('set-cookie')
+      ?.match(/shanda-fuel\.session_token=([^;]+)/);
+    if (rotatedCookie) cookie = `shanda-fuel.session_token=${rotatedCookie[1]}`;
+    managerSessionCookie = cookie;
+    const before = await stepUpPost(
+      authRequest('/api/auth/step-up', {
+        tenantId: ids.tenant,
+        password: 'incorrect',
+        totpCode: totpCode(secret!),
+      }),
+    );
+    expect(before.status).toBe(403);
+    const established = await stepUpPost(
+      authRequest('/api/auth/step-up', {
+        tenantId: ids.tenant,
+        password: 'synthetic-owner-demo-password',
+        totpCode: totpCode(secret!),
+      }),
+    );
+    expect(established.status).toBe(200);
+    expect(await established.json()).toMatchObject({ status: 'active', stepUpLevel: 1 });
+    const persisted =
+      await client`select step_up_tenant_id, step_up_level from auth.session where user_id=${ids.managerActor} and step_up_level=1`;
+    expect(persisted[0]).toEqual({ step_up_tenant_id: ids.tenant, step_up_level: 1 });
   });
 
   it('creates, reloads, submits, concurrently approves, retries, and chronologically posts A4 sales', async () => {
@@ -2622,5 +2693,21 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         and source_type='RECONCILIATION_SALE'
     `);
     expect(legacyMovement[0]?.count).toBe('1');
+  });
+  it('keeps populated sale cost attributions immutable despite the identifier lock grant', async () => {
+    const rows =
+      await client`select id from app.inventory_sale_cost_attributions where tenant_id=${ids.tenant} and station_id=${ids.station} limit 1`;
+    expect(rows).toHaveLength(1);
+    for (const expression of ['id', 'gen_random_uuid()']) {
+      await expect(
+        client.begin(async (tx) => {
+          await tx`set local role app_runtime`;
+          await tx`select set_config('app.tenant_id',${ids.tenant},true),set_config('app.station_id',${ids.station},true),set_config('app.actor_id',${ids.managerActor},true),set_config('app.membership_id',${ids.managerMembership},true)`;
+          await tx.unsafe(
+            `update app.inventory_sale_cost_attributions set id=${expression} where id='${rows[0]!.id}'`,
+          );
+        }),
+      ).rejects.toThrow('inventory sale cost attributions are immutable');
+    }
   });
 });

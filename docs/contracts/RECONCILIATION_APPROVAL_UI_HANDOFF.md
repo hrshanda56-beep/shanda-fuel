@@ -1,7 +1,7 @@
-# Owner demo approval UI handoff — Claude
+# Operational reconciliation approval UI handoff — Claude
 
 Base: `99bbe34cd9e978288f4ffb55fcad9f144e127922`.
-Backend candidate: `codex/owner-demo-backend`. Synthetic local environments only.
+Backend candidate: `codex/operational-workflow-fixes`. Production implementation; validation uses isolated synthetic data only.
 No production or staging operation is authorized. Preserve all unrelated worktrees.
 
 ## Approval contract
@@ -59,3 +59,14 @@ its isolated candidate and rerun the combined real-runtime PostgreSQL/browser
 workflow. Do not edit the backend worktree. Local Better Auth E2E can verify real
 password/TOTP enrollment and step-up; Clerk hosted-provider UI verification requires
 an authorized disposable Clerk test environment and is reported separately.
+
+
+## Implemented integration candidate
+
+The backend candidate now includes `reconciliation-approval-button.tsx`, wired
+into both the Operations and station reconciliation review routes. It provides
+Better Auth enrollment/password/TOTP and the strict Clerk approval action.
+Cancelled or failed verification cannot post approval; the existing final
+confirmation and server version checks remain. A separately delivered Claude UI
+commit still needs an explicit diff review/cherry-pick and combined validation;
+no Claude worktree or uncommitted files were changed by this candidate.

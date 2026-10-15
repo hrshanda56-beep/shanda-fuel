@@ -203,6 +203,34 @@ The project distinguishes infrastructure principals from product users. Importan
 - `first_user_provisioner` — tightly constrained bootstrap principal used only for first-user provisioning.
 - `job_runtime` — defined in repository bootstrap material as a background-worker role, but its current production existence must not be assumed without catalog evidence.
 
+### 6.2.1 Operational attendant reads and authoritative row locks
+
+The operational reconciliation read and attendant-eligibility checks use the
+validated tenant/station context and existing scoped permissions. Migration 0030
+adds a SELECT-only membership policy for active, unexpired station attendants,
+visible only to a current active actor with scoped `reconciliation.view` or
+`meter.boundary.capture`. It does not grant tenant-wide Supervisor staff
+management or change self/Owner/Admin policies. Membership status is checked at
+request/transaction read time; the role-assignment row remains share-locked by
+the eligibility check.
+
+PostgreSQL `FOR UPDATE`/`FOR SHARE` requires UPDATE on at least one column.
+Migration 0030 grants only `UPDATE(id)` on meter segments, inventory movements,
+inventory cost events, and sale cost attributions. Existing immutable-row
+triggers reject changed IDs, no-op updates, and conflict updates. State/version,
+quantity, price, and monetary fields remain ungranted; table-wide UPDATE/DELETE,
+ownership, RLS/FORCE RLS, and named sealing capabilities are unchanged. Inventory
+cost projections remain read-only to runtime and are written through the
+existing definer capability under a tank lock. Tenant RLS and application
+station authorization/predicates continue to form the established boundary.
+
+Reconciliation approval has its own Clerk `APPROVE_RECONCILIATION` assurance
+action, requiring `strict_mfa` even for tenant Owners. Existing lock/deactivation
+assertions cannot satisfy it. The approval UI uses the existing password/TOTP
+or Clerk reverification endpoints; server permission, session, tenant, action,
+expiry, expected-version, idempotency, and posting checks remain authoritative.
+Identity verification does not itself approve or optimistically change state.
+
 ### 6.3 First-user provisioning architecture
 
 **CONFIRMED:** First-user production access uses a dedicated, security-reviewed bootstrap system introduced by migration 0021.

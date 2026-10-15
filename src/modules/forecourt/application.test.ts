@@ -310,6 +310,55 @@ describe('A3 authoritative command seam', () => {
     ).rejects.toThrow(/not authorized|Strong authentication/);
   });
 
+  it('binds Clerk reconciliation approval to its own tenant and action', async () => {
+    const now = Date.now();
+    const assurance: Partial<SessionRecord> = {
+      strongAuthenticationMethod: 'clerk-reverification',
+      strongAuthenticationVerified: true,
+      strongAuthenticatedAt: new Date(now - 1000),
+      strongAuthenticationExpiresAt: new Date(now + 60000),
+      stepUpExpiresAt: new Date(now + 60000),
+      stepUpLevel: 1,
+      stepUpAction: 'APPROVE_RECONCILIATION',
+    };
+    for (const commandType of [
+      'ApproveReconciliation',
+      'ApproveProductionReconciliation',
+    ] as const) {
+      const command = {
+        commandType,
+        idempotencyKey: 'clerk-approval-' + commandType,
+        requestHash: 'clerk-hash',
+        subjectType: 'Reconciliation',
+        subjectId: ids.station,
+        expectedVersion: 0,
+        ports: ports([]),
+        execute: async () => ({ result: 'approved' as const }),
+      };
+      await expect(
+        executeForecourtCommand({
+          ...command,
+          context: context('FINANCE', ids.station, {
+            ...assurance,
+            stepUpAction: 'LOCK_BUSINESS_DAY',
+          }),
+        }),
+      ).rejects.toThrow(/step-up/);
+      await expect(
+        executeForecourtCommand({
+          ...command,
+          context: context('FINANCE', ids.station, { ...assurance, stepUpTenantId: ids.actor }),
+        }),
+      ).rejects.toThrow('The actor is not authorized for this action or scope');
+      await expect(
+        executeForecourtCommand({
+          ...command,
+          context: context('FINANCE', ids.station, assurance),
+        }),
+      ).resolves.toBe('approved');
+    }
+  });
+
   it('requires and invokes the transaction-bound optimistic version check', async () => {
     const calls: string[] = [];
     await expect(

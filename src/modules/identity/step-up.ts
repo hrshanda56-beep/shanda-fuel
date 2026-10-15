@@ -13,6 +13,7 @@ import {
   resolveClerkSession,
 } from '../../platform/auth/provider';
 import {
+  CLERK_APPROVE_RECONCILIATION_ACTION,
   CLERK_DEACTIVATE_STAFF_ACTION,
   CLERK_STEP_UP_ACTION,
   type ClerkReverificationLevel,
@@ -39,6 +40,9 @@ export type StepUpResult = {
 };
 
 export const CLERK_STEP_UP_POLICY = {
+  [CLERK_APPROVE_RECONCILIATION_ACTION]: {
+    allowNoMfaOwner: false,
+  },
   [CLERK_STEP_UP_ACTION]: {
     allowNoMfaOwner: true,
   },

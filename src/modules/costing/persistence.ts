@@ -126,6 +126,8 @@ async function lockTankForStream(
   }
 }
 
+// Projection reads/writes are serialized by the tank lock held by callers.
+// The runtime reads this derived table and writes only through its capability.
 async function loadStreamInput(
   transaction: CostingTransaction,
   key: InventoryStreamKey,
@@ -140,8 +142,7 @@ async function loadStreamInput(
         eq(inventoryCostStreamState.tankId, key.tankId),
         eq(inventoryCostStreamState.productId, key.productId),
       ),
-    )
-    .for('update');
+    );
   const [movementRows, eventRows] = await Promise.all([
     transaction
       .select({
@@ -258,6 +259,7 @@ export async function persistHistoricalLateSourceUnvaluedProjectionInTransaction
   transaction: CostingTransaction,
   input: InventoryStreamKey & { sourceType: string; sourceId: string },
 ): Promise<boolean> {
+  await lockTankForStream(transaction, input);
   const stream = await loadStreamInput(transaction, input);
   const sourceMovement = stream.movements.find(
     (movement) => movement.sourceType === input.sourceType && movement.sourceId === input.sourceId,
@@ -510,8 +512,7 @@ async function loadLateCostSourceForUpdate(
           eq(fuelDeliveryAllocations.productId, input.productId),
           eq(fuelDeliveryAllocations.id, input.sourceId),
         ),
-      )
-      .for('update');
+      );
     const allocation = allocations[0];
     if (!allocation || allocation.deliveryId === null) {
       throw new AppError('NOT_FOUND', 'The delivery allocation was not found');
@@ -1005,8 +1006,7 @@ export async function postInventoryCostRevaluationInTransaction(
           eq(inventoryCostRevaluationLines.tenantId, key.tenantId),
           eq(inventoryCostRevaluationLines.id, lineId),
         ),
-      )
-      .for('update');
+      );
     const existingLine = existingLines[0];
     if (existingLine) {
       if (
@@ -1085,6 +1085,7 @@ export async function persistInventoryCostProjectionInTransaction(
   transaction: CostingTransaction,
   input: InventoryStreamKey,
 ): Promise<CostStreamProjection> {
+  await lockTankForStream(transaction, input);
   return projectAndPersist(transaction, input);
 }
 
@@ -1164,8 +1165,7 @@ export async function postReceiptCostInTransaction(
         eq(fuelDeliveryAllocations.stationId, input.stationId),
         eq(fuelDeliveryAllocations.id, input.allocationId),
       ),
-    )
-    .for('update');
+    );
   const allocation = allocations[0];
   if (!allocation) throw new AppError('NOT_FOUND', 'The delivery allocation was not found');
   await lockTankForStream(transaction, {

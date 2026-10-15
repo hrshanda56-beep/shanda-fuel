@@ -1,5 +1,7 @@
 'use client';
 
+import { ReconciliationApprovalButton } from './reconciliation-approval-button';
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
@@ -626,7 +628,7 @@ export function DailyOperationsWorkspace({
       await load();
       setNotice(
         commandType === 'ApproveProductionReconciliation'
-          ? 'Reconciliation approved and locked.'
+          ? 'Reconciliation approved. Canonical sale evidence has been posted.'
           : 'Workflow state updated.',
       );
     } catch (cause) {
@@ -1452,13 +1454,12 @@ export function DailyOperationsWorkspace({
                   >
                     Return for correction
                   </Button>
-                  <Button
-                    variant="primary"
-                    onClick={() => void transition('ApproveProductionReconciliation')}
+                  <ReconciliationApprovalButton
+                    key={`${context.tenantId}:${activeReconciliationId}`}
+                    tenantId={context.tenantId}
                     disabled={busy}
-                  >
-                    Approve production reconciliation
-                  </Button>
+                    onVerified={() => void transition('ApproveProductionReconciliation')}
+                  />
                 </>
               ) : null}
             </div>

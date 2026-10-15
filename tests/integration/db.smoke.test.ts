@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
 
@@ -162,7 +164,16 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(30);
+    const migrationRoot = new URL('../../src/platform/db/migrations/', import.meta.url);
+    const journal = JSON.parse(
+      readFileSync(new URL('meta/_journal.json', migrationRoot), 'utf8'),
+    ) as { entries: Array<{ tag: string }> };
+    const canonicalHashes = journal.entries.map((entry) =>
+      createHash('sha256')
+        .update(readFileSync(new URL(`${entry.tag}.sql`, migrationRoot)))
+        .digest('hex'),
+    );
+    expect(migrations.map((row) => row.tag)).toEqual(canonicalHashes);
 
     const stepUpBinding = await client<{ column_name: string }[]>`
       select column_name

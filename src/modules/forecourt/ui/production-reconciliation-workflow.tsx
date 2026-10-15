@@ -1,5 +1,7 @@
 'use client';
 
+import { ReconciliationApprovalButton } from './reconciliation-approval-button';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Field, StatusBadge } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
@@ -446,13 +448,12 @@ export function ProductionReconciliationWorkflow({
               >
                 Return for correction
               </Button>
-              <Button
-                variant="primary"
-                onClick={() => void transition('ApproveProductionReconciliation')}
+              <ReconciliationApprovalButton
+                key={`${context.tenantId}:${context.reconciliationId}`}
+                tenantId={context.tenantId}
                 disabled={busy}
-              >
-                Approve production reconciliation
-              </Button>
+                onVerified={() => void transition('ApproveProductionReconciliation')}
+              />
             </>
           ) : null}
         </div>

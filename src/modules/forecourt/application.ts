@@ -262,6 +262,7 @@ export const FORECOURT_COMMAND_POLICY = {
     permissionCode: 'reconciliation.approve',
     requiredScopeType: 'STATION',
     assuranceRequirement: 'STEP_UP',
+    stepUpAction: 'APPROVE_RECONCILIATION',
     requiresExpectedVersion: true,
   },
   PostReconciliation: {
@@ -359,6 +360,7 @@ export const FORECOURT_COMMAND_POLICY = {
     permissionCode: 'reconciliation.approve',
     requiredScopeType: 'STATION',
     assuranceRequirement: 'STEP_UP',
+    stepUpAction: 'APPROVE_RECONCILIATION',
     requiresExpectedVersion: true,
   },
 } as const satisfies Record<
@@ -367,7 +369,7 @@ export const FORECOURT_COMMAND_POLICY = {
     permissionCode: PermissionCode;
     requiredScopeType: 'STATION';
     assuranceRequirement: 'STANDARD' | 'STEP_UP';
-    stepUpAction?: 'LOCK_BUSINESS_DAY';
+    stepUpAction?: 'LOCK_BUSINESS_DAY' | 'APPROVE_RECONCILIATION';
     requiresExpectedVersion: boolean;
     requiresAttendantEligibility?: boolean;
   }

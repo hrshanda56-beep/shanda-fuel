@@ -21,6 +21,10 @@ const currentMigrationPath = resolve(
 );
 const latestMigrationPath = resolve(
   import.meta.dirname,
+  '../../src/platform/db/migrations/0030_station_attendant_visibility.sql',
+);
+const registryMigrationPath = resolve(
+  import.meta.dirname,
   '../../src/platform/db/migrations/0029_staff_number_registry_rls.sql',
 );
 const previousMigrationPath = resolve(
@@ -44,6 +48,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
     const latestMigrationSql = await readFile(latestMigrationPath, 'utf8');
     const latestMigrationHash = createHash('sha256').update(latestMigrationSql).digest('hex');
+    const registryMigrationSql = await readFile(registryMigrationPath, 'utf8');
+    const registryMigrationHash = createHash('sha256').update(registryMigrationSql).digest('hex');
     const previousMigrationSql = await readFile(previousMigrationPath, 'utf8');
     const previousMigrationHash = createHash('sha256').update(previousMigrationSql).digest('hex');
     const rollback = new Error('rollback disposable 0025 to 0026 upgrade');
@@ -51,6 +57,9 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     await expect(
       client.begin(async (transaction) => {
         await transaction.unsafe(`
+          DROP POLICY IF EXISTS memberships_station_attendants ON app.memberships;
+          REVOKE UPDATE(id) ON app.meter_segments, app.inventory_movements,
+            app.inventory_cost_events, app.inventory_sale_cost_attributions FROM app_runtime;
           DROP FUNCTION IF EXISTS app.accept_manual_staff_invitation(text, uuid, text, uuid);
           DROP FUNCTION IF EXISTS app.resolve_manual_staff_invitation(text, text);
           DROP FUNCTION IF EXISTS app.resolve_staff_number_for_user(uuid);
@@ -84,7 +93,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
           DELETE FROM drizzle.__drizzle_migrations
           WHERE hash IN (
             '${migrationHash}', '${previousMigrationHash}', '${currentMigrationHash}',
-            '${latestMigrationHash}'
+            '${latestMigrationHash}', '${registryMigrationHash}'
           );
         `);
 
@@ -158,7 +167,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     expect(rows).toEqual([
       {
-        migration_count: 30,
+        migration_count: 31,
         latest_hash: latestMigrationHash,
         exact_hash_count: 1,
       },

@@ -802,3 +802,30 @@ deployed application runtime.
 the existing scoped high-advisory exception remains unchanged. This exception
 must not be generalized to runtime dependencies or unrelated advisories, and
 must be revisited before production promotion if the dependency path changes.
+
+---
+
+## DEC-042 — Keep operational lookup and row-lock repairs least-privileged
+
+**Status:** ACCEPTED — implementation candidate; production operation not authorized.
+
+**Context:** Real-runtime validation found station Supervisors unable to see
+assigned attendants under self-only membership RLS, and PostgreSQL row-lock
+queries failing on authoritative tables whose broad UPDATE privileges were
+intentionally revoked. Approval also lacked an action-bound Clerk MFA contract
+and a usable verification entry point in its review UI.
+
+**Chosen approach:** Add SELECT-only, permission- and station-scoped active
+attendant membership visibility. Grant only `UPDATE(id)` on the four existing
+immutable evidence tables needed by row-lock readers/validation triggers; retain
+all immutability triggers and prohibit UPDATE on operational/economic fields.
+Keep derived projection writes behind the existing capability and tank lock.
+Use an explicit `APPROVE_RECONCILIATION` Clerk action with strict MFA; expose
+existing provider verification in review UI without weakening approval checks.
+
+**Consequences:** Migration 0030 is a normal reviewed canonical operation,
+reversible by dropping its one policy and revoking the four column grants.
+Fresh PostgreSQL 18/runtime-role tests must verify forced RLS, exact column ACLs,
+immutable OPEN/SEALED history, station/tenant denial, and real Owner MFA before
+approval. No one-off production GRANT or migration is authorized. The existing
+Owner no-MFA exception for unrelated Clerk actions does not apply to approval.
