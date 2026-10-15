@@ -19,7 +19,9 @@
   padding: var(--space-3) 2rem;
   border-bottom: 1px solid transparent;
   background: var(--bg-canvas);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .shell-main .shell-header[data-scrolled] {

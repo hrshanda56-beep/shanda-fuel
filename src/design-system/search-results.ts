@@ -24,7 +24,12 @@ const MAX_PER_GROUP = 5;
 type Overview = {
   station: { timezone: string };
   selectedBusinessDay?: { id: string; date: string };
-  shifts: Array<{ id: string; plannedStartAt: string; plannedEndAt: string; businessDate?: string }>;
+  shifts: Array<{
+    id: string;
+    plannedStartAt: string;
+    plannedEndAt: string;
+    businessDate?: string;
+  }>;
   reconciliations: Array<{ id: string; shiftId: string | null; state: string }>;
 };
 
@@ -55,7 +60,17 @@ export function useSearchResults(
         { cache: 'no-store', signal },
       )
         .then((response) => (response.ok ? (response.json() as Promise<Overview>) : null))
-        .then((body) => setOverview(body))
+        .then((body) =>
+          // A reply that is not the shape we read is treated as "nothing found", never as a crash.
+          setOverview(
+            body &&
+              Array.isArray(body.shifts) &&
+              Array.isArray(body.reconciliations) &&
+              body.station?.timezone
+              ? body
+              : null,
+          ),
+        )
         .catch(() => undefined);
     }
     void fetch(`/api/customers/summary?${new URLSearchParams({ tenantId })}`, {
@@ -63,7 +78,9 @@ export function useSearchResults(
       signal,
     })
       .then((response) => (response.ok ? response.json() : null))
-      .then((body: { customers?: CustomerRow[] } | null) => setCustomers(body?.customers ?? []))
+      .then((body: { customers?: CustomerRow[] } | null) =>
+        setCustomers(Array.isArray(body?.customers) ? body.customers : []),
+      )
       .catch(() => undefined);
     return () => controller.abort();
   }, [open, tenantId, stationId]);
@@ -99,7 +116,12 @@ export function useSearchResults(
     const timezone = overview.station.timezone;
     const day = overview.selectedBusinessDay;
     const params = (shiftId: string) =>
-      new URLSearchParams({ tenantId, stationId, ...(day ? { businessDayId: day.id } : {}), shiftId });
+      new URLSearchParams({
+        tenantId,
+        stationId,
+        ...(day ? { businessDayId: day.id } : {}),
+        shiftId,
+      });
     for (const shift of overview.shifts) {
       const title = shiftLabel(shift.plannedStartAt, shift.plannedEndAt, timezone);
       const dateText = day ? formatBusinessDate(day.date) : '';
@@ -115,7 +137,9 @@ export function useSearchResults(
     for (const reconciliation of overview.reconciliations) {
       const status = getDisplayStatus(reconciliation.state);
       const shift = overview.shifts.find((item) => item.id === reconciliation.shiftId);
-      const title = shift ? shiftLabel(shift.plannedStartAt, shift.plannedEndAt, timezone) : 'Reconciliation';
+      const title = shift
+        ? shiftLabel(shift.plannedStartAt, shift.plannedEndAt, timezone)
+        : 'Reconciliation';
       const dateText = day ? formatBusinessDate(day.date) : '';
       if (!matches(status.label, title, dateText)) continue;
       if (!reconciliation.shiftId) continue;

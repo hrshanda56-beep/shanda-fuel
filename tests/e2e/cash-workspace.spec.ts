@@ -140,8 +140,7 @@ test.describe('Cash workspace', () => {
     await expect(page.getByRole('heading', { name: 'Collections', exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: 'Station cash collections' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Bank deposits' })).toBeVisible();
-    const position = page.getByRole('definition').filter({ hasText: '—' });
-    await expect(position).toHaveCount(1);
+    await expect(page.getByRole('region', { name: 'Cash position' })).toBeVisible();
 
     // Forms live in a side sheet opened from the action bar.
     await page.getByRole('button', { name: 'Receive a collection' }).click();
@@ -157,19 +156,17 @@ test.describe('Cash workspace', () => {
     ).toBeVisible();
   });
 
-  test('the cash position list is structurally valid once its figures load', async ({ page }) => {
+  test('the cash position card is accessible once its figures load', async ({ page }) => {
     await mockCash(page);
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-      const position = page.getByLabel('Cash position');
-      // Wait for the figures, so the scan sees the rendered list (not a skeleton).
-      await expect(position.getByRole('definition').filter({ hasText: '—' })).toContainText(
-        'Not available on this page yet',
-      );
+      const position = page.getByRole('region', { name: 'Cash position' });
+      // Wait for the figures, so the scan sees the rendered card (not a skeleton).
+      await expect(position.getByText('Loading cash position')).toHaveCount(0);
+      await expect(position.getByRole('button').first()).toBeVisible();
       const results = await new AxeBuilder({ page })
-        .include('[aria-label="Cash position"]')
-        .withRules(['definition-list', 'dlitem'])
+        .include('[aria-labelledby="cash-split-title"]')
         .analyze();
       expect(results.violations, `width ${width}`).toEqual([]);
     }

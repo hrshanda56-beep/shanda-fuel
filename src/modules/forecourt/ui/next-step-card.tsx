@@ -7,7 +7,11 @@ import { ConfirmDialog } from '../../../design-system/confirm-dialog';
 import { InlineError } from '../../../design-system/inline-error';
 import { Button } from '../../../design-system/primitives';
 import { useToast } from '../../../design-system/toast';
-import { describeFailure, type UserMessage, userMessage } from '../../../design-system/user-messages';
+import {
+  describeFailure,
+  type UserMessage,
+  userMessage,
+} from '../../../design-system/user-messages';
 import { CloseMetersSheet } from './close-meters-sheet';
 import {
   nextStep,
@@ -289,7 +293,12 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
       ) : null}
       {action?.kind === 'blocked' ? (
         <>
-          <Button variant="primary" className="next-step-action" disabled aria-describedby="next-step-reason">
+          <Button
+            variant="primary"
+            className="next-step-action"
+            disabled
+            aria-describedby="next-step-reason"
+          >
             {action.label}
           </Button>
           <p className="action-reason" id="next-step-reason">

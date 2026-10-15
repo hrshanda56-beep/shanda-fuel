@@ -250,29 +250,26 @@ export function OperationsControlRoom({
     return `/api/forecourt/operations/overview?${params.toString()}`;
   }, [context.businessDayId, context.stationId, context.tenantId]);
 
-  const load = useCallback(
-    async () => {
-      setError(undefined);
-      try {
-        const response = await fetch(endpoint, { cache: 'no-store' });
-        const body = (await response.json()) as Overview & { message?: string; error?: string };
-        if (!response.ok) {
-          const failure = describeFailure(response.status, body.error, body.message);
-          throw new Error(`${failure.title}. ${failure.body}`);
-        }
-        setOverview(body);
-      } catch (caught) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'Something went wrong. Please try again. If it keeps happening, contact your administrator.',
-        );
-      } finally {
-        setLoading(false);
+  const load = useCallback(async () => {
+    setError(undefined);
+    try {
+      const response = await fetch(endpoint, { cache: 'no-store' });
+      const body = (await response.json()) as Overview & { message?: string; error?: string };
+      if (!response.ok) {
+        const failure = describeFailure(response.status, body.error, body.message);
+        throw new Error(`${failure.title}. ${failure.body}`);
       }
-    },
-    [endpoint],
-  );
+      setOverview(body);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Something went wrong. Please try again. If it keeps happening, contact your administrator.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [endpoint]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -368,7 +365,10 @@ export function OperationsControlRoom({
       router.refresh();
     } catch (caught) {
       setPending(null);
-      setCommandError({ where: current.where, message: failureMessage(caught, current.commandType) });
+      setCommandError({
+        where: current.where,
+        message: failureMessage(caught, current.commandType),
+      });
       await load();
     } finally {
       setBusy(false);
@@ -463,7 +463,11 @@ export function OperationsControlRoom({
 
   if (loading) {
     return (
-      <div className="operations-control-room" role="status" aria-label={focus === 'reconciliations' ? 'Loading reconciliations' : 'Loading operations'}>
+      <div
+        className="operations-control-room"
+        role="status"
+        aria-label={focus === 'reconciliations' ? 'Loading reconciliations' : 'Loading operations'}
+      >
         <SkeletonBlock height="7rem" />
         <SkeletonBlock height="5rem" />
         <SkeletonBlock height="14rem" />
@@ -868,7 +872,9 @@ export function OperationsControlRoom({
                         : formatBusinessDate(overview.currentBusinessDate)}
                     </h2>
                   </div>
-                  <StatusBadge tone={statusOf(day?.state).tone}>{statusOf(day?.state).label}</StatusBadge>
+                  <StatusBadge tone={statusOf(day?.state).tone}>
+                    {statusOf(day?.state).label}
+                  </StatusBadge>
                 </div>
                 <p className="panel-detail">
                   Times are shown in the station’s time zone ({overview.station.timezone}).
@@ -1160,7 +1166,9 @@ export function OperationsControlRoom({
                       Updated {formatTimestamp(item.updatedAt, overview.station.timezone)}
                     </small>
                   </span>
-                  <StatusBadge tone={statusOf(item.state).tone}>{statusOf(item.state).label}</StatusBadge>
+                  <StatusBadge tone={statusOf(item.state).tone}>
+                    {statusOf(item.state).label}
+                  </StatusBadge>
                 </a>
               ))}
             </div>

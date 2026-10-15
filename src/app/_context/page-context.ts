@@ -3,6 +3,10 @@ import 'server-only';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+import {
+  allowsE2ENavigationFixture,
+  E2E_NAVIGATION_FIXTURE_HEADER,
+} from '@/design-system/navigation-projection';
 import { resolveCurrentContext } from '@/modules/context/server';
 import { AppError } from '@/platform/errors';
 
@@ -42,13 +46,25 @@ export async function resolvePageContext(
     };
   }
 
+  const requestHeaders = await headers();
+  // The synthetic browser-test fixture has no session; it renders with whatever the URL carries.
+  if (
+    allowsE2ENavigationFixture(
+      process.env.APP_ENV,
+      requestHeaders.get(E2E_NAVIGATION_FIXTURE_HEADER),
+      process.env.NODE_ENV,
+    )
+  ) {
+    return null;
+  }
+
   const url = new URL(pathname, ORIGIN);
   for (const [key, value] of Object.entries(search)) {
     const single = first(value);
     if (single !== undefined) url.searchParams.set(key, single);
   }
   try {
-    const resolution = await resolveCurrentContext(new Request(url, { headers: await headers() }));
+    const resolution = await resolveCurrentContext(new Request(url, { headers: requestHeaders }));
     const current = resolution.current;
     if (!current) return null;
     const station = pathStation ?? current.stationId;

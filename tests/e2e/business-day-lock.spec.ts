@@ -124,10 +124,15 @@ test.describe('lock business day', () => {
         body: JSON.stringify({ error: 'FORBIDDEN', message: 'step-up expired' }),
       });
     });
-    page.once('dialog', (dialog) => void dialog.accept());
     await lockButtons(page).click();
+    // Locking asks first; nothing is sent until the dialog is confirmed.
+    expect(posted).toHaveLength(0);
+    await page
+      .getByRole('alertdialog', { name: 'Lock business day?' })
+      .getByRole('button', { name: 'Lock day' })
+      .click();
     await expect(
-      page.getByText(/requires the existing step-up authentication flow. No change was posted./),
+      page.getByText(/needs extra sign-in verification. Nothing was changed./),
     ).toBeVisible();
     expect(posted).toHaveLength(1);
     expect(posted[0]).toMatchObject({

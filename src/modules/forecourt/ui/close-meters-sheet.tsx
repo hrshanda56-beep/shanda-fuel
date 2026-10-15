@@ -122,9 +122,13 @@ export function CloseMetersSheet({
   const rows = useMemo(
     () =>
       [...(context?.availableReadings ?? [])].sort((a, b) =>
-        `${a.pumpNumber}.${a.nozzleNumber}`.localeCompare(`${b.pumpNumber}.${b.nozzleNumber}`, undefined, {
-          numeric: true,
-        }),
+        `${a.pumpNumber}.${a.nozzleNumber}`.localeCompare(
+          `${b.pumpNumber}.${b.nozzleNumber}`,
+          undefined,
+          {
+            numeric: true,
+          },
+        ),
       ),
     [context],
   );
@@ -324,7 +328,10 @@ export function CloseMetersSheet({
                       label="Opening reading"
                       value={opening[row.nozzleId] ?? ''}
                       onChange={(event) =>
-                        setOpening((current) => ({ ...current, [row.nozzleId]: event.target.value }))
+                        setOpening((current) => ({
+                          ...current,
+                          [row.nozzleId]: event.target.value,
+                        }))
                       }
                       unit="L"
                       disabled={busy}
@@ -348,7 +355,9 @@ export function CloseMetersSheet({
                   />
                   <div className="close-meters-readonly">
                     <span className="metric-label">Litres sold</span>
-                    <strong className="numeric">{litres ? formatLitres(litres.toFixed(3)) : '—'}</strong>
+                    <strong className="numeric">
+                      {litres ? formatLitres(litres.toFixed(3)) : '—'}
+                    </strong>
                   </div>
                 </div>
               </li>

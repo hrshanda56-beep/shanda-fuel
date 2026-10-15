@@ -124,10 +124,8 @@ test.describe('shared shell consistency', () => {
       'aria-expanded',
       'true',
     );
-    await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toHaveAttribute(
-      'href',
-      '/customers',
-    );
+    // Customers is in the bottom bar, so the menu does not repeat it.
+    await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'More' })).toBeFocused();
   });

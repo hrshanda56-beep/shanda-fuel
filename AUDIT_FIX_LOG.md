@@ -53,19 +53,33 @@ routes, commands, migrations, schema or `src/platform` / domain-module server co
 
 Commits: `aed5753` (Phase 1), `594f4a4` / `5b9fbcd` / `8c50f2e` (Phase 2). Unit tests, lint and typecheck pass.
 
-| Item | Status | Notes |
-|---|---|---|
-| 1.1 Work context | Done | Pages resolve the saved station via the existing `src/modules/context` (no `sf_ctx` cookie: that module forbids a second one). Nav links use the saved station. Re-selecting a station closes the dialog; switching refreshes. Empty copy updated. |
-| 1.2 Workflow order | Partly done | UI guards, new step order, direct land on the wizard, Close meters sheet, disabled-with-reason all built. Server-side enforcement and typed error codes are back end (not done). Start-shift form has a Shift preset (sets time) but not an attendants picker: attendants can only be listed once a shift exists, and a supervisor's session gets an empty list (back end). |
-| 1.3 Consistent status | Done | `getDisplayStatus` used on board, wizard, review, dashboard attention link. |
-| 1.4 Plain-language errors | Done (UI) | `user-messages.ts`; server text is only used to pick a code. Typed codes from the server would make this exact. |
-| 1.5 Confirmations | Done | Open day, start shift, submit, approve, send back, close day, close shift; Close meters sheet is its own confirmation. |
-| 1.6 Review screen | Done | Approve/Send back only for approvers who did not submit. Approve needs step-up on the server. |
-| 2.1–2.8 | Done | Search groups are built client-side from existing endpoints (no new `/api/search`). |
-| 3.x | Not started | Mostly needs back end (new tables, jobs). See below. |
-| 4 | Not started | Needs clean seed data and an e2e run. |
+| Item                      | Status      | Notes                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1 Work context          | Done        | Pages resolve the saved station via the existing `src/modules/context` (no `sf_ctx` cookie: that module forbids a second one). Nav links use the saved station. Re-selecting a station closes the dialog; switching refreshes. Empty copy updated.                                                                                                                          |
+| 1.2 Workflow order        | Partly done | UI guards, new step order, direct land on the wizard, Close meters sheet, disabled-with-reason all built. Server-side enforcement and typed error codes are back end (not done). Start-shift form has a Shift preset (sets time) but not an attendants picker: attendants can only be listed once a shift exists, and a supervisor's session gets an empty list (back end). |
+| 1.3 Consistent status     | Done        | `getDisplayStatus` used on board, wizard, review, dashboard attention link.                                                                                                                                                                                                                                                                                                 |
+| 1.4 Plain-language errors | Done (UI)   | `user-messages.ts`; server text is only used to pick a code. Typed codes from the server would make this exact.                                                                                                                                                                                                                                                             |
+| 1.5 Confirmations         | Done        | Open day, start shift, submit, approve, send back, close day, close shift; Close meters sheet is its own confirmation.                                                                                                                                                                                                                                                      |
+| 1.6 Review screen         | Done        | Approve/Send back only for approvers who did not submit. Approve needs step-up on the server.                                                                                                                                                                                                                                                                               |
+| 2.1–2.8                   | Done        | Search groups are built client-side from existing endpoints (no new `/api/search`).                                                                                                                                                                                                                                                                                         |
+| 3.x                       | Not started | Mostly needs back end (new tables, jobs). See below.                                                                                                                                                                                                                                                                                                                        |
+| 4                         | Not started | Needs clean seed data and an e2e run.                                                                                                                                                                                                                                                                                                                                       |
+
+### Verification
+
+- Unit tests (867), lint and typecheck pass. Full Playwright run: 307 passed, 31 skipped, 1 flaky
+  (`login-mfa.spec.ts`, passes on rerun).
+- E2E specs were updated for the redesign (icon flyout names, bottom bar, search palette, `alertdialog`
+  confirmations, report list pages, redesigned cash/settlement/supplier screens).
+- Real fixes found by the run: pages no longer redirect to /login under the e2e navigation fixture, the search
+  palette tolerates partial overview data, statement table has an accessible header, 320px overflow fixed on
+  the cash page and report tools.
+- Report titles are now sentence case (catalog, unit tests and one integration test string updated).
+- Phase 3 items that need new tables, jobs or endpoints (3.3 multi-currency, 3.6 notifications, price history
+  jobs) are **Blocked: needs back end**. Front-end-feasible 3.x pieces are being done next.
 
 ### Back-end issues found (not changed)
+
 1. `SealSegment` runs `SELECT … FOR UPDATE` on `app.meter_segments`, but `app_runtime` has no UPDATE on that table, so sealing a segment fails with a permission error. This is the real cause of "Close meters failed with an internal error". (Locally worked around with a one-off GRANT on the dev database only.)
 2. A supervisor's session gets an empty attendant list from `/api/forecourt/operations/daily` (the manager's session sees them), so "No attendants set up" appears for supervisors.
 3. `ApproveProductionReconciliation` requires step-up assurance; there is no UI path to satisfy it from the review screen.

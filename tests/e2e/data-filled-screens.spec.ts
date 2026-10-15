@@ -55,7 +55,7 @@ test.describe('data-filled screens', () => {
       await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
 
       const glance = page.getByLabel('Today at a glance');
-      await expect(glance, `width ${width}`).toContainText('2 · 1 open');
+      await expect(glance, `width ${width}`).toContainText('2 shifts · 1 open');
       await expect(glance).toContainText('Waiting for review');
       await expect(glance).toContainText('Returned for changes');
 
@@ -82,16 +82,19 @@ test.describe('data-filled screens', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/stations/${STATION}/reconciliations?tenantId=${TENANT}`);
 
-      const glance = page.getByLabel('Reconciliations at a glance');
-      await expect(glance, `width ${width}`).toContainText('In draft');
-      await expect(glance).toContainText('Approved');
+      // The status ring and the attention card lead the page.
+      const status = page.getByRole('region', { name: 'Reconciliation status' });
+      await expect(status, `width ${width}`).toBeVisible();
+      await expect(page.locator('.recon-highlight').first()).toContainText(
+        '1 waiting for review · 1 returned',
+      );
 
-      const rows = page.locator('.reconciliation-row');
-      // Needs action (default): returned first, then waiting for review; no draft/approved.
-      await expect(rows).toHaveCount(2);
-      await expect(rows.nth(0)).toHaveAttribute('data-state', 'RETURNED');
+      // Every reconciliation is listed with the returned and waiting ones first; filters narrow it.
+      const rows = page.locator('.recon-item');
+      await expect(rows).toHaveCount(4);
+      await expect(rows.nth(0)).toHaveAttribute('data-group', 'returned');
       await expect(rows.nth(0)).toContainText('Counted cash does not match the declaration');
-      await expect(rows.nth(1)).toHaveAttribute('data-state', 'PENDING_APPROVAL');
+      await expect(rows.nth(1)).toHaveAttribute('data-group', 'review');
       await expect(rows.nth(0).getByRole('link', { name: 'Open workspace' })).toHaveAttribute(
         'href',
         /\/operations\/daily\?.*businessDayId=day-1.*shiftId=shift-2/,
@@ -102,11 +105,15 @@ test.describe('data-filled screens', () => {
       );
 
       const filter = page.getByRole('group', { name: 'Show reconciliations' });
-      await filter.getByRole('button', { name: 'All' }).click();
+      await filter.getByRole('button', { name: /^Draft/ }).click();
+      await expect(rows).toHaveCount(1);
+      await expect(rows.nth(0)).toHaveAttribute('data-group', 'draft');
+      await filter.getByRole('button', { name: /^Approved/ }).click();
+      await expect(rows).toHaveCount(1);
+      await expect(rows.nth(0)).toHaveAttribute('data-group', 'approved');
+      await filter.getByRole('button', { name: /^All/ }).click();
       await expect(rows).toHaveCount(4);
-      await expect(rows.nth(2)).toHaveAttribute('data-state', 'DRAFT');
-      await expect(rows.nth(3)).toHaveAttribute('data-state', 'APPROVED');
-      await expect(filter.getByRole('button', { name: 'All' })).toHaveAttribute(
+      await expect(filter.getByRole('button', { name: /^All/ })).toHaveAttribute(
         'aria-pressed',
         'true',
       );
@@ -126,10 +133,11 @@ test.describe('data-filled screens', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
       const summary = page.getByLabel('Settlement summary');
-      const eco = summary.locator('div', { hasText: 'EcoCash waiting to match' });
+      const waiting = page.getByLabel('Payments waiting to match');
+      const eco = waiting.locator('li', { hasText: 'EcoCash waiting to match' });
       await expect(eco, `width ${width}`).toContainText('USD 25.50');
       await expect(eco).toContainText('1 payment');
-      const pos = summary.locator('div', { hasText: 'POS (card) waiting to match' });
+      const pos = waiting.locator('li', { hasText: 'POS (card) waiting to match' });
       await expect(pos).toContainText('USD 50.00');
       await expect(pos).toContainText('2 payments');
       await expect(summary.locator('div', { hasText: 'Settlements not reconciled' })).toContainText(
@@ -140,9 +148,9 @@ test.describe('data-filled screens', () => {
       const chart = page.locator('section[aria-labelledby="settled-by-provider-title"]');
       await expect(chart.getByRole('heading', { name: 'Settled by provider' })).toBeVisible();
       await expect(chart).toContainText('EcoCash merchant');
-      await expect(chart).toContainText('USD 75.00 · 75%');
+      await expect(chart).toContainText('USD 75.00');
       await expect(chart).toContainText('Zimswitch POS');
-      await expect(chart).toContainText('USD 25.00 · 25%');
+      await expect(chart).toContainText('USD 25.00');
 
       await expectNoSidewaysScroll(page, `width ${width}`);
       const results = await new AxeBuilder({ page }).analyze();
@@ -164,23 +172,21 @@ test.describe('data-filled screens', () => {
       await mockContext(page, `/stations/${STATION}/settlements`);
       await mockSettlements(page);
       await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
-      await expect(page.getByLabel('Settlement summary')).toContainText('USD 25.50');
-      await expect(page.locator('td[data-label="Dates"]').first()).toBeVisible();
+      await expect(page.getByLabel('Payments waiting to match')).toContainText('USD 25.50');
+      await expect(page.locator('.settlement-row [data-label="Settled"]').first()).toBeVisible();
       expect(
-        await wordsSplitAcrossLines(page, '.status, td.numeric, td .numeric'),
+        await wordsSplitAcrossLines(page, '.status, .list-amount, td.numeric, td .numeric'),
         `settlements ${width}`,
       ).toEqual([]);
       await expectNoSidewaysScroll(page, `settlements ${width}`);
 
       if (width >= 1440) {
-        // Desktop: the settlement table keeps its Action column in view.
-        const settlements = page.locator('.responsive-table-wrap', {
-          has: page.getByRole('columnheader', { name: 'Action' }),
-        });
+        // Desktop: every settlement column, Action included, is in view without scrolling.
+        const settlements = page.locator('.settlement-list');
         const hidden = await settlements.evaluate(
           (element) => element.scrollWidth - element.clientWidth,
         );
-        expect(hidden, `settlement table ${width}`).toBeLessThanOrEqual(0);
+        expect(hidden, `settlement list ${width}`).toBeLessThanOrEqual(0);
       }
 
       if (width >= 1024) {

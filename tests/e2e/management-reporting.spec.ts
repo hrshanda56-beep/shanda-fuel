@@ -120,7 +120,7 @@ test.describe('management reporting surface', () => {
       await signIn(context);
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await page.goto(`/reports?tenantId=${ids.tenant}&period=last-month`);
-      const menuButton = page.getByRole('button', { name: 'More actions for Sales & Payments' });
+      const menuButton = page.getByRole('button', { name: 'More actions for Sales & payments' });
 
       // Keyboard: opens with ArrowDown, items move with arrows, Escape returns focus.
       await menuButton.focus();
@@ -157,8 +157,8 @@ test.describe('management reporting surface', () => {
 
       // Recent activity lists both real actions.
       const rail = page.getByRole('complementary', { name: 'Browse reports' });
-      await expect(rail.getByText('Sales & Payments link shared')).toBeVisible();
-      await expect(rail.getByText('Sales & Payments exported')).toBeVisible();
+      await expect(rail.getByText('Sales & payments link shared')).toBeVisible();
+      await expect(rail.getByText('Sales & payments exported')).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });

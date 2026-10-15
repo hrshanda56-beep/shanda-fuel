@@ -10,7 +10,7 @@ describe('report catalog', () => {
   });
 
   it('finds reports by slug and groups them by category', () => {
-    expect(findReport('cash')?.title).toBe('Cash Evidence to Bank');
+    expect(findReport('cash')?.title).toBe('Cash evidence to bank');
     expect(findReport('nope')).toBeUndefined();
     expect(reportsInCategory('inventory').map((report) => report.slug)).toEqual(['inventory']);
   });

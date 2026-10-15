@@ -879,10 +879,7 @@ export function CashWorkspace() {
         {summary ? (
           <>
             {summary.collections.length === 0 ? (
-              <EmptyState
-                title="No collections yet"
-                message="Approved collections show up here."
-              />
+              <EmptyState title="No collections yet" message="Approved collections show up here." />
             ) : (
               <TableScrollRegion label="Station cash collections">
                 <table className="data-table">

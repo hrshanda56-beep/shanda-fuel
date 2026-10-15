@@ -139,7 +139,7 @@ export function StatementWorkspace({
           <thead>
             <tr>
               <th scope="col" className="income-name">
-                &nbsp;
+                <span className="visually-hidden">Line</span>
               </th>
               <th scope="col" className="income-num">
                 This period

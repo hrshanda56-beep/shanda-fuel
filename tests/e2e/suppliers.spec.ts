@@ -70,7 +70,7 @@ test.describe('supplier workflows', () => {
 
     await page.goto('/suppliers?tenantId=tenant-1&legalEntityId=entity-1');
     await expect(page.getByRole('link', { name: /SUP-0001/ })).toBeVisible();
-    const summary = page.getByLabel('Payables summary');
+    const summary = page.getByRole('list', { name: 'Supplier balances' });
     await expect(summary).toContainText('USD 185,000.00');
     await expect(summary).toContainText('USD 65,000.00');
     await expect(page.getByRole('button', { name: 'Add supplier' })).toHaveCount(1);
@@ -99,12 +99,11 @@ test.describe('supplier workflows', () => {
 
     await expect(page.getByRole('heading', { name: supplier.legalName })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Statement' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'INVOICE' })).toBeVisible();
-    const documentHeading = page.getByRole('heading', { name: 'Submit document' });
-    const paymentHeading = page.getByRole('heading', { name: 'Submit payment' });
-    await documentHeading.scrollIntoViewIfNeeded();
-    await paymentHeading.scrollIntoViewIfNeeded();
-    await expect(documentHeading).toBeVisible();
-    await expect(paymentHeading).toBeVisible();
+    await expect(
+      page.getByLabel('Posted supplier statement movements').getByText('Invoice', { exact: true }),
+    ).toBeVisible();
+    // Submitting happens from the header actions, which open their own forms.
+    await expect(page.getByRole('button', { name: 'Submit document' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Submit payment' })).toBeVisible();
   });
 });

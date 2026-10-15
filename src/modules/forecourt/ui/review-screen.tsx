@@ -11,7 +11,13 @@ import {
   formatMoney,
 } from '../../../design-system/formatters';
 import { InlineError } from '../../../design-system/inline-error';
-import { Field, ErrorState, Button, SkeletonBlock, StatusBadge } from '../../../design-system/primitives';
+import {
+  Field,
+  ErrorState,
+  Button,
+  SkeletonBlock,
+  StatusBadge,
+} from '../../../design-system/primitives';
 import { getDisplayStatus } from '../../../design-system/status-display';
 import { useToast } from '../../../design-system/toast';
 import {
@@ -105,7 +111,10 @@ export function ReviewScreen({
       ]);
       if (!operationResponse.ok || !recordResponse.ok) {
         const failed = operationResponse.ok ? recordResponse : operationResponse;
-        const body = (await failed.json().catch(() => ({}))) as { error?: string; message?: string };
+        const body = (await failed.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
         throw describeFailure(failed.status, body.error, body.message);
       }
       setOperation((await operationResponse.json()) as OperationsContext);
@@ -126,7 +135,10 @@ export function ReviewScreen({
   const submittedSummary = useMemo(() => {
     const summary = overview?.reconciliations.find((item) => item.id === context.reconciliationId);
     const submitEvent = overview?.timeline.find((event) => /submit/i.test(event.eventCode));
-    return { at: summary?.submittedAt ?? submitEvent?.occurredAt ?? null, by: submitEvent?.actorName ?? null };
+    return {
+      at: summary?.submittedAt ?? submitEvent?.occurredAt ?? null,
+      by: submitEvent?.actorName ?? null,
+    };
   }, [context.reconciliationId, overview]);
 
   if (loadError) {
@@ -170,9 +182,11 @@ export function ReviewScreen({
   const submittedByMe = Boolean(membershipId) && record.supervisor_id === membershipId;
   const mayDecide = canApprove && !submittedByMe && waiting;
   const timeText = submittedSummary.at
-    ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: timezone }).format(
-        new Date(submittedSummary.at),
-      )
+    ? new Intl.DateTimeFormat('en-GB', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: timezone,
+      }).format(new Date(submittedSummary.at))
     : null;
   const submittedLine = [
     submittedSummary.by ? `Submitted by ${submittedSummary.by}` : 'Submitted',
@@ -183,8 +197,13 @@ export function ReviewScreen({
 
   const explanationOf = (category: string) =>
     record.explanations.find((item) => item.category === category)?.explanation.trim() ?? '';
-  const differences: Array<{ key: string; label: string; value: string; unit: 'money' | 'litres'; explanation: string }> =
-    [];
+  const differences: Array<{
+    key: string;
+    label: string;
+    value: string;
+    unit: 'money' | 'litres';
+    explanation: string;
+  }> = [];
   if (!isZero(record.totals.salesVariance)) {
     differences.push({
       key: 'SALES',
@@ -243,7 +262,10 @@ export function ReviewScreen({
         }),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
         throw describeFailure(response.status, body.error, body.message);
       }
       toast.show(success);
@@ -522,7 +544,11 @@ export function ReviewScreen({
         busy={busy}
         confirmDisabled={!reasonValid}
         onConfirm={() =>
-          void decide('ReturnProductionReconciliation', { reason: reason.trim() }, 'Returned for correction')
+          void decide(
+            'ReturnProductionReconciliation',
+            { reason: reason.trim() },
+            'Returned for correction',
+          )
         }
         onClose={() => setSendingBack(false)}
       >

@@ -191,10 +191,12 @@ test.describe('provider settlement workspace', () => {
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
     await expect(
-      page.getByRole('row').filter({ hasText: settlementReference }).first(),
+      page.locator('.settlement-row').filter({ hasText: settlementReference }).first(),
     ).toBeVisible();
     await expect(page.getByRole('row').filter({ hasText: paymentReference }).first()).toBeVisible();
 
+    // Matching happens in a side sheet opened from the action bar.
+    await page.getByRole('button', { name: 'Match a payment' }).click();
     await page.getByLabel('Allocation amount').fill('40.0000');
     await page.getByRole('button', { name: 'Allocate evidence' }).click();
     await expect(
@@ -311,6 +313,8 @@ test.describe('provider settlement workspace', () => {
 
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
     await waitForHydration(page);
+    // Matching happens in a side sheet opened from the action bar.
+    await page.getByRole('button', { name: 'Match a payment' }).click();
     await page.getByLabel('Allocation amount').fill('40.0000');
     await page.getByRole('button', { name: 'Allocate evidence' }).click();
     await expect(page.getByText('The provider settlement is stale')).toBeVisible();
