@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
+import { resolvePageContext } from '@/app/_context/page-context';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { findReport } from '@/modules/reporting/catalog';
@@ -11,12 +12,13 @@ export default async function ReportDetailPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ tenantId?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
   const report = findReport(slug);
   if (!report) notFound();
-  const { tenantId } = await searchParams;
+  const context = await resolvePageContext(`/reports/${slug}`, await searchParams);
+  const tenantId = context?.tenantId;
 
   return (
     <AppShell pageSubtitle={report.title}>

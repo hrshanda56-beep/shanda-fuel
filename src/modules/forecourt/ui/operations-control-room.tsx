@@ -1,19 +1,31 @@
 'use client';
 
 import { useReverification } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmDialog, type ConfirmLine } from '../../../design-system/confirm-dialog';
+import { InlineError } from '../../../design-system/inline-error';
 import {
   Button,
   Card,
   EmptyState,
   ErrorState,
-  LoadingState,
+  SkeletonBlock,
   StatusBadge,
 } from '../../../design-system/primitives';
-import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
+import { formatBusinessDate } from '../../../design-system/formatters';
+import { getDisplayStatus } from '../../../design-system/status-display';
+import { useToast } from '../../../design-system/toast';
+import {
+  describeFailure,
+  type UserMessage,
+  userMessage,
+} from '../../../design-system/user-messages';
+import { CloseMetersSheet } from './close-meters-sheet';
 import { eventLabel, isEarlierOpenDay } from './operations-labels';
 import { NextStepCard } from './next-step-card';
 import { ReconciliationBoard } from './reconciliation-board';
+import { shiftLabel } from './shift-labels';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
 type ActionAvailability = {
@@ -96,6 +108,24 @@ type Overview = {
   }>;
 };
 
+/** What the person is asked to confirm before a command is sent. */
+type PendingCommand = Readonly<{
+  commandType: string;
+  values: Record<string, unknown>;
+  subjectId: string;
+  title: string;
+  lines: readonly ConfirmLine[];
+  note?: string;
+  confirmLabel: string;
+  success: string;
+  /** Which part of the page the failure is shown next to. */
+  where: string;
+}>;
+
+function isUserMessage(value: unknown): value is UserMessage {
+  return typeof value === 'object' && value !== null && 'title' in value && 'code' in value;
+}
+
 function ClerkStepUpForm({
   context,
   busy,
@@ -166,21 +196,7 @@ function ClerkStepUpForm({
   );
 }
 
-function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational' {
-  if (state === 'LOCKED' || state === 'APPROVED' || state === 'COMPLETED') return 'locked';
-  if (state === 'RETURNED' || state === 'CLOSED') return 'warning';
-  if (state === 'SUBMITTED' || state === 'PENDING_APPROVAL' || state === 'OPEN') return 'pending';
-  return 'informational';
-}
-
-function timeRange(start: string, end: string, timeZone: string) {
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone,
-  });
-  return `${formatter.format(new Date(start))} – ${formatter.format(new Date(end))}`;
-}
+const statusOf = (state: string | null | undefined) => getDisplayStatus(state);
 
 function formatTimestamp(value: string | null, timeZone: string) {
   return value
@@ -203,9 +219,14 @@ export function OperationsControlRoom({
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  const toast = useToast();
   const [error, setError] = useState<string>();
-  const [conflict, setConflict] = useState<string>();
-  const [notice, setNotice] = useState<string>();
+  const [commandError, setCommandError] = useState<{ where: string; message: UserMessage } | null>(
+    null,
+  );
+  const [pending, setPending] = useState<PendingCommand | null>(null);
+  const [metersFor, setMetersFor] = useState<Overview['shifts'][number] | null>(null);
   const [statementOpen, setStatementOpen] = useState(false);
   const [stepUpPassword, setStepUpPassword] = useState('');
   const [stepUpTotpCode, setStepUpTotpCode] = useState('');
@@ -230,24 +251,21 @@ export function OperationsControlRoom({
   }, [context.businessDayId, context.stationId, context.tenantId]);
 
   const load = useCallback(
-    async (preserveConflict = false) => {
-      setLoading(true);
+    async () => {
       setError(undefined);
-      if (!preserveConflict) setConflict(undefined);
       try {
         const response = await fetch(endpoint, { cache: 'no-store' });
         const body = (await response.json()) as Overview & { message?: string; error?: string };
         if (!response.ok) {
-          if (response.status === 403)
-            throw new Error('You do not have permission to view operations for this station.');
-          throw new Error(body.message ?? 'The operations control room could not be loaded.');
+          const failure = describeFailure(response.status, body.error, body.message);
+          throw new Error(`${failure.title}. ${failure.body}`);
         }
         setOverview(body);
       } catch (caught) {
         setError(
           caught instanceof Error
             ? caught.message
-            : 'The operations control room could not be loaded.',
+            : 'Something went wrong. Please try again. If it keeps happening, contact your administrator.',
         );
       } finally {
         setLoading(false);
@@ -312,53 +330,46 @@ export function OperationsControlRoom({
     }
   }
 
-  function isConflictError(caught: unknown): caught is OperationsCommandError {
-    return (
-      caught instanceof Error &&
-      'status' in caught &&
-      ((caught as OperationsCommandError).status === 409 ||
-        (caught as OperationsCommandError).code === 'CONFLICT' ||
-        (caught as OperationsCommandError).code === 'IDEMPOTENCY_CONFLICT')
-    );
-  }
-
-  function commandErrorMessage(caught: unknown, commandType: string) {
-    if (
-      caught instanceof Error &&
-      'status' in caught &&
-      (caught as OperationsCommandError).status === 403 &&
-      (caught.message.toLowerCase().includes('step-up') || commandType === 'LockBusinessDay')
-    ) {
-      return 'Locking a business day requires the existing step-up authentication flow. No change was posted.';
-    }
-    return caught instanceof Error ? caught.message : 'The server could not complete that action.';
-  }
-
-  async function runCommand(
-    commandType: string,
-    values: Record<string, unknown>,
-    subjectId: string,
-    consequence: string,
-    success: string,
-  ) {
-    if (!window.confirm(consequence)) return;
-    setBusy(true);
-    setError(undefined);
-    setConflict(undefined);
-    setNotice(undefined);
-    try {
-      await command(commandType, values, subjectId);
-      setNotice(success);
-      await load();
-    } catch (caught) {
-      if (isConflictError(caught)) {
-        await load(true);
-        setConflict(
-          'This operation changed elsewhere or is stale. The authoritative state has been refreshed; review it before trying again. The command was not retried.',
-        );
-      } else {
-        setError(commandErrorMessage(caught, commandType));
+  function failureMessage(caught: unknown, commandType: string): UserMessage {
+    if (isUserMessage(caught)) return caught;
+    if (caught instanceof Error && 'status' in caught) {
+      const failure = caught as OperationsCommandError;
+      if (
+        failure.status === 403 &&
+        (failure.message.toLowerCase().includes('step-up') || commandType === 'LockBusinessDay')
+      ) {
+        return {
+          code: 'NOT_PERMITTED',
+          title: 'Confirm it’s you first',
+          body: 'Locking a business day needs extra sign-in verification. Nothing was changed.',
+        };
       }
+      return describeFailure(failure.status, failure.code, failure.message);
+    }
+    return userMessage('UNKNOWN');
+  }
+
+  /** Asks first; the command only goes to the server once the dialog is confirmed. */
+  function askCommand(request: PendingCommand) {
+    setCommandError(null);
+    setPending(request);
+  }
+
+  async function confirmPending() {
+    if (!pending) return;
+    const current = pending;
+    setBusy(true);
+    setCommandError(null);
+    try {
+      await command(current.commandType, current.values, current.subjectId);
+      toast.show(current.success);
+      setPending(null);
+      await load();
+      router.refresh();
+    } catch (caught) {
+      setPending(null);
+      setCommandError({ where: current.where, message: failureMessage(caught, current.commandType) });
+      await load();
     } finally {
       setBusy(false);
     }
@@ -367,7 +378,6 @@ export function OperationsControlRoom({
   async function establishStepUp() {
     setStepUpBusy(true);
     setStepUpError(undefined);
-    setNotice(undefined);
     try {
       const response = await fetch('/api/auth/step-up', {
         method: 'POST',
@@ -384,7 +394,7 @@ export function OperationsControlRoom({
       }
       setStepUpPassword('');
       setStepUpTotpCode('');
-      setNotice('Step-up authentication verified. The lock action is now available briefly.');
+      toast.show('Identity confirmed');
       await load();
     } catch (caught) {
       setStepUpError(caught instanceof Error ? caught.message : 'Step-up verification failed.');
@@ -433,7 +443,7 @@ export function OperationsControlRoom({
       setMfaEnabled(true);
       setMfaSetup(undefined);
       setMfaSetupCode('');
-      setNotice('Authenticator MFA is enabled. Enter a current code to establish step-up.');
+      toast.show('Authenticator turned on');
     } catch (caught) {
       setMfaError(caught instanceof Error ? caught.message : 'Authenticator verification failed.');
     } finally {
@@ -451,7 +461,15 @@ export function OperationsControlRoom({
     return `/operations/daily?${params.toString()}`;
   }
 
-  if (loading) return <LoadingState label="Loading operations control room" />;
+  if (loading) {
+    return (
+      <div className="operations-control-room" role="status" aria-label="Loading operations">
+        <SkeletonBlock height="7rem" />
+        <SkeletonBlock height="5rem" />
+        <SkeletonBlock height="14rem" />
+      </div>
+    );
+  }
   if (error && !overview)
     return (
       <ErrorState
@@ -472,7 +490,18 @@ export function OperationsControlRoom({
   const shiftsForDay = day ? overview.shifts : [];
   const openShiftCount = shiftsForDay.filter((shift) => shift.state === 'OPEN').length;
   const shiftSummary =
-    shiftsForDay.length === 0 ? 'None yet' : `${shiftsForDay.length} · ${openShiftCount} open`;
+    shiftsForDay.length === 0
+      ? 'None yet'
+      : `${shiftsForDay.length} ${shiftsForDay.length === 1 ? 'shift' : 'shifts'} · ${openShiftCount} open`;
+  const everyShiftClosed =
+    shiftsForDay.length > 0 &&
+    shiftsForDay.every((shift) => ['COMPLETED', 'NOT_OPERATED'].includes(shift.state));
+  const everyReconciliationApproved = overview.reconciliations.every((item) =>
+    ['APPROVED', 'LOCKED', 'POSTED'].includes(item.state),
+  );
+  const dayReadyToClose = everyShiftClosed && everyReconciliationApproved;
+  const errorAt = (where: string) =>
+    commandError?.where === where ? <InlineError error={commandError.message} /> : null;
   const waitingForReview = overview.reconciliations.filter(
     (item) => item.state === 'SUBMITTED' || item.state === 'PENDING_APPROVAL',
   ).length;
@@ -481,10 +510,10 @@ export function OperationsControlRoom({
     day
       ? `/operations/reconciliations/${reconciliationId}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId }).toString()}`
       : undefined;
-  const shiftLabel = (shiftId: string | null) => {
+  const shiftLabelFor = (shiftId: string | null) => {
     const shift = shiftId ? overview.shifts.find((item) => item.id === shiftId) : undefined;
     return shift
-      ? timeRange(shift.plannedStartAt, shift.plannedEndAt, overview.station.timezone)
+      ? shiftLabel(shift.plannedStartAt, shift.plannedEndAt, overview.station.timezone)
       : 'Shift';
   };
   // Built only from states the server returned; nothing is inferred.
@@ -541,9 +570,7 @@ export function OperationsControlRoom({
           </p>
         </div>
         <div className="ops-hero-side">
-          <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
-            {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
-          </StatusBadge>
+          <StatusBadge tone={statusOf(day?.state).tone}>{statusOf(day?.state).label}</StatusBadge>
           {focus === 'reconciliations' && overview.visibility.reconciliations ? (
             <button
               type="button"
@@ -572,24 +599,12 @@ export function OperationsControlRoom({
           action={<Button onClick={() => void load()}>Refresh</Button>}
         />
       ) : null}
-      {conflict ? (
-        <ErrorState
-          title="State changed"
-          message={conflict}
-          action={<Button onClick={() => void load()}>Refresh</Button>}
-        />
-      ) : null}
-      {notice ? (
-        <p className="state state-success" role="status" aria-live="polite">
-          {notice}
-        </p>
-      ) : null}
 
       {focus === 'operations' ? (
         <dl className="operations-summary" aria-label="Today at a glance">
           <div>
             <dt>Business day</dt>
-            <dd>{formatStatusLabel(day?.state ?? 'NOT_STARTED')}</dd>
+            <dd>{statusOf(day?.state).label}</dd>
           </div>
           <div>
             <dt>Shifts</dt>
@@ -655,8 +670,8 @@ export function OperationsControlRoom({
               items={overview.reconciliations}
               timezone={overview.station.timezone}
               statementOpen={statementOpen}
-              tone={tone}
-              shiftLabel={shiftLabel}
+              tone={(state: string) => statusOf(state).tone}
+              shiftLabel={shiftLabelFor}
               formatTimestamp={formatTimestamp}
               actionFor={(item) => {
                 if (!item.shiftId || !day) return undefined;
@@ -724,7 +739,7 @@ export function OperationsControlRoom({
                         >
                           <div>
                             <strong>
-                              {timeRange(
+                              {shiftLabel(
                                 shift.plannedStartAt,
                                 shift.plannedEndAt,
                                 overview.station.timezone,
@@ -735,8 +750,8 @@ export function OperationsControlRoom({
                               {shift.attendantCount === 1 ? '' : 's'}
                             </small>
                           </div>
-                          <StatusBadge tone={tone(shift.state)}>
-                            {formatStatusLabel(shift.state)}
+                          <StatusBadge tone={statusOf(shift.state).tone}>
+                            {statusOf(shift.state).label}
                           </StatusBadge>
                           <div className="inline-links">
                             {shift.state === 'PLANNED' && overview.actions.StartShift.canExecute ? (
@@ -744,17 +759,29 @@ export function OperationsControlRoom({
                                 variant="secondary"
                                 disabled={busy}
                                 onClick={() =>
-                                  void runCommand(
-                                    'StartShift',
-                                    {
+                                  askCommand({
+                                    commandType: 'StartShift',
+                                    values: {
                                       ...values,
                                       plannedStartAt: shift.plannedStartAt,
                                       plannedEndAt: shift.plannedEndAt,
                                     },
-                                    shift.id,
-                                    'Start this shift and record its opening boundary?',
-                                    'Shift started.',
-                                  )
+                                    subjectId: shift.id,
+                                    title: 'Start shift?',
+                                    lines: [
+                                      {
+                                        label: 'Shift',
+                                        value: shiftLabel(
+                                          shift.plannedStartAt,
+                                          shift.plannedEndAt,
+                                          overview.station.timezone,
+                                        ),
+                                      },
+                                    ],
+                                    confirmLabel: 'Start shift',
+                                    success: 'Shift started',
+                                    where: shift.id,
+                                  })
                                 }
                               >
                                 Start shift
@@ -764,15 +791,7 @@ export function OperationsControlRoom({
                               <Button
                                 variant="secondary"
                                 disabled={busy}
-                                onClick={() =>
-                                  void runCommand(
-                                    'CloseMeters',
-                                    values,
-                                    shift.id,
-                                    'Close meters for this shift? Meter evidence must already be complete.',
-                                    'Shift meters closed.',
-                                  )
-                                }
+                                onClick={() => setMetersFor(shift)}
                               >
                                 Close meters
                               </Button>
@@ -783,16 +802,28 @@ export function OperationsControlRoom({
                                 variant="secondary"
                                 disabled={busy}
                                 onClick={() =>
-                                  void runCommand(
-                                    'CompleteShift',
+                                  askCommand({
+                                    commandType: 'CompleteShift',
                                     values,
-                                    shift.id,
-                                    'Complete this shift? This records the close boundary as complete.',
-                                    'Shift completed.',
-                                  )
+                                    subjectId: shift.id,
+                                    title: 'Close shift?',
+                                    lines: [
+                                      {
+                                        label: 'Shift',
+                                        value: shiftLabel(
+                                          shift.plannedStartAt,
+                                          shift.plannedEndAt,
+                                          overview.station.timezone,
+                                        ),
+                                      },
+                                    ],
+                                    confirmLabel: 'Close shift',
+                                    success: 'Shift closed',
+                                    where: shift.id,
+                                  })
                                 }
                               >
-                                Complete shift
+                                Close shift
                               </Button>
                             ) : null}
                             <a className="text-link" href={dayHref(day.id, shift.id)}>
@@ -807,6 +838,7 @@ export function OperationsControlRoom({
                               </a>
                             ) : null}
                           </div>
+                          {errorAt(shift.id)}
                         </article>
                       );
                     })}
@@ -836,9 +868,7 @@ export function OperationsControlRoom({
                         : formatBusinessDate(overview.currentBusinessDate)}
                     </h2>
                   </div>
-                  <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
-                    {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
-                  </StatusBadge>
+                  <StatusBadge tone={statusOf(day?.state).tone}>{statusOf(day?.state).label}</StatusBadge>
                 </div>
                 <p className="panel-detail">
                   Times are shown in the station’s time zone ({overview.station.timezone}).
@@ -874,18 +904,29 @@ export function OperationsControlRoom({
                       variant="primary"
                       disabled={busy}
                       onClick={() =>
-                        void runCommand(
-                          'OpenBusinessDay',
-                          {
+                        askCommand({
+                          commandType: 'OpenBusinessDay',
+                          values: {
                             tenantId: context.tenantId,
                             stationId: context.stationId,
                             businessDayId: openDayId,
                             expectedVersion: day?.version ?? 0,
                           },
-                          openDayId,
-                          'Open this business day?',
-                          'Business day opened.',
-                        )
+                          subjectId: openDayId,
+                          title: 'Open business day?',
+                          lines: [
+                            { label: 'Station', value: overview.station.name },
+                            {
+                              label: 'Date',
+                              value: formatBusinessDate(
+                                day ? day.date : overview.currentBusinessDate,
+                              ),
+                            },
+                          ],
+                          confirmLabel: 'Open day',
+                          success: 'Business day opened',
+                          where: 'day',
+                        })
                       }
                     >
                       Open business day
@@ -893,43 +934,59 @@ export function OperationsControlRoom({
                   ) : null}
                   {day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
                     <Button
-                      variant="danger"
-                      disabled={busy}
+                      variant="primary"
+                      disabled={busy || !dayReadyToClose}
+                      aria-describedby={dayReadyToClose ? undefined : 'close-day-reason'}
                       onClick={() =>
-                        void runCommand(
-                          'CloseBusinessDay',
-                          {
+                        askCommand({
+                          commandType: 'CloseBusinessDay',
+                          values: {
                             tenantId: context.tenantId,
                             stationId: context.stationId,
                             businessDayId: day.id,
                             expectedVersion: day.version,
                           },
-                          day.id,
-                          'Close this business day? Every operated shift must have complete meter readings.',
-                          'Business day closed.',
-                        )
+                          subjectId: day.id,
+                          title: 'Close business day?',
+                          lines: [
+                            { label: 'Date', value: formatBusinessDate(day.date) },
+                            { label: 'Shifts', value: String(shiftsForDay.length) },
+                          ],
+                          confirmLabel: 'Close day',
+                          success: 'Business day closed',
+                          where: 'day',
+                        })
                       }
                     >
                       Close business day
                     </Button>
+                  ) : null}
+                  {day?.state === 'OPEN' && closeBusinessDay.canExecute && !dayReadyToClose ? (
+                    <p className="action-reason" id="close-day-reason">
+                      Close every shift and get every reconciliation approved first.
+                    </p>
                   ) : null}
                   {day?.state === 'CLOSED' && lockBusinessDay.canExecute ? (
                     <Button
                       variant="danger"
                       disabled={busy}
                       onClick={() =>
-                        void runCommand(
-                          'LockBusinessDay',
-                          {
+                        askCommand({
+                          commandType: 'LockBusinessDay',
+                          values: {
                             tenantId: context.tenantId,
                             stationId: context.stationId,
                             businessDayId: day.id,
                             expectedVersion: day.version,
                           },
-                          day.id,
-                          'Lock this business day? This is irreversible and prevents ordinary changes.',
-                          'Business day locked.',
-                        )
+                          subjectId: day.id,
+                          title: 'Lock business day?',
+                          lines: [{ label: 'Date', value: formatBusinessDate(day.date) }],
+                          note: 'This can’t be undone. Corrections after this need a named correction.',
+                          confirmLabel: 'Lock day',
+                          success: 'Business day locked',
+                          where: 'day',
+                        })
                       }
                     >
                       Lock business day
@@ -944,9 +1001,7 @@ export function OperationsControlRoom({
                           context={context}
                           busy={busy}
                           onSuccess={async () => {
-                            setNotice(
-                              'Clerk reverification succeeded. The lock action is now available briefly.',
-                            );
+                            toast.show('Identity confirmed');
                             await load();
                           }}
                         />
@@ -1099,6 +1154,7 @@ export function OperationsControlRoom({
                     </>
                   ) : null}
                 </div>
+                {errorAt('day')}
                 {day?.state === 'CLOSED' ? (
                   <p className="semantic-note">
                     <strong>Lock is irreversible.</strong> Corrections require named compensating
@@ -1137,7 +1193,7 @@ export function OperationsControlRoom({
                       Updated {formatTimestamp(item.updatedAt, overview.station.timezone)}
                     </small>
                   </span>
-                  <StatusBadge tone={tone(item.state)}>{formatStatusLabel(item.state)}</StatusBadge>
+                  <StatusBadge tone={statusOf(item.state).tone}>{statusOf(item.state).label}</StatusBadge>
                 </a>
               ))}
             </div>
@@ -1170,14 +1226,14 @@ export function OperationsControlRoom({
                 {overview.reconciliations.map((item) => (
                   <div className="operations-list-row" key={item.id}>
                     <span>
-                      <strong>{formatStatusLabel(item.state)}</strong>
+                      <strong>{statusOf(item.state).label}</strong>
                       <small>
                         Revision {item.revision ?? '—'} · updated{' '}
                         {formatTimestamp(item.updatedAt, overview.station.timezone)}
                       </small>
                     </span>
-                    <StatusBadge tone={tone(item.state)}>
-                      {item.revisionState ? formatStatusLabel(item.revisionState) : 'No revision'}
+                    <StatusBadge tone={statusOf(item.revisionState ?? item.state).tone}>
+                      {item.revisionState ? statusOf(item.revisionState).label : 'No revision'}
                     </StatusBadge>
                     {item.shiftId && day ? (
                       <a
@@ -1228,6 +1284,37 @@ export function OperationsControlRoom({
           )}
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={pending?.title ?? ''}
+        lines={pending?.lines}
+        note={pending?.note}
+        confirmLabel={pending?.confirmLabel ?? 'Confirm'}
+        busy={busy}
+        onConfirm={() => void confirmPending()}
+        onClose={() => setPending(null)}
+      />
+      {metersFor ? (
+        <CloseMetersSheet
+          open
+          tenantId={context.tenantId}
+          stationId={context.stationId}
+          businessDayId={day?.id ?? ''}
+          shiftId={metersFor.id}
+          shiftVersion={metersFor.version}
+          plannedStartAt={metersFor.plannedStartAt}
+          plannedEndAt={metersFor.plannedEndAt}
+          timezone={overview.station.timezone}
+          onClose={() => setMetersFor(null)}
+          onClosed={() => {
+            setMetersFor(null);
+            toast.show('Shift closed');
+            void load();
+            router.refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

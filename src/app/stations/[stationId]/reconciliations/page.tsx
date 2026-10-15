@@ -1,3 +1,4 @@
+import { resolvePageContext } from '@/app/_context/page-context';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
 import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
@@ -9,10 +10,12 @@ export default async function ReconciliationListPage({
   searchParams,
 }: {
   params: Promise<{ stationId: string }>;
-  searchParams?: Promise<{ tenantId?: string; businessDayId?: string; shiftId?: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { stationId } = await params;
   const search = (await searchParams) ?? {};
+  const context = await resolvePageContext(`/stations/${stationId}/reconciliations`, search);
+  const businessDayId = typeof search.businessDayId === 'string' ? search.businessDayId : undefined;
 
   return (
     <AppShell
@@ -21,9 +24,9 @@ export default async function ReconciliationListPage({
         { label: 'Reconciliations' },
       ]}
     >
-      {search.tenantId ? (
+      {context ? (
         <OperationsControlRoom
-          context={{ tenantId: search.tenantId, stationId, businessDayId: search.businessDayId }}
+          context={{ tenantId: context.tenantId, stationId, businessDayId }}
           focus="reconciliations"
         />
       ) : (

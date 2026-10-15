@@ -116,6 +116,17 @@ export function ContextSelector({
   }
 
   async function submit(selection: ContextSelection, key: string) {
+    const current = state.status === 'ready' ? state.resolution.current : null;
+    if (
+      current &&
+      current.organisationId === selection.organisationId &&
+      current.allStations === selection.allStations &&
+      (current.stationId ?? null) === (selection.stationId ?? null)
+    ) {
+      // Already here: nothing to change, so just close the picker.
+      onClose();
+      return;
+    }
     setPendingKey(key);
     setSubmitting(true);
     setSubmitError(null);
@@ -136,6 +147,7 @@ export function ContextSelector({
       const nextSelection = body.data.current;
       onClose();
       router.push(buildContextHref(pathname, search, nextSelection));
+      router.refresh();
     } catch (error: unknown) {
       setSubmitError(
         error instanceof Error
@@ -235,8 +247,8 @@ function ContextError({ message, onRetry }: { message: string; onRetry: () => vo
 function ContextEmpty() {
   return (
     <div className="context-selector-state" role="status">
-      <h3>No authorised work areas</h3>
-      <p>No organisation, legal entity, or station is available for this account.</p>
+      <h3>No stations yet</h3>
+      <p>You don’t have access to any stations. Ask your administrator to add you to one.</p>
     </div>
   );
 }
@@ -407,7 +419,7 @@ function ContextOption({
         aria-current={selected || undefined}
         data-selected={selected || undefined}
         disabled={disabled}
-        onClick={selected ? undefined : onSelect}
+        onClick={onSelect}
       >
         <span className="context-selector-option-text">
           <span className="context-selector-option-title">{title}</span>

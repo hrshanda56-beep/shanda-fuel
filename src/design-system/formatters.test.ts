@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  describeDifference,
   formatBusinessDate,
   formatDecimal,
   formatLitres,
@@ -20,6 +21,25 @@ describe('presentation formatters', () => {
     expect(formatUsd('abc')).toBe('—');
     expect(formatLitres('1050.375')).toBe('1,050.375 L');
     expect(formatPercentage('4.25')).toBe('4.25%');
+  });
+
+  it('formats money the same way everywhere: code, grouping, two decimals, true minus', () => {
+    expect(formatMoney('50')).toBe('USD 50.00');
+    expect(formatMoney('12500.5')).toBe('USD 12,500.50');
+    expect(formatMoney('-10597')).toBe('−USD 10,597.00');
+    expect(formatMoney('-0.001')).toBe('USD 0.00');
+    expect(formatMoney('1.005', 'ZWG')).toBe('ZWG 1.01');
+    expect(formatMoney('abc')).toBe('—');
+  });
+
+  it('describes a difference in words', () => {
+    expect(describeDifference('50')).toEqual({ words: 'Over by USD 50.00', tone: 'over' });
+    expect(describeDifference('-10597')).toEqual({
+      words: 'Short by USD 10,597.00',
+      tone: 'short',
+    });
+    expect(describeDifference('0.0000')).toEqual({ words: 'Balanced', tone: 'balanced' });
+    expect(describeDifference(null)).toBeNull();
   });
 
   it('rejects malformed authoritative values instead of guessing', () => {

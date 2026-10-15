@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import { resolvePageContext } from '@/app/_context/page-context';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { ReportsRail } from '@/modules/reporting/ui/reports-rail';
@@ -11,9 +12,10 @@ export const metadata = {
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tenantId?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { tenantId } = await searchParams;
+  const context = await resolvePageContext('/reports', await searchParams);
+  const tenantId = context?.tenantId;
   return (
     <AppShell pageSubtitle="Operational Financial Position">
       {tenantId ? (

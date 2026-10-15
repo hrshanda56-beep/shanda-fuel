@@ -13,6 +13,7 @@ import '@/design-system/styles/entry.css';
 import '@/design-system/styles/approved-ui.css';
 import '@/design-system/styles/my-shift.css';
 
+import { ToastProvider } from '@/design-system/toast';
 import { shellInitScript } from '@/design-system/shell-preferences';
 import { themeInitScript } from '@/design-system/theme';
 import { getAuthProviderName } from '@/platform/auth/provider';
@@ -51,7 +52,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript + shellInitScript }} />
       </head>
-      <body>{content}</body>
+      <body>
+        <ToastProvider>{content}</ToastProvider>
+      </body>
     </html>
   );
 }
