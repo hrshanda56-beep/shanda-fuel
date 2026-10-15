@@ -1,3 +1,4 @@
+import { resolvePageContext } from '@/app/_context/page-context';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import {
   DailyOperationsContextRequired,
@@ -34,17 +35,19 @@ export default async function DailyOperationsPage({
         reconciliationId: search.reconciliationId,
       }
     : undefined;
-  const hasStationContext = Boolean(search.tenantId && search.stationId);
+  const resolved = context
+    ? null
+    : await resolvePageContext('/operations/daily', search, { needsStation: true });
 
   return (
     <AppShell>
       {context ? (
         <DailyOperationsWorkspace context={context} />
-      ) : hasStationContext ? (
+      ) : resolved?.stationId ? (
         <OperationsControlRoom
           context={{
-            tenantId: search.tenantId!,
-            stationId: search.stationId!,
+            tenantId: resolved.tenantId,
+            stationId: resolved.stationId,
             businessDayId: search.businessDayId,
           }}
         />

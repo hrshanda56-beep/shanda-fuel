@@ -1,34 +1,40 @@
 'use client';
 
-import { ReconciliationApprovalButton } from './reconciliation-approval-button';
-
+import Decimal from 'decimal.js';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmDialog } from '../../../design-system/confirm-dialog';
+import { InlineError } from '../../../design-system/inline-error';
 import {
   Button,
   Card,
   EmptyState,
   ErrorState,
   Field,
-  LoadingState,
   NumericInput,
+  SkeletonBlock,
   StatusBadge,
 } from '../../../design-system/primitives';
-import { MetricCard } from '../../../design-system/layout';
+import { getDisplayStatus } from '../../../design-system/status-display';
 import { TableScrollRegion } from '../../../design-system/table';
+import { useToast } from '../../../design-system/toast';
+import {
+  describeFailure,
+  type UserMessage,
+  userMessage,
+} from '../../../design-system/user-messages';
 import { sumDecimals } from '../../cash/ui/cash-visuals';
 import {
+  describeDifference,
   formatBusinessDate,
   formatLitres,
   formatMoney,
-  formatStatusLabel,
-  formatTimeInTimeZone,
 } from '../../../design-system/formatters';
-import {
-  dailyOperationsStatusLabel,
-  dailyOperationsStatusTone,
-  isEditableDailyOperationsState,
-  mapDailyOperationsError,
-} from './daily-operations-state';
+import { closedMetersKey } from './close-meters-sheet';
+import { isEditableDailyOperationsState } from './daily-operations-state';
+import { computeTotals, isZeroDecimal, litresBetween } from './reconciliation-math';
+import { shiftLabel } from './shift-labels';
+import { evaluateSubmit, MIN_EXPLANATION } from './submit-rules';
 import {
   createDraftSaveAttemptId,
   draftSaveCommandKey,
@@ -56,7 +62,7 @@ type AvailableReading = {
   previousReading: string | null;
 };
 
-type OperationsContext = {
+export type OperationsContext = {
   station: { id: string; code: string; name: string; timezone: string };
   organisation: { id: string; name: string };
   businessDay: { id: string; date: string; state: string; version: number };
@@ -104,7 +110,7 @@ type Expense = {
   reference: string;
 };
 
-type RecordData = {
+export type RecordData = {
   state: string;
   version: number;
   business_date: string;
@@ -182,7 +188,7 @@ const paymentMethods: readonly PaymentMethod[] = [
   'OTHER_APPROVED',
 ];
 
-const methodLabels: Record<PaymentMethod, string> = {
+export const methodLabels: Record<string, string> = {
   CASH: 'Cash',
   POS: 'Card (POS)',
   ECOCASH: 'EcoCash',
@@ -199,7 +205,7 @@ const quickPayments: readonly PaymentMethod[] = ['CASH', 'ECOCASH', 'POS'];
 const STEPS = ['Team', 'Pumps', 'Payments', 'Expenses', 'Cash', 'Submit'] as const;
 
 const STEP_TITLES = [
-  'Who is on shift?',
+  'Who’s on shift?',
   'Pump readings',
   'How customers paid',
   'Expenses',
@@ -252,9 +258,18 @@ function readingFromContext(
   };
 }
 
-function errorFromResponse(status: number, body: unknown): Error {
-  const result = body as { error?: string; message?: string };
-  return new Error(mapDailyOperationsError(status, result.error, result.message));
+/** A failed response, turned into the plain-language message the screen shows. */
+function failureFromResponse(status: number, body: unknown): UserMessage {
+  const result = (body ?? {}) as { error?: string; message?: string };
+  return describeFailure(status, result.error, result.message);
+}
+
+function isUserMessage(value: unknown): value is UserMessage {
+  return typeof value === 'object' && value !== null && 'title' in value && 'code' in value;
+}
+
+function asUserMessage(value: unknown): UserMessage {
+  return isUserMessage(value) ? value : userMessage('UNKNOWN');
 }
 
 function isZero(value: string | null | undefined): boolean {
@@ -283,13 +298,32 @@ function SectionHeading({
   );
 }
 
-export function DailyOperationsWorkspace({
-  context,
-  role = 'SUPERVISOR',
-}: {
-  context: DailyOperationsContext;
-  role?: 'SUPERVISOR' | 'MANAGEMENT';
-}) {
+/** A grey outline of the wizard, shown while it loads so the page does not jump. */
+function WorkspaceSkeleton({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className="daily-operations-workspace" role="status" aria-label="Loading figures">
+      {compact ? null : (
+        <>
+          <div className="workspace-skeleton-head">
+            <SkeletonBlock width="14rem" height="1.5rem" />
+            <SkeletonBlock width="8rem" height="1.5rem" />
+          </div>
+          <SkeletonBlock height="2.75rem" />
+        </>
+      )}
+      <SkeletonBlock height="12rem" />
+      <SkeletonBlock height="6rem" />
+    </div>
+  );
+}
+
+function differenceTone(value: string): 'warning' | 'critical' | undefined {
+  if (isZero(value)) return undefined;
+  return value.trim().startsWith('-') ? 'critical' : 'warning';
+}
+
+export function DailyOperationsWorkspace({ context }: { context: DailyOperationsContext }) {
+  const toast = useToast();
   const [activeReconciliationId, setActiveReconciliationId] = useState(context.reconciliationId);
   const [operation, setOperation] = useState<OperationsContext | null>(null);
   const [record, setRecord] = useState<RecordData | null>(null);
@@ -301,21 +335,25 @@ export function DailyOperationsWorkspace({
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const [conflict, setConflict] = useState(false);
-  const [notice, setNotice] = useState<string>();
+  const [loadError, setLoadError] = useState<UserMessage | null>(null);
+  const [actionError, setActionError] = useState<UserMessage | null>(null);
   const [dirty, setDirty] = useState(false);
   const [step, setStep] = useState(0);
-  const [returnReason, setReturnReason] = useState('');
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [online, setOnline] = useState(true);
   const saveJournal = useRef<DraftSaveJournal | undefined>(undefined);
+  const creating = useRef(false);
   const [cashSummary, setCashSummary] = useState<{
     availableAtStation: string;
     collectedButUnbanked: string;
     pendingBankConfirmation: string;
   }>();
-  const [settlementSummary, setSettlementSummary] = useState<
-    Array<{ providerName: string; state: string; unallocatedProviderAmount: string }>
-  >([]);
+  /** `null` when the person cannot see settlements, so the row is left out rather than shown as unavailable. */
+  const [settlementSummary, setSettlementSummary] = useState<Array<{
+    providerName: string;
+    state: string;
+    unallocatedProviderAmount: string;
+  }> | null>(null);
 
   const contextQuery = useMemo(
     () =>
@@ -328,27 +366,61 @@ export function DailyOperationsWorkspace({
     [context.businessDayId, context.shiftId, context.stationId, context.tenantId],
   );
 
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    const timer = window.setTimeout(update, 0);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
   const syncDraft = useCallback(
     (next: RecordData | null, nextOperation: OperationsContext) => {
-      if (!next) {
-        setReadings(
-          nextOperation.availableReadings.map((reading) =>
-            readingFromContext(reading, context.shiftId),
-          ),
+      const fromContext = () =>
+        nextOperation.availableReadings.map((reading) =>
+          readingFromContext(reading, context.shiftId),
         );
+      // The readings entered in Close meters are carried over so nobody types them twice.
+      const carried = (rows: Array<Reading & { rowKey: string }>) => {
+        let stored: Array<{ nozzleId: string; opening: string; closing: string }> = [];
+        try {
+          const raw = sessionStorage.getItem(closedMetersKey(context.shiftId));
+          stored = raw ? (JSON.parse(raw) as typeof stored) : [];
+        } catch {
+          stored = [];
+        }
+        if (stored.length === 0) return { rows, changed: false };
+        let changed = false;
+        const merged = rows.map((row) => {
+          const match = stored.find((item) => item.nozzleId === row.nozzleId);
+          if (!match || row.closingReading.trim() !== '') return row;
+          changed = true;
+          return { ...row, openingReading: match.opening, closingReading: match.closing };
+        });
+        return { rows: merged, changed };
+      };
+      if (!next) {
+        const { rows, changed } = carried(fromContext());
+        setReadings(rows);
         setPayments([]);
         setExpenses([]);
         setAttendantIds([]);
         setCashCounted('');
         setExplanations({});
+        if (changed) setDirty(true);
         return;
       }
-      const nextReadings = next.readings.length
+      const base = next.readings.length
         ? next.readings.map((reading) => ({ ...reading, rowKey: reading.id }))
-        : nextOperation.availableReadings.map((reading) =>
-            readingFromContext(reading, context.shiftId),
-          );
-      setReadings(nextReadings);
+        : fromContext();
+      const { rows, changed } = isEditableDailyOperationsState(next.state)
+        ? carried(base)
+        : { rows: base, changed: false };
+      setReadings(rows);
       setPayments(next.payments.map(paymentFromRecord));
       setExpenses(next.expenses.map(expenseFromRecord));
       setAttendantIds(next.attendants.map((attendant) => attendant.attendantId));
@@ -356,24 +428,20 @@ export function DailyOperationsWorkspace({
       setExplanations(
         Object.fromEntries(next.explanations.map((item) => [item.category, item.explanation])),
       );
-      setDirty(false);
+      setDirty(changed);
     },
     [context.shiftId],
   );
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(undefined);
-    setConflict(false);
+    setLoadError(null);
     try {
       const operationResponse = await fetch(
         `/api/forecourt/operations/daily?${contextQuery.toString()}`,
-        {
-          cache: 'no-store',
-        },
+        { cache: 'no-store' },
       );
       const operationBody = await operationResponse.json();
-      if (!operationResponse.ok) throw errorFromResponse(operationResponse.status, operationBody);
+      if (!operationResponse.ok) throw failureFromResponse(operationResponse.status, operationBody);
       const nextOperation = operationBody as OperationsContext;
       setOperation(nextOperation);
 
@@ -393,14 +461,12 @@ export function DailyOperationsWorkspace({
         return;
       }
       const recordBody = await recordResponse.json();
-      if (!recordResponse.ok) throw errorFromResponse(recordResponse.status, recordBody);
+      if (!recordResponse.ok) throw failureFromResponse(recordResponse.status, recordBody);
       const nextRecord = recordBody as RecordData;
       setRecord(nextRecord);
       syncDraft(nextRecord, nextOperation);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'The operations workspace could not be loaded.',
-      );
+      setLoadError(asUserMessage(cause));
     } finally {
       setLoading(false);
     }
@@ -427,23 +493,17 @@ export function DailyOperationsWorkspace({
     void Promise.all([
       fetch(
         `/api/cash/summary?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
-        {
-          cache: 'no-store',
-          signal: controller.signal,
-        },
+        { cache: 'no-store', signal: controller.signal },
       ).then(async (response) => (response.ok ? response.json() : null)),
       fetch(
         `/api/settlements/summary?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
-        {
-          cache: 'no-store',
-          signal: controller.signal,
-        },
-      ).then(async (response) => (response.ok ? response.json() : [])),
+        { cache: 'no-store', signal: controller.signal },
+      ).then(async (response) => (response.ok ? response.json() : null)),
     ])
       .then(([cash, settlements]) => {
         if (controller.signal.aborted) return;
         setCashSummary(cash?.totals);
-        setSettlementSummary(Array.isArray(settlements) ? settlements : []);
+        setSettlementSummary(Array.isArray(settlements) ? settlements : null);
       })
       .catch(() => undefined);
     return () => controller.abort();
@@ -463,13 +523,14 @@ export function DailyOperationsWorkspace({
       body: JSON.stringify({ commandType, ...values }),
     });
     const body = await response.json();
-    if (!response.ok) throw errorFromResponse(response.status, body);
+    if (!response.ok) throw failureFromResponse(response.status, body);
     return body as CommandResult;
   }
 
+  /** Opens the reconciliation for this shift. It is created straight away, so there is no extra "begin" step. */
   async function createDraft() {
     setBusy(true);
-    setError(undefined);
+    setActionError(null);
     const reconciliationId = activeReconciliationId ?? crypto.randomUUID();
     try {
       await sendCommand('CreateProductionReconciliation', {
@@ -484,25 +545,38 @@ export function DailyOperationsWorkspace({
       const url = new URL(window.location.href);
       url.searchParams.set('reconciliationId', reconciliationId);
       window.history.replaceState({}, '', url);
-      await load();
-      setNotice('Ready. Start with the team on shift.');
+      creating.current = false;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The draft could not be created.');
+      setActionError(asUserMessage(cause));
     } finally {
       setBusy(false);
     }
   }
 
+  useEffect(() => {
+    if (loading || loadError || !operation || record || creating.current) return;
+    if (operation.shift.state === 'PLANNED') return;
+    creating.current = true;
+    // Not cancelled on cleanup: `creating` already guards against a second run (including React's
+    // double effect in development), so the timer must always fire once.
+    window.setTimeout(() => void createDraft(), 0);
+    // createDraft only reads state that is stable once the first load has finished.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadError, operation, record]);
+
   /** Saves the draft; resolves to the new revision version, or null when nothing was saved. */
   async function saveDraft(): Promise<number | null> {
     if (!record || !operation) return null;
     if (readings.some((reading) => !reading.sellingPriceId)) {
-      setError('A current active selling price is required for every meter row before saving.');
+      setActionError({
+        code: 'STATION_NOT_SET_UP',
+        title: 'A selling price is missing',
+        body: 'Ask your manager to set a current price for every fuel before you carry on.',
+      });
       return null;
     }
     setBusy(true);
-    setError(undefined);
-    setNotice(undefined);
+    setActionError(null);
     try {
       const common = {
         tenantId: context.tenantId,
@@ -571,7 +645,7 @@ export function DailyOperationsWorkspace({
         };
       }
       const journal = saveJournal.current;
-      if (!journal) throw new Error('The draft save could not be prepared. Refresh and try again.');
+      if (!journal) throw userMessage('UNKNOWN');
       for (let index = journal.nextIndex; index < journal.commands.length; index += 1) {
         const command = journal.commands[index];
         if (!command) continue;
@@ -591,84 +665,14 @@ export function DailyOperationsWorkspace({
       }
       saveJournal.current = undefined;
       setDirty(false);
-      setNotice('Saved.');
       await load();
       return journal.version;
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The draft could not be saved.';
-      setError(message);
-      if (message.includes('changed elsewhere') || message.includes('locked')) setConflict(true);
+      const message = asUserMessage(cause);
       saveJournal.current = undefined;
       await load();
-      setError(message);
-      setNotice(
-        'That did not save. We reloaded what is saved on the server. Check your entries and try again.',
-      );
+      setActionError(message);
       return null;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function startShift() {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await sendCommand('StartShift', {
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        businessDayId: context.businessDayId,
-        shiftId: context.shiftId,
-        expectedVersion: operation?.shift.version ?? 0,
-        plannedStartAt: operation?.shift.plannedStartAt,
-        plannedEndAt: operation?.shift.plannedEndAt,
-      });
-      await load();
-      setNotice('Shift started.');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The shift could not be opened.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function transition(
-    commandType: string,
-    values: Record<string, unknown> = {},
-    savedVersion?: number,
-  ) {
-    if (!record || (dirty && savedVersion === undefined)) {
-      setError('Save the current draft before changing its workflow state.');
-      return;
-    }
-    if (
-      commandType === 'ApproveProductionReconciliation' &&
-      !window.confirm(
-        'Approve this production reconciliation? The server will post canonical sale evidence and the record cannot be edited afterwards.',
-      )
-    ) {
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    try {
-      await sendCommand(commandType, {
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        reconciliationId: activeReconciliationId,
-        expectedVersion: savedVersion ?? record.version,
-        ...values,
-      });
-      await load();
-      setNotice(
-        commandType === 'ApproveProductionReconciliation'
-          ? 'Reconciliation approved. Canonical sale evidence has been posted.'
-          : 'Workflow state updated.',
-      );
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The workflow transition failed.';
-      setError(message);
-      if (message.includes('changed elsewhere') || message.includes('locked')) setConflict(true);
     } finally {
       setBusy(false);
     }
@@ -678,127 +682,134 @@ export function DailyOperationsWorkspace({
     if (dirty && editable) {
       const saved = await saveDraft();
       if (saved === null) return;
+      toast.show('Saved');
     }
+    setActionError(null);
     setStep(Math.max(0, Math.min(next, STEPS.length - 1)));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  /** Saves anything not yet saved, then sends the figures for review. */
   async function submitForReview() {
-    if (!dirty) {
-      await transition('SubmitProductionReconciliation');
-      return;
+    if (!record) return;
+    let version = record.version;
+    if (dirty) {
+      const saved = await saveDraft();
+      if (saved === null) {
+        setConfirmSubmit(false);
+        return;
+      }
+      version = saved;
     }
-    const saved = await saveDraft();
-    if (saved !== null) await transition('SubmitProductionReconciliation', {}, saved);
+    setBusy(true);
+    setActionError(null);
+    try {
+      await sendCommand('SubmitProductionReconciliation', {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        reconciliationId: activeReconciliationId,
+        expectedVersion: version,
+      });
+      try {
+        sessionStorage.removeItem(closedMetersKey(context.shiftId));
+      } catch {
+        /* nothing stored */
+      }
+      await load();
+      toast.show('Submitted for review');
+    } catch (cause) {
+      setActionError(asUserMessage(cause));
+      await load();
+    } finally {
+      setBusy(false);
+      setConfirmSubmit(false);
+    }
   }
 
   const editable = isEditableDailyOperationsState(record?.state);
   const state = record?.state ?? 'NOT_STARTED';
-  const requiresSalesExplanation = record ? !isZero(record.totals.salesVariance) : false;
-  const requiresCashExplanation = record ? !isZero(record.totals.cashVariance) : false;
-  const requiresStockExplanation = record
+  const totals = computeTotals({ readings, payments, expenses, countedCash: cashCounted });
+  const stockDifference = record
     ? Object.values(record.totals.stockVariance).some((value) => !isZero(value))
     : false;
+  const salesDifferent = !isZeroDecimal(totals.salesDifference);
+  const cashDifferent = totals.cash.difference !== null && !isZeroDecimal(totals.cash.difference);
+  const evaluation = evaluateSubmit({
+    shiftState: operation?.shift.state ?? 'PLANNED',
+    readingsComplete:
+      readings.length > 0 &&
+      readings.every((item) => litresBetween(item.openingReading, item.closingReading) !== null),
+    hasPayments: payments.length > 0,
+    cashCounted: cashCounted.trim() !== '',
+    differences: { sales: salesDifferent, cash: cashDifferent, stock: stockDifference },
+    explanations,
+    offline: !online,
+  });
 
-  const checklist = record
-    ? [
-        {
-          label: 'Closing reading entered for every pump',
-          ok: readings.length > 0 && readings.every((item) => item.closingReading.trim() !== ''),
-        },
-        { label: 'Payments added', ok: payments.length > 0 },
-        { label: 'Cash counted', ok: cashCounted.trim() !== '' },
-        {
-          label: 'Differences explained',
-          ok:
-            (!requiresSalesExplanation || (explanations.SALES ?? '').trim() !== '') &&
-            (!requiresCashExplanation || (explanations.CASH ?? '').trim() !== '') &&
-            (!requiresStockExplanation || (explanations.STOCK ?? '').trim() !== ''),
-        },
-      ]
-    : [];
-
-  if (loading)
-    return (
-      <>
-        {notice ? (
-          <div className="state state-success" role="status" aria-live="polite">
-            {notice}
-          </div>
-        ) : null}
-        <LoadingState label="Loading daily operations" />
-      </>
-    );
-  if (error && !operation) {
+  if (loadError && !operation) {
     return (
       <ErrorState
-        title="Operations unavailable"
-        message={error}
-        action={<Button onClick={() => void load()}>Retry</Button>}
+        title={loadError.title}
+        message={loadError.body}
+        action={
+          loadError.code === 'UNKNOWN' ? <Button onClick={() => void load()}>Try again</Button> : null
+        }
       />
     );
   }
-  if (!operation) return null;
+  if (!operation) return <WorkspaceSkeleton />;
+
+  const shiftName = shiftLabel(
+    operation.shift.plannedStartAt,
+    operation.shift.plannedEndAt,
+    operation.station.timezone,
+  );
+  const shiftStatus = getDisplayStatus(operation.shift.state);
+  const submitted = Boolean(record) && !editable;
 
   if (!record) {
     return (
       <div className="daily-operations-workspace" aria-label="Daily station operations workspace">
-        <div className="page-header">
+        <header className="entry-head">
           <div>
-            <p className="lede">
-              {operation.station.name} · {formatBusinessDate(operation.businessDay.date)} ·{' '}
-              {formatStatusLabel(operation.shift.state)} shift
+            <p className="eyebrow">
+              {operation.station.name} · {formatBusinessDate(operation.businessDay.date)}
             </p>
+            <h2>Shift figures</h2>
           </div>
-          <StatusBadge tone={dailyOperationsStatusTone(operation.shift.state)}>
-            {formatStatusLabel(operation.shift.state)}
-          </StatusBadge>
-        </div>
-        {error ? (
-          <ErrorState message={error} action={<Button onClick={() => void load()}>Retry</Button>} />
-        ) : null}
-        <Card
-          as="section"
-          className="card panel cash-panel operations-start-card"
-          aria-labelledby="operations-start-title"
-        >
-          <SectionHeading
-            eyebrow="Today"
-            title="Start today's reconciliation"
-            headingId="operations-start-title"
-            detail="You will enter the pump readings, how customers paid, expenses and the cash count, one step at a time. Everything is saved as you go."
+          <div className="workspace-status">
+            <span className="shift-line">
+              Shift: {shiftName}
+              <StatusBadge tone={shiftStatus.tone}>{shiftStatus.label}</StatusBadge>
+            </span>
+          </div>
+        </header>
+        {operation.shift.state === 'PLANNED' ? (
+          <Card as="section" className="card panel cash-panel">
+            <SectionHeading
+              eyebrow="Today"
+              title="Start the shift first"
+              headingId="operations-start-title"
+              detail="Figures can be entered once the shift has started and its meters are closed."
+            />
+            <div className="form-actions">
+              <Link className="button button-primary" href="/">
+                Back to today
+              </Link>
+            </div>
+          </Card>
+        ) : actionError ? (
+          <InlineError
+            error={actionError}
+            onRetry={() => {
+              creating.current = false;
+              setActionError(null);
+              void load();
+            }}
           />
-          <dl className="operational-summary">
-            <div>
-              <dt>Station</dt>
-              <dd>{operation.station.name}</dd>
-            </div>
-            <div>
-              <dt>Business day</dt>
-              <dd>
-                {formatBusinessDate(operation.businessDay.date)} ·{' '}
-                {formatStatusLabel(operation.businessDay.state)}
-              </dd>
-            </div>
-            <div>
-              <dt>Shift</dt>
-              <dd>{formatStatusLabel(operation.shift.state)}</dd>
-            </div>
-          </dl>
-          {operation.shift.state === 'PLANNED' ? (
-            <p className="panel-detail">This shift has not started. Start it first, then begin.</p>
-          ) : null}
-          <div className="form-actions">
-            {operation.shift.state === 'PLANNED' ? (
-              <Button variant="secondary" onClick={() => void startShift()} loading={busy}>
-                Start the shift
-              </Button>
-            ) : null}
-            <Button variant="primary" onClick={() => void createDraft()} loading={busy}>
-              Begin reconciliation
-            </Button>
-          </div>
-        </Card>
+        ) : (
+          <WorkspaceSkeleton compact />
+        )}
       </div>
     );
   }
@@ -813,33 +824,20 @@ export function DailyOperationsWorkspace({
           <h2>{STEP_TITLES[step]}</h2>
         </div>
         <div className="workspace-status">
-          <StatusBadge tone={dailyOperationsStatusTone(state)}>
-            {dailyOperationsStatusLabel(state)}
-          </StatusBadge>
-          {dirty ? (
-            <span className="dirty-indicator">Not saved yet</span>
-          ) : (
-            <span className="saved-indicator">Saved</span>
-          )}
+          <span className="shift-line">
+            Shift: {shiftName}
+            <StatusBadge tone={shiftStatus.tone}>{shiftStatus.label}</StatusBadge>
+          </span>
+          <StatusBadge tone={getDisplayStatus(state).tone}>{getDisplayStatus(state).label}</StatusBadge>
+          {editable ? (
+            dirty ? (
+              <span className="dirty-indicator">{online ? 'Not saved yet' : 'Offline, not saved yet'}</span>
+            ) : (
+              <span className="saved-indicator">Saved</span>
+            )
+          ) : null}
         </div>
       </header>
-
-      {error || notice ? (
-        <div className="entry-notices">
-          {error ? (
-            <ErrorState
-              title={conflict ? 'Refresh required' : 'Something needs attention'}
-              message={error}
-              action={<Button onClick={() => void load()}>Refresh</Button>}
-            />
-          ) : null}
-          {notice ? (
-            <div className="state state-success" role="status" aria-live="polite">
-              {notice}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
 
       <nav className="entry-steps" aria-label="Steps">
         <ol>
@@ -865,18 +863,20 @@ export function DailyOperationsWorkspace({
         <dl className="entry-totals" aria-label="Totals so far">
           <div>
             <dt>Expected sales</dt>
-            <dd>{formatMoney(record.totals.expectedSales)}</dd>
+            <dd>{formatMoney(totals.expectedSales.toFixed())}</dd>
           </div>
           <div>
             <dt>Accounted for</dt>
-            <dd>{formatMoney(record.totals.accountedSales)}</dd>
+            <dd>{formatMoney(totals.accountedSales.toFixed())}</dd>
           </div>
-          <div data-tone={isZero(record.totals.salesVariance) ? undefined : 'warning'}>
+          <div data-tone={differenceTone(totals.salesDifference.toFixed())}>
             <dt>Difference</dt>
-            <dd>{formatMoney(record.totals.salesVariance)}</dd>
+            <dd>{formatMoney(totals.salesDifference.toFixed())}</dd>
+            <dd className="difference-words">
+              {describeDifference(totals.salesDifference.toFixed())?.words}
+            </dd>
           </div>
         </dl>
-        <p className="entry-totals-note">Totals refresh each time you press Next.</p>
       </aside>
 
       <div className="entry-flow">
@@ -898,15 +898,16 @@ export function DailyOperationsWorkspace({
                 <span className="metric-label">Date</span>
                 <strong>{formatBusinessDate(operation.businessDay.date)}</strong>
                 <span className="metric-meta">
-                  {formatStatusLabel(operation.businessDay.state)}
+                  <StatusBadge tone={getDisplayStatus(operation.businessDay.state).tone}>
+                    {getDisplayStatus(operation.businessDay.state).label}
+                  </StatusBadge>
                 </span>
               </div>
               <div>
                 <span className="metric-label">Shift</span>
-                <strong>{formatStatusLabel(operation.shift.state)}</strong>
+                <strong>{shiftName}</strong>
                 <span className="metric-meta">
-                  {formatTimeInTimeZone(operation.shift.plannedStartAt, operation.station.timezone)}{' '}
-                  – {formatTimeInTimeZone(operation.shift.plannedEndAt, operation.station.timezone)}
+                  <StatusBadge tone={shiftStatus.tone}>{shiftStatus.label}</StatusBadge>
                 </span>
               </div>
             </div>
@@ -978,6 +979,13 @@ export function DailyOperationsWorkspace({
                     const contextReading = operation.availableReadings.find(
                       (item) => item.nozzleId === reading.nozzleId,
                     );
+                    const litres = litresBetween(reading.openingReading, reading.closingReading);
+                    const sales = computeTotals({
+                      readings: [reading],
+                      payments: [],
+                      expenses: [],
+                      countedCash: '',
+                    }).expectedSales;
                     return (
                       <article className="meter-card" key={reading.rowKey}>
                         <div className="meter-card-heading">
@@ -991,10 +999,8 @@ export function DailyOperationsWorkspace({
                               {contextReading?.productName ?? reading.label ?? reading.nozzleId}
                             </h3>
                           </div>
-                          {reading.salesValue ? (
-                            <StatusBadge tone="informational">
-                              {formatMoney(reading.salesValue)}
-                            </StatusBadge>
+                          {litres ? (
+                            <StatusBadge tone="neutral">{formatMoney(sales.toFixed())}</StatusBadge>
                           ) : (
                             <StatusBadge tone="neutral">Enter closing</StatusBadge>
                           )}
@@ -1037,7 +1043,7 @@ export function DailyOperationsWorkspace({
                           <div className="derived-value">
                             <span className="metric-label">Litres sold</span>
                             <strong className="numeric">
-                              {reading.litresSold ? formatLitres(reading.litresSold) : '—'}
+                              {litres ? formatLitres(litres.toFixed(3)) : '—'}
                             </strong>
                             <span className="metric-meta">
                               Price{' '}
@@ -1362,7 +1368,7 @@ export function DailyOperationsWorkspace({
               <NumericInput
                 id="cash-counted"
                 label="Cash counted"
-                hint="The expected amount and any difference appear after you press Next."
+                hint="The expected amount and any difference update as you type."
                 value={cashCounted}
                 onChange={(event) => {
                   setDirty(true);
@@ -1374,26 +1380,25 @@ export function DailyOperationsWorkspace({
               <dl className="operational-summary compact-summary">
                 <div>
                   <dt>Cash we expected</dt>
-                  <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.expectedPhysicalCash) : 'Not counted'}
-                  </dd>
+                  <dd className="numeric">{formatMoney(totals.cash.expected.toFixed())}</dd>
                 </div>
                 <div>
                   <dt>Paid out in cash</dt>
-                  <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.cashPaidExpenses) : '—'}
-                  </dd>
+                  <dd className="numeric">{formatMoney(totals.cash.paidOut.toFixed())}</dd>
                 </div>
                 <div>
                   <dt>Expected after payouts</dt>
-                  <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.netExpectedCash) : 'Not counted'}
-                  </dd>
+                  <dd className="numeric">{formatMoney(totals.cash.net.toFixed())}</dd>
                 </div>
                 <div>
                   <dt>Difference</dt>
-                  <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.cashVariance) : 'Not counted'}
+                  <dd className="numeric" data-tone={differenceTone(totals.cash.difference?.toFixed() ?? '0')}>
+                    {totals.cash.difference ? formatMoney(totals.cash.difference.toFixed()) : '—'}
+                    {totals.cash.difference ? (
+                      <span className="difference-words">
+                        {describeDifference(totals.cash.difference.toFixed())?.words}
+                      </span>
+                    ) : null}
                   </dd>
                 </div>
               </dl>
@@ -1476,7 +1481,32 @@ export function DailyOperationsWorkspace({
           </Card>
         ) : null}
 
-        {step === 5 ? (
+        {step === 5 && submitted ? (
+          <Card
+            as="section"
+            className="card panel cash-panel submitted-panel"
+            id="operations-submitted"
+            aria-labelledby="operations-submitted-title"
+          >
+            <SectionHeading
+              eyebrow={getDisplayStatus(state).label}
+              title={state === 'RETURNED' ? 'Sent back for correction' : 'Submitted for review'}
+              headingId="operations-submitted-title"
+              detail={
+                state === 'APPROVED' || state === 'LOCKED'
+                  ? 'A manager has approved these figures.'
+                  : 'A manager will check these figures. You’ll be told if anything needs fixing.'
+              }
+            />
+            <div className="form-actions">
+              <Link className="button button-primary" href="/">
+                Back to today
+              </Link>
+            </div>
+          </Card>
+        ) : null}
+
+        {step === 5 && !submitted ? (
           <Card
             as="section"
             className="card panel cash-panel"
@@ -1489,8 +1519,8 @@ export function DailyOperationsWorkspace({
               headingId="operations-review-title"
             />
             <ul className="entry-checklist" aria-label="Before you submit">
-              {checklist.map((item) => (
-                <li key={item.label} data-ok={item.ok || undefined}>
+              {evaluation.checks.map((item) => (
+                <li key={item.id} data-ok={item.ok || undefined}>
                   <span aria-hidden="true">{item.ok ? '✓' : '!'}</span>
                   {item.label}
                 </li>
@@ -1500,11 +1530,13 @@ export function DailyOperationsWorkspace({
               {(['SALES', 'CASH', 'STOCK'] as const).map((category) => {
                 const required =
                   category === 'SALES'
-                    ? requiresSalesExplanation
+                    ? salesDifferent
                     : category === 'CASH'
-                      ? requiresCashExplanation
-                      : requiresStockExplanation;
+                      ? cashDifferent
+                      : stockDifference;
                 if (!required && !(explanations[category] ?? '').trim()) return null;
+                const short =
+                  required && (explanations[category] ?? '').trim().length < MIN_EXPLANATION;
                 return (
                   <Field
                     key={category}
@@ -1512,7 +1544,7 @@ export function DailyOperationsWorkspace({
                     label={`Why is ${category === 'SALES' ? 'the sales' : category === 'CASH' ? 'the cash' : 'the stock'} different?`}
                     hint={
                       required
-                        ? 'Please explain this difference before submitting.'
+                        ? `Add a short reason (at least ${MIN_EXPLANATION} characters).`
                         : 'Only needed if there is a difference.'
                     }
                   >
@@ -1520,6 +1552,7 @@ export function DailyOperationsWorkspace({
                       id={`explanation-${category.toLowerCase()}`}
                       rows={3}
                       value={explanations[category] ?? ''}
+                      aria-invalid={short || undefined}
                       disabled={!editable}
                       onChange={(event) => {
                         setDirty(true);
@@ -1533,82 +1566,41 @@ export function DailyOperationsWorkspace({
                 );
               })}
             </div>
-            {state === 'APPROVED' ? (
-              <p className="state state-success" role="status">
-                <strong>Approved:</strong> Canonical sale evidence has been posted by the production
-                approval command. Corrections use a named new revision workflow.
-              </p>
-            ) : null}
-            {state === 'LOCKED' ? (
-              <p className="state state-success" role="status">
-                <strong>Locked:</strong> This record is locked. Corrections use a named new revision
-                workflow.
-              </p>
-            ) : null}
             {state === 'RETURNED' ? (
               <p className="state state-warning" role="status">
-                <strong>Returned:</strong> Correct the evidence and save a new server draft before
-                resubmitting.
+                <strong>Returned:</strong> Correct the figures, then submit them again.
               </p>
-            ) : null}
-            {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
-              <Field
-                id="management-return-reason"
-                label="Return reason"
-                hint="Required when sending this reconciliation back for correction."
-                required
-              >
-                <textarea
-                  id="management-return-reason"
-                  rows={3}
-                  value={returnReason}
-                  onChange={(event) => setReturnReason(event.target.value)}
-                />
-              </Field>
             ) : null}
             <div className="form-actions">
               <Button
                 variant="secondary"
-                onClick={() => void saveDraft()}
+                onClick={() => void saveDraft().then((saved) => saved !== null && toast.show('Saved'))}
                 disabled={!editable || !dirty}
-                loading={busy}
+                loading={busy && !confirmSubmit}
               >
                 Save now
               </Button>
-              {role === 'SUPERVISOR' && editable ? (
-                <Button variant="primary" onClick={() => void submitForReview()} disabled={busy}>
+              {editable ? (
+                <Button
+                  variant="primary"
+                  onClick={() => setConfirmSubmit(true)}
+                  disabled={busy || !evaluation.canSubmit}
+                  aria-describedby="submit-reason"
+                >
                   Submit for review
                 </Button>
               ) : null}
-              {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
-                <>
-                  <Button
-                    variant="danger"
-                    onClick={() => {
-                      const reason = returnReason.trim();
-                      if (!reason) {
-                        setError('Enter a return reason before sending this reconciliation back.');
-                        return;
-                      }
-                      void transition('ReturnProductionReconciliation', { reason });
-                    }}
-                    disabled={busy || !returnReason.trim()}
-                  >
-                    Return for correction
-                  </Button>
-                  <ReconciliationApprovalButton
-                    key={`${context.tenantId}:${activeReconciliationId}`}
-                    tenantId={context.tenantId}
-                    disabled={busy}
-                    onVerified={() => void transition('ApproveProductionReconciliation')}
-                  />
-                </>
-              ) : null}
             </div>
+            {editable && evaluation.blocked ? (
+              <p className="action-reason" id="submit-reason">
+                {evaluation.blocked.reason}
+              </p>
+            ) : null}
+            <InlineError error={actionError} onRetry={() => setConfirmSubmit(true)} />
           </Card>
         ) : null}
 
-        {step === 5 ? (
+        {step === 5 && submitted ? (
           <Card
             as="section"
             className="card panel cash-panel"
@@ -1621,40 +1613,67 @@ export function DailyOperationsWorkspace({
             />
             <dl className="summary-list">
               <div>
-                <dt>Cash collected but not banked</dt>
+                <dt>Cash collected, not banked</dt>
                 <dd>
-                  {cashSummary ? formatMoney(cashSummary.collectedButUnbanked) : 'Unavailable'}
+                  {cashSummary ? formatMoney(cashSummary.collectedButUnbanked) : '—'}
                 </dd>
               </div>
               <div>
-                <dt>Waiting for bank confirmation</dt>
+                <dt>Awaiting bank confirmation</dt>
                 <dd>
-                  {cashSummary ? formatMoney(cashSummary.pendingBankConfirmation) : 'Unavailable'}
+                  {cashSummary ? formatMoney(cashSummary.pendingBankConfirmation) : '—'}
                 </dd>
               </div>
-              <div>
-                <dt>Provider settlements</dt>
-                <dd>{settlementSummary.length || 'Unavailable'}</dd>
-              </div>
+              {settlementSummary ? (
+                <div>
+                  <dt>Unmatched provider amount</dt>
+                  <dd>
+                    {formatMoney(
+                      settlementSummary
+                        .reduce(
+                          (total, item) => total.plus(item.unallocatedProviderAmount || '0'),
+                          new Decimal(0),
+                        )
+                        .toFixed(),
+                    )}
+                  </dd>
+                </div>
+              ) : null}
             </dl>
             <div className="inline-links">
               <a className="text-link" href={`/stations/${context.stationId}/cash`}>
                 Open cash
               </a>
-              <a className="text-link" href={`/stations/${context.stationId}/settlements`}>
-                Open settlements
-              </a>
-              {role === 'MANAGEMENT' ? (
-                <a
-                  className="text-link"
-                  href={`/reports?tenantId=${encodeURIComponent(context.tenantId)}`}
-                >
-                  Open reports
+              {settlementSummary ? (
+                <a className="text-link" href={`/stations/${context.stationId}/settlements`}>
+                  Open settlements
                 </a>
               ) : null}
             </div>
           </Card>
         ) : null}
+
+        <ConfirmDialog
+          open={confirmSubmit}
+          title="Submit for review?"
+          lines={[
+            { label: 'Expected sales', value: formatMoney(totals.expectedSales.toFixed()) },
+            { label: 'Accounted for', value: formatMoney(totals.accountedSales.toFixed()) },
+            {
+              label: 'Difference',
+              value: formatMoney(totals.salesDifference.toFixed()),
+            },
+            {
+              label: 'Cash difference',
+              value: totals.cash.difference ? formatMoney(totals.cash.difference.toFixed()) : '—',
+            },
+          ]}
+          note="You won’t be able to change these figures unless a manager sends them back."
+          confirmLabel="Submit"
+          busy={busy}
+          onConfirm={() => void submitForReview()}
+          onClose={() => setConfirmSubmit(false)}
+        />
 
         <footer className="entry-footer">
           <Button

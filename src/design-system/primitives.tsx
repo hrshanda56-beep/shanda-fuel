@@ -103,6 +103,7 @@ export type StatusTone =
   | 'positive'
   | 'neutral'
   | 'informational'
+  | 'progress'
   | 'warning'
   | 'critical'
   | 'pending'
