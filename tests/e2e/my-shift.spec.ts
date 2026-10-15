@@ -71,7 +71,7 @@ async function noSidewaysScroll(page: Page) {
   expect(overflow).toBeLessThanOrEqual(0);
 }
 
-test.describe('My Shift layout', () => {
+test.describe('My shift layout', () => {
   for (const width of WIDTHS) {
     test(`is simple, readable and accessible at ${width}px`, async ({ page }) => {
       await mockShift(page, shiftData());
@@ -110,7 +110,7 @@ test.describe('My Shift layout', () => {
   }
 });
 
-test.describe('My Shift states', () => {
+test.describe('My shift states', () => {
   test('shows a calm message when there is no shift', async ({ page }) => {
     await mockShift(page, shiftData({ noShift: true }));
     await page.goto('/my-shift');
@@ -169,7 +169,7 @@ test.describe('My Shift states', () => {
   });
 });
 
-test.describe('My Shift capture', () => {
+test.describe('My shift capture', () => {
   test('validates in plain language, then records once even on a double tap', async ({ page }) => {
     let data = shiftData();
     await page.route('**/api/forecourt/my-shift**', (route) =>

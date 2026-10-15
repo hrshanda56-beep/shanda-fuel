@@ -109,7 +109,7 @@ describe('navigation destinations', () => {
       'Daily operations',
       'Reconciliations',
       'Inventory',
-      'Cash & Banking',
+      'Cash & banking',
       'Provider settlements',
       'Customers',
       'Suppliers',

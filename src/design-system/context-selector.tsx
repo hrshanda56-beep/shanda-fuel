@@ -29,6 +29,8 @@ type ContextSelectorProps = Readonly<{
   onClose: () => void;
   /** Reports the current context parts (organisation → station) as they resolve. */
   onLabelChange?: (label: { station: string; parts: readonly string[] }) => void;
+  /** Reports the authorised tree and the current selection once they are known. */
+  onResolved?: (resolved: { available: AvailableContext; current: CurrentContext | null }) => void;
 }>;
 
 type SelectorState =
@@ -42,6 +44,7 @@ export function ContextSelector({
   onOpen,
   onClose,
   onLabelChange,
+  onResolved,
 }: ContextSelectorProps) {
   const pathname = usePathname() ?? '/';
   const search = useLocationSearch();
@@ -109,6 +112,12 @@ export function ContextSelector({
   useEffect(() => {
     onLabelChange?.({ station: pillLabel, parts: currentLabel });
   }, [currentLabel, onLabelChange, pillLabel]);
+
+  useEffect(() => {
+    if (state.status === 'ready') {
+      onResolved?.({ available: state.resolution.available, current: state.resolution.current });
+    }
+  }, [state, onResolved]);
 
   function retry() {
     setState({ status: 'loading' });
