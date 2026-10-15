@@ -162,7 +162,7 @@ test.describe('shared quality (F4-07)', () => {
     for (const control of search) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
     await page.keyboard.press('Escape');
 
-    // A real phone form: matching EcoCash/POS payments on Provider Settlements.
+    // A real phone form: matching EcoCash/POS payments on Provider settlements.
     await mockContext(page, `/stations/${STATION}/settlements`);
     await mockSettlements(page);
     await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);

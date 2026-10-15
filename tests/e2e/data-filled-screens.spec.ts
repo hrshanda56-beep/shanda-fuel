@@ -124,7 +124,7 @@ test.describe('data-filled screens', () => {
     }
   });
 
-  test('Provider Settlements shows EcoCash and POS waiting cards and the provider chart', async ({
+  test('Provider settlements shows EcoCash and POS waiting cards and the provider chart', async ({
     page,
   }) => {
     await mockContext(page, `/stations/${STATION}/settlements`);

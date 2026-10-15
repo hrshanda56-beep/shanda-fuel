@@ -5,7 +5,7 @@
 export const REPORT_CATEGORIES = [
   { id: 'statements', label: 'Financial statements' },
   { id: 'sales', label: 'Sales' },
-  { id: 'cash', label: 'Cash & Banking' },
+  { id: 'cash', label: 'Cash & banking' },
   { id: 'payments', label: 'Electronic payments' },
   { id: 'credit', label: 'Suppliers & Customers' },
   { id: 'inventory', label: 'Inventory' },

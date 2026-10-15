@@ -22,7 +22,7 @@ test.describe('management reporting surface', () => {
     const pageHeader = page.getByRole('region', { name: 'Page header and work context' });
     await expect(pageHeader.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible();
     await expect(
-      pageHeader.getByText('Operational Financial Position', { exact: true }),
+      pageHeader.getByText('Operational financial position', { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'Choose an organisation to view reports' }),
@@ -119,9 +119,9 @@ test.describe('management reporting surface', () => {
       await page.getByLabel('Period', { exact: true }).first().click();
       await page.getByRole('option', { name: 'Last month' }).click();
       await expect(page.getByLabel('Period', { exact: true }).first()).toHaveText('Last month');
-      await page.getByRole('link', { name: 'Cash Evidence to Bank' }).click();
-      await expect(page).toHaveURL(/\/reports\/cash\?.*period=3m/);
-      await expect(page.getByRole('region', { name: 'Cash Evidence to Bank' })).toBeVisible();
+      await page.getByRole('link', { name: /Cash & banking/ }).click();
+      await expect(page).toHaveURL(/period=3m.*category=cash|category=cash.*period=3m/);
+      await expect(page.locator('.report-row')).toHaveCount(1);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });

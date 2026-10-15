@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   createContext,
+  Fragment,
   useContext,
   useCallback,
   useEffect,
@@ -18,7 +19,14 @@ import {
 
 import { AccountSignOutItem, type AccountAuthProvider } from './account-sign-out';
 import { WorkInProgressDialog } from './dialogs';
+import {
+  buildContextHref,
+  type AvailableContext,
+  type ContextSelection,
+  type CurrentContext,
+} from '@/modules/context';
 import { ContextSelector } from './context-selector';
+import { useSearchResults, type SearchResult } from './search-results';
 import { useLocationSearch } from './location-search';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
 import { BrandMark } from './brand-mark';
@@ -163,10 +171,23 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname();
   const search = useLocationSearch();
-  const workContext = useMemo(
-    () => readWorkContext(pathname, new URLSearchParams(search)),
-    [pathname, search],
-  );
+  // The saved station (what the header shows) fills in whatever the URL does not say, so every
+  // navigation link leads to a populated page.
+  const [resolved, setResolved] = useState<{
+    available: AvailableContext;
+    current: CurrentContext | null;
+  } | null>(null);
+  const workContext = useMemo(() => {
+    const fromUrl = readWorkContext(pathname, new URLSearchParams(search));
+    const saved = resolved?.current;
+    if (!saved) return fromUrl;
+    return {
+      tenantId: saved.organisationId,
+      ...(saved.legalEntityId ? { legalEntityId: saved.legalEntityId } : {}),
+      ...(saved.stationId && !saved.allStations ? { stationId: saved.stationId } : {}),
+      ...fromUrl,
+    };
+  }, [pathname, search, resolved]);
   const sections = useMemo(
     () => resolveNavigation(navigationProjection, workContext),
     [navigationProjection, workContext],
@@ -400,6 +421,7 @@ export function AppShell({
                   onOpen={() => setContextSelectorOpen(true)}
                   onClose={() => setContextSelectorOpen(false)}
                   onLabelChange={setContextLabel}
+                  onResolved={setResolved}
                 />
                 {searchPlacement !== 'none' ? <GlobalSearchButton compact /> : null}
                 <AccountMenu
@@ -511,6 +533,8 @@ export function AppShell({
           open={searchOpen}
           onClose={() => setSearchOpen(false)}
           items={sections.flatMap((section) => section.items)}
+          resolved={resolved}
+          onContextRequired={openContextSelector}
           onWip={openWip}
           returnFocus={() => moreButtonRef.current}
         />
@@ -1121,27 +1145,45 @@ function SearchPalette({
   open,
   onClose,
   items,
+  resolved,
+  onContextRequired,
   onWip,
   returnFocus,
 }: {
   open: boolean;
   onClose: () => void;
   items: readonly ResolvedNavigationItem[];
+  resolved: { available: AvailableContext; current: CurrentContext | null } | null;
+  onContextRequired: () => void;
   onWip: (request: WipRequest) => void;
   /** Used when the control that opened search is gone, e.g. the closed More drawer. */
   returnFocus?: () => HTMLElement | null | undefined;
 }) {
   const router = useRouter();
+  const pathname = usePathname() ?? '/';
+  const locationSearch = useLocationSearch();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const results = items.filter(
+  const pageResults = items.filter(
     (item) =>
       item.state !== 'restricted' &&
       item.searchLabel.toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const safeIndex = Math.min(activeIndex, Math.max(results.length - 1, 0));
+  const moreResults = useSearchResults(
+    open,
+    query,
+    resolved ?? { available: null, current: null },
+  );
+  type Entry =
+    | { kind: 'page'; key: string; item: ResolvedNavigationItem }
+    | { kind: 'result'; key: string; result: SearchResult };
+  const entries: Entry[] = [
+    ...pageResults.map((item) => ({ kind: 'page' as const, key: item.key, item })),
+    ...moreResults.map((result) => ({ kind: 'result' as const, key: result.id, result })),
+  ];
+  const safeIndex = Math.min(activeIndex, Math.max(entries.length - 1, 0));
 
   const close = () => {
     setQuery('');
@@ -1149,10 +1191,77 @@ function SearchPalette({
     onClose();
   };
 
-  const choose = (item: ResolvedNavigationItem) => {
+  const choose = async (entry: Entry) => {
     close();
-    if (item.state === 'link') router.push(item.href);
-    else if (item.state === 'wip') onWip({ feature: item.feature, message: item.message });
+    if (entry.kind === 'page') {
+      const { item } = entry;
+      if (item.state === 'link') router.push(item.href);
+      else if (item.state === 'wip') {
+        // A page that only needs a station opens the station picker; only unbuilt pages say "coming soon".
+        if (item.reason === 'station') onContextRequired();
+        else onWip({ feature: item.feature, message: item.message });
+      }
+      return;
+    }
+    const { result } = entry;
+    if (result.href) {
+      router.push(result.href);
+      return;
+    }
+    if (result.select) {
+      try {
+        const response = await fetch('/api/context', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ pathname, selection: result.select }),
+        });
+        const body = (await response.json().catch(() => null)) as {
+          data?: { current?: ContextSelection };
+        } | null;
+        if (response.ok && body?.data?.current) {
+          router.push(buildContextHref(pathname, locationSearch, body.data.current));
+          router.refresh();
+        }
+      } catch {
+        /* the picker in the header is still available */
+      }
+    }
+  };
+
+  const groups = ['Stations', 'Shifts', 'Reconciliations', 'Customers'] as const;
+  let optionIndex = -1;
+  const renderOption = (entry: Entry) => {
+    optionIndex += 1;
+    const index = optionIndex;
+    return (
+      <li
+        key={entry.key}
+        id={`${listId}-${index}`}
+        role="option"
+        aria-selected={index === safeIndex}
+        className="search-palette-option"
+        onMouseEnter={() => setActiveIndex(index)}
+        onClick={() => void choose(entry)}
+      >
+        {entry.kind === 'page' ? (
+          <>
+            <Icon name={entry.item.icon} size="md" />
+            <span>{entry.item.searchLabel}</span>
+            {entry.item.state === 'wip' && entry.item.reason === 'planned' ? (
+              <span className="search-palette-meta">Coming soon</span>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <span>{entry.result.title}</span>
+            {entry.result.detail ? (
+              <span className="search-palette-meta">{entry.result.detail}</span>
+            ) : null}
+          </>
+        )}
+      </li>
+    );
   };
 
   return (
@@ -1160,7 +1269,7 @@ function SearchPalette({
       open={open}
       onClose={close}
       title="Search"
-      description="Go to any page you have access to."
+      description="Go to a page, station, shift, reconciliation or customer you have access to."
       size="md"
       className="modal-command-palette"
       initialFocusRef={inputRef}
@@ -1172,12 +1281,12 @@ function SearchPalette({
           className="search-palette-input"
           type="search"
           role="combobox"
-          aria-label="Search pages"
+          aria-label="Search"
           aria-expanded="true"
           aria-controls={listId}
-          aria-activedescendant={results[safeIndex] ? `${listId}-${safeIndex}` : undefined}
+          aria-activedescendant={entries[safeIndex] ? `${listId}-${safeIndex}` : undefined}
           aria-autocomplete="list"
-          placeholder="Search pages…"
+          placeholder="Search pages, stations, shifts…"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -1186,38 +1295,42 @@ function SearchPalette({
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
-              setActiveIndex((index) => Math.min(index + 1, results.length - 1));
+              setActiveIndex((index) => Math.min(index + 1, entries.length - 1));
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setActiveIndex((index) => Math.max(index - 1, 0));
-            } else if (event.key === 'Enter' && results[safeIndex]) {
+            } else if (event.key === 'Enter' && entries[safeIndex]) {
               event.preventDefault();
-              choose(results[safeIndex]!);
+              void choose(entries[safeIndex]!);
             }
           }}
         />
-        <ul id={listId} role="listbox" aria-label="Pages" className="search-palette-results">
-          {results.map((item, index) => (
-            <li
-              key={item.key}
-              id={`${listId}-${index}`}
-              role="option"
-              aria-selected={index === safeIndex}
-              className="search-palette-option"
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => choose(item)}
-            >
-              <Icon name={item.icon} size="md" />
-              <span>{item.searchLabel}</span>
-              {item.state === 'wip' ? (
-                <span className="search-palette-meta">Coming soon</span>
-              ) : null}
-            </li>
-          ))}
+        <ul id={listId} role="listbox" aria-label="Results" className="search-palette-results">
+          {pageResults.length > 0 ? (
+            <>
+              <li role="presentation" className="search-palette-group">
+                Pages
+              </li>
+              {entries.filter((entry) => entry.kind === 'page').map(renderOption)}
+            </>
+          ) : null}
+          {groups.map((group) => {
+            const inGroup = entries.filter(
+              (entry) => entry.kind === 'result' && entry.result.group === group,
+            );
+            return inGroup.length > 0 ? (
+              <Fragment key={group}>
+                <li role="presentation" className="search-palette-group">
+                  {group}
+                </li>
+                {inGroup.map(renderOption)}
+              </Fragment>
+            ) : null;
+          })}
         </ul>
-        {results.length === 0 ? (
+        {entries.length === 0 ? (
           <p className="search-palette-empty" role="status">
-            No pages match “{query}”.
+            Nothing matches “{query}”.
           </p>
         ) : null}
       </div>
