@@ -1171,11 +1171,7 @@ function SearchPalette({
       item.state !== 'restricted' &&
       item.searchLabel.toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const moreResults = useSearchResults(
-    open,
-    query,
-    resolved ?? { available: null, current: null },
-  );
+  const moreResults = useSearchResults(open, query, resolved ?? { available: null, current: null });
   type Entry =
     | { kind: 'page'; key: string; item: ResolvedNavigationItem }
     | { kind: 'result'; key: string; result: SearchResult };
@@ -1281,7 +1277,7 @@ function SearchPalette({
           className="search-palette-input"
           type="search"
           role="combobox"
-          aria-label="Search"
+          aria-label="Search pages"
           aria-expanded="true"
           aria-controls={listId}
           aria-activedescendant={entries[safeIndex] ? `${listId}-${safeIndex}` : undefined}

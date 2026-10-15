@@ -215,7 +215,7 @@ test.describe('phone search entry in the More drawer (F1-05)', () => {
     await mockDashboard(page);
     await page.goto(TODAY);
     await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
-    await expect(page.locator('.shell-header .global-search')).toBeHidden();
+    await expect(page.locator('.shell-header .global-search')).toBeVisible();
     await page.getByRole('button', { name: /^More/ }).tap();
     const drawer = page.getByRole('dialog', { name: 'More' });
     const entry = drawer.getByRole('button', { name: 'Search pages' });
@@ -304,7 +304,8 @@ test('the drawer search entry stays out of the tablet menu, where the header has
   await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'tablet');
   await page.locator('.shell-sidebar').getByRole('button', { name: 'Finance' }).click();
-  const drawer = page.getByRole('dialog', { name: 'More' });
+  // A section icon opens that section's own menu, named after it.
+  const drawer = page.getByRole('dialog', { name: 'Finance' });
   await expect(drawer).toBeVisible();
   await expect(drawer.locator('.shell-more-search')).toBeHidden();
 });

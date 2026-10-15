@@ -262,7 +262,9 @@ export function TodayOverview({
 
   return (
     <>
-      {showQuickActions && stationId ? <NextStepCard tenantId={tenantId} stationId={stationId} /> : null}
+      {showQuickActions && stationId ? (
+        <NextStepCard tenantId={tenantId} stationId={stationId} />
+      ) : null}
       <div className="today today-dashboard">
         <section
           className="today-section today-figures-section"

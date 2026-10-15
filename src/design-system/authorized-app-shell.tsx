@@ -25,9 +25,7 @@ export type AuthorizedAppShellProps = Omit<AppShellProps, 'navigationProjection'
 async function sessionUserName(requestHeaders: Headers): Promise<string | undefined> {
   try {
     if (getAuthProviderName() !== 'BETTER_AUTH') return undefined;
-    const result = await (
-      await getAuth()
-    ).api.getSession({ headers: requestHeaders });
+    const result = await (await getAuth()).api.getSession({ headers: requestHeaders });
     const name = (result as { user?: { name?: unknown } } | null)?.user?.name;
     return typeof name === 'string' && name.trim() ? name : undefined;
   } catch {

@@ -55,7 +55,7 @@ test.describe('data-filled screens', () => {
       await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
 
       const glance = page.getByLabel('Today at a glance');
-      await expect(glance, `width ${width}`).toContainText('2 · 1 open');
+      await expect(glance, `width ${width}`).toContainText('2 shifts · 1 open');
       await expect(glance).toContainText('Waiting for review');
       await expect(glance).toContainText('Returned for changes');
 

@@ -44,7 +44,8 @@ export const TRAIL = [
 ] as const;
 
 export const BLOCKED_REASONS = {
-  STATION_NOT_SET_UP: 'Add pumps and attendants for this station in Settings before starting a shift.',
+  STATION_NOT_SET_UP:
+    'Add pumps and attendants for this station in Settings before starting a shift.',
   DAY_HAS_OPEN_WORK: 'Close every shift and get every reconciliation approved first.',
 } as const;
 
@@ -336,7 +337,9 @@ export function nextStep(
     };
   }
 
-  const everyShiftClosed = shifts.every((shift) => ['COMPLETED', 'NOT_OPERATED'].includes(shift.state));
+  const everyShiftClosed = shifts.every((shift) =>
+    ['COMPLETED', 'NOT_OPERATED'].includes(shift.state),
+  );
   const everyReconciliationApproved = overview.reconciliations.every((item) =>
     ['APPROVED', 'LOCKED', 'POSTED'].includes(item.state),
   );
@@ -368,7 +371,11 @@ export function nextStep(
       stage: 4,
       title: 'Close the business day',
       detail: 'Do this once every shift is closed and approved.',
-      action: { kind: 'blocked', label: 'Close business day', reason: BLOCKED_REASONS.DAY_HAS_OPEN_WORK },
+      action: {
+        kind: 'blocked',
+        label: 'Close business day',
+        reason: BLOCKED_REASONS.DAY_HAS_OPEN_WORK,
+      },
     };
   }
 
@@ -400,7 +407,9 @@ export function trailActions(
   if (day?.state === 'OPEN') {
     const closedShift = overview.shifts.find((shift) => SHIFT_CLOSED.has(shift.state));
     if (closedShift && !none[3]) {
-      const reconciliation = overview.reconciliations.find((item) => item.shiftId === closedShift.id);
+      const reconciliation = overview.reconciliations.find(
+        (item) => item.shiftId === closedShift.id,
+      );
       const params = new URLSearchParams({
         tenantId: context.tenantId,
         stationId: context.stationId,

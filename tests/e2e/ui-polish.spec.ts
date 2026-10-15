@@ -551,7 +551,7 @@ test.describe('KPIs', () => {
     await expect(figures.locator(':is(svg, img)')).toHaveCount(0);
   });
 
-  test('link to the detail behind the number', async ({ page }) => {
+  test('reports open the detail behind them', async ({ page }) => {
     await mockApis(page);
     await page.goto('/reports?tenantId=tenant-1');
     await page.getByRole('link', { name: /Total Sales/ }).click();
@@ -612,7 +612,7 @@ test.describe('data screens stay accessible', () => {
       '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
       'Choose a station to view inventory',
     ],
-    ['/stations/station-1/cash?tenantId=tenant-1', 'Cash & Banking'],
+    ['/stations/station-1/cash?tenantId=tenant-1', 'Cash & banking'],
   ] as const;
 
   for (const width of [390, 1440]) {

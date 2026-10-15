@@ -55,7 +55,10 @@ export function evaluateSubmit(input: {
   if (input.offline) {
     blocked = { code: 'UNKNOWN', reason: 'Connect to the internet to submit.' };
   } else if (!shiftClosed) {
-    blocked = { code: 'SHIFT_NOT_CLOSED', reason: 'Close the shift meters, then submit the figures.' };
+    blocked = {
+      code: 'SHIFT_NOT_CLOSED',
+      reason: 'Close the shift meters, then submit the figures.',
+    };
   } else if (!input.readingsComplete) {
     blocked = {
       code: 'METER_READINGS_MISSING',

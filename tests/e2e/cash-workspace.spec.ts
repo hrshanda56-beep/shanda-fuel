@@ -166,7 +166,7 @@ test.describe('Cash workspace', () => {
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-      const position = page.getByRole('region', { name: 'Cash Position' });
+      const position = page.getByRole('region', { name: 'Cash position' });
       await expect(position).toContainText('Cash at station');
       await expect(position).toContainText('USD 700.00');
       await expect(position).toContainText('Collected, not banked');

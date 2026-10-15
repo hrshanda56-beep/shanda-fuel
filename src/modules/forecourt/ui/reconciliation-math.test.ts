@@ -64,7 +64,9 @@ describe('evaluateSubmit', () => {
     expect(evaluateSubmit({ ...base, explanations: { CASH: 'short' } }).blocked?.code).toBe(
       'DIFFERENCE_NOT_EXPLAINED',
     );
-    expect(evaluateSubmit({ ...base, explanations: { CASH: 'Till was five dollars short' } }).canSubmit).toBe(true);
+    expect(
+      evaluateSubmit({ ...base, explanations: { CASH: 'Till was five dollars short' } }).canSubmit,
+    ).toBe(true);
     const checks = evaluateSubmit({ ...base, explanations: {} }).checks;
     expect(checks.find((check) => check.id === 'differences')?.ok).toBe(false);
   });

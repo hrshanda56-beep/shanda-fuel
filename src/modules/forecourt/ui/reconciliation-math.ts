@@ -53,12 +53,16 @@ export function computeTotals(input: {
     input.readings.map((reading) => {
       const litres = litresBetween(reading.openingReading, reading.closingReading);
       const price = parse(reading.unitPrice);
-      return litres && price ? litres.times(price).toDecimalPlaces(4, Decimal.ROUND_HALF_EVEN) : null;
+      return litres && price
+        ? litres.times(price).toDecimalPlaces(4, Decimal.ROUND_HALF_EVEN)
+        : null;
     }),
   );
   const accountedSales = sum(input.payments.map((payment) => parse(payment.amount)));
   const cashExpected = sum(
-    input.payments.filter((payment) => payment.method === 'CASH').map((payment) => parse(payment.amount)),
+    input.payments
+      .filter((payment) => payment.method === 'CASH')
+      .map((payment) => parse(payment.amount)),
   );
   const paidOut = sum(
     input.expenses

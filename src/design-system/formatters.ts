@@ -34,7 +34,10 @@ export type DifferenceDisplay = Readonly<{
 }>;
 
 /** Direction in words for a difference (accounted for or counted, minus expected). */
-export function describeDifference(value: string | null | undefined, currency = 'USD'): DifferenceDisplay | null {
+export function describeDifference(
+  value: string | null | undefined,
+  currency = 'USD',
+): DifferenceDisplay | null {
   if (value === null || value === undefined || !DECIMAL_PATTERN.test(value.trim())) return null;
   const amount = new Decimal(value.trim()).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   if (amount.isZero()) return { words: 'Balanced', tone: 'balanced' };

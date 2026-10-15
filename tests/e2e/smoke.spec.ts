@@ -25,11 +25,17 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(mobileContext).toContainText('Morning shift');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
 
+  // Today is in the bottom bar, so the menu does not repeat it.
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Mobile navigation' })
+      .getByRole('link', { name: 'Today', exact: true }),
+  ).toHaveAttribute('href', '/');
+
   await page.getByRole('button', { name: 'More' }).click();
   const menu = page.getByRole('dialog', { name: 'More' });
   await expect(menu.getByRole('button', { name: /Demo station/ })).toBeVisible();
   await expect(menu.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
-  await expect(menu.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('href', '/');
 });
 
 // The shared form, dialog and sheet patterns are exercised on the internal

@@ -758,7 +758,9 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
         title={loadError.title}
         message={loadError.body}
         action={
-          loadError.code === 'UNKNOWN' ? <Button onClick={() => void load()}>Try again</Button> : null
+          loadError.code === 'UNKNOWN' ? (
+            <Button onClick={() => void load()}>Try again</Button>
+          ) : null
         }
       />
     );
@@ -834,10 +836,14 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
             Shift: {shiftName}
             <StatusBadge tone={shiftStatus.tone}>{shiftStatus.label}</StatusBadge>
           </span>
-          <StatusBadge tone={getDisplayStatus(state).tone}>{getDisplayStatus(state).label}</StatusBadge>
+          <StatusBadge tone={getDisplayStatus(state).tone}>
+            {getDisplayStatus(state).label}
+          </StatusBadge>
           {editable ? (
             dirty ? (
-              <span className="dirty-indicator">{online ? 'Not saved yet' : 'Offline, not saved yet'}</span>
+              <span className="dirty-indicator">
+                {online ? 'Not saved yet' : 'Offline, not saved yet'}
+              </span>
             ) : (
               <span className="saved-indicator">Saved</span>
             )
@@ -1398,7 +1404,10 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
                 </div>
                 <div>
                   <dt>Difference</dt>
-                  <dd className="numeric" data-tone={differenceTone(totals.cash.difference?.toFixed() ?? '0')}>
+                  <dd
+                    className="numeric"
+                    data-tone={differenceTone(totals.cash.difference?.toFixed() ?? '0')}
+                  >
                     {totals.cash.difference ? formatMoney(totals.cash.difference.toFixed()) : '—'}
                     {totals.cash.difference ? (
                       <span className="difference-words">
@@ -1580,7 +1589,9 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
             <div className="form-actions">
               <Button
                 variant="secondary"
-                onClick={() => void saveDraft().then((saved) => saved !== null && toast.show('Saved'))}
+                onClick={() =>
+                  void saveDraft().then((saved) => saved !== null && toast.show('Saved'))
+                }
                 disabled={!editable || !dirty}
                 loading={busy && !confirmSubmit}
               >
@@ -1620,15 +1631,11 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
             <dl className="summary-list">
               <div>
                 <dt>Cash collected, not banked</dt>
-                <dd>
-                  {cashSummary ? formatMoney(cashSummary.collectedButUnbanked) : '—'}
-                </dd>
+                <dd>{cashSummary ? formatMoney(cashSummary.collectedButUnbanked) : '—'}</dd>
               </div>
               <div>
                 <dt>Awaiting bank confirmation</dt>
-                <dd>
-                  {cashSummary ? formatMoney(cashSummary.pendingBankConfirmation) : '—'}
-                </dd>
+                <dd>{cashSummary ? formatMoney(cashSummary.pendingBankConfirmation) : '—'}</dd>
               </div>
               {settlementSummary ? (
                 <div>

@@ -102,13 +102,19 @@ export function classifyFailure(
   if (/sealed meter segment|terminal meter-close|meter.?close boundary/.test(text)) {
     return 'METER_READINGS_MISSING';
   }
-  if (/non-zero variance|variance explanation|explain/.test(text)) return 'DIFFERENCE_NOT_EXPLAINED';
-  if (/every operated shift must be completed|unresolved .*exception blocks day|open work/.test(text)) {
+  if (/non-zero variance|variance explanation|explain/.test(text))
+    return 'DIFFERENCE_NOT_EXPLAINED';
+  if (
+    /every operated shift must be completed|unresolved .*exception blocks day|open work/.test(text)
+  ) {
     return 'DAY_HAS_OPEN_WORK';
   }
   if (/return reason|reason is required/.test(text)) return 'RETURN_REASON_REQUIRED';
   if (/shift.*(not|must be).*(closed|meter)/.test(text)) return 'SHIFT_NOT_CLOSED';
-  if (/changed elsewhere|stale|expectedversion/.test(text) || serverCode === 'IDEMPOTENCY_CONFLICT') {
+  if (
+    /changed elsewhere|stale|expectedversion/.test(text) ||
+    serverCode === 'IDEMPOTENCY_CONFLICT'
+  ) {
     return 'STALE_STATE';
   }
   return 'UNKNOWN';

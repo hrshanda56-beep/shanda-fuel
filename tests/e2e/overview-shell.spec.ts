@@ -507,7 +507,7 @@ test.describe('today hardening', () => {
     const rail = page.locator('.shell-sidebar');
     await expect(rail.getByRole('link').first()).toBeVisible();
     await rail.getByRole('button', { name: 'Finance' }).click();
-    const drawer = page.getByRole('dialog', { name: 'More' });
+    const drawer = page.getByRole('dialog', { name: 'Finance' });
     await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toBeVisible();
     await animationsSettled(page);
     const results = await new AxeBuilder({ page }).analyze();

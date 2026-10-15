@@ -27,7 +27,10 @@ export default async function OperationsReconciliationReviewPage({
 
   return (
     <AppShell
-      breadcrumbs={[{ label: 'Operations', href: '/operations/daily' }, { label: 'Review figures' }]}
+      breadcrumbs={[
+        { label: 'Operations', href: '/operations/daily' },
+        { label: 'Review figures' },
+      ]}
     >
       {ready?.stationId && businessDayId && shiftId ? (
         <ReviewScreen

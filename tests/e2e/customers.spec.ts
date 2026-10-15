@@ -139,7 +139,7 @@ test.describe('customer accounts', () => {
     await mockCustomerApis(page);
     await page.goto('/customers?tenantId=tenant-1&legalEntityId=entity-1');
 
-    await expect(page.getByRole('heading', { name: 'Customer accounts' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Customers', level: 1 })).toBeVisible();
     await expect(
       page.locator('.shell-sidebar').getByRole('link', { name: 'Customers', exact: true }),
     ).toHaveAttribute('aria-current', 'page');
@@ -164,13 +164,11 @@ test.describe('customer accounts', () => {
     await page.goto('/customers/customer-1?tenantId=tenant-1&legalEntityId=entity-1');
 
     await expect(page.getByRole('heading', { name: 'Acme Transport' })).toBeVisible();
-    await page.getByRole('button', { name: 'More' }).click();
     await expect(
       page
-        .getByRole('dialog', { name: 'More' })
+        .getByRole('navigation', { name: 'Mobile navigation' })
         .getByRole('link', { name: 'Customers', exact: true }),
     ).toBeVisible();
-    await page.keyboard.press('Escape');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       await page.evaluate(() => document.documentElement.clientWidth),
     );
