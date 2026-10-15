@@ -40,6 +40,18 @@ export async function check(sql) {
     { unit_price: '1.550000', state: 'ACTIVE' },
     { unit_price: '1.600000', state: 'ACTIVE' },
   ]);
+  const opening = await sql`
+    select m.tank_id,m.quantity_litres::text as quantity_litres,c.amount::text as inventory_value
+    from app.inventory_movements m
+    join app.inventory_cost_events c
+      on c.tenant_id=m.tenant_id and c.source_type=m.source_type and c.source_id=m.source_id
+    where m.tenant_id=${id(1)} and m.station_id=${id(3)} and m.movement_type='OPENING_BALANCE'
+    order by m.tank_id
+  `;
+  assert.deepEqual(Array.from(opening), [
+    { tank_id: id(411), quantity_litres: '5000.000', inventory_value: '7750.0000' },
+    { tank_id: id(412), quantity_litres: '5000.000', inventory_value: '8000.0000' },
+  ]);
   const [runtime] =
     await sql`select rolsuper,rolbypassrls,rolcreaterole,rolcreatedb from pg_roles where rolname='app_runtime'`;
   assert.deepEqual(runtime, {

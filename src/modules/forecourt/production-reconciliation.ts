@@ -53,6 +53,7 @@ type HeaderRow = {
   shift_id: string | null;
   business_date: string;
   supervisor_id: string | null;
+  submitted_by: string | null;
   state: string;
   version: number | string;
 };
@@ -90,7 +91,7 @@ async function loadHeader(
 ): Promise<HeaderRow> {
   const rows = await transaction.execute<HeaderRow>(sql`
     select c.id, c.tenant_id, c.station_id, c.business_day_id, c.shift_id,
-           d.business_date, c.supervisor_id, c.state, c.version
+           d.business_date, c.supervisor_id, c.submitted_by, c.state, c.version
     from app.reconciliations c
     join app.station_business_days d
       on d.tenant_id = c.tenant_id and d.station_id = c.station_id and d.id = c.business_day_id

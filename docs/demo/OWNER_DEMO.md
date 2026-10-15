@@ -95,7 +95,7 @@ suffix below. `node scripts/demo/owner-demo.mjs status` prints full IDs.
 | Supervisor user / membership | `102` / `202`; canonical SUPERVISOR, station scope |
 | Attendants user / membership | `103`–`105` / `203`–`205`; ATTENDANT, station scope |
 | Diesel / Petrol product | `401` / `402` |
-| Diesel / Petrol tank | `411` / `412`; capacity 20000.000 L each |
+| Diesel / Petrol tank | `411` / `412`; capacity 20000.000 L each; synthetic opening stock 5000.000 L each valued at USD 7750.0000 / 8000.0000 |
 | Diesel / Petrol active price | `421` / `422`; USD 1.550000 / 1.600000 |
 | Pumps / nozzles / meters / installations | `501`–`503` / `511`–`513` / `521`–`523` / `531`–`533` |
 | Shift template / business day / open shift | `701` / `702` / `703` |
@@ -105,10 +105,12 @@ suffix below. `node scripts/demo/owner-demo.mjs status` prints full IDs.
 The fixture date is the station-local date at first seed. The template is
 06:00–14:00 station time. Reset on the presentation day. Pumps 1 and 3 are
 Diesel; pump 2 is Petrol. Each opening reading belongs to its matching
-attendant. No tank opening stock, deliveries, costs, posted sale, reconciliation,
-payment declaration, settlement, bank account or approved close is fabricated.
-Tank capacity is reference data, **not stock on hand**. Opening readings and
-active prices are labeled fixture setup, not a demonstrated approval history.
+attendant. The fixture includes clearly labelled synthetic opening stock and
+matching opening cost evidence so the normal inventory valuation guard can
+authorize canonical sale posting during approval. No deliveries, posted sale,
+reconciliation, payment declaration, settlement, bank account or approved close
+is fabricated. Opening readings, opening stock and active prices are labeled
+fixture setup, not a demonstrated approval history.
 
 Existing A5 payment methods include CASH, POS, ECOCASH and BANK_TRANSFER; these
 are contract enums, not new database-configurable methods. The A3 reconciliation

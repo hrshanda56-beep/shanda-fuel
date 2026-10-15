@@ -58,6 +58,20 @@ export async function seed(client) {
     }).format(new Date());
     const start = `${date}T04:00:00Z`;
     const end = `${date}T12:00:00Z`;
+    // Approval posts canonical sale and COGS evidence. Give each synthetic tank
+    // a clearly labelled opening quantity and matching authoritative cost so the
+    // normal valuation guard can succeed without weakening financial controls.
+    for (const [i, quantity, amount] of [
+      [0, '5000.000', '7750.0000'],
+      [1, '5000.000', '8000.0000'],
+    ]) {
+      const movementId = id(601 + i);
+      const sourceId = id(611 + i);
+      const productId = id(401 + i);
+      const tankId = id(411 + i);
+      await sql`insert into app.inventory_movements (id,tenant_id,station_id,tank_id,product_id,movement_type,quantity_litres,effective_at,business_date,source_type,source_id,actor_membership_id,reason) values (${movementId},${id(1)},${id(3)},${tankId},${productId},'OPENING_BALANCE',${quantity},${start},${date},'OPENING_BALANCE',${sourceId},${id(201)},'DEMO ONLY opening stock')`;
+      await sql`insert into app.inventory_cost_events (id,tenant_id,station_id,tank_id,product_id,event_type,source_type,source_id,effective_at,business_date,amount,currency,actor_membership_id) values (${id(621 + i)},${id(1)},${id(3)},${tankId},${productId},'OPENING_COST','OPENING_BALANCE',${sourceId},${start},${date},${amount},'USD',${id(201)})`;
+    }
     await sql`insert into app.shift_templates (id,tenant_id,station_id,code,name,start_time,duration_minutes,created_by) values (${id(701)},${id(1)},${id(3)},'DEMO-DAY','DEMO ONLY — Day shift','06:00',480,${id(201)})`;
     await sql`insert into app.station_business_days (id,tenant_id,station_id,business_date,state,opened_at) values (${id(702)},${id(1)},${id(3)},${date},'NOT_STARTED',${start})`;
     await sql`update app.station_business_days set state='OPEN' where id=${id(702)}`;
@@ -94,6 +108,10 @@ export async function manifest(sql) {
     actors,
     products: [id(401), id(402)],
     tanks: [id(411), id(412)],
+    openingStock: [
+      { tankId: id(411), quantityLitres: '5000.000', inventoryValue: '7750.0000' },
+      { tankId: id(412), quantityLitres: '5000.000', inventoryValue: '8000.0000' },
+    ],
     prices: [id(421), id(422)],
     pumps: [id(501), id(502), id(503)],
     nozzles: [id(511), id(512), id(513)],

@@ -82,7 +82,9 @@ export function ReviewScreen({
   const router = useRouter();
   const toast = useToast();
   const [operation, setOperation] = useState<OperationsContext | null>(null);
-  const [record, setRecord] = useState<(RecordData & { supervisor_id?: string }) | null>(null);
+  const [record, setRecord] = useState<(RecordData & { submitted_by?: string | null }) | null>(
+    null,
+  );
   const [overview, setOverview] = useState<OverviewSlice | null>(null);
   const [loadError, setLoadError] = useState<UserMessage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,7 +122,7 @@ export function ReviewScreen({
         throw describeFailure(failed.status, body.error, body.message);
       }
       setOperation((await operationResponse.json()) as OperationsContext);
-      setRecord((await recordResponse.json()) as RecordData & { supervisor_id?: string });
+      setRecord((await recordResponse.json()) as RecordData & { submitted_by?: string | null });
       setOverview(overviewResponse?.ok ? ((await overviewResponse.json()) as OverviewSlice) : null);
     } catch (caught) {
       setLoadError(isUserMessage(caught) ? caught : userMessage('UNKNOWN'));
@@ -181,7 +183,7 @@ export function ReviewScreen({
   const timezone = operation.station.timezone;
   const status = getDisplayStatus(record.state);
   const waiting = WAITING.has(record.state);
-  const submittedByMe = Boolean(membershipId) && record.supervisor_id === membershipId;
+  const submittedByMe = Boolean(membershipId) && record.submitted_by === membershipId;
   const mayDecide = canApprove && !submittedByMe && waiting;
   const timeText = submittedSummary.at
     ? new Intl.DateTimeFormat('en-GB', {

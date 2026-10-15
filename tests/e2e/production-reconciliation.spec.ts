@@ -1,47 +1,20 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { hashPassword, makeSignature } from 'better-auth/crypto';
+import { makeSignature } from 'better-auth/crypto';
 import { totpCode } from '../integration/synthetic-totp';
 import postgres, { type Sql } from 'postgres';
 import { ExactDecimal } from '../../src/platform/domain/primitives';
+import {
+  ids,
+  supervisorToken,
+  managerToken,
+  seedOwnerWorkflow,
+  seedSecondNozzle,
+} from '../fixtures/owner-workflow';
 
 const databaseUrl = process.env.DATABASE_FIXTURE_URL ?? process.env.DATABASE_URL;
 
-const ids = {
-  tenant: 'a5e00000-0000-4000-8000-000000000001',
-  legal: 'a5e00000-0000-4000-8000-000000000011',
-  station: 'a5e00000-0000-4000-8000-000000000021',
-  attendantActor: 'a5e00000-0000-4000-8000-000000000033',
-  attendantMembership: 'a5e00000-0000-4000-8000-000000000043',
-  supervisorActor: 'a5e00000-0000-4000-8000-000000000031',
-  supervisorMembership: 'a5e00000-0000-4000-8000-000000000041',
-  supervisorSession: 'a5e00000-0000-4000-8000-000000000051',
-  managerActor: 'a5e00000-0000-4000-8000-000000000032',
-  managerMembership: 'a5e00000-0000-4000-8000-000000000042',
-  managerSession: 'a5e00000-0000-4000-8000-000000000052',
-  product: 'a5e00000-0000-4000-8000-000000000061',
-  pump: 'a5e00000-0000-4000-8000-000000000071',
-  nozzle: 'a5e00000-0000-4000-8000-000000000081',
-  meter: 'a5e00000-0000-4000-8000-000000000091',
-  installation: 'a5e00000-0000-4000-8000-000000000101',
-  price: 'a5e00000-0000-4000-8000-000000000111',
-  day: 'a5e00000-0000-4000-8000-000000000121',
-  shift: 'a5e00000-0000-4000-8000-000000000131',
-  retryShift: 'a5e00000-0000-4000-8000-000000000132',
-  retryShiftTwo: 'a5e00000-0000-4000-8000-000000000133',
-  retryShiftThree: 'a5e00000-0000-4000-8000-000000000134',
-  a11RetryShift: 'a5e00000-0000-4000-8000-000000000135',
-  a11RetryShiftTwo: 'a5e00000-0000-4000-8000-000000000136',
-  a11RetryShiftThree: 'a5e00000-0000-4000-8000-000000000137',
-  controlRoomShift: 'a5e00000-0000-4000-8000-000000000138',
-  tank: 'a5e00000-0000-4000-8000-000000000141',
-  openingSource: 'a5e00000-0000-4000-8000-000000000151',
-  openingCostEvent: 'a5e00000-0000-4000-8000-000000000152',
-};
-
-const supervisorToken = 'a5e-supervisor-session-token';
-const managerToken = 'a5e-manager-session-token';
 let managerMfaSecret: string | undefined;
 let managerCookieValue: string | undefined;
 
@@ -53,130 +26,7 @@ test.describe('production reconciliation persistence', () => {
 
   test.beforeAll(async () => {
     client = postgres(databaseUrl!, { max: 1, prepare: false });
-    const ownerPassword = await hashPassword('synthetic-e2e-owner-password');
-    await client.unsafe(`
-      insert into app.tenants (id, name, slug) values
-        ('${ids.tenant}', 'A5 E2E Tenant', 'a5-e2e-tenant')
-        on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
-        ('${ids.supervisorActor}', 'A5 E2E Supervisor', 'a5e-supervisor@example.test'),
-        ('${ids.managerActor}', 'A5 E2E Owner', 'a5e-manager@example.test'),
-        ('${ids.attendantActor}', 'A5 E2E Attendant', 'a5e-attendant@example.test')
-        on conflict (id) do nothing;
-      insert into app.memberships (id, tenant_id, identity_id, status) values
-        ('${ids.supervisorMembership}', '${ids.tenant}', '${ids.supervisorActor}', 'ACTIVE'),
-        ('${ids.managerMembership}', '${ids.tenant}', '${ids.managerActor}', 'ACTIVE'),
-        ('${ids.attendantMembership}', '${ids.tenant}', '${ids.attendantActor}', 'ACTIVE')
-        on conflict (id) do nothing;
-      insert into app.legal_entities (id, tenant_id, legal_name) values
-        ('${ids.legal}', '${ids.tenant}', 'A5 E2E Legal') on conflict (id) do nothing;
-      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status, timezone) values
-        ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A5E2E', 'A5 E2E Station', 'ACTIVE', 'Africa/Harare')
-        on conflict (id) do nothing;
-      insert into app.membership_role_assignments
-        (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
-      values
-        ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
-        ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}'),
-        ('${ids.tenant}', '${ids.managerMembership}', 'OWNER', 'TENANT', null, null)
-        on conflict (id) do nothing;
-      insert into app.products (id, tenant_id, code, name)
-        values ('${ids.product}', '${ids.tenant}', 'A5E2E-DIESEL', 'A5 E2E Diesel') on conflict (id) do nothing;
-      insert into app.pumps (id, tenant_id, station_id, number, status)
-        values ('${ids.pump}', '${ids.tenant}', '${ids.station}', '1', 'ACTIVE') on conflict (id) do nothing;
-      insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id, status)
-        values ('${ids.nozzle}', '${ids.tenant}', '${ids.station}', '${ids.pump}', '1', '${ids.product}', 'ACTIVE')
-        on conflict (id) do nothing;
-      insert into app.meters (id, tenant_id, serial_number)
-        values ('${ids.meter}', '${ids.tenant}', 'A5E2E-METER-1') on conflict (id) do nothing;
-      insert into app.meter_installations
-        (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
-      values
-        ('${ids.installation}', '${ids.tenant}', '${ids.station}', '${ids.nozzle}', '${ids.meter}', '2020-01-01T00:00:00Z', '${ids.supervisorMembership}')
-        on conflict (id) do nothing;
-      insert into app.selling_prices
-        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
-      values
-        ('${ids.price}', '${ids.tenant}', '${ids.station}', '${ids.product}', '2020-01-01T00:00:00Z', 1.500000, 'DRAFT', '${ids.supervisorMembership}')
-        on conflict (id) do nothing;
-      update app.selling_prices set state='PENDING_APPROVAL'
-        where id='${ids.price}' and state='DRAFT';
-      update app.selling_prices set state='APPROVED', approved_by='${ids.managerMembership}', approved_at=now()
-        where id='${ids.price}' and state='PENDING_APPROVAL';
-      update app.selling_prices set state='PENDING_STATION_ACTIVATION'
-        where id='${ids.price}' and state='APPROVED';
-      update app.selling_prices set state='BOUNDARIES_IN_PROGRESS'
-        where id='${ids.price}' and state='PENDING_STATION_ACTIVATION';
-      update app.selling_prices set state='ACTIVE', activated_at=now()
-        where id='${ids.price}' and state='BOUNDARIES_IN_PROGRESS';
-      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
-        values ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-23', 'NOT_STARTED')
-        on conflict (id) do nothing;
-      update app.station_business_days set state='OPEN', opened_at=coalesce(opened_at, now())
-        where id='${ids.day}';
-      insert into app.shifts
-        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-      values
-        ('${ids.shift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T06:00:00Z', '2026-09-23T14:00:00Z', '2026-09-23')
-        on conflict (id) do nothing;
-      insert into app.shifts
-        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-      values
-        ('${ids.retryShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23')
-        on conflict (id) do nothing;
-      insert into app.shifts
-        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-      values
-        ('${ids.retryShiftTwo}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23')
-        on conflict (id) do nothing;
-      insert into app.shifts
-        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-      values
-        ('${ids.retryShiftThree}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23')
-        on conflict (id) do nothing;
-      insert into app.shifts
-        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
-      values
-        ('${ids.a11RetryShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T06:00:00Z', '2026-09-23T14:00:00Z', '2026-09-23'),
-        ('${ids.a11RetryShiftTwo}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23'),
-        ('${ids.a11RetryShiftThree}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T22:00:00Z', '2026-09-24T06:00:00Z', '2026-09-23'),
-        ('${ids.controlRoomShift}', '${ids.tenant}', '${ids.station}', '${ids.day}', 'PLANNED', '2026-09-23T14:00:00Z', '2026-09-23T22:00:00Z', '2026-09-23')
-        on conflict (id) do nothing;
-      update app.shifts set state='OPEN', opened_at=coalesce(opened_at, now())
-        where id in ('${ids.shift}', '${ids.retryShift}', '${ids.retryShiftTwo}', '${ids.retryShiftThree}', '${ids.a11RetryShift}', '${ids.a11RetryShiftTwo}', '${ids.a11RetryShiftThree}', '${ids.controlRoomShift}');
-      insert into app.tanks
-        (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
-      values
-        ('${ids.tank}', '${ids.tenant}', '${ids.station}', 'A5E2E-D1', '${ids.product}', 10000, 500, 10, 'ACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
-        on conflict (id) do nothing;
-      insert into app.inventory_movements
-        (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
-      values
-        ('${ids.openingSource}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', 3000, '2026-09-22T05:00:00Z', '2026-09-22', 'CUTOVER', '${ids.openingSource}', '${ids.supervisorMembership}')
-        on conflict (id) do nothing;
-      insert into app.inventory_cost_events
-        (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at, business_date, amount, currency, actor_membership_id)
-      values
-        ('${ids.openingCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_COST', 'CUTOVER', '${ids.openingSource}', '2026-09-22T05:00:00Z', '2026-09-22', 3000.0000, 'USD', '${ids.supervisorMembership}')
-        on conflict (id) do nothing;
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at,
-         strong_authentication_expires_at, step_up_level, step_up_expires_at, step_up_tenant_id)
-      values
-        ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', '${supervisorToken}', '${ids.supervisorActor}', true, now(), null, null, null, null),
-        ('${ids.managerSession}', '2030-01-01T00:00:00Z', '${managerToken}', '${ids.managerActor}', true, now(), '2030-01-01T00:00:00Z', 1, '2030-01-01T00:00:00Z', '${ids.tenant}')
-        on conflict (id) do update set
-          expires_at=excluded.expires_at,
-          strong_authentication_verified=excluded.strong_authentication_verified,
-          strong_authenticated_at=excluded.strong_authenticated_at,
-          strong_authentication_expires_at=excluded.strong_authentication_expires_at,
-          step_up_level=excluded.step_up_level,
-          step_up_expires_at=excluded.step_up_expires_at,
-          step_up_tenant_id=excluded.step_up_tenant_id;
-    `);
-    await client`insert into auth.account(account_id,provider_id,user_id,password)
-      values (${ids.managerActor},'credential',${ids.managerActor},${ownerPassword})
-      on conflict(provider_id,account_id) do update set password=excluded.password`;
+    await seedOwnerWorkflow(client);
   });
 
   test.afterAll(async () => {
@@ -416,7 +266,7 @@ test.describe('production reconciliation persistence', () => {
       controlRoom
         .locator('article.operations-shift-row strong')
         .filter({
-          hasText: '08:00 – 16:00',
+          hasText: 'Morning · 08:00–16:00',
         })
         .first(),
     ).toBeVisible();
@@ -438,6 +288,8 @@ test.describe('production reconciliation persistence', () => {
     context,
     page,
   }) => {
+    const staleShift = randomUUID();
+    await client`insert into app.shifts (id,tenant_id,station_id,business_day_id,state,planned_start_at,planned_end_at,business_date) values (${staleShift},${ids.tenant},${ids.station},${ids.day},'PLANNED','2026-09-23T06:00:00Z','2026-09-23T14:00:00Z','2026-09-23')`;
     await authenticate(context, supervisorToken);
     await gotoAndWaitForHydration(
       page,
@@ -450,12 +302,10 @@ test.describe('production reconciliation persistence', () => {
 
     const shiftRow = page
       // The approved layout no longer prints raw shift ids; rows carry data-shift-id.
-      .locator(`article.operations-shift-row[data-shift-id="${ids.controlRoomShift}"]`);
-    const closeMeters = shiftRow.getByRole('button', { name: 'Close meters' });
+      .locator(`article.operations-shift-row[data-shift-id="${staleShift}"]`);
+    const closeMeters = shiftRow.getByRole('button', { name: 'Start shift' });
     await expect(closeMeters).toBeVisible();
-    await client.unsafe(
-      `update app.shifts set version = version + 1 where id = '${ids.controlRoomShift}'`,
-    );
+    await client.unsafe(`update app.shifts set version = version + 1 where id = '${staleShift}'`);
 
     page.once('dialog', (dialog) => void dialog.accept());
     const responsePromise = page.waitForResponse(
@@ -464,6 +314,10 @@ test.describe('production reconciliation persistence', () => {
         response.request().method() === 'POST',
     );
     await closeMeters.click();
+    await page
+      .getByRole('alertdialog', { name: 'Start shift?', exact: true })
+      .getByRole('button', { name: 'Start shift', exact: true })
+      .click();
     const response = await responsePromise;
     expect(response.status()).toBe(409);
     await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
@@ -651,194 +505,199 @@ test.describe('production reconciliation persistence', () => {
     ]);
   });
 
-  test('A11 workspace captures representative evidence, requires a return reason, and approves production evidence', async ({
+  test('integrated owner workflow uses Close Meters, fixed payments and secure review', async ({
     context,
     page,
-  }, testInfo) => {
-    const activeShiftId =
-      [ids.a11RetryShift, ids.a11RetryShiftTwo, ids.a11RetryShiftThree][testInfo.retry] ??
-      ids.a11RetryShiftThree;
+  }) => {
+    test.setTimeout(180_000);
+    const shiftId = ids.a11RetryShift;
+    const { secondAttendant } = await seedSecondNozzle(client);
+    await authenticate(context, supervisorToken);
+    await prepareFixtureShift(shiftId);
     const query = new URLSearchParams({
       tenantId: ids.tenant,
       stationId: ids.station,
       businessDayId: ids.day,
-      shiftId: activeShiftId,
+      shiftId,
     });
-
-    await authenticate(context, supervisorToken);
-    const shiftInterval = await prepareFixtureShift(activeShiftId);
-    const sealedEvidence = await createSealedSegmentEvidence(
-      page.request,
-      activeShiftId,
-      `a11-${randomUUID()}`,
-      shiftInterval,
+    await gotoAndWaitForHydration(
+      page,
+      `/operations/daily?tenantId=${ids.tenant}&stationId=${ids.station}&businessDayId=${ids.day}`,
     );
-    const overviewQuery = new URLSearchParams({
-      tenantId: ids.tenant,
-      stationId: ids.station,
-      businessDayId: ids.day,
-    });
-    await gotoAndWaitForHydration(page, `/operations/daily?${overviewQuery}`);
-    const closeRow = page.locator(`article.operations-shift-row[data-shift-id="${activeShiftId}"]`);
-    page.once('dialog', (dialog) => void dialog.accept());
-    const closedResponse = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/forecourt/commands') &&
-        response.request().postData()?.includes('CloseMeters') === true,
-    );
-    await closeRow.getByRole('button', { name: 'Close meters', exact: true }).click();
-    const closed = await closedResponse;
-    expect(closed.ok(), await closed.text()).toBe(true);
-    const shiftRows = await client`select state from app.shifts where id=${activeShiftId}`;
-    expect(shiftRows[0]?.state).toBe('METER_CLOSED');
-    await gotoAndWaitForHydration(page, `/operations/daily?${query.toString()}`);
-    const createResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/forecourt/commands') &&
-        response.request().method() === 'POST' &&
-        response.request().postData()?.includes('CreateProductionReconciliation') === true,
-    );
-    await page.getByRole('button', { name: 'Create daily draft' }).click();
-    const createResponse = await createResponsePromise;
-    const createResponseText = await createResponse.text();
-
-    expect(
-      createResponse.ok(),
-      `CreateProductionReconciliation failed: ${createResponse.status()} ${createResponseText}`,
-    ).toBe(true);
-
-    const createRequestText = createResponse.request().postData();
-
-    if (!createRequestText) {
-      throw new Error('CreateProductionReconciliation request body was unavailable');
+    const row = page.locator(`article.operations-shift-row[data-shift-id="${shiftId}"]`);
+    await row.getByRole('button', { name: 'Close meters', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Close meters', exact: true });
+    await expect(sheet.getByLabel('Responsible attendant')).toHaveCount(2);
+    await sheet.getByLabel('Responsible attendant').nth(0).selectOption(ids.attendantMembership);
+    await sheet.getByLabel('Responsible attendant').nth(1).selectOption(secondAttendant);
+    for (const input of await sheet.getByLabel('Opening reading', { exact: true }).all())
+      await input.fill('100000');
+    const meterContextResponse = await page.request.get(`/api/forecourt/operations/daily?${query}`);
+    const meterContext = await meterContextResponse.json();
+    for (const nozzle of meterContext.availableReadings as Array<{
+      nozzleId: string;
+      previousReading: string | null;
+    }>) {
+      await sheet
+        .locator(`#close-${nozzle.nozzleId}`)
+        .fill(
+          new ExactDecimal(nozzle.previousReading ?? '100000')
+            .add(new ExactDecimal('250'))
+            .toString(),
+        );
     }
-
-    const createRequest = JSON.parse(createRequestText) as {
-      commandType?: string;
-      reconciliationId?: string;
-    };
-
-    expect(createRequest.commandType).toBe('CreateProductionReconciliation');
-
-    if (!createRequest.reconciliationId) {
-      throw new Error('CreateProductionReconciliation request did not contain reconciliationId');
-    }
-
-    const reconciliationId = createRequest.reconciliationId;
-
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get('reconciliationId'), {
-        message: 'Daily operations workspace did not persist created reconciliationId in the URL',
-        timeout: 5000,
-      })
-      .toBe(reconciliationId);
-
-    await expect(page.getByRole('heading', { name: 'Daily operations' })).toBeVisible();
-
-    const common = {
-      tenantId: ids.tenant,
-      stationId: ids.station,
-      reconciliationId,
-    };
-
+    await sheet.getByRole('button', { name: 'Close meters', exact: true }).click();
+    await expect(sheet).not.toBeVisible({ timeout: 30000 });
+    const [shift] = await client`select state from app.shifts where id=${shiftId}`;
+    expect(shift?.state).toBe('COMPLETED');
+    const segments =
+      await client`select litres::text, attendant_id from app.meter_segments where shift_id=${shiftId}`;
+    expect(segments).toHaveLength(2);
+    expect(segments.map((segment) => segment.attendant_id).sort()).toEqual(
+      [ids.attendantMembership, secondAttendant].sort(),
+    );
+    expect(segments.every((segment) => new ExactDecimal(segment.litres).toString() === '250')).toBe(
+      true,
+    );
+    await gotoAndWaitForHydration(page, `/operations/daily?${query}`);
     await page.getByRole('checkbox', { name: /A5 E2E Attendant/ }).check();
-    await page.locator('input[id^="opening-"]').first().fill(sealedEvidence.openingReading);
-    await page.locator('input[id^="closing-"]').first().fill(sealedEvidence.closingReading);
-    await page.getByRole('button', { name: 'Add payment evidence' }).click();
-    await page.locator('input[id^="payment-amount-"]').first().fill('750.0000');
-    await page.getByLabel('Counted cash').fill('750.0000');
-    await page.getByRole('button', { name: 'Save persisted draft' }).click();
-    await expect(page.getByText('Draft saved to the server.')).toBeVisible();
-    await page.reload();
-    await expect(page.getByLabel('Counted cash')).toHaveValue(/750/);
-    const submitResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/forecourt/commands') &&
-        response.request().method() === 'POST' &&
-        response.request().postData()?.includes('SubmitProductionReconciliation') === true,
-    );
-    await page.getByRole('button', { name: 'Submit for management review' }).click();
-    const submitResponse = await submitResponsePromise;
-    const submitResponseText = await submitResponse.text();
-    const submitRequestText = submitResponse.request().postData();
-
-    if (!submitRequestText) {
-      throw new Error('SubmitProductionReconciliation request body was unavailable');
-    }
-
-    const submitRequest = JSON.parse(submitRequestText) as { reconciliationId?: string };
-
-    expect(submitRequest.reconciliationId).toBe(reconciliationId);
-
-    expect(
-      submitResponse.ok(),
-      `SubmitProductionReconciliation failed: ${submitResponse.status()} ${submitResponseText}`,
-    ).toBe(true);
-
-    const submittedRecordResponse = await page.request.get(
+    await page.getByRole('checkbox', { name: /Integration Attendant Two/ }).check();
+    const steps = page.getByRole('navigation', { name: 'Steps', exact: true });
+    await steps.getByRole('button', { name: /Payments/ }).click();
+    await page.getByLabel('Cash amount', { exact: true }).fill('500.0000');
+    await page.getByLabel('EcoCash amount', { exact: true }).fill('150.0000');
+    await page.getByLabel('Card (POS) amount', { exact: true }).fill('100.0000');
+    await steps.getByRole('button', { name: /Cash/ }).click();
+    await page.getByLabel('Cash counted', { exact: true }).fill('500.0000');
+    await steps.getByRole('button', { name: /Submit/ }).click();
+    await page.getByRole('button', { name: 'Submit for review', exact: true }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Submit for review?', exact: true })
+      .getByRole('button', { name: 'Submit', exact: true })
+      .click();
+    await expect(page.getByText('Submitted for review', { exact: true }).first()).toBeVisible();
+    const reconciliationId = new URL(page.url()).searchParams.get('reconciliationId')!;
+    const response = await page.request.get(
       `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
     );
-    const submittedRecordText = await submittedRecordResponse.text();
-
-    expect(
-      submittedRecordResponse.ok(),
-      `submitted reconciliation read failed: ${submittedRecordResponse.status()} ${submittedRecordText}`,
-    ).toBe(true);
-
-    const submittedRecord = JSON.parse(submittedRecordText) as { state: string; version: number };
-
-    expect(submittedRecord.state).toBe('SUBMITTED');
-    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
-
-    await authenticate(context, managerToken);
-    await gotoAndWaitForHydration(
-      page,
-      `/operations/reconciliations/${reconciliationId}/review?${query.toString()}`,
-    );
-    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Return for correction' })).toBeDisabled();
-    await page.getByLabel('Return reason').fill('Meter evidence requires supervisor correction.');
-    await page.getByRole('button', { name: 'Return for correction' }).click();
-    await expect(page.getByText('Returned', { exact: true })).toBeVisible();
-
-    await authenticate(context, supervisorToken);
-    await gotoAndWaitForHydration(
-      page,
-      `/operations/reconciliations/${reconciliationId}?${query.toString()}`,
-    );
-    await expect(page.getByText('Returned', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Submit for management review' }).click();
-    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
-    const submittedResponse = await page.request.get(
-      `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
-    );
-    const submittedBody = (await submittedResponse.json()) as { version: number };
-    const unauthorizedApproval = await page.request.post('/api/forecourt/commands', {
+    const record = await response.json();
+    expect(record.state).toBe('SUBMITTED');
+    expect(record.submitted_by).toBe(ids.supervisorMembership);
+    expect(new ExactDecimal(record.totals.expectedSales).toString()).toBe('750');
+    expect(new ExactDecimal(record.totals.accountedSales).toString()).toBe('750');
+    expect(new ExactDecimal(record.totals.salesVariance).toString()).toBe('0');
+    const denied = await page.request.post('/api/forecourt/commands', {
       data: {
         commandType: 'ApproveProductionReconciliation',
-        ...common,
-        expectedVersion: submittedBody.version,
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        reconciliationId,
+        expectedVersion: record.version,
       },
-      headers: { 'idempotency-key': `a11-unauthorized-approve-${reconciliationId}` },
+      headers: { 'idempotency-key': `denied-${randomUUID()}` },
     });
-    expect(unauthorizedApproval.status()).toBe(403);
-
+    expect(denied.status()).toBe(403);
+    const otherStation = randomUUID();
+    await client`insert into app.stations (id,tenant_id,legal_entity_id,code,name,status,timezone) values (${otherStation},${ids.tenant},${ids.legal},'ISOLATED','Other synthetic station','ACTIVE','Africa/Harare')`;
+    const isolated = await page.request.get(
+      `/api/forecourt/operations/daily?tenantId=${ids.tenant}&stationId=${otherStation}&businessDayId=${ids.day}&shiftId=${shiftId}`,
+    );
+    expect(isolated.status()).toBe(403);
+    await authenticate(context, managerToken);
+    await client`update auth.session set step_up_expires_at=now()-interval '1 second' where user_id=${ids.managerActor}`;
+    const noStepUp = await page.request.post('/api/forecourt/commands', {
+      data: {
+        commandType: 'ApproveProductionReconciliation',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        reconciliationId,
+        expectedVersion: record.version,
+      },
+      headers: { 'idempotency-key': `mfa-required-${randomUUID()}` },
+    });
+    expect(noStepUp.status()).toBe(403);
+    await gotoAndWaitForHydration(
+      page,
+      `/operations/reconciliations/${reconciliationId}/review?${query}`,
+    );
+    await page.getByRole('button', { name: 'Send back', exact: true }).click();
+    const returnDialog = page.getByRole('alertdialog', {
+      name: 'Send back for correction?',
+      exact: true,
+    });
+    await expect(
+      returnDialog.getByRole('button', { name: 'Send back', exact: true }),
+    ).toBeDisabled();
+    await returnDialog
+      .getByLabel('Return reason')
+      .fill('Please verify the recorded cash evidence.');
+    await returnDialog.getByRole('button', { name: 'Send back', exact: true }).click();
+    await expect(page.getByText('Returned', { exact: true }).first()).toBeVisible();
+    await authenticate(context, supervisorToken);
+    await gotoAndWaitForHydration(
+      page,
+      `/operations/daily?${query}&reconciliationId=${reconciliationId}`,
+    );
+    await page
+      .getByRole('navigation', { name: 'Steps', exact: true })
+      .getByRole('button', { name: /Payments/ })
+      .click();
+    await expect(page.getByLabel('Cash amount', { exact: true })).toHaveValue('500.0000');
+    await expect(page.getByLabel('EcoCash amount', { exact: true })).toHaveValue('150.0000');
+    await expect(page.getByLabel('Card (POS) amount', { exact: true })).toHaveValue('100.0000');
+    await page
+      .getByRole('navigation', { name: 'Steps', exact: true })
+      .getByRole('button', { name: /Submit/ })
+      .click();
+    await page.getByRole('button', { name: 'Submit for review', exact: true }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Submit for review?', exact: true })
+      .getByRole('button', { name: 'Submit', exact: true })
+      .click();
+    await expect(page.getByText('Submitted for review', { exact: true }).first()).toBeVisible();
     await authenticate(context, managerToken);
     await gotoAndWaitForHydration(
       page,
-      `/operations/reconciliations/${reconciliationId}/review?${query.toString()}`,
+      `/operations/reconciliations/${reconciliationId}/review?${query}`,
     );
-    page.once('dialog', (dialog) => void dialog.accept());
-    await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
+    await page
+      .getByRole('button', { name: 'Approve production reconciliation', exact: true })
+      .click();
     await verifyApproval(page);
-    await expect(page.getByText('Approved', { exact: true })).toBeVisible();
+    await page
+      .getByRole('alertdialog', { name: 'Approve these figures?', exact: true })
+      .getByRole('button', { name: 'Approve', exact: true })
+      .click();
+    await expect(page.getByText('Approved', { exact: true }).first()).toBeVisible();
+    const final = await page.request.get(
+      `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
+    );
+    const approved = await final.json();
+    expect(approved.state).toBe('APPROVED');
+    await page.reload();
+    await expect(page.getByText('Approved', { exact: true }).first()).toBeVisible();
     await expect(
-      page.getByText(/^Approved: Canonical sale evidence has been posted/),
-    ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save persisted draft' })).toBeDisabled();
+      page.getByRole('button', { name: 'Approve production reconciliation', exact: true }),
+    ).toHaveCount(0);
     const accessibility = await new AxeBuilder({ page })
-      .include('[aria-label="Daily station operations workspace"]')
+      .include('[aria-label="Reconciliation review"]')
       .analyze();
     expect(accessibility.violations).toEqual([]);
+    const movements =
+      await client`select quantity_litres::text from app.inventory_movements where tenant_id=${ids.tenant} and station_id=${ids.station} and source_type='METER_SEGMENT_SALE' and source_id in (select id from app.meter_segments where shift_id=${shiftId})`;
+    expect(movements).toHaveLength(2);
+    expect(movements.every((movement) => movement.quantity_litres === '-250.000')).toBe(true);
+    await authenticate(context, supervisorToken);
+    const locked = await page.request.post('/api/forecourt/commands', {
+      data: {
+        commandType: 'SaveReconciliationDraft',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        reconciliationId,
+        expectedVersion: approved.version,
+      },
+      headers: { 'idempotency-key': `locked-${randomUUID()}` },
+    });
+    expect(locked.status()).toBe(409);
   });
 });
