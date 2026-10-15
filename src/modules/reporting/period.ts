@@ -109,3 +109,15 @@ export function resolvePeriod(
 export function businessToday(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Harare' }).format(now);
 }
+
+/** The range of the same length that ends the day before `fromDate`. */
+export function precedingRange(
+  fromDate: string,
+  toDate: string,
+): { fromDate: string; toDate: string } {
+  const [fy, fm, fd] = parts(fromDate);
+  const [ty, tm, td] = parts(toDate);
+  const days = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000) + 1;
+  const end = addDays(fromDate, -1);
+  return { fromDate: addDays(end, -(days - 1)), toDate: end };
+}

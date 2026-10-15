@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import { formatBusinessDate } from '../../../design-system/formatters';
@@ -12,7 +13,8 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatTileLitres } from '../../reporting/format';
-import { effectiveProduct, tankProducts, tanksForStation } from './tank-overview-model';
+import { TankDrum } from './tank-drum';
+import { fuelKind, tankLabel, tankLevel, tanksForStation } from './tank-overview-model';
 
 type TankRow = {
   stationId: string;
@@ -21,6 +23,8 @@ type TankRow = {
   productId: string;
   productCode: string;
   productName: string;
+  capacityLitres: string;
+  reorderLevelLitres: string | null;
   expectedLitres: string;
   physicalLitres: string | null;
   varianceLitres: string | null;
@@ -69,12 +73,22 @@ async function fetchTanks(
 
 /**
  * Tanks for one station (reference 05/16), read from the posted management
- * report: tank code, configured product, last recorded dip and the expected
- * book quantity as of today. Tank capacity is not part of this contract yet
- * (BE-07), so no fill level is drawn; the silhouette says the level is not
- * on record instead of looking full or empty.
+ * report: tank code, configured product, capacity, last recorded dip and the
+ * expected book quantity as of today. Each tank is drawn as a drum filled to
+ * the last dip, or to the book quantity until a dip is recorded; the card says
+ * which. A tank at or below its reorder level is flagged. Cards open the tank's
+ * valuation stream.
  */
-export function TankOverview({ tenantId, stationId }: { tenantId: string; stationId: string }) {
+export function TankOverview({
+  tenantId,
+  stationId,
+  contextHref = '',
+}: {
+  tenantId: string;
+  stationId: string;
+  contextHref?: string;
+}) {
+  const contextQuery = contextHref.split('?')[1];
   const key = `${tenantId}|${stationId}`;
   const [loaded, setLoaded] = useState<Keyed>({ status: 'loading' });
   // A result for another station is never shown while the new one loads.
@@ -82,7 +96,6 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
     () => (loaded.key === key ? loaded : { status: 'loading' }),
     [loaded, key],
   );
-  const [product, setProduct] = useState<string>('all');
 
   const [attempt, setAttempt] = useState(0);
 
@@ -98,21 +111,15 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
     () => (state.status === 'ready' ? tanksForStation(state.report.inventory.rows, stationId) : []),
     [state, stationId],
   );
-  // Products in the order the station's tanks list them; only configured ones.
-  const products = useMemo(() => tankProducts(tanks), [tanks]);
-  const selected = effectiveProduct(products, product);
-  const visible = selected === 'all' ? tanks : tanks.filter((tank) => tank.productId === selected);
 
   return (
     <Card as="section" className="panel tank-overview" aria-labelledby="tank-overview-title">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">
-            {state.status === 'ready'
-              ? `As of ${formatBusinessDate(state.report.filters.toDate)}`
-              : 'Fuel in tanks'}
-          </p>
           <h2 id="tank-overview-title">Tanks</h2>
+          {state.status === 'ready' ? (
+            <p className="tank-asof">{formatBusinessDate(state.report.filters.toDate)}</p>
+          ) : null}
         </div>
       </div>
 
@@ -146,64 +153,66 @@ export function TankOverview({ tenantId, stationId }: { tenantId: string; statio
 
       {state.status === 'ready' && tanks.length > 0 ? (
         <>
-          {products.length > 1 ? (
-            <div className="pill-group" role="group" aria-label="Filter tanks by product">
-              <button
-                type="button"
-                className="pill"
-                aria-pressed={selected === 'all'}
-                onClick={() => setProduct('all')}
-              >
-                All
-              </button>
-              {products.map((entry) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  className="pill"
-                  aria-pressed={selected === entry.id}
-                  onClick={() => setProduct(entry.id)}
-                >
-                  {entry.name}
-                </button>
-              ))}
-            </div>
-          ) : null}
           <ul className="tank-grid">
-            {visible.map((tank) => (
-              <li key={tank.tankId} className="tank-card">
-                <div className="tank-card-head">
-                  <h3>{tank.tankCode}</h3>
-                  <span className="tank-card-product">{tank.productName}</span>
-                </div>
-                <div className="tank-figure" aria-hidden="true">
-                  <span className="tank-figure-body">
-                    <span className="tank-figure-unknown">Level not on record</span>
-                  </span>
-                </div>
-                <dl className="tank-card-figures">
-                  <div>
-                    <dt>Last dip</dt>
-                    <dd>{formatTileLitres(tank.physicalLitres)}</dd>
-                  </div>
-                  <div>
-                    <dt>Expected</dt>
-                    <dd>{formatTileLitres(tank.expectedLitres)}</dd>
-                  </div>
-                  <div>
-                    <dt>Difference</dt>
-                    <dd>{formatTileLitres(tank.varianceLitres)}</dd>
-                  </div>
-                </dl>
-                {tank.physicalLitres === null ? (
-                  <StatusBadge tone="pending">No dip recorded yet</StatusBadge>
-                ) : null}
-              </li>
-            ))}
+            {tanks.map((tank) => {
+              const level = tankLevel(tank);
+              const streamPath = `/inventory/valuation/streams/${tank.tankId}/${tank.productId}`;
+              const compact = (value: string | null) => formatTileLitres(value).replace(' L', 'L');
+              return (
+                <li key={tank.tankId}>
+                  <Link
+                    href={contextQuery ? `${streamPath}?${contextQuery}` : streamPath}
+                    className="tank-card"
+                    data-state={level.state}
+                    data-source={level.source}
+                    data-fuel={fuelKind(tank.productCode, tank.productName)}
+                  >
+                    <span className="tank-card-head">
+                      <span className="tank-card-code">
+                        {tankLabel(tank.tankCode)}: {tank.productName}
+                      </span>
+                      {level.state === 'low' ? <StatusBadge tone="warning">Low</StatusBadge> : null}
+                    </span>
+                    <span className="tank-figure">
+                      <TankDrum level={level} />
+                      <span className="tank-percent">
+                        {level.percent === null ? (
+                          '—'
+                        ) : (
+                          <>
+                            {level.percent}
+                            <small>%</small>
+                          </>
+                        )}
+                      </span>
+                    </span>
+                    <span className="tank-card-body">
+                      <span className="tank-card-litres">
+                        {level.percent === null ? (
+                          <span className="tank-card-capacity">Level not on record</span>
+                        ) : (
+                          <>
+                            <strong>{compact(level.litres)}</strong>
+                            <span className="tank-card-capacity">
+                              /{compact(tank.capacityLitres)}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                      {level.source === 'book' ? (
+                        <span
+                          className="tank-card-note"
+                          title="Estimated from book stock; no dip recorded yet"
+                        >
+                          Estimated
+                        </span>
+                      ) : null}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
-          <p className="panel-detail">
-            Fill levels will show once tank capacities are available here.
-          </p>
         </>
       ) : null}
     </Card>

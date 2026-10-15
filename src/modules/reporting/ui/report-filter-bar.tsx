@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { Dropdown } from '../../../design-system/dropdown';
 import { Icon } from '../../../design-system/icons';
 import { describeStations, toggleStation, type ReportFilters } from '../filters';
 import { REPORT_PERIODS, REPORT_PERIOD_LABELS, type ReportPeriod } from '../period';
@@ -15,10 +16,13 @@ export function ReportFilterBar({
   stations,
   filters,
   onChange,
+  showPeriod = true,
 }: {
   stations: readonly FilterStation[];
   filters: ReportFilters;
   onChange: (next: ReportFilters) => void;
+  /** False when the period is chosen elsewhere, as on each row of the Reports list. */
+  showPeriod?: boolean;
 }) {
   const pickerRef = useRef<HTMLDetailsElement>(null);
   const allIds = stations.map((station) => station.id);
@@ -88,24 +92,24 @@ export function ReportFilterBar({
         </details>
       </div>
 
-      <div className="report-filter">
-        <label className="field-label" htmlFor="report-period">
-          Period
-        </label>
-        <select
-          id="report-period"
-          value={filters.period}
-          onChange={(event) => onChange({ ...filters, period: event.target.value as ReportPeriod })}
-        >
-          {REPORT_PERIODS.map((period) => (
-            <option key={period} value={period}>
-              {REPORT_PERIOD_LABELS[period]}
-            </option>
-          ))}
-        </select>
-      </div>
+      {showPeriod ? (
+        <div className="report-filter">
+          <label className="field-label" htmlFor="report-period">
+            Period
+          </label>
+          <Dropdown
+            id="report-period"
+            value={filters.period}
+            options={REPORT_PERIODS.map((period) => ({
+              value: period,
+              label: REPORT_PERIOD_LABELS[period],
+            }))}
+            onValueChange={(period) => onChange({ ...filters, period: period as ReportPeriod })}
+          />
+        </div>
+      ) : null}
 
-      {filters.period === 'custom' ? (
+      {showPeriod && filters.period === 'custom' ? (
         <>
           <div className="report-filter">
             <label className="field-label" htmlFor="report-from">

@@ -254,13 +254,10 @@ export function ValuationOverview({
 
   const unvalued = data.streams.filter((stream) => stream.valuationStatus === 'UNVALUED');
   return (
-    <div className="valuation-workspace">
+    <div className="valuation-workspace valuation-overview">
       <div className="page-heading">
         <div>
-          <p>
-            See which cost streams are valued, what is blocking an unvalued stream, and how
-            revaluation evidence changes historical COGS.
-          </p>
+          <p>Cost streams and their valuation.</p>
         </div>
         <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
           Refresh
@@ -294,8 +291,9 @@ export function ValuationOverview({
       </section>
       {data.streams.length === 0 ? (
         <EmptyState
+          layout="block"
           title="No valuation streams yet"
-          message="This station has no persisted cost stream yet. Create or import inventory movements before reviewing valuation."
+          message="Streams appear once this station has inventory movements."
         />
       ) : (
         <Card className="panel table-card" id="cost-streams">
@@ -381,8 +379,9 @@ export function ValuationOverview({
         </div>
         {data.revaluations.length === 0 ? (
           <EmptyState
-            title="No revaluation workflows"
-            message="A request appears here when a source movement needs late authoritative cost."
+            layout="block"
+            title="No revaluations"
+            message="A request appears here when a movement needs a late cost."
           />
         ) : (
           <TableScrollRegion label="Revaluation workflow history">

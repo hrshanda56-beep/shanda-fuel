@@ -1,21 +1,24 @@
-/* One rounded panel: section list on the left, details on the right. */
-.frame {
+/* Settings use the whole content width and sit close to the page header. */
+.page {
+  max-width: none;
+  padding-block: 0;
+}
+
+/* Section pills on the left, one rounded panel with the details on the right. */
+.layout {
   display: grid;
-  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+  grid-template-columns: 13rem minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-5);
   min-width: 0;
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-xs);
-  overflow: hidden;
 }
 
 .subnav {
+  position: sticky;
+  top: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-4);
-  border-right: var(--border-width) solid var(--border-subtle);
+  gap: var(--space-2);
 }
 
 .subnavItem {
@@ -23,9 +26,9 @@
   align-items: center;
   gap: var(--space-3);
   min-height: 2.75rem;
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: var(--radius-md);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-xl);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -36,13 +39,15 @@
 }
 
 .subnavItem:hover {
+  border-color: var(--border-strong);
   background: var(--bg-subtle);
   color: var(--text-primary);
 }
 
 .subnavItem[aria-pressed='true'] {
+  border-color: var(--accent);
   background: var(--bg-selected);
-  color: var(--accent-text);
+  color: var(--text-primary);
   font-weight: var(--font-weight-medium);
 }
 
@@ -53,9 +58,13 @@
 .content {
   display: grid;
   align-content: start;
-  gap: var(--space-4);
+  gap: var(--space-5);
   min-width: 0;
-  padding: var(--space-6);
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
 }
 
 .contentHeader {
@@ -76,79 +85,85 @@
   font-size: var(--font-size-sm);
 }
 
-.card {
+/* Blocks inside the panel: a heading, then outlined fields. */
+.section {
   display: grid;
   gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-5);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--border-subtle);
 }
 
-.cardTitle {
+.sectionHead {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sectionTitle {
   margin: 0;
   color: var(--text-primary);
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
 }
 
+/* Read-only values as outlined fields with the label sitting on the border. */
 .fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4) var(--space-6);
+  gap: var(--space-5) var(--space-4);
   margin: 0;
 }
 
+.fields > div {
+  position: relative;
+  min-width: 0;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-xl);
+}
+
+/* A lone tile (an odd last one) takes the full row so long names don't wrap in a half-width box. */
+.fields > div:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .fields dt {
+  position: absolute;
+  top: 0;
+  left: var(--space-3);
+  padding: 0 var(--space-2);
+  background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  transform: translateY(-50%);
 }
 
 .fields dd {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   color: var(--text-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   overflow-wrap: anywhere;
 }
 
-.profileCard {
-  grid-auto-flow: column;
-  grid-template-columns: auto minmax(0, 1fr);
+.profileRow {
+  display: flex;
   align-items: center;
   gap: var(--space-4);
 }
 
 .avatar {
   display: inline-grid;
+  flex: none;
   place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 4.5rem;
+  height: 4.5rem;
   border-radius: 50%;
   background: var(--accent-muted);
   color: var(--accent-text);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
-}
-
-.profileText {
-  min-width: 0;
-}
-
-.profileName {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  overflow-wrap: anywhere;
-}
-
-.profileMeta {
-  margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-md);
-  overflow-wrap: anywhere;
 }
 
 .signOutRow {
@@ -255,16 +270,14 @@
 
 /* Phone: the section list becomes wrapping pills above the details. */
 @media (max-width: 48rem) {
-  .frame {
+  .layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .subnav {
+    position: static;
     flex-direction: row;
     flex-wrap: wrap;
-    padding: var(--space-3);
-    border-right: 0;
-    border-bottom: var(--border-width) solid var(--border-subtle);
   }
 
   .subnavItem {
@@ -280,5 +293,290 @@
 @media (max-width: 30rem) {
   .fields {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profileRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Staff: a searchable table with filter pills, in the same soft language as the rest of the app. */
+/* One row on wide screens; wraps on narrow ones. */
+.staffToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.staffSearch {
+  display: flex;
+  flex: 0 1 18rem;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.staffSearch input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.staffSearch:focus-within {
+  border-color: var(--accent);
+}
+
+.staffFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+}
+
+.staffFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.staffFilter span {
+  color: var(--text-muted, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.staffFilter[aria-pressed='true'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Last in the row, pushed to the right edge. */
+.staffInviteButton {
+  margin-left: auto;
+}
+
+.staffDanger {
+  color: var(--tone-critical-fg, #b42318);
+}
+
+.staffEmpty {
+  margin: 0;
+  padding: var(--space-6) 0;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.staffTable {
+  display: grid;
+  min-width: 0;
+}
+
+.staffHead,
+.staffTableRow {
+  display: grid;
+  grid-template-columns:
+    minmax(11rem, 1.3fr) minmax(0, 1.6fr) minmax(5.5rem, 0.8fr) minmax(0, 1.1fr)
+    minmax(5.5rem, 0.7fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.staffHead {
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.staffRows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staffTableRow {
+  position: relative;
+  padding: var(--space-3) var(--space-2);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.staffTableRow::after {
+  content: '›';
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  color: var(--accent);
+  font-size: 1.25rem;
+  line-height: 1;
+  opacity: 0;
+  transform: translate(-4px, -50%);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.staffTableRow:hover::after,
+.staffTableRow:focus-within::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.staffTableRow:hover .staffOpen {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.staffOpen {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.staffDetail {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+}
+
+.staffFacts {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  margin: 0;
+}
+
+.staffFacts dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.staffFacts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.staffTableRow:last-child {
+  border-bottom: 0;
+}
+
+.staffTableRow:hover {
+  background: var(--bg-subtle);
+}
+
+.staffTableRow button:not(:disabled) {
+  cursor: pointer;
+}
+
+.staffName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.staffName > div {
+  display: grid;
+  min-width: 0;
+}
+
+.staffName strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.staffName small {
+  color: var(--text-secondary);
+}
+
+.staffAvatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--accent-muted);
+  color: var(--accent-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.staffCell {
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Phone: each row becomes a small stack, with no sideways scroll. */
+@media (max-width: 48rem) {
+  .staffSearch {
+    max-width: none;
+  }
+
+  .staffInviteButton {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .staffHead {
+    display: none;
+  }
+
+  .staffTableRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .staffCell {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .staffCell::before {
+    content: attr(data-label);
+    min-width: 4.5rem;
+    color: var(--text-muted, var(--text-secondary));
   }
 }

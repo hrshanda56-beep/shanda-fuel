@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   buildContextHref,
   contextRoutePolicy,
@@ -21,10 +21,9 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
-import { PageHeader } from '@/design-system/layout';
-import { TableScrollRegion } from '@/design-system/table';
-import { exact, sumExact } from '@/modules/reporting/domain';
+import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { initials, isOverdue, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
   supplierId: string;
@@ -47,6 +46,20 @@ const EMPTY_CREATE_FORM: CreateSupplierForm = {
   legalName: '',
   registrationReference: '',
 };
+
+type SupplierFilter = 'all' | 'overdue' | 'current';
+
+const FILTERS: ReadonlyArray<{ value: SupplierFilter; label: string }> = [
+  { value: 'all', label: 'All Suppliers' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'current', label: 'Up To Date' },
+];
+
+function matchesFilter(row: SupplierSummary, filter: SupplierFilter): boolean {
+  if (filter === 'overdue') return isOverdue(row);
+  if (filter === 'current') return !isOverdue(row);
+  return true;
+}
 
 const SUPPLIER_ROUTE_POLICY = contextRoutePolicy('/suppliers');
 
@@ -82,6 +95,78 @@ function legalEntityName(
   return null;
 }
 
+/** Row actions. A sibling of the row link, not inside it, so a click never opens the supplier. */
+function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(row.code);
+      setCopied(true);
+      window.setTimeout(() => {
+        setCopied(false);
+        setOpen(false);
+      }, 900);
+    } catch {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className="row-menu" ref={rootRef} data-open={open || undefined}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="row-menu-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${row.legalName}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="more" />
+      </button>
+      {open ? (
+        <div className="row-menu-list" role="menu">
+          <Link role="menuitem" className="row-menu-item" href={href}>
+            <Icon name="arrow-right" />
+            Open supplier
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            className="row-menu-item"
+            onClick={() => void copyCode()}
+          >
+            <Icon name={copied ? 'check' : 'tag'} />
+            {copied ? 'Copied' : 'Copy supplier code'}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SupplierWorkspace() {
   const searchParams = useSearchParams();
   const search = searchParams.toString();
@@ -96,6 +181,8 @@ export function SupplierWorkspace() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filter, setFilter] = useState<SupplierFilter>('all');
 
   const current = context?.current ?? null;
   const currentLegalEntityName = useMemo(
@@ -235,38 +322,20 @@ export function SupplierWorkspace() {
   }
 
   const supplierSelection = current;
-  const totals = useMemo(
-    () => ({
-      current: sumExact(rows.map((row) => row.current)),
-      overdue: sumExact(rows.map((row) => row.overdue)),
-      total: sumExact(rows.map((row) => row.total)),
-      overdueCount: rows.filter((row) => exact(row.overdue).value.greaterThan(0)).length,
-    }),
-    [rows],
-  );
+  const filteredRows = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return rows.filter(
+      (row) =>
+        matchesFilter(row, filter) &&
+        (!query || `${row.code} ${row.legalName}`.toLowerCase().includes(query)),
+    );
+  }, [rows, searchTerm, filter]);
+  const listReady = !loading && !error;
+  const filterCount = (value: SupplierFilter) =>
+    listReady ? rows.filter((row) => matchesFilter(row, value)).length : '—';
 
   return (
-    <div className="content-grid">
-      <PageHeader
-        eyebrow="Supplier creditors"
-        title="Payables position"
-        headingLevel="h2"
-        titleId="supplier-payables-title"
-        description="What each legal entity owes its suppliers, current and overdue."
-        actions={
-          hasRequiredContext ? (
-            <Button
-              onClick={() => {
-                resetCreateForm();
-                setCreateOpen(true);
-              }}
-            >
-              Add supplier
-            </Button>
-          ) : null
-        }
-      />
-
+    <div className="content-grid wide-workspace">
       {contextLoading ? <LoadingState label="Loading" /> : null}
       {contextError ? (
         <ErrorState
@@ -283,41 +352,58 @@ export function SupplierWorkspace() {
 
       {createSuccess ? <SuccessState title="Supplier created" message={createSuccess} /> : null}
 
-      {hasRequiredContext && supplierSelection && !loading && !error && rows.length > 0 ? (
-        <dl className="summary-strip content-span" aria-label="Payables summary">
-          <div>
-            <dt>Owed to suppliers</dt>
-            <dd>{formatTileMoney(totals.total)}</dd>
-          </div>
-          <div>
-            <dt>Not yet due</dt>
-            <dd>{formatTileMoney(totals.current)}</dd>
-          </div>
-          <div data-tone={totals.overdueCount > 0 ? 'warning' : undefined}>
-            <dt>Overdue</dt>
-            <dd>{formatTileMoney(totals.overdue)}</dd>
-          </div>
-          <div>
-            <dt>Suppliers overdue</dt>
-            <dd>
-              {totals.overdueCount} of {rows.length}
-            </dd>
-          </div>
-        </dl>
-      ) : null}
-
       {hasRequiredContext && supplierSelection ? (
         <Card
           as="section"
           className="panel content-span"
           aria-labelledby="supplier-creditors-title"
         >
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">{currentLegalEntityName ?? 'Legal entity'}</p>
-              <h2 id="supplier-creditors-title">Supplier balances</h2>
-            </div>
+          <h2 id="supplier-creditors-title" className="visually-hidden">
+            Supplier balances
+          </h2>
+
+          <div className="list-toolbar">
+            {rows.length > 0 ? (
+              <>
+                <label className="list-search">
+                  <Icon name="search" />
+                  <input
+                    id="supplier-search"
+                    type="search"
+                    aria-label="Search suppliers"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Search suppliers…"
+                    autoComplete="off"
+                  />
+                </label>
+                <div className="list-filters" role="group" aria-label="Filter suppliers">
+                  {FILTERS.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className="list-filter"
+                      aria-pressed={filter === item.value}
+                      onClick={() => setFilter(item.value)}
+                    >
+                      {item.label}
+                      <span>{filterCount(item.value)}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            <Button
+              className="list-toolbar-action"
+              onClick={() => {
+                resetCreateForm();
+                setCreateOpen(true);
+              }}
+            >
+              Add supplier
+            </Button>
           </div>
+
           {loading ? <LoadingState label="Loading supplier balances" /> : null}
           {error ? (
             <ErrorState
@@ -325,54 +411,80 @@ export function SupplierWorkspace() {
               action={<Button onClick={() => void loadSummary(supplierSelection)}>Retry</Button>}
             />
           ) : null}
-          {!loading && !error && rows.length === 0 ? (
+          {listReady && rows.length === 0 ? (
             <EmptyState
+              layout="block"
+              icon="users"
               title="No suppliers yet"
               message="Use Add supplier to create the first one."
             />
           ) : null}
-          {!loading && !error && rows.length > 0 ? (
-            <TableScrollRegion label="Supplier creditor balances">
-              <table className="responsive-table">
-                <caption className="visually-hidden">Supplier creditor balances</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Supplier</th>
-                    <th scope="col">Not yet due</th>
-                    <th scope="col">Overdue</th>
-                    <th scope="col">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.supplierId}>
-                      <td data-label="Supplier">
-                        <Link
-                          href={buildContextHref(
-                            `/suppliers/${encodeURIComponent(row.supplierId)}`,
-                            search,
-                            supplierSelection,
-                          )}
+          {listReady && rows.length > 0 && filteredRows.length === 0 ? (
+            <EmptyState
+              layout="block"
+              icon="search"
+              title="No matching suppliers"
+              message="Try a different name or code."
+            />
+          ) : null}
+          {listReady && filteredRows.length > 0 ? (
+            <div className="list-table supplier-table">
+              <div className="list-head" aria-hidden="true">
+                <span>Supplier</span>
+                <span>Status</span>
+                <span>Not Yet Due</span>
+                <span>Overdue</span>
+                <span>Total</span>
+                <span />
+              </div>
+              <ul className="list-rows" aria-label="Supplier balances">
+                {filteredRows.map((row) => {
+                  const href = buildContextHref(
+                    `/suppliers/${encodeURIComponent(row.supplierId)}`,
+                    search,
+                    supplierSelection,
+                  );
+                  const late = isOverdue(row);
+                  return (
+                    <li key={row.supplierId} className="list-item">
+                      <Link className="list-row" href={href}>
+                        <span className="list-name">
+                          <span className="list-avatar" aria-hidden="true">
+                            {initials(row.legalName)}
+                          </span>
+                          <span>
+                            <strong>{row.legalName}</strong>
+                            <small>{row.code}</small>
+                          </span>
+                        </span>
+                        <span className="list-cell list-status" data-label="Status">
+                          <span className="balance-bar" aria-hidden="true">
+                            <span style={{ width: `${late ? overduePercent(row) : 0}%` }} />
+                          </span>
+                          <span data-tone={late ? 'warning' : undefined}>
+                            {late ? `${overduePercent(row)}% overdue` : 'Up to date'}
+                          </span>
+                        </span>
+                        <span className="list-cell list-amount" data-label="Not yet due">
+                          {formatTileMoney(row.current)}
+                        </span>
+                        <span
+                          className="list-cell list-amount"
+                          data-label="Overdue"
+                          data-tone={late ? 'warning' : undefined}
                         >
-                          <strong>{row.code}</strong>
-                          <br />
-                          {row.legalName}
-                        </Link>
-                      </td>
-                      <td data-label="Not yet due" className="numeric">
-                        {formatTileMoney(row.current)}
-                      </td>
-                      <td data-label="Overdue" className="numeric">
-                        {formatTileMoney(row.overdue)}
-                      </td>
-                      <td data-label="Total" className="numeric">
-                        {formatTileMoney(row.total)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableScrollRegion>
+                          {formatTileMoney(row.overdue)}
+                        </span>
+                        <span className="list-cell list-amount" data-label="Total">
+                          {formatTileMoney(row.total)}
+                        </span>
+                      </Link>
+                      <SupplierRowMenu row={row} href={href} />
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           ) : null}
         </Card>
       ) : null}

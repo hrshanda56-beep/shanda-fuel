@@ -176,6 +176,8 @@ export type InventoryPosition = Readonly<{
     productId: string;
     productCode: string;
     productName: string;
+    capacityLitres: ReportLitres;
+    reorderLevelLitres: ReportLitres | null;
     expectedLitres: ReportLitres;
     physicalLitres: ReportLitres | null;
     varianceLitres: ReportLitres | null;

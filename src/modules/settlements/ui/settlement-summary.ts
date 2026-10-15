@@ -86,3 +86,18 @@ export function providerShares(rows: readonly ProviderSettlementSummaryRow[]): P
     })
     .sort((left, right) => right.share - left.share);
 }
+
+/** Share of a settlement's gross already matched to payment evidence, 0 to 100. Drawing only. */
+export function allocatedPercent(row: ProviderSettlementSummaryRow): number {
+  const gross = exact(row.grossAmount).value;
+  if (!gross.greaterThan(0)) return 0;
+  const share = exact(row.allocatedAmount).value.dividedBy(gross).times(100).toNumber();
+  return Math.min(100, Math.max(0, Math.round(share)));
+}
+
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (
+    (parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '')
+  ).toUpperCase();
+}

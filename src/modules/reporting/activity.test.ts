@@ -30,7 +30,7 @@ describe('report activity', () => {
       toDate: '2026-10-08',
       stationNames: ['Bindura'],
     });
-    expect(metadata).toMatchObject({ reportTitle: 'Cash evidence to bank', stationCount: 1 });
+    expect(metadata).toMatchObject({ reportTitle: 'Cash Evidence to Bank', stationCount: 1 });
     expect(
       toActivityItem({
         id: 'e1',
@@ -40,7 +40,7 @@ describe('report activity', () => {
       }),
     ).toMatchObject({
       kind: 'SHARED',
-      headline: 'Cash evidence to bank link shared',
+      headline: 'Cash Evidence to Bank link shared',
       detail: 'This month · Bindura',
     });
   });
