@@ -95,4 +95,23 @@ describe('tenant authority resolver', () => {
     expect(resolved.authorization.membershipActive).toBe(true);
     expect(resolved.membership.status).toBe('ACTIVE');
   });
+
+  it('reuses a verified actor without resolving the session a second time', async () => {
+    let resolveActorCalls = 0;
+    const resolved = await resolveTenantExecutionContext({
+      request: new Request('https://fuel.example.test'),
+      requestedTenantId: tenantId,
+      authenticatedActor: actor,
+      resolveActor: async () => {
+        resolveActorCalls += 1;
+        throw new Error('the request-scoped actor should have been reused');
+      },
+      loadMembership: async () => membership('ACTIVE'),
+      now: new Date('2026-09-20T10:00:00.000Z'),
+    });
+
+    expect(resolveActorCalls).toBe(0);
+    expect(resolved.actor).toBe(actor);
+    expect(resolved.transaction).toMatchObject({ tenantId, actorId: identityId, membershipId });
+  });
 });

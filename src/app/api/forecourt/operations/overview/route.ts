@@ -8,14 +8,14 @@ import { apiErrorResponse, withRequestObservability } from '../../../../../platf
 
 export const GET = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
-    await requireAuthenticatedActor(request);
+    const actor = await requireAuthenticatedActor(request);
     const url = new URL(request.url);
     const input = operationsOverviewQuery.parse({
       tenantId: url.searchParams.get('tenantId'),
       stationId: url.searchParams.get('stationId'),
       businessDayId: url.searchParams.get('businessDayId') ?? undefined,
     });
-    return NextResponse.json(await getOperationsOverviewFromRequest(request, input), {
+    return NextResponse.json(await getOperationsOverviewFromRequest(request, input, actor), {
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {
