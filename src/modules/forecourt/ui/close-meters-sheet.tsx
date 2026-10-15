@@ -4,8 +4,9 @@ import Decimal from 'decimal.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { InlineError } from '../../../design-system/inline-error';
+import { Select } from '../../../design-system/forms';
 import { Modal } from '../../../design-system/modal';
-import { Button, LoadingState, NumericInput } from '../../../design-system/primitives';
+import { Button, Field, LoadingState, NumericInput } from '../../../design-system/primitives';
 import { formatLitres } from '../../../design-system/formatters';
 import {
   describeFailure,
@@ -76,6 +77,8 @@ export function CloseMetersSheet({
   const [closing, setClosing] = useState<Record<string, string>>({});
   const [opening, setOpening] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState(false);
+  // Responsible attendant per nozzle; nozzles not listed default to the first attendant.
+  const [attendantByNozzle, setAttendantByNozzle] = useState<Record<string, string>>({});
   // Stable ids so a retry after a partial failure replays the same commands instead of duplicating them.
   const ids = useRef(new Map<string, Ids>());
   const firstInput = useRef<HTMLDivElement>(null);
@@ -154,6 +157,7 @@ export function CloseMetersSheet({
               : null,
     };
   });
+  const attendants = context?.attendants ?? [];
   const complete = computed.length > 0 && computed.every((item) => item.problem === null);
   const reason =
     computed.length === 0
@@ -178,11 +182,17 @@ export function CloseMetersSheet({
   async function submit() {
     setTouched(true);
     if (!complete || !context) return;
-    const attendant = context.attendants[0];
-    if (!attendant) {
+    const defaultAttendant = context.attendants[0];
+    if (!defaultAttendant) {
       setError(userMessage('STATION_NOT_SET_UP'));
       return;
     }
+    const attendantFor = (nozzleId: string) => {
+      const chosen = attendantByNozzle[nozzleId];
+      return context.attendants.some((entry) => entry.id === chosen)
+        ? chosen!
+        : defaultAttendant.id;
+    };
     setBusy(true);
     setError(null);
     const base = { tenantId, stationId, businessDayId, shiftId };
@@ -195,10 +205,11 @@ export function CloseMetersSheet({
         const { row } = item;
         if (!row.meterInstallationId) throw userMessage('STATION_NOT_SET_UP');
         const id = idsFor(row.nozzleId);
+        const attendantId = attendantFor(row.nozzleId);
         const nozzle = {
           nozzleId: row.nozzleId,
           meterInstallationId: row.meterInstallationId,
-          responsibleAttendantId: attendant.id,
+          responsibleAttendantId: attendantId,
           readingStatus: 'AVAILABLE',
           // Boundary and segment commands are versioned against the shift they belong to.
           expectedVersion: shiftVersion,
@@ -237,7 +248,7 @@ export function CloseMetersSheet({
             nozzleId: row.nozzleId,
             meterInstallationId: row.meterInstallationId,
             productId: row.productId,
-            responsibleAttendantId: attendant.id,
+            responsibleAttendantId: attendantId,
             openingBoundaryId: id.open,
             closingBoundaryId: id.close,
             startAt: plannedStartAt,
@@ -321,6 +332,24 @@ export function CloseMetersSheet({
                   </strong>
                   <span>{row.productName}</span>
                 </div>
+                {attendants.length > 1 ? (
+                  <Field id={`attendant-${row.nozzleId}`} label="Responsible attendant">
+                    <Select
+                      id={`attendant-${row.nozzleId}`}
+                      value={attendantByNozzle[row.nozzleId] ?? attendants[0]!.id}
+                      onChange={(event) =>
+                        setAttendantByNozzle((current) => ({
+                          ...current,
+                          [row.nozzleId]: event.target.value,
+                        }))
+                      }
+                      options={attendants.map((entry) => ({ value: entry.id, label: entry.name }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                ) : attendants.length === 1 ? (
+                  <p className="close-meters-attendant">Attendant: {attendants[0]!.name}</p>
+                ) : null}
                 <div className="close-meters-fields">
                   {row.previousReading === null ? (
                     <NumericInput

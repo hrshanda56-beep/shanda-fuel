@@ -2801,6 +2801,12 @@ tr:has(.row-link):active {
   align-items: end;
 }
 
+.close-meters-attendant {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .close-meters-readonly {
   display: grid;
   gap: var(--space-1);
@@ -3049,4 +3055,11 @@ tr:has(.row-link):active {
   font-weight: var(--font-weight-semibold);
   letter-spacing: var(--letter-spacing-caps);
   text-transform: uppercase;
+}
+
+.payment-method-name {
+  display: grid;
+  gap: var(--space-1);
+  align-content: end;
+  min-height: 2.75rem;
 }

@@ -94,6 +94,8 @@ type Reading = {
 
 type Payment = {
   id?: string;
+  /** The always-visible Cash / EcoCash / Card rows; supervisors only type the amount. */
+  fixed?: boolean;
   method: PaymentMethod;
   amount: string;
   reference: string;
@@ -217,6 +219,22 @@ function newRowKey(): string {
   return crypto.randomUUID();
 }
 
+/** Cash, EcoCash and Card (POS) are always listed first so supervisors only have to type amounts. */
+function withFixedPayments(
+  rows: Array<Payment & { rowKey: string }>,
+): Array<Payment & { rowKey: string }> {
+  const used = new Set<string>();
+  const fixed = quickPayments.map((method) => {
+    const existing = rows.find((row) => row.method === method && !used.has(row.rowKey));
+    if (existing) used.add(existing.rowKey);
+    return existing ?? { rowKey: newRowKey(), method, amount: '', reference: '', note: '' };
+  });
+  return [
+    ...fixed.map((row) => ({ ...row, fixed: true })),
+    ...rows.filter((row) => !used.has(row.rowKey)),
+  ];
+}
+
 function paymentFromRecord(payment: RecordData['payments'][number]): Payment & { rowKey: string } {
   return {
     rowKey: payment.id || newRowKey(),
@@ -328,7 +346,9 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
   const [operation, setOperation] = useState<OperationsContext | null>(null);
   const [record, setRecord] = useState<RecordData | null>(null);
   const [readings, setReadings] = useState<Array<Reading & { rowKey: string }>>([]);
-  const [payments, setPayments] = useState<Array<Payment & { rowKey: string }>>([]);
+  const [payments, setPayments] = useState<Array<Payment & { rowKey: string }>>(() =>
+    withFixedPayments([]),
+  );
   const [expenses, setExpenses] = useState<Array<Expense & { rowKey: string }>>([]);
   const [attendantIds, setAttendantIds] = useState<string[]>([]);
   const [cashCounted, setCashCounted] = useState('');
@@ -427,7 +447,7 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
         ? carried(base)
         : { rows: base, changed: false };
       setReadings(rows);
-      setPayments(next.payments.map(paymentFromRecord));
+      setPayments(withFixedPayments(next.payments.map(paymentFromRecord)));
       setExpenses(next.expenses.map(expenseFromRecord));
       setAttendantIds(next.attendants.map((attendant) => attendant.attendantId));
       setCashCounted(next.cash?.countedCash ?? '');
@@ -612,11 +632,13 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
             {
               commandType: 'SavePaymentAllocations',
               values: {
-                payments: payments.map(({ rowKey: _rowKey, ...payment }) => ({
-                  ...payment,
-                  reference: payment.reference || undefined,
-                  note: payment.note || undefined,
-                })),
+                payments: payments
+                  .filter((payment) => payment.amount.trim() !== '')
+                  .map(({ rowKey: _rowKey, fixed: _fixed, ...payment }) => ({
+                    ...payment,
+                    reference: payment.reference || undefined,
+                    note: payment.note || undefined,
+                  })),
               },
             },
             {
@@ -745,7 +767,7 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
     readingsComplete:
       readings.length > 0 &&
       readings.every((item) => litresBetween(item.openingReading, item.closingReading) !== null),
-    hasPayments: payments.length > 0,
+    hasPayments: payments.some((item) => item.amount.trim() !== ''),
     cashCounted: cashCounted.trim() !== '',
     differences: { sales: salesDifferent, cash: cashDifferent, stock: stockDifference },
     explanations,
@@ -1093,35 +1115,42 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
             <div className="entry-list">
               {payments.map((payment, index) => (
                 <div className="entry-row" key={payment.rowKey}>
-                  <Field
-                    id={`payment-method-${payment.rowKey}`}
-                    label={`Paid by (line ${index + 1})`}
-                  >
-                    <select
+                  {payment.fixed ? (
+                    <div className="payment-method-name">
+                      <span className="metric-label">Paid by</span>
+                      <strong>{methodLabels[payment.method]}</strong>
+                    </div>
+                  ) : (
+                    <Field
                       id={`payment-method-${payment.rowKey}`}
-                      value={payment.method}
-                      disabled={!editable}
-                      onChange={(event) => {
-                        setDirty(true);
-                        setPayments((current) =>
-                          current.map((item) =>
-                            item.rowKey === payment.rowKey
-                              ? { ...item, method: event.target.value as PaymentMethod }
-                              : item,
-                          ),
-                        );
-                      }}
+                      label={`Paid by (line ${index + 1})`}
                     >
-                      {paymentMethods.map((method) => (
-                        <option key={method} value={method}>
-                          {methodLabels[method]}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+                      <select
+                        id={`payment-method-${payment.rowKey}`}
+                        value={payment.method}
+                        disabled={!editable}
+                        onChange={(event) => {
+                          setDirty(true);
+                          setPayments((current) =>
+                            current.map((item) =>
+                              item.rowKey === payment.rowKey
+                                ? { ...item, method: event.target.value as PaymentMethod }
+                                : item,
+                            ),
+                          );
+                        }}
+                      >
+                        {paymentMethods.map((method) => (
+                          <option key={method} value={method}>
+                            {methodLabels[method]}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
                   <NumericInput
                     id={`payment-amount-${payment.rowKey}`}
-                    label="Amount"
+                    label={payment.fixed ? `${methodLabels[payment.method]} amount` : 'Amount'}
                     value={payment.amount}
                     onChange={(event) => {
                       setDirty(true);
@@ -1157,7 +1186,7 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
                       }}
                     />
                   </Field>
-                  {editable ? (
+                  {editable && !payment.fixed ? (
                     <Button
                       variant="quiet"
                       aria-label={`Remove payment line ${index + 1}`}
@@ -1175,22 +1204,7 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
               ))}
             </div>
             {editable ? (
-              <div className="quick-add" role="group" aria-label="Add a payment line">
-                {quickPayments.map((method) => (
-                  <Button
-                    key={method}
-                    variant="secondary"
-                    onClick={() => {
-                      setDirty(true);
-                      setPayments((current) => [
-                        ...current,
-                        { rowKey: newRowKey(), method, amount: '', reference: '', note: '' },
-                      ]);
-                    }}
-                  >
-                    + {methodLabels[method]}
-                  </Button>
-                ))}
+              <div className="quick-add" role="group" aria-label="Add another payment method">
                 <Button
                   variant="quiet"
                   onClick={() => {
@@ -1213,7 +1227,7 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
             ) : null}
             {payments.length > 0 ? (
               <p className="entry-sum">
-                Entered so far
+                Total
                 <strong>
                   {formatMoney(sumDecimals(payments.map((item) => item.amount || '0')))}
                 </strong>
