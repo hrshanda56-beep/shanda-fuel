@@ -32,7 +32,7 @@ type CashSheet = 'record' | 'receive' | 'deposit' | 'confirm';
 
 const SHEET_TITLES: Readonly<Record<CashSheet, string>> = {
   record: 'Record a cash collection',
-  receive: 'Receive a Collection',
+  receive: 'Receive a collection',
   deposit: 'Record a bank deposit',
   confirm: 'Confirm bank deposits',
 };
@@ -472,7 +472,7 @@ export function CashWorkspace() {
     },
     {
       key: 'receive',
-      label: 'Receive a Collection',
+      label: 'Receive a collection',
       shortLabel: 'Receive collection',
       available: capabilities.receiveCollection,
     },
@@ -484,8 +484,8 @@ export function CashWorkspace() {
     },
     {
       key: 'confirm',
-      label: `Confirm Deposits (${confirmableDeposits.length})`,
-      shortLabel: `Confirm Deposits (${confirmableDeposits.length})`,
+      label: `Confirm deposits (${confirmableDeposits.length})`,
+      shortLabel: `Confirm deposits (${confirmableDeposits.length})`,
       available: capabilities.confirmDeposit && confirmableDeposits.length > 0,
     },
   ];
@@ -882,17 +882,6 @@ export function CashWorkspace() {
               <EmptyState
                 title="No collections yet"
                 message="Approved collections show up here."
-                action={
-                  capabilities.recordCollection ? (
-                    <Button
-                      variant="secondary"
-                      aria-haspopup="dialog"
-                      onClick={() => openSheet('record')}
-                    >
-                      New collection
-                    </Button>
-                  ) : undefined
-                }
               />
             ) : (
               <TableScrollRegion label="Station cash collections">
