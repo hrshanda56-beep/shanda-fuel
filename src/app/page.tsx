@@ -39,9 +39,20 @@ export default async function OverviewPage({
       ? dashboardScopeFromCurrentContext(access.current)
       : undefined;
 
+  // Quick actions are for people who run shifts. Owners, administrators and finance see
+  // Suppliers in their navigation; supervisors do not, so this follows resolved permissions.
+  const managesBusiness =
+    access.status === 'ready' &&
+    Boolean(access.projection?.some((entry) => entry.key === 'suppliers' && entry.visible));
+
   return (
     <AppShell searchPlacement="header" shellAccess={access}>
-      <TodayOverview tenantId={tenantId} stationId={stationId} initialContext={initialContext} />
+      <TodayOverview
+        tenantId={tenantId}
+        stationId={stationId}
+        initialContext={initialContext}
+        showQuickActions={!managesBusiness}
+      />
     </AppShell>
   );
 }
