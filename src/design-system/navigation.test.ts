@@ -131,7 +131,15 @@ describe('mobile navigation projection', () => {
     expect(items.every((entry) => entry.state === 'link')).toBe(true);
   });
 
-  it('never exposes restricted or hidden destinations and does not backfill', () => {
+  it('puts Reports in the Customers slot when customers are not accessible', () => {
+    const projection = syntheticNavigationProjection.map((entry) =>
+      entry.key === 'customers' ? { ...entry, visible: false } : entry,
+    );
+    const items = selectMobileNavigationItems(resolveNavigation(projection, {}));
+    expect(items.at(-1)).toMatchObject({ key: 'reports', mobileLabel: 'Reports' });
+  });
+
+  it('never exposes restricted or hidden destinations', () => {
     const projection = syntheticNavigationProjection.map((entry) => {
       if (entry.key === 'customers') return { ...entry, visible: true, enabled: false };
       if (entry.key === 'daily-operations') return { ...entry, visible: false };
@@ -139,7 +147,8 @@ describe('mobile navigation projection', () => {
     });
     const items = selectMobileNavigationItems(resolveNavigation(projection, {}));
 
-    expect(items.map((entry) => entry.key)).toEqual(['today']);
+    // Customers is restricted, so Reports takes its slot; hidden Daily ops is not backfilled.
+    expect(items.map((entry) => entry.key)).toEqual(['today', 'reports']);
   });
 });
 
