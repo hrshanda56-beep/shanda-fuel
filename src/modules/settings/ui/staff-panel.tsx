@@ -46,7 +46,7 @@ function defaultScope(role: Role) {
 type StaffFilter = 'all' | 'active' | 'invited' | 'deactivated';
 
 const FILTERS: ReadonlyArray<{ value: StaffFilter; label: string }> = [
-  { value: 'all', label: 'All Staff' },
+  { value: 'all', label: 'All staff' },
   { value: 'active', label: 'Active' },
   { value: 'invited', label: 'Invited' },
   { value: 'deactivated', label: 'Deactivated' },
@@ -340,7 +340,7 @@ export function StaffPanel({
         invitation.status === 'EXPIRED'
           ? 'Expired'
           : invitation.deliveryMethod === 'MANUAL'
-            ? 'Manual Activation'
+            ? 'Manual activation'
             : 'Invited',
       tone: invitation.status === 'EXPIRED' ? 'warning' : 'informational',
       actions:
@@ -453,7 +453,7 @@ export function StaffPanel({
           aria-haspopup="dialog"
           onClick={() => setInviteOpen(true)}
         >
-          Invite Staff
+          Invite staff
         </Button>
       </div>
 
@@ -472,7 +472,7 @@ export function StaffPanel({
             message="Invite your first team member to get started."
             action={
               <Button type="button" variant="primary" onClick={() => setInviteOpen(true)}>
-                Invite Staff
+                Invite staff
               </Button>
             }
           />
@@ -606,7 +606,7 @@ export function StaffPanel({
             </label>
           ) : (
             <p className={styles.note}>
-              The Staff Number and activation code will be shown once after creation.
+              The Staff number and activation code will be shown once after creation.
             </p>
           )}
           <label>
@@ -715,11 +715,11 @@ export function StaffPanel({
         {manualActivation ? (
           <dl>
             <div>
-              <dt>Staff Number</dt>
+              <dt>Staff number</dt>
               <dd>{manualActivation.staffNumber}</dd>
             </div>
             <div>
-              <dt>Activation Code</dt>
+              <dt>Activation code</dt>
               <dd>{manualActivation.activationCode}</dd>
             </div>
             <div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { SkeletonBlock } from '../../../design-system/primitives';
 import { relativeTime, type ReportActivityItem } from '../activity';
 import { REPORT_ACTIVITY_CHANGED } from './use-report-actions';
 import { QuickLook } from './quick-look';
@@ -48,9 +49,10 @@ function RecentActivity({ tenantId }: { tenantId: string }) {
         Recent activity
       </h2>
       {state.status === 'loading' ? (
-        <p className="rail-note" role="status">
-          Loading…
-        </p>
+        <div className="rail-note" role="status" aria-label="Loading recent activity">
+          <SkeletonBlock height="0.875rem" />
+          <SkeletonBlock width="70%" height="0.875rem" />
+        </div>
       ) : state.status === 'error' ? (
         <p className="rail-note">Recent activity is unavailable right now.</p>
       ) : state.items.length === 0 ? (

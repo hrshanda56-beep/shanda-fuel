@@ -64,13 +64,13 @@ export type NavigationSection = {
 export const navigationSections: readonly NavigationSection[] = [
   {
     key: 'my-shift',
-    label: 'My Shift',
+    label: 'My shift',
     icon: 'today',
     items: [
       {
         key: 'my-shift',
-        label: 'My Shift',
-        searchLabel: 'My Shift',
+        label: 'My shift',
+        searchLabel: 'My shift',
         icon: 'today',
         destination: { kind: 'route', path: '/my-shift' },
         availability: 'active',
@@ -222,7 +222,7 @@ export const navigationSections: readonly NavigationSection[] = [
  */
 export const syntheticNavigationProjection: readonly NavigationProjection[] = navigationSections
   .flatMap((section) => section.items)
-  // My Shift is the attendant's own destination, never part of the management preview.
+  // My shift is the attendant's own destination, never part of the management preview.
   .filter((item) => item.key !== 'my-shift')
   .map((item) => ({ key: item.key, visible: true, enabled: true }));
 
@@ -355,11 +355,16 @@ export function resolveNavigation(
  * The phone bottom bar holds the three everyday destinations; everything else
  * lives behind "More". Short labels keep each tab on a single line.
  */
-const MOBILE_NAVIGATION_ITEMS: readonly { key: NavigationKey; label: string }[] = [
-  { key: 'my-shift', label: 'My Shift' },
+const MOBILE_NAVIGATION_ITEMS: readonly {
+  key: NavigationKey;
+  label: string;
+  /** Takes the slot when the person has no access to this destination. */
+  fallback?: { key: NavigationKey; label: string };
+}[] = [
+  { key: 'my-shift', label: 'My shift' },
   { key: 'today', label: 'Today' },
   { key: 'daily-operations', label: 'Daily ops' },
-  { key: 'customers', label: 'Customers' },
+  { key: 'customers', label: 'Customers', fallback: { key: 'reports', label: 'Reports' } },
 ];
 
 export type MobileNavigationItem = Extract<ResolvedNavigationItem, { state: 'link' }> & {
@@ -382,9 +387,11 @@ export function selectMobileNavigationItems(
       .flatMap((section) => section.items)
       .flatMap((item) => (item.state === 'link' ? [[item.key, item] as const] : [])),
   );
-  return MOBILE_NAVIGATION_ITEMS.flatMap(({ key, label }) => {
+  return MOBILE_NAVIGATION_ITEMS.flatMap(({ key, label, fallback }) => {
     const item = links.get(key);
-    return item ? [{ ...item, mobileLabel: label }] : [];
+    if (item) return [{ ...item, mobileLabel: label }];
+    const stand = fallback ? links.get(fallback.key) : undefined;
+    return stand && fallback ? [{ ...stand, mobileLabel: fallback.label }] : [];
   });
 }
 

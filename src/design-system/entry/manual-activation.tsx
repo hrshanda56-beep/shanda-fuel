@@ -57,13 +57,13 @@ export function ManualActivationForm() {
     <section aria-labelledby="entry-title">
       <header className="entry-heading">
         <h1 id="entry-title">Activate your Shanda Fuel account</h1>
-        <p>Enter the Staff Number and activation code provided by your manager.</p>
+        <p>Enter the Staff number and activation code provided by your manager.</p>
       </header>
       <form className="entry-form" onSubmit={submit} noValidate>
-        <Field id="staff-number" label="Staff Number" required>
+        <Field id="staff-number" label="Staff number" required>
           <input id="staff-number" name="staffNumber" autoComplete="username" required />
         </Field>
-        <Field id="activation-code" label="Activation Code" required>
+        <Field id="activation-code" label="Activation code" required>
           <input id="activation-code" name="activationCode" autoComplete="one-time-code" required />
         </Field>
         <Field

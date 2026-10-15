@@ -106,11 +106,11 @@ export function QuickLook({ tenantId }: { tenantId: string }) {
 }
 
 const PLACEHOLDERS = [
-  'Total Sales',
-  'Gross Profit',
-  'Total Expenses',
-  'Net Profit',
-  'Banked Cash',
+  'Total sales',
+  'Gross profit',
+  'Total expenses',
+  'Net profit',
+  'Banked cash',
   'Cash',
   'Stock on Hand',
   'Creditors',

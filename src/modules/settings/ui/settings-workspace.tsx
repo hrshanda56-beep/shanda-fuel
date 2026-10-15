@@ -120,7 +120,7 @@ export function SettingsWorkspace({
   if (view.accountOnly) {
     return (
       <PageContainer width="wide" className={`settings-page ${styles.page}`}>
-        <div className={styles.layout}>
+        <div className={`${styles.layout} ${styles.layoutSingle}`}>
           <div className={styles.content}>
             <header className={styles.contentHeader}>
               <h2 className={styles.contentTitle}>Account</h2>
@@ -138,7 +138,7 @@ export function SettingsWorkspace({
   if (!organisation) {
     return (
       <PageContainer width="wide" className={`settings-page ${styles.page}`}>
-        <div className={styles.layout}>
+        <div className={`${styles.layout} ${styles.layoutSingle}`}>
           <div className={styles.content}>
             <header className={styles.contentHeader}>
               <h2 className={styles.contentTitle}>Organisation</h2>

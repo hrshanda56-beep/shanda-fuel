@@ -257,7 +257,7 @@ export function ValuationOverview({
     <div className="valuation-workspace valuation-overview">
       <div className="page-heading">
         <div>
-          <p>Cost streams and their valuation.</p>
+          <p>Stock value by fuel type.</p>
         </div>
         <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
           Refresh
@@ -268,13 +268,13 @@ export function ValuationOverview({
         <MetricCard
           label="Streams"
           value={data.streams.length}
-          meta="Persisted cost projections"
+          meta="Cost records"
           href="#cost-streams"
         />
         <MetricCard
           label="Unvalued"
           value={unvalued.length}
-          meta="May block sale-cost posting"
+          meta="Need a cost before sales can be costed"
           tone={unvalued.length > 0 ? 'critical' : 'default'}
           href="#cost-streams"
         />
@@ -374,7 +374,7 @@ export function ValuationOverview({
         <div className="section-heading">
           <div>
             <h2>Revaluation history</h2>
-            <p>Every transition retains its actor, timestamp, and persisted evidence.</p>
+            <p>Every change is recorded with who made it and when.</p>
           </div>
         </div>
         {data.revaluations.length === 0 ? (

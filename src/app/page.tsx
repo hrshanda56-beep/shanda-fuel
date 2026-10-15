@@ -19,7 +19,7 @@ export default async function OverviewPage({
 }) {
   const { tenantId, legalEntityId, stationId } = await searchParams;
 
-  // Someone whose permissions are only shift and meter work lands on My Shift
+  // Someone whose permissions are only shift and meter work lands on My shift
   // instead of an empty management dashboard. Decided from resolved permissions.
   const access = await getServerShellAccess(await headers());
   if (

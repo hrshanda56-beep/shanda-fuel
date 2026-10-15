@@ -367,6 +367,12 @@ export function DailyOperationsWorkspace({ context }: { context: DailyOperations
   );
 
   useEffect(() => {
+    document
+      .querySelector('.entry-steps [aria-current="step"]')
+      ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [step]);
+
+  useEffect(() => {
     const update = () => setOnline(navigator.onLine);
     const timer = window.setTimeout(update, 0);
     window.addEventListener('online', update);

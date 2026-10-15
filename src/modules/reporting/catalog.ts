@@ -3,10 +3,10 @@
  * section of the management report. Pure data; no UI or database code.
  */
 export const REPORT_CATEGORIES = [
-  { id: 'statements', label: 'Financial Statements' },
+  { id: 'statements', label: 'Financial statements' },
   { id: 'sales', label: 'Sales' },
   { id: 'cash', label: 'Cash & Banking' },
-  { id: 'payments', label: 'Electronic Payments' },
+  { id: 'payments', label: 'Electronic payments' },
   { id: 'credit', label: 'Suppliers & Customers' },
   { id: 'inventory', label: 'Inventory' },
 ] as const;
@@ -25,14 +25,14 @@ export type ReportDefinition = Readonly<{
 export const REPORT_CATALOG: readonly ReportDefinition[] = [
   {
     slug: 'profit-loss',
-    title: 'Income Statement',
+    title: 'Income statement',
     description: 'Revenue, cost of sales, expenses and the operating result.',
     category: 'statements',
     exportable: false,
   },
   {
     slug: 'cash-movement',
-    title: 'Cash Movement',
+    title: 'Cash movement',
     description: 'Cash collected, banked and settled, and what is still outstanding.',
     category: 'statements',
     exportable: false,

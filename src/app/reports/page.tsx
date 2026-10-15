@@ -17,7 +17,7 @@ export default async function ReportsPage({
   const context = await resolvePageContext('/reports', await searchParams);
   const tenantId = context?.tenantId;
   return (
-    <AppShell pageSubtitle="Operational Financial Position">
+    <AppShell pageSubtitle="Operational financial position">
       {tenantId ? (
         <Suspense>
           <div className="reports-stack wide-workspace">

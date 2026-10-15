@@ -17,7 +17,7 @@ export type NavigationProjectionInput = Readonly<{
 export const E2E_NAVIGATION_FIXTURE_HEADER = 'x-shanda-e2e-navigation-fixture';
 
 /**
- * The synthetic navigation/My Shift fixture bypasses session and authorization to
+ * The synthetic navigation/My shift fixture bypasses session and authorization to
  * render a screen against mocked data routes. It is for local and CI browser tests
  * only, so every condition must hold (fail closed on anything else):
  *   - the request carries the explicit `synthetic` header,
@@ -78,7 +78,7 @@ const ATTENDANT_WORKSPACE_PERMISSIONS: readonly PermissionCode[] = [
 
 /**
  * An actor whose resolved permissions cover shift/meter work but none of the
- * management destinations lands on My Shift. This is decided from permissions,
+ * management destinations lands on My shift. This is decided from permissions,
  * never from a role name, and it never grants anything: the page and its data
  * route authorise again.
  */

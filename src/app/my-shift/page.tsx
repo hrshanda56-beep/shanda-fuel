@@ -11,7 +11,7 @@ import { resolveCurrentContext } from '@/modules/context/server';
 import { MyShiftWorkspace } from '@/modules/forecourt/ui/my-shift-workspace';
 import { AppError } from '@/platform/errors';
 
-export const metadata = { title: 'My Shift' };
+export const metadata = { title: 'My shift' };
 export const dynamic = 'force-dynamic';
 
 const MY_SHIFT_ORIGIN = 'http://shanda-fuel.local';

@@ -466,20 +466,20 @@ export function CashWorkspace() {
   }> = [
     {
       key: 'record',
-      label: 'New Collection',
-      shortLabel: 'New Collection',
+      label: 'New collection',
+      shortLabel: 'New collection',
       available: capabilities.recordCollection,
     },
     {
       key: 'receive',
       label: 'Receive a Collection',
-      shortLabel: 'Receive Collection',
+      shortLabel: 'Receive collection',
       available: capabilities.receiveCollection,
     },
     {
       key: 'deposit',
-      label: 'New Bank Deposit',
-      shortLabel: 'New Deposit',
+      label: 'New bank deposit',
+      shortLabel: 'New deposit',
       available: capabilities.recordDeposit,
     },
     {
@@ -498,7 +498,7 @@ export function CashWorkspace() {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Cash custody</p>
-            <h2 id="cash-actions-title">Move/ Bank Cash</h2>
+            <h2 id="cash-actions-title">Move or bank cash</h2>
           </div>
         </div>
         {summary ? (
@@ -823,7 +823,7 @@ export function CashWorkspace() {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Overview</p>
-            <h2 id="cash-split-title">Cash Position</h2>
+            <h2 id="cash-split-title">Cash position</h2>
           </div>
         </div>
         {summary ? (
@@ -889,7 +889,7 @@ export function CashWorkspace() {
                       aria-haspopup="dialog"
                       onClick={() => openSheet('record')}
                     >
-                      New Collection
+                      New collection
                     </Button>
                   ) : undefined
                 }
@@ -934,7 +934,7 @@ export function CashWorkspace() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Banking</p>
-              <h2 id="deposit-list-title">Bank Deposits</h2>
+              <h2 id="deposit-list-title">Bank deposits</h2>
             </div>
           </div>
           {summary?.deposits.length ? (
@@ -982,7 +982,7 @@ export function CashWorkspace() {
                     aria-haspopup="dialog"
                     onClick={() => openSheet('deposit')}
                   >
-                    New Bank Deposit
+                    New bank deposit
                   </Button>
                 ) : undefined
               }

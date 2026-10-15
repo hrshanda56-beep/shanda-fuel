@@ -2049,20 +2049,6 @@ a.operations-attention-row:hover {
   font-weight: 600;
 }
 
-/* Title-style capitals for headings, buttons, navigation and card names across the site. */
-h1,
-h2,
-h3,
-.button,
-.nav-label,
-[role='tab'],
-.cash-wallet-card-name,
-.cash-wallet-detail strong,
-.cash-wallet-caption,
-.cash-donut-name {
-  text-transform: capitalize;
-}
-
 /* On phones the Collections and Bank Deposits sections sit on the page, not in cards. */
 @media (max-width: 40rem) {
   .cash-workspace .panel.content-span {

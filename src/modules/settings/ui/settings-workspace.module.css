@@ -13,6 +13,16 @@
   min-width: 0;
 }
 
+/* One panel and no section list (account-only): it takes the width, up to a comfortable reading size. */
+.layoutSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.layoutSingle .content {
+  width: 100%;
+  max-width: 42rem;
+}
+
 .subnav {
   position: sticky;
   top: var(--space-4);

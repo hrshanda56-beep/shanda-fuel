@@ -18,12 +18,7 @@ export default async function ReconciliationListPage({
   const businessDayId = typeof search.businessDayId === 'string' ? search.businessDayId : undefined;
 
   return (
-    <AppShell
-      breadcrumbs={[
-        { label: 'Operations', href: '/operations/daily' },
-        { label: 'Reconciliations' },
-      ]}
-    >
+    <AppShell>
       {context ? (
         <OperationsControlRoom
           context={{ tenantId: context.tenantId, stationId, businessDayId }}

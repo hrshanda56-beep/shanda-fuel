@@ -3033,3 +3033,11 @@ tr:has(.row-link):active {
   font-size: var(--font-size-sm);
   line-height: var(--line-height-snug);
 }
+
+.shell-context-skeleton {
+  display: inline-block;
+  width: 7.5rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-skeleton);
+}

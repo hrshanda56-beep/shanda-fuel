@@ -36,6 +36,7 @@ import {
   CLOSE_STATUS_PRESENTATION,
   countSuspendedCustomers,
   operationsAttention,
+  reviewHrefFor,
   shiftSummary,
   type AttentionRow,
   type TodayOperations,
@@ -213,7 +214,11 @@ export function TodayOverview({
 
   const attention: AttentionRow[] = [];
   if (operations.status === 'ready') {
-    const row = operationsAttention(operations.data, dailyHref);
+    const reviewHref =
+      stationId && operations.data.status.close === 'READY_FOR_REVIEW'
+        ? reviewHrefFor(operations.data, { tenantId, stationId })
+        : null;
+    const row = operationsAttention(operations.data, reviewHref ?? dailyHref);
     if (row) attention.push(row);
   }
   if (customers.status === 'ready') {
@@ -368,11 +373,6 @@ export function TodayOverview({
             ) : (
               <p className="today-note">Nothing needs attention.</p>
             )}
-            {customers.status === 'forbidden' ? (
-              <p className="today-note">
-                Customer alerts are hidden because you don’t have access.
-              </p>
-            ) : null}
             {operations.status === 'error' || customers.status === 'error' ? (
               <p className="today-note">Some items could not be checked.</p>
             ) : null}
