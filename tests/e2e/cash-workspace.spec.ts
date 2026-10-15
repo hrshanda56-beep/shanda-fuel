@@ -43,9 +43,9 @@ const summary = {
   stationId: 'station-1',
   currency: 'USD',
   totals: {
-    availableAtStation: '100.00',
-    collectedButUnbanked: '700.00',
-    pendingBankConfirmation: '700.00',
+    availableAtStation: '700.00',
+    collectedButUnbanked: '800.00',
+    pendingBankConfirmation: '100.00',
   },
   collections: [
     {
@@ -140,8 +140,12 @@ test.describe('Cash workspace', () => {
     await expect(page.getByRole('heading', { name: 'Collections', exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: 'Station cash collections' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Bank deposits' })).toBeVisible();
-    const position = page.getByRole('definition').filter({ hasText: '—' });
-    await expect(position).toHaveCount(1);
+    const collection = page.getByRole('row', { name: /COL-001/ });
+    await expect(collection.locator('[data-label="Amount"]')).toHaveText('800.00 USD');
+    await expect(collection.locator('[data-label="Unbanked"]')).toHaveText('800.00 USD');
+    const deposit = page.getByRole('row', { name: /DEP-001/ });
+    await expect(deposit).toContainText('100.00 USD');
+    await expect(deposit).toContainText('Pending');
 
     // Forms live in a side sheet opened from the action bar.
     await page.getByRole('button', { name: 'Receive a collection' }).click();
@@ -149,7 +153,7 @@ test.describe('Cash workspace', () => {
     await expect(sheet.getByRole('button', { name: 'Receive collection' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
-    await page.getByRole('button', { name: /^Confirm deposits/ }).click();
+    await page.getByRole('button', { name: /^Confirm deposits/i }).click();
     await expect(
       page
         .getByRole('dialog', { name: 'Confirm bank deposits' })
@@ -157,20 +161,19 @@ test.describe('Cash workspace', () => {
     ).toBeVisible();
   });
 
-  test('the cash position list is structurally valid once its figures load', async ({ page }) => {
+  test('the cash position legend is structurally valid once its figures load', async ({ page }) => {
     await mockCash(page);
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-      const position = page.getByLabel('Cash position');
-      // Wait for the figures, so the scan sees the rendered list (not a skeleton).
-      await expect(position.getByRole('definition').filter({ hasText: '—' })).toContainText(
-        'Not available on this page yet',
-      );
-      const results = await new AxeBuilder({ page })
-        .include('[aria-label="Cash position"]')
-        .withRules(['definition-list', 'dlitem'])
-        .analyze();
+      const position = page.getByRole('region', { name: 'Cash Position' });
+      await expect(position).toContainText('Cash at station');
+      await expect(position).toContainText('USD 700.00');
+      await expect(position).toContainText('Collected, not banked');
+      await expect(position).toContainText('USD 800.00');
+      await expect(position).toContainText('Awaiting bank confirmation');
+      await expect(position).toContainText('USD 100.00');
+      const results = await new AxeBuilder({ page }).include('.cash-panel').analyze();
       expect(results.violations, `width ${width}`).toEqual([]);
     }
   });

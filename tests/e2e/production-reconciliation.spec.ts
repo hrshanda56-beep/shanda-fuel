@@ -190,6 +190,11 @@ test.describe('production reconciliation persistence', () => {
     ]);
   }
 
+  async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {
+    await page.goto(url);
+    await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
+  }
+
   async function command(request: APIRequestContext, input: Record<string, unknown>, key: string) {
     const response = await request.post('/api/forecourt/commands', {
       data: input,
@@ -343,7 +348,8 @@ test.describe('production reconciliation persistence', () => {
     `);
     await authenticate(context, supervisorToken);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(
+    await gotoAndWaitForHydration(
+      page,
       `/operations/daily?${new URLSearchParams({
         tenantId: ids.tenant,
         stationId: ids.station,
@@ -386,7 +392,8 @@ test.describe('production reconciliation persistence', () => {
     page,
   }) => {
     await authenticate(context, supervisorToken);
-    await page.goto(
+    await gotoAndWaitForHydration(
+      page,
       `/operations/daily?${new URLSearchParams({
         tenantId: ids.tenant,
         stationId: ids.station,
@@ -443,7 +450,7 @@ test.describe('production reconciliation persistence', () => {
       `a5e-${reconciliationId}`,
       shiftInterval,
     );
-    await page.goto(supervisorUrl);
+    await gotoAndWaitForHydration(page, supervisorUrl);
     const createResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/forecourt/commands') &&
@@ -519,7 +526,7 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
 
     await authenticate(context, managerToken);
-    await page.goto(reviewUrl);
+    await gotoAndWaitForHydration(page, reviewUrl);
     await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
     const approveResponsePromise = page.waitForResponse(
       (response) =>
@@ -618,7 +625,7 @@ test.describe('production reconciliation persistence', () => {
       `a11-${randomUUID()}`,
       shiftInterval,
     );
-    await page.goto(`/operations/daily?${query.toString()}`);
+    await gotoAndWaitForHydration(page, `/operations/daily?${query.toString()}`);
     const createResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/forecourt/commands') &&
@@ -717,7 +724,10 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
 
     await authenticate(context, managerToken);
-    await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
+    await gotoAndWaitForHydration(
+      page,
+      `/operations/reconciliations/${reconciliationId}/review?${query.toString()}`,
+    );
     await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Return for correction' })).toBeDisabled();
     await page.getByLabel('Return reason').fill('Meter evidence requires supervisor correction.');
@@ -725,7 +735,10 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText('Returned', { exact: true })).toBeVisible();
 
     await authenticate(context, supervisorToken);
-    await page.goto(`/operations/reconciliations/${reconciliationId}?${query.toString()}`);
+    await gotoAndWaitForHydration(
+      page,
+      `/operations/reconciliations/${reconciliationId}?${query.toString()}`,
+    );
     await expect(page.getByText('Returned', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Submit for management review' }).click();
     await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
@@ -744,7 +757,10 @@ test.describe('production reconciliation persistence', () => {
     expect(unauthorizedApproval.status()).toBe(403);
 
     await authenticate(context, managerToken);
-    await page.goto(`/operations/reconciliations/${reconciliationId}/review?${query.toString()}`);
+    await gotoAndWaitForHydration(
+      page,
+      `/operations/reconciliations/${reconciliationId}/review?${query.toString()}`,
+    );
     page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
     await expect(page.getByText('Approved', { exact: true })).toBeVisible();
