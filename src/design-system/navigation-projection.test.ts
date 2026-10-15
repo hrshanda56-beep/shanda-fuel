@@ -91,7 +91,7 @@ describe('server navigation projection', () => {
     });
   });
 
-  it('gives an attendant only My Shift and no management destination', () => {
+  it('gives an attendant only My shift and no management destination', () => {
     const projection = buildNavigationProjection({ actor: actor('ATTENDANT'), scope });
     const visible = projection.filter((entry) => entry.visible).map((entry) => entry.key);
 
@@ -110,7 +110,7 @@ describe('server navigation projection', () => {
     expect(isAttendantWorkspaceActor({ actor: stranger, scope })).toBe(false);
   });
 
-  it('keeps supervisor navigation unchanged and never adds My Shift to it', () => {
+  it('keeps supervisor navigation unchanged and never adds My shift to it', () => {
     const visible = buildNavigationProjection({ actor: actor('SUPERVISOR'), scope })
       .filter((entry) => entry.visible)
       .map((entry) => entry.key);
@@ -129,7 +129,7 @@ describe('server navigation projection', () => {
     expect(visible).not.toContain('my-shift');
   });
 
-  it('does not show My Shift for a station the attendant is not assigned to', () => {
+  it('does not show My shift for a station the attendant is not assigned to', () => {
     const stationActor: AuthorizationActor = {
       ...actor('ATTENDANT'),
       roleAssignments: [

@@ -1,0 +1,251 @@
+/*
+ * One page header for every page.
+ *   - 768px and up: one row. The title (and optional one-line subtitle) sit on the left; the station
+ *     selector, search and account buttons sit on the right.
+ *   - Under 768px: the title and account button share the first row; the station selector fills the
+ *     second row with the search button beside it.
+ * The header is solid (never see-through), and its side padding equals the page's own padding.
+ * Loaded last so it settles the older, overlapping header rules.
+ */
+.shell-main .shell-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 4rem;
+  margin: 0;
+  padding: var(--space-3) 2rem;
+  border-bottom: 1px solid transparent;
+  background: var(--bg-canvas);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.shell-main .shell-header[data-scrolled] {
+  border-bottom-color: var(--border-subtle);
+  box-shadow: var(--shadow-xs);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.shell-main .shell-sheet {
+  padding-inline: 2rem;
+}
+
+.shell-main .shell-page-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.shell-main .shell-page-heading h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.shell-main .shell-page-subtitle {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.shell-main .shell-header-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 47.99rem) {
+  .shell-main .shell-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title account'
+      'station search';
+    align-items: center;
+    gap: var(--space-2) var(--space-2);
+    min-height: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + var(--space-2)) 1rem var(--space-2);
+  }
+
+  .shell-main .shell-sheet {
+    padding-inline: 1rem;
+  }
+
+  .shell-main .shell-page-heading {
+    grid-area: title;
+  }
+
+  /* The controls row dissolves so each control can take its own grid cell. */
+  .shell-main .shell-header-controls {
+    display: contents;
+  }
+
+  .shell-main .shell-header .shell-context-selector {
+    grid-area: station;
+    min-width: 0;
+  }
+
+  .shell-main .shell-header .shell-context-pill {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .shell-main .shell-header .shell-account-menu {
+    grid-area: account;
+  }
+
+  .shell-main .shell-header .global-search {
+    display: inline-flex;
+    grid-area: search;
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .shell-main .shell-header .global-search > span,
+  .shell-main .shell-header .global-search kbd {
+    display: none;
+  }
+}
+
+.shell-main .shell-page-heading {
+  flex: 1 1 0;
+}
+
+/* Chips and badges never break mid-word and never get squashed by a long neighbour. */
+.status {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Figures wizard: step pills ------------------------------------------------------------------ */
+.entry-steps button span {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+}
+
+.entry-steps button {
+  white-space: nowrap;
+}
+
+@media (max-width: 47.99rem) {
+  .entry-steps ol {
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .entry-steps ol::-webkit-scrollbar {
+    display: none;
+  }
+
+  .entry-steps li {
+    flex: 0 0 auto;
+    scroll-snap-align: center;
+  }
+
+  .entry-steps button {
+    flex-direction: row;
+    gap: var(--space-2);
+    min-height: 2.75rem;
+    padding: 0 var(--space-3);
+    font-size: var(--font-size-sm);
+  }
+}
+
+/* Back / Next dock to the bottom edge on phones, and the bottom bar steps aside on these routes. */
+.daily-operations-workspace .entry-flow {
+  padding-bottom: 5rem;
+}
+
+@media (max-width: 47.99rem) {
+  .app-shell:has(.daily-operations-workspace .entry-head) .shell-mobile-nav,
+  .app-shell:has(.review-screen) .shell-mobile-nav {
+    display: none;
+  }
+
+  .entry-footer {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: var(--z-sticky);
+    border-radius: 0;
+    border-inline: 0;
+    border-bottom: 0;
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .review-action-bar {
+    position: fixed;
+    inset-inline: 0;
+  }
+}
+
+/* Reconciliations list: the text column may shrink, the chip and the action may not. */
+.recon-cell-shift {
+  min-width: 0;
+}
+
+.recon-cell-shift small {
+  overflow-wrap: break-word;
+}
+
+.recon-cell-action .button,
+.recon-cell .status {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* More sheet: the selected item's top border is no longer clipped by the scroll container. */
+.modal-more .dialog-body {
+  padding-top: var(--space-1);
+}
+
+/* Cards share one padding. */
+.today-side > .today-section,
+.today-stats {
+  padding: var(--space-5);
+}
+
+/* Touch targets: at least 44 x 44 on phones. */
+@media (max-width: 47.99rem) {
+  .text-link,
+  .today-figure-link,
+  .inline-links a,
+  .today-card a,
+  .recon-cell-action .button,
+  .operations-list-row .button,
+  .operations-list-row .text-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target-min, 2.75rem);
+    min-width: var(--touch-target-min, 2.75rem);
+  }
+
+  .operations-shift-row .inline-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+}
+
+.entry-totals dd:not(.difference-words),
+.review-total strong,
+.close-meters-readonly strong {
+  white-space: nowrap;
+}
+
+@media (max-width: 40rem) {
+  .entry-totals dd:not(.difference-words) {
+    font-size: var(--font-size-md);
+  }
+}

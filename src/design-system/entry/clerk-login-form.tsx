@@ -47,10 +47,10 @@ export function ClerkLoginForm({ next }: { next?: string }) {
     <section aria-labelledby="entry-title">
       <header className="entry-heading">
         <h1 id="entry-title">Welcome back</h1>
-        <p>Sign in with your work email or Staff Number.</p>
+        <p>Sign in with your work email or Staff number.</p>
       </header>
       <form className="entry-form" aria-labelledby="entry-title" onSubmit={submit}>
-        <Field id="identifier" label="Email or Staff Number" required>
+        <Field id="identifier" label="Email or Staff number" required>
           <input
             id="identifier"
             name="identifier"

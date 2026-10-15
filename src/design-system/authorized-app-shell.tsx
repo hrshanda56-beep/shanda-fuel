@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { AppShell, type AppShellProps } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
 import { getServerShellAccess, type ServerShellAccess } from './navigation-server';
+import { getAuth } from '@/platform/auth';
 import { getAuthProviderName } from '@/platform/auth/provider';
 
 import { EntryShell } from './entry/entry-shell';
@@ -19,6 +20,20 @@ export type AuthorizedAppShellProps = Omit<AppShellProps, 'navigationProjection'
   /** Reuse access already verified by the parent server page in the same request. */
   shellAccess?: ServerShellAccess;
 };
+
+/** The signed-in person's name for the account button's initials; nothing else is read. */
+async function sessionUserName(requestHeaders: Headers): Promise<string | undefined> {
+  try {
+    if (getAuthProviderName() !== 'BETTER_AUTH') return undefined;
+    const result = await (
+      await getAuth()
+    ).api.getSession({ headers: requestHeaders });
+    const name = (result as { user?: { name?: unknown } } | null)?.user?.name;
+    return typeof name === 'string' && name.trim() ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Server boundary for the shell. The client shell receives only a projection
@@ -51,9 +66,11 @@ export async function AuthorizedAppShell({
   ) {
     redirect('/my-shift');
   }
+  const userName = props.userName ?? (await sessionUserName(await headers()));
   return (
     <AppShell
       {...props}
+      userName={userName}
       authProvider={getAuthProviderName()}
       navigationProjection={access.projection ?? emptyNavigationProjection}
     />

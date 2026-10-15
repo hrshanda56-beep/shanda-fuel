@@ -1,5 +1,5 @@
 /**
- * Pure presentation logic for the attendant "My Shift" workspace.
+ * Pure presentation logic for the attendant "My shift" workspace.
  *
  * Nothing here grants access or decides business rules: the server read model
  * supplies authorised facts, the command API stays the authority for every

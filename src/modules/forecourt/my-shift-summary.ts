@@ -1,7 +1,7 @@
 import type { MeterView, MyShiftData, MyShiftView, StepState } from './my-shift-state';
 
 /**
- * Presentation-only roll-up of what My Shift already knows: counts for the key
+ * Presentation-only roll-up of what My shift already knows: counts for the key
  * figures and the exceptions worth surfacing. It reads the derived view and
  * never decides what is due; that stays in `deriveMyShiftView`.
  */

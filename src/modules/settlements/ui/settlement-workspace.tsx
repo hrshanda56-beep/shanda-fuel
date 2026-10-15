@@ -512,7 +512,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Provider payments</p>
-            <h2 id="settlement-actions-title">Match Payments</h2>
+            <h2 id="settlement-actions-title">Match payments</h2>
           </div>
         </div>
         {dataReady ? (
@@ -655,7 +655,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Overview</p>
-            <h2 id="settled-by-provider-title">Settled By Provider</h2>
+            <h2 id="settled-by-provider-title">Settled by provider</h2>
           </div>
         </div>
         {!dataReady ? (
@@ -684,7 +684,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Provider statements</p>
-            <h2 id="settlements-title">Provider Settlements</h2>
+            <h2 id="settlements-title">Provider settlements</h2>
           </div>
         </div>
         <p className="field-hint">
@@ -868,7 +868,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Waiting for a settlement</p>
-            <h2 id="matching-title">Unmatched Payments</h2>
+            <h2 id="matching-title">Unmatched payments</h2>
           </div>
         </div>
         {!loading && !error && unmatched.length === 0 ? (

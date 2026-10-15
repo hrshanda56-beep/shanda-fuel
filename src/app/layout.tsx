@@ -12,6 +12,7 @@ import '@/design-system/styles/reports.css';
 import '@/design-system/styles/entry.css';
 import '@/design-system/styles/approved-ui.css';
 import '@/design-system/styles/my-shift.css';
+import '@/design-system/styles/shell-header.css';
 
 import { ToastProvider } from '@/design-system/toast';
 import { shellInitScript } from '@/design-system/shell-preferences';

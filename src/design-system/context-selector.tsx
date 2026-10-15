@@ -174,9 +174,13 @@ export function ContextSelector({
           </span>
         ))}
       </p>
+      {state.status === 'loading' && !fallback ? (
+        <span className="shell-context-skeleton" role="status" aria-label="Loading station" />
+      ) : null}
       <button
         ref={triggerRef}
         type="button"
+        hidden={state.status === 'loading' && !fallback}
         className="shell-context-pill"
         aria-haspopup="dialog"
         aria-expanded={open}

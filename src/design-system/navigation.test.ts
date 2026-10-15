@@ -17,7 +17,7 @@ const item = (key: string) => allItems.find((entry) => entry.key === key)!;
 describe('grouped navigation model', () => {
   it('follows the locked business grouping', () => {
     expect(navigationSections.map((section) => section.label)).toEqual([
-      'My Shift',
+      'My shift',
       'Today',
       'Operations',
       'Finance',
@@ -104,7 +104,7 @@ describe('navigation destinations', () => {
   it('uses one canonical label for navigation and page search', () => {
     expect(allItems.every((entry) => entry.label === entry.searchLabel)).toBe(true);
     expect(allItems.map((entry) => entry.searchLabel)).toEqual([
-      'My Shift',
+      'My shift',
       'Today',
       'Daily operations',
       'Reconciliations',

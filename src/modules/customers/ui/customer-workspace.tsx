@@ -76,10 +76,10 @@ function accountIndicator(account: CustomerAccount): string {
 type CustomerFilter = 'all' | 'active' | 'suspended' | 'credit';
 
 const FILTERS: ReadonlyArray<{ value: CustomerFilter; label: string }> = [
-  { value: 'all', label: 'All Customers' },
+  { value: 'all', label: 'All customers' },
   { value: 'active', label: 'Active' },
   { value: 'suspended', label: 'Suspended' },
-  { value: 'credit', label: 'Credit Accounts' },
+  { value: 'credit', label: 'Credit accounts' },
 ];
 
 function matchesFilter(customer: CustomerSummary, filter: CustomerFilter): boolean {
@@ -240,7 +240,7 @@ export function CustomerWorkspace() {
       {hasRequiredContext ? (
         <Card as="section" className="panel content-span" aria-labelledby="customer-list-title">
           <h2 id="customer-list-title" className="visually-hidden">
-            Customer accounts
+            Customers
           </h2>
 
           {customers.length > 0 ? (
@@ -308,7 +308,7 @@ export function CustomerWorkspace() {
             <div className="list-table customer-table">
               <div className="list-head" aria-hidden="true">
                 <span>Customer</span>
-                <span>Account Type</span>
+                <span>Account type</span>
                 <span>Status</span>
                 <span>Balance</span>
               </div>

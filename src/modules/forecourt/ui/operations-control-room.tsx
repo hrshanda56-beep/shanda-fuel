@@ -463,7 +463,7 @@ export function OperationsControlRoom({
 
   if (loading) {
     return (
-      <div className="operations-control-room" role="status" aria-label="Loading operations">
+      <div className="operations-control-room" role="status" aria-label={focus === 'reconciliations' ? 'Loading reconciliations' : 'Loading operations'}>
         <SkeletonBlock height="7rem" />
         <SkeletonBlock height="5rem" />
         <SkeletonBlock height="14rem" />

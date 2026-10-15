@@ -199,6 +199,8 @@ export function AppShell({
     () => false,
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  // Set when the menu was opened from one section's icon (tablet rail): it then shows only that section.
+  const [menuSection, setMenuSection] = useState<string | null>(null);
   // The More drawer keeps every destination reachable in one tap and resets
   // any user-folded groups each time it opens.
   const [drawerClosedGroups, setDrawerClosedGroups] = useState<ReadonlySet<string>>(new Set());
@@ -274,6 +276,7 @@ export function AppShell({
     (key: string) => {
       if (shellMode === 'tablet') {
         setDrawerClosedGroups(new Set());
+        setMenuSection(key);
         setMenuOpen(true);
         return;
       }
@@ -310,6 +313,20 @@ export function AppShell({
     onContextRequired: openContextSelector,
   };
   const mobileNavigationItems = selectMobileNavigationItems(sections);
+  // From a section icon the menu is that section's flyout. The phone's More menu leaves out what the
+  // bottom bar already offers, so nothing appears twice.
+  const flyoutSection = menuSection
+    ? (sections.find((section) => section.key === menuSection) ?? null)
+    : null;
+  const bottomBarKeys = new Set<string>(mobileNavigationItems.map((item) => item.key));
+  const drawerSections = flyoutSection
+    ? [flyoutSection]
+    : sections
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) => !bottomBarKeys.has(item.key)),
+        }))
+        .filter((section) => section.items.length > 0);
 
   const shellContext = useMemo(() => ({ openSearch: () => setSearchOpen(true) }), []);
 
@@ -423,6 +440,7 @@ export function AppShell({
           moreOpen={menuOpen}
           onMore={() => {
             setDrawerClosedGroups(new Set());
+            setMenuSection(null);
             setMenuOpen(true);
           }}
         />
@@ -430,7 +448,7 @@ export function AppShell({
         <Modal
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
-          title="More"
+          title={flyoutSection?.label ?? 'More'}
           className="modal-more"
           returnFocus={() => moreButtonRef.current}
         >
@@ -464,6 +482,7 @@ export function AppShell({
           <nav className="shell-nav shell-nav-drawer" aria-label="Primary navigation">
             <NavigationTree
               {...navigationProps}
+              sections={drawerSections}
               closedGroups={drawerClosedGroups}
               onToggleGroup={toggleDrawerGroup}
               rail={false}
@@ -583,7 +602,8 @@ function MobileBottomNavigation({
   onMore: () => void;
 }) {
   const navRef = useRef<HTMLElement>(null);
-  const hidden = useHideOnScroll(navRef);
+  // The bar stays put while scrolling; it is the one place to jump between areas.
+  const hidden = false;
   // Pages without a tab of their own (Suppliers, Reports, Settings…) live
   // behind More, so More carries the current-page marker for them.
   const moreIsCurrent = !items.some((item) => isNavigationItemActive(item, pathname));

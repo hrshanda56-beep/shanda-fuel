@@ -3,7 +3,7 @@ import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-s
 import { ContextRequiredState } from '@/design-system/primitives';
 import { CashWorkspace } from '@/modules/cash/ui/cash-workspace';
 
-export const metadata = { title: 'Station collections' };
+export const metadata = { title: 'Cash & banking' };
 
 export default async function CashPage({ params }: { params: Promise<{ stationId: string }> }) {
   await params;

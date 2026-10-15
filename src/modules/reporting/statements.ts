@@ -284,11 +284,11 @@ export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
   const gross = report.grossMargin;
   const net = gross === null ? null : subtractExact(gross, report.expenses.total);
   return [
-    { id: 'sales', label: 'Total Sales', value: report.sales.salesValue, slug: 'sales' },
-    { id: 'gross', label: 'Gross Profit', value: gross, slug: 'profit-loss' },
-    { id: 'expenses', label: 'Total Expenses', value: report.expenses.total, slug: 'profit-loss' },
-    { id: 'net', label: 'Net Profit', value: net, slug: 'profit-loss' },
-    { id: 'banked', label: 'Banked Cash', value: report.cash.banked, slug: 'cash-movement' },
+    { id: 'sales', label: 'Total sales', value: report.sales.salesValue, slug: 'sales' },
+    { id: 'gross', label: 'Gross profit', value: gross, slug: 'profit-loss' },
+    { id: 'expenses', label: 'Total expenses', value: report.expenses.total, slug: 'profit-loss' },
+    { id: 'net', label: 'Net profit', value: net, slug: 'profit-loss' },
+    { id: 'banked', label: 'Banked cash', value: report.cash.banked, slug: 'cash-movement' },
     {
       id: 'unbanked',
       label: 'Cash',

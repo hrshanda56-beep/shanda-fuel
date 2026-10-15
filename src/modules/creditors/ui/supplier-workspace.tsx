@@ -50,9 +50,9 @@ const EMPTY_CREATE_FORM: CreateSupplierForm = {
 type SupplierFilter = 'all' | 'overdue' | 'current';
 
 const FILTERS: ReadonlyArray<{ value: SupplierFilter; label: string }> = [
-  { value: 'all', label: 'All Suppliers' },
+  { value: 'all', label: 'All suppliers' },
   { value: 'overdue', label: 'Overdue' },
-  { value: 'current', label: 'Up To Date' },
+  { value: 'current', label: 'Up to date' },
 ];
 
 function matchesFilter(row: SupplierSummary, filter: SupplierFilter): boolean {
@@ -432,7 +432,7 @@ export function SupplierWorkspace() {
               <div className="list-head" aria-hidden="true">
                 <span>Supplier</span>
                 <span>Status</span>
-                <span>Not Yet Due</span>
+                <span>Not yet due</span>
                 <span>Overdue</span>
                 <span>Total</span>
                 <span />

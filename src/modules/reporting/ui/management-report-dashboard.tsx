@@ -370,7 +370,7 @@ function ProviderCards({ providers }: { providers: ManagementReport['providers']
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Overview</p>
-            <h2 id="provider-split-title">Settlement Position</h2>
+            <h2 id="provider-split-title">Settlement position</h2>
           </div>
         </div>
         <CashDonut

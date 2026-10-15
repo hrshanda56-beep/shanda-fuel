@@ -57,7 +57,28 @@ export type TodayOperations = {
   currentBusinessDate: string;
   status: { close: OperationsCloseStatus; approval: OperationsApprovalStatus };
   shifts: ReadonlyArray<{ id: string; state: string }>;
+  selectedBusinessDay?: { id: string };
+  reconciliations?: ReadonlyArray<{ id: string; shiftId: string | null; state: string }>;
 };
+
+/** The review screen for the reconciliation that is waiting on a manager, when there is one. */
+export function reviewHrefFor(
+  operations: TodayOperations,
+  scope: { tenantId: string; stationId: string },
+): string | null {
+  const waiting = operations.reconciliations?.find(
+    (item) => item.shiftId && ['SUBMITTED', 'PENDING_APPROVAL'].includes(item.state),
+  );
+  const dayId = operations.selectedBusinessDay?.id;
+  if (!waiting?.shiftId || !dayId) return null;
+  const params = new URLSearchParams({
+    tenantId: scope.tenantId,
+    stationId: scope.stationId,
+    businessDayId: dayId,
+    shiftId: waiting.shiftId,
+  });
+  return `/operations/reconciliations/${waiting.id}/review?${params}`;
+}
 
 export type AttentionRow = { id: string; title: string; detail: string; href: string };
 
