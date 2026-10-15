@@ -105,6 +105,7 @@ test.describe('Setup readiness and payment setup', () => {
       `/settings?tenantId=${ids.organisation}&legalEntityId=${ids.legalEntity}&stationId=${ids.stationReady}`,
     );
     await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+    await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
   });
 
   const content = (page: Page) => page.getByRole('main', { name: 'Settings' });
@@ -124,7 +125,15 @@ test.describe('Setup readiness and payment setup', () => {
   test('readiness shows Not entered for unentered setup and never a bare zero', async ({
     page,
   }) => {
+    const overviewResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/setup/overview') && response.request().method() === 'GET',
+    );
     await tab(page, 'Readiness').click();
+    const overviewResponse = await overviewResponsePromise;
+    expect(overviewResponse.ok(), `Setup overview returned ${overviewResponse.status()}`).toBe(
+      true,
+    );
     const bare = page.getByRole('region', { name: /Setup Bare Station/ });
     await expect(bare).toBeVisible();
     await expect(bare.getByText('Not entered').first()).toBeVisible();

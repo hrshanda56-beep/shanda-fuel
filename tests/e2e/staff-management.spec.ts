@@ -371,7 +371,16 @@ test.describe('authenticated Staff lifecycle', () => {
       page.getByRole('heading', { name: 'Join your new workspace', level: 1 }),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Accept invitation' })).toBeVisible();
+    const acceptResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/invite/${inviteTokens.existing}/accept`) &&
+        response.request().method() === 'POST',
+    );
     await page.getByRole('button', { name: 'Accept invitation' }).click();
+    const acceptResponse = await acceptResponsePromise;
+    expect(acceptResponse.ok(), `Invitation acceptance returned ${acceptResponse.status()}`).toBe(
+      true,
+    );
     await expect(page).not.toHaveURL(new RegExp(`/invite/${inviteTokens.existing}$`));
     await expect(
       page.getByRole('heading', { name: 'This invitation is no longer available', level: 1 }),
