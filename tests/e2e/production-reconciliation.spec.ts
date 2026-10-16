@@ -162,7 +162,6 @@ test.describe('production reconciliation persistence', () => {
       },
       `${keyPrefix}-opening-${openingBoundaryId}`,
     );
-    await client.unsafe('select pg_sleep(0.01)');
     await command(
       request,
       {
@@ -426,9 +425,38 @@ test.describe('production reconciliation persistence', () => {
     await page.getByRole('button', { name: 'Submit for management review' }).click();
     await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
 
+    const submitted = await client`select state, submitted_by, version from app.reconciliations
+      where tenant_id=${ids.tenant} and station_id=${ids.station} and id=${reconciliationId}`;
+    expect(submitted[0]?.state).toBe('SUBMITTED');
+    expect(submitted[0]?.submitted_by).toBe(ids.supervisorMembership);
+    await testInfo.attach('submission-persisted-before-manager-navigation', {
+      body: JSON.stringify(submitted),
+      contentType: 'application/json',
+    });
     await authenticate(context, managerToken);
-    await gotoAndWaitForHydration(page, reviewUrl);
-    await expect(page.getByText('Submitted', { exact: true }).first()).toBeVisible();
+    const persisted = await page.request.get(
+      `/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
+    );
+    expect(persisted.status()).toBe(200);
+    expect((await persisted.json()).state).toBe('SUBMITTED');
+
+    // Optional timeline metadata must not prevent review of authoritative evidence.
+    let releaseOverview!: () => void;
+    const overviewGate = new Promise<void>((resolve) => {
+      releaseOverview = resolve;
+    });
+    const holdOverview = async (route: import('@playwright/test').Route) => {
+      await overviewGate;
+      await route.continue();
+    };
+    await page.route('**/api/forecourt/operations/overview?**', holdOverview);
+    try {
+      await gotoAndWaitForHydration(page, reviewUrl);
+      await expect(page.getByText('Submitted', { exact: true }).first()).toBeVisible();
+    } finally {
+      releaseOverview();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
     const approveResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/forecourt/commands') &&

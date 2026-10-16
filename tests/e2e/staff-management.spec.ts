@@ -80,11 +80,7 @@ async function installSessionCookie(context: BrowserContext, token: string) {
 async function openSettings(page: Page, token: string) {
   await installSessionCookie(page.context(), token);
   const url = `/settings?tenantId=${ids.tenant}&legalEntityId=${ids.legalEntity}&stationId=${ids.bindura}`;
-  try {
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
-  } catch (error) {
-    if (!String(error).includes('ERR_ABORTED')) throw error;
-  }
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   // domcontentloaded returns before React attaches handlers, so an early click on a section
   // tab is a no-op. The shell marks itself once hydration has finished.
@@ -106,6 +102,10 @@ async function submitStaffCommandAndWaitForReload(page: Page, action: () => Prom
   // Creating an invitation answers 201 Created; resend and revoke answer 200.
   expect([200, 201]).toContain(response.status());
   await navigationPromise;
+  // A committed reload is not yet an interactive document. Clicking Staff
+  // before hydration leaves the new page on its default Organisation section.
+  await page.waitForLoadState('domcontentloaded');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
 }
 
 async function seed(client: Sql) {

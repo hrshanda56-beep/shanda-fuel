@@ -3,7 +3,7 @@
 import { ReconciliationApprovalButton } from './reconciliation-approval-button';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { ConfirmDialog } from '../../../design-system/confirm-dialog';
 import {
@@ -93,8 +93,10 @@ export function ReviewScreen({
   const [approving, setApproving] = useState(false);
   const [sendingBack, setSendingBack] = useState(false);
   const [reason, setReason] = useState('');
+  const loadGeneration = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     try {
       const query = new URLSearchParams({
         tenantId: context.tenantId,
@@ -102,16 +104,23 @@ export function ReviewScreen({
         businessDayId: context.businessDayId,
         shiftId: context.shiftId,
       });
-      const [operationResponse, recordResponse, overviewResponse] = await Promise.all([
+      // Timeline metadata is supplementary. A slow overview must not hide the
+      // authoritative reconciliation or keep its review in a loading state.
+      void fetch(
+        `/api/forecourt/operations/overview?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: context.businessDayId })}`,
+        { cache: 'no-store' },
+      )
+        .then(async (response) => (response.ok ? ((await response.json()) as OverviewSlice) : null))
+        .catch(() => null)
+        .then((next) => {
+          if (generation === loadGeneration.current) setOverview(next);
+        });
+      const [operationResponse, recordResponse] = await Promise.all([
         fetch(`/api/forecourt/operations/daily?${query}`, { cache: 'no-store' }),
         fetch(
           `/api/forecourt/reconciliations/${context.reconciliationId}?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
           { cache: 'no-store' },
         ),
-        fetch(
-          `/api/forecourt/operations/overview?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: context.businessDayId })}`,
-          { cache: 'no-store' },
-        ).catch(() => null),
       ]);
       if (!operationResponse.ok || !recordResponse.ok) {
         const failed = operationResponse.ok ? recordResponse : operationResponse;
@@ -121,20 +130,34 @@ export function ReviewScreen({
         };
         throw describeFailure(failed.status, body.error, body.message);
       }
-      setOperation((await operationResponse.json()) as OperationsContext);
-      setRecord((await recordResponse.json()) as RecordData & { submitted_by?: string | null });
-      setOverview(overviewResponse?.ok ? ((await overviewResponse.json()) as OverviewSlice) : null);
+      const nextOperation = (await operationResponse.json()) as OperationsContext;
+      const nextRecord = (await recordResponse.json()) as RecordData & {
+        submitted_by?: string | null;
+      };
+      if (generation !== loadGeneration.current) return;
+      setLoadError(null);
+      setOperation(nextOperation);
+      setRecord(nextRecord);
     } catch (caught) {
-      setLoadError(isUserMessage(caught) ? caught : userMessage('UNKNOWN'));
+      if (generation === loadGeneration.current) {
+        setLoadError(isUserMessage(caught) ? caught : userMessage('UNKNOWN'));
+      }
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
   }, [context]);
 
+  const invalidateLoad = useCallback(() => {
+    loadGeneration.current++;
+  }, []);
+
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
+    return () => {
+      window.clearTimeout(timer);
+      invalidateLoad();
+    };
+  }, [load, invalidateLoad]);
 
   const submittedSummary = useMemo(() => {
     const summary = overview?.reconciliations.find((item) => item.id === context.reconciliationId);
