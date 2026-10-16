@@ -1,5 +1,23 @@
 # Shanda Fuel — Current Status
 
+## MFA/browser release remediation — 2026-10-16
+
+Release status remains **NO-GO**. The complete development matrix on
+`f3f7de48545a1a28aa364d1d0be445101fbf7dfc` finished with **327 passed,
+7 failed, 0 flaky, 4 intentional skips and 1 not run**. The retained correction
+`26b579ab2f5c6a80ba09e0afae5fd62e17e3aa62` passed **22/22** fresh-database
+reconciliation/shell checks, including expired-MFA 403/no-posting proof and
+fresh Better Auth MFA approval with correct approver, postings and audit.
+Focused authorization units passed 28/28; integration passed 12/12 under each
+of two opposing app/database timezone configurations. Independent review is
+green. This does not establish a clean full matrix on the corrected candidate.
+Standalone smoke/invitation navigation readiness and stable full-run evidence
+remain open. All owned disposable databases were removed. No production or
+staging contact, push, merge, deployment or provider change occurred.
+
+See [the exact evidence and remaining gates](reports/MFA_E2E_HANDOFF_2026-10-16.md).
+Earlier local snapshots below remain historical evidence, not release approval.
+
 ## Integrated owner workflow — local candidate 2026-10-15
 
 The isolated branch `codex/workflow-integrated-verification-20261015` combines
