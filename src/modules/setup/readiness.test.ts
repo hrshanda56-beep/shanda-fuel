@@ -15,6 +15,7 @@ const empty: StationSetupFacts = {
   activePumps: 0,
   activeNozzles: 0,
   pumpsWithoutNozzle: 0,
+  nozzlesWithoutMeter: 0,
   activeShiftTemplates: 0,
   providerAccounts: 0,
   bankAccounts: 0,
@@ -99,5 +100,14 @@ describe('computeStationReadiness', () => {
     expect(statusLabel('READY')).toBe('Ready');
     expect(statusLabel('PARTIAL')).toBe('Incomplete');
     expect(statusLabel('NOT_ENTERED')).toBe('Not entered');
+  });
+});
+
+describe('meter installation readiness', () => {
+  it('does not mark configured nozzles ready without current active meters', () => {
+    const result = computeStationReadiness({ ...complete, nozzlesWithoutMeter: 1 });
+    expect(result.ready).toBe(false);
+    expect(result.areas.find((a) => a.code === 'PUMPS')).toMatchObject({ status: 'PARTIAL' });
+    expect(result.areas.find((a) => a.code === 'PUMPS')?.detail).toContain('current active meter');
   });
 });
