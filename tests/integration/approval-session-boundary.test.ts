@@ -32,13 +32,13 @@ async function approval(
     values (${sessionId}, ${token}, ${ids.actor!}, now() + interval '1 hour')`;
   await seedActiveStepUp(fixture, sessionId, ids.tenant!);
   if (options.session === 'expired') {
-    await fixture`update auth.session set expires_at = now() - interval '1 minute' where id = ${sessionId}`;
+    await fixture`update auth.session set expires_at = timezone('UTC', now()) - interval '1 minute' where id = ${sessionId}`;
   }
   if (options.session === 'revoked') {
     await fixture`update auth.session set revoked_at = now() where id = ${sessionId}`;
   }
   if (options.stepUp === 'expired') {
-    await fixture`update auth.session set step_up_expires_at = now() - interval '1 minute'
+    await fixture`update auth.session set step_up_expires_at = timezone('UTC', now()) - interval '1 minute'
       where id = ${sessionId}`;
   }
   if (options.stepUp === 'wrong-tenant') {

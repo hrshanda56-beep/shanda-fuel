@@ -255,7 +255,7 @@ describe('production TOTP step-up establishment', () => {
 
     await client`
       update auth.session
-      set step_up_expires_at = now() - interval '1 minute',
+      set step_up_expires_at = timezone('UTC', now()) - interval '1 minute',
           strong_authentication_expires_at = now() + interval '1 hour'
       where id = ${actor!.session.sessionId}
     `;

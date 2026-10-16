@@ -643,7 +643,11 @@ test.describe('production reconciliation persistence', () => {
     );
     expect(isolated.status()).toBe(403);
     await authenticate(context, managerToken);
-    await client`update auth.session set step_up_expires_at=now()-interval '1 second' where user_id=${ids.managerActor}`;
+    // auth.session uses timestamp without time zone and the application maps it
+    // as a UTC Date.  Write a UTC wall-clock value so this fixture is expired
+    // from the application's perspective even when PostgreSQL uses a non-UTC
+    // session timezone.
+    await client`update auth.session set step_up_expires_at=timezone('UTC', now())-interval '1 second' where user_id=${ids.managerActor}`;
     const noStepUp = await page.request.post('/api/forecourt/commands', {
       data: {
         commandType: 'ApproveProductionReconciliation',
@@ -655,6 +659,15 @@ test.describe('production reconciliation persistence', () => {
       headers: { 'idempotency-key': `mfa-required-${randomUUID()}` },
     });
     expect(noStepUp.status()).toBe(403);
+    const [deniedState] = await client`
+      select state from app.reconciliations where id=${reconciliationId}
+    `;
+    expect(deniedState?.state).toBe('SUBMITTED');
+    const [deniedPostings] = await client`
+      select count(*)::int as count from app.sale_recognition_movements
+      where reconciliation_id=${reconciliationId}
+    `;
+    expect(deniedPostings?.count).toBe(0);
     await gotoAndWaitForHydration(
       page,
       `/operations/reconciliations/${reconciliationId}/review?${query}`,
@@ -713,6 +726,10 @@ test.describe('production reconciliation persistence', () => {
     );
     const approved = await final.json();
     expect(approved.state).toBe('APPROVED');
+    const [approvedState] = await client`
+      select state, approved_by from app.reconciliations where id=${reconciliationId}
+    `;
+    expect(approvedState).toEqual({ state: 'APPROVED', approved_by: ids.managerMembership });
     await page.reload();
     await expect(page.getByText('Approved', { exact: true }).first()).toBeVisible();
     await expect(
@@ -726,6 +743,18 @@ test.describe('production reconciliation persistence', () => {
       await client`select quantity_litres::text from app.inventory_movements where tenant_id=${ids.tenant} and station_id=${ids.station} and source_type='METER_SEGMENT_SALE' and source_id in (select id from app.meter_segments where shift_id=${shiftId})`;
     expect(movements).toHaveLength(2);
     expect(movements.every((movement) => movement.quantity_litres === '-250.000')).toBe(true);
+    const [approvalPostings] = await client`
+      select count(*)::int as count from app.sale_recognition_movements
+      where reconciliation_id=${reconciliationId}
+    `;
+    expect(approvalPostings?.count).toBe(2);
+    const [approvalAudit] = await client`
+      select count(*)::int as count from platform.security_events
+      where tenant_id=${ids.tenant}
+        and event_code='FORECOURT.ApproveProductionReconciliation'
+        and membership_id=${ids.managerMembership}
+    `;
+    expect(approvalAudit?.count).toBe(1);
     await authenticate(context, supervisorToken);
     const locked = await page.request.post('/api/forecourt/commands', {
       data: {

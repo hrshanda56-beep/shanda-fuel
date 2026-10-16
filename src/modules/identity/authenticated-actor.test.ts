@@ -40,22 +40,7 @@ describe('authenticated actor resolver', () => {
     ).resolves.toEqual(actor);
   });
 
-  it('uses the Better Auth server API and rejects mismatched identity/session claims', async () => {
-    const getSession = async () => ({
-      user: { id: actor.identityId },
-      session: {
-        id: actor.session.sessionId,
-        userId: actor.identityId,
-        expiresAt: actor.session.expiresAt,
-      },
-    });
-    const resolved = await resolveAuthenticatedActor(
-      request,
-      { api: { getSession } },
-      new Date('2026-09-20T10:00:00.000Z'),
-    );
-    expect(resolved?.identityId).toBe(actor.identityId);
-
+  it('rejects mismatched Better Auth identity/session claims before a durable lookup', async () => {
     await expect(
       resolveAuthenticatedActor(
         request,
@@ -66,6 +51,27 @@ describe('authenticated actor resolver', () => {
               session: {
                 id: actor.session.sessionId,
                 userId: '66666666-6666-4666-8666-666666666666',
+                expiresAt: actor.session.expiresAt,
+              },
+            }),
+          },
+        },
+        new Date('2026-09-20T10:00:00.000Z'),
+      ),
+    ).rejects.toThrow('invalid');
+  });
+
+  it('fails closed when a Better Auth claim has no authoritative session record', async () => {
+    await expect(
+      resolveAuthenticatedActor(
+        request,
+        {
+          api: {
+            getSession: async () => ({
+              user: { id: actor.identityId },
+              session: {
+                id: actor.session.sessionId,
+                userId: actor.identityId,
                 expiresAt: actor.session.expiresAt,
               },
             }),
