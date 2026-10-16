@@ -130,6 +130,19 @@ describe('POST /api/forecourt/commands security boundary', () => {
     expect(mocks.handlers.openBusinessDay).not.toHaveBeenCalled();
   });
 
+  it.each(['ReportMeterUnavailable', 'ResolveMeterException'] as const)(
+    'dispatches the named meter-exception command through the boundary command handler: %s',
+    async (commandType) => {
+      const body = { ...authorityBody, commandType };
+      const response = await POST(request(body));
+
+      expect(response.status).toBe(200);
+      expect(mocks.preflight).toHaveBeenCalledWith(expect.objectContaining({ commandType, body }));
+      expect(mocks.handlers.confirmBoundary).toHaveBeenCalledOnce();
+      expect(mocks.handlers.openBusinessDay).not.toHaveBeenCalled();
+    },
+  );
+
   it('authenticates before parsing an unauthenticated body, including malformed JSON', async () => {
     mocks.authenticate.mockRejectedValue(
       new AppError('UNAUTHENTICATED', 'Authentication is required'),
