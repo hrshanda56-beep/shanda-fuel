@@ -554,7 +554,7 @@ test.describe('KPIs', () => {
   test('reports open the detail behind them', async ({ page }) => {
     await mockApis(page);
     await page.goto('/reports?tenantId=tenant-1');
-    await page.getByRole('link', { name: /Total Sales/ }).click();
+    await page.getByRole('link', { name: /Total sales/ }).click();
     await expect(page).toHaveURL(/\/reports\/sales\?tenantId=tenant-1/);
     await expect(page.getByRole('heading', { name: 'Payments and products' })).toBeVisible();
   });
