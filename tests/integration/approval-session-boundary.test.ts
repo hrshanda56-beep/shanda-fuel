@@ -5,6 +5,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST } from '../../src/app/api/forecourt/commands/route';
 import { closeDatabase } from '../../src/platform/db/client';
 import { seedActiveStepUp } from './auth-session-fixtures';
+import { resolveAuthenticatedActor } from '../../src/modules/identity';
 
 const fixtureUrl = process.env.DATABASE_URL;
 if (!fixtureUrl) throw new Error('A disposable PostgreSQL DATABASE_URL is required');
@@ -122,6 +123,25 @@ describe('approval HTTP session and step-up boundary', () => {
   );
   it('denies a station-scoped Owner at another station even with current MFA', async () => {
     expect((await approval({ stationId: ids.outside })).status).toBe(403);
+  });
+  it('cannot borrow a different user session even when provider claims match each other', async () => {
+    const otherUser = randomUUID();
+    const otherSession = randomUUID();
+    await fixture`insert into auth."user"(id, name, email)
+      values (${otherUser}, 'Other synthetic identity', ${otherUser + '@example.test'})`;
+    await fixture`insert into auth.session(id, token, user_id, expires_at)
+      values (${otherSession}, ${randomUUID()}, ${otherUser}, timestamp '2030-01-01')`;
+    await seedActiveStepUp(fixture, otherSession, ids.tenant!);
+    await expect(
+      resolveAuthenticatedActor(new Request('http://127.0.0.1:3000/api/forecourt/commands'), {
+        api: {
+          getSession: async () => ({
+            user: { id: ids.actor },
+            session: { id: otherSession, userId: ids.actor, expiresAt: '2030-01-01' },
+          }),
+        },
+      }),
+    ).rejects.toThrow('invalid');
   });
   it('leaves financial commands and authoritative records absent after all probes', async () => {
     const rows = await fixture`select

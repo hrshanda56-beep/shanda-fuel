@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { assertStepUp } from '../../platform/security';
+
+const { durableLookup } = vi.hoisted(() => ({ durableLookup: vi.fn() }));
+vi.mock('../../platform/db', () => ({
+  getDatabase: () => ({ select: () => ({ from: () => ({ where: durableLookup }) }) }),
+}));
 import {
   requireAuthenticatedActor,
   revokeIdentitySessions,
@@ -18,6 +24,10 @@ const actor: AuthenticatedActorContext = {
 };
 
 describe('authenticated actor resolver', () => {
+  beforeEach(() => {
+    durableLookup.mockReset().mockResolvedValue([]);
+  });
+
   it('rejects an absent or expired Better Auth session result', async () => {
     await expect(requireAuthenticatedActor(request, async () => null)).rejects.toThrow(
       'Authentication is required',
@@ -92,5 +102,57 @@ describe('authenticated actor resolver', () => {
       },
     });
     expect(revoked).toBe(true);
+  });
+
+  const provider = {
+    api: {
+      getSession: async () => ({
+        user: { id: actor.identityId },
+        session: {
+          id: actor.session.sessionId,
+          userId: actor.identityId,
+          expiresAt: new Date('2030-01-01T00:00:00Z'),
+          stepUpLevel: 1,
+          stepUpExpiresAt: new Date('2030-01-01T00:00:00Z'),
+        },
+      }),
+    },
+  };
+
+  it('uses durable assurance instead of a fresh provider claim', async () => {
+    durableLookup.mockResolvedValue([
+      {
+        expiresAt: actor.session.expiresAt,
+        strongAuthenticationVerified: true,
+        strongAuthenticatedAt: new Date('2026-09-20T09:50:00Z'),
+        strongAuthenticationExpiresAt: actor.session.expiresAt,
+        stepUpLevel: 1,
+        stepUpExpiresAt: new Date('2026-09-20T09:59:00Z'),
+        stepUpTenantId: actor.identityId,
+      },
+    ]);
+    const now = new Date('2026-09-20T10:00:00Z');
+    const resolved = await resolveAuthenticatedActor(request, provider, now);
+    expect(resolved?.session.sessionId).toBe(actor.session.sessionId);
+    expect(() => assertStepUp(resolved!.session, 1, now, actor.identityId)).toThrow(
+      'current step-up authentication',
+    );
+  });
+
+  it('fails closed when the authoritative database lookup fails', async () => {
+    durableLookup.mockRejectedValue(new Error('synthetic database lookup failure'));
+    await expect(resolveAuthenticatedActor(request, provider)).rejects.toThrow(
+      'synthetic database lookup failure',
+    );
+  });
+
+  it.each([
+    { expiresAt: new Date('2026-09-20T09:59:00Z') },
+    { expiresAt: actor.session.expiresAt, revokedAt: new Date('2026-09-20T09:59:00Z') },
+  ])('rejects inactive durable session state despite valid provider claims', async (durable) => {
+    durableLookup.mockResolvedValue([durable]);
+    await expect(
+      resolveAuthenticatedActor(request, provider, new Date('2026-09-20T10:00:00Z')),
+    ).rejects.toThrow();
   });
 });

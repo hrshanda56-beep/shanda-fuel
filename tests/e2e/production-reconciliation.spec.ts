@@ -643,6 +643,10 @@ test.describe('production reconciliation persistence', () => {
     );
     expect(isolated.status()).toBe(403);
     await authenticate(context, managerToken);
+    const inventoryBeforeDenial = await client`
+      select id, quantity_litres::text from app.inventory_movements
+      where tenant_id=${ids.tenant} and station_id=${ids.station} order by id
+    `;
     // auth.session uses timestamp without time zone and the application maps it
     // as a UTC Date.  Write a UTC wall-clock value so this fixture is expired
     // from the application's perspective even when PostgreSQL uses a non-UTC
@@ -668,6 +672,12 @@ test.describe('production reconciliation persistence', () => {
       where reconciliation_id=${reconciliationId}
     `;
     expect(deniedPostings?.count).toBe(0);
+    expect(
+      await client`
+      select id, quantity_litres::text from app.inventory_movements
+      where tenant_id=${ids.tenant} and station_id=${ids.station} order by id
+    `,
+    ).toEqual(inventoryBeforeDenial);
     await gotoAndWaitForHydration(
       page,
       `/operations/reconciliations/${reconciliationId}/review?${query}`,
