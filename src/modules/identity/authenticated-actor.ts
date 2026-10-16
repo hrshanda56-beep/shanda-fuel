@@ -1,5 +1,7 @@
 import 'server-only';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { getDatabase } from '../../platform/db';
 import { AppError } from '../../platform/errors';
 import {
   assertSessionActive,
@@ -118,17 +120,47 @@ export async function resolveAuthenticatedActor(
   const session: SessionRecord = {
     sessionId: parsed.data.session.id,
     userId: parsed.data.session.userId,
-    expiresAt: parsed.data.session.expiresAt,
-    revokedAt: parsed.data.session.revokedAt ?? undefined,
-    strongAuthenticatedAt: parsed.data.session.strongAuthenticatedAt ?? undefined,
-    strongAuthenticationExpiresAt: parsed.data.session.strongAuthenticationExpiresAt ?? undefined,
-    strongAuthenticationVerified: parsed.data.session.strongAuthenticationVerified,
-    stepUpLevel: parsed.data.session.stepUpLevel,
-    stepUpExpiresAt: parsed.data.session.stepUpExpiresAt ?? undefined,
-    stepUpTenantId: parsed.data.session.stepUpTenantId ?? undefined,
+    // Better Auth may return a previously serialized session. Privileged
+    // authorization must use the durable assurance state, so an expired or
+    // revoked session cannot be accepted from a cache.
+    ...(await loadAuthoritativeBetterAuthSession(parsed.data.session.id, parsed.data.user.id)),
   };
   assertSessionActive(session, now);
   return { identityId: parsed.data.user.id, session: invalidateExpiredAssurance(session, now) };
+}
+
+async function loadAuthoritativeBetterAuthSession(
+  sessionId: string,
+  userId: string,
+): Promise<Omit<SessionRecord, 'sessionId' | 'userId'>> {
+  const rows = await getDatabase().transaction((transaction) => transaction.execute<{
+    expires_at: Date;
+    revoked_at: Date | null;
+    strong_authenticated_at: Date | null;
+    strong_authentication_expires_at: Date | null;
+    strong_authentication_verified: boolean | null;
+    step_up_level: 0 | 1 | 2 | null;
+    step_up_expires_at: Date | null;
+    step_up_tenant_id: string | null;
+  }>(sql`
+    select expires_at, revoked_at, strong_authenticated_at,
+      strong_authentication_expires_at, strong_authentication_verified,
+      step_up_level, step_up_expires_at, step_up_tenant_id
+    from auth.session
+    where id=${sessionId} and user_id=${userId}
+  `));
+  const session = rows[0];
+  if (!session) throw new AppError('UNAUTHENTICATED', 'The authentication session is invalid');
+  return {
+    expiresAt: session.expires_at,
+    revokedAt: session.revoked_at ?? undefined,
+    strongAuthenticatedAt: session.strong_authenticated_at ?? undefined,
+    strongAuthenticationExpiresAt: session.strong_authentication_expires_at ?? undefined,
+    strongAuthenticationVerified: session.strong_authentication_verified ?? undefined,
+    stepUpLevel: session.step_up_level ?? undefined,
+    stepUpExpiresAt: session.step_up_expires_at ?? undefined,
+    stepUpTenantId: session.step_up_tenant_id ?? undefined,
+  };
 }
 
 /** Revoke all Better Auth sessions for the authenticated identity on compromise. */
