@@ -106,6 +106,15 @@ function pumpsArea(facts: StationSetupFacts): ReadinessArea {
       blocks,
     };
   }
+  if (facts.nozzlesWithoutMeter > 0) {
+    return {
+      code: 'PUMPS',
+      label: 'Pumps and nozzles',
+      status: 'PARTIAL',
+      detail: `${plural(facts.nozzlesWithoutMeter, 'nozzle')} without a current active meter installation.`,
+      blocks,
+    };
+  }
   return {
     code: 'PUMPS',
     label: 'Pumps and nozzles',

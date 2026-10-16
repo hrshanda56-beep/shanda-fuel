@@ -147,12 +147,15 @@ describe('setup readiness (PostgreSQL)', () => {
     expect(state(full)).toEqual({
       PRICES: 'READY',
       TANKS: 'READY',
-      PUMPS: 'READY',
+      PUMPS: 'PARTIAL', // nozzle exists but no meter is installed
       SHIFTS: 'READY',
       PAYMENTS: 'PARTIAL', // bank account entered, provider account not yet
       STAFF: 'READY',
     });
     expect(full.ready).toBe(false);
+    expect(full.areas.find((a: any) => a.code === 'PUMPS').detail).toContain(
+      'current active meter',
+    );
     // Products exist for the tenant, so the empty station's prices are "not entered here".
     expect(state(empty)).toEqual({
       PRICES: 'NOT_ENTERED',
@@ -237,5 +240,31 @@ describe('setup readiness (PostgreSQL)', () => {
     expect(full.areas.find((a: any) => a.code === 'PAYMENTS').status).toBe('READY');
     // The account is station-specific, so the other station's provider side stays unentered.
     expect(empty.areas.find((a: any) => a.code === 'PAYMENTS').status).toBe('PARTIAL');
+  });
+  it('requires an effective active meter and ignores future, ended and inactive installations', async () => {
+    const [nozzle] =
+      await client`select id from app.nozzles where tenant_id=${ids.tenant} and station_id=${ids.full}`;
+    const [meter] = await client`insert into app.meters (tenant_id, serial_number, status)
+      values (${ids.tenant}, 'SETUP-READINESS-METER', 'ACTIVE') returning id`;
+    const [installation] = await client`insert into app.meter_installations
+      (tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
+      values (${ids.tenant}, ${ids.full}, ${nozzle!.id}, ${meter!.id}, now() + interval '1 day', ${ids.adminMembership}) returning id`;
+    const pumps = async (expectedSerial: string | null = null) => {
+      const { status, body } = await overview('setup-admin-token');
+      expect(status).toBe(200);
+      expect(body.data.nozzles.find((n: any) => n.id === nozzle!.id).meterSerialNumber).toBe(
+        expectedSerial,
+      );
+      return body.stations
+        .find((s: any) => s.stationCode === 'SETFULL')
+        .areas.find((a: any) => a.code === 'PUMPS').status;
+    };
+    expect(await pumps()).toBe('PARTIAL');
+    await client`update app.meter_installations set effective_from=now() - interval '2 days', effective_to=now() - interval '1 day' where id=${installation!.id}`;
+    expect(await pumps()).toBe('PARTIAL');
+    await client`update app.meter_installations set effective_to=null where id=${installation!.id}`;
+    expect(await pumps('SETUP-READINESS-METER')).toBe('READY');
+    await client`update app.meters set status='INACTIVE' where id=${meter!.id}`;
+    expect(await pumps()).toBe('PARTIAL');
   });
 });
