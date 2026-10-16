@@ -407,12 +407,13 @@ test.describe('phone navigation', () => {
     await page.goto('/reports');
     await waitForHydration(page);
     await page.getByRole('button', { name: 'More' }).click();
-    await page
-      .getByRole('dialog', { name: 'More' })
-      .getByRole('link', { name: 'Suppliers' })
-      .click();
+    await Promise.all([
+      page.waitForURL(/\/suppliers$/, { waitUntil: 'domcontentloaded' }),
+      page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Suppliers' }).click(),
+    ]);
 
     await expect(page).toHaveURL(/\/suppliers$/);
+    await expect(page.getByRole('heading', { name: 'Suppliers', exact: true })).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'More' })).toBeHidden();
   });
 

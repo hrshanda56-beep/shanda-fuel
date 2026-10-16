@@ -195,9 +195,12 @@ test('figures fit their cards without splitting a number, at every width', async
   await mockToday(page, {
     daily: [dailyRow({ salesValue: '120000', cashVariance: '-12345.67' })],
   });
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto(TODAY);
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
+  // Exercise responsive reflow on the same rendered data, including live resizing.
   for (const width of [320, 375, 1024, 1280, 1360, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto(TODAY);
     await expect(page.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
       'USD 120,000.00',
     );

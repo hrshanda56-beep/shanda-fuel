@@ -480,50 +480,64 @@ test.describe('phones never scroll sideways', () => {
     '/no-such-page',
   ];
 
-  for (const width of PHONE_WIDTHS) {
-    test(`empty and entry states fit ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 800 });
-      for (const route of routes) {
-        await page.goto(route);
-        await expect(page.locator('h1').first(), route).toBeVisible();
-        await expectFitsWidth(page);
-      }
-    });
-
-    test(`data-heavy screens fit ${width}px`, async ({ page }) => {
-      await mockApis(page);
-      await page.setViewportSize({ width, height: 800 });
-
-      await page.goto('/reports?tenantId=tenant-1');
-      await expect(page.getByRole('heading', { name: 'Available reports' })).toBeVisible();
-      await expectFitsWidth(page);
-
-      await page.goto('/reports/sales?tenantId=tenant-1');
-      await expect(page.getByRole('heading', { name: 'Payments and products' })).toBeVisible();
-      await expectFitsWidth(page);
-
-      await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
-      await expect(
+  const populatedRoutes = [
+    {
+      name: 'reports',
+      url: '/reports?tenantId=tenant-1',
+      ready: (page: Page) => page.getByRole('heading', { name: 'Available reports' }),
+    },
+    {
+      name: 'sales',
+      url: '/reports/sales?tenantId=tenant-1',
+      ready: (page: Page) => page.getByRole('heading', { name: 'Payments and products' }),
+    },
+    {
+      name: 'settlements',
+      url: '/stations/station-1/settlements?tenantId=tenant-1',
+      ready: (page: Page) =>
         page
           .getByRole('list', { name: 'Provider settlement reconciliation' })
           .getByText('ZSW-2026-09-20-000123456789'),
-      ).toBeVisible();
-      await expectFitsWidth(page);
-
-      await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-      await expect(page.getByText('COL-HRE01-2026-09-20-MORNING-000042')).toBeVisible();
-      await expectFitsWidth(page);
-
-      await page.goto('/inventory/valuation?tenantId=tenant-1&stationId=station-1');
-      await expect(
+    },
+    {
+      name: 'cash',
+      url: '/stations/station-1/cash?tenantId=tenant-1',
+      ready: (page: Page) => page.getByText('COL-HRE01-2026-09-20-MORNING-000042'),
+    },
+    {
+      name: 'inventory',
+      url: '/inventory/valuation?tenantId=tenant-1&stationId=station-1',
+      ready: (page: Page) =>
         page.getByRole('heading', { name: 'Choose a station to view inventory' }),
-      ).toBeVisible();
-      await expectFitsWidth(page);
+    },
+    {
+      name: 'suppliers',
+      url: '/suppliers?tenantId=tenant-1&legalEntityId=entity-1',
+      ready: (page: Page) => page.getByText(/Zimbabwe National Fuel Distribution/),
+    },
+  ];
 
-      await page.goto('/suppliers?tenantId=tenant-1&legalEntityId=entity-1');
-      await expect(page.getByText(/Zimbabwe National Fuel Distribution/)).toBeVisible();
-      await expectFitsWidth(page);
-    });
+  // Each independent route gets a fresh context and its own existing test budget.
+  // Keep every width, fixture, readiness and overflow assertion from the route loops.
+  for (const width of PHONE_WIDTHS) {
+    for (const route of routes) {
+      test(`empty and entry state ${route} fits ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(route);
+        await expect(page.locator('h1').first(), route).toBeVisible();
+        await expectFitsWidth(page);
+      });
+    }
+
+    for (const { name, url, ready } of populatedRoutes) {
+      test(`data-heavy ${name} fits ${width}px`, async ({ page }) => {
+        await mockApis(page);
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(url);
+        await expect(ready(page)).toBeVisible();
+        await expectFitsWidth(page);
+      });
+    }
   }
 
   test('tables stack into label/value rows on phones', async ({ page }) => {

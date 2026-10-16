@@ -1,10 +1,23 @@
 import type { NextConfig } from 'next';
 
+const isolatedE2E = process.env.SHANDA_E2E_ISOLATED_CACHE === '1';
+if (isolatedE2E && process.env.APP_ENV !== 'test') {
+  throw new Error('E2E cache isolation requires a test environment');
+}
+
 const scriptSource = `'self' 'unsafe-inline'${
   process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''
 }`;
 
 const nextConfig: NextConfig = {
+  ...(isolatedE2E
+    ? {
+        distDir: '.next-e2e-postgres-dev',
+        // A serial development matrix revisits many routes after the default
+        // two-page buffer would evict them. Keep compiled entries for this run.
+        onDemandEntries: { maxInactiveAge: 60 * 60 * 1000, pagesBufferLength: 64 },
+      }
+    : {}),
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {

@@ -32,6 +32,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   retries: 0,
+  globalSetup: './tests/e2e/fixtures/development-warmup.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
   outputDir: process.env.E2E_OUTPUT_DIR ?? 'test-results/postgres-dev',
@@ -45,6 +46,7 @@ export default defineConfig({
     url: 'http://127.0.0.1:3119',
     reuseExistingServer: false,
     timeout: 120_000,
+    stdout: 'pipe',
     env: {
       APP_ENV: 'test',
       AUTH_PROVIDER: 'BETTER_AUTH',
@@ -53,6 +55,7 @@ export default defineConfig({
       DATABASE_DIRECT_URL: runtimeUrl,
       DATABASE_FIXTURE_URL: runtimeUrl,
       NODE_OPTIONS: '--max-old-space-size=4096',
+      SHANDA_E2E_ISOLATED_CACHE: '1',
     },
   },
 });

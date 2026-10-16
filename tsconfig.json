@@ -33,7 +33,9 @@
     "*.config.ts",
     "*.config.mjs",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-e2e-postgres-dev/types/**/*.ts",
+    ".next-e2e-postgres-dev/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

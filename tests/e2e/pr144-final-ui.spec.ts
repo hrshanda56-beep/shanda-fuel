@@ -18,6 +18,7 @@ async function openReconciliations(page: Page, failIds?: string[]) {
   await mockReconciliationDetails(page, failIds ? { failIds } : {});
   await page.goto(reconciliationsUrl);
   await expect(page.getByRole('heading', { name: 'Shift reconciliations' }).first()).toBeVisible();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
 }
 
 async function openStatement(page: Page, failIds?: string[]) {

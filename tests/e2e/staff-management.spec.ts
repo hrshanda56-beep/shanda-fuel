@@ -360,17 +360,16 @@ test.describe('authenticated Staff lifecycle', () => {
     }
   });
 
-  test('invalid, revoked and expired links fail closed; existing and new users accept once', async ({
-    page,
-    browser,
-  }) => {
+  test('invalid, revoked and expired links fail closed', async ({ page }) => {
     for (const token of ['not-a-valid-token', inviteTokens.revoked, inviteTokens.expired]) {
       await page.goto(`/invite/${token}`);
       await expect(
         page.getByRole('heading', { name: 'This invitation is no longer available', level: 1 }),
       ).toBeVisible();
     }
+  });
 
+  test('an existing user accepts an invitation once', async ({ page }) => {
     await installSessionCookie(page.context(), sessions.existingJoin);
     await page.goto(`/invite/${inviteTokens.existing}`);
     await expect(
@@ -402,7 +401,9 @@ test.describe('authenticated Staff lifecycle', () => {
       role_code: 'SUPERVISOR',
       station_id: ids.bindura,
     });
+  });
 
+  test('a new user signs up and accepts an invitation once', async ({ browser }) => {
     const newContext = await browser.newContext();
     const newPage = await newContext.newPage();
     try {
@@ -439,7 +440,9 @@ test.describe('authenticated Staff lifecycle', () => {
       role_code: 'FINANCE',
       scope_type: 'LEGAL_ENTITY',
     });
+  });
 
+  test('deactivation revokes access and protects the last owner', async ({ page }) => {
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await page.getByRole('button', { name: 'E2E Attendant', exact: true }).click();
