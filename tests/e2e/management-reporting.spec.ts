@@ -119,7 +119,8 @@ test.describe('management reporting surface', () => {
       await page.getByLabel('Period', { exact: true }).first().click();
       await page.getByRole('option', { name: 'Last month' }).click();
       await expect(page.getByLabel('Period', { exact: true }).first()).toHaveText('Last month');
-      await page.getByRole('link', { name: /Cash & banking/ }).click();
+      await page.getByLabel('Filter reports by category').click();
+      await page.getByRole('option', { name: /Cash & banking \(1\)/ }).click();
       await expect(page).toHaveURL(/period=3m.*category=cash|category=cash.*period=3m/);
       await expect(page.locator('.report-row')).toHaveCount(1);
       const results = await new AxeBuilder({ page }).analyze();
