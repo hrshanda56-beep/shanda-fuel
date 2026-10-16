@@ -43,6 +43,8 @@ type FactRow = {
   active_nozzles: number | string;
   pumps_without_nozzle: number | string;
   nozzles_without_meter: number | string;
+  active_nozzles_with_inactive_product: number | string;
+  active_tanks_with_inactive_product: number | string;
   active_shift_templates: number | string;
   provider_accounts: number | string;
   bank_accounts: number | string;
@@ -102,6 +104,14 @@ export async function readStationSetupFacts(
               and mi.effective_from <= now()
               and (mi.effective_to is null or mi.effective_to > now())
           )) as nozzles_without_meter,
+      (select count(*) from app.nozzles n
+        left join app.products p on p.tenant_id = n.tenant_id and p.id = n.product_id
+        where n.tenant_id = s.tenant_id and n.station_id = s.id and n.status = 'ACTIVE'
+          and (p.id is null or p.status <> 'ACTIVE')) as active_nozzles_with_inactive_product,
+      (select count(*) from app.tanks t
+        left join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
+        where t.tenant_id = s.tenant_id and t.station_id = s.id and t.status = 'ACTIVE'
+          and (p.id is null or p.status <> 'ACTIVE')) as active_tanks_with_inactive_product,
       (select count(*) from app.shift_templates st
         where st.tenant_id = s.tenant_id and st.station_id = s.id and st.active)
         as active_shift_templates,
@@ -140,6 +150,8 @@ export async function readStationSetupFacts(
     activeNozzles: count(row.active_nozzles),
     pumpsWithoutNozzle: count(row.pumps_without_nozzle),
     nozzlesWithoutMeter: count(row.nozzles_without_meter),
+    activeNozzlesWithInactiveProduct: count(row.active_nozzles_with_inactive_product),
+    activeTanksWithInactiveProduct: count(row.active_tanks_with_inactive_product),
     activeShiftTemplates: count(row.active_shift_templates),
     providerAccounts: count(row.provider_accounts),
     bankAccounts: count(row.bank_accounts),

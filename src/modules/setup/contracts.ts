@@ -38,6 +38,7 @@ export type SetupPrice = Readonly<{
   currency: string;
   state: string;
   effectiveFrom: string;
+  effectiveTo: string | null;
   version: number;
 }>;
 export type SetupSupplier = Readonly<{
@@ -66,6 +67,8 @@ export type StationSetupFacts = Readonly<{
   activeNozzles: number;
   pumpsWithoutNozzle: number;
   nozzlesWithoutMeter: number;
+  activeNozzlesWithInactiveProduct: number;
+  activeTanksWithInactiveProduct: number;
   activeShiftTemplates: number;
   providerAccounts: number;
   bankAccounts: number;
@@ -136,6 +139,7 @@ export type SetupCapabilities = Readonly<{
 export type ConfigurationSetupOverview = Readonly<{
   tenantId: string;
   stationId: string;
+  stationTimezone: string;
   stationStatus: string;
   capabilities: SetupCapabilities;
   products: readonly SetupProduct[] | null;
@@ -159,6 +163,7 @@ export type SetupOverview =
       canManagePayments: boolean;
       stations: readonly StationReadiness[];
       stationOptions: readonly SetupStationOption[];
+      data?: ConfigurationSetupOverview;
       providers: readonly PaymentProviderRow[];
       providerAccounts: readonly ProviderAccountRow[];
       bankAccounts: readonly BankAccountRow[];

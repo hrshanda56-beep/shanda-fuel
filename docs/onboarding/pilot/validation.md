@@ -1,15 +1,15 @@
 # Validation and integration handoff
 
-Branch: `codex/station-onboarding`.
+Branch: `codex/station-onboarding-completion` (managed worktree; no push or merge is claimed).
 Base: `871dcd45c11893149947e7ee3e412505dcc1534b` (human-specified operational candidate).
 Accepted production baseline supplied by human: `99bbe34cd9e978288f4ffb55fcad9f144e127922`.
 Final local commit identity is recorded in the delivery report; no deployment is claimed.
 
-## Permanent correction
+## Permanent corrections
 
 The six-area readiness computation previously marked PUMPS READY when pumps/nozzles existed but none had a meter installed. A synthetic unit regression reproduced the false ready result before the fix. The read-only query now counts active nozzles without a current active meter installation using tenant/station/nozzle identity and a half-open effective interval. The existing PUMPS area reports Incomplete in that case. The detailed configuration query uses the same active/time predicates for displayed meter serials, avoiding presentation of a future, ended or inactive installation as current.
 
-No operational command, migration, RLS policy, permission grant, MFA/approval logic or financial calculation was changed. No new runtime dependency, paid service or UI redesign was introduced.
+Settings → Configuration now provides authorized forms for products, tanks, pumps/nozzles/meters, shift templates and draft selling prices, reusing existing commands and step-up behavior. It does not create opening financial balances or bypass price approval/activation. Readiness now checks current active meter installations, active products on tanks/nozzles, and effective price windows. Inventory date/time inputs use station timezone metadata rather than browser-local conversion. No migration, RLS policy, permission grant, MFA logic or financial calculation was added.
 
 ## Local evidence
 
@@ -21,8 +21,8 @@ Private PostgreSQL 18.6, UTC, database `onboarding_verify`, loopback port 55487;
 - New integration regression checks missing/future/ended/current/inactive meter readiness and corresponding current serial display.
 - Focused existing unvalued-stock/RLS regression: **1 passed, 7 deliberately filtered-out tests**; those seven are not claimed passing. Missing cost remains null/UNVALUED rather than fake zero.
 - Production build: **PASS** with explicit synthetic Better Auth/test configuration and no database URL. The first unconfigured build failed closed because AUTH_PROVIDER was missing; it is not treated as a product regression or a pass.
-- Changed-file TypeScript/Markdown formatting, 23 local document links, whitespace and protected-file scope checks: **PASS**. Browser/E2E/responsive tests were not run; no UI component or operational command changed.
-- Route type generation: **PASS**. TypeScript `tsc --noEmit`: **PASS**. Focused ESLint on changed TypeScript/tests: **PASS**.
+- Completion-branch focused formatting and whitespace checks: **PASS**. Focused ESLint on changed TypeScript/tests: **PASS** using the existing dependency tree through a temporary ignored symlink, which was removed afterward. Changed-module TypeScript diagnostics: **none** using the same read-only dependency tree and an isolated temporary config. Browser/E2E/responsive tests remain open for the new Settings form and station-time input.
+- Full production build: **BLOCKED by validation environment**. Next/Turbopack rejects the temporary dependency symlink because it points outside the isolated filesystem root; no source error was established. Focused integration suites could not collect because the available dependency tree lacks `@clerk/nextjs/server`; no database was contacted.
 
 Logs are private local test artifacts under `/private/tmp/shanda-onboarding-pg18/` and contain synthetic context. The temporary cluster/bootstrap helper is not product tooling and is excluded from Git. No demo seed was used for onboarding.
 
@@ -32,11 +32,11 @@ Independent bounded code/document review: **GREEN**. Reviewer inspected the actu
 
 ## Outstanding implementation / release handoff
 
-1. Provide permanent Owner-facing create/edit workflows or separately reviewed onboarding tooling for organisation/legal entity/station and currently command-only asset/product/shift/price setup. Do not ask station users to execute raw API calls.
+1. Organisation/legal entity/station creation remains display-only and needs a reviewed permanent onboarding path. Configuration forms cover the existing product/tank/forecourt/shift/draft-price commands but do not create or edit those parent records.
 2. Confirm an explicit physical tank/nozzle supply and multi-tank allocation contract before an ambiguous station is cut over.
-3. Resolve inventory `datetime-local` browser-time conversion before cross-timezone cutover; the source evidence is `inventory-workspace.tsx`'s `isoFromLocal`. This task did not change that inventory UI or claim browser reproduction.
+3. Review the station-time conversion in browser/E2E coverage before cross-timezone cutover; focused unit coverage is present, but full browser validation remains open.
 4. Complete/approve required opening cash/bank/customer/supplier financial cutover workflows; no general opening import was established.
-5. Resolve detailed price blocker effective-window/200-row limitations; the time-aware readiness summary must not be replaced with an ACTIVE-label shortcut.
+5. The price list still limits displayed rows to 200; readiness and detailed blockers now reject future/ended active prices, but full approval/boundary/activation remains a separate operational sequence.
 6. Preserve release-owned commands, 0030, approval and MFA. Merge this bounded setup read-model change only after normal review; rerun combined candidate gates and verify explicit migration/release state separately.
 7. Owner supplies pilot choice, setup facts, opening evidence, role/approver arrangement, custody policy and escalation contacts. Staff training, known-build browser rehearsal and signed acceptance remain open.
 

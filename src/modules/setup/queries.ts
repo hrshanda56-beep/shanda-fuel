@@ -132,9 +132,10 @@ export async function getSetupOverview(args: {
           currency: string;
           state: string;
           effective_from: Date | string;
+          effective_to: Date | string | null;
           version: number;
         }>(sql`
-          select id, product_id, unit_price::text, currency, state, effective_from, version
+          select id, product_id, unit_price::text, currency, state, effective_from, effective_to, version
           from app.selling_prices
           where tenant_id = ${tenantId} and station_id = ${stationId}
           order by effective_from desc, created_at desc limit 200`)
@@ -151,12 +152,13 @@ export async function getSetupOverview(args: {
           select id, code, legal_name, registration_reference, status, version
           from app.suppliers where tenant_id = ${tenantId} order by code`)
       : null;
-    const station = await tx.execute<{ status: string }>(sql`
-      select status from app.stations where tenant_id = ${tenantId} and id = ${stationId}`);
+    const station = await tx.execute<{ status: string; timezone: string }>(sql`
+      select status, timezone from app.stations where tenant_id = ${tenantId} and id = ${stationId}`);
 
     const overview: Omit<ConfigurationSetupOverview, 'blockers'> = {
       tenantId,
       stationId,
+      stationTimezone: station[0]?.timezone ?? '',
       stationStatus: station[0]?.status ?? 'UNKNOWN',
       capabilities,
       products:
@@ -203,6 +205,11 @@ export async function getSetupOverview(args: {
             r.effective_from instanceof Date
               ? r.effective_from.toISOString()
               : new Date(r.effective_from).toISOString(),
+          effectiveTo: r.effective_to
+            ? r.effective_to instanceof Date
+              ? r.effective_to.toISOString()
+              : new Date(r.effective_to).toISOString()
+            : null,
           version: Number(r.version),
         })) ?? null,
       suppliers:

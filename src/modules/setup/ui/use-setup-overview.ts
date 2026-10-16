@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import type { SetupOverview } from '../contracts';
+import type { ConfigurationSetupOverview, SetupOverview } from '../contracts';
 
 type Ready = Extract<SetupOverview, { status: 'ready' }>;
+export type SetupOverviewResponse = Ready & { data?: ConfigurationSetupOverview };
 
 export type SetupLoadState =
   | { kind: 'loading' }
   | { kind: 'error' }
   | { kind: 'unavailable' }
-  | { kind: 'ready'; overview: Ready };
+  | { kind: 'ready'; overview: SetupOverviewResponse };
 
 /**
  * Load the server-computed setup overview. Context selectors are forwarded from
@@ -41,7 +42,7 @@ export function useSetupOverview(): {
           setState({ kind: 'error' });
           return;
         }
-        const body = (await response.json()) as SetupOverview;
+        const body = (await response.json()) as SetupOverviewResponse;
         if (body.status === 'ready') setState({ kind: 'ready', overview: body });
         else setState({ kind: body.status === 'error' ? 'error' : 'unavailable' });
       } catch {

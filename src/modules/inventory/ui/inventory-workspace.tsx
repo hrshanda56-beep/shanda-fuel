@@ -10,6 +10,7 @@ import {
   Field,
   SuccessState,
 } from '@/design-system/primitives';
+import { stationLocalDateTimeToIso } from '../../../platform/domain/zoned-time';
 
 export type InventoryContext = Readonly<{
   tenantId: string;
@@ -41,8 +42,8 @@ type InventoryOperationalActionsProps = Readonly<{
   onRefresh: () => void;
 }>;
 
-function isoFromLocal(value: string): string {
-  return new Date(value).toISOString();
+function isoFromStationLocal(value: string, stationTimezone: string): string {
+  return stationLocalDateTimeToIso(value, stationTimezone);
 }
 
 function displayFailure(failure: CommandFailure): CommandFailure {
@@ -190,7 +191,7 @@ function TankDipForm({
         {
           commandType: 'RecordTankDip',
           tankId,
-          measuredAt: isoFromLocal(measuredAt),
+          measuredAt: isoFromStationLocal(measuredAt, context.stationTimezone),
           physicalLitres,
           ...(notes.trim() ? { notes: notes.trim() } : {}),
         },
@@ -278,7 +279,7 @@ function AdjustmentForm({
           commandType: 'PostInventoryAdjustment',
           tankId,
           quantityLitres,
-          effectiveAt: isoFromLocal(effectiveAt),
+          effectiveAt: isoFromStationLocal(effectiveAt, context.stationTimezone),
           movementType,
           reason: reason.trim(),
         },
@@ -375,7 +376,7 @@ function OpeningInventoryForm({
           commandType: 'RecordOpeningBalance',
           tankId,
           quantityLitres,
-          effectiveAt: isoFromLocal(effectiveAt),
+          effectiveAt: isoFromStationLocal(effectiveAt, context.stationTimezone),
         },
         quantityKey.current,
       );
@@ -509,7 +510,7 @@ function DeliveryForm({
           commandType: 'CreateDelivery',
           productId,
           deliveryNoteNumber: deliveryNoteNumber.trim(),
-          deliveredAt: isoFromLocal(deliveredAt),
+          deliveredAt: isoFromStationLocal(deliveredAt, context.stationTimezone),
           noteQuantityLitres,
           actualQuantityLitres,
           allocations: [{ tankId, quantityLitres: allocationQuantityLitres }],
