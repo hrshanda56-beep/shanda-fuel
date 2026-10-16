@@ -88,7 +88,7 @@ test.describe('production reconciliation persistence', () => {
   }
 
   async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {
-    await page.goto(url);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
   }
 
@@ -427,7 +427,16 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText('SUBMITTED', { exact: true })).toBeVisible();
 
     await authenticate(context, managerToken);
+    // Shell hydration precedes the review's authoritative data requests.
+    const reviewRecord = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        response.url().includes(`/api/forecourt/reconciliations/${reconciliationId}?`),
+    );
     await gotoAndWaitForHydration(page, reviewUrl);
+    const loadedRecord = await reviewRecord;
+    expect(loadedRecord.status()).toBe(200);
+    expect((await loadedRecord.json()).state).toBe('SUBMITTED');
     await expect(page.getByText('Submitted', { exact: true }).first()).toBeVisible();
     const approveResponsePromise = page.waitForResponse(
       (response) =>

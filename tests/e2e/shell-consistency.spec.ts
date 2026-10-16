@@ -19,7 +19,7 @@ const HEADER_VIEWPORTS = [
 
 async function prepareShell(page: Page, viewport: { width: number; height: number }) {
   await page.setViewportSize(viewport);
-  await page.goto('/reports');
+  await page.goto('/reports', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
 }
 
@@ -193,7 +193,7 @@ test.describe('shared shell consistency', () => {
       });
     });
     await page.setViewportSize({ width: 320, height: 800 });
-    await page.goto('/reports');
+    await page.goto('/reports', { waitUntil: 'domcontentloaded' });
 
     const context = page.getByRole('group', { name: 'Work context' });
     await expect(context).toContainText('A deliberately long authorised organisation name');
@@ -242,7 +242,7 @@ test.describe('shared shell consistency', () => {
     const theme = page.locator('.theme-control:visible');
     await theme.getByRole('radio', { name: 'Dark' }).check();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await page.goto('/suppliers');
+    await page.goto('/suppliers', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -271,7 +271,7 @@ test.describe('shared shell consistency', () => {
         ['/reports', 'Reports'],
         ['/inventory', 'Inventory'],
       ] as const) {
-        await page.goto(path);
+        await page.goto(path, { waitUntil: 'domcontentloaded' });
         const shell = page.locator('.app-shell');
         await expect(shell).toHaveCount(1);
         await expect(shell).toHaveAttribute('data-hydrated', 'true');
