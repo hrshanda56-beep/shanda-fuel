@@ -65,6 +65,7 @@ export type StationSetupFacts = Readonly<{
   activePumps: number;
   activeNozzles: number;
   pumpsWithoutNozzle: number;
+  nozzlesWithoutMeter: number;
   activeShiftTemplates: number;
   providerAccounts: number;
   bankAccounts: number;

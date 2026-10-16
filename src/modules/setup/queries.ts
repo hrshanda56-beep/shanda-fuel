@@ -102,7 +102,9 @@ export async function getSetupOverview(args: {
             (select m.serial_number from app.meter_installations i
                join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
               where i.tenant_id = n.tenant_id and i.station_id = n.station_id
-                and i.nozzle_id = n.id and i.effective_to is null
+                and i.nozzle_id = n.id and m.status = 'ACTIVE'
+                and i.effective_from <= now()
+                and (i.effective_to is null or i.effective_to > now())
               order by i.effective_from desc limit 1) as meter_serial_number
           from app.nozzles n
           where n.tenant_id = ${tenantId} and n.station_id = ${stationId}
