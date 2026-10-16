@@ -106,12 +106,11 @@ Current production release SHA:
 
 `2c7304916c191c66907d9582a3e7c26225c6eb59`
 
-Current production evidence:
+Production journal evidence (read-only verification, 2026-10-16):
 
-- The migration journal ends at `0024`.
-- Migrations `0022`, `0023`, and `0024` were each verified once with their
-  expected hashes.
-- Migration `0025` is **NOT APPLIED** and remains intentionally deferred.
+- The production journal contains 30 rows: `0000` through `0029`, each once.
+  The stored hashes for `0025` through `0029` match this candidate's migration
+  files. Migration `0030` is not recorded and remains pending.
 - An active `OWNER` exists and OWNER MFA enrollment is verified.
 - The `T.E.I Oils` tenant is active and four active stations are confirmed.
 - `app_runtime` least privilege is verified.
