@@ -39,8 +39,12 @@ own strict-MFA action; Better Auth uses actual password/TOTP enrollment and
 verification, including normal session rotation.
 
 Independent code review found no material security/concurrency defects. Fresh
-PostgreSQL 18 integration and real-runtime browser checks have passed; final
-candidate evidence and remaining hosted Clerk/release gates are recorded in
+PostgreSQL 18 integration and focused real-runtime browser checks passed;
+however, the later full browser E2E matrix did not complete cleanly because
+development-cache disk exhaustion produced six failures and interrupted cases.
+The remaining release gates are full-E2E remediation/re-run, exact 0025/0030
+migration ordering, preview isolation, and verified recovery controls. Final
+candidate evidence and historical hosted-Clerk limits are recorded in
 `docs/reports/OPERATIONAL_WORKFLOW_VALIDATION_2026-10-15.md`. Provisioning opt-in
 skips remain skips. This is not production release approval: no production or
 staging data operation, push, merge, or deployment was performed. Claude's
