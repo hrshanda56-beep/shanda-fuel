@@ -47,6 +47,23 @@ staging data operation, push, merge, or deployment was performed. Claude's
 worktree remains untouched; the shared API/UI contract is in
 `docs/contracts/RECONCILIATION_APPROVAL_UI_HANDOFF.md`.
 
+## Production support documentation — 2026-10-16
+
+A documentation-only [production support package](runbooks/production-operations.md)
+is prepared against freshly fetched `origin/main`
+`99bbe34cd9e978288f4ffb55fcad9f144e127922`, the accepted baseline supplied for
+this task. Operational candidate `f24548677b7b64d829b03ec9b7ffc2615a0c4530`
+was inspected without modification. Support readiness is **PARTIALLY VERIFIED**:
+procedures cover eleven incident classes, safe support, monitoring, release
+identity, rollback compatibility and the first 30-minute watch. Live alert
+delivery, provider rollback controls, named coverage and current production
+deployment/journal remain unverified. Historical production SHAs and migration
+snapshots below are preserved; they do not establish today's live state.
+No production/staging contact, application/schema/auth change, migration, push,
+merge or deployment was performed. The [risk register](runbooks/reliability-risks.md)
+records 0030 permissions, deferred 0025, journal-documentation conflicts, PG18,
+auth/provider and performance dependencies for the integration owner.
+
 
 ## 1. Snapshot
 

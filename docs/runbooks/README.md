@@ -28,3 +28,19 @@ background jobs are enabled for production scope, with lease/retry,
 tenant-context, terminal-failure, and replay procedures. Report/export and
 object-storage lifecycle runbooks are also needed before those capabilities are
 enabled in a pilot scope.
+
+## Production pilot support package — 2026-10-16
+
+Status: **PARTIALLY VERIFIED**; repository procedures only, no live provider
+configuration verified and no production/staging contact. Start with
+[production operations](production-operations.md), then use:
+
+- [Health and monitoring checklist](health-monitoring-checklist.md).
+- [Incident playbook: eleven operational failure scenarios](production-incident-playbook.md).
+- [Deployment and rollback checklist](deployment-rollback-checklist.md).
+- [Support escalation and access boundaries](support-escalation.md).
+- [Reliability risks and release dependencies](reliability-risks.md).
+- [First 30 minutes after release](post-release-monitoring.md).
+
+These extend the existing runbooks; provider controls, alert delivery, named
+on-call coverage and exact live release/migration evidence remain owner gates.
