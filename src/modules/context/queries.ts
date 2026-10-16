@@ -210,16 +210,17 @@ export function filterAuthorizedContextRows(
 }
 
 /** Discover only the context tree the current authenticated actor may use. */
-export async function discoverAvailableContext(
+async function discoverContextAuthority(
   request: Request,
   dependencies: QueryDependencies = {},
-): Promise<AvailableContext> {
+): Promise<{ available: AvailableContext; authorities: Map<string, TenantExecutionContext> }> {
   const now = dependencies.now ?? new Date();
   const actor = await requireAuthenticatedActor(request, dependencies.resolveActor, now);
   const database = dependencies.database ?? getDatabase();
   const tenantIds = await listActiveTenantIds(actor.identityId, database);
   const membershipLoader = dependencies.loadMembership ?? loadTenantMembership;
   const organisations: ContextOrganisation[] = [];
+  const authorities = new Map<string, TenantExecutionContext>();
 
   for (const tenantId of tenantIds) {
     const membership = await membershipLoader(actor.identityId, tenantId);
@@ -234,9 +235,17 @@ export async function discoverAvailableContext(
     const rows = await readTenantRows(authority);
     const authorized = filterAuthorizedContextRows(authority, rows, now);
     organisations.push(...authorized.organisations);
+    authorities.set(tenantId, authority);
   }
 
-  return { organisations };
+  return { available: { organisations }, authorities };
+}
+
+export async function discoverAvailableContext(
+  request: Request,
+  dependencies: QueryDependencies = {},
+): Promise<AvailableContext> {
+  return (await discoverContextAuthority(request, dependencies)).available;
 }
 
 function routeSelection(available: AvailableContext, route: ContextRoute): ContextSelection | null {
@@ -289,18 +298,19 @@ function validatePersistedSelection(
   }
 }
 
-export async function resolveCurrentContext(
+/** Reuse only the authority verified during this call; never cache between requests. */
+export async function resolveCurrentContextWithAuthority(
   request: Request,
   input: Readonly<{
     route?: ContextRoute;
     policy?: ContextRoutePolicy;
     dependencies?: QueryDependencies;
   }> = {},
-): Promise<ContextResolution> {
+): Promise<{ resolution: ContextResolution; authority: TenantExecutionContext | null }> {
   const url = new URL(request.url);
   const route = input.route ?? readContextRoute(url.pathname, url.searchParams);
   const policy = input.policy ?? contextRoutePolicy(route.pathname);
-  const available = await discoverAvailableContext(request, input.dependencies);
+  const { available, authorities } = await discoverContextAuthority(request, input.dependencies);
   const persisted = readPersistedContext(request);
 
   const explicit = routeSelection(available, route);
@@ -315,11 +325,22 @@ export async function resolveCurrentContext(
   current ??= defaultContextSelection(available, policy);
 
   return {
-    available,
-    current,
-    route: { pathname: route.pathname, policy },
-    persistedContextInvalid: persisted.invalid || persistedSelectionInvalid,
+    resolution: {
+      available,
+      current,
+      route: { pathname: route.pathname, policy },
+      persistedContextInvalid: persisted.invalid || persistedSelectionInvalid,
+    },
+    authority: current ? (authorities.get(current.organisationId) ?? null) : null,
   };
+}
+
+/** Keep authority server-only; public context responses contain selection data only. */
+export async function resolveCurrentContext(
+  request: Request,
+  input: Parameters<typeof resolveCurrentContextWithAuthority>[1] = {},
+): Promise<ContextResolution> {
+  return (await resolveCurrentContextWithAuthority(request, input)).resolution;
 }
 
 export async function validateRequestedContext(

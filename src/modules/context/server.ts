@@ -2,6 +2,7 @@ export {
   discoverAvailableContext,
   filterAuthorizedContextRows,
   resolveCurrentContext,
+  resolveCurrentContextWithAuthority,
   validateRequestedContext,
   type AuthorizedContextRow,
   type QueryDependencies,

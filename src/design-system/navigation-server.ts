@@ -1,8 +1,8 @@
 import 'server-only';
 
-import { resolveCurrentContext } from '../modules/context/server';
+import { resolveCurrentContextWithAuthority } from '../modules/context/server';
 import type { CurrentContext } from '../modules/context/contracts';
-import { resolveTenantExecutionContext } from '../modules/tenancy/server';
+import type { TenantExecutionContext } from '../modules/tenancy/server';
 import { hasProviderSessionCookie } from './entry/session-cookie';
 import { buildNavigationProjection } from './navigation-projection';
 import { syntheticNavigationProjection, type NavigationProjection } from './navigation';
@@ -18,15 +18,11 @@ export function requestFromHeaders(requestHeaders: Headers): Request | null {
 }
 
 async function buildServerNavigationProjection(
-  request: Request,
-  current: Awaited<ReturnType<typeof resolveCurrentContext>>['current'],
+  authority: TenantExecutionContext | null,
+  current: CurrentContext | null,
 ): Promise<readonly NavigationProjection[] | null> {
-  if (!current) return null;
-
-  const authority = await resolveTenantExecutionContext({
-    request,
-    requestedTenantId: current.organisationId,
-  });
+  if (!current || !authority || authority.membership.tenantId !== current.organisationId)
+    return null;
   const scope = current.stationId
     ? {
         tenantId: current.organisationId,
@@ -67,8 +63,8 @@ export async function getServerNavigationProjection(
   if (!request) return null;
 
   try {
-    const resolution = await resolveCurrentContext(request);
-    return await buildServerNavigationProjection(request, resolution.current);
+    const { resolution, authority } = await resolveCurrentContextWithAuthority(request);
+    return await buildServerNavigationProjection(authority, resolution.current);
   } catch {
     return null;
   }
@@ -109,10 +105,10 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
   if (!hasProviderSessionCookie(requestHeaders)) return { status: 'signed-out' };
 
   try {
-    const resolution = await resolveCurrentContext(request);
+    const { resolution, authority } = await resolveCurrentContextWithAuthority(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
     if (!resolution.current) return { status: 'signed-out' };
-    const projection = await buildServerNavigationProjection(request, resolution.current);
+    const projection = await buildServerNavigationProjection(authority, resolution.current);
     if (projection === null) return { status: 'signed-out' };
     return { status: 'ready', projection, current: resolution.current };
   } catch {

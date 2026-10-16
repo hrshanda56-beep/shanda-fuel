@@ -1,14 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  resolveCurrentContext: vi.fn(),
+  resolveCurrentContextWithAuthority: vi.fn(),
+  authority: { authorization: {}, membership: { tenantId: 'tenant-1' }, transaction: {} } as {
+    authorization: object;
+    membership: { tenantId: string };
+    transaction: object;
+  } | null,
   resolveTenantExecutionContext: vi.fn(),
   buildNavigationProjection: vi.fn(() => []),
   allowsE2ENavigationFixture: vi.fn(() => false),
 }));
 
 vi.mock('../modules/context/server', () => ({
-  resolveCurrentContext: mocks.resolveCurrentContext,
+  resolveCurrentContextWithAuthority: async (...args: unknown[]) => {
+    const resolution = await mocks.resolveCurrentContextWithAuthority(...args);
+    return { resolution, authority: mocks.authority };
+  },
 }));
 
 vi.mock('../modules/tenancy/server', () => ({
@@ -37,6 +45,7 @@ const availableContext = {
 describe('server shell session gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.authority = { authorization: {}, membership: { tenantId: 'tenant-1' }, transaction: {} };
   });
 
   afterEach(() => {
@@ -45,14 +54,9 @@ describe('server shell session gate', () => {
 
   it('keeps a prefixed Better Auth session on the authenticated root-shell path', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    mocks.resolveCurrentContext.mockResolvedValue({
+    mocks.resolveCurrentContextWithAuthority.mockResolvedValue({
       available: availableContext,
       current: { organisationId: 'tenant-1', legalEntityId: 'legal-entity-1' },
-    });
-    mocks.resolveTenantExecutionContext.mockResolvedValue({
-      authorization: {},
-      membership: {},
-      transaction: {},
     });
 
     await expect(
@@ -70,7 +74,7 @@ describe('server shell session gate', () => {
 
   it('keeps a production Secure-prefixed Better Auth session on the root-shell path after station selection', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    mocks.resolveCurrentContext.mockResolvedValue({
+    mocks.resolveCurrentContextWithAuthority.mockResolvedValue({
       available: {
         organisations: [
           {
@@ -99,11 +103,6 @@ describe('server shell session gate', () => {
         stationId: 'station-bindura',
         allStations: false,
       },
-    });
-    mocks.resolveTenantExecutionContext.mockResolvedValue({
-      authorization: {},
-      membership: {},
-      transaction: {},
     });
 
     await expect(
@@ -134,12 +133,12 @@ describe('server shell session gate', () => {
         }),
       ),
     ).resolves.toEqual({ status: 'signed-out' });
-    expect(mocks.resolveCurrentContext).not.toHaveBeenCalled();
+    expect(mocks.resolveCurrentContextWithAuthority).not.toHaveBeenCalled();
   });
 
   it('fails closed when authenticated context resolution rejects', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    mocks.resolveCurrentContext.mockRejectedValue(new Error('context unavailable'));
+    mocks.resolveCurrentContextWithAuthority.mockRejectedValue(new Error('context unavailable'));
 
     await expect(
       getServerShellAccess(
@@ -153,13 +152,11 @@ describe('server shell session gate', () => {
 
   it('fails closed when the navigation projection cannot verify context', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    mocks.resolveCurrentContext.mockResolvedValue({
+    mocks.resolveCurrentContextWithAuthority.mockResolvedValue({
       available: availableContext,
       current: { organisationId: 'tenant-1' },
     });
-    mocks.resolveTenantExecutionContext.mockRejectedValue(
-      new Error('projection context unavailable'),
-    );
+    mocks.authority = null;
 
     await expect(
       getServerShellAccess(
@@ -173,7 +170,7 @@ describe('server shell session gate', () => {
 
   it('uses the validated station selection for the shell projection without re-resolving context', async () => {
     vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    mocks.resolveCurrentContext.mockResolvedValue({
+    mocks.resolveCurrentContextWithAuthority.mockResolvedValue({
       available: availableContext,
       current: {
         organisationId: 'tenant-1',
@@ -181,11 +178,6 @@ describe('server shell session gate', () => {
         stationId: 'station-bindura',
         allStations: false,
       },
-    });
-    mocks.resolveTenantExecutionContext.mockResolvedValue({
-      authorization: {},
-      membership: {},
-      transaction: {},
     });
 
     await expect(
@@ -196,10 +188,28 @@ describe('server shell session gate', () => {
         }),
       ),
     ).resolves.toMatchObject({ status: 'ready' });
-    expect(mocks.resolveCurrentContext).toHaveBeenCalledTimes(1);
-    expect(mocks.resolveTenantExecutionContext).toHaveBeenCalledWith(
-      expect.objectContaining({ requestedTenantId: 'tenant-1' }),
+    expect(mocks.resolveCurrentContextWithAuthority).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveTenantExecutionContext).not.toHaveBeenCalled();
+    expect(mocks.buildNavigationProjection).toHaveBeenCalledWith(
+      expect.objectContaining({ actor: mocks.authority?.authorization }),
     );
+  });
+
+  it('fails closed if selected context and authority belong to different tenants', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+    mocks.resolveCurrentContextWithAuthority.mockResolvedValue({
+      available: availableContext,
+      current: { organisationId: 'tenant-other' },
+    });
+    await expect(
+      getServerShellAccess(
+        new Headers({
+          host: 'fuel.shandahr.com',
+          cookie: 'shanda-fuel.session_token=opaque',
+        }),
+      ),
+    ).resolves.toEqual({ status: 'signed-out' });
+    expect(mocks.buildNavigationProjection).not.toHaveBeenCalled();
   });
 
   it('returns signed-out for an unauthenticated request so the shell redirects', async () => {
