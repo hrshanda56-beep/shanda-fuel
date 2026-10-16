@@ -1,7 +1,8 @@
 import 'server-only';
-import { sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDatabase } from '../../platform/db';
+import { authSession } from '../../platform/db/schema';
 import { AppError } from '../../platform/errors';
 import {
   assertSessionActive,
@@ -133,33 +134,30 @@ async function loadAuthoritativeBetterAuthSession(
   sessionId: string,
   userId: string,
 ): Promise<Omit<SessionRecord, 'sessionId' | 'userId'>> {
-  const rows = await getDatabase().transaction((transaction) => transaction.execute<{
-    expires_at: Date;
-    revoked_at: Date | null;
-    strong_authenticated_at: Date | null;
-    strong_authentication_expires_at: Date | null;
-    strong_authentication_verified: boolean | null;
-    step_up_level: 0 | 1 | 2 | null;
-    step_up_expires_at: Date | null;
-    step_up_tenant_id: string | null;
-  }>(sql`
-    select expires_at, revoked_at, strong_authenticated_at,
-      strong_authentication_expires_at, strong_authentication_verified,
-      step_up_level, step_up_expires_at, step_up_tenant_id
-    from auth.session
-    where id=${sessionId} and user_id=${userId}
-  `));
+  const rows = await getDatabase()
+    .select({
+      expiresAt: authSession.expiresAt,
+      revokedAt: authSession.revokedAt,
+      strongAuthenticatedAt: authSession.strongAuthenticatedAt,
+      strongAuthenticationExpiresAt: authSession.strongAuthenticationExpiresAt,
+      strongAuthenticationVerified: authSession.strongAuthenticationVerified,
+      stepUpLevel: authSession.stepUpLevel,
+      stepUpExpiresAt: authSession.stepUpExpiresAt,
+      stepUpTenantId: authSession.stepUpTenantId,
+    })
+    .from(authSession)
+    .where(and(eq(authSession.id, sessionId), eq(authSession.userId, userId)));
   const session = rows[0];
   if (!session) throw new AppError('UNAUTHENTICATED', 'The authentication session is invalid');
   return {
-    expiresAt: session.expires_at,
-    revokedAt: session.revoked_at ?? undefined,
-    strongAuthenticatedAt: session.strong_authenticated_at ?? undefined,
-    strongAuthenticationExpiresAt: session.strong_authentication_expires_at ?? undefined,
-    strongAuthenticationVerified: session.strong_authentication_verified ?? undefined,
-    stepUpLevel: session.step_up_level ?? undefined,
-    stepUpExpiresAt: session.step_up_expires_at ?? undefined,
-    stepUpTenantId: session.step_up_tenant_id ?? undefined,
+    expiresAt: session.expiresAt,
+    revokedAt: session.revokedAt ?? undefined,
+    strongAuthenticatedAt: session.strongAuthenticatedAt ?? undefined,
+    strongAuthenticationExpiresAt: session.strongAuthenticationExpiresAt ?? undefined,
+    strongAuthenticationVerified: session.strongAuthenticationVerified ?? undefined,
+    stepUpLevel: (session.stepUpLevel ?? undefined) as 0 | 1 | 2 | undefined,
+    stepUpExpiresAt: session.stepUpExpiresAt ?? undefined,
+    stepUpTenantId: session.stepUpTenantId ?? undefined,
   };
 }
 
