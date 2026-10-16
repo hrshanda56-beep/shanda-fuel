@@ -1,0 +1,89 @@
+{
+  "refs": {
+    "origin/main": "99bbe34cd9e978288f4ffb55fcad9f144e127922",
+    "codex/workflow-integrated-verification-20261015": "f3f7de48545a1a28aa364d1d0be445101fbf7dfc",
+    "codex/operational-e2e-remediation": "baec0c9ebacea1b4d6a1a3872b1678de4f120b92",
+    "codex/station-onboarding": "2707c83f9bf32daa648c48fcf3687ddee344d38c",
+    "codex/phase2-completion": "c17a8f721785a07296d3b3ba5c08ec883a040c36",
+    "codex/application-performance": "fdbc20b1d7fafd6e17849071c0b165ae89569245"
+  },
+  "commits": {
+    "871dcd4": "871dcd45c11893149947e7ee3e412505dcc1534b",
+    "377879a": "377879ada600344985f1dd07ae95c51ed46af104",
+    "2707c83": "2707c83f9bf32daa648c48fcf3687ddee344d38c",
+    "c17a8f7": "c17a8f721785a07296d3b3ba5c08ec883a040c36",
+    "fdbc20b": "fdbc20b1d7fafd6e17849071c0b165ae89569245",
+    "9c87aa8": "9c87aa87cfb9da303fe7832f5ce86085bf6db32b",
+    "ff76bdd": "ff76bdd950d307167a838ad36650a73ab694cee6",
+    "7153622": "71536227b126468db4c8b496d4bf29f47fe78bca",
+    "06f8274": "06f827440e8a06d88eb2344532bad6a2c75bda62"
+  },
+  "contains": {
+    "origin/main": {
+      "871dcd4": false,
+      "377879a": false,
+      "2707c83": false,
+      "c17a8f7": false,
+      "fdbc20b": false,
+      "9c87aa8": false,
+      "ff76bdd": false,
+      "7153622": false,
+      "06f8274": false
+    },
+    "codex/workflow-integrated-verification-20261015": {
+      "871dcd4": true,
+      "377879a": true,
+      "2707c83": false,
+      "c17a8f7": false,
+      "fdbc20b": false,
+      "9c87aa8": true,
+      "ff76bdd": true,
+      "7153622": true,
+      "06f8274": true
+    },
+    "codex/operational-e2e-remediation": {
+      "871dcd4": true,
+      "377879a": false,
+      "2707c83": false,
+      "c17a8f7": false,
+      "fdbc20b": false,
+      "9c87aa8": false,
+      "ff76bdd": false,
+      "7153622": false,
+      "06f8274": false
+    },
+    "codex/station-onboarding": {
+      "871dcd4": true,
+      "377879a": false,
+      "2707c83": true,
+      "c17a8f7": false,
+      "fdbc20b": false,
+      "9c87aa8": false,
+      "ff76bdd": false,
+      "7153622": false,
+      "06f8274": false
+    },
+    "codex/phase2-completion": {
+      "871dcd4": false,
+      "377879a": false,
+      "2707c83": false,
+      "c17a8f7": true,
+      "fdbc20b": false,
+      "9c87aa8": false,
+      "ff76bdd": false,
+      "7153622": false,
+      "06f8274": false
+    },
+    "codex/application-performance": {
+      "871dcd4": true,
+      "377879a": false,
+      "2707c83": false,
+      "c17a8f7": false,
+      "fdbc20b": true,
+      "9c87aa8": false,
+      "ff76bdd": false,
+      "7153622": false,
+      "06f8274": false
+    }
+  }
+}
