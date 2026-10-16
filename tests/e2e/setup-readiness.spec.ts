@@ -17,6 +17,7 @@ const ids = {
   product: 'e2e70000-0000-4000-8000-000000000061',
   pump: 'e2e70000-0000-4000-8000-000000000071',
   price: 'e2e70000-0000-4000-8000-000000000081',
+  meter: 'e2e70000-0000-4000-8000-000000000091',
 };
 const sessionToken = 'setup-readiness-session-token';
 const WIDTHS = [320, 390, 768, 1024, 1440] as const;
@@ -85,6 +86,16 @@ test.describe('Setup readiness and payment setup', () => {
         on conflict (id) do nothing;
       insert into app.nozzles (tenant_id, station_id, pump_id, number, product_id)
         values ('${ids.organisation}', '${ids.stationReady}', '${ids.pump}', 'N1', '${ids.product}')
+        on conflict do nothing;
+      insert into app.meters (id, tenant_id, serial_number, status)
+        values ('${ids.meter}', '${ids.organisation}', 'SUP-METER-1', 'ACTIVE')
+        on conflict (id) do nothing;
+      insert into app.meter_installations
+        (tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
+        select '${ids.organisation}', '${ids.stationReady}', n.id, '${ids.meter}', now() - interval '1 day', '${ids.membership}'
+        from app.nozzles n
+        where n.tenant_id = '${ids.organisation}' and n.station_id = '${ids.stationReady}'
+          and n.pump_id = '${ids.pump}' and n.number = 'N1'
         on conflict do nothing;
       insert into app.shift_templates (tenant_id, station_id, code, name, created_by)
         values ('${ids.organisation}', '${ids.stationReady}', 'DAY', 'Day', '${ids.membership}')
@@ -170,6 +181,26 @@ test.describe('Setup readiness and payment setup', () => {
     failing = false;
     await page.getByRole('button', { name: 'Try again' }).click();
     await expect(page.getByRole('region', { name: /Setup Bare Station/ })).toBeVisible();
+  });
+
+  test('configuration exposes the authorized station setup forms and timezone', async ({
+    page,
+  }) => {
+    await tab(page, 'Configuration').click();
+    await expect(
+      content(page).getByRole('heading', { name: 'Fuel products', level: 3 }),
+    ).toBeVisible();
+    await expect(content(page).getByRole('heading', { name: 'Tanks', level: 3 })).toBeVisible();
+    await expect(
+      content(page).getByRole('heading', { name: 'Pumps, nozzles and meters', level: 3 }),
+    ).toBeVisible();
+    await expect(
+      content(page).getByRole('heading', { name: 'Shift templates', level: 3 }),
+    ).toBeVisible();
+    await expect(
+      content(page).getByRole('heading', { name: 'Selling prices', level: 3 }),
+    ).toBeVisible();
+    await expect(content(page).getByText(/station timezone is Africa\/Harare/)).toBeVisible();
   });
 
   test('adds a provider and a station account with the existing commands', async ({ page }) => {
