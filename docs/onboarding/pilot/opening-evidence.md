@@ -18,9 +18,9 @@ Owner confirms station, approved cutoff instant and responsible counters. Financ
 - [ ] Finance compares quantity and value to source documents and signs the tank-by-tank cutoff record.
 - [ ] Real opening meter boundaries are captured separately; tank stock is not nozzle throughput and capacity is neither of them.
 
-## Time-entry limitation
+## Station-time input
 
-The current inventory forms convert `datetime-local` using browser-local `new Date(value).toISOString()` rather than station timezone. This affects opening stock and other inventory evidence times. It is a confirmed source-level onboarding risk; no browser reproduction or correction is claimed in this bounded readiness change. Refer it to the inventory/integration owner for a station-time input contract and regression test. Do not certify a cross-timezone cutover until the entered instant is unambiguous and verified through a supported reviewed workflow. Do not guess or change the workstation timezone as an undocumented workaround.
+Inventory `datetime-local` inputs are converted using the authoritative station IANA timezone before commands are sent. The browser timezone is not used. Keep the station timezone visible in the acceptance record and verify the interpreted instant against the signed physical evidence, especially around DST or overnight cutovers.
 
 ## Opening cash and financial balances
 

@@ -16,6 +16,8 @@ const empty: StationSetupFacts = {
   activeNozzles: 0,
   pumpsWithoutNozzle: 0,
   nozzlesWithoutMeter: 0,
+  activeNozzlesWithInactiveProduct: 0,
+  activeTanksWithInactiveProduct: 0,
   activeShiftTemplates: 0,
   providerAccounts: 0,
   bankAccounts: 0,
@@ -109,5 +111,16 @@ describe('meter installation readiness', () => {
     expect(result.ready).toBe(false);
     expect(result.areas.find((a) => a.code === 'PUMPS')).toMatchObject({ status: 'PARTIAL' });
     expect(result.areas.find((a) => a.code === 'PUMPS')?.detail).toContain('current active meter');
+  });
+});
+
+describe('asset relationship readiness', () => {
+  it('blocks inactive products on active nozzles and tanks', () => {
+    expect(
+      computeStationReadiness({ ...complete, activeNozzlesWithInactiveProduct: 1 }).ready,
+    ).toBe(false);
+    expect(computeStationReadiness({ ...complete, activeTanksWithInactiveProduct: 1 }).ready).toBe(
+      false,
+    );
   });
 });

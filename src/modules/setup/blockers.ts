@@ -8,6 +8,7 @@ import type { ConfigurationSetupOverview } from './contracts';
  */
 export function computeSetupBlockers(
   data: Omit<ConfigurationSetupOverview, 'blockers'>,
+  now = new Date(),
 ): readonly { code: string; message: string }[] {
   const out: { code: string; message: string }[] = [];
   const productName = (id: string) => data.products?.find((p) => p.id === id)?.name ?? 'a product';
@@ -34,12 +35,26 @@ export function computeSetupBlockers(
     });
   }
   if (data.prices && activeNozzles) {
-    const priced = new Set(data.prices.filter((p) => p.state === 'ACTIVE').map((p) => p.productId));
+    const priced = new Set(
+      data.prices
+        .filter(
+          (p) =>
+            p.state === 'ACTIVE' &&
+            new Date(p.effectiveFrom) <= now &&
+            (p.effectiveTo === null || new Date(p.effectiveTo) > now),
+        )
+        .map((p) => p.productId),
+    );
+    const future = new Set(
+      data.prices
+        .filter((p) => p.state === 'ACTIVE' && new Date(p.effectiveFrom) > now)
+        .map((p) => p.productId),
+    );
     for (const productId of new Set(activeNozzles.map((n) => n.productId))) {
       if (!priced.has(productId)) {
         out.push({
           code: 'NO_PRICE',
-          message: `No active selling price for ${productName(productId)}, so it cannot be sold or reconciled.`,
+          message: `${future.has(productId) ? 'No selling price is effective yet' : 'No effective active selling price'} for ${productName(productId)}, so it cannot be sold or reconciled.`,
         });
       }
     }

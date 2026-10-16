@@ -59,6 +59,15 @@ function tanksArea(facts: StationSetupFacts): ReadinessArea {
       blocks,
     };
   }
+  if (facts.activeTanksWithInactiveProduct > 0) {
+    return {
+      code: 'TANKS',
+      label: 'Tanks',
+      status: 'PARTIAL',
+      detail: `${plural(facts.activeTanksWithInactiveProduct, 'active tank')} references an inactive or missing fuel product.`,
+      blocks,
+    };
+  }
   if (facts.tanksMissingTolerance > 0) {
     return {
       code: 'TANKS',
@@ -112,6 +121,15 @@ function pumpsArea(facts: StationSetupFacts): ReadinessArea {
       label: 'Pumps and nozzles',
       status: 'PARTIAL',
       detail: `${plural(facts.nozzlesWithoutMeter, 'nozzle')} without a current active meter installation.`,
+      blocks,
+    };
+  }
+  if (facts.activeNozzlesWithInactiveProduct > 0) {
+    return {
+      code: 'PUMPS',
+      label: 'Pumps and nozzles',
+      status: 'PARTIAL',
+      detail: `${plural(facts.activeNozzlesWithInactiveProduct, 'active nozzle')} references an inactive or missing fuel product.`,
       blocks,
     };
   }
