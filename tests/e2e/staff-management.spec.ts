@@ -106,6 +106,8 @@ async function submitStaffCommandAndWaitForReload(page: Page, action: () => Prom
   // Creating an invitation answers 201 Created; resend and revoke answer 200.
   expect([200, 201]).toContain(response.status());
   await navigationPromise;
+  await page.waitForLoadState('domcontentloaded');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
 }
 
 async function seed(client: Sql) {

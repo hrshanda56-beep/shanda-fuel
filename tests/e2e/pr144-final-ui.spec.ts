@@ -87,7 +87,9 @@ test.describe('console hygiene', () => {
     await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
     await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await page.locator('nav a[href^="/stations/"]:visible', { hasText: 'Reconciliations' }).click();
-    await expect(page).toHaveURL(/\/reconciliations/);
+    // This is a full-document navigation in the development runner. Wait for
+    // navigation completion before checking the destination's rendered state.
+    await page.waitForURL(/\/reconciliations/);
     await expect(
       page.getByRole('heading', { name: 'Shift reconciliations' }).first(),
     ).toBeVisible();

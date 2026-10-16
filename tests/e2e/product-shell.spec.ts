@@ -412,7 +412,7 @@ test.describe('phone navigation', () => {
       .getByRole('link', { name: 'Suppliers' })
       .click();
 
-    await expect(page).toHaveURL(/\/suppliers$/);
+    await page.waitForURL(/\/suppliers$/);
     await expect(page.getByRole('dialog', { name: 'More' })).toBeHidden();
   });
 

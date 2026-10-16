@@ -482,6 +482,8 @@ test.describe('phones never scroll sideways', () => {
 
   for (const width of PHONE_WIDTHS) {
     test(`empty and entry states fit ${width}px`, async ({ page }) => {
+      // Nine document navigations share this budget; traces show individual routes taking 6–13s.
+      test.setTimeout(90_000);
       await page.setViewportSize({ width, height: 800 });
       for (const route of routes) {
         await page.goto(route);
@@ -491,6 +493,8 @@ test.describe('phones never scroll sideways', () => {
     });
 
     test(`data-heavy screens fit ${width}px`, async ({ page }) => {
+      // Six document navigations need an aggregate budget, preserving each rendering assertion.
+      test.setTimeout(90_000);
       await mockApis(page);
       await page.setViewportSize({ width, height: 800 });
 

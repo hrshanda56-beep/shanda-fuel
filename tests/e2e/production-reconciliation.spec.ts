@@ -763,6 +763,7 @@ test.describe('production reconciliation persistence', () => {
       where tenant_id=${ids.tenant}
         and event_code='FORECOURT.ApproveProductionReconciliation'
         and membership_id=${ids.managerMembership}
+        and details->>'subjectId'=${reconciliationId}
     `;
     expect(approvalAudit?.count).toBe(1);
     await authenticate(context, supervisorToken);

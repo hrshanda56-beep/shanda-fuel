@@ -6,7 +6,7 @@ test.describe('A12 inventory valuation operator surface', () => {
     page,
   }) => {
     await page.goto('/inventory');
-    await expect(page).toHaveURL(/\/inventory\/valuation$/);
+    await page.waitForURL(/\/inventory\/valuation$/);
     await expect(
       page.getByRole('heading', { name: 'Choose a station to view inventory', level: 2 }),
     ).toBeVisible();
