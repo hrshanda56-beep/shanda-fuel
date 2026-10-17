@@ -15,7 +15,7 @@ import {
 
 import type { PaymentProviderRow, SetupOverview } from '../contracts';
 import styles from './setup.module.css';
-import { StepUpDialog, type StepUpProvider } from './step-up-dialog';
+import { StepUpDialog } from './step-up-dialog';
 import { useSetupOverview } from './use-setup-overview';
 
 type Ready = Extract<SetupOverview, { status: 'ready' }>;
@@ -501,15 +501,7 @@ function BankSection({
   );
 }
 
-export function PaymentsView({
-  overview,
-  reload,
-  provider,
-}: {
-  overview: Ready;
-  reload: () => void;
-  provider: StepUpProvider;
-}) {
+export function PaymentsView({ overview, reload }: { overview: Ready; reload: () => void }) {
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const confirmedUntil = useRef(0);
   if (!overview.canViewPayments) {
@@ -532,7 +524,7 @@ export function PaymentsView({
       <StepUpDialog
         open={pending !== null}
         tenantId={overview.tenantId}
-        provider={provider}
+
         onCancel={() => setPending(null)}
         onVerified={() => {
           confirmedUntil.current = Date.now() + STEP_UP_REUSE_MS;
@@ -545,7 +537,7 @@ export function PaymentsView({
   );
 }
 
-export function PaymentsPanel({ provider }: { provider: StepUpProvider }) {
+export function PaymentsPanel() {
   const { state, reload, refresh } = useSetupOverview();
   if (state.kind === 'loading') return <LoadingState label="Loading payment setup" />;
   if (state.kind === 'unavailable') {
@@ -560,5 +552,5 @@ export function PaymentsPanel({ provider }: { provider: StepUpProvider }) {
       />
     );
   }
-  return <PaymentsView overview={state.overview} reload={refresh} provider={provider} />;
+  return <PaymentsView overview={state.overview} reload={refresh} />;
 }

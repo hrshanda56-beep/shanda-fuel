@@ -206,17 +206,6 @@ export function OperationsControlRoom({
   const [conflict, setConflict] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [statementOpen, setStatementOpen] = useState(false);
-  const [stepUpPassword, setStepUpPassword] = useState('');
-  const [stepUpTotpCode, setStepUpTotpCode] = useState('');
-  const [stepUpBusy, setStepUpBusy] = useState(false);
-  const [stepUpError, setStepUpError] = useState<string>();
-  const [authProvider, setAuthProvider] = useState<'BETTER_AUTH' | 'CLERK'>();
-  const [mfaEnabled, setMfaEnabled] = useState<boolean>();
-  const [mfaSetupPassword, setMfaSetupPassword] = useState('');
-  const [mfaSetupCode, setMfaSetupCode] = useState('');
-  const [mfaSetup, setMfaSetup] = useState<{ totpURI: string; backupCodes: string[] }>();
-  const [mfaBusy, setMfaBusy] = useState(false);
-  const [mfaError, setMfaError] = useState<string>();
   const idempotencyKeys = useRef(new Map<string, string>());
 
   const endpoint = useMemo(() => {
@@ -259,24 +248,6 @@ export function OperationsControlRoom({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
-
-  const loadMfaStatus = useCallback(async () => {
-    const response = await fetch('/api/auth/mfa/setup', { cache: 'no-store' });
-    if (response.status === 404) {
-      setAuthProvider('CLERK');
-      setMfaEnabled(false);
-      return;
-    }
-    if (!response.ok) return;
-    setAuthProvider('BETTER_AUTH');
-    const body = (await response.json()) as { enabled?: boolean };
-    setMfaEnabled(body.enabled === true);
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadMfaStatus(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadMfaStatus]);
 
   function stableIdempotencyKey(
     commandType: string,
@@ -360,83 +331,6 @@ export function OperationsControlRoom({
       }
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function establishStepUp() {
-    setStepUpBusy(true);
-    setStepUpError(undefined);
-    setNotice(undefined);
-    try {
-      const response = await fetch('/api/auth/step-up', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: context.tenantId,
-          password: stepUpPassword,
-          totpCode: stepUpTotpCode,
-        }),
-      });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        throw new Error(body.message ?? 'Step-up verification failed.');
-      }
-      setStepUpPassword('');
-      setStepUpTotpCode('');
-      setNotice('Step-up authentication verified. The lock action is now available briefly.');
-      await load();
-    } catch (caught) {
-      setStepUpError(caught instanceof Error ? caught.message : 'Step-up verification failed.');
-    } finally {
-      setStepUpBusy(false);
-    }
-  }
-
-  async function startMfaEnrollment() {
-    setMfaBusy(true);
-    setMfaError(undefined);
-    try {
-      const response = await fetch('/api/auth/mfa/setup', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ password: mfaSetupPassword }),
-      });
-      const body = (await response.json()) as {
-        message?: string;
-        totpURI?: string;
-        backupCodes?: string[];
-      };
-      if (!response.ok || !body.totpURI || !body.backupCodes) {
-        throw new Error(body.message ?? 'Authenticator setup could not be started.');
-      }
-      setMfaSetup({ totpURI: body.totpURI, backupCodes: body.backupCodes });
-      setMfaSetupPassword('');
-    } catch (caught) {
-      setMfaError(caught instanceof Error ? caught.message : 'Authenticator setup failed.');
-    } finally {
-      setMfaBusy(false);
-    }
-  }
-
-  async function confirmMfaEnrollment() {
-    setMfaBusy(true);
-    setMfaError(undefined);
-    try {
-      const response = await fetch('/api/auth/mfa/setup/verify', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code: mfaSetupCode }),
-      });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) throw new Error(body.message ?? 'Authenticator code was rejected.');
-      setMfaEnabled(true);
-      setMfaSetup(undefined);
-      setMfaSetupCode('');
-      setNotice('Authenticator MFA is enabled. Enter a current code to establish step-up.');
-    } catch (caught) {
-      setMfaError(caught instanceof Error ? caught.message : 'Authenticator verification failed.');
-    } finally {
-      setMfaBusy(false);
     }
   }
 
@@ -930,147 +824,16 @@ export function OperationsControlRoom({
                   lockBusinessDay.permissionGranted &&
                   lockBusinessDay.requiresStepUp ? (
                     <>
-                      {authProvider === 'CLERK' ? (
-                        <ClerkStepUpForm
-                          context={context}
-                          busy={busy}
-                          onSuccess={async () => {
-                            setNotice(
-                              'Clerk reverification succeeded. The lock action is now available briefly.',
-                            );
-                            await load();
-                          }}
-                        />
-                      ) : mfaEnabled !== true ? (
-                        <form
-                          className="step-up-form"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            if (mfaSetup) void confirmMfaEnrollment();
-                            else void startMfaEnrollment();
-                          }}
-                          aria-describedby="lock-business-day-step-up-help"
-                        >
-                          <p className="eyebrow">Authenticator setup required</p>
-                          <p className="semantic-note">
-                            Supervisor high-risk actions require password re-authentication plus an
-                            authenticator code. Set up TOTP once, then use the current six-digit
-                            code.
-                          </p>
-                          {!mfaSetup ? (
-                            <>
-                              <label htmlFor="mfa-setup-password">Current password</label>
-                              <input
-                                id="mfa-setup-password"
-                                name="mfaSetupPassword"
-                                type="password"
-                                autoComplete="current-password"
-                                value={mfaSetupPassword}
-                                onChange={(event) => setMfaSetupPassword(event.target.value)}
-                                required
-                                disabled={busy || mfaBusy}
-                              />
-                              <Button
-                                type="submit"
-                                variant="secondary"
-                                disabled={busy || mfaBusy || mfaSetupPassword.length === 0}
-                                loading={mfaBusy}
-                              >
-                                Start authenticator setup
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <p className="semantic-note">
-                                Scan or enter this authenticator URI, save the backup codes
-                                securely, then confirm with the current six-digit code.
-                              </p>
-                              <code className="mfa-uri">{mfaSetup.totpURI}</code>
-                              <p className="semantic-note">
-                                Backup codes: {mfaSetup.backupCodes.join(' · ')}
-                              </p>
-                              <label htmlFor="mfa-setup-code">Authenticator code</label>
-                              <input
-                                id="mfa-setup-code"
-                                name="mfaSetupCode"
-                                inputMode="numeric"
-                                pattern="[0-9]{6}"
-                                autoComplete="one-time-code"
-                                value={mfaSetupCode}
-                                onChange={(event) => setMfaSetupCode(event.target.value)}
-                                required
-                                disabled={busy || mfaBusy}
-                              />
-                              <Button
-                                type="submit"
-                                variant="secondary"
-                                disabled={busy || mfaBusy || mfaSetupCode.length !== 6}
-                                loading={mfaBusy}
-                              >
-                                Confirm authenticator
-                              </Button>
-                            </>
-                          )}
-                          {mfaError ? (
-                            <p className="state state-error" role="alert">
-                              {mfaError}
-                            </p>
-                          ) : null}
-                        </form>
-                      ) : (
-                        <form
-                          className="step-up-form"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void establishStepUp();
-                          }}
-                          aria-describedby="lock-business-day-step-up-help"
-                        >
-                          <label htmlFor="lock-business-day-step-up-password">
-                            Confirm your password to unlock this action
-                          </label>
-                          <input
-                            id="lock-business-day-step-up-password"
-                            name="stepUpPassword"
-                            type="password"
-                            autoComplete="current-password"
-                            value={stepUpPassword}
-                            onChange={(event) => setStepUpPassword(event.target.value)}
-                            required
-                            disabled={busy || stepUpBusy}
-                          />
-                          <label htmlFor="lock-business-day-step-up-totp">Authenticator code</label>
-                          <input
-                            id="lock-business-day-step-up-totp"
-                            name="stepUpTotpCode"
-                            inputMode="numeric"
-                            pattern="[0-9]{6}"
-                            autoComplete="one-time-code"
-                            value={stepUpTotpCode}
-                            onChange={(event) => setStepUpTotpCode(event.target.value)}
-                            required
-                            disabled={busy || stepUpBusy}
-                          />
-                          <Button
-                            type="submit"
-                            variant="secondary"
-                            disabled={
-                              busy ||
-                              stepUpBusy ||
-                              stepUpPassword.length === 0 ||
-                              stepUpTotpCode.length !== 6
-                            }
-                            loading={stepUpBusy}
-                          >
-                            Verify step-up
-                          </Button>
-                          {stepUpError ? (
-                            <p className="state state-error" role="alert">
-                              {stepUpError}
-                            </p>
-                          ) : null}
-                        </form>
-                      )}
+                      <ClerkStepUpForm
+                        context={context}
+                        busy={busy}
+                        onSuccess={async () => {
+                          setNotice(
+                            'Clerk reverification succeeded. The lock action is now available briefly.',
+                          );
+                          await load();
+                        }}
+                      />
                       <Button
                         variant="danger"
                         disabled

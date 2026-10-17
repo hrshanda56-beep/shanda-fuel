@@ -6,7 +6,6 @@ import { requestFromHeaders } from '@/design-system/navigation-server';
 import { readPersistedContext, resolveCurrentContext } from '@/modules/context/server';
 import { validateRequestedContext } from '@/modules/context/server';
 import { AppError } from '@/platform/errors';
-import { getAuthProviderName } from '@/platform/auth/provider';
 
 import { planWorkplaceEntry } from '@/design-system/entry/entry-logic';
 import { EntryShell } from '@/design-system/entry/entry-shell';
@@ -43,15 +42,10 @@ export default async function WorkplacePage() {
   }
 
   if (plan.kind === 'continue') redirect('/');
-  const provider = getAuthProviderName();
 
   return (
     <EntryShell>
-      {plan.kind === 'none' ? (
-        <NoWorkplace provider={provider} />
-      ) : (
-        <WorkplacePicker options={plan.options} />
-      )}
+      {plan.kind === 'none' ? <NoWorkplace /> : <WorkplacePicker options={plan.options} />}
     </EntryShell>
   );
 }

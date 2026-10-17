@@ -7,7 +7,6 @@ import type { ReactNode } from 'react';
 import { AppShell, type AppShellProps } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
 import { getServerShellAccess, type ServerShellAccess } from './navigation-server';
-import { getAuthProviderName } from '@/platform/auth/provider';
 
 import { EntryShell } from './entry/entry-shell';
 import { NoWorkplace } from './entry/workplace-views';
@@ -54,7 +53,7 @@ export async function AuthorizedAppShell({
   return (
     <AppShell
       {...props}
-      authProvider={getAuthProviderName()}
+      authProvider={'CLERK'}
       navigationProjection={access.projection ?? emptyNavigationProjection}
     />
   );

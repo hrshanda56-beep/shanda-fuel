@@ -15,7 +15,6 @@ import styles from './settings-workspace.module.css';
 
 type Tab =
   'organisation' | 'companies' | 'stations' | 'readiness' | 'payments' | 'staff' | 'account';
-type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
@@ -73,7 +72,7 @@ function Section({
   );
 }
 
-function AccountPanel({ view, provider }: { view: SettingsView; provider: AuthProviderName }) {
+function AccountPanel({ view }: { view: SettingsView }) {
   const email = view.account.email ?? 'No email provided';
   return (
     <>
@@ -100,20 +99,14 @@ function AccountPanel({ view, provider }: { view: SettingsView; provider: AuthPr
         intro="Sign out of Shanda Fuel on this device."
       >
         <div className={styles.signOutRow}>
-          <SignOutButton provider={provider} />
+          <SignOutButton />
         </div>
       </Section>
     </>
   );
 }
 
-export function SettingsWorkspace({
-  view,
-  provider,
-}: {
-  view: SettingsView;
-  provider: AuthProviderName;
-}) {
+export function SettingsWorkspace({ view }: { view: SettingsView }) {
   const [tab, setTab] = useState<Tab>('organisation');
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
@@ -128,7 +121,7 @@ export function SettingsWorkspace({
             <Section headingId="organisation-unavailable" title="Not available">
               <AccessDeniedState message="No organisation is available for this account." />
             </Section>
-            <AccountPanel view={view} provider={provider} />
+            <AccountPanel view={view} />
           </div>
         </div>
       </PageContainer>
@@ -213,15 +206,13 @@ export function SettingsWorkspace({
 
           {tab === 'readiness' && view.staff?.canManage ? <ReadinessPanel /> : null}
 
-          {tab === 'payments' && view.staff?.canManage ? (
-            <PaymentsPanel provider={provider} />
-          ) : null}
+          {tab === 'payments' && view.staff?.canManage ? <PaymentsPanel /> : null}
 
           {tab === 'staff' && view.staff?.canManage ? (
-            <StaffPanel tenantId={organisation.id} overview={view.staff} provider={provider} />
+            <StaffPanel tenantId={organisation.id} overview={view.staff} />
           ) : null}
 
-          {tab === 'account' ? <AccountPanel view={view} provider={provider} /> : null}
+          {tab === 'account' ? <AccountPanel view={view} /> : null}
         </div>
       </div>
     </PageContainer>

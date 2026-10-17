@@ -168,7 +168,7 @@ function knownError(error: string, message: string) {
       title: 'Check the revaluation details',
       message: message || 'Review the amount, currency, and reason before retrying.',
     };
-  if (message.includes('BETTER_AUTH_SECRET'))
+  if (message.includes('CLERK_SECRET_KEY'))
     return {
       title: 'Authentication is unavailable',
       message:

@@ -4,9 +4,7 @@ import { EntryShell } from '@/design-system/entry/entry-shell';
 import { resolveInvitationView } from '@/design-system/entry/invitation';
 import { InviteUnavailable } from '@/design-system/entry/invite-views';
 import { ExistingInviteFlow, NewInviteFlow } from '@/design-system/entry/invite-acceptance';
-import { LoginForm } from '@/design-system/entry/login-form';
-import { getAuth } from '@/platform/auth';
-import { getAuthProviderName } from '@/platform/auth/provider';
+import { ClerkLoginForm } from '@/design-system/entry/clerk-login-form';
 import { hasActiveSession } from '@/design-system/entry/session';
 import { headers } from 'next/headers';
 
@@ -25,24 +23,17 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
 
   const requestHeaders = await headers();
   const session =
-    view.kind === 'existing-identity'
-      ? getAuthProviderName() === 'CLERK'
-        ? await hasActiveSession(requestHeaders)
-        : await (
-            await getAuth()
-          ).api.getSession({
-            headers: requestHeaders,
-            query: { disableCookieCache: true },
-          })
-      : null;
+    view.kind === 'existing-identity' || view.kind === 'new-identity'
+      ? await hasActiveSession(requestHeaders)
+      : false;
 
   return (
     <EntryShell>
-      {view.kind === 'existing-identity' ? (
+      {view.kind === 'existing-identity' || (view.kind === 'new-identity' && session) ? (
         session ? (
           <ExistingInviteFlow token={token} />
         ) : (
-          <LoginForm invited next={`/invite/${token}`} />
+          <ClerkLoginForm invited next={`/invite/${token}`} />
         )
       ) : view.kind === 'new-identity' ? (
         <NewInviteFlow token={token} organisationName={view.organisationName} email={view.email} />
