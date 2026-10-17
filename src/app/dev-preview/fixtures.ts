@@ -1,4 +1,5 @@
 import type { ContextResolution } from '@/modules/context';
+import type { StepOverview } from '@/modules/forecourt/ui/next-step';
 import { businessToday } from '@/modules/reporting/period';
 
 import {
@@ -57,17 +58,49 @@ function context(scenario: Scenario, pathname: string): ContextResolution {
   };
 }
 
-const operations = (scenario: Scenario) => ({
-  station: { name: 'Harare Central' },
-  currentBusinessDate: new Date().toISOString().slice(0, 10),
+const operations = (
+  scenario: Scenario,
+  today: string,
+): StepOverview & {
+  status: { close: string; approval: string };
+} => ({
+  station: available.organisations[0]!.legalEntities[0]!.stations[0]!,
+  currentBusinessDate: today,
+  // This read-only sample must never offer real operational commands.
+  actions: {
+    OpenBusinessDay: { canExecute: false },
+    CloseBusinessDay: { canExecute: false },
+    StartShift: { canExecute: false },
+    CloseMeters: { canExecute: false },
+    CompleteShift: { canExecute: false },
+  },
+  reconciliations: [],
   status: {
     close: scenario === 'attention' ? 'READY_FOR_REVIEW' : 'IN_PROGRESS',
     approval: scenario === 'attention' ? 'PENDING_APPROVAL' : 'DRAFT',
   },
   shifts: [
-    { id: 's1', state: 'OPEN' },
-    { id: 's2', state: 'OPEN' },
-    { id: 's3', state: 'CLOSED' },
+    {
+      id: 's1',
+      state: 'OPEN',
+      version: 0,
+      plannedStartAt: `${today}T04:00:00.000Z`,
+      plannedEndAt: `${today}T12:00:00.000Z`,
+    },
+    {
+      id: 's2',
+      state: 'OPEN',
+      version: 0,
+      plannedStartAt: `${today}T12:00:00.000Z`,
+      plannedEndAt: `${today}T20:00:00.000Z`,
+    },
+    {
+      id: 's3',
+      state: 'CLOSED',
+      version: 0,
+      plannedStartAt: `${today}T00:00:00.000Z`,
+      plannedEndAt: `${today}T04:00:00.000Z`,
+    },
   ],
 });
 
@@ -123,7 +156,7 @@ export function fixtureAnswer(
     };
   }
   if (path === '/api/forecourt/operations/overview') {
-    return { status: 200, body: operations(scenario) };
+    return { status: 200, body: operations(scenario, today) };
   }
   if (path === '/api/customers/summary') return { status: 200, body: customers(scenario) };
   const stationId = url.searchParams.get('stationIds') ?? STATION;

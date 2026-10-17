@@ -40,7 +40,7 @@ const screens = [
     name: 'reconciliations',
     url: `/stations/${STATION}/reconciliations?tenantId=${TENANT}`,
     // The list card heading, not the page title (which renders while loading).
-    ready: 'Needs attention',
+    ready: 'Shift reconciliations',
     mock: async (page: import('@playwright/test').Page) => {
       await mockContext(page, `/stations/${STATION}/reconciliations`);
       await mockOverview(page);
@@ -59,15 +59,22 @@ const screens = [
 
 for (const screen of screens) {
   test(`screenshots: ${screen.name}`, async ({ page }) => {
+    // Six document loads and captures share this budget. Traces show a cold
+    // first document taking ~25s before the remaining five captures begin.
+    test.setTimeout(90_000);
     await screen.mock(page);
     for (const width of widths) {
       for (const colorScheme of themes) {
         await page.setViewportSize({ width, height: 900 });
         await page.emulateMedia({ colorScheme });
         await page.goto(screen.url);
+        await page.locator('.app-shell[data-hydrated="true"]').waitFor({ state: 'attached' });
         await expect(
           page.getByRole('heading', { name: screen.ready, exact: true }).first(),
         ).toBeVisible();
+        if (screen.name === 'reconciliations') {
+          await expect(page.getByText('Needs attention', { exact: true })).toBeVisible();
+        }
         // The page title can match before data arrives: wait until nothing is
         // still loading, so a capture never shows a loading state.
         await expect(page.getByText(/^Loading\b/)).toHaveCount(0);

@@ -362,9 +362,8 @@ test.describe('authenticated Staff lifecycle', () => {
     }
   });
 
-  test('invalid, revoked and expired links fail closed; existing and new users accept once', async ({
+  test('invalid, revoked and expired links fail closed; an existing user accepts once', async ({
     page,
-    browser,
   }) => {
     for (const token of ['not-a-valid-token', inviteTokens.revoked, inviteTokens.expired]) {
       await page.goto(`/invite/${token}`);
@@ -404,7 +403,13 @@ test.describe('authenticated Staff lifecycle', () => {
       role_code: 'SUPERVISOR',
       station_id: ids.bindura,
     });
+  });
 
+  // Each lifecycle scenario owns its page. Keeping an accepted user's Today
+  // page alive during another user's signup starts unrelated dashboard work.
+  test('a new invited user signs up and accepts once with the assigned scope', async ({
+    browser,
+  }) => {
     const newContext = await browser.newContext();
     const newPage = await newContext.newPage();
     try {
@@ -441,7 +446,9 @@ test.describe('authenticated Staff lifecycle', () => {
       role_code: 'FINANCE',
       scope_type: 'LEGAL_ENTITY',
     });
+  });
 
+  test('deactivation revokes sessions and protects the last Owner', async ({ page }) => {
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await page.getByRole('button', { name: 'E2E Attendant', exact: true }).click();

@@ -89,6 +89,9 @@ test.describe('production reconciliation persistence', () => {
 
   async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
+    // Hydration is a navigation readiness phase, bounded by the existing test
+    // deadline; cold development chunks can arrive after DOMContentLoaded.
+    await page.locator('.app-shell[data-hydrated="true"]').waitFor({ state: 'attached' });
     await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
   }
 

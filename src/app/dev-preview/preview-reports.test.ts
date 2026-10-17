@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { nextStep, trailActions, type StepOverview } from '@/modules/forecourt/ui/next-step';
 
 import { dailyTotals, litresSeries, chartBuckets } from '../_overview/dashboard-figures';
 import { fixtureAnswer, SCENARIOS } from './fixtures';
@@ -130,4 +131,32 @@ describe('sample figures follow the approved-report rules', () => {
       expect((answer.body as { sample: boolean }).sample).toBe(true);
     }
   });
+});
+
+describe('preview operational overview contract', () => {
+  it.each(['normal', 'attention', 'unapproved', 'empty'] as const)(
+    '%s renders next-step consumers without enabling live commands',
+    (scenario) => {
+      const answer = fixtureAnswer(
+        url('/api/forecourt/operations/overview'),
+        scenario,
+        'development',
+        TODAY,
+      );
+      expect(answer && answer !== 'hang' && answer.status).toBe(200);
+      if (!answer || answer === 'hang') throw new Error('Missing synthetic overview');
+      const overview = answer.body as StepOverview;
+      const scope = { tenantId: 'synthetic-tenant', stationId: STATION };
+      expect(overview.station.timezone).toBe('Africa/Harare');
+      expect(Object.values(overview.actions).every((action) => !action.canExecute)).toBe(true);
+      expect(nextStep(overview, scope, () => 'synthetic-id').action).toBeNull();
+      expect(trailActions(overview, scope, () => 'synthetic-id')).toEqual([
+        null,
+        null,
+        null,
+        null,
+        null,
+      ]);
+    },
+  );
 });
