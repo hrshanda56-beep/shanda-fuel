@@ -1,0 +1,36 @@
+{
+  "sourceSha": "d007e51197a03ccaf5eff8e5c63297225c12bb45",
+  "applicationChange": "NONE",
+  "results": {
+    "securityUnit": {
+      "passed": 18,
+      "failed": 0
+    },
+    "securityIntegration": {
+      "passed": 12,
+      "failed": 0
+    },
+    "focusedLint": "PASS",
+    "typecheck": "PASS",
+    "fullBrowser": "BLOCKED_NOT_RUN",
+    "build": "NOT_RUN"
+  },
+  "localEvidence": [
+    {
+      "path": "/private/tmp/shanda-reconcile-security-unit.log",
+      "sha256": "9943b01798a12965c234a1ccf1c219812b31aac76decd54eea3223647fe3bfb3"
+    },
+    {
+      "path": "/private/tmp/shanda-reconcile-security-integration.log",
+      "sha256": "edee2bb3176941f665b5c9d6aacffcf8c69ee9d5857abd0160569102a95ccf9f"
+    },
+    {
+      "path": "/private/tmp/shanda-reconcile-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/shanda-reconcile-typecheck.log",
+      "sha256": "99d7c2179cdd316467c51f37901025a0753453664d741214ba56fc631fa6c0bc"
+    }
+  ]
+}

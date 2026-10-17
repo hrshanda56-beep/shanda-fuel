@@ -1,0 +1,107 @@
+{
+  "fullTestedSha": "f3f7de48545a1a28aa364d1d0be445101fbf7dfc",
+  "fullStats": {
+    "startTime": "2026-10-16T20:21:22.685Z",
+    "duration": 2027551.998,
+    "expected": 327,
+    "skipped": 5,
+    "unexpected": 7,
+    "flaky": 0
+  },
+  "nonPassingCases": [
+    {
+      "file": "production-reconciliation.spec.ts",
+      "line": 329,
+      "title": "persists through refresh, submits, approves, and rejects edits after production approval",
+      "status": "unexpected",
+      "results": ["failed"]
+    },
+    {
+      "file": "production-reconciliation.spec.ts",
+      "line": 513,
+      "title": "integrated owner workflow uses Close Meters, fixed payments and secure review",
+      "status": "skipped",
+      "results": ["skipped"]
+    },
+    {
+      "file": "screenshot-matrix.spec.ts",
+      "line": 61,
+      "title": "screenshots: dashboard",
+      "status": "skipped",
+      "results": ["skipped"]
+    },
+    {
+      "file": "screenshot-matrix.spec.ts",
+      "line": 61,
+      "title": "screenshots: daily-operations",
+      "status": "skipped",
+      "results": ["skipped"]
+    },
+    {
+      "file": "screenshot-matrix.spec.ts",
+      "line": 61,
+      "title": "screenshots: reconciliations",
+      "status": "skipped",
+      "results": ["skipped"]
+    },
+    {
+      "file": "screenshot-matrix.spec.ts",
+      "line": 61,
+      "title": "screenshots: provider-settlements",
+      "status": "skipped",
+      "results": ["skipped"]
+    },
+    {
+      "file": "shell-consistency.spec.ts",
+      "line": 229,
+      "title": "uses one visible account control and one theme-control system",
+      "status": "unexpected",
+      "results": ["timedOut"]
+    },
+    {
+      "file": "shell-consistency.spec.ts",
+      "line": 256,
+      "title": "shared shell chrome passes accessibility checks",
+      "status": "unexpected",
+      "results": ["timedOut"]
+    },
+    {
+      "file": "shell-consistency.spec.ts",
+      "line": 266,
+      "title": "phone keeps page headings in the shared header",
+      "status": "unexpected",
+      "results": ["timedOut"]
+    },
+    {
+      "file": "shell-consistency.spec.ts",
+      "line": 266,
+      "title": "tablet keeps page headings in the shared header",
+      "status": "unexpected",
+      "results": ["timedOut"]
+    },
+    {
+      "file": "smoke.spec.ts",
+      "line": 3,
+      "title": "application foundation renders and exposes liveness health",
+      "status": "unexpected",
+      "results": ["timedOut"]
+    },
+    {
+      "file": "staff-management.spec.ts",
+      "line": 365,
+      "title": "invalid, revoked and expired links fail closed; existing and new users accept once",
+      "status": "unexpected",
+      "results": ["timedOut"]
+    }
+  ],
+  "focusedTestedSha": "26b579ab2f5c6a80ba09e0afae5fd62e17e3aa62",
+  "focusedStats": {
+    "startTime": "2026-10-16T21:06:09.509Z",
+    "duration": 217086.542,
+    "expected": 22,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "note": "Full skipped=5 separates four intentional screenshot skips from one serial not-run case; prior results, not a new run."
+}

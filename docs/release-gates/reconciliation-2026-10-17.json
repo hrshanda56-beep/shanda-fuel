@@ -1,0 +1,61 @@
+{
+  "references": {
+    "99bbe34": "99bbe34cd9e978288f4ffb55fcad9f144e127922",
+    "f3f7de4": "f3f7de48545a1a28aa364d1d0be445101fbf7dfc",
+    "baec0c9": "baec0c9ebacea1b4d6a1a3872b1678de4f120b92",
+    "377879a": "377879ada600344985f1dd07ae95c51ed46af104",
+    "26b579a": "26b579ab2f5c6a80ba09e0afae5fd62e17e3aa62",
+    "d007e51": "d007e51197a03ccaf5eff8e5c63297225c12bb45",
+    "2707c83": "2707c83f9bf32daa648c48fcf3687ddee344d38c",
+    "c17a8f7": "c17a8f721785a07296d3b3ba5c08ec883a040c36",
+    "fdbc20b": "fdbc20b1d7fafd6e17849071c0b165ae89569245"
+  },
+  "mergeBase": "871dcd45c11893149947e7ee3e412505dcc1534b",
+  "exclusiveCommits": [
+    "< f3f7de48545a1a28aa364d1d0be445101fbf7dfc test: synchronize browser release matrix with development navigation",
+    "< 06f827440e8a06d88eb2344532bad6a2c75bda62 test: stabilize operational browser runner and prove session isolation",
+    "> baec0c9ebacea1b4d6a1a3872b1678de4f120b92 docs: record complete matrix resource blocker",
+    "< dc674cc7be0f4340ff5e518cdc77aa4711447b15 test: harden MFA approval session regressions",
+    "< 377879ada600344985f1dd07ae95c51ed46af104 fix: use typed authoritative session lookup",
+    "< 71536227b126468db4c8b496d4bf29f47fe78bca fix: read durable session assurance for authorization",
+    "> 42f82285e54a0bd5d97fd3f31d57b3d251e6d4e2 test: isolate dev compilation and independent E2E scenarios",
+    "< 88c3db6c61ff69a2a39fae74d6036c2c59f97187 test: match report KPI accessible name",
+    "< 7a8897e64aa6fa50567df30a2e9b014eaacbbf30 test: exercise report category filter",
+    "< ff76bdd950d307167a838ad36650a73ab694cee6 docs: record release security and 0030 decisions",
+    "> 956ecb6b1cb1e8eaeade02489a2f6c0b71c2dd60 fix: unblock reconciliation review and stabilize PostgreSQL dev E2E verification",
+    "< 9c87aa87cfb9da303fe7832f5ce86085bf6db32b docs: record verified production migration journal"
+  ],
+  "filesBetweenStartingHeads": [
+    "M\t.gitignore",
+    "M\tdocs/CURRENT_STATUS.md",
+    "D\tdocs/decisions/RELEASE_SECURITY_AND_0030_DECISION_RECORD_2026-10-16.md",
+    "A\tdocs/reports/OPERATIONAL_E2E_REMEDIATION_2026-10-16.md",
+    "M\tnext.config.ts",
+    "M\tplaywright.config.ts",
+    "A\tplaywright.postgres-dev.config.ts",
+    "A\tscripts/e2e/create-disposable-postgres.mjs",
+    "M\tsrc/modules/forecourt/ui/review-screen.tsx",
+    "M\tsrc/modules/identity/authenticated-actor.test.ts",
+    "M\tsrc/modules/identity/authenticated-actor.ts",
+    "M\tsrc/platform/db/migrations/README.md",
+    "M\ttests/e2e/a12-valuation.spec.ts",
+    "A\ttests/e2e/fixtures/development-warmup.ts",
+    "D\ttests/e2e/global-setup.ts",
+    "M\ttests/e2e/management-reporting.spec.ts",
+    "M\ttests/e2e/overview-shell.spec.ts",
+    "M\ttests/e2e/pr144-final-ui.spec.ts",
+    "M\ttests/e2e/product-shell.spec.ts",
+    "M\ttests/e2e/production-reconciliation.spec.ts",
+    "M\ttests/e2e/staff-management.spec.ts",
+    "M\ttests/e2e/ui-polish.spec.ts",
+    "M\ttests/integration/approval-session-boundary.test.ts",
+    "M\ttests/integration/security-step-up.test.ts",
+    "M\ttsconfig.json"
+  ],
+  "latestHandoffDelta": [
+    "M\tdocs/CURRENT_STATUS.md",
+    "A\tdocs/reports/MFA_E2E_HANDOFF_2026-10-16.md",
+    "M\ttests/e2e/production-reconciliation.spec.ts",
+    "M\ttests/e2e/shell-consistency.spec.ts"
+  ]
+}
