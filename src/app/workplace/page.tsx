@@ -42,15 +42,10 @@ export default async function WorkplacePage() {
   }
 
   if (plan.kind === 'continue') redirect('/');
-  const provider = 'CLERK';
 
   return (
     <EntryShell>
-      {plan.kind === 'none' ? (
-        <NoWorkplace provider={provider} />
-      ) : (
-        <WorkplacePicker options={plan.options} />
-      )}
+      {plan.kind === 'none' ? <NoWorkplace /> : <WorkplacePicker options={plan.options} />}
     </EntryShell>
   );
 }

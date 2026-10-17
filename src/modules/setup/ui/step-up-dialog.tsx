@@ -8,12 +8,9 @@ import { Button } from '@/design-system/primitives';
 
 import styles from './setup.module.css';
 
-export type StepUpProvider = 'CLERK';
-
 type DialogProps = {
   open: boolean;
   tenantId: string;
-  provider: StepUpProvider;
   onVerified: () => void;
   onCancel: () => void;
 };

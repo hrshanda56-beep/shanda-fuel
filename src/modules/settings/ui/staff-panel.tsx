@@ -19,7 +19,6 @@ import {
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
-type AuthProviderName = 'CLERK';
 type StaffMember = StaffOverview['activeStaff'][number];
 
 type DeactivationOutcome =
@@ -72,14 +71,7 @@ function initials(name: string) {
   ).toUpperCase();
 }
 
-export function StaffPanel({
-  tenantId,
-  overview,
-}: {
-  tenantId: string;
-  overview: StaffOverview;
-  provider: AuthProviderName;
-}) {
+export function StaffPanel({ tenantId, overview }: { tenantId: string; overview: StaffOverview }) {
   const [filter, setFilter] = useState<StaffFilter>('all');
   const [query, setQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);

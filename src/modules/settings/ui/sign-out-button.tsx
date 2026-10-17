@@ -4,7 +4,7 @@ import { useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-export function SignOutButton(_props: { provider?: 'CLERK' }) {
+export function SignOutButton() {
   const { signOut } = useClerk();
   const router = useRouter();
   const [pending, setPending] = useState(false);

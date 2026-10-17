@@ -71,7 +71,7 @@ export function WorkplacePicker({ options }: { options: readonly WorkplaceOption
 }
 
 /** Signed in, but no active membership grants a workplace. */
-export function NoWorkplace(_props: { provider?: 'CLERK' }) {
+export function NoWorkplace() {
   const { signOut } = useClerk();
   const router = useRouter();
   const [loading, setLoading] = useState(false);

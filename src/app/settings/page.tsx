@@ -59,14 +59,13 @@ export default async function SettingsPage({
   }
   if (failure) throw failure;
   if (!view) throw new Error('Settings data was not loaded');
-  const provider = 'CLERK';
 
   return (
     <AppShell
       userName={view.account.name}
       pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
     >
-      <SettingsWorkspace view={view} provider={provider} />
+      <SettingsWorkspace view={view} />
     </AppShell>
   );
 }
