@@ -4,6 +4,7 @@
  * Platform and module owners contribute reviewed schema files here; A0 owns
  * integration of their single canonical migration sequence.
  */
+export * from './users';
 export * from './auth';
 export * from './a1';
 export * from './a3';

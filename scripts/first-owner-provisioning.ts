@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import postgres, { type Sql, type TransactionSql } from 'postgres';
-import { hashPassword } from 'better-auth/crypto';
 
 import {
   ACCEPTED_PROVISIONING_DB_ROLE,
   assertPrivilegedDirectConnection,
   formatSafeError,
-  readHiddenPassword,
+  validateClerkUserId,
+  verifyExistingClerkUser,
   ProvisioningError,
 } from './first-user-provisioning';
 import { signSecurityEvent } from '../src/platform/security/audit-signing';
@@ -120,7 +120,7 @@ function auditEvent(input: {
       details: {
         actorType: 'SUPPORT',
         initiatedBy: TOOL_NAME,
-        subjectType: 'auth.user',
+        subjectType: 'app.users',
         subjectId: input.userId,
         metadata: {
           operationId: input.operationId,
@@ -206,7 +206,7 @@ async function main(): Promise<void> {
           scopeType: 'TENANT',
           stationCount: OWNER_BOOTSTRAP_STATION_IDS.length,
           writes: plan.writes,
-          password: 'hidden',
+          authProvider: 'CLERK',
         }),
       );
       return;
@@ -220,12 +220,12 @@ async function main(): Promise<void> {
       throw new ProvisioningError('AUDIT_SIGNING_KEY_ID and AUDIT_SIGNING_KEY are required');
     }
 
-    let password = await readHiddenPassword();
-    try {
+    const clerkUserId = validateClerkUserId(process.env.CLERK_USER_ID ?? '');
+    await verifyExistingClerkUser(clerkUserId, OWNER_BOOTSTRAP_EMAIL);
+    {
       const userId = randomUUID();
       const membershipId = randomUUID();
       const operationId = randomUUID();
-      const passwordHash = await hashPassword(password);
       const initiated = auditEvent({
         eventCode: 'ACCESS.PROVISIONING_INITIATED',
         userId,
@@ -252,7 +252,7 @@ async function main(): Promise<void> {
             ${client!.array([...OWNER_BOOTSTRAP_STATION_IDS])}::uuid[],
             ${OWNER_BOOTSTRAP_EMAIL},
             ${OWNER_BOOTSTRAP_DISPLAY_NAME},
-            ${passwordHash},
+            ${clerkUserId},
             ${transaction.json(JSON.parse(JSON.stringify(initiated)))}::jsonb,
             ${transaction.json(JSON.parse(JSON.stringify(completed)))}::jsonb
           ) as value
@@ -276,11 +276,9 @@ async function main(): Promise<void> {
           operationId: result.operationId,
           userId: result.userId,
           membershipId: result.membershipId,
-          password: 'hidden',
+          authProvider: 'CLERK',
         }),
       );
-    } finally {
-      password = '';
     }
   } catch (error) {
     if (client && auditKey) {

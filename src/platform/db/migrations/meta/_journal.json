@@ -211,6 +211,13 @@
       "when": 1791816395000,
       "tag": "0029_staff_number_registry_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0030_clerk_only_application_users",
+      "breakpoints": true
     }
   ]
 }

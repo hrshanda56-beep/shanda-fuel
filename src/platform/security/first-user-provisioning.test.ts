@@ -1,7 +1,4 @@
-import { EventEmitter } from 'node:events';
-
-import { describe, expect, it } from 'vitest';
-import { hashPassword, verifyPassword } from 'better-auth/crypto';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   ACCEPTED_PROVIDER_MEMBERSHIP,
@@ -15,7 +12,8 @@ import {
   formatSafeError,
   parseCli,
   provisioningReason,
-  readHiddenPassword,
+  validateClerkUserId,
+  verifyExistingClerkUser,
   scopeForGrant,
   type IdentitySnapshot,
   type DatabaseRoleSnapshot,
@@ -27,6 +25,11 @@ import {
   provisionFirstUser,
   revokeFirstUserAccess,
 } from '../../../scripts/first-user-provisioning';
+
+const clerkGetUser = vi.hoisted(() => vi.fn());
+vi.mock('@clerk/backend', () => ({
+  createClerkClient: () => ({ users: { getUser: clerkGetUser } }),
+}));
 
 const scopeIds: ScopeIds = {
   tenantId: '00000000-0000-4000-8000-000000000001',
@@ -59,13 +62,13 @@ class FakeRepository implements ProvisioningRepository {
   readonly nowValue = new Date('2026-10-04T10:00:00.000Z');
   readonly writes = {
     users: [] as string[],
-    accounts: [] as string[],
+    clerkIdentities: [] as string[],
     memberships: [] as string[],
     grants: [] as string[],
     events: [] as string[],
     contexts: [] as string[],
     revokedGrants: [] as string[],
-    revokedSessions: [] as string[],
+    revokedAssurance: [] as string[],
     disabledMemberships: [] as string[],
   };
   availablePermissions = READ_ONLY_GRANT_PLAN.map((grant) => grant.permissionCode);
@@ -102,8 +105,8 @@ class FakeRepository implements ProvisioningRepository {
     this.writes.users.push(input.id);
   }
 
-  async insertCredentialAccount(input: { userId: string }): Promise<void> {
-    this.writes.accounts.push(input.userId);
+  async insertClerkIdentity(input: { userId: string }): Promise<void> {
+    this.writes.clerkIdentities.push(input.userId);
   }
 
   async insertMembership(input: { id: string }): Promise<void> {
@@ -159,8 +162,8 @@ class FakeRepository implements ProvisioningRepository {
     return before - this.unrevokedGrants.length;
   }
 
-  async revokeSessions(userId: string): Promise<number> {
-    this.writes.revokedSessions.push(userId);
+  async revokeAssurance(userId: string): Promise<number> {
+    this.writes.revokedAssurance.push(userId);
     return 1;
   }
 
@@ -211,7 +214,7 @@ function existingIdentity(status: string = 'ACTIVE'): IdentitySnapshot {
     id: '00000000-0000-4000-8000-000000000010',
     name: 'First Production Owner',
     email: 'owner@example.com',
-    accounts: [],
+    providerIdentities: [],
     memberships: [
       {
         id: '00000000-0000-4000-8000-000000000011',
@@ -295,23 +298,18 @@ async function runWithRollback<T>(
 }
 
 describe('first production user provisioning', () => {
-  it('creates only the explicit read-only grant plan and never exposes the password in audit data', async () => {
+  it('creates only the explicit read-only grant plan with a Clerk mapping', async () => {
     const repository = new FakeRepository();
-    const password = 'a test password that is never logged';
-    let hashedInput = '';
+    const clerkUserId = 'user_existingOwner';
 
     const result = await provisionFirstUser({
       repository,
       request: request(),
-      password,
+      clerkUserId,
       auditKey,
-      hasher: async (value) => {
-        hashedInput = value;
-        return 'better-auth-password-hash';
-      },
     });
 
-    expect(hashedInput).toBe(password);
+    expect(repository.writes.clerkIdentities).toHaveLength(1);
     expect(result.permissionCodes).toEqual(
       READ_ONLY_GRANT_PLAN.map((grant) => grant.permissionCode),
     );
@@ -320,7 +318,7 @@ describe('first production user provisioning', () => {
     );
     expect(repository.writes.grants).toHaveLength(READ_ONLY_GRANT_PLAN.length);
     expect(repository.writes.events).toHaveLength(2);
-    expect(JSON.stringify(repository.writes)).not.toContain(password);
+    expect(JSON.stringify(repository.writes)).not.toContain('password');
     expect(
       READ_ONLY_GRANT_PLAN.every(
         (grant) =>
@@ -342,10 +340,15 @@ describe('first production user provisioning', () => {
     repository.existing = existingIdentity();
 
     await expect(
-      provisionFirstUser({ repository, request: request(), password: 'a test password', auditKey }),
+      provisionFirstUser({
+        repository,
+        request: request(),
+        clerkUserId: 'user_existingOwner',
+        auditKey,
+      }),
     ).rejects.toBeInstanceOf(DuplicateProvisioningError);
     expect(repository.writes.users).toHaveLength(0);
-    expect(repository.writes.accounts).toHaveLength(0);
+    expect(repository.writes.clerkIdentities).toHaveLength(0);
     expect(repository.writes.memberships).toHaveLength(0);
     expect(repository.writes.grants).toHaveLength(0);
   });
@@ -371,14 +374,13 @@ describe('first production user provisioning', () => {
         provisionFirstUser({
           repository,
           request: request(),
-          password: 'a test password',
+          clerkUserId: 'user_existingOwner',
           auditKey,
-          hasher: async () => 'hash',
         }),
       ),
     ).rejects.toThrow('simulated grant failure');
     expect(repository.writes.users).toHaveLength(0);
-    expect(repository.writes.accounts).toHaveLength(0);
+    expect(repository.writes.clerkIdentities).toHaveLength(0);
     expect(repository.writes.memberships).toHaveLength(0);
     expect(repository.writes.grants).toHaveLength(0);
     expect(repository.writes.events).toHaveLength(0);
@@ -390,7 +392,7 @@ describe('first production user provisioning', () => {
 
     expect(plan.grants).toEqual(READ_ONLY_GRANT_PLAN);
     expect(repository.writes.users).toHaveLength(0);
-    expect(repository.writes.accounts).toHaveLength(0);
+    expect(repository.writes.clerkIdentities).toHaveLength(0);
     expect(repository.writes.memberships).toHaveLength(0);
     expect(repository.writes.grants).toHaveLength(0);
     expect(repository.writes.events).toHaveLength(0);
@@ -420,12 +422,12 @@ describe('first production user provisioning', () => {
 
     expect(first).toMatchObject({
       revokedGrantCount: READ_ONLY_GRANT_PLAN.length,
-      revokedSessionCount: 1,
+      revokedAssuranceCount: 1,
       membershipDisabled: true,
     });
     expect(second).toEqual({ status: 'already-disabled' });
     expect(repository.writes.revokedGrants).toHaveLength(READ_ONLY_GRANT_PLAN.length);
-    expect(repository.writes.revokedSessions).toHaveLength(1);
+    expect(repository.writes.revokedAssurance).toHaveLength(1);
     expect(repository.writes.disabledMemberships).toHaveLength(1);
     expect(repository.writes.events).toHaveLength(1);
     expect(repository.unrevokedGrants).toHaveLength(0);
@@ -487,7 +489,7 @@ describe('first production user provisioning', () => {
         auditKey,
       }),
     ).rejects.toThrow('memberships outside');
-    expect(repository.writes.revokedSessions).toHaveLength(0);
+    expect(repository.writes.revokedAssurance).toHaveLength(0);
     expect(repository.writes.revokedGrants).toHaveLength(0);
   });
 
@@ -597,49 +599,7 @@ describe('first production user provisioning', () => {
     ).toThrow('function privilege');
   });
 
-  it('reads a password with raw TTY input without echoing it', async () => {
-    class FakeInput extends EventEmitter {
-      isTTY = true;
-      rawMode = false;
-      paused = false;
-
-      setRawMode(mode: boolean): void {
-        this.rawMode = mode;
-      }
-
-      resume(): void {}
-
-      pause(): void {
-        this.paused = true;
-      }
-    }
-    class FakeOutput {
-      isTTY = true;
-      chunks: string[] = [];
-
-      write(chunk: string | Uint8Array): boolean {
-        this.chunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
-        return true;
-      }
-    }
-
-    const input = new FakeInput();
-    const output = new FakeOutput();
-    const passwordPromise = readHiddenPassword(input as never, output as never);
-    input.emit('data', Buffer.from('a secret password\r\n'));
-    const password = await passwordPromise;
-
-    expect(password).toBe('a secret password');
-    expect(output.chunks.join('')).toBe('Password (hidden): \n');
-    expect(output.chunks.join('')).not.toContain(password);
-    expect(input.rawMode).toBe(false);
-    expect(input.paused).toBe(true);
-  });
-
-  it('fails closed without a TTY and redacts non-tool errors', () => {
-    expect(() => readHiddenPassword({ isTTY: false } as never, { isTTY: false } as never)).toThrow(
-      'interactive local TTY',
-    );
+  it('redacts non-tool errors', () => {
     expect(formatSafeError(new Error('postgres://user:secret@example/db'))).not.toContain('secret');
     expect(formatSafeError(new Error('postgres://user:secret@example/db'))).toContain(
       'Provisioning tool failed',
@@ -687,11 +647,38 @@ describe('first production user provisioning', () => {
     ).toBe('dry-run');
   });
 
-  it('preserves Better Auth credential hashing and verification semantics', async () => {
-    const password = 'a test password that is never logged';
-    const hash = await hashPassword(password);
-    expect(hash).not.toBe(password);
-    expect(await verifyPassword({ hash, password })).toBe(true);
-    expect(await verifyPassword({ hash, password: `${password}!` })).toBe(false);
+  it('rejects malformed Clerk IDs before writes', async () => {
+    const repository = new FakeRepository();
+    for (const clerkUserId of ['', 'credential', 'user_bad id', temporaryUserId]) {
+      expect(() => validateClerkUserId(clerkUserId)).toThrow('existing Clerk user ID');
+      await expect(
+        provisionFirstUser({
+          repository,
+          request: request(),
+          clerkUserId,
+          auditKey,
+        }),
+      ).rejects.toThrow('existing Clerk user ID');
+    }
+    expect(repository.writes.users).toHaveLength(0);
+  });
+
+  it('verifies an existing Clerk user with a verified matching email using only getUser', async () => {
+    clerkGetUser.mockResolvedValue({
+      emailAddresses: [{ emailAddress: 'OWNER@example.com', verification: { status: 'verified' } }],
+    });
+    await expect(
+      verifyExistingClerkUser('user_existingOwner', 'owner@example.com'),
+    ).resolves.toBeUndefined();
+    expect(clerkGetUser).toHaveBeenCalledWith('user_existingOwner');
+    for (const address of [
+      { emailAddress: 'someoneelse@example.com', verification: { status: 'verified' } },
+      { emailAddress: 'owner@example.com', verification: { status: 'unverified' } },
+    ]) {
+      clerkGetUser.mockResolvedValue({ emailAddresses: [address] });
+      await expect(
+        verifyExistingClerkUser('user_existingOwner', 'owner@example.com'),
+      ).rejects.toThrow('verified provisioning email');
+    }
   });
 });

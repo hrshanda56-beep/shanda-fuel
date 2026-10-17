@@ -26,7 +26,7 @@ vi.mock('../../platform/auth/provider', () => ({
   revokeClerkUserSessions: vi.fn(),
 }));
 
-import { deactivateStaffMemberFromRequest } from './commands';
+import { deactivateStaffMemberFromRequest, signUpFromInvitation } from './commands';
 
 const tenantId = '10000000-0000-4000-8000-000000000001';
 const ownerMembershipId = '10000000-0000-4000-8000-000000000021';
@@ -92,6 +92,13 @@ beforeEach(() => {
 });
 
 describe('Clerk staff deactivation revocation contract', () => {
+  it('rejects local credential signup before database access', async () => {
+    await expect(signUpFromInvitation({ token: 'unused', password: 'unused' })).rejects.toThrow(
+      'Create your account with Clerk',
+    );
+    expect(transactionExecute).not.toHaveBeenCalled();
+  });
+
   it('returns REVOKED only after complete provider revocation', async () => {
     setupTransaction('ACTIVE', 'clerk_user_redacted');
     const revokeClerkSessions = vi.fn().mockResolvedValue({
@@ -102,7 +109,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({
@@ -118,7 +124,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({
@@ -134,7 +139,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({
@@ -153,7 +157,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({

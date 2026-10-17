@@ -10,7 +10,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { authUser } from './auth';
+import { users } from './users';
 import { legalEntities, memberships, roleDefinitions, stations, tenants } from './a1';
 import { appSchema } from './namespaces';
 
@@ -29,7 +29,7 @@ export const staffNumberRegistry = appSchema.table(
     staffNumber: text('staff_number').notNull(),
     normalizedStaffNumber: text('normalized_staff_number').notNull(),
     reservedInvitationId: uuid('reserved_invitation_id'),
-    internalUserId: uuid('internal_user_id').references(() => authUser.id, {
+    internalUserId: uuid('internal_user_id').references(() => users.id, {
       onDelete: 'restrict',
     }),
     status: text('status').notNull().default('RESERVED'),
@@ -155,7 +155,7 @@ export const staffInvitations = appSchema.table(
     }),
     foreignKey({
       columns: [table.createdByUserId],
-      foreignColumns: [authUser.id],
+      foreignColumns: [users.id],
       name: 'staff_invitations_created_by_user_fk',
     }),
     foreignKey({
@@ -165,12 +165,12 @@ export const staffInvitations = appSchema.table(
     }),
     foreignKey({
       columns: [table.revokedByUserId],
-      foreignColumns: [authUser.id],
+      foreignColumns: [users.id],
       name: 'staff_invitations_revoked_by_user_fk',
     }),
     foreignKey({
       columns: [table.acceptedByUserId],
-      foreignColumns: [authUser.id],
+      foreignColumns: [users.id],
       name: 'staff_invitations_accepted_by_user_fk',
     }),
     foreignKey({

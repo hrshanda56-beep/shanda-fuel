@@ -164,7 +164,7 @@ async function readOverview(transaction: StaffTransaction): Promise<{
         else concat('Station ', assignment.station_id::text)
       end) filter (where assignment.id is not null), '{}') as scope_labels
     from app.memberships membership
-    join auth."user" identity on identity.id = membership.identity_id
+    join app.users identity on identity.id = membership.identity_id
     left join app.membership_role_assignments assignment
       on assignment.tenant_id = membership.tenant_id
      and assignment.membership_id = membership.id

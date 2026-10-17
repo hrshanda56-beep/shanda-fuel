@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
-import { authUser } from './auth';
+import { users } from './users';
 import { tenants } from './a1';
 import { appSchema } from './namespaces';
 
@@ -16,7 +16,7 @@ export const authIdentities = appSchema.table(
     id: id(),
     internalUserId: uuid('internal_user_id')
       .notNull()
-      .references(() => authUser.id, { onDelete: 'restrict' }),
+      .references(() => users.id, { onDelete: 'restrict' }),
     provider: text('provider').notNull(),
     providerUserId: text('provider_user_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -39,7 +39,7 @@ export const authSessionAssurance = appSchema.table(
     providerSessionId: text('provider_session_id').notNull(),
     internalUserId: uuid('internal_user_id')
       .notNull()
-      .references(() => authUser.id, { onDelete: 'cascade' }),
+      .references(() => users.id, { onDelete: 'cascade' }),
     tenantId: uuid('tenant_id')
       .notNull()
       .references(() => tenants.id, { onDelete: 'restrict' }),

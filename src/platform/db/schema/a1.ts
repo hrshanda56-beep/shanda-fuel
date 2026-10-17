@@ -11,7 +11,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { authUser } from './auth';
+import { users } from './users';
 import { appSchema, platformSchema } from './namespaces';
 
 const generatedUuid = () =>
@@ -92,7 +92,7 @@ export const memberships = appSchema.table(
       .references(() => tenants.id),
     identityId: uuid('identity_id')
       .notNull()
-      .references(() => authUser.id),
+      .references(() => users.id),
     status: text('status').notNull().default('ACTIVE'),
     disabledAt: timestamp('disabled_at'),
     suspendedAt: timestamp('suspended_at'),
