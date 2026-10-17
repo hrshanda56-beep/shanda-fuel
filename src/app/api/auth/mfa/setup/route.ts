@@ -1,75 +1,9 @@
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-import { requireAuthenticatedActor } from '../../../../../modules/identity';
-import { getAuth } from '../../../../../platform/auth';
-import { getAuthProviderName } from '../../../../../platform/auth/provider';
-import { apiErrorResponse, withRequestObservability } from '../../../../../platform/observability';
-import { AUTH_RATE_LIMIT, withPersistentRateLimit } from '../../../../../platform/security';
-
+// Authentication and MFA enrollment are managed by Clerk.
 export const runtime = 'nodejs';
 
-const startSchema = z.object({
-  password: z.string().min(1).max(256),
-});
-
-function jsonResponse(body: unknown, status: number): Response {
-  return NextResponse.json(body, {
-    status,
-    headers: { 'Cache-Control': 'no-store' },
-  });
+function retiredEndpoint(_request?: Request): Response {
+  return new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
 }
 
-export const GET = withRequestObservability(async (request: Request): Promise<Response> => {
-  if (getAuthProviderName() === 'CLERK') return new Response(null, { status: 404 });
-  try {
-    await requireAuthenticatedActor(request);
-    const result = await (
-      await getAuth()
-    ).api.getSession({
-      headers: request.headers,
-      query: { disableCookieCache: true },
-    });
-    const user = result?.user as { twoFactorEnabled?: boolean } | undefined;
-    return jsonResponse({ enabled: user?.twoFactorEnabled === true }, 200);
-  } catch (error) {
-    return apiErrorResponse(request, error, {
-      includeDetails: true,
-      headers: { 'Cache-Control': 'no-store' },
-    });
-  }
-});
-
-export const POST = withRequestObservability(
-  withPersistentRateLimit(async (request: Request): Promise<Response> => {
-    if (getAuthProviderName() === 'CLERK') return new Response(null, { status: 404 });
-    try {
-      await requireAuthenticatedActor(request);
-      const input = startSchema.parse(await request.json());
-      const result = await (
-        await getAuth()
-      ).api.enableTwoFactor({
-        headers: request.headers,
-        body: { password: input.password, method: 'totp', issuer: 'Shanda Fuel' },
-      });
-      if (result.method !== 'totp') {
-        return jsonResponse({ error: 'MFA_METHOD_UNAVAILABLE' }, 409);
-      }
-      return jsonResponse(
-        {
-          status: 'pending',
-          method: result.method,
-          totpURI: result.totpURI,
-          backupCodes: result.backupCodes,
-        },
-        200,
-      );
-    } catch (error) {
-      return apiErrorResponse(request, error, {
-        includeDetails: true,
-        unknownBody: { error: 'MFA_SETUP_FAILED' },
-        unknownStatus: 400,
-        headers: { 'Cache-Control': 'no-store' },
-      });
-    }
-  }, AUTH_RATE_LIMIT),
-);
+export const GET = retiredEndpoint;
+export const POST = retiredEndpoint;

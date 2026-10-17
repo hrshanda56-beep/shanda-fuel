@@ -64,10 +64,17 @@ function parse(value: string | undefined, now = Date.now()): SignedToken | null 
     if (
       (payload.action !== CLERK_STEP_UP_ACTION &&
         payload.action !== CLERK_DEACTIVATE_STAFF_ACTION) ||
+      (payload.level !== 'strict' && payload.level !== 'strict_mfa') ||
+      !payload.providerSessionId ||
+      !payload.internalUserId ||
+      !payload.tenantId ||
+      !payload.nonce ||
       !Number.isSafeInteger(payload.issuedAt) ||
       !Number.isSafeInteger(payload.expiresAt) ||
       payload.expiresAt <= now ||
-      payload.issuedAt > now
+      payload.issuedAt > now ||
+      payload.expiresAt <= payload.issuedAt ||
+      payload.expiresAt - payload.issuedAt > TOKEN_TTL_MS
     ) {
       return null;
     }

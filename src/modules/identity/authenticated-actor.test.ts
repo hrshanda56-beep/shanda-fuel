@@ -1,90 +1,77 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+const mocks = vi.hoisted(() => ({ resolve: vi.fn(), revoke: vi.fn() }));
+vi.mock('../../platform/auth/provider', () => ({
+  resolveClerkSession: mocks.resolve,
+  revokeClerkUserSessions: mocks.revoke,
+}));
 import {
   requireAuthenticatedActor,
-  revokeIdentitySessions,
   resolveAuthenticatedActor,
-  type AuthenticatedActorContext,
+  revokeIdentitySessions,
 } from './authenticated-actor';
-
-const request = new Request('https://fuel.example.test/app/home');
-const actor: AuthenticatedActorContext = {
-  identityId: '11111111-1111-4111-8111-111111111111',
-  session: {
-    sessionId: '22222222-2222-4222-8222-222222222222',
-    userId: '11111111-1111-4111-8111-111111111111',
-    membershipId: '33333333-3333-4333-8333-333333333333',
-    expiresAt: new Date('2026-09-20T11:00:00.000Z'),
-  },
+const request = new Request('https://fuel.test');
+const now = new Date('2026-10-17T10:00:00Z');
+const session = {
+  providerUserId: 'user_1',
+  internalUserId: 'internal_1',
+  providerSessionId: 'sess_1',
+  expiresAt: new Date('2026-10-17T11:00:00Z'),
 };
-
-describe('authenticated actor resolver', () => {
-  it('rejects an absent or expired Better Auth session result', async () => {
-    await expect(requireAuthenticatedActor(request, async () => null)).rejects.toThrow(
-      'Authentication is required',
-    );
-    await expect(
-      requireAuthenticatedActor(
-        request,
-        async () => ({
-          ...actor,
-          session: { ...actor.session, expiresAt: new Date('2026-09-20T09:00:00.000Z') },
-        }),
-        new Date('2026-09-20T10:00:00.000Z'),
-      ),
-    ).rejects.toThrow('no longer active');
-  });
-
-  it('returns the validated actor context', async () => {
-    await expect(
-      requireAuthenticatedActor(request, async () => actor, new Date('2026-09-20T10:00:00.000Z')),
-    ).resolves.toEqual(actor);
-  });
-
-  it('uses the Better Auth server API and rejects mismatched identity/session claims', async () => {
-    const getSession = async () => ({
-      user: { id: actor.identityId },
-      session: {
-        id: actor.session.sessionId,
-        userId: actor.identityId,
-        expiresAt: actor.session.expiresAt,
-      },
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.resolve.mockResolvedValue(session);
+});
+describe('Clerk actor resolution and compromise revocation', () => {
+  it('requires authentication', async () => {
+    mocks.resolve.mockResolvedValue(null);
+    expect(await resolveAuthenticatedActor(request, now)).toBeNull();
+    await expect(requireAuthenticatedActor(request)).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
     });
-    const resolved = await resolveAuthenticatedActor(
-      request,
-      { api: { getSession } },
-      new Date('2026-09-20T10:00:00.000Z'),
-    );
-    expect(resolved?.identityId).toBe(actor.identityId);
-
-    await expect(
-      resolveAuthenticatedActor(
-        request,
-        {
-          api: {
-            getSession: async () => ({
-              user: { id: actor.identityId },
-              session: {
-                id: actor.session.sessionId,
-                userId: '66666666-6666-4666-8666-666666666666',
-                expiresAt: actor.session.expiresAt,
-              },
-            }),
-          },
-        },
-        new Date('2026-09-20T10:00:00.000Z'),
-      ),
-    ).rejects.toThrow('invalid');
   });
-
-  it('can revoke all sessions through Better Auth for identity compromise', async () => {
-    let revoked = false;
-    await revokeIdentitySessions(request, {
-      api: {
-        revokeSessions: async () => {
-          revoked = true;
-        },
-      },
+  it('maps Clerk identity and rejects expired sessions', async () => {
+    expect(await resolveAuthenticatedActor(request, now)).toMatchObject({
+      identityId: 'internal_1',
+      session: { sessionId: 'sess_1', userId: 'internal_1' },
     });
-    expect(revoked).toBe(true);
+    await expect(
+      resolveAuthenticatedActor(request, new Date('2026-10-17T12:00:00Z')),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+  });
+  it('invalidates stale assurance including action and tenant binding', async () => {
+    mocks.resolve.mockResolvedValue({
+      ...session,
+      strongAuthenticationVerified: true,
+      strongAuthenticatedAt: now,
+      strongAuthenticationExpiresAt: now,
+      stepUpExpiresAt: now,
+      stepUpLevel: 1,
+      stepUpTenantId: 'tenant_1',
+      stepUpAction: 'LOCK_BUSINESS_DAY',
+    });
+    const actor = await resolveAuthenticatedActor(request, now);
+    expect(actor?.session.strongAuthenticationVerified).toBe(false);
+    expect(actor?.session.stepUpAction).toBeUndefined();
+    expect(actor?.session.stepUpTenantId).toBeUndefined();
+  });
+  it('revokes the provider identity sessions', async () => {
+    mocks.revoke.mockResolvedValue({ complete: true });
+    await revokeIdentitySessions(request);
+    expect(mocks.revoke).toHaveBeenCalledWith('user_1');
+  });
+  it('fails when revocation is incomplete or unavailable', async () => {
+    mocks.revoke.mockResolvedValue({ complete: false });
+    await expect(revokeIdentitySessions(request)).rejects.toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+    });
+    mocks.revoke.mockRejectedValue(new Error('unavailable'));
+    await expect(revokeIdentitySessions(request)).rejects.toThrow('unavailable');
+  });
+  it('does not claim anonymous sessions were revoked', async () => {
+    mocks.resolve.mockResolvedValue(null);
+    await expect(revokeIdentitySessions(request)).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(mocks.revoke).not.toHaveBeenCalled();
   });
 });
