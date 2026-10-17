@@ -5,7 +5,6 @@ import { AccessDeniedState } from '@/design-system/primitives';
 import { PageContainer } from '@/design-system/layout';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { AppError } from '@/platform/errors';
-import { getAuthProviderName } from '@/platform/auth/provider';
 import { resolveSettings } from '@/modules/settings';
 import type { SettingsView } from '@/modules/settings';
 import { SettingsWorkspace } from '@/modules/settings/ui/settings-workspace';
@@ -60,7 +59,7 @@ export default async function SettingsPage({
   }
   if (failure) throw failure;
   if (!view) throw new Error('Settings data was not loaded');
-  const provider = getAuthProviderName();
+  const provider = 'CLERK';
 
   return (
     <AppShell

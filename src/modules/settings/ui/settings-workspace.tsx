@@ -15,7 +15,7 @@ import styles from './settings-workspace.module.css';
 
 type Tab =
   'organisation' | 'companies' | 'stations' | 'readiness' | 'payments' | 'staff' | 'account';
-type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
+type AuthProviderName = 'CLERK';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },

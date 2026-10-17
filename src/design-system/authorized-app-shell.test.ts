@@ -14,7 +14,6 @@ vi.mock('./navigation-projection', () => ({ emptyNavigationProjection: [] }));
 vi.mock('./navigation-server', () => ({
   getServerShellAccess: mocks.getServerShellAccess,
 }));
-vi.mock('@/platform/auth/provider', () => ({ getAuthProviderName: () => 'BETTER_AUTH' }));
 vi.mock('./entry/entry-shell', () => ({ EntryShell: () => null }));
 vi.mock('./entry/workplace-views', () => ({ NoWorkplace: () => null }));
 
@@ -40,7 +39,7 @@ describe('authorized app shell request-local reuse', () => {
 
     expect(mocks.getServerShellAccess).not.toHaveBeenCalled();
     expect(result).toMatchObject({
-      props: { navigationProjection: [], authProvider: 'BETTER_AUTH' },
+      props: { navigationProjection: [], authProvider: 'CLERK' },
     });
   });
 

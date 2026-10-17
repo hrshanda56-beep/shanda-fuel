@@ -3,10 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { authClient } from '@/platform/auth/client';
-
 import { Button } from '../primitives';
 import { JoinWorkspaceForm } from './invite-views';
+import { ClerkLoginForm } from './clerk-login-form';
 
 async function postJson(path: string, body: unknown): Promise<boolean> {
   const response = await fetch(path, {
@@ -27,7 +26,9 @@ export function NewInviteFlow({
   organisationName: string;
   email: string;
 }) {
-  const router = useRouter();
+  const [created, setCreated] = useState(false);
+
+  if (created) return <ClerkLoginForm next={`/invite/${token}`} invited />;
 
   return (
     <JoinWorkspaceForm
@@ -39,13 +40,9 @@ export function NewInviteFlow({
         ) {
           return { ok: false };
         }
-        const signIn = await authClient.signIn.email({ email, password });
-        if (signIn.error) return { ok: false };
-        if (!(await postJson(`/api/invite/${encodeURIComponent(token)}/accept`, { token }))) {
-          return { ok: false };
-        }
-        router.push('/');
-        router.refresh();
+        // The server creates the invited Clerk identity. Authenticate it before
+        // returning to this invitation for the server-authorized acceptance.
+        setCreated(true);
         return { ok: true };
       }}
     />

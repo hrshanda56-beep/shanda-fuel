@@ -19,7 +19,7 @@ import {
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
-type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
+type AuthProviderName = 'CLERK';
 type StaffMember = StaffOverview['activeStaff'][number];
 
 type DeactivationOutcome =
@@ -75,7 +75,6 @@ function initials(name: string) {
 export function StaffPanel({
   tenantId,
   overview,
-  provider,
 }: {
   tenantId: string;
   overview: StaffOverview;
@@ -238,10 +237,7 @@ export function StaffPanel({
       if (response.ok && body?.sessionsRevoked === true) {
         setDeactivationOutcome({
           kind: 'success',
-          message:
-            provider === 'CLERK'
-              ? 'Staff member deactivated and Clerk sessions revoked.'
-              : 'Staff member deactivated and sessions revoked.',
+          message: 'Staff member deactivated and Clerk sessions revoked.',
         });
         return;
       }
@@ -780,14 +776,8 @@ export function StaffPanel({
               >
                 {deactivationOutcome.message}
               </p>
-            ) : provider === 'CLERK' ? (
-              <ClerkStaffDeactivationStepUp
-                tenantId={tenantId}
-                busy={deactivationBusy}
-                onVerified={submitDeactivation}
-              />
             ) : (
-              <BetterAuthStaffDeactivationStepUp
+              <ClerkStaffDeactivationStepUp
                 tenantId={tenantId}
                 busy={deactivationBusy}
                 onVerified={submitDeactivation}
@@ -869,94 +859,5 @@ function ClerkStaffDeactivationStepUp({
         </p>
       ) : null}
     </div>
-  );
-}
-
-function BetterAuthStaffDeactivationStepUp({
-  tenantId,
-  busy,
-  onVerified,
-}: {
-  tenantId: string;
-  busy: boolean;
-  onVerified: () => Promise<void>;
-}) {
-  const [password, setPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
-  const [stepUpBusy, setStepUpBusy] = useState(false);
-  const [stepUpError, setStepUpError] = useState<string>();
-
-  async function verify(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStepUpBusy(true);
-    setStepUpError(undefined);
-    try {
-      const response = await fetch('/api/auth/step-up', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          tenantId,
-          action: 'DEACTIVATE_STAFF_MEMBER',
-          password,
-          totpCode,
-        }),
-      });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) throw new Error(body.message ?? 'Step-up verification failed.');
-      setPassword('');
-      setTotpCode('');
-      await onVerified();
-    } catch (error) {
-      setStepUpError(error instanceof Error ? error.message : 'Step-up verification failed.');
-    } finally {
-      setStepUpBusy(false);
-    }
-  }
-
-  return (
-    <form
-      className="step-up-form"
-      onSubmit={(event) => void verify(event)}
-      aria-describedby="staff-deactivation-step-up-help"
-    >
-      <p className="semantic-note" id="staff-deactivation-step-up-help">
-        Confirm your Better Auth password and current authenticator code before the deactivation
-        command is submitted.
-      </p>
-      <label htmlFor="staff-deactivation-password">Current password</label>
-      <input
-        id="staff-deactivation-password"
-        type="password"
-        autoComplete="current-password"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        required
-        disabled={busy || stepUpBusy}
-      />
-      <label htmlFor="staff-deactivation-totp">Authenticator code</label>
-      <input
-        id="staff-deactivation-totp"
-        inputMode="numeric"
-        pattern="[0-9]{6}"
-        autoComplete="one-time-code"
-        value={totpCode}
-        onChange={(event) => setTotpCode(event.target.value)}
-        required
-        disabled={busy || stepUpBusy}
-      />
-      <Button
-        type="submit"
-        variant="danger"
-        disabled={busy || stepUpBusy || password.length === 0 || totpCode.length !== 6}
-        loading={stepUpBusy}
-      >
-        Verify and deactivate
-      </Button>
-      {stepUpError ? (
-        <p className="state state-error" role="alert">
-          {stepUpError}
-        </p>
-      ) : null}
-    </form>
   );
 }

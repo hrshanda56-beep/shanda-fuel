@@ -1,6 +1,7 @@
 'use client';
 
 import { useSignIn } from '@clerk/nextjs/legacy';
+import { SignIn } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
 
@@ -8,12 +9,13 @@ import { Button, Field } from '../primitives';
 import { PasswordField } from './password-field';
 import { safePostSignInPath } from './entry-logic';
 
-export function ClerkLoginForm({ next }: { next?: string }) {
+export function ClerkLoginForm({ next, invited = false }: { next?: string; invited?: boolean }) {
   const router = useRouter();
   const { isLoaded, signIn, setActive } = useSignIn();
   const passwordRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -26,7 +28,7 @@ export function ClerkLoginForm({ next }: { next?: string }) {
     try {
       const result = await signIn.create({ identifier, password });
       if (result.status !== 'complete' || !result.createdSessionId) {
-        setError('Additional verification is required to continue.');
+        setVerificationRequired(true);
         return;
       }
       await setActive({ session: result.createdSessionId });
@@ -43,10 +45,16 @@ export function ClerkLoginForm({ next }: { next?: string }) {
     }
   }
 
+  // Clerk completes MFA, password resets and other provider challenges before
+  // redirecting back to the invitation or authorized workplace selection.
+  if (verificationRequired) {
+    return <SignIn routing="hash" forceRedirectUrl={safePostSignInPath(next)} />;
+  }
+
   return (
     <section aria-labelledby="entry-title">
       <header className="entry-heading">
-        <h1 id="entry-title">Welcome back</h1>
+        <h1 id="entry-title">{invited ? 'Sign in to join your workspace' : 'Welcome back'}</h1>
         <p>Sign in with your work email or Staff Number.</p>
       </header>
       <form className="entry-form" aria-labelledby="entry-title" onSubmit={submit}>

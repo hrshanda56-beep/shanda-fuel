@@ -1,34 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
+import { describe, expect, it } from 'vitest';
 import { hasProviderSessionCookie } from './session-cookie';
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-describe('provider session cookie detection', () => {
-  it('recognizes Clerk sessions without accepting the Better Auth cookie', () => {
-    vi.stubEnv('AUTH_PROVIDER', 'CLERK');
-    vi.stubEnv('CLERK_SECRET_KEY', 'sk_test_clerk_fixture');
-    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_test_clerk_fixture');
-    expect(hasProviderSessionCookie(new Headers({ cookie: '__session=opaque' }))).toBe(true);
-    expect(hasProviderSessionCookie(new Headers({ cookie: 'session_token=opaque' }))).toBe(false);
+describe('Clerk session cookie detection', () => {
+  it('recognizes the exact Clerk cookie among other cookies', () => {
+    expect(hasProviderSessionCookie(new Headers({ cookie: 'theme=dark; __session=opaque' }))).toBe(
+      true,
+    );
   });
 
-  it('recognizes Better Auth sessions without accepting the Clerk cookie', () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-    expect(
-      hasProviderSessionCookie(new Headers({ cookie: 'shanda-fuel.session_token=opaque' })),
-    ).toBe(true);
-    expect(
-      hasProviderSessionCookie(
-        new Headers({ cookie: '__Secure-shanda-fuel.session_token=opaque' }),
-      ),
-    ).toBe(true);
-    expect(hasProviderSessionCookie(new Headers({ cookie: 'session_token=opaque' }))).toBe(false);
-    expect(
-      hasProviderSessionCookie(new Headers({ cookie: 'shanda-fuel.session_token_extra=opaque' })),
-    ).toBe(false);
-    expect(hasProviderSessionCookie(new Headers({ cookie: '__session=opaque' }))).toBe(false);
+  it.each([
+    '',
+    'shanda-fuel.session_token=opaque',
+    '__Secure-shanda-fuel.session_token=opaque',
+    'session_token=opaque',
+    '__session_extra=opaque',
+  ])('rejects absent or non-Clerk cookies: %s', (cookie) => {
+    expect(hasProviderSessionCookie(new Headers({ cookie }))).toBe(false);
   });
 });
