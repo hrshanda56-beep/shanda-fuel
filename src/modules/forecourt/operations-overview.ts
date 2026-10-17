@@ -387,7 +387,7 @@ async function loadOperationsOverview(
                e.details->>'subjectId' as "subjectId",
                e.details->>'reason' as reason
         from platform.security_events e
-        left join auth."user" u on u.id=e.actor_id
+        left join app.users u on u.id=e.actor_id
         where e.tenant_id=${context.tenantId}
           and (
             e.details->>'subjectId' in (${subjectIdsFilter})

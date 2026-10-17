@@ -6,7 +6,7 @@ afterEach(() => {
 });
 
 function getServerEnv(input: Record<string, unknown> = {}) {
-  return parseServerEnv({ AUTH_PROVIDER: 'BETTER_AUTH', ...input });
+  return parseServerEnv(input);
 }
 
 describe('server environment validation', () => {
@@ -15,12 +15,10 @@ describe('server environment validation', () => {
       getServerEnv({
         APP_ENV: 'local',
         APP_URL: 'http://localhost:3000',
-        AUTH_PROVIDER: 'BETTER_AUTH',
       }),
     ).toMatchObject({
       APP_ENV: 'local',
       APP_URL: 'http://localhost:3000',
-      AUTH_PROVIDER: 'BETTER_AUTH',
       REQUIRE_LOGIN_MFA: true,
       REQUIRE_PRIVILEGED_STEP_UP: true,
     });
@@ -59,9 +57,9 @@ describe('server environment validation', () => {
   const validR2 = {
     APP_ENV: 'staging',
     APP_URL: 'https://staging.shandahr.com',
-    AUTH_PROVIDER: 'BETTER_AUTH',
     DATABASE_URL: 'postgresql://staging-runtime',
-    BETTER_AUTH_SECRET: 'b'.repeat(32),
+    CLERK_SECRET_KEY: 'sk_fixture',
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fixture',
     AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
     AUDIT_SIGNING_KEY: 's'.repeat(32),
     R2_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
@@ -125,9 +123,9 @@ describe('server environment validation', () => {
         ...validR2,
         APP_ENV: 'production',
         APP_URL: 'https://fuel.shandahr.com',
-        AUTH_PROVIDER: 'BETTER_AUTH',
         DATABASE_URL: 'postgresql://configured',
-        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        CLERK_SECRET_KEY: 'sk_fixture',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fixture',
       }),
     ).toThrow('R2 recovery storage is required');
   });
@@ -150,9 +148,9 @@ describe('server environment validation', () => {
       getServerEnv({
         APP_ENV: 'production',
         APP_URL: 'http://fuel.shandahr.com',
-        AUTH_PROVIDER: 'BETTER_AUTH',
         DATABASE_URL: 'postgresql://configured',
-        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        CLERK_SECRET_KEY: 'sk_fixture',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fixture',
       }),
     ).toThrow('HTTPS');
   });
@@ -168,9 +166,9 @@ describe('server environment validation', () => {
       getServerEnv({
         APP_ENV: 'staging',
         APP_URL: 'https://localhost:3000',
-        AUTH_PROVIDER: 'BETTER_AUTH',
         DATABASE_URL: 'postgresql://configured',
-        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        CLERK_SECRET_KEY: 'sk_fixture',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fixture',
         AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
         AUDIT_SIGNING_KEY: 's'.repeat(32),
       }),
@@ -182,48 +180,57 @@ describe('server environment validation', () => {
       getServerEnv({
         APP_ENV: 'production',
         APP_URL: 'https://fuel.shandahr.com',
-        AUTH_PROVIDER: 'BETTER_AUTH',
         DATABASE_URL: 'postgresql://configured',
         DATABASE_DIRECT_URL: 'postgresql://migration-owner',
-        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        CLERK_SECRET_KEY: 'sk_fixture',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fixture',
         AUDIT_SIGNING_KEY_ID: 'production-audit-v1',
         AUDIT_SIGNING_KEY: 's'.repeat(32),
       }),
     ).toThrow('DATABASE_DIRECT_URL');
   });
 
-  it('requires the production authentication secret', () => {
+  it('requires both Clerk keys in deployed environments', () => {
     expect(() =>
       getServerEnv({
         APP_ENV: 'production',
         APP_URL: 'https://fuel.shandahr.com',
         DATABASE_URL: 'postgresql://configured',
       }),
-    ).toThrow();
+    ).toThrow('Clerk secret key');
+    expect(() =>
+      getServerEnv({
+        APP_ENV: 'staging',
+        APP_URL: 'https://staging.shandahr.com',
+        DATABASE_URL: 'postgresql://configured',
+        CLERK_SECRET_KEY: 'sk_fixture',
+        AUDIT_SIGNING_KEY_ID: 'audit-v1',
+        AUDIT_SIGNING_KEY: 's'.repeat(32),
+      }),
+    ).toThrow('Clerk publishable key');
   });
 
-  it('does not require Better Auth credentials when deployed Clerk is selected', () => {
+  it('accepts deployed Clerk configuration without a provider selector', () => {
     expect(
       getServerEnv({
         APP_ENV: 'staging',
         APP_URL: 'https://staging.shandahr.com',
-        AUTH_PROVIDER: 'CLERK',
         DATABASE_URL: 'postgresql://configured',
         CLERK_SECRET_KEY: 'sk_fake_clerk_fixture',
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fake_clerk_fixture',
         AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
         AUDIT_SIGNING_KEY: 's'.repeat(32),
       }),
-    ).toMatchObject({ AUTH_PROVIDER: 'CLERK' });
+    ).toMatchObject({ CLERK_SECRET_KEY: 'sk_fake_clerk_fixture' });
   });
 
   it('requires audit signing credentials in production', () => {
     const base = {
       APP_ENV: 'production',
       APP_URL: 'https://fuel.shandahr.com',
-      AUTH_PROVIDER: 'BETTER_AUTH',
       DATABASE_URL: 'postgresql://configured',
-      BETTER_AUTH_SECRET: 'a'.repeat(32),
+      CLERK_SECRET_KEY: 'sk_fixture',
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fixture',
     };
     expect(() => getServerEnv(base)).toThrow(/AUDIT_SIGNING_KEY_ID|AUDIT_SIGNING_KEY/);
     expect(() =>
@@ -251,9 +258,9 @@ describe('server environment validation', () => {
       getServerEnv({
         APP_ENV: 'staging',
         APP_URL: 'https://staging.shandahr.com',
-        AUTH_PROVIDER: 'BETTER_AUTH',
         DATABASE_URL: 'postgresql://staging-runtime',
-        BETTER_AUTH_SECRET: 'b'.repeat(32),
+        CLERK_SECRET_KEY: 'sk_fixture',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_fixture',
         AUDIT_SIGNING_KEY_ID: 'staging-audit-v1',
         AUDIT_SIGNING_KEY: 's'.repeat(32),
       }).APP_ENV,

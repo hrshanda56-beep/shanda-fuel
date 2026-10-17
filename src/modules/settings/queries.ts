@@ -156,7 +156,7 @@ export async function resolveSettings(
       if (!actor) return null;
       const rows = await getDatabase().execute<{ name: string; email: string | null }>(sql`
         select name, email
-        from auth."user"
+        from app.users
         where id = ${actor.identityId}
         limit 1
       `);
