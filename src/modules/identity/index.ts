@@ -16,18 +16,10 @@ export {
   ClerkReverificationRequiredError,
   STEP_UP_LEVEL,
   STEP_UP_TTL_MS,
-  type StepUpDependencies,
   type StepUpResult,
 } from './step-up';
 export {
   CLERK_DEACTIVATE_STAFF_ACTION,
   CLERK_STEP_UP_ACTION,
 } from '../../platform/auth/clerk-step-up';
-export type {
-  AuthenticatedActorContext,
-  AuthenticatedActorResolver,
-  BetterAuthServer,
-  BetterAuthPasswordVerifier,
-  BetterAuthSessionReader,
-  BetterAuthSessionRevoker,
-} from './authenticated-actor';
+export type { AuthenticatedActorContext, AuthenticatedActorResolver } from './authenticated-actor';

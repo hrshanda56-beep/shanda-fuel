@@ -13,7 +13,7 @@ export type SessionRecord = {
   stepUpExpiresAt?: Date;
   stepUpTenantId?: string;
   stepUpAction?: string;
-  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification' | 'better-auth-totp';
+  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification';
 };
 
 export function assertSessionActive(session: SessionRecord, now = new Date()): void {
@@ -47,8 +47,7 @@ export function assertStepUp(
     session.stepUpExpiresAt.getTime() <= now.getTime() ||
     (session.stepUpLevel ?? 0) < minimumLevel ||
     session.stepUpTenantId !== tenantId ||
-    (session.strongAuthenticationMethod === 'clerk-reverification' &&
-      session.stepUpAction !== requiredAction)
+    session.stepUpAction !== requiredAction
   ) {
     throw new AppError('FORBIDDEN', 'A current step-up authentication is required for this action');
   }
@@ -81,7 +80,12 @@ export function invalidateExpiredAssurance(
         }
       : {}),
     ...(strongAuthenticationExpired || stepUpExpired
-      ? { stepUpLevel: undefined, stepUpExpiresAt: undefined, stepUpTenantId: undefined }
+      ? {
+          stepUpLevel: undefined,
+          stepUpExpiresAt: undefined,
+          stepUpTenantId: undefined,
+          stepUpAction: undefined,
+        }
       : {}),
   };
 }

@@ -55,7 +55,7 @@ describe('POST /api/auth/step-up', () => {
   });
 
   it('authenticates before parsing and establishes the current tenant step-up', async () => {
-    const response = await POST(request({ tenantId, password: 'correct', totpCode: '123456' }));
+    const response = await POST(request({ tenantId, action: 'LOCK_BUSINESS_DAY' }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -68,7 +68,7 @@ describe('POST /api/auth/step-up', () => {
       expect.objectContaining({ requestedTenantId: tenantId }),
     );
     expect(mocks.establish).toHaveBeenCalledWith(
-      expect.objectContaining({ password: 'correct', totpCode: '123456', context }),
+      expect.objectContaining({ action: 'LOCK_BUSINESS_DAY', context }),
     );
     expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
@@ -76,7 +76,7 @@ describe('POST /api/auth/step-up', () => {
   it('returns a generic forbidden response for a failed challenge', async () => {
     mocks.establish.mockRejectedValueOnce(new AppError('FORBIDDEN', 'Step-up verification failed'));
 
-    const response = await POST(request({ tenantId, password: 'wrong', totpCode: '000000' }));
+    const response = await POST(request({ tenantId, action: 'LOCK_BUSINESS_DAY' }));
 
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({
@@ -112,8 +112,6 @@ describe('POST /api/auth/step-up', () => {
       expect.objectContaining({
         action: 'LOCK_BUSINESS_DAY',
         context,
-        password: '',
-        totpCode: '',
       }),
     );
     expect(response.headers.get('Set-Cookie')).toContain('shanda-fuel.clerk-step-up-challenge');
@@ -188,7 +186,7 @@ describe('POST /api/auth/step-up', () => {
     mocks.authenticate.mockRejectedValueOnce(
       new AppError('UNAUTHENTICATED', 'Authentication is required'),
     );
-    const unauthenticated = request({ tenantId, password: 'correct', totpCode: '123456' });
+    const unauthenticated = request({ tenantId, action: 'LOCK_BUSINESS_DAY' });
     const json = vi.spyOn(unauthenticated, 'json');
 
     const response = await POST(unauthenticated);
@@ -198,7 +196,7 @@ describe('POST /api/auth/step-up', () => {
     expect(mocks.resolveContext).not.toHaveBeenCalled();
   });
 
-  it('rejects a password-only request before provider verification', async () => {
+  it('requires a named action before provider verification', async () => {
     const response = await POST(request({ tenantId, password: 'correct' }));
 
     expect(response.status).toBe(400);

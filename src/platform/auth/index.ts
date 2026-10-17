@@ -1,1 +1,1 @@
-export { getAuth } from './server';
+export { AUTH_SECURITY_POLICY } from './server';

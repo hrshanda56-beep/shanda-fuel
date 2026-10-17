@@ -8,7 +8,7 @@ import { getDatabase } from '../db';
 import { AppError } from '../errors';
 import { readClerkStepUpAssertion } from './clerk-step-up';
 
-export type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
+export type AuthProviderName = 'CLERK';
 
 export type ProviderSession = {
   provider: AuthProviderName;
@@ -23,7 +23,7 @@ export type ProviderSession = {
   stepUpExpiresAt?: Date;
   stepUpTenantId?: string;
   stepUpAction?: string;
-  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification' | 'better-auth-totp';
+  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification';
 };
 
 export type ClerkCredentialIdentity = {
@@ -40,17 +40,7 @@ export type ClerkSessionRevocationResult = {
 const CLERK_STEP_UP_MAX_AGE_MINUTES = 10;
 
 export function getAuthProviderName(): AuthProviderName {
-  const configured = assertAuthProviderName(process.env.AUTH_PROVIDER);
-  const env = getServerEnv();
-  if (env.AUTH_PROVIDER !== configured) {
-    throw new AppError('INVARIANT_VIOLATION', 'Authentication provider configuration is invalid');
-  }
-  return configured;
-}
-
-export function assertAuthProviderName(value: unknown): AuthProviderName {
-  if (value === 'BETTER_AUTH' || value === 'CLERK') return value;
-  throw new AppError('INVARIANT_VIOLATION', 'Authentication provider configuration is invalid');
+  return 'CLERK';
 }
 
 export async function resolveClerkSession(request: Request): Promise<ProviderSession | null> {
@@ -82,7 +72,10 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
     factorAges.length === 2 &&
     factorAges.every(
       (age) =>
-        typeof age === 'number' && Number.isFinite(age) && age <= CLERK_STEP_UP_MAX_AGE_MINUTES,
+        typeof age === 'number' &&
+        Number.isFinite(age) &&
+        age >= 0 &&
+        age < CLERK_STEP_UP_MAX_AGE_MINUTES,
     );
   const strongAuthenticatedAt = hasRecentMfa
     ? new Date(Date.now() - Math.max(factorAges[0], factorAges[1]) * 60_000)
@@ -93,7 +86,8 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
   const clerkAssertion = readClerkStepUpAssertion(request);
   const assertionMatchesSession =
     clerkAssertion?.providerSessionId === auth.sessionId &&
-    clerkAssertion.internalUserId === identity;
+    clerkAssertion.internalUserId === identity &&
+    (clerkAssertion.level === 'strict_mfa' || !getServerEnv().REQUIRE_LOGIN_MFA);
   const assertionIsStrictMfa = assertionMatchesSession && clerkAssertion.level === 'strict_mfa';
   const effectiveStrongAuthentication = hasRecentMfa || assertionMatchesSession;
   const effectiveStrongAuthenticatedAt = hasRecentMfa
@@ -175,17 +169,27 @@ export async function revokeClerkUserSessions(
   providerUserId: string,
 ): Promise<ClerkSessionRevocationResult> {
   const client = await clerkClient();
-  const sessions = await client.sessions.getSessionList({
-    userId: providerUserId,
-    status: 'active',
-  });
+  // Collect all pages before revoking: mutations would otherwise shift offsets.
+  const sessionIds = new Set<string>();
+  let offset = 0;
+  while (true) {
+    const page = await client.sessions.getSessionList({
+      userId: providerUserId,
+      status: 'active',
+      limit: 100,
+      offset,
+    });
+    for (const session of page.data) sessionIds.add(session.id);
+    offset += page.data.length;
+    if (page.data.length === 0 || offset >= page.totalCount || page.data.length < 100) break;
+  }
   const results = await Promise.allSettled(
-    sessions.data.map((session) => client.sessions.revokeSession(session.id)),
+    [...sessionIds].map((id) => client.sessions.revokeSession(id)),
   );
   const sessionsRevoked = results.filter((result) => result.status === 'fulfilled').length;
   return {
-    activeSessionsFound: sessions.data.length,
+    activeSessionsFound: sessionIds.size,
     sessionsRevoked,
-    complete: sessionsRevoked === sessions.data.length,
+    complete: sessionsRevoked === sessionIds.size,
   };
 }
