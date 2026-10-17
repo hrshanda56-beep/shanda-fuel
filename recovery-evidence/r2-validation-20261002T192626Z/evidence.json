@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "shanda-fuel.r2-recovery-validation.v1",
+  "recordedAt": "2026-10-02T19:26:26.000Z",
+  "recoveryProject": {
+    "projectId": "prj_yLsHYS3NNLJajpT4ai9ttPaadRc3",
+    "deploymentId": "dpl_FjVhFrv7NBbQyxJXySjKL3zH8Ewd",
+    "deployedSha": "0db85f6192f7c96fd92282389cc970b35bae2e33"
+  },
+  "r2": {
+    "environmentClassification": "staging/non-production",
+    "requiredVariableNames": [
+      "R2_ACCOUNT_ID",
+      "R2_BUCKET",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_RECOVERY_BUCKET",
+      "R2_RECOVERY_ACCESS_KEY_ID",
+      "R2_RECOVERY_SECRET_ACCESS_KEY"
+    ],
+    "repositoryRunbookBucketIdentity": {
+      "primary": "shanda-fuel-staging-private",
+      "recovery": "shanda-fuel-staging-recovery",
+      "liveReconfirmed": false
+    },
+    "secretRetrieval": {
+      "status": "blocked",
+      "reason": "Canonical staging R2 values are Vercel Secret variables and are not retrievable through the supported narrow provider path; no approved local R2 handoff was present.",
+      "valuesPrinted": false,
+      "rotationAttempted": false
+    },
+    "readOnlyPreflight": "not_performed",
+    "existingObjectValidation": "not_performed",
+    "temporaryObject": {
+      "created": false,
+      "upload": "not_performed",
+      "downloadChecksum": "not_performed",
+      "cleanup": "not_applicable"
+    },
+    "applicationLevelValidation": "not_performed"
+  },
+  "recoveryProjectR2Configuration": {
+    "status": "unchanged",
+    "r2VariablesAdded": false,
+    "redeployed": false
+  },
+  "localSecretCleanup": {
+    "temporaryR2HandoffFound": false,
+    "temporaryR2HandoffRemoved": "not_applicable",
+    "sessionCookieRetained": true,
+    "sessionCookiePath": "/tmp/shanda-recovery-session-cookie"
+  },
+  "classification": "R2 RECOVERY VALIDATION: FAIL",
+  "safety": {
+    "canonicalStagingUnchanged": true,
+    "productionUntouched": true,
+    "r2MutationAttempted": false
+  },
+  "recoveryObjectives": {
+    "rpoSeconds": 7.068,
+    "rto": "FAIL"
+  },
+  "nextAction": "Provide the seven R2 values through an approved narrow, process-memory-only staging secret handoff (or provider-supported individual retrieval), then rerun only the R2 validation. Do not rotate credentials or export the full staging environment."
+}

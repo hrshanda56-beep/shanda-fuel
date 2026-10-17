@@ -94,6 +94,12 @@ export const PERMISSION_CODES = [
   'customer.statement.view',
   'customer.account.adjust',
   'customer.limit.override',
+  'expense.view',
+  'expense.submit',
+  'expense.approve',
+  'expense.post',
+  'expense.reverse',
+  'expense.recurring.manage',
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
@@ -175,6 +181,10 @@ const highRiskPermissions = new Set<PermissionCode>([
   'customer.prepaid.top_up',
   'customer.account.adjust',
   'customer.limit.override',
+  'expense.approve',
+  'expense.post',
+  'expense.reverse',
+  'expense.recurring.manage',
 ]);
 
 const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
@@ -372,6 +382,8 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'cash.collection.record',
     'cash.count.record',
     'cash.handover.submit',
+    'expense.view',
+    'expense.submit',
     'provider.batch.record',
     'provider.view',
     'provider.settlement.view',

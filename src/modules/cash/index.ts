@@ -1,5 +1,6 @@
 export * from './contracts';
 export * from './domain';
+export * from './handover-domain';
 export * from './application';
 export * from './commands';
 export * from './persistence';

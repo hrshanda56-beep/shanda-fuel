@@ -285,6 +285,7 @@ export function DailyOperationsWorkspace({
   const [settlementSummary, setSettlementSummary] = useState<
     Array<{ providerName: string; state: string; unallocatedProviderAmount: string }>
   >([]);
+  const [downstreamError, setDownstreamError] = useState<string>();
 
   const contextQuery = useMemo(
     () =>
@@ -400,21 +401,45 @@ export function DailyOperationsWorkspace({
           cache: 'no-store',
           signal: controller.signal,
         },
-      ).then(async (response) => (response.ok ? response.json() : null)),
+      ).then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok)
+          throw new Error(body?.message ?? 'Cash custody data could not be loaded.');
+        return body;
+      }),
       fetch(
         `/api/settlements/summary?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
         {
           cache: 'no-store',
           signal: controller.signal,
         },
-      ).then(async (response) => (response.ok ? response.json() : [])),
+      ).then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok)
+          throw new Error(body?.message ?? 'Provider settlement data could not be loaded.');
+        return body;
+      }),
     ])
       .then(([cash, settlements]) => {
         if (controller.signal.aborted) return;
+        if (!cash?.totals || !Array.isArray(settlements)) {
+          throw new Error('Downstream cash or provider data was incomplete.');
+        }
+        setDownstreamError(undefined);
         setCashSummary(cash?.totals);
-        setSettlementSummary(Array.isArray(settlements) ? settlements : []);
+        setSettlementSummary(settlements);
       })
-      .catch(() => undefined);
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) {
+          setCashSummary(undefined);
+          setSettlementSummary([]);
+          setDownstreamError(
+            cause instanceof Error
+              ? cause.message
+              : 'Cash and provider follow-up data could not be loaded.',
+          );
+        }
+      });
     return () => controller.abort();
   }, [context.stationId, context.tenantId, operation]);
 
@@ -1516,6 +1541,9 @@ export function DailyOperationsWorkspace({
                 <dd>{settlementSummary.length || 'Unavailable'}</dd>
               </div>
             </dl>
+            {downstreamError ? (
+              <ErrorState title="Downstream data unavailable" message={downstreamError} />
+            ) : null}
             <div className="inline-links">
               <a className="text-link" href={`/stations/${context.stationId}/cash`}>
                 Open cash custody

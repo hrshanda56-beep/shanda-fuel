@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
+  classifyDeliveryReceipt,
   calculateTankStockVariance,
+  convertCalibratedMeasurementToLitres,
   deriveExpectedTankStock,
+  interpolateCalibrationLitres,
   requireAdjustmentReason,
+  validateCalibrationPoints,
   validateDeliveryAllocations,
   validateMovementQuantity,
 } from './domain';
@@ -37,5 +41,47 @@ describe('inventory domain', () => {
 
   it('calculates delivery shortage/excess as actual minus note quantity', () => {
     expect(calculateDeliveryShortageExcess('10000', '9995.5')).toBe('-4.5');
+  });
+
+  it('classifies a partial receipt using exact decimal quantities', () => {
+    expect(classifyDeliveryReceipt('10000.000', '9995.500')).toBe('PARTIAL');
+    expect(classifyDeliveryReceipt('10000', '10000.000')).toBe('FULL');
+    expect(classifyDeliveryReceipt('10000', '10000.001')).toBe('EXCESS');
+    expect(() => classifyDeliveryReceipt('-1', '0')).toThrow('cannot be negative');
+  });
+
+  it('converts calibrated tank measurements with exact interpolation and unit checks', () => {
+    const chart = validateCalibrationPoints([
+      { measurementValue: '2000', litres: '20000', measurementUnit: 'mm' },
+      { measurementValue: '0', litres: '0', measurementUnit: 'mm' },
+    ]);
+
+    expect(interpolateCalibrationLitres('1000', chart)).toBe('10000');
+    expect(convertCalibratedMeasurementToLitres('1500', 'mm', chart)).toBe('15000');
+    expect(() => convertCalibratedMeasurementToLitres('1000', 'cm', chart)).toThrow(
+      'does not match',
+    );
+    expect(() => interpolateCalibrationLitres('2001', chart)).toThrow('outside');
+  });
+
+  it('rejects malformed or non-monotonic calibration charts', () => {
+    expect(() =>
+      validateCalibrationPoints([
+        { measurementValue: '0', litres: '0', measurementUnit: 'mm' },
+        { measurementValue: '0', litres: '100', measurementUnit: 'mm' },
+      ]),
+    ).toThrow('unique');
+    expect(() =>
+      validateCalibrationPoints([
+        { measurementValue: '0', litres: '100', measurementUnit: 'mm' },
+        { measurementValue: '1000', litres: '0', measurementUnit: 'mm' },
+      ]),
+    ).toThrow('monotonic');
+    expect(() =>
+      validateCalibrationPoints([
+        { measurementValue: '0', litres: '0', measurementUnit: 'mm' },
+        { measurementValue: '1000', litres: '1000', measurementUnit: 'cm' },
+      ]),
+    ).toThrow('one measurement unit');
   });
 });

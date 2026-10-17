@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "shanda-fuel.neon-recovery-owner-verification.v1",
+  "verificationCompletedAt": "2026-10-01T21:54:45.614Z",
+  "projectId": "solitary-dream-28627763",
+  "recoveryBranchId": "br-restless-field-b1tel5y4",
+  "recoveryEndpointId": "ep-damp-mountain-b1pqoeh9",
+  "inspectionRole": "neondb_owner",
+  "roleContextMechanism": "neondb_owner existing role visibility; no row_security override and no transaction-local tenant GUC was used",
+  "knownGoodCheckpoint": "2026-10-01T18:27:23.068Z",
+  "providerRecoveredThrough": "2026-10-01T18:27:16Z",
+  "rpoSeconds": 7.068,
+  "verification": {
+    "pass": true,
+    "checks": {
+      "databaseContext": true,
+      "readOnlyUtc": true,
+      "inspectionRoleIdentity": true,
+      "ownerVisibility": true,
+      "tenantA": true,
+      "actorA": true,
+      "membershipA": true,
+      "legalEntityA": true,
+      "stationA": true,
+      "tenantB": true,
+      "legalEntityB": true,
+      "stationB": true,
+      "noDuplicateTenantBHierarchy": true,
+      "noTenantAGrantsIntoB": true,
+      "noTenantBGrants": true,
+      "noTenantBBusinessDays": true,
+      "noTenantBShifts": true,
+      "noTenantBReconciliations": true,
+      "migrationState": true,
+      "rlsForced": true,
+      "securityFunctions": true,
+      "appRuntimeSecurity": true,
+      "appRuntimePrivileges": true,
+      "appRuntimeOwnsNoRelations": true
+    },
+    "identity": {
+      "databaseName": "shanda_fuel",
+      "currentUser": "neondb_owner",
+      "sessionUser": "neondb_owner",
+      "postgresMajor": "18",
+      "transactionReadOnly": "on",
+      "timezone": "UTC"
+    },
+    "inspectionRole": {
+      "superuser": false,
+      "bypassRls": true,
+      "canLogin": true,
+      "createdb": true,
+      "createrole": true,
+      "inherit": true,
+      "replication": true,
+      "memberships": [
+        "app_runtime",
+        "diagnostics_readonly",
+        "job_runtime",
+        "migration_owner",
+        "migration_owner",
+        "neon_superuser"
+      ],
+      "ownership": [
+        {
+          "schema_name": "app",
+          "owner_name": "migration_owner"
+        },
+        {
+          "schema_name": "auth",
+          "owner_name": "migration_owner"
+        },
+        {
+          "schema_name": "drizzle",
+          "owner_name": "migration_owner"
+        },
+        {
+          "schema_name": "platform",
+          "owner_name": "migration_owner"
+        }
+      ]
+    },
+    "tenantA": {
+      "count": 1,
+      "status": "ACTIVE",
+      "actorCount": 1,
+      "membershipCount": 1,
+      "membershipTenant": "a1000000-0000-4000-8000-000000000001",
+      "membershipIdentity": "a2000000-0000-4000-8000-000000000001",
+      "membershipStatus": "ACTIVE",
+      "legalEntityStatus": "ACTIVE",
+      "stationStatus": "ACTIVE"
+    },
+    "tenantB": {
+      "status": "ACTIVE",
+      "legalEntityStatus": "ACTIVE",
+      "stationStatus": "ACTIVE",
+      "grants": 0,
+      "businessDays": 0,
+      "shifts": 0,
+      "reconciliations": 0,
+      "duplicateCounts": {
+        "tenant_rows": 1,
+        "legal_entity_rows": 1,
+        "station_rows": 1
+      }
+    },
+    "tenantAGrantsIntoB": 0,
+    "migration": {
+      "journalPresent": true,
+      "count": 21,
+      "expectedCount": 21,
+      "latestHashPresent": true,
+      "latestCreatedAt": "1790533600000",
+      "expectedTablesPresent": true
+    },
+    "rls": {
+      "tableCount": 67,
+      "expectedTableCount": 67,
+      "violations": []
+    },
+    "securityFunctions": {
+      "rate_limiter_security_definer": true,
+      "current_tenant_function_present": true,
+      "active_membership_function_present": true
+    },
+    "appRuntime": {
+      "exists": true,
+      "login": true,
+      "superuser": false,
+      "bypassRls": false,
+      "createdb": false,
+      "createrole": false,
+      "inherit": false,
+      "replication": false,
+      "privileges": {
+        "database_connect": true,
+        "app_usage": true,
+        "auth_usage": true,
+        "platform_usage": true,
+        "tenants_select": true,
+        "permission_definitions_select": true,
+        "security_events_select": true,
+        "security_events_insert": true,
+        "rate_limiter_execute": true
+      },
+      "ownedRelations": 0
+    }
+  }
+}

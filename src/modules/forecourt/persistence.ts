@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
@@ -235,22 +237,14 @@ async function assertAttendantEligibility(
   tenantId: string,
 ): Promise<void> {
   const tx = dbTransaction(transaction);
-  const rows = await tx.execute<{ eligible: number }>(sql`
-    SELECT 1 AS eligible
-    FROM app.memberships AS membership
-    JOIN app.membership_role_assignments AS assignment
-      ON assignment.tenant_id = membership.tenant_id
-     AND assignment.membership_id = membership.id
-    WHERE membership.tenant_id = ${tenantId}
-      AND membership.id = ${attendantId}
-      AND membership.status = 'ACTIVE'
-      AND assignment.scope_type = 'STATION'
-      AND assignment.station_id = ${stationId}
-      AND assignment.role_code = 'ATTENDANT'
-      AND (assignment.expires_at IS NULL OR assignment.expires_at > now())
-    FOR SHARE
+  const rows = await tx.execute<{ eligible: boolean }>(sql`
+    SELECT app.is_station_operator(
+      ${tenantId}::uuid,
+      ${stationId}::uuid,
+      ${attendantId}::uuid
+    ) AS eligible
   `);
-  if (rows.length === 0) {
+  if (rows[0]?.eligible !== true) {
     throw new AppError('FORBIDDEN', 'The responsible attendant is not eligible for this station');
   }
 }
@@ -268,11 +262,15 @@ async function assertExpectedVersion(
     throw new AppError('VALIDATION_FAILED', `No versioned forecourt subject: ${subjectType}`);
   }
   const qualifiedTable = sql.raw(`"app"."${tableName}"`);
+  // Meter segments are append-only and intentionally deny UPDATE to the
+  // runtime role. Their named seal/correction commands use optimistic version
+  // predicates; other forecourt subjects retain the transaction row lock.
+  const rowLock = subjectType === 'MeterSegment' ? sql`` : sql`FOR UPDATE`;
   const tx = dbTransaction(transaction);
   const rows = await tx.execute<{ version: number | string }>(sql`
     SELECT version FROM ${qualifiedTable}
     WHERE tenant_id = ${tenantId} AND station_id = ${stationId} AND id = ${subjectId}
-    FOR UPDATE
+    ${rowLock}
   `);
   const row = rows[0];
   if (!row) {

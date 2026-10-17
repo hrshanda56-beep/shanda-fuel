@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatBusinessDate, formatLitres, formatMoney } from '../../../design-system/formatters';
+import { NeedsAttention } from '../../../design-system/feedback';
 import {
   Card,
   EmptyState,
@@ -12,6 +13,7 @@ import {
 } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
 import type { ManagementReport } from '../contracts';
+import { buildReportingNeedsAttention } from '../domain';
 
 function today(): string {
   return new Intl.DateTimeFormat('en-CA').format(new Date());
@@ -78,6 +80,8 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
     void load();
   }
 
+  const attentionItems = report ? buildReportingNeedsAttention(report) : [];
+
   return (
     <>
       <Card as="section" className="panel" aria-labelledby="report-filters-title">
@@ -126,6 +130,17 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
           <button className="button button-primary" type="submit" disabled={loading}>
             Refresh report
           </button>
+          <a
+            className="button button-secondary"
+            href={`/api/reports/management/export?${new URLSearchParams({
+              tenantId,
+              fromDate,
+              toDate,
+              ...(stationId ? { stationId } : {}),
+            }).toString()}`}
+          >
+            Export CSV
+          </a>
         </form>
         <p className="metric-meta">
           Every section uses its documented source date basis. A10 reports posted source facts; it
@@ -137,6 +152,45 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
       {error ? <ErrorState title="Report unavailable" message={error} /> : null}
       {!loading && !error && report ? (
         <>
+          <Card as="section" className="panel" aria-labelledby="report-attention-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Exception-first control</p>
+                <h2 id="report-attention-title">Needs attention</h2>
+              </div>
+              <StatusBadge
+                tone={
+                  attentionItems.some((item) => item.priority === 'warning')
+                    ? 'warning'
+                    : 'positive'
+                }
+              >
+                {attentionItems.length === 0
+                  ? 'No report-derived items'
+                  : `${attentionItems.length} item${attentionItems.length === 1 ? '' : 's'}`}
+              </StatusBadge>
+            </div>
+            <NeedsAttention
+              items={attentionItems.map((item) => ({
+                id: item.id,
+                priority: item.priority,
+                title: item.title,
+                detail: item.detail,
+                meta: item.meta,
+                action: (
+                  <a className="text-link" href={item.anchor}>
+                    Review evidence
+                  </a>
+                ),
+              }))}
+              emptyMessage="No non-zero cash, provider, stock, or costing facts need review for this period."
+            />
+            <p className="metric-meta">
+              Read-only projection from this report’s authorized source facts. It does not
+              acknowledge, resolve, or mutate the underlying ledgers.
+            </p>
+          </Card>
+
           <section className="metric-grid" aria-label="Management report headline metrics">
             <Metric
               label="Accounted sales"
@@ -197,6 +251,74 @@ export function ManagementReportDashboard({ tenantId }: { tenantId: string }) {
               detail="A5 only"
             />
           </section>
+
+          <Card as="section" className="panel" aria-labelledby="report-explanation-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Source lineage</p>
+                <h2 id="report-explanation-title">Explain these numbers</h2>
+              </div>
+              <StatusBadge tone="informational">Evidence-linked</StatusBadge>
+            </div>
+            <p>
+              These explanations identify the authoritative domain and date basis behind each
+              headline. They do not recalculate or replace the source ledgers.
+            </p>
+            <dl className="summary-list">
+              <div>
+                <dt>Recognized revenue</dt>
+                <dd>
+                  REV1 sale-recognition movements · {report.revenue.saleCount} canonical sale rows ·{' '}
+                  {report.dateBasis.recognizedRevenue}
+                </dd>
+              </div>
+              <div>
+                <dt>Gross margin</dt>
+                <dd>
+                  Recognized revenue minus restated A12 COGS · costing status{' '}
+                  {report.costing.costingStatus} · {report.costing.valuedSaleCount} valued sales
+                </dd>
+              </div>
+              <div>
+                <dt>Cash collected</dt>
+                <dd>
+                  A6 collection evidence · {report.cash.collectionIds.length} collection records ·{' '}
+                  {report.dateBasis.cashCollections}
+                </dd>
+              </div>
+              <div>
+                <dt>Supplier exposure</dt>
+                <dd>{report.dateBasis.suppliers}</dd>
+              </div>
+              <div>
+                <dt>Expected stock and variance</dt>
+                <dd>{report.dateBasis.inventory}</dd>
+              </div>
+            </dl>
+            <details>
+              <summary>Show source identifiers</summary>
+              <div className="metric-meta">
+                <p>
+                  Reconciliations:{' '}
+                  {report.sales.reconciliationIds.slice(0, 12).join(', ') || 'none'}
+                </p>
+                <p>
+                  Revenue movements:{' '}
+                  {report.revenue.sales
+                    .slice(0, 12)
+                    .map((sale) => sale.revenueMovementId)
+                    .join(', ') || 'none'}
+                </p>
+                <p>
+                  Costing rows:{' '}
+                  {report.costing.sales
+                    .slice(0, 12)
+                    .map((sale) => sale.saleMovementId)
+                    .join(', ') || 'none'}
+                </p>
+              </div>
+            </details>
+          </Card>
 
           <div className="content-grid">
             <Card as="section" className="panel" aria-labelledby="sales-report-title">

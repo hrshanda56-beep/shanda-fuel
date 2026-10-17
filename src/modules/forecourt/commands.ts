@@ -1109,7 +1109,6 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
             and e.shift_id = ${payload.shiftId}
             and e.status = 'BLOCKING'
             and b.reading_status = 'UNAVAILABLE'
-          for update
         `);
         if (!exception[0] || new Date(exception[0].effective_at) >= new Date(now))
           throw new AppError(
@@ -1766,7 +1765,7 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
             where successor.tenant_id=m.tenant_id and successor.station_id=m.station_id
               and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
           )
-        for update of m, ob, cb
+        for update of ob, cb
       `);
       const source = rows[0];
       if (!source)

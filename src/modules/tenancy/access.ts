@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { AppError } from '../../platform/errors';
 import type { TenantTransactionInput } from '../../platform/db';
 

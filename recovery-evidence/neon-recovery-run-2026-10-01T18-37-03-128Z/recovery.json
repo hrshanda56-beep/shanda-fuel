@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "shanda-fuel.neon-recovery-run.v1",
+  "recoveryRehearsalStartedAt": "2026-10-01T18:37:03.128Z",
+  "status": "provider-result-unconfirmed",
+  "postAttempted": true,
+  "postResult": "not captured; GET-only confirmation is required; no retry is authorized",
+  "projectId": "solitary-dream-28627763",
+  "sourceBranchId": "br-holy-star-b1t1176i",
+  "recoveryBranchName": "recovery-20261001-182723z",
+  "parentTimestamp": "2026-10-01T18:27:23.068Z"
+}

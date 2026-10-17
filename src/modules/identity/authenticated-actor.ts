@@ -27,7 +27,7 @@ export type BetterAuthSessionReader = {
   api: {
     getSession: (input: {
       headers: Headers;
-      query?: { disableCookieCache?: boolean };
+      query?: { disableCookieCache?: boolean; disableRefresh?: boolean };
     }) => Promise<unknown>;
   };
 };
@@ -36,7 +36,7 @@ export type BetterAuthPasswordVerifier = {
   api: {
     getSession: (input: {
       headers: Headers;
-      query?: { disableCookieCache?: boolean };
+      query?: { disableCookieCache?: boolean; disableRefresh?: boolean };
     }) => Promise<unknown>;
     verifyPassword: (input: { headers: Headers; body: { password: string } }) => Promise<unknown>;
     verifyTOTP: (input: { headers: Headers; body: { code: string } }) => Promise<unknown>;
@@ -87,7 +87,7 @@ export async function resolveAuthenticatedActor(
 ): Promise<AuthenticatedActorContext | null> {
   const result = await auth.api.getSession({
     headers: request.headers,
-    query: { disableCookieCache: true },
+    query: { disableCookieCache: true, disableRefresh: true },
   });
   if (!result) return null;
   const parsed = betterAuthSessionSchema.safeParse(result);

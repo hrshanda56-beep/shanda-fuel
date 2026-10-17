@@ -2,12 +2,7 @@ import 'server-only';
 
 import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
-import {
-  normalizeCanonicalRevenueAmount,
-  normalizeValuedSaleCogs,
-  summarizeCanonicalRevenue,
-  summarizeRestatedCogs,
-} from './domain';
+import { normalizeCanonicalRevenueAmount, normalizeValuedSaleCogs } from './domain';
 import type {
   CanonicalRevenueReport,
   CanonicalSaleRevenue,
@@ -31,6 +26,11 @@ type RestatedCogsRow = {
   revaluation_delta: string | null;
   revaluation_line_ids: string[] | null;
   revaluation_event_ids: string[] | null;
+  total_sale_count: number | string | null;
+  valued_sale_count: number | string | null;
+  original_cogs_total: string | null;
+  revaluation_delta_total: string | null;
+  restated_cogs_total: string | null;
   restated_business_date: string;
   effective_at: Date | string;
   sale_event_currency: string | null;
@@ -179,7 +179,27 @@ export async function readRestatedCogs(
       coalesce(revaluation.revaluation_event_ids, ARRAY[]::uuid[]) as revaluation_event_ids,
       movement.business_date as restated_business_date,
       movement.effective_at,
-      sale_event.currency as sale_event_currency
+      sale_event.currency as sale_event_currency,
+      count(*) over () as total_sale_count,
+      count(*) filter (where attribution.id is not null
+        and attribution.original_cogs is not null
+        and validated_sale_event.id is not null
+        and sale_event.currency = 'USD') over () as valued_sale_count,
+      sum(case when attribution.id is not null
+        and attribution.original_cogs is not null
+        and validated_sale_event.id is not null
+        and sale_event.currency = 'USD'
+        then attribution.original_cogs else 0 end) over ()::text as original_cogs_total,
+      sum(case when attribution.id is not null
+        and attribution.original_cogs is not null
+        and validated_sale_event.id is not null
+        and sale_event.currency = 'USD'
+        then coalesce(revaluation.revaluation_delta::numeric, 0) else 0 end) over ()::text as revaluation_delta_total,
+      sum(case when attribution.id is not null
+        and attribution.original_cogs is not null
+        and validated_sale_event.id is not null
+        and sale_event.currency = 'USD'
+        then attribution.original_cogs + coalesce(revaluation.revaluation_delta::numeric, 0) else 0 end) over ()::text as restated_cogs_total
     from latest_finalized_revisions latest
     join app.reconciliation_meter_reading_segments bridge
       on bridge.tenant_id = ${filters.tenantId}
@@ -241,7 +261,52 @@ export async function readRestatedCogs(
   `);
 
   const sales = rows.map(mapSale);
-  return { ...summarizeRestatedCogs(sales), sales };
+  const totalSaleCount = Number(rows[0]?.total_sale_count ?? 0);
+  const valuedSaleCount = Number(rows[0]?.valued_sale_count ?? 0);
+  const unvaluedSaleCount = totalSaleCount - valuedSaleCount;
+  const summary =
+    totalSaleCount === 0
+      ? {
+          currency: 'USD' as const,
+          costingStatus: 'NO_SALES' as const,
+          originalCogs: '0.0000',
+          revaluationDelta: '0.0000',
+          restatedCogs: '0.0000',
+          saleCount: 0,
+          valuedSaleCount: 0,
+          unvaluedSaleCount: 0,
+        }
+      : unvaluedSaleCount > 0
+        ? {
+            currency: 'USD' as const,
+            costingStatus: 'UNVALUED' as const,
+            originalCogs: null,
+            revaluationDelta: null,
+            restatedCogs: null,
+            saleCount: totalSaleCount,
+            valuedSaleCount,
+            unvaluedSaleCount,
+          }
+        : {
+            currency: 'USD' as const,
+            costingStatus: 'COMPLETE' as const,
+            originalCogs: normalizeValuedSaleCogs({
+              originalCogs: rows[0]?.original_cogs_total ?? '0',
+              revaluationDelta: '0',
+            }).originalCogs,
+            revaluationDelta: normalizeValuedSaleCogs({
+              originalCogs: '0',
+              revaluationDelta: rows[0]?.revaluation_delta_total ?? '0',
+            }).revaluationDelta,
+            restatedCogs: normalizeValuedSaleCogs({
+              originalCogs: rows[0]?.restated_cogs_total ?? '0',
+              revaluationDelta: '0',
+            }).originalCogs,
+            saleCount: totalSaleCount,
+            valuedSaleCount,
+            unvaluedSaleCount: 0,
+          };
+  return { ...summary, sales };
 }
 
 type CanonicalRevenueRow = {
@@ -255,6 +320,8 @@ type CanonicalRevenueRow = {
   business_date: string;
   effective_at: Date | string;
   currency: string;
+  total_sale_count: number | string | null;
+  total_recognized_revenue: string | null;
 };
 
 /**
@@ -292,7 +359,9 @@ export async function readCanonicalRevenue(
       revenue.quantity_litres::text as quantity_litres,
       revenue.business_date,
       revenue.effective_at,
-      revenue.currency
+      revenue.currency,
+      count(*) over () as total_sale_count,
+      sum(revenue.recognized_revenue_amount) over ()::text as total_recognized_revenue
     from latest_finalized_revisions latest
     join app.sale_recognition_movements revenue
       on revenue.tenant_id = ${filters.tenantId}
@@ -317,5 +386,11 @@ export async function readCanonicalRevenue(
     effectiveAt: toIso(row.effective_at),
     currency: row.currency,
   }));
-  return summarizeCanonicalRevenue(sales);
+  return {
+    currency: 'USD',
+    revenueStatus: sales.length === 0 ? 'NO_SALES' : 'POSTED',
+    recognizedRevenue: normalizeCanonicalRevenueAmount(rows[0]?.total_recognized_revenue ?? '0'),
+    saleCount: Number(rows[0]?.total_sale_count ?? 0),
+    sales,
+  };
 }

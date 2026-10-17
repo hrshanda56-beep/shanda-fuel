@@ -17,8 +17,43 @@ Status vocabulary:
 
 ## Integration base
 
-Current merged base: `6b85ae5` (`main`, current canonical integration tip;
-2026-09-28).
+Current merged base: `2c7304916c191c66907d9582a3e7c26225c6eb59` (`main`, current
+canonical integration tip; 2026-10-09).
+
+## Current production Stage 1 security closeout
+
+Evidence date: **2026-10-09**
+
+Result: **PASS**
+
+Historical failure: **SUPERSEDED**
+
+Release SHA `2c7304916c191c66907d9582a3e7c26225c6eb59` is verified with the
+production migration journal through `0024`. Migration counts and hashes for
+`0022`, `0023`, and `0024` are verified. Tenant isolation, 67 app tables with
+RLS and `FORCE ROW LEVEL SECURITY`, and `app_runtime` least-privilege controls
+are verified. An active OWNER and OWNER MFA enrollment are verified, as are
+production health HTTP 200 and readiness HTTP 200 with database `ok`.
+
+`job_runtime` temporary quarantine is **EFFECTIVE**. The production password
+reset completed, the new password was not exposed/captured/stored, and
+post-rotation `job_runtime` sessions were verified at `0`. The deployed web
+role remains directly verified as `app_runtime`; no active `job_runtime`
+consumer has been identified; and health, readiness, and normal authenticated
+application load were verified as passing after rotation.
+
+The `job_runtime` release blocker is **REMOVED** for controlled release under
+a documented security exception. This does not mark the role fully remediated
+or close provider-level hardening. Until that hardening is complete,
+`job_runtime` must remain unbound.
+
+Required post-launch provider hardening remains open:
+
+- remove `neon_superuser` membership;
+- enforce `NOLOGIN`, `NOINHERIT`, and `NOBYPASSRLS`;
+- remove `CREATEROLE`, `CREATEDB`, and `REPLICATION`;
+- remove obsolete legacy grants; and
+- retain the unbound state until the hardening is verified.
 
 First-parent merged work includes A4 inventory (`afed2eb`), A5 daily
 reconciliation (`bca2ea0`), A6 cash/banking (`fba3cfb`), A7 supplier creditors
@@ -48,7 +83,8 @@ those are operational execution gates, not missing implementation claims.
 
 Evidence: `package.json`; `src/platform/db/`; migration
 `src/platform/db/migrations/0000_platform_namespaces.sql`;
-`tests/integration/db.smoke.test.ts`; `docs/architecture/database.md`.
+`tests/integration/db.smoke.test.ts`; `src/platform/smoke/database-boundary.test.ts`;
+`docs/architecture/database.md`.
 
 The toolchain, modular-monolith structure, Drizzle/PostgreSQL boundary,
 environment validation, migration journal, and test harness are present.
@@ -99,12 +135,16 @@ and the production reconciliation workflow are integrated.
 Evidence: `src/modules/inventory/`; migration
 `0004_a4_inventory.sql`; `tests/integration/a4-inventory.test.ts`.
 
-Tanks, direct-litre dips, calibration-point storage, delivery records and
-allocations, append-only inventory movements, opening balances, stock
-projections, negative-stock prevention, and controlled adjustments are present.
-Inventory pools, a transfer command/workflow, calibration execution/interpolation,
-and the full interrupted/partial delivery workflow are not present. WAC and
-late-cost revaluation are implemented in the A12 costing workstreams below.
+Tanks, direct-litre or calibrated dips, validated calibration-chart capture,
+delivery records and allocations, exact server-derived FULL/PARTIAL/EXCESS
+receipt classification, append-only inventory movements, opening balances,
+stock projections now use PostgreSQL grouped numeric reads for the station
+product view, while command-path chronological validation remains server-side;
+negative-stock prevention, and controlled adjustments are present. Inventory pools, a transfer command/workflow, and the persisted
+interrupted/resume/partial-delivery workflow are not present. The existing
+station-scoped dip, calibration, adjustment, opening-balance, and delivery
+commands are now reachable from the valuation stream detail workspace. WAC and late-cost
+revaluation are implemented in the A12 costing workstreams below.
 
 ### A6 — Cash and banking — PARTIAL
 
@@ -112,9 +152,11 @@ Evidence: `src/modules/cash/`; migration `0006_cash_banking.sql`;
 `tests/integration/a6-cash-banking.test.ts`.
 
 Collections, partial collection allocation, deposits, deposit allocation,
-manual bank confirmation, exact-decimal capacity checks, idempotency, audit,
-and tenant/permission checks are implemented. Cash count, handover, dispute,
-and complete custody state-machine commands remain incomplete.
+manual bank confirmation, cash counts, handover/dispute state transitions,
+exact-decimal capacity checks, idempotency, audit, and tenant/permission checks
+are implemented; the station summary now receives its custody totals and
+per-collection custody calculations from PostgreSQL. External bank/provider connectivity and final operational
+custody training remain deployment/cutover work.
 
 ### A7 — Supplier creditors — COMPLETE
 
@@ -133,9 +175,16 @@ Evidence: `src/modules/customers/`; migration
 
 Customer identity, credit accounts, prepaid value/litres, product-specific
 balances, authorizations/reservations, fuel usage, payments/top-ups, append-only
-ledger behavior, statements, and A5 evidence linkage are implemented. Customer
-invoices, benefits, vehicle/driver controls, and several commercial policies
-remain unresolved.
+ledger behavior, statements, A5 evidence linkage, and a tenant-authorized
+read-only customer/account workspace are implemented. The workspace exposes
+exact-decimal balances, reservations, available credit/prepaid capacity, and
+recent ledger evidence through `/customers` and `/api/customers/summary`.
+Customer statements apply as-of filtering, keyset pagination, balances, and
+running balances in PostgreSQL; the browser only renders server-confirmed
+values. The workspace now exposes account selection, as-of filtering, retry/
+empty states, and cursor-based older-entry loading without browser arithmetic.
+Customer invoices, benefits, vehicle/driver controls, and several commercial
+policies remain unresolved.
 
 ### A9 — Provider settlement reconciliation — COMPLETE
 
@@ -161,10 +210,29 @@ Evidence: `src/modules/reporting/` and `src/modules/profitability/`; routes
 Tenant-safe management and daily read models combine finalized A4–A9 facts,
 return source IDs, preserve metric-specific date bases, and expose an initial
 responsive dashboard. A10.2 now consumes REV1 revenue and A12 restated COGS for
-ordinary-fuel gross margin, including explicit unavailable states. Report
-artifacts, export generation, full timestamp-based `as_of`, Action Center
-behavior, Explain This Number, operating-expense recognition, and broader
-profitability remain incomplete.
+ordinary-fuel gross margin, including explicit unavailable states. Protected
+CSV export is available at `src/app/api/reports/management/export/route.ts` and
+serializes the same exact-decimal report values with private no-store headers,
+scope metadata, generated timestamp, empty-section metadata, and source
+lineage IDs. The dashboard now includes
+read-only report-backed Needs Attention and Explain These Numbers panels with
+evidence anchors and source lineage. Canonical revenue and restated COGS
+summary totals now come from PostgreSQL numeric window aggregates while detail
+lineage remains available for explanation. Report artifacts/private downloads,
+full timestamp-based `as_of`, and broader profitability remain incomplete.
+
+### Expense control — PARTIAL
+
+Evidence: `src/modules/expenses/`, `src/app/api/expenses/`, migrations
+`0021_expenses.sql`, `0023_expense_role_alignment.sql`, and
+`0024_expense_recurring_templates.sql`.
+
+Station-scoped expense submission, exact-decimal validation, configurable
+approval thresholds, no-self-approval, second-approver enforcement, posting,
+reversal, recognition events, recurring templates, idempotency, audit, RLS,
+API routes, and permission-gated version-aware approval/return/rejection,
+posting, and reversal controls are implemented. Broader payment settlement
+integration remains to be completed.
 
 ### A11 — Daily operations workspace — COMPLETE
 
@@ -268,12 +336,12 @@ reporting remain separate reporting concerns.
 | Phase 0 — Repository and engineering foundation | **COMPLETE** | Toolchain, CI/test harness, Drizzle/PostgreSQL workflow, environment validation, and modular monolith foundation. |
 | Phase 1 — Tenancy, identity, authorization, and security | **COMPLETE** | Tenant hierarchy, identity, authorization, RLS, runtime roles, security events, and isolation proof. |
 | Phase 2 — Core forecourt vertical slice | **COMPLETE** | Business day → shift → meters → declarations → reconciliation → approval/post/lock, with representative mobile workflow. |
-| Phase 3 — Inventory, tanks, deliveries, and costing | **PARTIAL** | Tank/dip/delivery/movement/adjustment foundation is implemented; A12.3 and A12.4 provide opening/receipt valuation, canonical sale COGS, persisted WAC projections, and late-cost revaluation; inventory pools, transfers, calibration execution, and full delivery interruption flow remain. |
+| Phase 3 — Inventory, tanks, deliveries, and costing | **PARTIAL** | Tank/dip/calibration/delivery/movement/adjustment foundation plus server-derived full/partial/excess receipt classification is implemented; A12.3 and A12.4 provide opening/receipt valuation, canonical sale COGS, persisted WAC projections, and late-cost revaluation; inventory pools, transfers, and persisted delivery interruption/resume flow remain. |
 | Phase 3 — WAC and late-cost revaluation | **COMPLETE** | A12.3 provides opening/receipt valuation and canonical pre-sale-WAC COGS; A12.4 provides append-only whole-history revaluation and the production A5 bridge; A12.5 closes bounded posting as intentionally deferred from v1 by design. |
-| Phase 4 — Cash, banking, and electronic settlements | **PARTIAL** | Collections, deposits, manual bank confirmation, and A9 provider settlement reconciliation are implemented; cash counts, handovers, disputes, and any separate provider-batch scope remain. |
-| Phase 5 — Suppliers, customers, and expenses | **PARTIAL** | Supplier creditors are complete; the implemented customer subset is complete; customer invoices/benefits/policy items and expenses/recurring costs remain. |
+| Phase 4 — Cash, banking, and electronic settlements | **PARTIAL** | Collections, deposits, manual bank confirmation, cash counts, handovers/disputes, and A9 provider settlement reconciliation are implemented; external integrations and any separate provider-batch scope remain. |
+| Phase 5 — Suppliers, customers, and expenses | **PARTIAL** | Supplier creditors are complete; the implemented customer subset and expense lifecycle/API plus approval/payment controls are present; customer invoices/benefits/policy items and broader settlement integration remain. |
 | Phase 5 — Customer commercial policy | **REQUIRES_CLIENT_DECISION** | Credit limits, approval thresholds, billing cadence, tax invoice treatment, prepaid funding/conversion, benefit policy, and vehicle/driver rules are not invented by the repository. |
-| Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10.2 now provides canonical ordinary-fuel revenue and gross-margin reporting from REV1/A12 authorities; exports/artifacts, full as-of, Action Center, and Explain This Number remain incomplete. |
+| Phase 6 — Profitability, reporting, and owner dashboard | **PARTIAL** | A10.2 provides canonical ordinary-fuel revenue and gross-margin reporting from REV1/A12 authorities, protected CSV export, report-backed Needs Attention, and Explain These Numbers/source lineage; report artifacts, private downloads, and full timestamp-based as-of remain incomplete. |
 | Phase 6 — Profitability and gross margin | **PARTIAL** | Canonical REV1 revenue and A12 restated COGS are consumed by the A10 profitability read model with latest-finalized-revision, business-date, tenant, and station safeguards; operating expenses, fixed-cost recognition, and broader profitability remain incomplete. |
 | Phase 7 — Production hardening | **PARTIAL** | Security/RLS foundations, representative accessibility/weak-network behavior, release notes, operational procedures, health/readiness checks, structured runtime observability with normalized route/status signals, machine-validated provider-neutral dashboard/alert definitions, a read-only staging alert-proof harness, staging smoke tooling, Lane 4 database PITR/integrity/security, isolated app-to-restored-DB readiness, and witnessed R2 deleted-object recovery evidence exist. Staging R2 uses a separate private recovery bucket with 30-day Bucket Lock and lifecycle controls plus a successful retained-copy/delete/restore/checksum drill. RPO/RTO targets remain unproven; deployed sink integration, provider dashboards/alerts, retention, notification delivery/ownership, offline sync, and full incident/tenant-recovery exercises remain open. |
 | Phase 8 — Pilot and cutover | **PARTIAL** | Onboarding workbook and per-tank opening balance support exist; approved cross-domain opening batch, training, shadow operation, UAT, discrepancy classification, and pilot exit evidence remain. |

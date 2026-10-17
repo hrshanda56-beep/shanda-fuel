@@ -51,6 +51,9 @@ export function getAuth() {
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
+      // Session expiry is an authorization boundary; reads must not silently
+      // extend a near-expiry or expired persisted session.
+      disableSessionRefresh: true,
       additionalFields: {
         revokedAt: { type: 'date', required: false, input: false },
         strongAuthenticatedAt: { type: 'date', required: false, input: false },

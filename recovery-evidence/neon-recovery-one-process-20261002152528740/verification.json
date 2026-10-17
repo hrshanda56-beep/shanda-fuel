@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "shanda-fuel.neon-recovery-one-process.v1",
+  "projectId": "solitary-dream-28627763",
+  "recoveryBranchId": "br-restless-field-b1tel5y4",
+  "recoveryEndpointId": "ep-damp-mountain-b1pqoeh9",
+  "database": "shanda_fuel",
+  "inspectionRole": "neondb_owner",
+  "checkpoint": "2026-10-01T18:27:23.068Z",
+  "recoveredThrough": "2026-10-01T18:27:16Z",
+  "rpoSeconds": 7.068,
+  "noMutationAttempted": true,
+  "oneNodeProcess": true,
+  "uriPersisted": false,
+  "tenantContextMechanism": {
+    "sourceFiles": [
+      "src/platform/db/transaction.ts",
+      "src/platform/db/tenant-context.ts"
+    ],
+    "applicationFunction": "withTenantTransaction",
+    "operation": "transaction-local set_config(..., true)",
+    "keys": [
+      "app.tenant_id",
+      "app.actor_id",
+      "app.membership_id",
+      "app.legal_entity_id",
+      "app.station_id",
+      "app.request_id"
+    ],
+    "authorityRequirement": "server-resolved trusted tenant transaction context"
+  },
+  "verificationError": "Error",
+  "verificationCompletedAt": "2026-10-02T15:25:28.740Z",
+  "invariants": {
+    "target": false,
+    "session": false,
+    "transaction": false,
+    "role": false,
+    "tenantA": false,
+    "tenantB": false,
+    "grants": false,
+    "fixtureRows": false,
+    "migrations": false,
+    "rls": false,
+    "security": false
+  },
+  "allInvariants": false
+}

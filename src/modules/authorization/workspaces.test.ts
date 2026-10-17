@@ -42,6 +42,7 @@ describe('permission-driven workspaces', () => {
       'reconciliations',
       'inventory',
       'cash',
+      'expenses',
       'settlements',
       'customers',
       'reports',

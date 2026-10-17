@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "shanda-fuel.recovery-known-good-checkpoint.v1",
+  "checkpointUtc": "2026-10-01T18:27:23.068Z",
+  "timestampSource": "PostgreSQL clock_timestamp() inside one UTC repeatable-read read-only transaction",
+  "neonProjectId": "solitary-dream-28627763",
+  "sourceBranchId": "br-holy-star-b1t1176i",
+  "databaseName": "shanda_fuel",
+  "databaseVerification": {
+    "transactionReadOnly": true,
+    "transactionIsolation": "repeatable read",
+    "timezone": "UTC",
+    "stagingNeonHostContext": true,
+    "tenantOwnedTablesRlsForced": true,
+    "tenantOwnedTablesChecked": 67
+  },
+  "tenantA": {
+    "tenantId": "a1000000-0000-4000-8000-000000000001",
+    "stationId": "a5000000-0000-4000-8000-000000000001",
+    "stationStatus": "ACTIVE"
+  },
+  "tenantB": {
+    "tenantId": "b1000000-0000-4000-8000-000000000001",
+    "legalEntityId": "b4000000-0000-4000-8000-000000000001",
+    "stationId": "b5000000-0000-4000-8000-000000000001",
+    "stationStatus": "ACTIVE"
+  },
+  "tenantBHierarchyCounts": {
+    "tenantRows": 1,
+    "legalEntityRows": 1,
+    "stationRows": 1
+  },
+  "tenantAGrantCountIntoTenantB": 0,
+  "tenantBFixtureGrantCount": 0,
+  "authenticatedReadOnlySmoke": {
+    "health": 200,
+    "readiness": 200,
+    "tenantA": 200,
+    "tenantBWithTenantASession": 403,
+    "deploymentId": "dpl_EmkkM1RtMfgNAz9fgyeHFxrLjoJ4",
+    "requestIds": {
+      "health": "e136904b-fa4e-4e18-b8de-313f0226a0c4",
+      "readiness": "a4585cc0-c137-452d-9dd5-8219a1f856e9",
+      "tenantA": "cd9ba9a2-a1b4-4e68-9368-af2e825277b7",
+      "tenantB": "d8ee73e9-c827-4d21-b552-6be22614da09"
+    }
+  }
+}

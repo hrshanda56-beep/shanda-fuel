@@ -18,6 +18,7 @@ export type NavigationKey =
   | 'reconciliations'
   | 'inventory'
   | 'cash'
+  | 'expenses'
   | 'settlements'
   | 'customers'
   | 'suppliers'
@@ -118,6 +119,13 @@ export const navigationSections: readonly NavigationSection[] = [
         match: [/^\/stations\/[^/]+\/cash(\/|$)/],
       },
       {
+        key: 'expenses',
+        label: 'Expenses',
+        icon: 'wallet',
+        destination: { kind: 'route', path: '/expenses' },
+        match: [/^\/expenses(\/|$)/],
+      },
+      {
         key: 'settlements',
         label: 'Provider settlements',
         icon: 'wallet',
@@ -135,11 +143,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'customers',
         label: 'Customers',
         icon: 'users',
-        destination: {
-          kind: 'wip',
-          message:
-            'Customer accounts, statements and credit are still being completed. This is where they will live. Nothing has been changed.',
-        },
+        destination: { kind: 'route', path: '/customers' },
         match: [/^\/customers(\/|$)/],
       },
     ],

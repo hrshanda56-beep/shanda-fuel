@@ -52,7 +52,7 @@ type AccountRow = {
   customer_status: Customer['status'];
 };
 
-type LedgerRow = {
+export type LedgerRow = {
   id: string;
   tenant_id: string;
   customer_id: string;
@@ -114,7 +114,7 @@ function accountFromRow(row: AccountRow): CustomerAccount {
   };
 }
 
-function ledgerFromRow(row: LedgerRow): CustomerLedgerEntry {
+export function ledgerFromRow(row: LedgerRow): CustomerLedgerEntry {
   const base = {
     id: row.id,
     tenantId: row.tenant_id,

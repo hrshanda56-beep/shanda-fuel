@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "shanda-fuel.neon-recovery-inspection.v1",
+  "projectId": "solitary-dream-28627763",
+  "recoveryBranchId": "br-restless-field-b1tel5y4",
+  "recoveryEndpointId": "ep-damp-mountain-b1pqoeh9",
+  "database": "shanda_fuel",
+  "inspectionRole": "migration_owner",
+  "checkpoint": "2026-10-01T18:27:23.068Z",
+  "recoveredThrough": "2026-10-01T18:27:16Z",
+  "rpoSeconds": 7.068,
+  "noMutationAttempted": true,
+  "verificationError": "Error",
+  "verificationCompletedAt": "2026-10-01T21:53:37.761Z",
+  "invariants": {
+    "target": false,
+    "session": false,
+    "transaction": false,
+    "tenantA": false,
+    "tenantB": false,
+    "grants": false,
+    "fixtureRows": false,
+    "migrations": false,
+    "rls": false,
+    "security": false
+  },
+  "allInvariants": false
+}

@@ -41,7 +41,9 @@ describe('grouped navigation model', () => {
 describe('navigation projection', () => {
   it('hides items that are not visible and drops empty sections', () => {
     const projection: NavigationProjection[] = syntheticNavigationProjection.map((entry) =>
-      entry.key === 'cash' || entry.key === 'settlements' ? { ...entry, visible: false } : entry,
+      ['cash', 'expenses', 'settlements'].includes(entry.key)
+        ? { ...entry, visible: false }
+        : entry,
     );
     const sections = resolveNavigation(projection, {});
     expect(sections.map((section) => section.key)).not.toContain('finance');
@@ -68,11 +70,10 @@ describe('navigation destinations', () => {
     resolveNavigation(syntheticNavigationProjection, context).flatMap((section) => section.items);
   const find = (key: string, context = {}) => resolved(context).find((entry) => entry.key === key)!;
 
-  it('routes planned areas to the work-in-progress dialog instead of dead links', () => {
+  it('routes incomplete planned areas to work-in-progress while exposing customer review', () => {
     expect(find('customers')).toMatchObject({
-      state: 'wip',
-      reason: 'planned',
-      feature: 'Customers',
+      state: 'link',
+      href: '/customers',
     });
     expect(find('settings')).toMatchObject({ state: 'wip', feature: 'Settings' });
   });
@@ -126,6 +127,7 @@ describe('current-route indication', () => {
     ['/stations/demo/reconciliations/new', 'reconciliations'],
     ['/inventory/valuation/streams/t/p', 'inventory'],
     ['/stations/demo/cash', 'cash'],
+    ['/expenses', 'expenses'],
     ['/stations/demo/settlements', 'settlements'],
     ['/suppliers', 'suppliers'],
     ['/reports', 'reports'],

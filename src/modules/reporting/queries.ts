@@ -15,8 +15,6 @@ import {
   exact,
   formatLitres,
   formatMoney,
-  subtractExact,
-  sumExact,
   uniqueIds,
 } from './domain';
 import {
@@ -308,6 +306,11 @@ async function readProviders(
       gross: string;
       allocated: string;
       fees: string;
+      unallocated: string;
+      settlement_gross_total: string | null;
+      allocated_total: string | null;
+      unallocated_total: string | null;
+      fees_total: string | null;
     }>(sql`
       with allocation_totals as (
         select settlement_id, coalesce(sum(a.amount) filter (where a.state = 'POSTED' and not exists (
@@ -321,7 +324,12 @@ async function readProviders(
       select s.id, pp.id as provider_id, pp.name as provider_name, s.station_id,
         s.transaction_date, s.settlement_date, s.settlement_reference,
         s.gross_amount::text as gross, coalesce(a.allocated, '0') as allocated,
-        (coalesce(s.provider_fee_amount, 0) + coalesce(s.provider_deduction_amount, 0))::text as fees
+        (s.gross_amount - coalesce(a.allocated::numeric, 0))::text as unallocated,
+        (coalesce(s.provider_fee_amount, 0) + coalesce(s.provider_deduction_amount, 0))::text as fees,
+        sum(s.gross_amount) over ()::text as settlement_gross_total,
+        sum(coalesce(a.allocated::numeric, 0)) over ()::text as allocated_total,
+        sum(s.gross_amount - coalesce(a.allocated::numeric, 0)) over ()::text as unallocated_total,
+        sum(coalesce(s.provider_fee_amount, 0) + coalesce(s.provider_deduction_amount, 0)) over ()::text as fees_total
       from app.provider_settlements s
       join app.provider_accounts pa on pa.tenant_id = s.tenant_id and pa.id = s.provider_account_id
       join app.payment_providers pp on pp.tenant_id = pa.tenant_id and pp.id = pa.provider_id
@@ -359,18 +367,18 @@ async function readProviders(
     settlementReference: row.settlement_reference,
     grossAmount: formatMoney(row.gross),
     allocatedAmount: formatMoney(row.allocated),
-    unallocatedAmount: formatMoney(subtractExact(row.gross, row.allocated)),
+    unallocatedAmount: formatMoney(row.unallocated),
     feesAndDeductions: formatMoney(row.fees),
-    variance: formatMoney(subtractExact(row.gross, row.allocated)),
+    variance: formatMoney(row.unallocated),
   }));
   return {
     paymentEvidence: formatMoney(evidence[0]?.value),
-    settlementGross: formatMoney(sumExact(rows.map((row) => row.grossAmount))),
-    allocatedAmount: formatMoney(sumExact(rows.map((row) => row.allocatedAmount))),
-    unallocatedProviderAmount: formatMoney(sumExact(rows.map((row) => row.unallocatedAmount))),
+    settlementGross: formatMoney(settlements[0]?.settlement_gross_total),
+    allocatedAmount: formatMoney(settlements[0]?.allocated_total),
+    unallocatedProviderAmount: formatMoney(settlements[0]?.unallocated_total),
     unmatchedEvidenceAmount: formatMoney(unmatched[0]?.value),
-    settlementVariance: formatMoney(sumExact(rows.map((row) => row.variance))),
-    feesAndDeductions: formatMoney(sumExact(rows.map((row) => row.feesAndDeductions))),
+    settlementVariance: formatMoney(settlements[0]?.unallocated_total),
+    feesAndDeductions: formatMoney(settlements[0]?.fees_total),
     rows,
   };
 }
@@ -388,6 +396,10 @@ async function readSuppliers(
     credit_note_value: string;
     payments: string;
     outstanding: string;
+    invoice_total: string | null;
+    credit_note_total: string | null;
+    payments_total: string | null;
+    outstanding_total: string | null;
   }>(sql`
     select s.id as supplier_id, s.code, s.legal_name,
       coalesce(sum(m.amount) filter (where m.movement_type = 'INVOICE'), 0)::text as invoice_value,
@@ -396,6 +408,12 @@ async function readSuppliers(
       coalesce(sum(case when m.movement_type in ('INVOICE', 'PAYMENT_REVERSAL') then m.amount
                         when m.movement_type in ('CREDIT_NOTE', 'PAYMENT') then -m.amount
                         else 0 end), 0)::text as outstanding
+      ,sum(coalesce(sum(m.amount) filter (where m.movement_type = 'INVOICE'), 0)) over ()::text as invoice_total
+      ,sum(coalesce(sum(m.amount) filter (where m.movement_type = 'CREDIT_NOTE'), 0)) over ()::text as credit_note_total
+      ,sum(coalesce(sum(case when m.movement_type = 'PAYMENT' then m.amount when m.movement_type = 'PAYMENT_REVERSAL' then -m.amount else 0 end), 0)) over ()::text as payments_total
+      ,sum(coalesce(sum(case when m.movement_type in ('INVOICE', 'PAYMENT_REVERSAL') then m.amount
+                              when m.movement_type in ('CREDIT_NOTE', 'PAYMENT') then -m.amount
+                              else 0 end), 0)) over ()::text as outstanding_total
     from app.suppliers s
     left join app.supplier_account_movements m
       on m.tenant_id = s.tenant_id and m.supplier_id = s.id
@@ -415,10 +433,10 @@ async function readSuppliers(
     outstandingBalance: formatMoney(row.outstanding),
   }));
   return {
-    invoiceValue: formatMoney(sumExact(mapped.map((row) => row.invoiceValue))),
-    creditNoteValue: formatMoney(sumExact(mapped.map((row) => row.creditNoteValue))),
-    payments: formatMoney(sumExact(mapped.map((row) => row.payments))),
-    outstandingBalance: formatMoney(sumExact(mapped.map((row) => row.outstandingBalance))),
+    invoiceValue: formatMoney(rows[0]?.invoice_total),
+    creditNoteValue: formatMoney(rows[0]?.credit_note_total),
+    payments: formatMoney(rows[0]?.payments_total),
+    outstandingBalance: formatMoney(rows[0]?.outstanding_total),
     rows: mapped,
   };
 }
@@ -448,6 +466,10 @@ async function readCustomers(
     prepaid_value: string;
     reserved_amount: string;
     reserved_litres: string;
+    receivable_total: string | null;
+    prepaid_value_total: string | null;
+    reserved_amount_total: string | null;
+    reserved_litres_total: string | null;
   }>(sql`
     with balances as (
       select customer_id,
@@ -473,7 +495,11 @@ async function readCustomers(
       coalesce(b.receivable, 0)::text as receivable,
       coalesce(b.prepaid_value, 0)::text as prepaid_value,
       coalesce(r.reserved_amount, 0)::text as reserved_amount,
-      coalesce(r.reserved_litres, 0)::text as reserved_litres
+      coalesce(r.reserved_litres, 0)::text as reserved_litres,
+      sum(coalesce(b.receivable, 0)) over ()::text as receivable_total,
+      sum(coalesce(b.prepaid_value, 0)) over ()::text as prepaid_value_total,
+      sum(coalesce(r.reserved_amount, 0)) over ()::text as reserved_amount_total,
+      sum(coalesce(r.reserved_litres, 0)) over ()::text as reserved_litres_total
     from app.customers c
     left join balances b on b.customer_id = c.id
     left join reservations r on r.customer_id = c.id
@@ -491,10 +517,10 @@ async function readCustomers(
   }));
   return {
     availability: customerScopeAvailability(),
-    receivableBalance: formatMoney(sumExact(mapped.map((row) => row.receivableBalance))),
-    prepaidValueBalance: formatMoney(sumExact(mapped.map((row) => row.prepaidValueBalance))),
-    reservedAmount: formatMoney(sumExact(mapped.map((row) => row.reservedAmount))),
-    reservedLitres: formatLitres(sumExact(mapped.map((row) => row.reservedLitres))),
+    receivableBalance: formatMoney(rows[0]?.receivable_total),
+    prepaidValueBalance: formatMoney(rows[0]?.prepaid_value_total),
+    reservedAmount: formatMoney(rows[0]?.reserved_amount_total),
+    reservedLitres: formatLitres(rows[0]?.reserved_litres_total),
     rows: mapped,
   };
 }
@@ -517,6 +543,11 @@ async function readInventory(
     delivery_value: string;
     movement_ids: string[] | null;
     delivery_ids: string[] | null;
+    expected_total: string | null;
+    physical_total: string | null;
+    variance_total: string | null;
+    delivery_litres_total: string | null;
+    delivery_value_total: string | null;
   }>(sql`
     with movement_totals as (
       select station_id, tank_id, product_id, coalesce(sum(quantity_litres), 0)::text as expected,
@@ -546,7 +577,12 @@ async function readInventory(
       coalesce(del.delivery_litres, '0') as delivery_litres,
       coalesce(del.delivery_value, '0') as delivery_value,
       coalesce(m.movement_ids, ARRAY[]::uuid[]) as movement_ids,
-      coalesce(del.delivery_ids, ARRAY[]::uuid[]) as delivery_ids
+      coalesce(del.delivery_ids, ARRAY[]::uuid[]) as delivery_ids,
+      sum(coalesce(m.expected, '0')::numeric) over ()::text as expected_total,
+      sum(coalesce(d.physical, '0')::numeric) over ()::text as physical_total,
+      sum(case when d.physical is null then 0 else (d.physical::numeric - coalesce(m.expected, '0')::numeric) end) over ()::text as variance_total,
+      sum(coalesce(del.delivery_litres, '0')::numeric) over ()::text as delivery_litres_total,
+      sum(coalesce(del.delivery_value, '0')::numeric) over ()::text as delivery_value_total
     from app.tanks t
     join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
     left join movement_totals m on m.station_id = t.station_id and m.tank_id = t.id and m.product_id = t.product_id
@@ -572,11 +608,11 @@ async function readInventory(
     deliveryIds: uniqueIds(row.delivery_ids ?? []),
   }));
   return {
-    expectedLitres: formatLitres(sumExact(mapped.map((row) => row.expectedLitres))),
-    physicalLitres: formatLitres(sumExact(mapped.map((row) => row.physicalLitres))),
-    varianceLitres: formatLitres(sumExact(mapped.map((row) => row.varianceLitres))),
-    deliveryLitres: formatLitres(sumExact(mapped.map((row) => row.deliveryLitres))),
-    deliveryValue: formatMoney(sumExact(mapped.map((row) => row.deliveryValue))),
+    expectedLitres: formatLitres(rows[0]?.expected_total),
+    physicalLitres: formatLitres(rows[0]?.physical_total),
+    varianceLitres: formatLitres(rows[0]?.variance_total),
+    deliveryLitres: formatLitres(rows[0]?.delivery_litres_total),
+    deliveryValue: formatMoney(rows[0]?.delivery_value_total),
     rows: mapped,
   };
 }
@@ -588,10 +624,12 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
     category: string;
     amount: string;
     ids: string[] | null;
+    total_amount: string | null;
   }>(sql`
     with approved as (${approvedReconciliations(filters)})
     select a.business_date, a.station_id, e.category, coalesce(sum(e.amount), 0)::text as amount,
-      coalesce(array_agg(e.id order by e.id), ARRAY[]::uuid[]) as ids
+      coalesce(array_agg(e.id order by e.id), ARRAY[]::uuid[]) as ids,
+      sum(sum(e.amount)) over ()::text as total_amount
     from approved a
     join app.reconciliation_expenses e on e.tenant_id = ${filters.tenantId}
       and e.station_id = a.station_id and e.reconciliation_id = a.reconciliation_id
@@ -605,7 +643,7 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
     amount: formatMoney(row.amount),
     expenseIds: uniqueIds(row.ids ?? []),
   }));
-  return { total: formatMoney(sumExact(mapped.map((row) => row.amount))), rows: mapped };
+  return { total: formatMoney(rows[0]?.total_amount), rows: mapped };
 }
 
 async function readDaily(
@@ -820,6 +858,7 @@ const dateBasis: ReportDateBasis = {
 export async function getManagementReportFromRequest(
   request: Request,
   input: unknown,
+  options: { permissionCode?: 'report.view' | 'report.export' } = {},
 ): Promise<ManagementReport> {
   const filters = parseManagementReportQuery(input);
   const authority = await resolveTenantExecutionContext({
@@ -839,7 +878,7 @@ export async function getManagementReportFromRequest(
     : { tenantId: filters.tenantId, scopeType: 'TENANT' as const };
   authorize({
     actor: authority.authorization,
-    permissionCode: 'report.view',
+    permissionCode: options.permissionCode ?? 'report.view',
     requestedScope,
   });
   const reportTransactionContext = station

@@ -10,6 +10,7 @@ import {
   postInventoryCostRevaluationFromRequest,
   recordOpeningInventoryCostFromRequest,
   recordOpeningBalanceFromRequest,
+  recordTankCalibrationChartFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
   requestInventoryCostRevaluationFromRequest,
@@ -22,6 +23,7 @@ const COMMANDS = [
   'CreateTank',
   'DeactivateTank',
   'RecordTankDip',
+  'RecordTankCalibrationChart',
   'CreateDelivery',
   'ConfirmDelivery',
   'PostInventoryAdjustment',
@@ -61,6 +63,9 @@ export const POST = withRequestObservability(
           break;
         case 'RecordTankDip':
           result = await recordTankDipFromRequest(request, body);
+          break;
+        case 'RecordTankCalibrationChart':
+          result = await recordTankCalibrationChartFromRequest(request, body);
           break;
         case 'CreateDelivery':
           result = await createDeliveryFromRequest(request, body);

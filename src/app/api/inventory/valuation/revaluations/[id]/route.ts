@@ -10,6 +10,8 @@ function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
+type RevaluationRouteContext = { params: Promise<{ id: string }> };
+
 export const GET = withRequestObservability(
   async (request: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> => {
     try {
@@ -32,4 +34,4 @@ export const GET = withRequestObservability(
       });
     }
   },
-);
+) as (request: Request, context: RevaluationRouteContext) => Promise<Response>;

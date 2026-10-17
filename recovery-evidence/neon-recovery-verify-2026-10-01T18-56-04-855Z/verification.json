@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "shanda-fuel.neon-recovery-get-verification.v1",
+  "verifiedAt": "2026-10-01T18:56:04.855Z",
+  "recoveryRehearsalStartedAt": "2026-10-01T18:37:03.128Z",
+  "expectedParentTimestamp": "2026-10-01T18:27:23.068Z",
+  "classification": "A",
+  "exactRecoveryBranchExists": true,
+  "recoveryBranchId": "br-restless-field-b1tel5y4",
+  "recoveryBranch": {
+    "name": "recovery-20261001-182723z",
+    "state": "ready",
+    "createdAt": "2026-10-01T18:37:04Z",
+    "parentId": "br-holy-star-b1t1176i",
+    "parentTimestamp": "2026-10-01T18:27:16Z",
+    "protected": false
+  },
+  "endpoints": [
+    {
+      "id": "ep-damp-mountain-b1pqoeh9",
+      "type": "read_write",
+      "state": "idle",
+      "region": "aws-eu-central-1",
+      "createdAt": "2026-10-01T18:37:04Z"
+    }
+  ],
+  "exactlyOneExpectedReadWriteEndpoint": true,
+  "sourceBranch": {
+    "id": "br-holy-star-b1t1176i",
+    "name": "production",
+    "state": "ready",
+    "primary": true,
+    "default": true,
+    "unchangedStructuralState": true
+  },
+  "operationsGet": {
+    "httpStatus": 200,
+    "supported": true,
+    "recentRelevant": [
+      {
+        "id": "890d403a-7815-42a8-91dc-b2011346640d",
+        "status": "finished",
+        "type": "suspend_compute",
+        "createdAt": "2026-10-01T18:42:17Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      },
+      {
+        "id": "83a276af-ff09-4f65-afb3-55b406c92377",
+        "status": "finished",
+        "type": "epc_sync",
+        "createdAt": "2026-10-01T18:37:04Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      },
+      {
+        "id": "497d8a28-58b4-41d9-8f96-d531730222dc",
+        "status": "finished",
+        "type": "start_compute",
+        "createdAt": "2026-10-01T18:37:04Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      },
+      {
+        "id": "60e44683-f397-479a-b0e0-6da521c7cb6e",
+        "status": "finished",
+        "type": "timeline_update_protected_config",
+        "createdAt": "2026-10-01T18:37:04Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      },
+      {
+        "id": "ca262d12-4c00-4226-b6cc-74d5498904c0",
+        "status": "finished",
+        "type": "create_branch",
+        "createdAt": "2026-10-01T18:37:04Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      },
+      {
+        "id": "fc0db48e-7dc2-41a3-9b45-902ae9a19d7a",
+        "status": "finished",
+        "type": "suspend_compute",
+        "createdAt": "2026-10-01T18:33:47Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      },
+      {
+        "id": "29ac63af-7a08-4e26-938a-bb6754c9460f",
+        "status": "finished",
+        "type": "start_compute",
+        "createdAt": "2026-10-01T18:27:15Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      },
+      {
+        "id": "fc030df0-0c1b-4f27-8d61-074213a183b2",
+        "status": "finished",
+        "type": "suspend_compute",
+        "createdAt": "2026-10-01T18:23:32Z",
+        "startedAt": null,
+        "finishedAt": null,
+        "error": null
+      }
+    ]
+  },
+  "noPostSentThisTurn": true
+}

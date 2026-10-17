@@ -249,18 +249,14 @@ export async function setReconciliationAttendantsFromRequest(request: Request, i
     'reconciliation_attendants',
     async (transaction, context) => {
       for (const attendantId of payload.attendantIds) {
-        const eligible = await transaction.execute<{ id: string }>(sql`
-        select m.id
-        from app.memberships m
-        join app.membership_role_assignments a
-          on a.tenant_id = m.tenant_id and a.membership_id = m.id
-        where m.tenant_id = ${context.tenantId} and m.id = ${attendantId} and m.status = 'ACTIVE'
-          and a.scope_type = 'STATION' and a.station_id = ${context.stationId}
-          and a.role_code = 'ATTENDANT'
-          and (a.expires_at is null or a.expires_at > now())
-        limit 1
-      `);
-        if (!eligible[0])
+        const eligible = await transaction.execute<{ eligible: boolean }>(sql`
+          select app.is_station_operator(
+            ${context.tenantId}::uuid,
+            ${context.stationId}::uuid,
+            ${attendantId}::uuid
+          ) as eligible
+        `);
+        if (eligible[0]?.eligible !== true)
           throw new AppError('FORBIDDEN', 'An attendant is not assigned to this station');
       }
       await replaceRows(
@@ -868,7 +864,6 @@ export async function approveProductionReconciliationFromRequest(request: Reques
                 and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
             )
           order by m.segment_start_at, m.id
-          for update of m
         `);
         const allocations = deriveSegmentSaleAllocations(
           {
@@ -912,7 +907,6 @@ export async function approveProductionReconciliationFromRequest(request: Reques
                 and movement_type='SALE'
                 and source_type='METER_SEGMENT_SALE'
                 and source_id=${allocation.segmentId}
-              for update
             `);
             if (existingMovement.length > 0) {
               throw new AppError(

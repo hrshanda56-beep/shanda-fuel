@@ -44,6 +44,15 @@ describe('cash custody domain', () => {
     expect(() => transitionCashHandover('DRAFT', 'AcceptCashHandover')).toThrow('DRAFT state');
   });
 
+  it('keeps cancel limited to handovers that have not been accepted or resolved', () => {
+    expect(transitionCashHandover('DRAFT', 'CancelCashHandover')).toBe('CANCELLED');
+    expect(transitionCashHandover('SUBMITTED', 'CancelCashHandover')).toBe('CANCELLED');
+    expect(transitionCashHandover('DISPUTED', 'CancelCashHandover')).toBe('CANCELLED');
+    expect(() => transitionCashHandover('ACCEPTED', 'CancelCashHandover')).toThrow(
+      'ACCEPTED state',
+    );
+  });
+
   it('supports partial collection from one reconciliation without binary arithmetic', () => {
     expect(
       calculateCashCollectionAmount([

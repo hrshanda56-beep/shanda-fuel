@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "shanda-fuel.recovery-app-dry-run.v2",
+  "deploymentStartedAt": "2026-10-02T17:55:37.058Z",
+  "validationCompletedAt": "2026-10-02T17:58:39.148Z",
+  "source": {
+    "originMainSha": "0db85f6192f7c96fd92282389cc970b35bae2e33",
+    "uiPolishIncluded": true,
+    "worktreePath": "/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-recovery-app",
+    "worktreeClean": true
+  },
+  "recoveryVercel": {
+    "projectId": "prj_yLsHYS3NNLJajpT4ai9ttPaadRc3",
+    "projectName": "shanda-fuel-recovery-20261001-182723z",
+    "deploymentId": "dpl_FjVhFrv7NBbQyxJXySjKL3zH8Ewd",
+    "deploymentUrl": "https://shanda-fuel-recovery-20261001-182723z-gzou8vt8y.vercel.app",
+    "stableRecoveryOrigin": "https://shanda-fuel-recovery-20261001-18272.vercel.app",
+    "target": "production",
+    "state": "READY",
+    "deploymentProtection": ["vercel_authentication"],
+    "cliGeneratedProtectionBypassForReadOnlyGets": true
+  },
+  "recoveryNeon": {
+    "branchId": "br-restless-field-b1tel5y4",
+    "endpointId": "ep-damp-mountain-b1pqoeh9",
+    "runtimeRole": "app_runtime",
+    "database": "shanda_fuel",
+    "pooledRuntimeIdentityVerified": true
+  },
+  "generatedRecoverySecretNames": [
+    "BETTER_AUTH_SECRET",
+    "AUDIT_SIGNING_KEY_ID",
+    "AUDIT_SIGNING_KEY"
+  ],
+  "configuredEnvironmentVariableNames": [
+    "APP_ENV",
+    "APP_URL",
+    "DATABASE_URL",
+    "BETTER_AUTH_SECRET",
+    "AUDIT_SIGNING_KEY_ID",
+    "AUDIT_SIGNING_KEY"
+  ],
+  "validation": {
+    "health": {"method": "GET", "status": 200},
+    "readiness": {"method": "GET", "status": 200},
+    "loginRoute": {"method": "GET", "status": 200},
+    "signInPerformed": false,
+    "tenantSmokePerformed": false,
+    "r2Configured": false,
+    "rateLimitProofPerformed": false
+  },
+  "safety": {
+    "canonicalStagingProjectUntouched": true,
+    "canonicalStagingAliasUntouched": true,
+    "productionProjectUntouched": true,
+    "databaseWritesPerformed": false,
+    "recoveryDatabaseUrlWrittenToEvidence": false,
+    "temporaryBootstrapRouteDeployed": false
+  },
+  "recoveryObjectives": {
+    "rpoSeconds": 7.068,
+    "rpoWithinTarget": true,
+    "rtoClassification": "FAIL",
+    "rtoReason": "The original rehearsal exceeded the four-hour objective before this dry-run app validation."
+  }
+}

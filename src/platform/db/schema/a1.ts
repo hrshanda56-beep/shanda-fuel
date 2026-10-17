@@ -108,6 +108,25 @@ export const memberships = appSchema.table(
   ],
 );
 
+export const membershipStatusContext = appSchema.table(
+  'membership_status_context',
+  {
+    tenantId: uuid('tenant_id').notNull(),
+    membershipId: uuid('membership_id').notNull(),
+    status: text('status').notNull(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.tenantId, table.membershipId] }),
+    index('membership_status_context_status_idx').on(table.tenantId, table.status),
+    foreignKey({
+      columns: [table.tenantId, table.membershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'membership_status_context_membership_fk',
+    }),
+  ],
+);
+
 export const permissionDefinitions = platformSchema.table('permission_definitions', {
   code: text('code').primaryKey(),
   description: text('description').notNull(),

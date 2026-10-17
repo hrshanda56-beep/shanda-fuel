@@ -14,7 +14,12 @@ export function getDatabase(): Database {
   if (pooledDatabase) return pooledDatabase;
 
   const url = assertDatabaseConfigured();
-  pooledClient = postgres(url, { max: 10, prepare: false, onnotice: () => undefined });
+  pooledClient = postgres(url, {
+    max: 10,
+    prepare: false,
+    onnotice: () => undefined,
+    connection: { TimeZone: 'UTC' },
+  });
   pooledDatabase = drizzle(pooledClient, { schema });
   return pooledDatabase;
 }

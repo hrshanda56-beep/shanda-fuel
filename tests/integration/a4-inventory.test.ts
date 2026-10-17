@@ -8,6 +8,7 @@ import {
   type InventoryCommandContext,
 } from '../../src/modules/inventory/application';
 import {
+  getExpectedTankStock,
   getTankVariance,
   postInventoryMovementInTransaction,
 } from '../../src/modules/inventory/persistence';
@@ -41,6 +42,9 @@ const ids = {
   deliveryMovement: 'a4000000-0000-4000-8000-000000000082',
   saleMovement: 'a4000000-0000-4000-8000-000000000083',
   dip: 'a4000000-0000-4000-8000-000000000091',
+  projectionSaleMovement: 'a4000000-0000-4000-8000-000000000092',
+  projectionDeliveryMovement: 'a4000000-0000-4000-8000-000000000093',
+  projectionCommandMovement: 'a4000000-0000-4000-8000-000000000094',
 };
 
 let client: Sql;
@@ -341,5 +345,63 @@ describe('A4 PostgreSQL inventory persistence', () => {
         }),
       ),
     ).rejects.toThrow();
+  });
+
+  it('uses a PostgreSQL stock total for reads while commands retain chronological validation', async () => {
+    const trusted = context();
+    await withTenantTransaction(trusted.authority.transaction, (transaction) =>
+      transaction.insert(inventoryMovements).values([
+        {
+          id: ids.projectionSaleMovement,
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          tankId: ids.petrolTank,
+          productId: ids.petrol,
+          movementType: 'SALE',
+          quantityLitres: '-10',
+          effectiveAt: new Date('2026-09-24T06:00:00Z'),
+          businessDate: '2026-09-24',
+          sourceType: 'PROJECTION_TEST_SALE',
+          sourceId: ids.projectionSaleMovement,
+          actorMembershipId: ids.membership,
+        },
+        {
+          id: ids.projectionDeliveryMovement,
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          tankId: ids.petrolTank,
+          productId: ids.petrol,
+          movementType: 'DELIVERY',
+          quantityLitres: '20',
+          effectiveAt: new Date('2026-09-24T07:00:00Z'),
+          businessDate: '2026-09-24',
+          sourceType: 'PROJECTION_TEST_DELIVERY',
+          sourceId: ids.projectionDeliveryMovement,
+          actorMembershipId: ids.membership,
+        },
+      ]),
+    );
+
+    const position = await getTankVariance(trusted, ids.petrolTank);
+    expect(position.expectedLitres).toBe('10');
+    expect(await getExpectedTankStock(trusted, ids.petrolTank)).toBe('10');
+
+    await expect(
+      withTenantTransaction(trusted.authority.transaction, (transaction) =>
+        postInventoryMovementInTransaction(transaction, {
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          tankId: ids.petrolTank,
+          productId: ids.petrol,
+          movementType: 'DELIVERY',
+          quantityLitres: '1',
+          effectiveAt: new Date('2026-09-24T08:00:00Z'),
+          businessDate: '2026-09-24',
+          sourceType: 'PROJECTION_TEST_COMMAND',
+          sourceId: ids.projectionCommandMovement,
+          actorMembershipId: ids.membership,
+        }),
+      ),
+    ).rejects.toThrow('negative stock');
   });
 });

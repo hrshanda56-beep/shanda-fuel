@@ -47,9 +47,9 @@ export default async function CashPage({
       <div className="page-header">
         <div>
           <p className="eyebrow">Cash and banking</p>
-          <h1>Station collections</h1>
+          <h1>Cash custody</h1>
           <p className="lede">
-            Track custody, collection allocation, and distinct bank confirmation.
+            Track collections, handovers, and distinct bank confirmation for this station.
           </p>
         </div>
       </div>

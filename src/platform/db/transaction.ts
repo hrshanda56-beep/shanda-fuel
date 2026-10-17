@@ -14,6 +14,14 @@ export async function withTenantTransaction<T>(
   const database = getDatabase();
 
   return database.transaction(async (transaction) => {
+    // The application may connect through an administrative local/CI role
+    // that is a member of app_runtime. Enter the least-privileged runtime
+    // role before any tenant context or domain work is performed so SECURITY
+    // DEFINER capabilities cannot be reached from the administrative role.
+    // In production DATABASE_URL is already app_runtime; SET LOCAL ROLE to
+    // the current role remains valid and keeps both deployment shapes alike.
+    await transaction.execute(sql`set local role app_runtime`);
+
     // Every key is set, including absent optional values, so a pooled
     // connection can never retain a broader context from another command.
     await transaction.execute(sql`

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "shanda-fuel.neon-recovery-staged-one-process.v1",
+  "projectId": "solitary-dream-28627763",
+  "recoveryBranchId": "br-restless-field-b1tel5y4",
+  "recoveryEndpointId": "ep-damp-mountain-b1pqoeh9",
+  "database": "shanda_fuel",
+  "inspectionRole": "neondb_owner",
+  "checkpoint": "2026-10-01T18:27:23.068Z",
+  "recoveredThrough": "2026-10-01T18:27:16Z",
+  "rpoSeconds": 7.068,
+  "oneNodeProcess": true,
+  "uriPersisted": false,
+  "noMutationAttempted": true,
+  "contextMechanism": {
+    "sources": [
+      "src/platform/db/transaction.ts",
+      "src/platform/db/tenant-context.ts"
+    ],
+    "function": "withTenantTransaction",
+    "operation": "transaction-local set_config(..., true)",
+    "keys": [
+      "app.tenant_id",
+      "app.actor_id",
+      "app.membership_id",
+      "app.legal_entity_id",
+      "app.station_id",
+      "app.request_id"
+    ]
+  },
+  "keyPrecheck": {
+    "exists": true,
+    "nonEmpty": true,
+    "modeOctal": "600"
+  },
+  "uriGet": {
+    "httpStatus": 401
+  },
+  "failure": {
+    "stage": "URI_GET",
+    "errorName": "AuditFailure",
+    "sanitizedMessage": "Neon connection URI request returned HTTP 401",
+    "sanitizedStackLocation": "    at file:///Users/wolftech/1TheStudio/1The%20Studio/shanda-fuel/[eval1]:72:20",
+    "httpStatus": 401
+  },
+  "verificationCompletedAt": "2026-10-02T15:32:06.829Z",
+  "stagesReached": [
+    "KEY_PRECHECK",
+    "URI_GET"
+  ],
+  "invariants": {
+    "target": false,
+    "probe": false,
+    "transaction": false,
+    "tenantA": false,
+    "tenantB": false,
+    "grants": false,
+    "fixtures": false,
+    "migrations": false,
+    "rls": false,
+    "security": false
+  },
+  "allInvariants": false
+}

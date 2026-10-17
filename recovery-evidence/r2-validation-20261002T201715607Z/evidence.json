@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "shanda-fuel.r2-recovery-validation.v2",
+  "startedAt": "2026-10-02T20:16:59.641Z",
+  "recoveryProject": {
+    "projectId": "prj_yLsHYS3NNLJajpT4ai9ttPaadRc3",
+    "deploymentId": "dpl_FjVhFrv7NBbQyxJXySjKL3zH8Ewd",
+    "deployedSha": "0db85f6192f7c96fd92282389cc970b35bae2e33"
+  },
+  "r2": {
+    "environmentClassification": "staging/non-production",
+    "requiredVariableNames": [
+      "R2_ACCOUNT_ID",
+      "R2_BUCKET",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_RECOVERY_BUCKET",
+      "R2_RECOVERY_ACCESS_KEY_ID",
+      "R2_RECOVERY_SECRET_ACCESS_KEY"
+    ],
+    "configuredPrimaryBucket": "shanda-fuel-staging-private",
+    "configuredRecoveryBucket": "shanda-fuel-staging-recovery",
+    "accountIdValid": true,
+    "primaryBucketValid": true,
+    "recoveryBucketValid": true,
+    "primaryBucketMatchesExpected": true,
+    "recoveryBucketMatchesExpected": true,
+    "targetBucketsMatchExpected": true,
+    "readOnlyPreflight": "passed",
+    "probeKey": "private/recovery-validation/20261002/f85a04f3-068e-4cae-9d86-6cbb0053fd04",
+    "localSha256": "49b76cbc8134f629a9a2b5ecabc66b3a47da34333b771d8486f323ebfa5eb0ad",
+    "downloadedSha256": "49b76cbc8134f629a9a2b5ecabc66b3a47da34333b771d8486f323ebfa5eb0ad",
+    "checksumMatch": true,
+    "probeCleanup": "passed"
+  },
+  "applicationLevelValidation": "not_required_for_direct_repository_r2_drill",
+  "stagingUnchanged": true,
+  "productionUntouched": true,
+  "rpoSeconds": 7.068,
+  "rto": "FAIL",
+  "status": "R2 RECOVERY VALIDATION: PASS",
+  "completedAt": "2026-10-02T20:17:15.607Z"
+}

@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "shanda-fuel.recovery-db-verification.v3",
+  "recoveryBranchId": "br-restless-field-b1tel5y4",
+  "recoveryEndpointId": "ep-damp-mountain-b1pqoeh9",
+  "database": "shanda_fuel",
+  "runtimeRole": "app_runtime",
+  "knownGoodCheckpoint": "2026-10-01T18:27:23.068Z",
+  "providerRecoveredThrough": "2026-10-01T18:27:16Z",
+  "rpoSeconds": 7.068,
+  "noMutationAttempted": true,
+  "target": {
+    "host": "ep-damp-mountain-b1pqoeh9-pooler.c-5.eu-central-1.aws.neon.tech",
+    "databaseFromUri": "shanda_fuel",
+    "hostMatchesRecoveryEndpoint": true,
+    "hostMatchesSourceEndpoint": false,
+    "uriHeldInMemoryOnly": true
+  },
+  "session": {
+    "label": "session",
+    "errorName": "PostgresError"
+  },
+  "tenantA": {
+    "tenant_rows": 0,
+    "station_rows": 0
+  },
+  "tenantB": {
+    "tenant_rows": 0,
+    "legal_entity_rows": 0,
+    "station_rows": 0
+  },
+  "grants": {
+    "tenant_a_into_tenant_b": 0,
+    "tenant_b": 0,
+    "tenant_a": 0
+  },
+  "fixtureRows": {
+    "business_days": 0,
+    "shifts": 0,
+    "reconciliations": 0
+  },
+  "migration": {
+    "label": "migration",
+    "errorName": "PostgresError"
+  },
+  "rls": {
+    "total": 67,
+    "enabled": 67,
+    "forced": 67,
+    "unforced": []
+  },
+  "securityDefiner": [
+    {
+      "schema": "app",
+      "name": "create_meter_exception_for_unavailable_boundary",
+      "args": ""
+    },
+    {
+      "schema": "app",
+      "name": "resolve_meter_exception",
+      "args": "p_tenant_id uuid, p_station_id uuid, p_exception_id uuid, p_resolution_boundary_id uuid, p_resolution_kind text, p_corrected_segment_id uuid, p_replacement_installation_id uuid"
+    },
+    {
+      "schema": "app",
+      "name": "seal_meter_segment",
+      "args": "p_tenant_id uuid, p_station_id uuid, p_segment_id uuid, p_expected_version integer"
+    },
+    {
+      "schema": "app",
+      "name": "upsert_inventory_cost_stream_state",
+      "args": "p_tenant_id uuid, p_station_id uuid, p_tank_id uuid, p_product_id uuid, p_quantity_litres numeric, p_inventory_value numeric, p_currency text, p_weighted_average_cost numeric, p_valuation_status text, p_last_movement_effective_at timestamp with time zone, p_last_movement_id uuid, p_last_cost_event_effective_at timestamp with time zone, p_last_cost_event_id uuid, p_projection_version integer"
+    },
+    {
+      "schema": "platform",
+      "name": "consume_rate_limit",
+      "args": "p_scope text, p_key_hash text, p_limit integer, p_window_seconds integer"
+    }
+  ],
+  "appRole": {
+    "rolcanlogin": true,
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "rolcreatedb": false,
+    "rolcreaterole": false,
+    "rolinherit": false,
+    "rolreplication": false
+  },
+  "privileges": {
+    "database_connect": true,
+    "platform_usage": true,
+    "rate_limit_execute": true,
+    "rate_limit_exists": true
+  },
+  "ownership": {
+    "relations": 0,
+    "schemas": 0,
+    "routines": 0
+  },
+  "invariants": {
+    "session": false,
+    "tenantA": false,
+    "tenantB": false,
+    "grants": true,
+    "fixtureRows": true,
+    "migration": false,
+    "rls": true,
+    "appRuntime": true,
+    "privileges": true
+  },
+  "allInvariants": false,
+  "verificationCompletedAt": "2026-10-01T20:40:09.094Z"
+}\n

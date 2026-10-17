@@ -150,7 +150,7 @@ export async function establishStepUp(input: {
   try {
     const session = await auth.api.getSession({
       headers: input.request.headers,
-      query: { disableCookieCache: true },
+      query: { disableCookieCache: true, disableRefresh: true },
     });
     if (
       !session ||

@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "shanda-fuel.timed-recovery-evidence.v1",
+  "runId": "rto-20261003054133865",
+  "environment": "staging",
+  "recoveryModel": "STANDING_RECOVERY_TARGET",
+  "targetLabel": "isolated-staging",
+  "rto": {
+    "startAtUtc": "2026-10-03T05:41:33.865Z",
+    "startAtLocal": "2026-10-03, 07:41:33 GMT+2",
+    "endAtUtc": "2026-10-03T05:57:39.509Z",
+    "endAtLocal": "2026-10-03, 07:57:39 GMT+2",
+    "startMonotonicNs": "361786799513333",
+    "endMonotonicNs": "362752453311916",
+    "measuredSeconds": 966,
+    "targetSeconds": 14400,
+    "withinNumericTarget": true,
+    "status": "RTO_FAIL",
+    "failureReason": "R2 recovery validation did not complete"
+  },
+  "neon": {
+    "projectId": "solitary-dream-28627763",
+    "sourceBranchId": "br-holy-star-b1t1176i",
+    "sourceBranchName": "production",
+    "recoveryBranchName": "recovery-rto-20261003-054133z",
+    "recoveryBranchId": "br-billowing-mud-b102dp8n",
+    "endpointId": "ep-quiet-butterfly-b1znnivx",
+    "createdAt": "2026-10-03T05:42:05Z",
+    "readyAt": "2026-10-03T05:42:07Z",
+    "requestedCheckpointAt": "2026-10-01T18:27:23.068Z",
+    "providerParentTimestamp": "2026-10-01T18:33:17Z",
+    "rpoSeconds": 0,
+    "rpoTargetSeconds": 900,
+    "rpoWithinTarget": true,
+    "rpoNote": "Provider parent timestamp was later than the requested checkpoint; bounded RPO was clamped to zero."
+  },
+  "database": {
+    "database": "shanda_fuel",
+    "runtimeRole": "app_runtime",
+    "sessionRole": "app_runtime",
+    "transactionReadOnly": true,
+    "schemaValidation": "passed",
+    "expectedTables": 5,
+    "availableTables": 5
+  },
+  "source": {
+    "originMainSha": "0db85f6192f7c96fd92282389cc970b35bae2e33",
+    "cleanDetachedWorktree": true
+  },
+  "deployment": {
+    "projectId": "prj_yLsHYS3NNLJajpT4ai9ttPaadRc3",
+    "deploymentId": "dpl_q9n8ugFQYVAAc15W1xEf1WtVuDwH",
+    "deploymentUrl": "https://shanda-fuel-recovery-20261001-182723z-ppax9c5mp.vercel.app",
+    "stableRecoveryUrl": "https://shanda-fuel-recovery-20261001-18272.vercel.app",
+    "ready": true,
+    "deployedSha": "0db85f6192f7c96fd92282389cc970b35bae2e33",
+    "health": { "httpStatus": 200, "requestId": "3dc76268-96dc-43bb-9e10-c424b47115c2" },
+    "readiness": { "httpStatus": 200, "requestId": "6bd3f133-a8b6-4078-b05d-a19253d3b643" },
+    "loginPage": { "httpStatus": 200 }
+  },
+  "authentication": {
+    "email": "operator+smoke@staging.shandafuel.invalid",
+    "freshLoginHttpStatus": 200,
+    "freshSessionCookieStored": true
+  },
+  "tenantAuthorization": {
+    "tenantA": {
+      "tenantId": "a1000000-0000-4000-8000-000000000001",
+      "stationId": "a5000000-0000-4000-8000-000000000001",
+      "httpStatus": 200,
+      "requestId": "d3cb4222-99a2-4bf4-9ca8-6e87532b6e95"
+    },
+    "tenantB": {
+      "tenantId": "b1000000-0000-4000-8000-000000000001",
+      "stationId": "b5000000-0000-4000-8000-000000000001",
+      "httpStatus": 403,
+      "requestId": "3a30541c-0dfb-451f-9df1-03775d612ba0"
+    },
+    "pass": true
+  },
+  "temporaryGrants": {
+    "permissions": ["business_day.view", "shift.view"],
+    "grantIds": [
+      "e7b796ac-9a96-4a5a-80c1-f6d534ebe320",
+      "c2cfce8e-1d30-4c19-a5e2-0bdc92ec7049"
+    ],
+    "scope": "Tenant A / Membership A / Legal Entity A / Station A",
+    "cleanup": "revoked_and_verified_inactive"
+  },
+  "r2": {
+    "status": "failed",
+    "expectedPrimaryBucket": "shanda-fuel-staging-private",
+    "expectedRecoveryBucket": "shanda-fuel-staging-recovery",
+    "processMemoryOnly": true,
+    "credentialsAvailable": false,
+    "failureCode": "r2_credentials_unavailable",
+    "drillError": "ERR_INVALID_URL",
+    "probeObjectCreated": false
+  },
+  "cleanup": {
+    "temporaryGrantsRevoked": true,
+    "temporaryDatabaseUrlDeleted": true,
+    "smokePasswordDeleted": true,
+    "sessionCookieDeleted": true,
+    "r2LocalCredentialFilesFound": false
+  },
+  "pass": false,
+  "redacted": true
+}

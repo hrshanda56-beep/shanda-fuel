@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildLoginRedirectPath,
-  safeNextPath,
-  stationReconciliationsPath,
-} from './navigation';
+import { buildLoginRedirectPath, safeNextPath, stationReconciliationsPath } from './navigation';
 
 describe('workspace navigation safety', () => {
   it('preserves authenticated context in login redirects', () => {
@@ -11,9 +7,7 @@ describe('workspace navigation safety', () => {
       buildLoginRedirectPath(
         'https://fuel.shandahr.com/stations/bindura?tenantId=tenant-1&stationId=station-2',
       ),
-    ).toBe(
-      '/login?next=%2Fstations%2Fbindura%3FtenantId%3Dtenant-1%26stationId%3Dstation-2',
-    );
+    ).toBe('/login?next=%2Fstations%2Fbindura%3FtenantId%3Dtenant-1%26stationId%3Dstation-2');
   });
 
   it('rejects external and backslash-based next destinations', () => {
@@ -24,7 +18,10 @@ describe('workspace navigation safety', () => {
 
   it('preserves a same-origin path, query and fragment', () => {
     expect(
-      safeNextPath('/?tenantId=tenant-1&stationId=station-2#workspace', 'https://fuel.shandahr.com'),
+      safeNextPath(
+        '/?tenantId=tenant-1&stationId=station-2#workspace',
+        'https://fuel.shandahr.com',
+      ),
     ).toBe('/?tenantId=tenant-1&stationId=station-2#workspace');
   });
 

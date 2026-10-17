@@ -11,12 +11,16 @@ import {
   fuelDeliveryAllocations,
   inventoryMovements,
   tanks,
+  tankCalibrationPoints,
   tankDips,
 } from '../../platform/db/schema/a4';
 import {
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
+  classifyDeliveryReceipt,
+  convertCalibratedMeasurementToLitres,
   requireAdjustmentReason,
+  validateCalibrationPoints,
   validateDeliveryAllocations,
 } from './domain';
 import {
@@ -64,13 +68,44 @@ const deactivateTankPayload = authorityPayload.extend({
   status: z.enum(['INACTIVE', 'RETIRED']),
 });
 
-const dipPayload = authorityPayload.extend({
+const dipPayload = authorityPayload
+  .extend({
+    tankId: uuid,
+    measuredAt: instant,
+    physicalLitres: decimalText.nullish(),
+    rawMeasurement: decimalText.nullish(),
+    measurementUnit: z.string().trim().min(1).max(32).nullish(),
+    notes: z.string().trim().max(1000).nullish(),
+  })
+  .superRefine((value, refinement) => {
+    if (!value.physicalLitres && !value.rawMeasurement) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['physicalLitres'],
+        message: 'Physical litres or a calibrated raw measurement is required',
+      });
+    }
+    if (value.rawMeasurement && !value.measurementUnit) {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['measurementUnit'],
+        message: 'A measurement unit is required for a calibrated raw measurement',
+      });
+    }
+  });
+
+const calibrationPayload = authorityPayload.extend({
   tankId: uuid,
-  measuredAt: instant,
-  physicalLitres: decimalText,
-  rawMeasurement: decimalText.nullish(),
-  measurementUnit: z.string().trim().min(1).max(32).nullish(),
-  notes: z.string().trim().max(1000).nullish(),
+  points: z
+    .array(
+      z.object({
+        measurementValue: decimalText,
+        litres: decimalText,
+        measurementUnit: z.string().trim().min(1).max(32),
+      }),
+    )
+    .min(2)
+    .max(500),
 });
 
 const allocationPayload = z.object({ tankId: uuid, quantityLitres: decimalText });
@@ -263,7 +298,7 @@ export async function deactivateTankFromRequest(request: Request, input: unknown
 
 export async function recordTankDipFromRequest(request: Request, input: unknown) {
   const payload = dipPayload.parse(input);
-  if ((payload.rawMeasurement === undefined) !== (payload.measurementUnit === undefined)) {
+  if (Boolean(payload.rawMeasurement) !== Boolean(payload.measurementUnit)) {
     throw new AppError(
       'VALIDATION_FAILED',
       'Raw dip measurement and unit must be supplied together',
@@ -290,7 +325,45 @@ export async function recordTankDipFromRequest(request: Request, input: unknown)
       });
       if (tank.status === 'RETIRED')
         throw new AppError('CONFLICT', 'Retired tanks cannot be dipped');
-      assertWithinTankCapacity(payload.physicalLitres, tank.capacityLitres);
+      const calibrationPoints = payload.rawMeasurement
+        ? await transaction
+            .select({
+              measurementValue: tankCalibrationPoints.measurementValue,
+              litres: tankCalibrationPoints.litres,
+              measurementUnit: tankCalibrationPoints.measurementUnit,
+            })
+            .from(tankCalibrationPoints)
+            .where(
+              and(
+                eq(tankCalibrationPoints.tenantId, context.tenantId),
+                eq(tankCalibrationPoints.stationId, context.stationId),
+                eq(tankCalibrationPoints.tankId, tank.id),
+              ),
+            )
+            .orderBy(asc(tankCalibrationPoints.measurementValue))
+        : [];
+      const calibratedLitres = payload.rawMeasurement
+        ? convertCalibratedMeasurementToLitres(
+            payload.rawMeasurement,
+            payload.measurementUnit!,
+            calibrationPoints,
+          )
+        : undefined;
+      if (
+        calibratedLitres &&
+        payload.physicalLitres &&
+        litres(calibratedLitres).value.eq(litres(payload.physicalLitres).value) === false
+      ) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'Physical litres do not match the approved calibration chart conversion',
+        );
+      }
+      const physicalLitres = payload.physicalLitres ?? calibratedLitres;
+      if (!physicalLitres) {
+        throw new AppError('VALIDATION_FAILED', 'A physical litre value could not be derived');
+      }
+      assertWithinTankCapacity(physicalLitres, tank.capacityLitres);
       const dipId = randomUUID();
       await transaction.insert(tankDips).values({
         id: dipId,
@@ -299,13 +372,56 @@ export async function recordTankDipFromRequest(request: Request, input: unknown)
         tankId: tank.id,
         measuredAt: new Date(payload.measuredAt),
         businessDate: deriveBusinessDate(payload.measuredAt, context.stationTimezone),
-        physicalLitres: litres(payload.physicalLitres).toString(),
+        physicalLitres: litres(physicalLitres).toString(),
         rawMeasurement: payload.rawMeasurement ? litres(payload.rawMeasurement).toString() : null,
         measurementUnit: payload.measurementUnit ?? null,
         recordedBy: context.authority.membership.membershipId,
         notes: payload.notes ?? null,
       });
-      return { dipId, tankId: tank.id, physicalLitres: litres(payload.physicalLitres).toString() };
+      return { dipId, tankId: tank.id, physicalLitres: litres(physicalLitres).toString() };
+    },
+  });
+}
+
+export async function recordTankCalibrationChartFromRequest(request: Request, input: unknown) {
+  const payload = calibrationPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'RecordTankCalibrationChart',
+    permissionCode: 'inventory.tank.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_CALIBRATION_CHART_RECORDED',
+      subjectType: 'Tank',
+      subjectId: payload.tankId,
+      metadata: { pointCount: payload.points.length },
+    },
+    execute: async (transaction) => {
+      const tank = await loadTankForUpdate(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+      });
+      if (tank.status === 'RETIRED') {
+        throw new AppError('CONFLICT', 'Retired tanks cannot receive a calibration chart');
+      }
+      const points = validateCalibrationPoints(payload.points);
+      await transaction.insert(tankCalibrationPoints).values(
+        points.map((point) => ({
+          id: randomUUID(),
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: tank.id,
+          measurementValue: point.measurementValue,
+          litres: point.litres,
+          measurementUnit: point.measurementUnit!,
+          recordedBy: context.authority.membership.membershipId,
+        })),
+      );
+      return { tankId: tank.id, pointCount: points.length };
     },
   });
 }
@@ -314,13 +430,23 @@ async function insertDelivery(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   payload: z.infer<typeof deliveryPayload>,
-): Promise<{ deliveryId: string; allocationIds: readonly string[] }> {
+): Promise<{
+  deliveryId: string;
+  allocationIds: readonly string[];
+  receiptKind: ReturnType<typeof classifyDeliveryReceipt>;
+  noteQuantityLitres: string;
+  actualQuantityLitres: string;
+  shortageExcessLitres: string;
+  allocatedQuantityLitres: string;
+}> {
   await assertProductBelongsToTenant(transaction, context.tenantId, payload.productId);
-  validateDeliveryAllocations(
+  const allocatedQuantityLitres = validateDeliveryAllocations(
     payload.actualQuantityLitres,
     payload.allocations.map((item) => item.quantityLitres),
   );
   const actual = litres(payload.actualQuantityLitres);
+  const noteQuantity = litres(payload.noteQuantityLitres);
+  const receiptKind = classifyDeliveryReceipt(noteQuantity.toString(), actual.toString());
   const allocationIds: string[] = [];
   const sortedAllocations = [...payload.allocations].sort((left, right) =>
     left.tankId.localeCompare(right.tankId),
@@ -340,7 +466,6 @@ async function insertDelivery(
       throw new AppError('CONFLICT', 'Retired tanks cannot receive deliveries');
   }
   const deliveryId = randomUUID();
-  const noteQuantity = litres(payload.noteQuantityLitres);
   const shortageExcess = calculateDeliveryShortageExcess(
     noteQuantity.toString(),
     actual.toString(),
@@ -382,7 +507,15 @@ async function insertDelivery(
       quantityLitres: litres(allocation.quantityLitres).toString(),
     });
   }
-  return { deliveryId, allocationIds };
+  return {
+    deliveryId,
+    allocationIds,
+    receiptKind,
+    noteQuantityLitres: noteQuantity.toString(),
+    actualQuantityLitres: actual.toString(),
+    shortageExcessLitres: shortageExcess,
+    allocatedQuantityLitres,
+  };
 }
 
 export async function createDeliveryFromRequest(request: Request, input: unknown) {
@@ -433,8 +566,19 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
         .for('update');
       const delivery = deliveries[0];
       if (!delivery) throw new AppError('NOT_FOUND', 'The requested delivery was not found');
+      const receiptKind = classifyDeliveryReceipt(
+        delivery.noteQuantityLitres,
+        delivery.actualQuantityLitres,
+      );
       if (delivery.status === 'CONFIRMED')
-        return { deliveryId: delivery.id, status: delivery.status };
+        return {
+          deliveryId: delivery.id,
+          status: delivery.status,
+          receiptKind,
+          noteQuantityLitres: delivery.noteQuantityLitres,
+          actualQuantityLitres: delivery.actualQuantityLitres,
+          shortageExcessLitres: delivery.shortageExcessLitres,
+        };
       if (delivery.status !== 'DRAFT')
         throw new AppError('CONFLICT', 'Only draft deliveries can be confirmed');
       const allocations = await transaction
@@ -521,7 +665,15 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
           updatedAt: new Date(),
         })
         .where(eq(fuelDeliveries.id, delivery.id));
-      return { deliveryId: delivery.id, status: 'CONFIRMED', movementCount: allocations.length };
+      return {
+        deliveryId: delivery.id,
+        status: 'CONFIRMED',
+        movementCount: allocations.length,
+        receiptKind,
+        noteQuantityLitres: delivery.noteQuantityLitres,
+        actualQuantityLitres: delivery.actualQuantityLitres,
+        shortageExcessLitres: delivery.shortageExcessLitres,
+      };
     },
   });
 }

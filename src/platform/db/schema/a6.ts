@@ -328,6 +328,8 @@ export const cashHandovers = appSchema.table(
     stationId: uuid('station_id').notNull(),
     fromLocationId: uuid('from_location_id').notNull(),
     toLocationId: uuid('to_location_id').notNull(),
+    transitLocationId: uuid('transit_location_id').notNull(),
+    businessDate: text('business_date').notNull(),
     expectedAmount: numeric('expected_amount', { precision: 20, scale: 4 }).notNull(),
     countedAmount: numeric('counted_amount', { precision: 20, scale: 4 }),
     variance: numeric('variance', { precision: 20, scale: 4 }),
@@ -336,6 +338,9 @@ export const cashHandovers = appSchema.table(
     deliveredBy: uuid('delivered_by').notNull(),
     receivedBy: uuid('received_by'),
     disputeReason: text('dispute_reason'),
+    varianceExplanation: text('variance_explanation'),
+    resolutionReason: text('resolution_reason'),
+    cancellationReason: text('cancellation_reason'),
     submittedAt: utcTimestamp('submitted_at'),
     acceptedAt: utcTimestamp('accepted_at'),
     version: integer('version').notNull().default(0),
@@ -351,7 +356,7 @@ export const cashHandovers = appSchema.table(
     ),
     check(
       'cash_handovers_locations_differ_ck',
-      sql`${table.fromLocationId} <> ${table.toLocationId}`,
+      sql`${table.fromLocationId} <> ${table.toLocationId} and ${table.fromLocationId} <> ${table.transitLocationId} and ${table.toLocationId} <> ${table.transitLocationId}`,
     ),
     check(
       'cash_handovers_amounts_ck',
@@ -373,6 +378,10 @@ export const cashHandovers = appSchema.table(
     cashLocationScope(
       { tenantId: table.tenantId, stationId: table.stationId, locationId: table.toLocationId },
       'cash_handovers_to_location_fk',
+    ),
+    cashLocationScope(
+      { tenantId: table.tenantId, stationId: table.stationId, locationId: table.transitLocationId },
+      'cash_handovers_transit_location_fk',
     ),
     foreignKey({
       columns: [table.tenantId, table.stationId],

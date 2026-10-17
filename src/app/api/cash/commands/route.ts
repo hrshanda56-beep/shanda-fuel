@@ -2,10 +2,17 @@ import { NextResponse } from 'next/server';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   assertCashCommandType,
+  cancelHandoverFromRequest,
   confirmBankDepositFromRequest,
+  countCashFromRequest,
   createBankDepositFromRequest,
+  disputeHandoverFromRequest,
+  prepareHandoverFromRequest,
+  receiverConfirmHandoverFromRequest,
   receiveCashCollectionFromRequest,
   recordCashCollectionFromRequest,
+  resolveHandoverDisputeFromRequest,
+  senderConfirmHandoverFromRequest,
 } from '../../../../modules/cash/commands';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
@@ -27,6 +34,20 @@ export const POST = withRequestObservability(
           ? (body as { commandType: unknown }).commandType
           : undefined;
       switch (assertCashCommandType(commandType)) {
+        case 'CountCash':
+          return response(await countCashFromRequest(request, body), 201);
+        case 'PrepareHandover':
+          return response(await prepareHandoverFromRequest(request, body), 201);
+        case 'SenderConfirmHandover':
+          return response(await senderConfirmHandoverFromRequest(request, body));
+        case 'ReceiverConfirmHandover':
+          return response(await receiverConfirmHandoverFromRequest(request, body));
+        case 'DisputeHandover':
+          return response(await disputeHandoverFromRequest(request, body));
+        case 'ResolveHandoverDispute':
+          return response(await resolveHandoverDisputeFromRequest(request, body));
+        case 'CancelHandover':
+          return response(await cancelHandoverFromRequest(request, body));
         case 'RecordCashCollection':
           return response(await recordCashCollectionFromRequest(request, body), 201);
         case 'ReceiveCashCollection':

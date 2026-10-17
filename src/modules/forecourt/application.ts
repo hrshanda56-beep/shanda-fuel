@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { AppError } from '../../platform/errors';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';

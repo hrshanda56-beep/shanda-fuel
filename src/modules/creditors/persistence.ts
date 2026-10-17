@@ -256,7 +256,6 @@ export async function reverseSupplierDocumentInTransaction(
       and not exists (select 1 from app.supplier_payment_allocations r
         where r.tenant_id = a.tenant_id and r.reversal_of_id = a.id and r.state = 'REVERSED')
     order by a.id
-    for update
   `);
   const affectedPayments = new Set<string>();
   for (const allocation of allocations) {
@@ -513,7 +512,6 @@ export async function reverseSupplierPaymentInTransaction(
       and not exists (select 1 from app.supplier_payment_allocations r
         where r.tenant_id = a.tenant_id and r.reversal_of_id = a.id and r.state = 'REVERSED')
     order by a.id
-    for update
   `);
   for (const allocation of allocations) {
     await transaction.execute(sql`

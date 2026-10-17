@@ -352,6 +352,49 @@ define the scope, completion criteria, validation, evidence, and follow-up for
 each workstream. `TBD` means the value is not yet known or evidenced; it must
 not be replaced with an invented PR number, SHA, validation result, or owner.
 
+### Current production Stage 1 security closeout
+
+**Evidence date:** 2026-10-09
+
+**Stage 1 result:** **PASS**
+
+**Historical Stage 1 failure:** **SUPERSEDED**
+
+**Ready to record formal closeout:** **YES**
+
+The current production closeout is recorded against release SHA
+`2c7304916c191c66907d9582a3e7c26225c6eb59`.
+
+| Check | Current result |
+| --- | --- |
+| Migration journal and integrity | **PASS** — journal through `0024`; migrations `0022`, `0023`, and `0024` counts/hashes verified. |
+| Tenant isolation and RLS | **PASS** — tenant isolation controls verified; all 67 app tables have RLS and `FORCE ROW LEVEL SECURITY`. |
+| `app_runtime` | **PASS** — least-privilege controls verified, including migration-table and rate-limit-table restrictions. |
+| Owner and MFA | **PASS** — active `OWNER` exists and OWNER MFA enrollment is verified. |
+| Production health | **PASS** — HTTP 200. |
+| Production readiness | **PASS** — HTTP 200 with database readiness `ok`. |
+
+`job_runtime` temporary quarantine is **EFFECTIVE**. The production password
+reset completed, the new password was not exposed/captured/stored, and
+post-rotation `job_runtime` sessions were verified at `0`. The deployed web
+role remains directly verified as `app_runtime`; no active `job_runtime`
+consumer has been identified; and health, readiness, and normal authenticated
+application load were verified as passing after rotation.
+
+| `job_runtime` quarantine | **PASS** — effective after password rotation; the role remains unbound. |
+| `job_runtime` release blocker | **REMOVED** for controlled release with a documented security exception. |
+| Provider-level hardening | **OPEN** — permanent role hardening remains required and does not qualify as complete remediation. |
+
+Required post-launch provider hardening remains open: remove
+`neon_superuser` membership; enforce `NOLOGIN`, `NOINHERIT`, and
+`NOBYPASSRLS`; remove `CREATEROLE`, `CREATEDB`, and `REPLICATION`; remove
+obsolete legacy grants; and keep `job_runtime` unbound until completion is
+verified.
+
+This status update is documentation-only. It does not run migrations, apply
+`0025`, change production data, users, roles, or grants, or alter issues
+`#111` or `#113`.
+
 | Workstream | Phase | Status | Owner / Agent | Branch | Dependencies | PR | Merge SHA |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Security P0 | Phase 1 | **VERIFIED** | Codex — Agent 1 (security owner) | `fix/security-p0-dev-csp` | None recorded | #45 | `843c3fa60977d591035157bd740c8a11a564b448` |

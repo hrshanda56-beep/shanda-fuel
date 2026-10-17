@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { formatMoney, formatStatusLabel } from '../../../design-system/formatters';
+import { Select } from '../../../design-system/forms';
 import {
   Button,
   Card,
@@ -29,7 +31,52 @@ type CashSummary = {
     custodyState: string;
     currentLocationId: string;
   }>;
+  locations?: Array<{
+    locationId: string;
+    code: string;
+    name: string;
+    locationType: string;
+  }>;
+  handovers?: CashHandover[];
+  handoverCapabilities?: {
+    prepareHandover: boolean;
+    acceptHandover: boolean;
+    resolveHandover: boolean;
+  };
 };
+
+type CashHandover = {
+  handoverId: string;
+  fromLocationId: string;
+  fromLocationName: string;
+  toLocationId: string;
+  toLocationName: string;
+  expectedAmount: string;
+  countedAmount: string | null;
+  variance: string | null;
+  state: string;
+  deliveredBy: string;
+  receivedBy: string | null;
+  disputeReason: string | null;
+  submittedAt: string | null;
+  acceptedAt: string | null;
+  createdAt: string;
+  version: number;
+};
+
+const emptyHandoverCapabilities = {
+  prepareHandover: false,
+  acceptHandover: false,
+  resolveHandover: false,
+};
+
+function handoverTone(state: string): 'positive' | 'pending' | 'warning' | 'critical' | 'locked' {
+  if (state === 'ACCEPTED' || state === 'RESOLVED') return 'positive';
+  if (state === 'DISPUTED') return 'critical';
+  if (state === 'CANCELLED') return 'locked';
+  if (state === 'SUBMITTED') return 'pending';
+  return 'warning';
+}
 
 export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stationId: string }) {
   const [summary, setSummary] = useState<CashSummary | null>(null);
@@ -37,6 +84,7 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const handoverIntentKeys = useRef(new Map<string, string>());
 
   async function refresh() {
     setLoading(true);
@@ -139,6 +187,45 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
     }
   }
 
+  async function postHandoverCommand(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const commandType = String(data.get('commandType'));
+    const payload: Record<string, unknown> = { commandType, tenantId, stationId };
+    for (const [key, value] of data.entries()) {
+      if (key !== 'commandType' && value !== '') payload[key] = String(value);
+    }
+    if ('expectedVersion' in payload) payload.expectedVersion = Number(payload.expectedVersion);
+    const signature = JSON.stringify(payload);
+    const idempotencyKey = handoverIntentKeys.current.get(signature) ?? crypto.randomUUID();
+    handoverIntentKeys.current.set(signature, idempotencyKey);
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch('/api/cash/commands', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? 'Cash handover command failed');
+      handoverIntentKeys.current.delete(signature);
+      setSuccess(`${formatStatusLabel(commandType)} recorded. The station status was refreshed.`);
+      form.reset();
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Cash handover command failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const handovers = summary?.handovers ?? [];
+  const locations = summary?.locations ?? [];
+  const handoverCapabilities = summary?.handoverCapabilities ?? emptyHandoverCapabilities;
+
   return (
     <div className="content-grid">
       <Card as="section" className="panel" aria-labelledby="cash-position-title">
@@ -217,9 +304,38 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Named commands</p>
-            <h2 id="cash-actions-title">Record custody movement</h2>
+            <h2 id="cash-actions-title">Record cash control</h2>
           </div>
         </div>
+        <form
+          className="form-stack"
+          onSubmit={(event) => void postCommand(event, event.currentTarget)}
+        >
+          <input type="hidden" name="commandType" value="CountCash" />
+          <Field id="count-location-id" label="Cash location ID" required>
+            <input id="count-location-id" name="locationId" />
+          </Field>
+          <Field id="count-business-date" label="Business date" required>
+            <input id="count-business-date" name="businessDate" type="date" />
+          </Field>
+          <NumericInput
+            id="counted-cash-amount"
+            name="countedAmount"
+            label="Physical cash counted"
+            unit="USD"
+            required
+          />
+          <Field
+            id="cash-count-explanation"
+            label="Variance explanation"
+            hint="Required when the physical count differs from the server-derived expected balance."
+          >
+            <textarea id="cash-count-explanation" name="explanation" rows={3} />
+          </Field>
+          <Button type="submit" loading={busy}>
+            Record cash count
+          </Button>
+        </form>
         <form
           className="form-stack"
           onSubmit={(event) => void postCommand(event, event.currentTarget)}
@@ -280,6 +396,263 @@ export function CashWorkspace({ tenantId, stationId }: { tenantId: string; stati
           Deposit allocation and confirmation are available through the named cash API commands; no
           bank API is implied.
         </p>
+      </Card>
+
+      <Card as="section" className="panel" aria-labelledby="cash-handovers-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Cash custody handover</p>
+            <h2 id="cash-handovers-title">Prepare, confirm, and resolve custody</h2>
+          </div>
+          <StatusBadge tone="informational">Tenant and station scoped</StatusBadge>
+        </div>
+        <p>
+          The sender confirms the physical count. A variance must be explained and is routed for
+          receiver dispute and owner resolution.
+        </p>
+
+        {summary && handovers.length === 0 ? (
+          <EmptyState
+            title="No cash handovers yet"
+            message="Prepare a handover when cash is ready to move between two active station locations."
+          />
+        ) : null}
+        {summary && handovers.length > 0 ? (
+          <TableScrollRegion label="Cash handover status">
+            <table className="data-table">
+              <caption className="sr-only">Cash handover status</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Handover</th>
+                  <th scope="col">Route</th>
+                  <th scope="col">Expected</th>
+                  <th scope="col">Counted</th>
+                  <th scope="col">Variance</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {handovers.map((handover) => (
+                  <tr key={handover.handoverId}>
+                    <th scope="row">
+                      <span title={handover.handoverId}>{handover.handoverId.slice(0, 8)}</span>
+                      <br />
+                      <small>Version {handover.version}</small>
+                    </th>
+                    <td>
+                      {handover.fromLocationName}
+                      <br />
+                      <small>to {handover.toLocationName}</small>
+                    </td>
+                    <td className="numeric">{formatMoney(handover.expectedAmount)}</td>
+                    <td className="numeric">
+                      {handover.countedAmount ? formatMoney(handover.countedAmount) : '—'}
+                    </td>
+                    <td className="numeric">
+                      {handover.variance ? formatMoney(handover.variance) : '—'}
+                    </td>
+                    <td>
+                      <StatusBadge tone={handoverTone(handover.state)}>
+                        {formatStatusLabel(handover.state)}
+                      </StatusBadge>
+                      {handover.disputeReason ? (
+                        <p className="field-hint">{handover.disputeReason}</p>
+                      ) : null}
+                    </td>
+                    <td>
+                      {handover.state === 'DRAFT' && handoverCapabilities.prepareHandover ? (
+                        <form
+                          className="form-stack"
+                          onSubmit={(event) => void postHandoverCommand(event)}
+                        >
+                          <input type="hidden" name="commandType" value="SenderConfirmHandover" />
+                          <input type="hidden" name="handoverId" value={handover.handoverId} />
+                          <input type="hidden" name="expectedVersion" value={handover.version} />
+                          <NumericInput
+                            id={`handover-count-${handover.handoverId}`}
+                            name="countedAmount"
+                            label="Sender counted amount"
+                            hint="A mismatch opens a dispute."
+                            unit="USD"
+                            required
+                          />
+                          <Field
+                            id={`handover-variance-${handover.handoverId}`}
+                            label="Variance explanation"
+                            optional
+                          >
+                            <textarea
+                              id={`handover-variance-${handover.handoverId}`}
+                              name="varianceExplanation"
+                              rows={2}
+                            />
+                          </Field>
+                          <Button type="submit" loading={busy}>
+                            Sender confirm
+                          </Button>
+                        </form>
+                      ) : null}
+                      {handover.state === 'SUBMITTED' && handoverCapabilities.acceptHandover ? (
+                        <div className="form-stack">
+                          <form onSubmit={(event) => void postHandoverCommand(event)}>
+                            <input
+                              type="hidden"
+                              name="commandType"
+                              value="ReceiverConfirmHandover"
+                            />
+                            <input type="hidden" name="handoverId" value={handover.handoverId} />
+                            <input type="hidden" name="expectedVersion" value={handover.version} />
+                            <Button type="submit" loading={busy}>
+                              Receiver accept
+                            </Button>
+                          </form>
+                          <form onSubmit={(event) => void postHandoverCommand(event)}>
+                            <input type="hidden" name="commandType" value="DisputeHandover" />
+                            <input type="hidden" name="handoverId" value={handover.handoverId} />
+                            <input type="hidden" name="expectedVersion" value={handover.version} />
+                            <Field
+                              id={`handover-dispute-${handover.handoverId}`}
+                              label="Dispute reason"
+                              required
+                            >
+                              <textarea
+                                id={`handover-dispute-${handover.handoverId}`}
+                                name="reason"
+                                rows={2}
+                              />
+                            </Field>
+                            <Button type="submit" variant="secondary" loading={busy}>
+                              Dispute handover
+                            </Button>
+                          </form>
+                        </div>
+                      ) : null}
+                      {handover.state === 'DISPUTED' && handoverCapabilities.resolveHandover ? (
+                        <form
+                          className="form-stack"
+                          onSubmit={(event) => void postHandoverCommand(event)}
+                        >
+                          <input type="hidden" name="commandType" value="ResolveHandoverDispute" />
+                          <input type="hidden" name="handoverId" value={handover.handoverId} />
+                          <input type="hidden" name="expectedVersion" value={handover.version} />
+                          <Field
+                            id={`handover-resolution-${handover.handoverId}`}
+                            label="Resolution reason"
+                            required
+                          >
+                            <textarea
+                              id={`handover-resolution-${handover.handoverId}`}
+                              name="reason"
+                              rows={2}
+                            />
+                          </Field>
+                          <Button type="submit" loading={busy}>
+                            Resolve dispute
+                          </Button>
+                        </form>
+                      ) : null}
+                      {(handover.state === 'DRAFT' ||
+                        handover.state === 'SUBMITTED' ||
+                        handover.state === 'DISPUTED') &&
+                      handoverCapabilities.prepareHandover ? (
+                        <form onSubmit={(event) => void postHandoverCommand(event)}>
+                          <input type="hidden" name="commandType" value="CancelHandover" />
+                          <input type="hidden" name="handoverId" value={handover.handoverId} />
+                          <input type="hidden" name="expectedVersion" value={handover.version} />
+                          <Field
+                            id={`handover-cancel-${handover.handoverId}`}
+                            label="Cancellation reason"
+                            required
+                          >
+                            <input id={`handover-cancel-${handover.handoverId}`} name="reason" />
+                          </Field>
+                          <Button type="submit" variant="danger" loading={busy}>
+                            Cancel handover
+                          </Button>
+                        </form>
+                      ) : null}
+                      {handover.state === 'ACCEPTED' ||
+                      handover.state === 'RESOLVED' ||
+                      handover.state === 'CANCELLED' ? (
+                        <span>Finalized</span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScrollRegion>
+        ) : null}
+
+        {handoverCapabilities.prepareHandover && locations.length === 0 ? (
+          <EmptyState
+            title="Active cash locations are required"
+            message="Configure active cash locations for this station before preparing a handover."
+          />
+        ) : null}
+        {handoverCapabilities.prepareHandover && locations.length > 0 ? (
+          <form className="form-stack" onSubmit={(event) => void postHandoverCommand(event)}>
+            <h3>Prepare a handover</h3>
+            <input type="hidden" name="commandType" value="PrepareHandover" />
+            <Field id="handover-from-location" label="From cash location" required>
+              <Select
+                id="handover-from-location"
+                name="fromLocationId"
+                options={locations
+                  .filter((location) => location.locationType !== 'TRANSIT')
+                  .map((location) => ({
+                    value: location.locationId,
+                    label: `${location.name} (${location.code})`,
+                  }))}
+                placeholder="Choose the source location"
+                required
+              />
+            </Field>
+            <Field id="handover-to-location" label="To cash location" required>
+              <Select
+                id="handover-to-location"
+                name="toLocationId"
+                options={locations
+                  .filter((location) => location.locationType !== 'TRANSIT')
+                  .map((location) => ({
+                    value: location.locationId,
+                    label: `${location.name} (${location.code})`,
+                  }))}
+                placeholder="Choose the receiving location"
+                required
+              />
+            </Field>
+            <Field id="handover-transit-location" label="Transit location" required>
+              <Select
+                id="handover-transit-location"
+                name="transitLocationId"
+                options={locations
+                  .filter((location) => location.locationType === 'TRANSIT')
+                  .map((location) => ({
+                    value: location.locationId,
+                    label: `${location.name} (${location.code})`,
+                  }))}
+                placeholder="Choose the transit location"
+                required
+              />
+            </Field>
+            <Field id="handover-business-date" label="Business date" required>
+              <input id="handover-business-date" name="businessDate" type="date" required />
+            </Field>
+            <NumericInput
+              id="handover-expected-amount"
+              name="expectedAmount"
+              label="Expected amount"
+              hint="The server checks available cash before creating the custody record."
+              unit="USD"
+              required
+            />
+            <Button type="submit" loading={busy}>
+              Prepare handover
+            </Button>
+          </form>
+        ) : null}
       </Card>
     </div>
   );

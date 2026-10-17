@@ -23,6 +23,7 @@ const navigationRequirements: Readonly<Record<NavigationKey, NavigationRequireme
   reconciliations: { kind: 'any', permissions: ['reconciliation.view'] },
   inventory: { kind: 'any', permissions: ['inventory.view'] },
   cash: { kind: 'any', permissions: ['cash.collection.view', 'cash.deposit.view'] },
+  expenses: { kind: 'any', permissions: ['expense.view'] },
   settlements: { kind: 'any', permissions: ['provider.view', 'provider.settlement.view'] },
   customers: { kind: 'any', permissions: ['customer.view'] },
   suppliers: { kind: 'any', permissions: ['supplier.view'] },

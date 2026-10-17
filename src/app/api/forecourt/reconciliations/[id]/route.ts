@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getProductionReconciliationFromRequest } from '../../../../../modules/forecourt/production-reconciliation';
 import { apiErrorResponse, withRequestObservability } from '../../../../../platform/observability';
 
+type ReconciliationRouteContext = { params: Promise<{ id: string }> };
+
 export const GET = withRequestObservability(
   async (request: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> => {
     try {
@@ -21,4 +23,4 @@ export const GET = withRequestObservability(
       return apiErrorResponse(request, error);
     }
   },
-);
+) as (request: Request, context: ReconciliationRouteContext) => Promise<Response>;

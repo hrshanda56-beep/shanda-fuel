@@ -1,14 +1,28 @@
 export {
   INVENTORY_MOVEMENT_TYPES,
   assertWithinTankCapacity,
+  calculatePartialDeliveryReceipt,
   calculateDeliveryShortageExcess,
+  classifyDeliveryReceipt,
   calculateTankStockVariance,
+  convertCalibratedMeasurementToLitres,
   deriveExpectedTankStock,
+  interpolateCalibrationLitres,
   requireAdjustmentReason,
+  transitionDeliveryReceiptState,
+  validateCalibrationPoints,
   validateDeliveryAllocations,
   validateMovementQuantity,
 } from './domain';
-export type { InventoryMovementType, StockMovement } from './domain';
+export type {
+  DeliveryReceiptCommand,
+  DeliveryReceiptKind,
+  DeliveryReceiptState,
+  InventoryMovementType,
+  PartialDeliveryReceiptProgress,
+  StockMovement,
+  TankCalibrationPoint,
+} from './domain';
 export {
   createDeliveryFromRequest,
   createTankFromRequest,
@@ -19,6 +33,7 @@ export {
   postInventoryCostRevaluationFromRequest,
   recordOpeningInventoryCostFromRequest,
   recordOpeningBalanceFromRequest,
+  recordTankCalibrationChartFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
   requestInventoryCostRevaluationFromRequest,

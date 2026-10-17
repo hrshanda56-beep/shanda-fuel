@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "shanda-fuel.recovery-app-dry-run.v1",
+  "recordedAt": "2026-10-02T15:52:13.883Z",
+  "source": {
+    "originMainSha": "0db85f6192f7c96fd92282389cc970b35bae2e33",
+    "uiMergeCommit": "0db85f6192f7c96fd92282389cc970b35bae2e33",
+    "uiMergeIncluded": true,
+    "worktreePath": "/Users/wolftech/1TheStudio/1The Studio/shanda-fuel-recovery-app",
+    "worktreeClean": true
+  },
+  "recoveryVercelProject": {
+    "projectId": "prj_yLsHYS3NNLJajpT4ai9ttPaadRc3",
+    "name": "shanda-fuel-recovery-20261001-182723z",
+    "team": "shanda-hr-s-projects",
+    "linkedProjectIdVerified": true,
+    "configuredEnvironmentNames": []
+  },
+  "recoveryNeonTarget": {
+    "projectId": "solitary-dream-28627763",
+    "branchId": "br-restless-field-b1tel5y4",
+    "endpointId": "ep-damp-mountain-b1pqoeh9",
+    "database": "shanda_fuel",
+    "runtimeRole": "app_runtime",
+    "pooled": true,
+    "connectionUriRetrieved": false,
+    "authenticationHttpStatus": 401
+  },
+  "deployment": {
+    "status": "not_started",
+    "deploymentId": null,
+    "deploymentUrl": null,
+    "stableRecoveryOrigin": null,
+    "blocker": "neon_api_authentication_failed"
+  },
+  "validation": {
+    "health": "not_run",
+    "readiness": "not_run",
+    "loginRoute": "not_run"
+  },
+  "recoveryObjectives": {
+    "rpoSeconds": 7.068,
+    "rpoWithinTarget": true,
+    "originalRehearsalStartedAt": "2026-10-01T18:37:03.128Z",
+    "rtoClassification": "FAIL",
+    "rtoTargetSeconds": 14400,
+    "rtoReason": "The original rehearsal exceeded the four-hour objective before isolated application validation."
+  },
+  "safety": {
+    "canonicalStagingUntouched": true,
+    "productionUntouched": true,
+    "neonMutationOccurred": false,
+    "recoveryEnvironmentMutationOccurred": false,
+    "approvedProviderMutation": "Created the isolated Vercel recovery project only."
+  }
+}

@@ -15,6 +15,7 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
+import { InventoryOperationalActions } from '@/modules/inventory/ui/inventory-workspace';
 
 type Context = { tenantId: string; stationId: string };
 type Capabilities = { request: boolean; approve: boolean; post: boolean };
@@ -705,6 +706,17 @@ export function ValuationStreamDetail({
           </p>
         </Card>
       </div>
+      <InventoryOperationalActions
+        context={{
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          stationName: 'Selected station',
+        }}
+        tankId={stream.tank.id}
+        productId={stream.product.id}
+        onRefresh={() => void load()}
+        canRecordReceiptCost={false}
+      />
       <Card className="table-card">
         <h2>Revaluation history for this stream</h2>
         {data.revaluations.length === 0 ? (

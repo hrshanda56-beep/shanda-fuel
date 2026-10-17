@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, lte, sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import {
   deriveExpectedTankStock,
@@ -103,11 +103,35 @@ async function movementRows(
   }));
 }
 
+/**
+ * Command-path replay: preserve effective-time/id ordering so a new movement
+ * cannot make any historical stock prefix negative.
+ */
 export async function getExpectedTankStockInTransaction(
   transaction: InventoryTransaction,
   input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
 ): Promise<string> {
   return deriveExpectedTankStock(undefined, await movementRows(transaction, input));
+}
+
+async function getExpectedTankStockProjectionInTransaction(
+  transaction: InventoryTransaction,
+  input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
+): Promise<string> {
+  const rows = await transaction
+    .select({
+      expectedLitres: sql<string>`coalesce(sum(${inventoryMovements.quantityLitres}), 0)::text`,
+    })
+    .from(inventoryMovements)
+    .where(
+      and(
+        eq(inventoryMovements.tenantId, input.tenantId),
+        eq(inventoryMovements.stationId, input.stationId),
+        eq(inventoryMovements.tankId, input.tankId),
+        input.asOf ? lte(inventoryMovements.effectiveAt, input.asOf) : undefined,
+      ),
+    );
+  return rows[0]?.expectedLitres ?? '0';
 }
 
 export async function getPhysicalTankStockInTransaction(
@@ -135,7 +159,7 @@ export async function getTankStockPositionInTransaction(
   input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
 ): Promise<StockPosition> {
   const tank = await loadTankForUpdate(transaction, input);
-  const expectedLitres = await getExpectedTankStockInTransaction(transaction, input);
+  const expectedLitres = await getExpectedTankStockProjectionInTransaction(transaction, input);
   const physicalLitres = await getPhysicalTankStockInTransaction(transaction, input);
   return {
     tankId: tank.id,
@@ -154,7 +178,7 @@ export async function getExpectedTankStock(
   asOf?: Date,
 ): Promise<string> {
   return withTenantTransaction(context.authority.transaction, (transaction) =>
-    getExpectedTankStockInTransaction(transaction, {
+    getExpectedTankStockProjectionInTransaction(transaction, {
       tenantId: context.tenantId,
       stationId: context.stationId,
       tankId,
@@ -199,27 +223,53 @@ export async function getStationProductStock(
   asOf?: Date,
 ): Promise<readonly StockPosition[]> {
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
-    const stationTanks = await transaction
-      .select({ id: tanks.id })
-      .from(tanks)
-      .where(
-        and(
-          eq(tanks.tenantId, context.tenantId),
-          eq(tanks.stationId, context.stationId),
-          eq(tanks.productId, productId),
-        ),
-      )
-      .orderBy(asc(tanks.code));
-    return Promise.all(
-      stationTanks.map((tank) =>
-        getTankStockPositionInTransaction(transaction, {
-          tenantId: context.tenantId,
-          stationId: context.stationId,
-          tankId: tank.id,
-          asOf,
-        }),
-      ),
-    );
+    const rows = await transaction.execute<{
+      tank_id: string;
+      station_id: string;
+      product_id: string;
+      expected_litres: string;
+      physical_litres: string | null;
+      variance_litres: string | null;
+    }>(sql`
+      select
+        t.id as tank_id,
+        t.station_id,
+        t.product_id,
+        coalesce(sum(m.quantity_litres), 0)::text as expected_litres,
+        dip.physical_litres::text as physical_litres,
+        case when dip.physical_litres is null then null
+          else (dip.physical_litres - coalesce(sum(m.quantity_litres), 0))::text
+        end as variance_litres
+      from app.tanks t
+      left join app.inventory_movements m
+        on m.tenant_id = t.tenant_id
+       and m.station_id = t.station_id
+       and m.tank_id = t.id
+       ${asOf ? sql`and m.effective_at <= ${asOf}` : sql``}
+      left join lateral (
+        select d.physical_litres
+        from app.tank_dips d
+        where d.tenant_id = t.tenant_id
+          and d.station_id = t.station_id
+          and d.tank_id = t.id
+          ${asOf ? sql`and d.measured_at <= ${asOf}` : sql``}
+        order by d.measured_at desc, d.id desc
+        limit 1
+      ) dip on true
+      where t.tenant_id = ${context.tenantId}
+        and t.station_id = ${context.stationId}
+        and t.product_id = ${productId}
+      group by t.id, t.station_id, t.product_id, dip.physical_litres, t.code
+      order by t.code, t.id
+    `);
+    return rows.map((row) => ({
+      tankId: row.tank_id,
+      stationId: row.station_id,
+      productId: row.product_id,
+      expectedLitres: row.expected_litres,
+      physicalLitres: row.physical_litres,
+      varianceLitres: row.variance_litres,
+    }));
   });
 }
 
@@ -279,3 +329,4 @@ export async function postInventoryMovementInTransaction(
   if (!rows[0]?.id) throw new AppError('INTERNAL_ERROR', 'Inventory movement was not persisted');
   return rows[0].id;
 }
+import 'server-only';

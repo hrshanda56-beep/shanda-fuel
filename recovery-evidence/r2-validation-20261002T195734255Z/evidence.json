@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "shanda-fuel.r2-recovery-validation.v2",
+  "startedAt": "2026-10-02T19:57:34.249Z",
+  "recoveryProject": {
+    "projectId": "prj_yLsHYS3NNLJajpT4ai9ttPaadRc3",
+    "deploymentId": "dpl_FjVhFrv7NBbQyxJXySjKL3zH8Ewd",
+    "deployedSha": "0db85f6192f7c96fd92282389cc970b35bae2e33"
+  },
+  "r2": {
+    "environmentClassification": "staging/non-production",
+    "requiredVariableNames": [
+      "R2_ACCOUNT_ID",
+      "R2_BUCKET",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_RECOVERY_BUCKET",
+      "R2_RECOVERY_ACCESS_KEY_ID",
+      "R2_RECOVERY_SECRET_ACCESS_KEY"
+    ],
+    "configuredPrimaryBucket": "shanda-fuel-staging-private",
+    "configuredRecoveryBucket": "shanda-fuel-staging-recovery",
+    "targetBucketsMatchExpected": false,
+    "readOnlyPreflight": "not_started",
+    "probeKey": null,
+    "localSha256": null,
+    "downloadedSha256": null,
+    "checksumMatch": false,
+    "probeCleanup": "not_completed"
+  },
+  "applicationLevelValidation": "not_required_for_direct_repository_r2_drill",
+  "stagingUnchanged": true,
+  "productionUntouched": true,
+  "rpoSeconds": 7.068,
+  "rto": "FAIL",
+  "status": "R2 RECOVERY VALIDATION: FAIL",
+  "failureCode": "provider",
+  "completedAt": "2026-10-02T19:57:34.255Z"
+}

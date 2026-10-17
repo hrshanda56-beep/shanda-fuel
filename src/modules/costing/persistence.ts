@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { and, asc, eq, gte, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../../platform/errors';
@@ -140,8 +142,7 @@ async function loadStreamInput(
         eq(inventoryCostStreamState.tankId, key.tankId),
         eq(inventoryCostStreamState.productId, key.productId),
       ),
-    )
-    .for('update');
+    );
   const [movementRows, eventRows] = await Promise.all([
     transaction
       .select({
@@ -339,8 +340,7 @@ async function loadMovementBySource(
         eq(inventoryMovements.sourceType, input.sourceType),
         eq(inventoryMovements.sourceId, input.sourceId),
       ),
-    )
-    .for('update');
+    );
   const movement = rows[0];
   if (!movement)
     throw new AppError('CONFLICT', 'The authoritative inventory movement was not found');
@@ -406,8 +406,7 @@ async function insertOrVerifyCostEvent(
         eq(inventoryCostEvents.sourceId, input.sourceId),
         eq(inventoryCostEvents.eventType, input.eventType),
       ),
-    )
-    .for('update');
+    );
   const row = existing[0];
   if (row) {
     if (
@@ -482,8 +481,7 @@ async function loadLateCostSourceForUpdate(
         eq(inventoryMovements.sourceId, input.sourceId),
       ),
     )
-    .orderBy(asc(inventoryMovements.id))
-    .for('update');
+    .orderBy(asc(inventoryMovements.id));
   const movement = movements[0];
   if (!movement) throw new AppError('NOT_FOUND', 'The authoritative cost source was not found');
   if (
@@ -510,8 +508,7 @@ async function loadLateCostSourceForUpdate(
           eq(fuelDeliveryAllocations.productId, input.productId),
           eq(fuelDeliveryAllocations.id, input.sourceId),
         ),
-      )
-      .for('update');
+      );
     const allocation = allocations[0];
     if (!allocation || allocation.deliveryId === null) {
       throw new AppError('NOT_FOUND', 'The delivery allocation was not found');
@@ -609,8 +606,7 @@ async function insertOrVerifyCogsRevaluationEvent(
         eq(inventoryCostEvents.sourceType, 'INVENTORY_COST_REVALUATION_LINE'),
         eq(inventoryCostEvents.sourceId, input.sourceId),
       ),
-    )
-    .for('update');
+    );
   const row = existing[0];
   if (row) {
     if (
@@ -1005,8 +1001,7 @@ export async function postInventoryCostRevaluationInTransaction(
           eq(inventoryCostRevaluationLines.tenantId, key.tenantId),
           eq(inventoryCostRevaluationLines.id, lineId),
         ),
-      )
-      .for('update');
+      );
     const existingLine = existingLines[0];
     if (existingLine) {
       if (
@@ -1110,8 +1105,7 @@ export async function postOpeningInventoryCostInTransaction(
         eq(inventoryMovements.tankId, input.tankId),
         eq(inventoryMovements.movementType, 'OPENING_BALANCE'),
       ),
-    )
-    .for('update');
+    );
   const movement = openingRows[0];
   if (!movement) throw new AppError('CONFLICT', 'The requested tank has no opening balance');
   if (movement.tankId !== input.tankId || movement.movementType !== 'OPENING_BALANCE') {
@@ -1164,8 +1158,7 @@ export async function postReceiptCostInTransaction(
         eq(fuelDeliveryAllocations.stationId, input.stationId),
         eq(fuelDeliveryAllocations.id, input.allocationId),
       ),
-    )
-    .for('update');
+    );
   const allocation = allocations[0];
   if (!allocation) throw new AppError('NOT_FOUND', 'The delivery allocation was not found');
   await lockTankForStream(transaction, {
@@ -1257,8 +1250,7 @@ export async function postCanonicalSaleCostInTransaction(
         eq(inventoryMovements.stationId, input.stationId),
         eq(inventoryMovements.id, input.movementId),
       ),
-    )
-    .for('update');
+    );
   const sale = saleRows[0];
   if (!sale) throw new AppError('NOT_FOUND', 'The canonical sale movement was not found');
   await lockTankForStream(transaction, {
@@ -1355,8 +1347,7 @@ export async function postCanonicalSaleCostInTransaction(
         eq(inventorySaleCostAttributions.stationId, input.stationId),
         eq(inventorySaleCostAttributions.inventoryMovementId, input.movementId),
       ),
-    )
-    .for('update');
+    );
   const storedAttribution = existingAttribution[0];
   if (storedAttribution) {
     const matches =

@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../../platform/errors';
@@ -61,8 +63,10 @@ export async function postCanonicalSaleRevenueInTransaction(
         eq(saleRecognitionMovements.sourceId, input.meterSegmentId),
         eq(saleRecognitionMovements.classification, input.classification),
       ),
-    )
-    .for('update');
+    );
+  // Sale-recognition rows are append-only. The unique source/classification
+  // key provides duplicate protection; locking this immutable table would
+  // incorrectly require UPDATE privilege from the runtime role.
   if (existing[0]) {
     const row = existing[0];
     if (

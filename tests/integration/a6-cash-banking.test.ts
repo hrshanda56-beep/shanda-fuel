@@ -232,6 +232,30 @@ describe('A6 cash collection and banking persistence', () => {
     expectDecimal(beforeConfirmation.totals.availableAtStation, '100');
     expectDecimal(beforeConfirmation.totals.collectedButUnbanked, '800');
     expectDecimal(beforeConfirmation.totals.pendingBankConfirmation, '700');
+    expect(beforeConfirmation.collections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          collectionId: firstBody.collectionId,
+          amount: '600',
+          allocatedAmount: '600',
+          confirmedAmount: '0',
+          availableAtStation: '0',
+          collectedButUnbanked: '600',
+          pendingBankConfirmation: '600',
+          custodyState: 'IN_TRANSIT',
+        }),
+        expect.objectContaining({
+          collectionId: secondBody.collectionId,
+          amount: '200',
+          allocatedAmount: '100',
+          confirmedAmount: '0',
+          availableAtStation: '100',
+          collectedButUnbanked: '200',
+          pendingBankConfirmation: '100',
+          custodyState: 'PARTIALLY_DEPOSITED',
+        }),
+      ]),
+    );
 
     const confirmed = await postCashCommand(
       {

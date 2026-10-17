@@ -242,6 +242,8 @@ export async function runStagingAuthSmokeBootstrap(input: {
   mode: StagingAuthSmokeMode;
   email?: string;
   password?: string;
+  /** Refresh mode must never create a new credential from a route handler. */
+  requireExistingCredentialAccount?: boolean;
   auditKey?: { keyId: string; secret: string };
   requestId?: string;
 }): Promise<StagingAuthSmokeResult> {
@@ -250,7 +252,7 @@ export async function runStagingAuthSmokeBootstrap(input: {
   if (input.mode === 'bootstrap' && !input.email) {
     fail('Bootstrap requires an explicit synthetic staging email');
   }
-  if (input.mode === 'bootstrap' && !input.password) {
+  if (input.mode === 'bootstrap' && !input.password && !input.requireExistingCredentialAccount) {
     fail('Bootstrap requires a runtime-supplied password');
   }
   if (input.mode === 'bootstrap' && !input.auditKey?.keyId) {
@@ -263,6 +265,9 @@ export async function runStagingAuthSmokeBootstrap(input: {
   const credentialAccount = state.credentialAccounts.find(
     (account) => account.providerId === 'credential',
   );
+  if (input.mode === 'bootstrap' && input.requireExistingCredentialAccount && !credentialAccount) {
+    fail('Bootstrap requires an existing credential account');
+  }
   const result: StagingAuthSmokeResult = {
     mode: input.mode,
     hierarchyValid: true,
@@ -293,7 +298,9 @@ export async function runStagingAuthSmokeBootstrap(input: {
 
   const expiresAt = new Date(state.now.getTime() + STAGING_AUTH_SMOKE_TTL_MS);
   let passwordHash: string | undefined;
-  if (!credentialAccount) passwordHash = await hashPassword(input.password!);
+  if (!credentialAccount && !input.requireExistingCredentialAccount) {
+    passwordHash = await hashPassword(input.password!);
+  }
 
   if (!state.user) {
     await input.repository.createUser({
@@ -303,7 +310,7 @@ export async function runStagingAuthSmokeBootstrap(input: {
     });
     result.authUser = 'created';
   }
-  if (!credentialAccount) {
+  if (!credentialAccount && !input.requireExistingCredentialAccount) {
     await input.repository.createCredentialAccount({
       userId: input.ids.actorId,
       accountId: input.ids.actorId,

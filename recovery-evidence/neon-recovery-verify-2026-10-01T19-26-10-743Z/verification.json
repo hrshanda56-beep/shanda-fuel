@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "shanda-fuel.neon-recovery-verification.v2",
+  "projectId": "solitary-dream-28627763",
+  "sourceBranchId": "br-holy-star-b1t1176i",
+  "recoveryBranchId": "br-restless-field-b1tel5y4",
+  "recoveryEndpointId": "ep-damp-mountain-b1pqoeh9",
+  "database": "shanda_fuel",
+  "knownGoodCheckpoint": "2026-10-01T18:27:23.068Z",
+  "providerRecoveredThrough": "2026-10-01T18:27:16Z",
+  "recoveryStartedAt": "2026-10-01T18:37:03.128Z",
+  "noMutationAttempted": true,
+  "uriClassification": "A",
+  "provider": {
+    "projectHttpStatus": 200,
+    "projectId": "solitary-dream-28627763",
+    "sourceHttpStatus": 200,
+    "recoveryHttpStatus": 200,
+    "endpointHttpStatus": 200,
+    "databasesHttpStatus": 200,
+    "rolesHttpStatus": 200,
+    "operationsHttpStatus": 200,
+    "sourceBranch": {
+      "id": "br-holy-star-b1t1176i",
+      "name": "production",
+      "state": "ready",
+      "primary": true,
+      "default": true,
+      "parentId": null
+    },
+    "recoveryBranch": {
+      "id": "br-restless-field-b1tel5y4",
+      "name": "recovery-20261001-182723z",
+      "state": "ready",
+      "parentId": "br-holy-star-b1t1176i",
+      "parentTimestamp": "2026-10-01T18:27:16Z",
+      "createdAt": "2026-10-01T18:37:04Z"
+    },
+    "endpoints": [
+      {
+        "id": "ep-damp-mountain-b1pqoeh9",
+        "type": "read_write",
+        "region": "aws-eu-central-1",
+        "state": "idle",
+        "branchId": "br-restless-field-b1tel5y4",
+        "autoscalingMinCu": 0.25,
+        "autoscalingMaxCu": 2,
+        "suspendTimeoutSeconds": 0
+      }
+    ],
+    "sourceEndpointIds": [
+      "ep-empty-boat-b1wong3k"
+    ],
+    "databases": [
+      {
+        "name": "neondb",
+        "branchId": "br-restless-field-b1tel5y4",
+        "ownerName": "neondb_owner"
+      },
+      {
+        "name": "shanda_fuel",
+        "branchId": "br-restless-field-b1tel5y4",
+        "ownerName": "neondb_owner"
+      }
+    ],
+    "roles": [
+      {
+        "name": "neondb_owner",
+        "branchId": "br-restless-field-b1tel5y4"
+      },
+      {
+        "name": "migration_owner",
+        "branchId": "br-restless-field-b1tel5y4"
+      },
+      {
+        "name": "diagnostics_readonly",
+        "branchId": "br-restless-field-b1tel5y4"
+      },
+      {
+        "name": "job_runtime",
+        "branchId": "br-restless-field-b1tel5y4"
+      },
+      {
+        "name": "app_runtime",
+        "branchId": "br-restless-field-b1tel5y4"
+      }
+    ],
+    "relevantOperations": [],
+    "checks": {
+      "sourcePrimaryDefault": true,
+      "recoveryBranchId": true,
+      "recoveryBranchName": true,
+      "parentId": true,
+      "parentTimestamp": true,
+      "exactlyOneExpectedEndpoint": true,
+      "databasePresent": true
+    }
+  },
+  "error": "TypeError",
+  "verificationCompletedAt": "2026-10-01T19:26:10.743Z"
+}

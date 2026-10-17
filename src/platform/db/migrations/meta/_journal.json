@@ -148,6 +148,76 @@
       "when": 1790533600000,
       "tag": "0020_security_runtime_least_privilege_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790537200000,
+      "tag": "0021_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790540800000,
+      "tag": "0022_cash_handover_workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790544400000,
+      "tag": "0023_expense_role_alignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790548000000,
+      "tag": "0024_expense_recurring_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790551600000,
+      "tag": "0025_runtime_role_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790555200000,
+      "tag": "0026_provider_allocation_trigger_lock_capability",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790555260000,
+      "tag": "0027_runtime_append_only_validation_locks",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790555320000,
+      "tag": "0028_operator_eligibility_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790555380000,
+      "tag": "0029_runtime_sale_fk_capability",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790555440000,
+      "tag": "0030_runtime_sale_validation_lock_capability",
+      "breakpoints": true
     }
   ]
 }

@@ -151,6 +151,33 @@ export function calculateCashVariance(expectedAmount: string, countedAmount: str
   return counted.subtract(decimal(expectedAmount)).toString();
 }
 
+export function calculateCashCount(input: {
+  expectedAmount: string;
+  countedAmount: string;
+  explanation?: string;
+}): { expectedAmount: string; countedAmount: string; variance: string } {
+  const expected = decimal(input.expectedAmount);
+  if (expected.value.lt(0)) {
+    throw new AppError('VALIDATION_FAILED', 'Expected cash amount cannot be negative');
+  }
+  const counted = decimal(input.countedAmount);
+  if (counted.value.lt(0)) {
+    throw new AppError('VALIDATION_FAILED', 'Counted cash amount cannot be negative');
+  }
+  const variance = counted.subtract(expected).toString();
+  if (variance !== '0' && !input.explanation?.trim()) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'An explanation is required when counted cash differs from expected cash',
+    );
+  }
+  return {
+    expectedAmount: expected.toString(),
+    countedAmount: counted.toString(),
+    variance,
+  };
+}
+
 export function calculateCashCollectionAmount(sources: readonly CashCollectionSource[]): string {
   if (sources.length === 0) {
     throw new AppError('VALIDATION_FAILED', 'At least one reconciliation source is required');

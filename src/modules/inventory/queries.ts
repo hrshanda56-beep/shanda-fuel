@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { getStationProductStock, getTankVariance } from './persistence';
