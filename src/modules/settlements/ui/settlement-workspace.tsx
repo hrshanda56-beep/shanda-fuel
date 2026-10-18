@@ -129,6 +129,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [matchOpen, setMatchOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [cardNote, setCardNote] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'exceptions'>('all');
   const [pendingReconciliationId, setPendingReconciliationId] = useState('');
   const [reconciliationReason, setReconciliationReason] = useState('');
@@ -589,22 +590,27 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                 );
                 return (
                   <li key={method}>
-                    {actionable ? (
-                      <button
-                        type="button"
-                        className="channel-card channel-card-action"
-                        data-waiting="true"
-                        aria-haspopup="dialog"
-                        aria-label={`Match ${label} payments, ${money(total?.remaining ?? '0')} to match`}
-                        onClick={() => openMatch(target?.paymentId)}
-                      >
-                        {content}
-                      </button>
-                    ) : (
-                      <div className="channel-card" data-waiting={total ? 'true' : undefined}>
-                        {content}
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      className="channel-card channel-card-action"
+                      data-waiting={total ? 'true' : undefined}
+                      aria-haspopup={actionable ? 'dialog' : undefined}
+                      aria-label={`${actionable ? 'Match' : 'Check'} ${label} payments, ${money(total?.remaining ?? '0')} to match`}
+                      onClick={() => {
+                        if (actionable) {
+                          setCardNote(null);
+                          openMatch(target?.paymentId);
+                        } else {
+                          setCardNote(
+                            total
+                              ? 'Add a provider statement before these payments can be matched.'
+                              : `All ${label} payments are matched.`,
+                          );
+                        }
+                      }}
+                    >
+                      {content}
+                    </button>
                   </li>
                 );
               })}
@@ -632,32 +638,32 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                 );
                 return (
                   <li key={tile.key}>
-                    {tile.count > 0 ? (
-                      <button
-                        type="button"
-                        className="status-tile status-tile-action"
-                        data-tone={tone}
-                        aria-pressed={statusFilter === tile.key}
-                        aria-label={`Show ${tile.label.toLowerCase()}, ${tile.count}`}
-                        onClick={() => {
-                          setStatusFilter(tile.key);
-                          setExpandedId(null);
-                          document
-                            .getElementById('settlements-title')
-                            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }}
-                      >
-                        {inner}
-                      </button>
-                    ) : (
-                      <div className="status-tile" data-tone={tone}>
-                        {inner}
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      className="status-tile status-tile-action"
+                      data-tone={tone}
+                      aria-pressed={statusFilter === tile.key}
+                      aria-label={`Show ${tile.label.toLowerCase()}, ${tile.count}`}
+                      onClick={() => {
+                        setCardNote(null);
+                        setStatusFilter(tile.key);
+                        setExpandedId(null);
+                        document
+                          .getElementById('settlements-title')
+                          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                    >
+                      {inner}
+                    </button>
                   </li>
                 );
               })}
             </ul>
+            {cardNote ? (
+              <p className="field-hint" role="status">
+                {cardNote}
+              </p>
+            ) : null}
           </div>
         ) : (
           <LoadingState label="Loading settlement summary" />
@@ -794,8 +800,9 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         <p className="field-hint">Providers often pay a few days after the sale.</p>
         {statusFilter !== 'all' ? (
           <p className="filter-chip" role="status">
-            Showing {statusFilter === 'open' ? 'open settlements' : 'exceptions'} (
-            {visibleSettlements.length})
+            {visibleSettlements.length === 0
+              ? `No ${statusFilter === 'open' ? 'open settlements' : 'exceptions'} right now.`
+              : `Showing ${statusFilter === 'open' ? 'open settlements' : 'exceptions'} (${visibleSettlements.length})`}
             <button type="button" onClick={() => setStatusFilter('all')}>
               Show all
             </button>
@@ -813,7 +820,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             message="Settlements appear here once a provider statement has been recorded."
           />
         ) : null}
-        {canShowSettlementRows ? (
+        {canShowSettlementRows && visibleSettlements.length > 0 ? (
           <div className="list-table settlement-list">
             <div className="list-head" aria-hidden="true">
               <span>Provider</span>
