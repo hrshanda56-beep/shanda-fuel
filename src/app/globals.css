@@ -4120,3 +4120,16 @@ h3,
 .settlement-workspace .data-table tr.row-action:focus-visible {
   background: var(--bg-subtle);
 }
+
+.settlement-workspace .heading-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+
+.settlement-workspace .heading-hint {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  opacity: 0.75;
+}

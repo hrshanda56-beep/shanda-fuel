@@ -792,8 +792,9 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
 
       <Card as="section" className="panel content-span" aria-labelledby="settlements-title">
         <div className="panel-heading">
-          <div>
+          <div className="heading-inline">
             <h2 id="settlements-title">Provider Payouts</h2>
+            <span className="heading-hint">Provider statements</span>
           </div>
         </div>
         {statusFilter !== 'all' ? (
@@ -981,8 +982,9 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
 
       <Card as="section" className="panel content-span" aria-labelledby="matching-title">
         <div className="panel-heading">
-          <div>
+          <div className="heading-inline">
             <h2 id="matching-title">Payments Waiting</h2>
+            <span className="heading-hint">Waiting for a payout</span>
           </div>
         </div>
         {!loading && !error && unmatched.length === 0 ? (
