@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../../platform/errors';
+import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import {
   DECIMAL_POLICIES,
   ExactDecimal,
@@ -823,8 +824,16 @@ export async function approveInventoryCostRevaluationInTransaction(
   if (revaluation.status !== 'REQUESTED') {
     throw new AppError('CONFLICT', 'Only a requested inventory cost revaluation can be approved');
   }
-  // Separation of duties: the person who requested a revaluation cannot approve it.
-  if (revaluation.requestedBy === input.approvedBy) {
+  // Separation of duties: the requester cannot approve, unless no one else could (solo owner).
+  if (
+    revaluation.requestedBy === input.approvedBy &&
+    (await hasAlternateApprover(transaction, {
+      tenantId: input.tenantId,
+      stationId: input.stationId,
+      excludeMembershipId: input.approvedBy,
+      permission: 'approval.act',
+    }))
+  ) {
     throw new AppError(
       'FORBIDDEN',
       'The person who requested an inventory cost revaluation cannot approve it',

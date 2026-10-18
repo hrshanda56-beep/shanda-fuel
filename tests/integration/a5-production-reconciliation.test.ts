@@ -2011,6 +2011,41 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     expect(rows).toEqual([{ state: 'SUBMITTED' }]);
   });
 
+  it('lets a solo approver approve their own reconciliation when nobody else could', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-solo-submit-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    await client.unsafe(`
+      update app.memberships set status='SUSPENDED'
+      where tenant_id='${ids.tenant}' and id <> '${ids.managerMembership}'
+    `);
+    try {
+      await expectOk(
+        await postCommand(
+          { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+          `a5-solo-approve-${reconciliationId}`,
+          'a5-manager-session-token',
+        ),
+      );
+    } finally {
+      await client.unsafe(`
+        update app.memberships set status='ACTIVE'
+        where tenant_id='${ids.tenant}' and id <> '${ids.managerMembership}'
+      `);
+    }
+    const rows = await client.unsafe<{ state: string }[]>(`
+      select state from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(rows).toEqual([{ state: 'APPROVED' }]);
+  });
+
   it('rejects insufficient-stock approval atomically', async () => {
     const reconciliationId = randomUUID();
     const { common, segmentIds } = await createPopulatedProductionReconciliation(

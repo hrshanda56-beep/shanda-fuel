@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
+import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import { ExactDecimal, money } from '../../platform/domain/primitives';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { postInventoryMovementInTransaction } from '../inventory/persistence';
@@ -763,7 +764,8 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       const header = await loadHeader(transaction, context, payload.reconciliationId);
       if (header.state !== 'SUBMITTED')
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be approved');
-      // Separation of duties: whoever submitted the day cannot also approve it.
+      // Separation of duties: whoever submitted the day cannot also approve it, unless they are the
+      // only person who could (solo owner).
       const submitter = await transaction.execute<{ submitted_by: string | null }>(sql`
         select submitted_by
         from app.reconciliations
@@ -771,7 +773,15 @@ export async function approveProductionReconciliationFromRequest(request: Reques
           and station_id=${context.stationId}
           and id=${payload.reconciliationId}
       `);
-      if (submitter[0]?.submitted_by === context.actor.membershipId) {
+      if (
+        submitter[0]?.submitted_by === context.actor.membershipId &&
+        (await hasAlternateApprover(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          excludeMembershipId: context.actor.membershipId,
+          permission: 'reconciliation.approve',
+        }))
+      ) {
         throw new AppError(
           'FORBIDDEN',
           'The person who submitted a reconciliation cannot approve it',
