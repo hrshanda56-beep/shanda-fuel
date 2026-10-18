@@ -10,6 +10,16 @@ const selection = {
 } as const;
 
 describe('context route policy', () => {
+  it('supports both overall and individual station dashboard views', () => {
+    expect(contextRoutePolicy('/').allStationsAllowed).toBe(true);
+    expect(
+      buildContextHref('/', '?stationId=old', {
+        organisationId: selection.organisationId,
+        allStations: true,
+      }),
+    ).toBe(`/?tenantId=${selection.organisationId}&allStations=true`);
+    expect(buildContextHref('/', '', selection)).toContain(`stationId=${selection.stationId}`);
+  });
   it('marks station command routes as station-required', () => {
     expect(contextRoutePolicy('/stations/station-a/cash')).toEqual({
       legalEntity: 'required',

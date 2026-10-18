@@ -1,4 +1,14 @@
 /* Settings use the whole content width and sit close to the page header. */
+.staffPending:global(.status-pending) {
+  border-color: var(--tone-info-border);
+  background: var(--tone-info-bg);
+  color: var(--tone-info-text);
+}
+
+.staffPending:global(.status-pending)::before {
+  border-color: var(--tone-info-fg);
+}
+
 .page {
   max-width: none;
   padding-block: 0;

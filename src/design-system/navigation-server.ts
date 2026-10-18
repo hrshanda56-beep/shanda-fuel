@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 
 import { resolveCurrentContext } from '../modules/context/server';
 import type { CurrentContext } from '../modules/context/contracts';
@@ -8,14 +9,16 @@ import { buildNavigationProjection } from './navigation-projection';
 import { syntheticNavigationProjection, type NavigationProjection } from './navigation';
 import { allowsE2ENavigationFixture, E2E_NAVIGATION_FIXTURE_HEADER } from './navigation-projection';
 
-export function requestFromHeaders(requestHeaders: Headers): Request | null {
+export const requestFromHeaders = cache(function requestFromHeaders(
+  requestHeaders: Headers,
+): Request | null {
   const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
   if (!host) return null;
   const protocol = requestHeaders.get('x-forwarded-proto')?.split(',')[0]?.trim() ?? 'http';
   return new Request(`${protocol}://${host}/`, {
     headers: new Headers(requestHeaders),
   });
-}
+});
 
 async function buildServerNavigationProjection(
   request: Request,
@@ -91,7 +94,9 @@ export type ServerShellAccess =
  * navigation-context lookup is also `signed-out` so the shell never renders
  * without verified authorization.
  */
-export async function getServerShellAccess(requestHeaders: Headers): Promise<ServerShellAccess> {
+export const getServerShellAccess = cache(async function getServerShellAccess(
+  requestHeaders: Headers,
+): Promise<ServerShellAccess> {
   if (
     allowsE2ENavigationFixture(
       process.env.APP_ENV,
@@ -121,4 +126,4 @@ export async function getServerShellAccess(requestHeaders: Headers): Promise<Ser
     // access cannot be verified.
     return { status: 'signed-out' };
   }
-}
+});

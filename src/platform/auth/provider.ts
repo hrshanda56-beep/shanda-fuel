@@ -7,6 +7,8 @@ import { getServerEnv } from '../config/env';
 import { getDatabase } from '../db';
 import { AppError } from '../errors';
 import { readClerkStepUpAssertion } from './clerk-step-up';
+import { clerkCredentialName } from './credential-name';
+import { memoizeRequestRead } from '../security/request-read-scope';
 
 export type AuthProviderName = 'CLERK';
 
@@ -38,27 +40,22 @@ export type ClerkSessionRevocationResult = {
 };
 
 const CLERK_STEP_UP_MAX_AGE_MINUTES = 10;
-
-export function getAuthProviderName(): AuthProviderName {
-  return 'CLERK';
-}
+const identityRead = Symbol('clerk-internal-identity');
 
 export async function resolveClerkSession(request: Request): Promise<ProviderSession | null> {
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
   if (!auth.isAuthenticated || !auth.userId || !auth.sessionId) return null;
 
-  const identity = await getDatabase().transaction(async (transaction) => {
-    await transaction.execute(sql`
-      select
-        set_config('app.auth_provider', 'CLERK', true),
-        set_config('app.provider_user_id', ${auth.userId}, true)
-    `);
-    const rows = await transaction.execute<{ internal_user_id: string }>(sql`
+  // The reviewed identity capability takes explicit provider/user arguments and
+  // uses its owner-only RLS policy. It does not read connection-local context.
+  // Do not spend BEGIN/context/COMMIT round trips for this single read.
+  const rows = await memoizeRequestRead(identityRead, auth.userId, () =>
+    getDatabase().execute<{ internal_user_id: string }>(sql`
       select internal_user_id
       from app.resolve_auth_identity('CLERK', ${auth.userId})
-    `);
-    return rows[0]?.internal_user_id ?? null;
-  });
+    `),
+  );
+  const identity = rows[0]?.internal_user_id ?? null;
 
   if (!identity) {
     throw new AppError('FORBIDDEN', 'The authentication identity is not provisioned');
@@ -145,17 +142,18 @@ export async function clerkUserHasMfa(providerUserId: string): Promise<boolean> 
 }
 
 export async function createClerkCredentialIdentity(input: {
-  username: string;
+  username?: string;
+  email?: string;
   password: string;
   firstName?: string;
   lastName?: string;
 }): Promise<ClerkCredentialIdentity> {
   const client = await clerkClient();
   const user = await client.users.createUser({
-    username: input.username,
+    ...(input.username ? { username: input.username } : {}),
+    ...(input.email ? { emailAddress: [input.email] } : {}),
     password: input.password,
-    ...(input.firstName ? { firstName: input.firstName } : {}),
-    ...(input.lastName ? { lastName: input.lastName } : {}),
+    ...clerkCredentialName(input.firstName, input.lastName),
   });
   return { providerUserId: user.id };
 }

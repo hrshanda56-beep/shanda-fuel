@@ -39,6 +39,14 @@ async function submit(next?: string) {
 }
 
 describe('Clerk credential login', () => {
+  it('provides a first-time activation link', () => {
+    const section = ClerkLoginForm({}) as ReactElement<{ children: ReactElement[] }>;
+    const footnote = section.props.children.find(
+      (child) =>
+        (child?.props as { className?: string } | undefined)?.className === 'entry-footnote',
+    ) as ReactElement<{ children: ReactElement<{ href: string }> }>;
+    expect(footnote.props.children.props.href).toBe('/join');
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal(

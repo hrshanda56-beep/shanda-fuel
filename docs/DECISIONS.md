@@ -1,5 +1,26 @@
 # Shanda Fuel — Decision Log
 
+## Activation security clarification — 2026-10-18
+
+Explicit human instruction: after five incorrect activation codes the code is
+permanently invalid, not temporarily locked. A manager must generate a new code.
+The database persists failure counts, serializes concurrent attempts and burns
+the old hash. Replacement resets the budget; time alone does not. Keep one-time
+acceptance, 72-hour expiry and independent client throttling.
+
+## DEC-043 — Use Clerk alone; simplify the development authentication cutover
+
+Date: 2026-10-18. Explicit human instruction supersedes historical provider choices.
+Clerk owns credentials, recovery, MFA and authentication sessions. Shanda Fuel
+owns internal UUIDs, tenant memberships, scoped permissions and audit. Remove
+provider switching and Better Auth runtime/dependencies. The target development
+authentication data is disposable: drop obsolete credential/session tables and
+legacy mappings rather than archive them. Preserve business foreign keys and do
+not reset financial/operational data. Remove the hard-coded production Owner CLI;
+provide a configurable development seed with preview and explicit apply. Review
+the exact migration and test evidence before applying to the confirmed Neon dev
+database. This is not production migration or deployment authorization.
+
 This file records meaningful product, architecture, security, and delivery decisions that have already been made. It exists so future agents do not casually reverse established choices without understanding the context.
 
 Status values:

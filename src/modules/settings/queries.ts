@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import {
@@ -11,8 +10,7 @@ import {
   type ContextResolution,
 } from '../context';
 import { resolveCurrentContext } from '../context/server';
-import { resolveAuthenticatedActor } from '../identity';
-import { getDatabase } from '../../platform/db';
+import { readAuthenticatedAccount } from '../identity/account';
 import { AppError } from '../../platform/errors';
 import { authorize } from '../../platform/security';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
@@ -149,24 +147,7 @@ export async function resolveSettings(
   request: Request,
   dependencies: SettingsDependencies = {},
 ): Promise<SettingsView> {
-  const readSession =
-    dependencies.readSession ??
-    (async (currentRequest: Request) => {
-      const actor = await resolveAuthenticatedActor(currentRequest);
-      if (!actor) return null;
-      const rows = await getDatabase().execute<{ name: string; email: string | null }>(sql`
-        select name, email
-        from app.users
-        where id = ${actor.identityId}
-        limit 1
-      `);
-      const account = rows[0];
-      if (!account) throw new AppError('UNAUTHENTICATED', 'Authentication identity is unavailable');
-      return {
-        user: { id: actor.identityId, name: account.name, email: account.email },
-        session: { userId: actor.identityId },
-      };
-    });
+  const readSession = dependencies.readSession ?? readAuthenticatedAccount;
   const account = await readAccount(request, readSession);
   const resolution = await (dependencies.resolveContext ?? resolveCurrentContext)(request);
 

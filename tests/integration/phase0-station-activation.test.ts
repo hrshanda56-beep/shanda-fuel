@@ -1,9 +1,8 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -41,12 +40,12 @@ const supervisorToken = `phase0-supervisor-${randomUUID()}`;
 let client: Sql;
 
 async function postCommand(input: Record<string, unknown>, key: string, token = ownerToken) {
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        ...clerkHeaders(signedToken),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -88,7 +87,7 @@ describe('Phase 0 station activation in PostgreSQL', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'phase0-activation-test-key';
     process.env.AUDIT_SIGNING_KEY ??= 'phase0-activation-test-audit-secret';
     client = postgres(databaseUrl!, { max: 4, prepare: false });
@@ -99,7 +98,7 @@ describe('Phase 0 station activation in PostgreSQL', () => {
         (${ids.otherTenant}, 'Phase 0 Other Tenant', ${`phase0-${ids.otherTenant}`})
     `;
     await client`
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         (${ids.owner}, 'Phase 0 Owner', ${`phase0-owner-${ids.owner}@example.test`}),
         (${ids.supervisor}, 'Phase 0 Supervisor', ${`phase0-supervisor-${ids.supervisor}@example.test`})
     `;
@@ -131,13 +130,8 @@ describe('Phase 0 station activation in PostgreSQL', () => {
         (${ids.tenant}, ${ids.ownerMembership}, 'OWNER', 'STATION', ${ids.legalEntity}, ${ids.concurrent}),
         (${ids.tenant}, ${ids.supervisorMembership}, 'SUPERVISOR', 'STATION', ${ids.legalEntity}, ${ids.denied})
     `;
-    await client`
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values
-        (${ids.ownerSession}, '2030-01-01T00:00:00Z', ${ownerToken}, ${ids.owner}, true, now()),
-        (${ids.supervisorSession}, '2030-01-01T00:00:00Z', ${supervisorToken}, ${ids.supervisor}, true, now())
-    `;
+    await seedClerkSession(client, ids.ownerSession, ownerToken, ids.owner);
+    await seedClerkSession(client, ids.supervisorSession, supervisorToken, ids.supervisor);
     await seedActiveStepUp(client, ids.ownerSession, ids.tenant);
     await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
   });

@@ -1,5 +1,219 @@
 # Shanda Fuel — Current Status
 
+## Shared navigation read deduplication — 2026-10-18
+
+All sidebar destinations share request/render-local reuse of verified identity
+mapping and tenant membership reads. GET handlers receive isolated asynchronous
+read stores; server renders use React request-local cache. No cross-request
+authorization cache or command cache is introduced. Shell/context discovery also
+reuses identical render inputs. Daily Operations obtains database time with its
+station read and reuses a business day already loaded; daily reports authorize
+and read within one scoped transaction instead of two. Permission checks and
+tenant RLS remain enforced.
+
+Validation: 878 unit tests passed; fresh PostgreSQL migration/integration run
+passed 148 tests with 23 provisioning skips. Typecheck and targeted lint passed.
+An explicitly opted-in read-only Neon development benchmark confirmed two
+identical membership reads use 4 statements with reuse versus 8 without it.
+This is a shared-read query budget, not a measured end-to-end navigation speedup.
+Live authenticated timings across every sidebar destination remain unverified.
+No production changes, database policy changes, merge or deployment.
+
+Follow-up browser validation: all 10 account-menu/tablet-navigation fixture
+checks passed, including keyboard/focus, mobile sizing and accessibility. The
+first tablet run exposed the Next development badge covering the sidebar
+control; it now renders bottom-right. These fixture tests do not establish
+authenticated database latency or every destination's full data flow.
+
+## Authentication/membership round-trip reduction — 2026-10-18
+
+Clerk identity mapping now calls the existing explicit-argument SECURITY DEFINER
+resolver as a single read, removing BEGIN/context-setting/COMMIT overhead. The
+reviewed resolver does not consume those connection settings and its owner-only
+RLS policy is unchanged. After verified membership and tenant context setup,
+role assignments and temporary grants load via one UNION ALL query rather than
+two sequential queries; expiry/revocation predicates and native timestamp types
+are retained. Twenty focused tests, ten PostgreSQL isolation integration tests,
+typecheck and targeted lint passed. No migration, policy/permission relaxation,
+production access or deployment. Live station-switch timing remains unmeasured.
+
+## Station-switch validation narrowing — 2026-10-18
+
+The default context-switch validator now resolves membership for the requested
+organisation directly and reads only the selected station/legal entity where
+specified, rather than discovering every active company membership first.
+It still filters rows through live permissions under tenant RLS and validates
+the selection against route policy. The dependency-injected discovery path is
+retained for existing tests. Spinner text now explains that access is being
+checked before switching. Ten focused context tests, typecheck and targeted
+lint passed. Live latency remains unmeasured; membership-resolution and server
+navigation round trips still remain. No production or schema change.
+
+## Consolidated Owner dashboard request — 2026-10-18
+
+Dashboard cards/chart now load through one no-store /api/dashboard request.
+An explicit AsyncLocalStorage scope reuses default tenant authority resolution
+only for the identical Request object and tenant within that execution; injected
+resolvers and time overrides bypass reuse. No global/cross-request identity
+cache is introduced. Individual domain permission checks and RLS remain intact.
+The chart reads only the existing authorized sales projection instead of all
+management report sections. Independent section errors remain explicit, and
+aborted station changes do not apply old results. Twenty-five focused tests,
+typecheck and targeted ESLint passed. Live authenticated performance and database
+integration for this new aggregate endpoint remain unverified; no speedup number
+is claimed. Station selection/context-discovery waterfall is not yet optimized.
+No migration, production contact, merge or deployment.
+
+## Dashboard all-stations selector — 2026-10-18
+
+The dashboard route now opts into the existing reporting all-stations context
+policy. Its context selector can switch between All stations and individual
+stations; the existing dashboard aggregate API path is used when no station is
+selected. Station command routes remain station-required, and server report
+authorization/RLS are unchanged. Twenty-two context/dashboard model tests,
+typecheck and targeted lint passed. Live Owner browser aggregation was not
+verified in this slice; permissions were not broadened and no data was invented.
+
+## Tablet labeled navigation — 2026-10-18
+
+Tablet icon rails now offer Expand menu, opening the existing accessible modal
+with labeled navigation and expanded groups. Selecting a destination closes it;
+Escape restores focus to the separate tablet trigger. Desktop collapse and phone
+More controls are unchanged. The 1113px browser regression passed, including
+label visibility, Escape/focus and navigation dismissal. Typecheck passed after
+Next generated route files settled; no authorization or database changes.
+
+## Automatic sign-in after manual activation — 2026-10-18
+
+After successful activation, the browser attempts Clerk credential sign-in with
+the password still in the submit handler's memory, activates completed sessions
+and replaces the route with /workplace. Incomplete challenges go through Clerk's
+SignIn component; failed automatic sign-in shows account-created messaging and
+a login link without exposing the activation form for resubmission. No passwords
+are persisted or logged. Three focused tests (success, fallback, second factor),
+typecheck and targeted lint passed. Live employee activation was not repeated.
+The existing workplace planner already skips choice for one available station.
+Latency investigation found repeated sequential membership/context queries;
+no cross-request authorization cache or security bypass was introduced.
+
+## Staff-code regeneration verification handling — 2026-10-18
+
+Regeneration now establishes existing PRIVILEGED_OPERATION Clerk assurance
+before calling the command. A regression test also identified and fixed a missing
+return of the transaction result: generated credentials had not reached the UI.
+The verification takes place
+before calling the membership.manage-protected command. The details sheet
+remains open for errors and displays command feedback rather than hiding it
+behind the backdrop; success closes details and opens the fresh code dialog.
+Duplicate regeneration clicks are disabled while busy. MFA requirements remain
+unchanged. Command regression for preserved staff number/new code/audit passed;
+typecheck and targeted lint passed. Live authenticated UI acceptance remains
+unverified; an Owner without MFA cannot satisfy the existing strict-MFA policy.
+
+## Clerk manual activation name requirement repair — 2026-10-18
+
+Actual development activation failed with Clerk form_data_missing: last_name is
+required by this instance. Full names had been sent only as firstName. Provider
+creation now splits a supplied full name into firstName and lastName while
+preserving explicitly supplied names and never inventing a missing surname.
+Provider failures log only stage, status and bounded error codes, not input,
+credentials or raw provider messages. Activation UI distinguishes backend setup
+failures from incorrect codes. Failed provider creation rolls back the attempt
+transaction and does not spend an incorrect-code attempt. A disposable Clerk
+development signup with the corrected name mapping succeeded and was removed;
+no employee identity/password was changed. No migration or production action.
+
+## Shareable staff invitation text — 2026-10-18
+
+Copy invitation now produces labeled staff number, activation code, explicit
+UTC expiry, the current application's /join link and password-setup instructions,
+with one-time/five-failure and privacy guidance. Clipboard failures are surfaced
+instead of silently ignored. No credentials are persisted or logged by formatting.
+
+## Optional custom staff numbers — 2026-10-18
+
+Staff invitation defaults to Staff number, with an optional number field;
+blank input preserves automatic generation. The selector is now Invite using
+with Staff number and Email options. Custom numbers normalize to uppercase,
+accept 4–32 ASCII letters/digits/hyphens/underscores (starting alphanumeric),
+and remain globally unique in the existing registry. Migration 0032 updates
+registry constraints and reservation/activation capability validation without
+changing ownership, grants or RLS. Duplicate numbers return a conflict.
+Fourteen focused unit tests, typecheck and the PostgreSQL runtime-role custom
+reservation/duplicate/activation regression passed. Real Clerk signup was not
+exercised. Migration 0032 applied successfully to the configured Neon development
+database. No production access or deployment.
+
+## Settings account-context redirect repair — 2026-10-18
+
+Settings now reads its authenticated account through a shared identity helper
+that sets transaction-local actor context and clears tenant/scope context before
+the self-only query. A mapped but missing account fails FORBIDDEN rather than
+UNAUTHENTICATED, avoiding the Settings → login → workplace redirect cycle.
+Audited other app.users reads/joins in Staff, Daily Operations, Operations
+Overview and Costing: these already execute within authorized tenant
+transactions. No equivalent unscoped account read was found there. Ten focused
+unit tests, typecheck and targeted ESLint passed; live authenticated browser
+verification is blocked because local browser use is disabled in Work settings.
+No schema/security-policy change, production access, push, merge or deployment.
+
+## Permanent activation lockout — 2026-10-18
+
+The latest human decision supersedes the timed staff-number budget below:
+five incorrect activation codes permanently burn that invitation's code hash.
+Only issuing a replacement code starts a fresh attempt budget; time passing
+does not unlock it. Migration 0031 stores the bounded failure counter, uses
+row locking for concurrent attempts and an owner-only SECURITY DEFINER
+capability under FORCE RLS. Incorrect attempts commit even when the command
+returns an error. Existing manager replacement and audit flow is retained.
+The per-client twenty-attempt/fifteen-minute throttle remains a separate layer.
+Local fresh-migration, lockout/replacement/concurrency and runtime-capability
+checks passed, as did historical upgrade tests, focused unit tests, typecheck,
+ESLint and Drizzle metadata checks. Migration 0031 was applied to the configured
+Neon development database; 32 migrations and the guard/counter were verified.
+No production change or deployment.
+
+## Friendly staff activation — 2026-10-18
+
+New manual activation codes use eight unambiguous characters grouped as
+`7K3M-9R2X`. Case, spaces and optional hyphens are normalized; existing 40-hex
+codes remain valid until their existing expiry. Hash-only storage, 72-hour
+expiry and one-time acceptance are unchanged. Activation now enforces persistent
+limits in every environment: five attempts per staff number and twenty per
+client address per fifteen-minute window, failing closed on database errors.
+Login links directly to activation, with a return-to-login link on that form.
+Focused domain/login/command/rate-limit tests passed (24 tests); the PostgreSQL
+cross-client per-staff throttling regression passed, and browser navigation
+login → activation → login passed. Real Clerk account creation/login was not
+exercised by those browser checks. No schema migration or production action.
+
+## Clerk-only development candidate — 2026-10-18
+
+Human-authorized branch `codex/clerk-only-auth-20261017` replaces runtime
+authentication with Clerk only. Candidate migration 0030 moves internal users
+to `app.users`, preserves business relationships and removes disposable legacy
+credentials and provider mappings. The hard-coded production Owner CLI is
+removed; configurable development seeding supports preview and explicit apply.
+See `docs/runbooks/clerk-only-cutover.md`. This is repository implementation,
+not a production deployment or claim that Neon/provider acceptance is complete.
+No production credentials, roles, data or deployments were changed by this work.
+
+Local verification for this candidate: 857 unit tests passed; PostgreSQL
+integration tests passed (145 passed, 23 explicitly opt-in provisioning tests
+skipped); fresh migration and seeded upgrade rehearsals passed. Typecheck,
+Drizzle consistency check, ESLint and production build passed.
+Account-menu and business-day-lock browser UI checks passed (13 tests).
+Authenticated
+Clerk login/MFA browser acceptance still requires dedicated test users and fresh
+MFA evidence; synthetic UI checks are not a substitute for that acceptance.
+Neon development migration 0030 was subsequently applied with explicit human
+approval: 31 journal entries verified and obsolete credential tables absent.
+Username-only development Owner seeding now accepts NULL email, preserves the
+Clerk identity mapping and records a signed audit event. The focused PostgreSQL
+regression test, typecheck and targeted ESLint passed. No new migration was
+needed: the existing user email column is already nullable.
+Changes remain on the isolated branch and have not been pushed or deployed.
+
 ## 1. Snapshot
 
 This file is a conservative status snapshot based on the latest project conversation. It is intentionally stricter than a progress report: discussion alone does not count as implementation, and implementation alone does not count as release completion.

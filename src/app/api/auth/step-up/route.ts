@@ -19,6 +19,7 @@ import { createLogger } from '../../../../platform/logging';
 import { reverificationErrorResponse } from '@clerk/nextjs/server';
 import {
   CLERK_DEACTIVATE_STAFF_ACTION,
+  CLERK_PRIVILEGED_ACTION,
   CLERK_STEP_UP_ACTION,
   clerkStepUpCookieClearHeaders,
 } from '../../../../platform/auth/clerk-step-up';
@@ -47,7 +48,7 @@ function logDeactivationStepUp(
 
 const requestSchema = z.object({
   tenantId: z.string().uuid(),
-  action: z.enum([CLERK_STEP_UP_ACTION, CLERK_DEACTIVATE_STAFF_ACTION]),
+  action: z.enum([CLERK_STEP_UP_ACTION, CLERK_DEACTIVATE_STAFF_ACTION, CLERK_PRIVILEGED_ACTION]),
 });
 
 function jsonResponse(body: unknown, status: number): Response {

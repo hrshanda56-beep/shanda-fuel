@@ -222,9 +222,10 @@ async function loadOperationsOverview(
     timezone: string;
     tenantId: string;
     tenantName: string;
+    now: Date | string;
   }>(sql`
     select s.id, s.code, s.name, s.timezone,
-           t.id as "tenantId", t.name as "tenantName"
+           t.id as "tenantId", t.name as "tenantName", clock_timestamp() as now
     from app.stations s
     join app.tenants t on t.id = s.tenant_id
     where s.tenant_id=${context.tenantId} and s.id=${context.stationId}
@@ -232,10 +233,7 @@ async function loadOperationsOverview(
   const station = stationRows[0];
   if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
 
-  const nowRows = await transaction.execute<{ now: Date | string }>(
-    sql`select clock_timestamp() as now`,
-  );
-  const currentBusinessDate = deriveBusinessDate(nowRows[0]?.now ?? new Date(), station.timezone);
+  const currentBusinessDate = deriveBusinessDate(station.now, station.timezone);
 
   const days = await transaction.execute<BusinessDayRow>(sql`
     select id, business_date as date, state, version,
@@ -249,7 +247,10 @@ async function loadOperationsOverview(
 
   let selectedDay: BusinessDayRow | null;
   if (input.businessDayId) {
-    const requestedDayRows = await transaction.execute<BusinessDayRow>(sql`
+    const recentDay = days.find((day) => day.id === input.businessDayId);
+    if (recentDay) selectedDay = recentDay;
+    else {
+      const requestedDayRows = await transaction.execute<BusinessDayRow>(sql`
       select id, business_date as date, state, version,
              opened_at as "openedAt", closed_at as "closedAt",
              created_at as "createdAt", updated_at as "updatedAt"
@@ -259,9 +260,10 @@ async function loadOperationsOverview(
         and id=${input.businessDayId}
       limit 1
     `);
-    selectedDay = requestedDayRows[0] ?? null;
-    if (!selectedDay) {
-      throw new AppError('NOT_FOUND', 'The requested business day was not found');
+      selectedDay = requestedDayRows[0] ?? null;
+      if (!selectedDay) {
+        throw new AppError('NOT_FOUND', 'The requested business day was not found');
+      }
     }
   } else {
     selectedDay = days.find((day) => day.date === currentBusinessDate) ?? days[0] ?? null;

@@ -1,5 +1,5 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { GET as dailyReportGet } from '../../src/app/api/reports/daily/route';
@@ -7,7 +7,6 @@ import { GET as managementReportGet } from '../../src/app/api/reports/management
 import { GET as reportActivityGet } from '../../src/app/api/reports/activity/route';
 import { GET as reportExportGet } from '../../src/app/api/reports/export/route';
 import { POST as reportSharePost } from '../../src/app/api/reports/share/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -123,7 +122,7 @@ const sessionToken = 'a10-management-session-token';
 const scopedSessionToken = 'a10-management-scoped-session-token';
 
 async function signedCookie(token = sessionToken): Promise<string> {
-  return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return token;
 }
 
 async function forecourtCommand(input: Record<string, unknown>, key: string) {
@@ -131,7 +130,7 @@ async function forecourtCommand(input: Record<string, unknown>, key: string) {
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie()}`,
+        ...clerkHeaders(await signedCookie()),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -146,14 +145,14 @@ describe('A10 management reporting PostgreSQL read model', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     client = postgres(databaseUrl!, { max: 2, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A10 Reporting Tenant', 'a10-reporting-tenant'),
         ('${ids.otherTenant}', 'A10 Other Tenant', 'a10-other-tenant')
       on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.actor}', 'A10 Finance', 'a10-finance@example.test'),
         ('${ids.scopedActor}', 'A10 Station Finance', 'a10-station-finance@example.test')
       on conflict (id) do nothing;
@@ -185,16 +184,6 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
       values ('${ids.tenant}', '${ids.scopedMembership}', 'FINANCE', 'STATION', '${ids.legal}', '${ids.scopedStation}')
       on conflict do nothing;
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values ('${ids.session}', '2030-01-01T00:00:00Z', '${sessionToken}', '${ids.actor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at,
-        strong_authentication_verified = true;
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values ('${ids.scopedSession}', '2030-01-01T00:00:00Z', '${scopedSessionToken}', '${ids.scopedActor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at,
-        strong_authentication_verified = true;
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.factDay}', '${ids.tenant}', '${ids.station}', '2026-09-20', 'NOT_STARTED')
         on conflict (id) do nothing;
@@ -367,6 +356,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
         values ('${ids.factDelivery}', '${ids.tenant}', '${ids.station}', '${ids.factProduct}', 'A10-DELIVERY', '2026-09-20T10:00:00Z', '2026-09-20', 20.000, 20.000, 0.000, 'CONFIRMED', 2.00000000, 40.0000, 'USD', '${ids.membership}', '${ids.membership}', '2026-09-20T11:00:00Z')
         on conflict (id) do nothing;
     `);
+    await seedClerkSession(client, ids.session, sessionToken, ids.actor, true);
+    await seedClerkSession(client, ids.scopedSession, scopedSessionToken, ids.scopedActor, true);
     await seedActiveStepUp(client, ids.session, ids.tenant);
 
     const seal = await forecourtCommand(
@@ -645,7 +636,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-18&toDate=2026-09-18`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -690,7 +681,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -722,7 +713,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const priorBusinessDateResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-19&toDate=2026-09-19`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     const priorBusinessDateBody = (await priorBusinessDateResponse.json()) as Record<string, any>;
@@ -822,7 +813,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const reversedResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(reversedResponse.status).toBe(200);
@@ -838,7 +829,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const collectionDateOnly = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-20`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     const collectionDateBody = (await collectionDateOnly.json()) as Record<string, any>;
@@ -848,7 +839,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const depositDateOnly = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-22&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     const depositDateBody = (await depositDateOnly.json()) as Record<string, any>;
@@ -858,7 +849,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const dailyResponse = await dailyReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(dailyResponse.status).toBe(200);
@@ -884,7 +875,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.station}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -908,7 +899,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.scopedStation}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -921,11 +912,11 @@ describe('A10 management reporting PostgreSQL read model', () => {
   });
 
   it('rejects the whole request when any selected station is not permitted', async () => {
-    const scopedActorCookie = `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`;
+    const scopedActorHeaders = clerkHeaders(scopedSessionToken);
     const mixed = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.scopedStation}`,
-        { headers: { cookie: scopedActorCookie } },
+        { headers: scopedActorHeaders },
       ),
     );
     expect(mixed.status).toBe(403);
@@ -933,7 +924,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const foreign = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.otherStation}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(foreign.status).toBe(404);
@@ -945,7 +936,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.scopedStation}&fromDate=2026-10-10&toDate=2026-10-10`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         },
       ),
@@ -1016,7 +1007,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.scopedStation}&fromDate=2026-10-11&toDate=2026-10-11`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         },
       ),
@@ -1036,7 +1027,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const otherStationResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.station}&fromDate=2026-10-10&toDate=2026-10-10`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(otherStationResponse.status).toBe(200);
@@ -1053,7 +1044,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
   it('rejects cross-tenant report selection and unauthorized station scope', async () => {
     const otherTenantResponse = await managementReportGet(
       new Request(`http://127.0.0.1:3000/api/reports/management?tenantId=${ids.otherTenant}`, {
-        headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` },
+        headers: { ...clerkHeaders(await signedCookie()) },
       }),
     );
     expect(otherTenantResponse.status).toBe(403);
@@ -1061,7 +1052,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const wrongStationResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.otherStation}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(wrongStationResponse.status).toBe(404);
@@ -1071,7 +1062,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.station}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         },
       ),
@@ -1094,9 +1085,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     async function exportAs(token: string | null, query: string) {
       return reportExportGet(
         new Request(`http://127.0.0.1:3000/api/reports/export?${query}`, {
-          headers: token
-            ? { cookie: `shanda-fuel.session_token=${await signedCookie(token)}` }
-            : {},
+          headers: token ? { ...clerkHeaders(await signedCookie(token)) } : {},
         }),
       );
     }
@@ -1107,7 +1096,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            ...(token ? { cookie: `shanda-fuel.session_token=${await signedCookie(token)}` } : {}),
+            ...(token ? { ...clerkHeaders(await signedCookie(token)) } : {}),
           },
           body: JSON.stringify(body),
         }),
@@ -1228,7 +1217,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       );
       const owner = await reportActivityGet(
         new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
-          headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` },
+          headers: { ...clerkHeaders(await signedCookie()) },
         }),
       );
       expect(owner.status).toBe(200);
@@ -1245,7 +1234,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       const scoped = await reportActivityGet(
         new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         }),
       );
@@ -1270,7 +1259,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         managementReportGet(
           new Request(viewUrl, {
             headers: {
-              cookie: `shanda-fuel.session_token=${scopedSessionCookieSync}`,
+              ...clerkHeaders(scopedSessionCookieSync),
             },
           }),
         );

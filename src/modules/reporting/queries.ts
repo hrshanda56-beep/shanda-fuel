@@ -936,6 +936,21 @@ export async function authorizeManagementReportRequest(request: Request, input: 
   return { filters, authority, stations };
 }
 
+export async function getDashboardSalesFromRequest(request: Request, input: unknown) {
+  const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
+  const single = stations.length === 1 ? stations[0] : undefined;
+  const context = single
+    ? createTrustedTenantTransactionContext({
+        ...authority.transaction,
+        legalEntityId: single.legalEntityId,
+        stationId: single.id,
+      })
+    : authority.transaction;
+  return withTenantTransaction(context, async (transaction) => ({
+    sales: await readSales(transaction, filters),
+  }));
+}
+
 export async function getManagementReportFromRequest(
   request: Request,
   input: unknown,
@@ -1018,20 +1033,20 @@ export async function getDailyOperationsFromRequest(
     request,
     requestedTenantId: filters.tenantId,
   });
-  const stations = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStations(transaction, filters),
-  );
-  authorizeStations(authority.authorization, filters, stations);
-  return withTenantTransaction(authority.transaction, async (transaction) => ({
-    report: 'DAILY_OPERATIONS' as const,
-    state: 'POSTED' as const,
-    filters: {
-      tenantId: filters.tenantId,
-      stationIds: filters.stationIds,
-      fromDate: filters.fromDate,
-      toDate: filters.toDate,
-    },
-    dateBasis,
-    rows: await readDaily(transaction, filters),
-  }));
+  return withTenantTransaction(authority.transaction, async (transaction) => {
+    const stations = await selectedStations(transaction, filters);
+    authorizeStations(authority.authorization, filters, stations);
+    return {
+      report: 'DAILY_OPERATIONS' as const,
+      state: 'POSTED' as const,
+      filters: {
+        tenantId: filters.tenantId,
+        stationIds: filters.stationIds,
+        fromDate: filters.fromDate,
+        toDate: filters.toDate,
+      },
+      dateBasis,
+      rows: await readDaily(transaction, filters),
+    };
+  });
 }

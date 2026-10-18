@@ -1,6 +1,6 @@
 -- Clerk-only identity cutover. Run atomically with the application release.
 -- ALTER TABLE preserves relation OIDs, every internal UUID, and all inbound FKs.
--- No credential rows are deleted. The archive is inaccessible to runtime roles.
+-- Disposable development credentials are removed; business UUIDs stay intact.
 ALTER TABLE auth."user" SET SCHEMA app;
 ALTER TABLE app."user" RENAME TO users;
 --> statement-breakpoint
@@ -1073,49 +1073,143 @@ END
 $$;
 --> statement-breakpoint
 
-CREATE SCHEMA legacy_auth AUTHORIZATION migration_owner;
-REVOKE ALL ON SCHEMA legacy_auth FROM PUBLIC;
+-- Development credentials are disposable; remove unused local authentication
+-- storage without CASCADE so unexpected dependents fail the migration.
+DROP TABLE auth.two_factor;
+DROP TABLE auth.account;
+DROP TABLE auth.session;
+DROP TABLE auth.verification;
 --> statement-breakpoint
 
-DO $$
-DECLARE
-  table_name text;
-  privilege record;
+DELETE FROM app.auth_session_assurance WHERE provider <> 'CLERK';
+DELETE FROM app.auth_identities WHERE provider <> 'CLERK';
+ALTER TABLE app.auth_identities DROP CONSTRAINT auth_identities_provider_ck;
+ALTER TABLE app.auth_identities ADD CONSTRAINT auth_identities_provider_ck CHECK (provider = 'CLERK');
+ALTER TABLE app.auth_session_assurance DROP CONSTRAINT auth_session_assurance_provider_ck;
+ALTER TABLE app.auth_session_assurance ADD CONSTRAINT auth_session_assurance_provider_ck CHECK (provider = 'CLERK');
+ALTER TABLE app.users DROP COLUMN two_factor_enabled;
+--> statement-breakpoint
+
+ALTER TABLE app.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.users FORCE ROW LEVEL SECURITY;
+CREATE POLICY users_security_definer ON app.users TO migration_owner
+  USING (current_user = 'migration_owner') WITH CHECK (current_user = 'migration_owner');
+CREATE POLICY users_directory_read ON app.users FOR SELECT TO app_runtime
+  USING (id = app.current_actor_id() OR (
+    app.has_active_membership() AND EXISTS (
+      SELECT 1 FROM app.memberships m
+      WHERE m.identity_id = users.id AND m.tenant_id = app.current_tenant_id()
+    )
+  ));
+REVOKE INSERT, UPDATE, DELETE ON app.users FROM app_runtime;
+--> statement-breakpoint
+
+CREATE FUNCTION app.register_invited_clerk_identity(p_token_hash text, p_user_id uuid, p_clerk_user_id text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, app, platform
+AS $$
+DECLARE invitation app.staff_invitations%ROWTYPE;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['account', 'session', 'verification', 'two_factor']
-  LOOP
-    -- Access is exclusive for the privilege inspection and move.
-    EXECUTE format('LOCK TABLE auth.%I IN ACCESS EXCLUSIVE MODE', table_name);
-    -- Remove every explicit non-owner table/column grant, including grants to
-    -- roles unknown to this repository. The schema has no runtime USAGE.
-    FOR privilege IN
-      SELECT DISTINCT acl.grantee, roles.rolname
-      FROM pg_class c
-      LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0
-      CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, '{}'::aclitem[]) ||
-                                    coalesce(a.attacl, '{}'::aclitem[])) acl
-      LEFT JOIN pg_roles roles ON roles.oid = acl.grantee
-      WHERE c.oid = format('auth.%I', table_name)::regclass
-        AND acl.grantee <> c.relowner
-    LOOP
-      EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE auth.%I FROM %s',
-        table_name, CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(privilege.rolname) END);
-      -- REVOKE on the table does not remove column ACLs.
-      EXECUTE (
-        SELECT format('REVOKE ALL PRIVILEGES (%s) ON TABLE auth.%I FROM %s',
-          string_agg(quote_ident(attname), ', '), table_name,
-          CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(privilege.rolname) END)
-        FROM pg_attribute WHERE attrelid = format('auth.%I', table_name)::regclass AND attnum > 0 AND NOT attisdropped
-      );
-    END LOOP;
-    EXECUTE format('ALTER TABLE auth.%I SET SCHEMA legacy_auth', table_name);
-    EXECUTE format('ALTER TABLE legacy_auth.%I OWNER TO migration_owner', table_name);
-  END LOOP;
+  IF p_clerk_user_id IS NULL OR p_clerk_user_id !~ '^user_[a-zA-Z0-9]+$' OR p_user_id IS NULL THEN
+    RAISE EXCEPTION 'invalid identity' USING ERRCODE = '22023';
+  END IF;
+  PERFORM set_config('app.invitation_token_hash', p_token_hash, true);
+  SELECT * INTO invitation FROM app.staff_invitations
+    WHERE token_hash = p_token_hash AND delivery_method = 'EMAIL'
+      AND status = 'PENDING' AND expires_at > clock_timestamp() FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'invitation unavailable' USING ERRCODE = 'P0001'; END IF;
+  INSERT INTO app.users (id, name, email, email_verified)
+    VALUES (p_user_id, invitation.invited_name, invitation.invited_email, false);
+  INSERT INTO app.auth_identities (internal_user_id, provider, provider_user_id)
+    VALUES (p_user_id, 'CLERK', p_clerk_user_id);
+END $$;
+ALTER FUNCTION app.register_invited_clerk_identity(text,uuid,text) OWNER TO migration_owner;
+REVOKE ALL ON FUNCTION app.register_invited_clerk_identity(text,uuid,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.register_invited_clerk_identity(text,uuid,text) TO app_runtime;
+--> statement-breakpoint
+
+CREATE FUNCTION app.register_manual_staff_identity(p_token_hash text, p_staff_number text, p_user_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, app, platform
+AS $$
+DECLARE invited_name text;
+BEGIN
+  SELECT invitation.invited_name INTO invited_name
+    FROM app.resolve_manual_staff_invitation(p_token_hash, p_staff_number) invitation;
+  IF NOT FOUND OR p_user_id IS NULL THEN RAISE EXCEPTION 'invitation unavailable' USING ERRCODE = 'P0001'; END IF;
+  INSERT INTO app.users (id, name, email, email_verified) VALUES (p_user_id, invited_name, NULL, false);
+END $$;
+ALTER FUNCTION app.register_manual_staff_identity(text,text,uuid) OWNER TO migration_owner;
+REVOKE ALL ON FUNCTION app.register_manual_staff_identity(text,text,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.register_manual_staff_identity(text,text,uuid) TO app_runtime;
+--> statement-breakpoint
+
+-- Refresh the proof's cached regprocedure constants after replacing capability OIDs.
+CREATE OR REPLACE FUNCTION platform.first_user_provisioning_assert_runtime_role()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, platform, app, auth
+AS $$
+DECLARE
+  v_role oid;
+  v_expected_functions oid[];
+BEGIN
+  SELECT oid INTO v_role FROM pg_roles WHERE rolname = 'first_user_provisioner';
+  IF v_role IS NULL THEN RAISE EXCEPTION 'first_user_provisioner role is missing' USING ERRCODE = '42501'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE oid = v_role
+      AND (NOT rolcanlogin OR rolsuper OR rolbypassrls OR rolcreaterole
+        OR rolcreatedb OR rolinherit OR rolreplication OR rolconfig IS NOT NULL)
+  ) THEN RAISE EXCEPTION 'first_user_provisioner role attributes are unsafe' USING ERRCODE = '42501'; END IF;
+  IF EXISTS (SELECT 1 FROM pg_database WHERE datname = current_database() AND datdba = v_role)
+     OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = v_role)
+     OR EXISTS (SELECT 1 FROM pg_class WHERE relowner = v_role)
+     OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member = v_role)
+  THEN RAISE EXCEPTION 'first_user_provisioner has an unsafe owner or role membership' USING ERRCODE = '42501'; END IF;
+  IF has_database_privilege('first_user_provisioner', current_database(), 'CREATE')
+     OR has_schema_privilege('first_user_provisioner', 'app', 'CREATE')
+     OR has_schema_privilege('first_user_provisioner', 'auth', 'CREATE')
+     OR has_schema_privilege('first_user_provisioner', 'platform', 'CREATE')
+     OR has_schema_privilege('first_user_provisioner', 'app', 'USAGE')
+     OR has_schema_privilege('first_user_provisioner', 'auth', 'USAGE')
+     OR NOT has_schema_privilege('first_user_provisioner', 'platform', 'USAGE')
+  THEN RAISE EXCEPTION 'first_user_provisioner has an unsafe database or schema privilege' USING ERRCODE = '42501'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) acl
+    WHERE n.nspname IN ('app', 'auth', 'platform') AND acl.grantee = v_role
+  ) THEN RAISE EXCEPTION 'first_user_provisioner has an unexpected direct table privilege' USING ERRCODE = '42501'; END IF;
+
+  v_expected_functions := ARRAY[
+    'platform.first_user_provisioning_assert_runtime_role()'::regprocedure::oid,
+    'platform.first_user_provisioning_scope_options(uuid,uuid,uuid)'::regprocedure::oid,
+    'platform.first_user_provisioning_identity(text,uuid)'::regprocedure::oid,
+    'platform.first_user_provisioning_permission_definitions()'::regprocedure::oid,
+    'platform.first_user_provisioning_grants(uuid,uuid,uuid)'::regprocedure::oid,
+    'platform.first_user_provisioning_provision(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,timestamptz,jsonb,jsonb)'::regprocedure::oid,
+    'platform.first_user_provisioning_revoke(uuid,uuid,uuid,uuid,uuid,uuid,jsonb)'::regprocedure::oid,
+    'platform.first_user_provisioning_append_failure(uuid,jsonb)'::regprocedure::oid,
+    'platform.first_owner_provisioning_plan(uuid,uuid,uuid[],text,text)'::regprocedure::oid,
+    'platform.first_owner_provisioning_provision(uuid,uuid,uuid,uuid,uuid,uuid[],text,text,text,jsonb,jsonb)'::regprocedure::oid,
+    'platform.first_owner_provisioning_append_failure(uuid,jsonb)'::regprocedure::oid
+  ];
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+    WHERE n.nspname IN ('app', 'auth', 'platform')
+      AND acl.grantee = v_role AND p.oid <> ALL(v_expected_functions)
+  ) OR EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'platform' AND p.oid <> ALL(v_expected_functions)
+      AND has_function_privilege('first_user_provisioner', p.oid, 'EXECUTE')
+  ) THEN RAISE EXCEPTION 'first_user_provisioner has an unexpected function EXECUTE privilege' USING ERRCODE = '42501'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM unnest(v_expected_functions) expected(function_oid)
+    WHERE NOT has_function_privilege('first_user_provisioner', expected.function_oid, 'EXECUTE')
+  ) THEN RAISE EXCEPTION 'first_user_provisioner is missing a required function EXECUTE privilege' USING ERRCODE = '42501'; END IF;
 END
 $$;
 --> statement-breakpoint
-
--- Deliberately retain auth_identities' historical BETTER_AUTH rows and the
--- users.two_factor_enabled column as non-authoritative history. Resolvers
--- above accept Clerk only; no legacy credentials remain in the live schema.
 SELECT platform.first_user_provisioning_assert_runtime_role();

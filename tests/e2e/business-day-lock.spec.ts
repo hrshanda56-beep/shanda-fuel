@@ -5,9 +5,8 @@ import { expect, test, type Page } from '@playwright/test';
  * behaviour preserved. Database-free: the overview API is answered by the test and
  * the server's own gating is represented by the `actions.LockBusinessDay` flags the
  * real server derives (canExecute is false whenever step-up is still required).
- * Better Auth is selected (AUTH_PROVIDER=BETTER_AUTH). Clerk mode renders
- * ClerkStepUpForm instead, which needs a ClerkProvider and live keys; it is covered by
- * the verify-clerk-stepup.sh source check and a manual Clerk-instance check, not here.
+ * Clerk renders the verification form. These tests cover visibility and command
+ * refusal; real MFA/reverification needs the dedicated Clerk test instance.
  */
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -71,10 +70,6 @@ async function arrange(page: Page, lock: LockFlags) {
   await page.route('**/api/forecourt/operations/overview**', (route) =>
     route.fulfill({ contentType: 'application/json', body: JSON.stringify(overview(lock)) }),
   );
-  // Better Auth, TOTP already enrolled: the step-up form shows password + code.
-  await page.route('**/api/auth/mfa/setup', (route) =>
-    route.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: true }) }),
-  );
   await page.goto(URL);
   await expect(
     page
@@ -92,7 +87,7 @@ test.describe('lock business day', () => {
     await arrange(page, { canExecute: false, permissionGranted: true, requiresStepUp: true });
     await expect(lockButtons(page)).toHaveCount(1);
     await expect(lockButtons(page)).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Verify step-up' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reverify with Clerk' })).toBeVisible();
     await expect(page.getByText(/requires current privileged reverification/)).toBeVisible();
   });
 
@@ -102,13 +97,13 @@ test.describe('lock business day', () => {
     await arrange(page, { canExecute: true, permissionGranted: true, requiresStepUp: false });
     await expect(lockButtons(page)).toHaveCount(1);
     await expect(lockButtons(page)).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Verify step-up' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Reverify with Clerk' })).toHaveCount(0);
   });
 
   test('without permission there is no lock action and no step-up form', async ({ page }) => {
     await arrange(page, NONE);
     await expect(lockButtons(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Verify step-up' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Reverify with Clerk' })).toHaveCount(0);
   });
 
   test('the UI never locks on its own: the server decides, and a refusal changes nothing', async ({

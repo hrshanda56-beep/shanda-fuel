@@ -14,7 +14,10 @@ function runtimeSources(directory: string): string[] {
 
 describe('Clerk-only authentication boundary', () => {
   it('cannot reintroduce an alternate runtime credential provider', () => {
-    const violations = runtimeSources(resolve('src')).filter((path) => {
+    const violations = [
+      ...runtimeSources(resolve('src')),
+      ...runtimeSources(resolve('scripts')),
+    ].filter((path) => {
       const source = readFileSync(path, 'utf8');
       return /(?:from\s+|import\s*\()['"]better-auth(?:\/|['"])/.test(source);
     });

@@ -1,6 +1,6 @@
+import { seedClerkSession, seedActiveStepUp } from '../auth-session-fixtures';
 import { randomUUID } from 'node:crypto';
 import type { Sql } from 'postgres';
-import { seedActiveStepUp } from '../auth-session-fixtures';
 
 export type Qa1ActorName = 'admin' | 'supervisor' | 'finance' | 'attendant' | 'otherTenant';
 
@@ -111,7 +111,7 @@ export async function createQa1ScenarioContext(
       ('${otherTenantId}', 'QA1 Other ${label}', 'qa1-other-${runId}')
     on conflict (id) do nothing;
 
-    insert into auth."user" (id, name, email) values
+    insert into app.users (id, name, email) values
       ('${actors.admin.actorId}', 'QA1 Administrator', '${runId}-admin@example.test'),
       ('${actors.supervisor.actorId}', 'QA1 Supervisor', '${runId}-supervisor@example.test'),
       ('${actors.finance.actorId}', 'QA1 Finance', '${runId}-finance@example.test'),
@@ -210,17 +210,42 @@ export async function createQa1ScenarioContext(
       (id, tenant_id, legal_entity_id, name, bank_name, account_reference_masked)
     values ('${bankAccountId}', '${tenantId}', '${legalEntityId}', 'QA1 Operating Account ${runId.slice(0, 8)}', 'QA1 Test Bank', '****QA1')
     on conflict (id) do nothing;
-
-    insert into auth.session
-      (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-    values
-      ('${actors.admin.sessionId}', '2030-01-01T00:00:00Z', '${actors.admin.token}', '${actors.admin.actorId}', true, '2026-09-26T05:00:00Z'),
-      ('${actors.supervisor.sessionId}', '2030-01-01T00:00:00Z', '${actors.supervisor.token}', '${actors.supervisor.actorId}', true, '2026-09-26T05:00:00Z'),
-      ('${actors.finance.sessionId}', '2030-01-01T00:00:00Z', '${actors.finance.token}', '${actors.finance.actorId}', true, '2026-09-26T05:00:00Z'),
-      ('${actors.attendant.sessionId}', '2030-01-01T00:00:00Z', '${actors.attendant.token}', '${actors.attendant.actorId}', false, null),
-      ('${actors.otherTenant.sessionId}', '2030-01-01T00:00:00Z', '${actors.otherTenant.token}', '${actors.otherTenant.actorId}', true, '2026-09-26T05:00:00Z')
-    on conflict (id) do nothing;
   `);
+  await seedClerkSession(
+    client,
+    actors.admin.sessionId,
+    actors.admin.token,
+    actors.admin.actorId,
+    true,
+  );
+  await seedClerkSession(
+    client,
+    actors.supervisor.sessionId,
+    actors.supervisor.token,
+    actors.supervisor.actorId,
+    true,
+  );
+  await seedClerkSession(
+    client,
+    actors.finance.sessionId,
+    actors.finance.token,
+    actors.finance.actorId,
+    true,
+  );
+  await seedClerkSession(
+    client,
+    actors.attendant.sessionId,
+    actors.attendant.token,
+    actors.attendant.actorId,
+    false,
+  );
+  await seedClerkSession(
+    client,
+    actors.otherTenant.sessionId,
+    actors.otherTenant.token,
+    actors.otherTenant.actorId,
+    true,
+  );
 
   await seedActiveStepUp(client, actors.admin.sessionId, tenantId);
   await seedActiveStepUp(client, actors.supervisor.sessionId, tenantId);

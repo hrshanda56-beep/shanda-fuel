@@ -1,11 +1,10 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { POST as cashCommandPost } from '../../src/app/api/cash/commands/route';
 import { GET as cashSummaryGet } from '../../src/app/api/cash/summary/route';
 import { ExactDecimal } from '../../src/platform/domain/primitives';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -41,7 +40,7 @@ const stationContext = {
 let client: Sql;
 
 async function signedCookie(token: string): Promise<string> {
-  return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return token;
 }
 
 async function postCashCommand(
@@ -53,7 +52,8 @@ async function postCashCommand(
     'content-type': 'application/json',
     'idempotency-key': key,
   });
-  if (token) headers.set('cookie', `shanda-fuel.session_token=${await signedCookie(token)}`);
+  if (token)
+    for (const [key, value] of Object.entries(clerkHeaders(token))) headers.set(key, value);
   return cashCommandPost(
     new Request('http://127.0.0.1:3000/api/cash/commands', {
       method: 'POST',
@@ -67,7 +67,7 @@ async function readCashSummary(token = 'a6-manager-session-token') {
   return cashSummaryGet(
     new Request(
       `http://127.0.0.1:3000/api/cash/summary?tenantId=${ids.tenant}&stationId=${ids.station}`,
-      { headers: { cookie: `shanda-fuel.session_token=${await signedCookie(token)}` } },
+      { headers: { ...clerkHeaders(await signedCookie(token)) } },
     ),
   );
 }
@@ -84,7 +84,7 @@ describe('A6 cash collection and banking persistence', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-a6-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-a6-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
@@ -92,7 +92,7 @@ describe('A6 cash collection and banking persistence', () => {
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A6 Cash Tenant', 'a6-cash-tenant')
         on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.supervisorActor}', 'A6 Supervisor', 'a6-supervisor@example.test'),
         ('${ids.managerActor}', 'A6 Manager', 'a6-manager@example.test')
         on conflict (id) do nothing;
@@ -137,12 +137,21 @@ describe('A6 cash collection and banking persistence', () => {
         (id, tenant_id, legal_entity_id, name, bank_name, account_reference_masked)
         values ('${ids.bankAccount}', '${ids.tenant}', '${ids.legal}', 'A6 Operating Account', 'Test Bank', '****0101')
         on conflict (id) do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values
-          ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', 'a6-supervisor-session-token', '${ids.supervisorActor}', true, now()),
-          ('${ids.managerSession}', '2030-01-01T00:00:00Z', 'a6-manager-session-token', '${ids.managerActor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(
+      client,
+      ids.supervisorSession,
+      'a6-supervisor-session-token',
+      ids.supervisorActor,
+      true,
+    );
+    await seedClerkSession(
+      client,
+      ids.managerSession,
+      'a6-manager-session-token',
+      ids.managerActor,
+      true,
+    );
     await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
     await seedActiveStepUp(client, ids.managerSession, ids.tenant);
   });

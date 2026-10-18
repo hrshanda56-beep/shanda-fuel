@@ -47,7 +47,8 @@ export function assertStepUp(
     session.stepUpExpiresAt.getTime() <= now.getTime() ||
     (session.stepUpLevel ?? 0) < minimumLevel ||
     session.stepUpTenantId !== tenantId ||
-    session.stepUpAction !== requiredAction
+    ((requiredAction || session.strongAuthenticationMethod) &&
+      session.stepUpAction !== (requiredAction ?? 'PRIVILEGED_OPERATION'))
   ) {
     throw new AppError('FORBIDDEN', 'A current step-up authentication is required for this action');
   }

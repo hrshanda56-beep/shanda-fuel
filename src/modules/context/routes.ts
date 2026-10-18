@@ -48,6 +48,7 @@ const STATION_REQUIRED_POLICY: ContextRoutePolicy = {
  */
 export function contextRoutePolicy(pathname: string | null | undefined): ContextRoutePolicy {
   const path = pathname || '/';
+  if (path === '/') return REPORTING_POLICY;
   if (/^\/reports(?:\/|$)/.test(path)) return REPORTING_POLICY;
   if (/^\/suppliers(?:\/|$)/.test(path)) return LEGAL_ENTITY_ALL_STATIONS_POLICY;
   if (

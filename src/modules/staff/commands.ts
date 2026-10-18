@@ -9,6 +9,7 @@ import { getDatabase } from '../../platform/db';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
 import { createResendEmailSender, type EmailSender } from '../../platform/email';
+import { createLogger } from '../../platform/logging';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authorize } from '../../platform/security/permissions';
 import { assertStepUp } from '../../platform/security';
@@ -30,6 +31,7 @@ import {
   invitationExpiry,
   normalizeEmail,
   normalizeStaffNumber,
+  normalizeActivationCode,
   parseRole,
   validateInvitationScope,
 } from './domain';
@@ -42,6 +44,7 @@ const createSchema = z.object({
   tenantId: z.string().uuid(),
   invitedName: z.string().trim().min(1).max(160),
   invitedEmail: z.string().trim().email().max(320).optional(),
+  staffNumber: z.string().trim().max(32).optional(),
   deliveryMethod: z.enum(['EMAIL', 'MANUAL']).default('EMAIL'),
   assignedRole: z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']),
   scopeType: z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']),
@@ -70,7 +73,7 @@ const deactivateSchema = z.object({
 const acceptanceSchema = z.object({ token: z.string().min(1).max(256) });
 const manualActivationSchema = z.object({
   staffNumber: z.string().min(3).max(32),
-  activationCode: z.string().min(20).max(128),
+  activationCode: z.string().min(1).max(128),
   password: z.string().min(8).max(256),
 });
 const manualConversionSchema = z.object({
@@ -91,7 +94,8 @@ function transactionError(error: unknown): AppError {
   if (error instanceof AppError) return error;
   if (typeof error === 'object' && error !== null && 'code' in error) {
     const code = (error as { code?: unknown }).code;
-    if (code === '23505') return new AppError('CONFLICT', 'That staff invitation already exists');
+    if (code === '23505')
+      return new AppError('CONFLICT', 'That staff number or invitation is already in use');
     if (code === 'P0001')
       return new AppError('FORBIDDEN', 'This invitation is no longer available');
   }
@@ -210,7 +214,12 @@ export async function createStaffInvitationFromRequest(
   const token = input.deliveryMethod === 'EMAIL' ? createInvitationToken() : createActivationCode();
   const tokenHash = 'codeHash' in token ? token.codeHash : token.tokenHash;
   const rawToken = 'code' in token ? token.code : token.token;
-  const staffNumber = input.deliveryMethod === 'MANUAL' ? createStaffNumber() : undefined;
+  const staffNumber =
+    input.deliveryMethod === 'MANUAL'
+      ? input.staffNumber
+        ? normalizeStaffNumber(input.staffNumber)
+        : createStaffNumber()
+      : undefined;
   const expiresAt = invitationExpiry();
   let result: {
     invitationId: string;
@@ -462,6 +471,7 @@ export async function generateManualStaffActivationFromRequest(
         expiresAt: expiresAt.toISOString(),
       };
     });
+    return result;
   } catch (error) {
     throw transactionError(error);
   }
@@ -779,11 +789,54 @@ export async function acceptStaffInvitationFromRequest(request: Request, body: u
   }
 }
 
-export async function signUpFromInvitation(_body: unknown): Promise<never> {
-  throw new AppError(
-    'FORBIDDEN',
-    'Create your account with Clerk, then accept the invitation while signed in',
-  );
+export async function signUpFromInvitation(body: unknown, deps: StaffCommandDependencies = {}) {
+  const input = z
+    .object({ token: z.string().min(1).max(256), password: z.string().min(8).max(256) })
+    .parse(body);
+  const tokenHash = hashInvitationToken(assertInvitationToken(input.token));
+  const createIdentity = deps.createClerkIdentity ?? createClerkCredentialIdentity;
+  const deleteIdentity = deps.deleteClerkIdentity ?? deleteClerkCredentialIdentity;
+  let created: { providerUserId: string } | undefined;
+  try {
+    return await getDatabase().transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${tokenHash}, 0))`,
+      );
+      const rows = await transaction.execute<{
+        invited_email: string;
+        invited_name: string;
+        existing_identity: boolean;
+      }>(sql`
+        select invited_email, invited_name, existing_identity from app.resolve_staff_invitation(${tokenHash})
+      `);
+      const invitation = rows[0];
+      if (!invitation || invitation.existing_identity)
+        throw new AppError(
+          'FORBIDDEN',
+          'Sign in with the invited account or request a new invitation',
+        );
+      created = await createIdentity({
+        email: invitation.invited_email,
+        password: input.password,
+        firstName: invitation.invited_name,
+      });
+      await transaction.execute(
+        sql`select app.register_invited_clerk_identity(${tokenHash}, ${randomUUID()}::uuid, ${created.providerUserId})`,
+      );
+      return { email: invitation.invited_email };
+    });
+  } catch (error) {
+    if (created) {
+      try {
+        await deleteIdentity(created.providerUserId);
+      } catch {
+        createLogger({ component: 'staff.signup' }).error('staff.identity_cleanup_failed', {
+          providerUserId: created.providerUserId,
+        });
+      }
+    }
+    throw transactionError(error);
+  }
 }
 
 export async function activateManualStaffFromRequest(
@@ -792,14 +845,26 @@ export async function activateManualStaffFromRequest(
 ) {
   const input = manualActivationSchema.parse(body);
   const staffNumber = normalizeStaffNumber(input.staffNumber);
-  const tokenHash = hashInvitationToken(input.activationCode.trim().toLowerCase());
+  let normalizedCode: string;
+  try {
+    normalizedCode = normalizeActivationCode(input.activationCode);
+  } catch {
+    normalizedCode = 'invalid-activation-code';
+  }
+  const tokenHash = hashInvitationToken(normalizedCode);
   const internalUserId = randomUUID();
   const createIdentity = deps.createClerkIdentity ?? createClerkCredentialIdentity;
   const deleteIdentity = deps.deleteClerkIdentity ?? deleteClerkCredentialIdentity;
   let clerkUser: { providerUserId: string } | undefined;
 
   try {
-    return await getDatabase().transaction(async (transaction) => {
+    const result = await getDatabase().transaction(async (transaction) => {
+      const checks = await transaction.execute<{ allowed: boolean }>(sql`
+        select app.check_manual_activation_attempt(${staffNumber}, ${tokenHash}) as allowed
+      `);
+      // Return normally so incorrect-attempt increments commit. Throwing here
+      // would roll them back and allow unlimited guessing.
+      if (!checks[0]?.allowed) return null;
       const invitationRows = await transaction.execute<{
         invitation_id: string;
         tenant_id: string;
@@ -816,15 +881,41 @@ export async function activateManualStaffFromRequest(
       const invitation = invitationRows[0];
       if (!invitation) throw new AppError('FORBIDDEN', 'This activation is no longer available');
 
-      clerkUser = await createIdentity({
-        username: invitation.staff_number,
-        password: input.password,
-        firstName: invitation.invited_name,
-      });
+      try {
+        clerkUser = await createIdentity({
+          username: invitation.staff_number,
+          password: input.password,
+          firstName: invitation.invited_name,
+        });
+      } catch (error) {
+        const providerError = error as {
+          status?: number;
+          errors?: { code?: string; meta?: { paramNames?: string[]; param_names?: string[] } }[];
+        };
+        createLogger({ component: 'staff.activation' }).error(
+          'staff.activation.provider_rejected',
+          {
+            stage: 'create_identity',
+            providerStatus: providerError.status,
+            errorCodes: providerError.errors
+              ?.map((e) => e.code)
+              .filter((c) => typeof c === 'string' && /^[a-z_]+$/.test(c)),
+          },
+        );
+        const codes = providerError.errors?.map((e) => e.code) ?? [];
+        if (codes.some((code) => code?.startsWith('form_password')))
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'Clerk did not accept that password. Choose a stronger, unique password.',
+          );
+        throw new AppError(
+          'DEPENDENCY_UNAVAILABLE',
+          'Account setup could not be completed. Ask your manager to check the employee name and authentication settings. Your activation code was not counted as incorrect.',
+        );
+      }
 
       await transaction.execute(sql`
-        insert into app.users (id, name, email, email_verified)
-        values (${internalUserId}, ${invitation.invited_name}, null, false)
+        select app.register_manual_staff_identity(${tokenHash}, ${staffNumber}, ${internalUserId}::uuid)
       `);
       const acceptedRows = await transaction.execute<{
         membership_id: string;
@@ -855,6 +946,12 @@ export async function activateManualStaffFromRequest(
       );
       return { activated: true, tenantId: accepted.tenant_id };
     });
+    if (!result)
+      throw new AppError(
+        'FORBIDDEN',
+        'Activation failed. After five incorrect codes, ask your manager for a new code.',
+      );
+    return result;
   } catch (error) {
     if (clerkUser) {
       try {

@@ -1,5 +1,62 @@
 # Clerk-only authentication cutover
 
+## Development procedure (2026-10-18)
+
+Employees reach manual activation through **First time? Activate your account**
+on the login page. New codes are formatted `7K3M-9R2X` (not a real code).
+Typing lower case or omitting the hyphen is accepted. Codes are one-time and
+expire in 72 hours; legacy long codes keep their original validity. Activation
+permanently invalidates a code after five incorrect attempts. The employee must
+ask their manager to generate a replacement; waiting does not restore it.
+A replacement resets the failure count and gets a fresh 72-hour expiry.
+A separate twenty-attempt limit per client per fifteen minutes still applies.
+Do not share codes publicly or include them in logs. Generate a new activation
+through the staff-management flow if a code is lost or expires.
+
+This development procedure supersedes production/archive instructions below.
+Do not use it to migrate an existing production database.
+
+Drizzle now loads `.env.local` before `.env`, preserving shell-injected values.
+Set `DATABASE_DIRECT_URL` to the administrator's non-pooled development connection
+and run `pnpm db:migrate` after bootstrapping the repository's database roles.
+Missing database configuration fails explicitly rather than targeting localhost.
+
+The expected sequence is 0000–0030 (31 journal entries). Migration 0030 moves
+`auth.user` to `app.users` with its UUIDs/foreign keys intact, updates SQL functions
+and removes `auth.account`, `auth.session`, `auth.verification`, `auth.two_factor`,
+non-Clerk mappings/assurance and the unused local MFA flag. It does not reset
+financial or operational tables and does not archive development credentials.
+
+The dedicated hard-coded production Owner script has been deleted. To seed one
+existing Clerk development user, set the intended company and user privately:
+
+```dotenv
+APP_ENV=local
+SEED_CLERK_USER_ID=user_your_existing_development_user
+SEED_TENANT_SLUG=your-company-slug
+SEED_TENANT_NAME=Your Company Name
+```
+
+Configure the app's Clerk test secret (`sk_test_`) and audit-signing credentials,
+and verify the Clerk user's primary email if one is present. Username-only
+accounts require no email; their internal email remains NULL (never invented).
+Preview and explicitly apply:
+
+```sh
+pnpm db:seed
+pnpm db:seed --apply
+```
+
+Preview only reads the Clerk user. Apply atomically creates/reuses the company,
+internal user, Clerk mapping, Owner membership, role assignment and signed audit
+event. Re-running is idempotent; conflicting mappings and inactive memberships
+fail rather than being overwritten. No password is stored locally and no stations
+or financial balances are invented. The seed refuses staging/production mode.
+
+Review the migration and local test evidence before applying it to Neon dev.
+
+## Historical production planning notes
+
 This runbook supersedes provider-selection and Better Auth credential steps in
 older release documents. Historical evidence remains historical.
 

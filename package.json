@@ -25,6 +25,7 @@
     "db:check": "drizzle-kit check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:seed": "node --import tsx scripts/seed-development.ts",
     "db:migrate:test": "drizzle-kit migrate"
   },
   "dependencies": {
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.0",
+    "@clerk/testing": "^2.2.47",
     "@playwright/test": "^1.56.1",
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.2",

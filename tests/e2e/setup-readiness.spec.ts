@@ -1,10 +1,9 @@
+import { seedClerkIdentity, authenticateClerk } from './clerk-fixtures';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 
 const databaseUrl = process.env.DATABASE_URL;
-const authSecret = process.env.BETTER_AUTH_SECRET;
 
 const ids = {
   organisation: 'e2e70000-0000-4000-8000-000000000001',
@@ -22,10 +21,7 @@ const sessionToken = 'setup-readiness-session-token';
 const WIDTHS = [320, 390, 768, 1024, 1440] as const;
 
 test.describe('Setup readiness and payment setup', () => {
-  test.skip(
-    !databaseUrl || !authSecret,
-    'Setup E2E requires CI PostgreSQL and the Better Auth secret',
-  );
+  test.skip(!databaseUrl, 'Setup E2E requires CI PostgreSQL and the Clerk development instance');
   test.describe.configure({ mode: 'serial' });
 
   let client: Sql;
@@ -39,7 +35,7 @@ test.describe('Setup readiness and payment setup', () => {
       insert into app.tenants (id, name, slug) values
         ('${ids.organisation}', 'Setup E2E Organisation', 'setup-e2e-organisation')
         on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.actor}', 'Setup E2E Admin', 'setup-e2e@example.test')
         on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
@@ -56,17 +52,6 @@ test.describe('Setup readiness and payment setup', () => {
         (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
       values ('${ids.organisation}', '${ids.membership}', 'ADMINISTRATOR', 'TENANT', null, null)
       on conflict do nothing;
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values ('${ids.session}', '2030-01-01T00:00:00Z', '${sessionToken}', '${ids.actor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at,
-        strong_authentication_verified = true;
-      update auth.session
-         set strong_authentication_verified = true, strong_authenticated_at = now(),
-             strong_authentication_expires_at = timestamp '2030-01-01 00:00:00',
-             step_up_level = 1, step_up_expires_at = timestamp '2030-01-01 00:00:00',
-             step_up_tenant_id = '${ids.organisation}'
-       where id = '${ids.session}';
       insert into app.products (id, tenant_id, code, name) values
         ('${ids.product}', '${ids.organisation}', 'SUP-ULP', 'Setup Unleaded')
         on conflict (id) do nothing;
@@ -90,6 +75,7 @@ test.describe('Setup readiness and payment setup', () => {
         values ('${ids.organisation}', '${ids.stationReady}', 'DAY', 'Day', '${ids.membership}')
         on conflict do nothing;
     `);
+    await seedClerkIdentity(client, ids.actor);
   });
 
   test.afterAll(async () => {
@@ -97,10 +83,7 @@ test.describe('Setup readiness and payment setup', () => {
   });
 
   test.beforeEach(async ({ context, page }) => {
-    const signedCookie = `${sessionToken}.${await makeSignature(sessionToken, authSecret!)}`;
-    await context.addCookies([
-      { name: 'shanda-fuel.session_token', value: signedCookie, domain: '127.0.0.1', path: '/' },
-    ]);
+    await authenticateClerk(context, ids.actor);
     await page.goto(
       `/settings?tenantId=${ids.organisation}&legalEntityId=${ids.legalEntity}&stationId=${ids.stationReady}`,
     );

@@ -45,7 +45,7 @@ function ClerkForm({ tenantId, onVerified, onCancel }: DialogProps) {
     const response = await fetch('/api/auth/step-up', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tenantId, action: 'LOCK_BUSINESS_DAY' }),
+      body: JSON.stringify({ tenantId, action: 'PRIVILEGED_OPERATION' }),
     });
     const body = (await response.json().catch(() => ({}))) as StepUpBody;
     if (!response.ok) {

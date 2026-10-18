@@ -3,6 +3,11 @@
 Date: 2026-10-17
 Status: accepted by project owner
 
+2026-10-18 clarification: the target is development with disposable authentication
+seeds. Remove obsolete credential tables and legacy mappings; do not archive them
+or reset financial tables. Remove the hard-coded production Owner CLI and provide
+configurable, idempotent development seeding. See canonical DEC-043.
+
 ## Decision
 
 Clerk is the only runtime authentication provider. Remove provider selection,

@@ -219,6 +219,7 @@ export function AppShell({
     parts: readonly string[];
   } | null>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const tabletMenuButtonRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const headerHidden = useHideOnScroll(headerRef);
 
@@ -345,13 +346,31 @@ export function AppShell({
           </div>
           <div className="shell-sidebar-footer">
             <div className="shell-sidebar-controls">
-              <IconButton
-                icon="panel-left"
-                size="sm"
-                className="shell-collapse-button"
-                label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                onClick={() => setSidebarCollapsed(!collapsed)}
-              />
+              {shellMode === 'desktop' ? (
+                <IconButton
+                  icon="panel-left"
+                  size="sm"
+                  className="shell-collapse-button"
+                  label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  onClick={() => setSidebarCollapsed(!collapsed)}
+                />
+              ) : shellMode === 'tablet' ? (
+                <button
+                  ref={tabletMenuButtonRef}
+                  type="button"
+                  className="icon-button icon-button-sm shell-collapse-button"
+                  aria-label="Expand menu"
+                  title="Expand menu"
+                  aria-haspopup="dialog"
+                  aria-expanded={menuOpen}
+                  onClick={() => {
+                    setDrawerClosedGroups(new Set());
+                    setMenuOpen(true);
+                  }}
+                >
+                  <Icon name="panel-left" size="sm" />
+                </button>
+              ) : null}
             </div>
           </div>
         </aside>
@@ -430,9 +449,11 @@ export function AppShell({
         <Modal
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
-          title="More"
+          title={shellMode === 'tablet' ? 'Navigation' : 'More'}
           className="modal-more"
-          returnFocus={() => moreButtonRef.current}
+          returnFocus={() =>
+            shellMode === 'tablet' ? tabletMenuButtonRef.current : moreButtonRef.current
+          }
         >
           <button
             type="button"

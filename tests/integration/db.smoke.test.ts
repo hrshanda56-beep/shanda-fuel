@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -34,7 +36,7 @@ describe('PostgreSQL integration harness', () => {
     expect(rows.map((row) => row.schema_name)).toEqual(['app', 'auth', 'platform']);
   });
 
-  it('denies auth schema reads to non-auth runtime roles', async () => {
+  it('removes obsolete credential tables rather than archiving them', async () => {
     const privileges = await client<
       {
         rolname: string;
@@ -46,20 +48,20 @@ describe('PostgreSQL integration harness', () => {
       select
         r.rolname,
         c.relname as table_name,
-        has_schema_privilege(r.rolname, 'auth', 'USAGE') as schema_usage,
+        false as schema_usage,
         has_table_privilege(r.rolname, c.oid, 'SELECT') as can_select
       from pg_roles r
       cross join pg_namespace n
       cross join pg_class c
-      where r.rolname in ('job_runtime', 'diagnostics_readonly')
-        and n.nspname = 'auth'
+      where r.rolname in ('app_runtime', 'job_runtime', 'diagnostics_readonly')
+        and n.nspname in ('auth', 'legacy_auth')
         and c.relnamespace = n.oid
         and c.relkind in ('r', 'p')
-        and c.relname in ('user', 'session', 'account', 'verification', 'two_factor')
+        and c.relname in ('session', 'account', 'verification', 'two_factor')
       order by r.rolname, c.relname
     `;
 
-    expect(privileges).toHaveLength(10);
+    expect(privileges).toHaveLength(0);
     expect(
       privileges.every(
         ({ schema_usage, can_select }) => schema_usage === false && can_select === false,
@@ -106,11 +108,11 @@ describe('PostgreSQL integration harness', () => {
         has_table_privilege('app_runtime', c.oid, 'DELETE') as can_delete
       from pg_namespace n
       join pg_class c on c.relnamespace = n.oid
-      where n.nspname = 'auth' and c.relkind in ('r', 'p')
+      where n.nspname = 'legacy_auth' and c.relkind in ('r', 'p')
       order by c.relname
     `;
-    expect(authDeletes.length).toBeGreaterThan(0);
-    expect(authDeletes.every((row) => row.can_delete)).toBe(true);
+    expect(authDeletes).toHaveLength(0);
+    expect(authDeletes.every((row) => !row.can_delete)).toBe(true);
 
     const rateLimitPrivileges = await client<
       {
@@ -162,7 +164,22 @@ describe('PostgreSQL integration harness', () => {
     const migrations = await client<{ tag: string }[]>`
       select hash as tag from drizzle.__drizzle_migrations order by created_at
     `;
-    expect(migrations).toHaveLength(30);
+    const journal = JSON.parse(
+      await readFile(
+        new URL('../../src/platform/db/migrations/meta/_journal.json', import.meta.url),
+        'utf8',
+      ),
+    ) as { entries: { tag: string }[] };
+    const hashes = await Promise.all(
+      journal.entries.map(async ({ tag }) =>
+        createHash('sha256')
+          .update(
+            await readFile(new URL(`../../src/platform/db/migrations/${tag}.sql`, import.meta.url)),
+          )
+          .digest('hex'),
+      ),
+    );
+    expect(migrations.map((row) => row.tag)).toEqual(hashes);
 
     const stepUpBinding = await client<{ column_name: string }[]>`
       select column_name
@@ -171,14 +188,13 @@ describe('PostgreSQL integration harness', () => {
         and table_name = 'session'
         and column_name = 'step_up_tenant_id'
     `;
-    expect(stepUpBinding).toEqual([{ column_name: 'step_up_tenant_id' }]);
+    expect(stepUpBinding).toEqual([]);
 
     const objects = await client<{ schema_name: string; table_name: string }[]>`
       select table_schema as schema_name, table_name
       from information_schema.tables
       where (table_schema, table_name) in (
-        ('auth', 'user'), ('auth', 'session'), ('auth', 'account'), ('auth', 'verification'),
-        ('auth', 'two_factor'),
+        ('app', 'users'), ('app', 'auth_identities'),
         ('app', 'tenants'), ('app', 'memberships'), ('app', 'forecourt_idempotency_records'),
         ('app', 'forecourt_outbox'), ('app', 'cash_collections'),
         ('app', 'cash_collection_allocations'), ('app', 'bank_deposits'),
@@ -189,7 +205,7 @@ describe('PostgreSQL integration harness', () => {
       )
       order by table_schema, table_name
     `;
-    expect(objects).toHaveLength(19);
+    expect(objects).toHaveLength(16);
 
     const a12Table = await client<{ relrowsecurity: boolean; relforcerowsecurity: boolean }[]>`
       select c.relrowsecurity, c.relforcerowsecurity

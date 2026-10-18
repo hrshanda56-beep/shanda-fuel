@@ -66,7 +66,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
   beforeAll(() => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-qa1-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-qa1-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });

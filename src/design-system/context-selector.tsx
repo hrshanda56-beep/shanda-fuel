@@ -375,6 +375,7 @@ function ContextForm({
         <p className="context-selector-note">No stations are available in this organisation.</p>
       ) : null}
 
+      {submitting ? <p role="status">Checking your access and switching station…</p> : null}
       {submitError ? (
         <p className="context-selector-error" role="alert">
           {submitError}

@@ -1,20 +1,24 @@
 # Database security
 
-The target database design uses separate `auth`, `app`, and `platform` schemas, tenant-aware foreign keys, PostgreSQL RLS, and a tenant transaction wrapper that sets local tenant, actor, and membership context before business queries execute.
+The database uses application and platform schemas, tenant-aware foreign keys,
+PostgreSQL RLS, and a tenant transaction wrapper that sets local tenant, actor,
+and membership context before business queries execute. Clerk is the sole
+authentication provider; historical `auth` tables are legacy migration material.
+See [Clerk-only cutover](runbooks/clerk-only-cutover.md).
 
 ## A1 security boundary
 
-- Better Auth is the server-side identity/session boundary. The Next.js route at `/api/auth/[...all]` delegates to the server-only Better Auth configuration, uses the Drizzle PostgreSQL adapter in the `auth` schema, and fails closed when `BETTER_AUTH_SECRET` is absent. Browser code never receives database credentials or connects to PostgreSQL.
-- Auth core tables (`user`, `session`, `account`, and `verification`) are separate from tenant memberships. A membership links an identity to a tenant and is usable only while its status is `ACTIVE`; `INVITED`, `SUSPENDED`, `LOCKED`, and `DISABLED` are denied by the application guard.
-- The trusted path is Better Auth session → server-resolved identity → requested tenant lookup → persisted membership and status → role/grant scope → branded server-owned execution context → tenant transaction → RLS. A requested tenant UUID is intent only; it cannot establish authority.
+- Clerk verifies credentials and sessions. The server maps the verified Clerk user ID to an internal application UUID; unmapped identities fail closed. Browser code never receives database credentials or connects to PostgreSQL.
+- Application users are separate from tenant memberships. A membership links an identity to a tenant and is usable only while its status is `ACTIVE`; `INVITED`, `SUSPENDED`, `LOCKED`, and `DISABLED` are denied by the application guard. Internal UUIDs survive the authentication migration.
+- The trusted path is Clerk session → explicit internal identity mapping → requested tenant lookup → persisted membership and status → role/grant scope → branded server-owned execution context → tenant transaction → RLS. A requested tenant UUID is intent only; it cannot establish authority.
 - `withTenantTransaction` accepts only a branded context created by the authority resolver. It sets all context keys with `SET LOCAL` semantics, including membership, so pooled connections cannot retain a previous request's context.
 - RLS policies use `app.current_tenant_id()`, `app.current_actor_id()`, `app.current_membership_id()`, and `app.has_active_membership()`, and fail closed when any required context is missing or malformed. Tenant-owned children repeat `tenant_id` in composite foreign keys.
 - The runtime role is not a schema owner and must not have `BYPASSRLS`; migration ownership remains separate. Background jobs use the same tenant-context path.
 - `platform.security_events` is intentionally tenant-scoped: `tenant_id` is required and protected by tenant-aware foreign keys and RLS. Login, MFA, recovery, and other pre-tenant identity events need a separately designed global stream; they must not be represented here through nullable tenant IDs. Tenant events are independently HMAC signed with a key identifier; there is no global hash chain bottleneck.
 - [`ops/db/bootstrap.sql`](../ops/db/bootstrap.sql) provisions separate `migration_owner`, `app_runtime`, `job_runtime`, and `diagnostics_readonly` roles. Runtime roles are `NOSUPERUSER`, `NOBYPASSRLS`, and not schema owners. Integration tests use those exact role contracts after a fresh canonical migration. `SECURITY DEFINER` is permitted only for the narrow, explicitly reviewed authoritative capabilities described in [A3 forecourt `SECURITY DEFINER` capabilities](#a3-forecourt-security-definer-capabilities) below -- it is not a general-purpose escape hatch, and no other application path relies on it.
 - Runtime/job roles receive INSERT (and only the required tenant SELECT) for security events, never UPDATE or DELETE. The append API accepts the active transaction executor so tenant-local RLS context is preserved.
-- Membership revocation denies new authority immediately, filters revoked/expired temporary grants, and the migration proposal revokes active grants on status transitions. Strong-authentication gates require a verified server-side assertion; absent verification fails closed. Public Better Auth signup is disabled and authentication alone never creates tenant access.
-- Production environment validation requires an HTTPS `APP_URL`, a database, and a Better Auth secret; secure cookies are enabled for production.
+- Membership revocation denies new authority immediately and filters revoked/expired temporary grants. Staff deactivation additionally revokes Clerk sessions. Strong-authentication gates require a verified server-side assertion; absent verification fails closed. Authentication alone never creates tenant access.
+- Deployed environment validation requires an HTTPS `APP_URL`, a database, Clerk keys, and independent audit signing credentials. Sensitive actions require the configured Clerk reverification and application authorization checks.
 
 ### Runtime-role hardening after the historical grant
 

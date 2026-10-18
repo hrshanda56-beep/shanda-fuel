@@ -3,6 +3,7 @@
 import { useSignIn } from '@clerk/nextjs/legacy';
 import { SignIn } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useRef, useState, type FormEvent } from 'react';
 
 import { Button, Field } from '../primitives';
@@ -93,7 +94,14 @@ export function ClerkLoginForm({ next, invited = false }: { next?: string; invit
           Sign in
         </Button>
       </form>
-      <p className="entry-footnote">New here? Use the invitation from your manager.</p>
+      <button type="button" className="entry-link" onClick={() => setVerificationRequired(true)}>
+        Forgot your password?
+      </button>
+      <p className="entry-footnote">
+        <Link className="entry-link" href="/join">
+          First time? Activate your account
+        </Link>
+      </p>
     </section>
   );
 }

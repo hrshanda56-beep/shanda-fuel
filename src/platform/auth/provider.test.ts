@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ getAuth: vi.fn(), execute: vi.fn(), transaction: vi.fn() }));
 vi.mock('@clerk/nextjs/server', () => ({ getAuth: mocks.getAuth, clerkClient: vi.fn() }));
-vi.mock('../db', () => ({ getDatabase: () => ({ transaction: mocks.transaction }) }));
-import { getAuthProviderName, resolveClerkSession } from './provider';
+vi.mock('../db', () => ({
+  getDatabase: () => ({ transaction: mocks.transaction, execute: mocks.execute }),
+}));
+import { resolveClerkSession } from './provider';
 import { issueClerkStepUpAssertion } from './clerk-step-up';
 afterEach(() => {
   vi.clearAllMocks();
@@ -40,10 +42,6 @@ describe('Clerk session boundary', () => {
       expect(session?.stepUpTenantId).toBe(requireMfa ? undefined : 'tenant_1');
     },
   );
-  it('always selects Clerk', () => {
-    vi.stubEnv('AUTH_PROVIDER', 'unused');
-    expect(getAuthProviderName()).toBe('CLERK');
-  });
   it('does not resolve an anonymous identity', async () => {
     mocks.getAuth.mockReturnValue({ isAuthenticated: false });
     expect(await resolveClerkSession(new Request('https://fuel.test'))).toBeNull();
@@ -51,7 +49,7 @@ describe('Clerk session boundary', () => {
   });
   it('denies an unprovisioned identity', async () => {
     mocks.getAuth.mockReturnValue({ isAuthenticated: true, userId: 'user_1', sessionId: 'sess_1' });
-    mocks.transaction.mockResolvedValue(null);
+    mocks.execute.mockResolvedValue([]);
     await expect(resolveClerkSession(new Request('https://fuel.test'))).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });

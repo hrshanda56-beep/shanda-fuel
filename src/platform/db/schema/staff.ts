@@ -3,6 +3,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   text,
   timestamp,
   unique,
@@ -43,7 +44,10 @@ export const staffNumberRegistry = appSchema.table(
     index('staff_number_registry_invitation_idx')
       .on(table.reservedInvitationId)
       .where(sql`${table.reservedInvitationId} is not null`),
-    check('staff_number_registry_staff_number_ck', sql`${table.staffNumber} ~ '^SF-[0-9]{8}$'`),
+    check(
+      'staff_number_registry_staff_number_ck',
+      sql`${table.staffNumber} ~ '^[A-Z0-9][A-Z0-9_-]{3,31}$'`,
+    ),
     check(
       'staff_number_registry_normalized_ck',
       sql`${table.normalizedStaffNumber} = upper(btrim(${table.staffNumber}))`,
@@ -70,6 +74,7 @@ export const staffInvitations = appSchema.table(
     scopeType: text('scope_type').notNull(),
     legalEntityId: uuid('legal_entity_id'),
     tokenHash: text('token_hash').notNull(),
+    activationFailedAttempts: integer('activation_failed_attempts').notNull().default(0),
     status: text('status').notNull().default('PENDING'),
     expiresAt: utcTimestamp('expires_at').notNull(),
     acceptedAt: utcTimestamp('accepted_at'),
@@ -90,6 +95,10 @@ export const staffInvitations = appSchema.table(
     ),
   },
   (table) => [
+    check(
+      'staff_invitations_activation_attempts_ck',
+      sql`${table.activationFailedAttempts} between 0 and 5`,
+    ),
     unique('staff_invitations_tenant_id_id_uidx').on(table.tenantId, table.id),
     unique('staff_invitations_tenant_id_id_legal_entity_uidx').on(
       table.tenantId,

@@ -1,7 +1,14 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
 import { defineConfig } from 'drizzle-kit';
 
-const databaseUrl = process.env.DATABASE_DIRECT_URL ?? process.env.DATABASE_URL;
+// Match Next's local-development precedence without overriding injected values.
+config({ path: '.env.local', quiet: true });
+config({ path: '.env', quiet: true });
+
+const databaseUrl = process.env.DATABASE_DIRECT_URL?.trim() || process.env.DATABASE_URL?.trim();
+if (process.argv.includes('migrate') && !databaseUrl) {
+  throw new Error('Set DATABASE_DIRECT_URL in .env.local or .env before running migrations.');
+}
 
 export default defineConfig({
   dialect: 'postgresql',

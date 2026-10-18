@@ -1,8 +1,13 @@
+import {
+  seedClerkSession,
+  seedActiveStepUp,
+  clerkHeaders,
+  setFixtureStrongAuthentication,
+} from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
 import {
   FORECOURT_COMMAND_POLICY,
@@ -22,7 +27,6 @@ import {
 } from '../../src/modules/forecourt/contracts';
 import { litres, money, unitPrice } from '../../src/platform/domain/primitives';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -198,14 +202,14 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     client = postgres(databaseUrl, { max: 1, prepare: false });
     raceClient = postgres(databaseUrl, { max: 2, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenantA}', 'A3 Tenant A', 'a3-tenant-a'),
         ('${ids.tenantB}', 'A3 Tenant B', 'a3-tenant-b') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.actorA}', 'A3 Actor A', 'a3-actor-a@example.test'),
         ('${ids.actorB}', 'A3 Actor B', 'a3-actor-b@example.test'),
         ('${ids.actorC}', 'A3 Actor C', 'a3-actor-c@example.test'),
@@ -235,13 +239,15 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       insert into app.products (id, tenant_id, code, name)
         values ('${ids.productC}', '${ids.tenantA}', 'A3-TEST-PRODUCT', 'Test Product')
         on conflict (id) do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values ('${ids.routeSession}', '2030-01-01T00:00:00Z', 'a3-route-session-token', '${ids.actorA}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values ('${ids.negativeSession}', '2030-01-01T00:00:00Z', 'a3-negative-session-token', '${ids.actorD}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(client, ids.routeSession, 'a3-route-session-token', ids.actorA, true);
+    await seedClerkSession(
+      client,
+      ids.negativeSession,
+      'a3-negative-session-token',
+      ids.actorD,
+      true,
+    );
     await seedActiveStepUp(client, ids.routeSession, ids.tenantA);
   });
 
@@ -812,7 +818,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         ('${ids.routeClosing}', '${ids.tenantA}', '${ids.stationA}', '${ids.nozzleA}', '${ids.installationA}', '${ids.routeDay}', '${ids.routeShift}', 'SHIFT_CLOSE', 'AVAILABLE', 1012.125, '2026-09-21T07:00:00Z', '2026-09-21T07:00:01Z', '${ids.membershipA}', '${ids.membershipA}', '${ids.membershipA}')
     `);
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     const sealInput = {
       commandType: 'SealSegment',
       tenantId: ids.tenantA,
@@ -834,7 +840,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',
         headers: {
-          cookie: `shanda-fuel.session_token=${signedToken}`,
+          ...clerkHeaders(signedToken),
           'content-type': 'application/json',
           'idempotency-key': 'a3-real-route-seal-1',
         },
@@ -848,7 +854,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',
         headers: {
-          cookie: `shanda-fuel.session_token=${signedToken}`,
+          ...clerkHeaders(signedToken),
           'content-type': 'application/json',
           'idempotency-key': 'a3-real-route-invalid-attendant',
         },
@@ -867,7 +873,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',
         headers: {
-          cookie: `shanda-fuel.session_token=${signedToken}`,
+          ...clerkHeaders(signedToken),
           'content-type': 'application/json',
           'idempotency-key': 'a3-real-route-seal-1',
         },
@@ -879,7 +885,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       new Request('http://127.0.0.1:3000/api/forecourt/commands', {
         method: 'POST',
         headers: {
-          cookie: `shanda-fuel.session_token=${signedToken}`,
+          ...clerkHeaders(signedToken),
           'content-type': 'application/json',
           'idempotency-key': 'a3-real-route-seal-1',
         },
@@ -910,13 +916,13 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     async function postCommand(input: unknown, key: string) {
       return forecourtCommandPost(
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken, input),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -1086,9 +1092,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     const negativeRawToken = 'a3-negative-session-token';
-    const negativeSignedToken = `${negativeRawToken}.${await makeSignature(negativeRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const negativeSignedToken = negativeRawToken;
 
     async function postUnauthenticated(body: string) {
       return forecourtCommandPost(
@@ -1136,7 +1142,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${token}`,
+            ...clerkHeaders(token),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -1248,7 +1254,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
 
     await client.unsafe(`
       insert into app.products (id, tenant_id, code, name)
@@ -1301,7 +1307,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken, input),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -1466,13 +1472,13 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     async function postCommand(input: Record<string, unknown>, key: string) {
       return forecourtCommandPost(
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken, input),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -1656,15 +1662,15 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const actorRawToken = 'a3-route-session-token';
-    const actorToken = `${actorRawToken}.${await makeSignature(actorRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const actorToken = actorRawToken;
     const attendantRawToken = 'a3-negative-session-token';
-    const attendantToken = `${attendantRawToken}.${await makeSignature(attendantRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const attendantToken = attendantRawToken;
     async function postWithToken(token: string, input: Record<string, unknown>, key: string) {
       return forecourtCommandPost(
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${token}`,
+            ...clerkHeaders(token),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -1702,17 +1708,13 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       403,
     );
 
-    await client.unsafe(
-      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
-    );
+    setFixtureStrongAuthentication(ids.routeSession, false);
     try {
       expect((await postWithToken(actorToken, priceInput, 'a3-price-weak-assurance')).status).toBe(
         403,
       );
     } finally {
-      await client.unsafe(
-        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
-      );
+      setFixtureStrongAuthentication(ids.routeSession, true);
     }
 
     await expectGenericStationForbidden(
@@ -1757,18 +1759,14 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       (await postWithToken(attendantToken, preparePriceInput, 'a3-price-prepare-no-permission'))
         .status,
     ).toBe(403);
-    await client.unsafe(
-      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
-    );
+    setFixtureStrongAuthentication(ids.routeSession, false);
     try {
       expect(
         (await postWithToken(actorToken, preparePriceInput, 'a3-price-prepare-weak-assurance'))
           .status,
       ).toBe(403);
     } finally {
-      await client.unsafe(
-        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
-      );
+      setFixtureStrongAuthentication(ids.routeSession, true);
     }
     await expectGenericStationForbidden(
       { ...preparePriceInput, stationId: ids.stationB },
@@ -2069,13 +2067,13 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     ).resolves.toEqual([1, 0]);
 
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     async function postHandover(boundaryId: string, key: string) {
       return forecourtCommandPost(
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -2117,13 +2115,13 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     async function postCommand(input: Record<string, unknown>, key: string) {
       return forecourtCommandPost(
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken, input),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -2408,7 +2406,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     const id = () => randomUUID();
     const day = id();
     const shift = id();
@@ -2440,7 +2438,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -2709,7 +2707,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     const day = randomUUID();
     const shift = randomUUID();
     const postCommand = (input: Record<string, unknown>, key: string) =>
@@ -2717,7 +2715,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -2782,7 +2780,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const rawToken = 'a3-route-session-token';
-    const signedToken = `${rawToken}.${await makeSignature(rawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const signedToken = rawToken;
     const day = randomUUID();
     const shift = randomUUID();
     const unavailableBoundary = randomUUID();
@@ -2792,7 +2790,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${signedToken}`,
+            ...clerkHeaders(signedToken),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -2917,9 +2915,9 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
     process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
     const actorRawToken = 'a3-route-session-token';
-    const actorToken = `${actorRawToken}.${await makeSignature(actorRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const actorToken = actorRawToken;
     const attendantRawToken = 'a3-negative-session-token';
-    const attendantToken = `${attendantRawToken}.${await makeSignature(attendantRawToken, process.env.BETTER_AUTH_SECRET!)}`;
+    const attendantToken = attendantRawToken;
     const id = () => randomUUID();
 
     const resetBoundary = id();
@@ -2951,7 +2949,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         new Request('http://127.0.0.1:3000/api/forecourt/commands', {
           method: 'POST',
           headers: {
-            cookie: `shanda-fuel.session_token=${token}`,
+            ...clerkHeaders(token),
             'content-type': 'application/json',
             'idempotency-key': key,
           },
@@ -3118,9 +3116,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       body: { ...resetInput, stationId: ids.stationA2 },
       statuses: [403],
     });
-    await client.unsafe(
-      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
-    );
+    setFixtureStrongAuthentication(ids.routeSession, false);
     try {
       await expectDenied({
         commandType: 'ResetMeter',
@@ -3130,9 +3126,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         statuses: [403],
       });
     } finally {
-      await client.unsafe(
-        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
-      );
+      setFixtureStrongAuthentication(ids.routeSession, true);
     }
     await expectDenied({
       commandType: 'ResetMeter',
@@ -3187,9 +3181,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       body: { ...replacementHistoricalInput, stationId: ids.stationA2 },
       statuses: [403],
     });
-    await client.unsafe(
-      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
-    );
+    setFixtureStrongAuthentication(ids.routeSession, false);
     try {
       await expectDenied({
         commandType: 'ReplaceMeter',
@@ -3199,9 +3191,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         statuses: [403],
       });
     } finally {
-      await client.unsafe(
-        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
-      );
+      setFixtureStrongAuthentication(ids.routeSession, true);
     }
     await expectDenied({
       commandType: 'ReplaceMeter',
@@ -3260,9 +3250,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       body: { ...correctionInput, stationId: ids.stationA2 },
       statuses: [403],
     });
-    await client.unsafe(
-      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
-    );
+    setFixtureStrongAuthentication(ids.routeSession, false);
     try {
       await expectDenied({
         commandType: 'CorrectMeterSegment',
@@ -3272,9 +3260,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         statuses: [403],
       });
     } finally {
-      await client.unsafe(
-        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
-      );
+      setFixtureStrongAuthentication(ids.routeSession, true);
     }
     await expectDenied({
       commandType: 'CorrectMeterSegment',
@@ -3382,9 +3368,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       body: { ...priceBoundaryInput, stationId: ids.stationA2 },
       statuses: [403],
     });
-    await client.unsafe(
-      `update auth.session set strong_authentication_verified = false where id = '${ids.routeSession}'`,
-    );
+    setFixtureStrongAuthentication(ids.routeSession, false);
     try {
       await expectDenied({
         commandType: 'ConfirmPriceChangeBoundary',
@@ -3394,9 +3378,7 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         statuses: [403],
       });
     } finally {
-      await client.unsafe(
-        `update auth.session set strong_authentication_verified = true where id = '${ids.routeSession}'`,
-      );
+      setFixtureStrongAuthentication(ids.routeSession, true);
     }
     await expectDenied({
       commandType: 'ConfirmPriceChangeBoundary',

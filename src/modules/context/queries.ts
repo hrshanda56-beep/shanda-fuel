@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -79,7 +80,10 @@ async function listActiveTenantIds(
   });
 }
 
-async function readTenantRows(authority: TenantExecutionContext): Promise<ContextRow[]> {
+async function readTenantRows(
+  authority: TenantExecutionContext,
+  selection?: ContextSelection,
+): Promise<ContextRow[]> {
   return withTenantTransaction(authority.transaction, async (transaction: ContextTransaction) => {
     return transaction.execute<ContextRow>(sql`
       select
@@ -101,6 +105,8 @@ async function readTenantRows(authority: TenantExecutionContext): Promise<Contex
        and s.status = 'ACTIVE'
       where t.id = ${authority.membership.tenantId}
         and t.status = 'ACTIVE'
+        ${selection?.legalEntityId ? sql`and le.id = ${selection.legalEntityId}` : sql``}
+        ${selection?.stationId ? sql`and s.id = ${selection.stationId}` : sql``}
       order by le.legal_name, le.id, s.code, s.id
     `);
   });
@@ -210,7 +216,17 @@ export function filterAuthorizedContextRows(
 }
 
 /** Discover only the context tree the current authenticated actor may use. */
-export async function discoverAvailableContext(
+const discoverForRender = cache((request: Request) => discoverAvailableContextUncached(request));
+export function discoverAvailableContext(
+  request: Request,
+  dependencies: QueryDependencies = {},
+): Promise<AvailableContext> {
+  return Object.keys(dependencies).length > 0
+    ? discoverAvailableContextUncached(request, dependencies)
+    : discoverForRender(request);
+}
+
+async function discoverAvailableContextUncached(
   request: Request,
   dependencies: QueryDependencies = {},
 ): Promise<AvailableContext> {
@@ -333,6 +349,17 @@ export async function validateRequestedContext(
 ): Promise<ContextSelection> {
   const pathname = input.pathname ?? new URL(request.url).pathname;
   const policy = input.policy ?? contextRoutePolicy(pathname);
+  if (!input.dependencies) {
+    // A switch supplies the target organisation already. Verify that membership
+    // directly rather than enumerating every membership and station first.
+    const authority = await resolveTenantExecutionContext({
+      request,
+      requestedTenantId: selection.organisationId,
+    });
+    const rows = await readTenantRows(authority, selection);
+    const available = filterAuthorizedContextRows(authority, rows);
+    return validateContextSelection(available, selection, policy);
+  }
   const available = await discoverAvailableContext(request, input.dependencies);
   return validateContextSelection(available, selection, policy);
 }

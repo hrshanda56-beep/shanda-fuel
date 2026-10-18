@@ -10,6 +10,7 @@ import { Modal } from '@/design-system/modal';
 import type { RoleCode } from '@/modules/authorization';
 import type { SettingsView } from '../contracts';
 import styles from './settings-workspace.module.css';
+import { formatStaffInvitationMessage } from './staff-invitation-message';
 import {
   ApplicationStepUpError,
   NetworkStepUpError,
@@ -82,7 +83,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
   );
   const [legalEntityId, setLegalEntityId] = useState('');
   const [stationIds, setStationIds] = useState<string[]>([]);
-  const [deliveryMethod, setDeliveryMethod] = useState<'EMAIL' | 'MANUAL'>('EMAIL');
+  const [deliveryMethod, setDeliveryMethod] = useState<'EMAIL' | 'MANUAL'>('MANUAL');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [manualActivation, setManualActivation] = useState<{
@@ -144,7 +145,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
         invitedName: String(form.get('name') ?? ''),
         ...(deliveryMethod === 'EMAIL'
           ? { invitedEmail: String(form.get('email') ?? ''), deliveryMethod }
-          : { deliveryMethod }),
+          : { deliveryMethod, staffNumber: String(form.get('staffNumber') ?? '').trim() }),
         assignedRole: role,
         scopeType,
         ...(legalEntityId ? { legalEntityId } : {}),
@@ -171,6 +172,17 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
   }
 
   async function generateManual(invitationId: string) {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      await verifyStaffManagement();
+    } catch {
+      setMessage(
+        'Security verification was not completed. No new code was generated. This action requires recent MFA verification.',
+      );
+      setBusy(false);
+      return;
+    }
     const result = await command(
       { commandType: 'GenerateManualStaffActivation', invitationId },
       false,
@@ -179,10 +191,22 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
       setManualActivation(
         result as unknown as { staffNumber: string; activationCode: string; expiresAt: string },
       );
+      setSelectedId(undefined);
     } else if (result) {
       window.location.reload();
     }
   }
+
+  const verifyStaffManagement = useReverification(async () => {
+    const response = await fetch('/api/auth/step-up', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenantId, action: 'PRIVILEGED_OPERATION' }),
+    });
+    const body = (await response.json()) as { clerk_error?: unknown; message?: string };
+    if (!response.ok && !body.clerk_error) throw new Error('Security verification required');
+    return body;
+  });
 
   function toggleStation(stationId: string) {
     setStationIds((current) =>
@@ -324,13 +348,8 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
       ...(invitation.staffNumber ? { staffNumber: invitation.staffNumber } : {}),
       role: ROLE_LABELS[invitation.role],
       scope: invitationScope(invitation),
-      statusLabel:
-        invitation.status === 'EXPIRED'
-          ? 'Expired'
-          : invitation.deliveryMethod === 'MANUAL'
-            ? 'Manual Activation'
-            : 'Invited',
-      tone: invitation.status === 'EXPIRED' ? 'warning' : 'informational',
+      statusLabel: invitation.status === 'EXPIRED' ? 'Expired' : 'Pending',
+      tone: invitation.status === 'EXPIRED' ? 'warning' : 'pending',
       actions:
         invitation.status === 'PENDING' ? (
           <>
@@ -341,18 +360,23 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
                 size="sm"
                 onClick={() => generateManual(invitation.id)}
               >
-                Generate manual activation
+                Switch to staff-number activation
               </Button>
             ) : null}
             <Button
               type="button"
               variant="quiet"
               size="sm"
+              disabled={busy}
               onClick={() =>
-                command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
+                invitation.deliveryMethod === 'MANUAL'
+                  ? generateManual(invitation.id)
+                  : command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
               }
             >
-              Resend
+              {invitation.deliveryMethod === 'MANUAL'
+                ? 'Generate new activation code'
+                : 'Resend email invitation'}
             </Button>
             <Button
               type="button"
@@ -371,11 +395,16 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             type="button"
             variant="quiet"
             size="sm"
+            disabled={busy}
             onClick={() =>
-              command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
+              invitation.deliveryMethod === 'MANUAL'
+                ? generateManual(invitation.id)
+                : command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
             }
           >
-            Resend
+            {invitation.deliveryMethod === 'MANUAL'
+              ? 'Generate new activation code'
+              : 'Resend email invitation'}
           </Button>
         ),
     })),
@@ -517,7 +546,14 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
                   <span>{row.scope}</span>
                 </div>
                 <div className={styles.staffCell} data-label="Status">
-                  <StatusBadge tone={row.tone}>{row.statusLabel}</StatusBadge>
+                  <StatusBadge
+                    tone={row.tone}
+                    {...(row.tone === 'pending'
+                      ? { className: `status status-pending ${styles.staffPending}` }
+                      : {})}
+                  >
+                    {row.statusLabel}
+                  </StatusBadge>
                 </div>
               </li>
             ))}
@@ -534,7 +570,19 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
       >
         {selectedRow ? (
           <div className={styles.staffDetail}>
-            <StatusBadge tone={selectedRow.tone}>{selectedRow.statusLabel}</StatusBadge>
+            {message ? (
+              <p role="status" className={styles.staffMessage}>
+                {message}
+              </p>
+            ) : null}
+            <StatusBadge
+              tone={selectedRow.tone}
+              {...(selectedRow.tone === 'pending'
+                ? { className: `status status-pending ${styles.staffPending}` }
+                : {})}
+            >
+              {selectedRow.statusLabel}
+            </StatusBadge>
             <dl className={styles.staffFacts}>
               <div>
                 <dt>Email</dt>
@@ -550,14 +598,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
               </div>
             </dl>
             {selectedRow.actions ? (
-              <div
-                className={styles.staffActions}
-                onClick={(event) => {
-                  if ((event.target as HTMLElement).closest('button')) setSelectedId(undefined);
-                }}
-              >
-                {selectedRow.actions}
-              </div>
+              <div className={styles.staffActions}>{selectedRow.actions}</div>
             ) : (
               <p className={styles.note}>No actions available for this staff member.</p>
             )}
@@ -578,13 +619,13 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             <input name="name" required maxLength={160} />
           </label>
           <label>
-            <span>Delivery</span>
+            <span>Invite using</span>
             <select
               value={deliveryMethod}
               onChange={(event) => setDeliveryMethod(event.target.value as 'EMAIL' | 'MANUAL')}
             >
-              <option value="EMAIL">Email invitation</option>
-              <option value="MANUAL">Manual activation</option>
+              <option value="MANUAL">Staff number</option>
+              <option value="EMAIL">Email</option>
             </select>
           </label>
           {deliveryMethod === 'EMAIL' ? (
@@ -593,9 +634,20 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
               <input name="email" type="email" required maxLength={320} />
             </label>
           ) : (
-            <p className={styles.note}>
-              The Staff Number and activation code will be shown once after creation.
-            </p>
+            <label>
+              <span>Staff number (optional)</span>
+              <input
+                name="staffNumber"
+                maxLength={32}
+                minLength={4}
+                autoCapitalize="characters"
+                aria-describedby="staff-number-help"
+              />
+              <small id="staff-number-help">
+                Leave blank to generate a staff number automatically. Use 4–32 letters, numbers,
+                hyphens or underscores. This is their login username.
+              </small>
+            </label>
           )}
           <label>
             <span>Role</span>
@@ -682,12 +734,20 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             <Button
               type="button"
               variant="quiet"
-              onClick={() =>
-                manualActivation &&
-                navigator.clipboard?.writeText(
-                  `${manualActivation.staffNumber}\n${manualActivation.activationCode}`,
-                )
-              }
+              onClick={async () => {
+                if (!manualActivation) return;
+                try {
+                  if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+                  await navigator.clipboard.writeText(
+                    formatStaffInvitationMessage(manualActivation, window.location.origin),
+                  );
+                  setMessage('Invitation copied. Share it privately with the employee.');
+                } catch {
+                  setMessage(
+                    'Could not copy the invitation. Copy the staff number, code and expiry shown here manually.',
+                  );
+                }
+              }}
             >
               Copy invitation
             </Button>

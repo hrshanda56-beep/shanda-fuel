@@ -23,6 +23,8 @@ import {
   type AuthenticatedActorResolver,
 } from '../identity';
 import { assertActiveTenantMembership, type MembershipStatus } from './access';
+import { reuseRequestAuthority } from './request-authority';
+import { memoizeRequestRead } from '../../platform/security/request-read-scope';
 
 const membershipStatusSchema = z.enum(['INVITED', 'ACTIVE', 'SUSPENDED', 'LOCKED', 'DISABLED']);
 const roleCodeSchema = z.enum(ROLE_CODES);
@@ -158,22 +160,26 @@ export async function loadTenantMembershipWithDatabase(
         set_config('app.tenant_id', ${row.tenant_id}, true),
         set_config('app.membership_id', ${row.membership_id}, true)
     `);
-    const roleRows = (await transaction.execute(sql`
-      select tenant_id, role_code, scope_type, legal_entity_id, station_id, expires_at
+    // Both sets require the same verified tenant context. UNION ALL fetches
+    // them in one round trip without joining/multiplying independent grants.
+    const assignments = (await transaction.execute(sql`
+      select 'role' as kind, tenant_id, role_code, null::text as permission_code,
+        scope_type, legal_entity_id, station_id, expires_at, null::timestamptz as revoked_at
       from app.membership_role_assignments
       where tenant_id = ${tenantId}
         and membership_id = ${row.membership_id}
         and (expires_at is null or expires_at > now())
-    `)) as unknown as RoleAssignmentRow[];
-    const grantRows = (await transaction.execute(sql`
-      select tenant_id, permission_code, scope_type, legal_entity_id, station_id,
+      union all
+      select 'grant' as kind, tenant_id, null::text as role_code, permission_code, scope_type, legal_entity_id, station_id,
              expires_at, revoked_at
       from app.temporary_permission_grants
       where tenant_id = ${tenantId}
         and membership_id = ${row.membership_id}
         and revoked_at is null
         and expires_at > now()
-    `)) as unknown as TemporaryGrantRow[];
+    `)) as unknown as Array<RoleAssignmentRow & TemporaryGrantRow & { kind: 'role' | 'grant' }>;
+    const roleRows = assignments.filter((row) => row.kind === 'role');
+    const grantRows = assignments.filter((row) => row.kind === 'grant');
 
     return {
       tenantId: row.tenant_id,
@@ -187,10 +193,23 @@ export async function loadTenantMembershipWithDatabase(
   });
 }
 
+const membershipRead = Symbol('tenant-membership');
 export const loadTenantMembership: TenantMembershipLoader = (identityId, tenantId) =>
-  loadTenantMembershipWithDatabase(identityId, tenantId, getDatabase());
+  memoizeRequestRead(membershipRead, JSON.stringify([identityId, tenantId]), () =>
+    loadTenantMembershipWithDatabase(identityId, tenantId, getDatabase()),
+  );
 
-export async function resolveTenantExecutionContext(input: {
+export function resolveTenantExecutionContext(
+  input: Parameters<typeof resolveTenantExecutionContextUncached>[0],
+): Promise<TenantExecutionContext> {
+  if (input.authenticatedActor || input.resolveActor || input.loadMembership || input.now)
+    return resolveTenantExecutionContextUncached(input);
+  return reuseRequestAuthority(input.request, input.requestedTenantId, () =>
+    resolveTenantExecutionContextUncached(input),
+  );
+}
+
+async function resolveTenantExecutionContextUncached(input: {
   request: Request;
   requestedTenantId: string;
   authenticatedActor?: AuthenticatedActorContext;

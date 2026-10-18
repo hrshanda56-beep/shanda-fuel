@@ -112,45 +112,6 @@ export function TodayOverview({
   const [daily, setDaily] = useState<Section<DailyReport>>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
-  useEffect(() => {
-    if (!tenantId) return;
-    const controller = new AbortController();
-    const { signal } = controller;
-    const reset = window.setTimeout(() => {
-      setOperations({ status: 'loading' });
-      setCustomers({ status: 'loading' });
-      setDaily({ status: 'loading' });
-    }, 0);
-
-    // Today's approved figures; without a station, every station this person may see.
-    const reportParams = new URLSearchParams({ tenantId });
-    if (stationId) reportParams.set('stationIds', stationId);
-    load<DailyReport>(
-      `/api/reports/daily?${reportParams}`,
-      signal,
-      'Today’s figures could not be loaded.',
-    ).then(setDaily, () => {});
-
-    if (stationId) {
-      const params = new URLSearchParams({ tenantId, stationId });
-      load<TodayOperations>(
-        `/api/forecourt/operations/overview?${params}`,
-        signal,
-        'Daily operations could not be loaded.',
-      ).then(setOperations, () => {});
-    }
-    load<{ customers: { status: string }[] }>(
-      `/api/customers/summary?${new URLSearchParams({ tenantId })}`,
-      signal,
-      'Customers could not be loaded.',
-    ).then(setCustomers, () => {});
-
-    return () => {
-      window.clearTimeout(reset);
-      controller.abort();
-    };
-  }, [tenantId, stationId, attempt]);
-
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   const [range, setRange] = useState<ChartRange>('30D');
@@ -164,22 +125,43 @@ export function TodayOverview({
   useEffect(() => {
     if (!tenantId) return;
     const controller = new AbortController();
+    const reset = window.setTimeout(() => {
+      setDaily({ status: 'loading' });
+      setCustomers({ status: 'loading' });
+      setOperations({ status: 'loading' });
+    }, 0);
     const params = new URLSearchParams({
       tenantId,
       fromDate: rangeWindow.fromDate,
       toDate: rangeWindow.toDate,
     });
-    if (stationId) params.set('stationIds', stationId);
-    load<{ sales: { rows: SalesRow[] } }>(
-      `/api/reports/management?${params}`,
-      controller.signal,
-      'Sales could not be loaded.',
-    ).then(
-      (section) => setChart({ ...section, key: chartKey }),
+    if (stationId) params.set('stationId', stationId);
+    load<{
+      daily: Section<DailyReport>;
+      customers: Section<{ customers: { status: string }[] }>;
+      operations: Section<TodayOperations> | null;
+      chart: Section<{ sales: { rows: SalesRow[] } }>;
+    }>(`/api/dashboard?${params}`, controller.signal, 'Sales could not be loaded.').then(
+      (section) => {
+        if (section.status === 'ready') {
+          setDaily(section.data.daily);
+          setCustomers(section.data.customers);
+          if (section.data.operations) setOperations(section.data.operations);
+          setChart({ ...section.data.chart, key: chartKey });
+        } else {
+          setDaily(section);
+          setCustomers(section);
+          setOperations(section);
+          setChart({ ...section, key: chartKey });
+        }
+      },
       () => {},
     );
-    return () => controller.abort();
-  }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt]);
+    return () => {
+      window.clearTimeout(reset);
+      controller.abort();
+    };
+  }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt, attempt]);
 
   const customersHref = useMemo(
     () => (tenantId ? `/customers?${new URLSearchParams({ tenantId })}` : '/customers'),

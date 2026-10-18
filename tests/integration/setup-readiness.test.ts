@@ -1,9 +1,8 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { GET as overviewGet } from '../../src/app/api/setup/overview/route';
 import { POST as settlementPost } from '../../src/app/api/settlements/commands/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -34,15 +33,14 @@ const ids = {
 let client: Sql;
 
 async function cookie(token: string): Promise<string> {
-  const signature = await makeSignature(token, process.env.BETTER_AUTH_SECRET!);
-  return `shanda-fuel.session_token=${token}.${signature}`;
+  return token;
 }
 
 async function overview(token: string) {
   const response = await overviewGet(
     new Request(
       `http://127.0.0.1:3000/api/setup/overview?tenantId=${ids.tenant}&legalEntityId=${ids.legal}&stationId=${ids.full}`,
-      { headers: { cookie: await cookie(token) } },
+      { headers: { ...clerkHeaders(token) } },
     ),
   );
   return { status: response.status, body: (await response.json()) as Record<string, any> };
@@ -53,7 +51,7 @@ async function post(payload: Record<string, unknown>, key: string) {
     new Request('http://127.0.0.1:3000/api/settlements/commands', {
       method: 'POST',
       headers: {
-        cookie: await cookie('setup-admin-token'),
+        ...clerkHeaders('setup-admin-token'),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -66,7 +64,7 @@ describe('setup readiness (PostgreSQL)', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-setup-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-setup-secret';
     client = postgres(databaseUrl!, { max: 4, prepare: false });
@@ -75,7 +73,7 @@ describe('setup readiness (PostgreSQL)', () => {
         ('${ids.tenant}', 'Setup Tenant', 'setup-readiness-tenant'),
         ('${ids.otherTenant}', 'Setup Other Tenant', 'setup-readiness-other')
       on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.admin}', 'Setup Admin', 'setup-admin@example.test'),
         ('${ids.supervisor}', 'Setup Supervisor', 'setup-supervisor@example.test'),
         ('${ids.otherAdmin}', 'Setup Other Admin', 'setup-other@example.test')
@@ -100,11 +98,6 @@ describe('setup readiness (PostgreSQL)', () => {
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.full}'),
         ('${ids.otherTenant}', '${ids.otherMembership}', 'ADMINISTRATOR', 'TENANT', null, null)
       on conflict do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values
-        ('${ids.adminSession}', '2030-01-01T00:00:00Z', 'setup-admin-token', '${ids.admin}', true, now()),
-        ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', 'setup-supervisor-token', '${ids.supervisor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at;
       insert into app.products (id, tenant_id, code, name) values
         ('${ids.product}', '${ids.tenant}', 'SETUP-ULP', 'Setup Unleaded'),
         ('${ids.otherProduct}', '${ids.otherTenant}', 'SETUP-OTHER', 'Setup Other Fuel')
@@ -132,6 +125,14 @@ describe('setup readiness (PostgreSQL)', () => {
       values ('${ids.tenant}', '${ids.legal}', 'Setup Main', 'Setup Bank', '****1234')
       on conflict do nothing;
     `);
+    await seedClerkSession(client, ids.adminSession, 'setup-admin-token', ids.admin, true);
+    await seedClerkSession(
+      client,
+      ids.supervisorSession,
+      'setup-supervisor-token',
+      ids.supervisor,
+      true,
+    );
   });
 
   afterAll(async () => client?.end());

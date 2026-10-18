@@ -218,6 +218,15 @@
       "when": 1792195200000,
       "tag": "0030_clerk_only_application_users",
       "breakpoints": true
-    }
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0031_manual_activation_attempt_limit",
+      "breakpoints": true
+    },
+    { "idx": 32, "version": "7", "when": 1792281601000,
+      "tag": "0032_custom_staff_numbers", "breakpoints": true }
   ]
 }

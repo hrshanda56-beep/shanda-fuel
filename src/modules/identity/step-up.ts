@@ -12,6 +12,7 @@ import {
 } from '../../platform/auth/provider';
 import {
   CLERK_DEACTIVATE_STAFF_ACTION,
+  CLERK_PRIVILEGED_ACTION,
   CLERK_STEP_UP_ACTION,
   type ClerkReverificationLevel,
   type ClerkStepUpAction,
@@ -35,6 +36,7 @@ export type StepUpResult = {
 };
 
 export const CLERK_STEP_UP_POLICY = {
+  [CLERK_PRIVILEGED_ACTION]: { allowNoMfaOwner: false },
   [CLERK_STEP_UP_ACTION]: {
     allowNoMfaOwner: true,
   },

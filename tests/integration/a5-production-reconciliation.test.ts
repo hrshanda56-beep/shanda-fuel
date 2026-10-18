@@ -1,12 +1,11 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
 import { DECIMAL_POLICIES, ExactDecimal } from '../../src/platform/domain/primitives';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -55,12 +54,12 @@ async function postCommand(
   key: string,
   token = 'a5-supervisor-session-token',
 ) {
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        ...clerkHeaders(signedToken),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -74,12 +73,12 @@ async function postInventoryCommand(
   key: string,
   token = 'a5-supervisor-session-token',
 ) {
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return inventoryCommandPost(
     new Request('http://127.0.0.1:3000/api/inventory/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        ...clerkHeaders(signedToken),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -89,11 +88,11 @@ async function postInventoryCommand(
 }
 
 async function readReconciliation(reconciliationId: string) {
-  const signedToken = `${'a5-supervisor-session-token'}.${await makeSignature('a5-supervisor-session-token', process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = 'a5-supervisor-session-token';
   return reconciliationGet(
     new Request(
       `http://127.0.0.1:3000/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
-      { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      { headers: { ...clerkHeaders(signedToken) } },
     ),
     { params: Promise.resolve({ id: reconciliationId }) },
   );
@@ -366,7 +365,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-a5-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-a5-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
@@ -374,7 +373,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A5 Reconciliation Tenant', 'a5-reconciliation-tenant')
         on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.supervisorActor}', 'A5 Supervisor', 'a5-supervisor@example.test'),
         ('${ids.managerActor}', 'A5 Manager', 'a5-manager@example.test'),
         ('${ids.attendantActor}', 'A5 Attendant', 'a5-attendant@example.test')
@@ -479,12 +478,21 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
         values ('${ids.dip}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '2026-09-22T23:00:00Z', '2026-09-22', 1100, '${ids.supervisorMembership}')
         on conflict (id) do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values
-          ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', 'a5-supervisor-session-token', '${ids.supervisorActor}', true, now()),
-          ('${ids.managerSession}', '2030-01-01T00:00:00Z', 'a5-manager-session-token', '${ids.managerActor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(
+      client,
+      ids.supervisorSession,
+      'a5-supervisor-session-token',
+      ids.supervisorActor,
+      true,
+    );
+    await seedClerkSession(
+      client,
+      ids.managerSession,
+      'a5-manager-session-token',
+      ids.managerActor,
+      true,
+    );
     await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
     await seedActiveStepUp(client, ids.managerSession, ids.tenant);
   });
