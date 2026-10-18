@@ -290,6 +290,7 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'price.view',
     'reconciliation.view',
     'reconciliation.approve',
+    'reconciliation.return',
     'reconciliation.post',
     'approval.view',
     'approval.act',

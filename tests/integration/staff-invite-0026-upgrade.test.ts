@@ -149,7 +149,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     const latestMigrationSql = await readFile(
       resolve(
         import.meta.dirname,
-        '../../src/platform/db/migrations/0032_custom_staff_numbers.sql',
+        '../../src/platform/db/migrations/0033_finance_reconciliation_return.sql',
       ),
       'utf8',
     );
@@ -172,7 +172,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     expect(rows).toEqual([
       {
-        migration_count: 33,
+        migration_count: 34,
         latest_hash: latestMigrationHash,
         exact_hash_count: 1,
       },

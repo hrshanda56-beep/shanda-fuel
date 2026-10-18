@@ -226,7 +226,19 @@
       "tag": "0031_manual_activation_attempt_limit",
       "breakpoints": true
     },
-    { "idx": 32, "version": "7", "when": 1792281601000,
-      "tag": "0032_custom_staff_numbers", "breakpoints": true }
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792281601000,
+      "tag": "0032_custom_staff_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792281602000,
+      "tag": "0033_finance_reconciliation_return",
+      "breakpoints": true
+    }
   ]
 }
