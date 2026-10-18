@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
  * behaviour preserved. Database-free: the overview API is answered by the test and
  * the server's own gating is represented by the `actions.LockBusinessDay` flags the
  * real server derives (canExecute is false whenever step-up is still required).
- * Clerk renders the verification form. These tests cover visibility and command
+ * Clicking Lock invokes Clerk verification when required. These tests cover visibility and command
  * refusal; real MFA/reverification needs the dedicated Clerk test instance.
  */
 
@@ -33,7 +33,7 @@ function overview(lock: LockFlags) {
     organisation: { id: TENANT, name: 'Sample organisation' },
     currentBusinessDate: '2026-10-12',
     currentBusinessDayId: DAY,
-    visibility: { reconciliations: false, auditTimeline: false },
+    visibility: { reconciliations: false },
     actions: {
       OpenBusinessDay: NONE,
       CloseBusinessDay: NONE,
@@ -46,11 +46,13 @@ function overview(lock: LockFlags) {
     selectedBusinessDay: day,
     shifts: [],
     reconciliations: [],
-    timeline: [],
   };
 }
 
 async function arrange(page: Page, lock: LockFlags) {
+  await page.route('**/api/auth/step-up', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'active' }) }),
+  );
   await page.route('**/api/context**', (route) =>
     route.fulfill({
       contentType: 'application/json',
@@ -81,14 +83,13 @@ async function arrange(page: Page, lock: LockFlags) {
 const lockButtons = (page: Page) => page.getByRole('button', { name: 'Lock business day' });
 
 test.describe('lock business day', () => {
-  test('step-up still required: one visible, disabled lock action and the step-up form', async ({
+  test('step-up still required: one enabled lock action without a separate verification button', async ({
     page,
   }) => {
     await arrange(page, { canExecute: false, permissionGranted: true, requiresStepUp: true });
     await expect(lockButtons(page)).toHaveCount(1);
-    await expect(lockButtons(page)).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Reverify with Clerk' })).toBeVisible();
-    await expect(page.getByText(/requires current privileged reverification/)).toBeVisible();
+    await expect(lockButtons(page)).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Reverify with Clerk' })).toHaveCount(0);
   });
 
   test('step-up satisfied by the server: one enabled lock action, no step-up form', async ({
@@ -135,5 +136,25 @@ test.describe('lock business day', () => {
     // Still exactly one lock action, not reported as locked.
     await expect(lockButtons(page)).toHaveCount(1);
     await expect(page.getByText('Business day locked.')).toHaveCount(0);
+  });
+
+  test('failed identity verification never posts the lock command', async ({ page }) => {
+    await arrange(page, { canExecute: false, permissionGranted: true, requiresStepUp: true });
+    let commands = 0;
+    await page.route('**/api/forecourt/commands', async (route) => {
+      commands += 1;
+      await route.abort();
+    });
+    await page.route('**/api/auth/step-up', (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Identity verification failed.' }),
+      }),
+    );
+    page.once('dialog', (dialog) => void dialog.accept());
+    await lockButtons(page).click();
+    await expect(page.getByText('Identity verification failed.', { exact: true })).toBeVisible();
+    expect(commands).toBe(0);
   });
 });

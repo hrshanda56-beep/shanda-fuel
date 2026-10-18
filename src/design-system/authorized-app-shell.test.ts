@@ -39,7 +39,11 @@ describe('authorized app shell request-local reuse', () => {
 
     expect(mocks.getServerShellAccess).not.toHaveBeenCalled();
     expect(result).toMatchObject({
-      props: { navigationProjection: [], authProvider: 'CLERK' },
+      props: {
+        navigationProjection: [],
+        authProvider: 'CLERK',
+        navigationContext: { tenantId: 'tenant-1', stationId: 'station-1' },
+      },
     });
   });
 

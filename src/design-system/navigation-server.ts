@@ -1,10 +1,11 @@
 import 'server-only';
 import { cache } from 'react';
+import { AppError } from '../platform/errors';
+import { observeError } from '../platform/observability';
 
 import { resolveCurrentContext } from '../modules/context/server';
 import type { CurrentContext } from '../modules/context/contracts';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
-import { hasProviderSessionCookie } from './entry/session-cookie';
 import { buildNavigationProjection } from './navigation-projection';
 import { syntheticNavigationProjection, type NavigationProjection } from './navigation';
 import { allowsE2ENavigationFixture, E2E_NAVIGATION_FIXTURE_HEADER } from './navigation-projection';
@@ -91,8 +92,8 @@ export type ServerShellAccess =
  * Server-side gate for the authenticated shell. A missing or expired session is
  * `signed-out` (the caller redirects before any product UI is produced); an
  * account with no active organisation is `no-workplace`; any unresolved
- * navigation-context lookup is also `signed-out` so the shell never renders
- * without verified authorization.
+ * failed authorization/context lookup throws without rendering product UI.
+ * An infrastructure failure must never be misreported as an expired login.
  */
 export const getServerShellAccess = cache(async function getServerShellAccess(
   requestHeaders: Headers,
@@ -109,21 +110,20 @@ export const getServerShellAccess = cache(async function getServerShellAccess(
 
   const request = requestFromHeaders(requestHeaders);
   if (!request) return { status: 'signed-out' };
-  // No session cookie means signed out, whatever the database is doing. This
-  // keeps a lookup failure from ever rendering product UI for a visitor.
-  if (!hasProviderSessionCookie(requestHeaders)) return { status: 'signed-out' };
-
+  // Clerk is the session authority, not an application cookie-name heuristic.
+  // Context resolution verifies Clerk before any identity/membership DB read.
   try {
     const resolution = await resolveCurrentContext(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
-    if (!resolution.current) return { status: 'signed-out' };
+    if (!resolution.current) throw new AppError('FORBIDDEN', 'A valid work context is required');
     const projection = await buildServerNavigationProjection(request, resolution.current);
-    if (projection === null) return { status: 'signed-out' };
+    if (projection === null)
+      throw new AppError('FORBIDDEN', 'Navigation access could not be verified');
     return { status: 'ready', projection, current: resolution.current };
-  } catch {
-    // Any unresolved session/context/authorization error must fail closed.
-    // The shell redirects signed-out users and never renders product UI when
-    // access cannot be verified.
-    return { status: 'signed-out' };
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'UNAUTHENTICATED')
+      return { status: 'signed-out' };
+    observeError(request, error, 'navigation.access.error');
+    throw error;
   }
 });

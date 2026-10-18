@@ -54,6 +54,15 @@ export async function AuthorizedAppShell({
     <AppShell
       {...props}
       authProvider={'CLERK'}
+      navigationContext={
+        access.current
+          ? {
+              tenantId: access.current.organisationId,
+              legalEntityId: access.current.legalEntityId,
+              stationId: access.current.stationId,
+            }
+          : undefined
+      }
       navigationProjection={access.projection ?? emptyNavigationProjection}
     />
   );

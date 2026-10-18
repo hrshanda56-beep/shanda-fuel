@@ -10,7 +10,6 @@ import {
 } from '@/modules/context';
 import { resolveCurrentContext } from '@/modules/context/server';
 import { ValuationOverview } from '@/modules/costing/ui/valuation-workspace';
-import { TankOverview } from '@/modules/inventory/ui/tank-overview';
 import {
   InventoryContextRequired,
   type InventoryContext,
@@ -98,12 +97,11 @@ export default async function InventoryValuationPage({
     <AppShell>
       {context ? (
         <div className="inventory-page">
-          <TankOverview
-            tenantId={context.tenantId}
-            stationId={context.stationId}
+          <ValuationOverview
+            key={`${context.tenantId}:${context.stationId}`}
+            context={context}
             contextHref={contextHref}
           />
-          <ValuationOverview context={context} contextHref={contextHref} />
         </div>
       ) : (
         <InventoryContextRequired />

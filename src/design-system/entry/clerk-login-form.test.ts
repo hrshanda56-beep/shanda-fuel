@@ -93,6 +93,23 @@ describe('Clerk credential login', () => {
     await submit();
     expect(mocks.push).not.toHaveBeenCalled();
     expect(mocks.setState).toHaveBeenCalledWith(
+      'Your details were accepted, but your session could not be started. Refresh the page and try again.',
+    );
+  });
+
+  it('does not report a connection failure as an incorrect password', async () => {
+    mocks.create.mockRejectedValue(new Error('network unavailable'));
+    await submit();
+    expect(mocks.setActive).not.toHaveBeenCalled();
+    expect(mocks.setState).toHaveBeenCalledWith(
+      'Sign-in could not be completed. Check your connection, refresh the page and try again.',
+    );
+  });
+
+  it('reports rejected credentials without disclosing account existence', async () => {
+    mocks.create.mockRejectedValue({ errors: [{ code: 'form_identifier_not_found' }] });
+    await submit();
+    expect(mocks.setState).toHaveBeenCalledWith(
       'The sign-in details were not accepted. Check them and try again.',
     );
   });

@@ -16,6 +16,7 @@ import {
 } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import { TankOverview, type InventoryReport } from '@/modules/inventory/ui/tank-overview';
 import {
   InventoryOperationalActions,
   type InventoryContext,
@@ -69,6 +70,7 @@ type Revaluation = {
 };
 
 type ValuationResponse = {
+  tankReport?: InventoryReport;
   capabilities: Capabilities;
   streams: Stream[];
   revaluations: Revaluation[];
@@ -255,6 +257,14 @@ export function ValuationOverview({
   const unvalued = data.streams.filter((stream) => stream.valuationStatus === 'UNVALUED');
   return (
     <div className="valuation-workspace valuation-overview">
+      {data.tankReport ? (
+        <TankOverview
+          tenantId={context.tenantId}
+          stationId={context.stationId}
+          contextHref={contextHref}
+          report={data.tankReport}
+        />
+      ) : null}
       <div className="page-heading">
         <div>
           <p>Cost streams and their valuation.</p>

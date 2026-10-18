@@ -30,7 +30,7 @@ type TankRow = {
   varianceLitres: string | null;
 };
 
-type InventoryReport = {
+export type InventoryReport = {
   filters: { toDate: string };
   inventory: { rows: readonly TankRow[] };
 };
@@ -83,29 +83,33 @@ export function TankOverview({
   tenantId,
   stationId,
   contextHref = '',
+  report,
 }: {
   tenantId: string;
   stationId: string;
   contextHref?: string;
+  report?: InventoryReport;
 }) {
   const contextQuery = contextHref.split('?')[1];
   const key = `${tenantId}|${stationId}`;
   const [loaded, setLoaded] = useState<Keyed>({ status: 'loading' });
   // A result for another station is never shown while the new one loads.
   const state: Load = useMemo(
-    () => (loaded.key === key ? loaded : { status: 'loading' }),
-    [loaded, key],
+    () =>
+      report ? { status: 'ready', report } : loaded.key === key ? loaded : { status: 'loading' },
+    [loaded, key, report],
   );
 
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    if (report) return;
     const controller = new AbortController();
     void fetchTanks(tenantId, stationId, controller.signal).then((next) => {
       if (next) setLoaded({ ...next, key: `${tenantId}|${stationId}` });
     });
     return () => controller.abort();
-  }, [tenantId, stationId, attempt]);
+  }, [tenantId, stationId, attempt, report]);
 
   const tanks = useMemo(
     () => (state.status === 'ready' ? tanksForStation(state.report.inventory.rows, stationId) : []),

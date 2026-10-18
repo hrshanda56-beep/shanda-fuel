@@ -23,6 +23,7 @@ vi.mock('./navigation-projection', () => ({
 }));
 
 import { getServerShellAccess } from './navigation-server';
+import { AppError } from '../platform/errors';
 
 const availableContext = {
   organisations: [
@@ -37,6 +38,9 @@ const availableContext = {
 describe('server shell session gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resolveCurrentContext.mockRejectedValue(
+      new AppError('UNAUTHENTICATED', 'No Clerk session'),
+    );
   });
 
   afterEach(() => {
@@ -130,7 +134,7 @@ describe('server shell session gate', () => {
         }),
       ),
     ).resolves.toEqual({ status: 'signed-out' });
-    expect(mocks.resolveCurrentContext).not.toHaveBeenCalled();
+    expect(mocks.resolveCurrentContext).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed when authenticated context resolution rejects', async () => {
@@ -143,7 +147,7 @@ describe('server shell session gate', () => {
           cookie: '__session=opaque',
         }),
       ),
-    ).resolves.toEqual({ status: 'signed-out' });
+    ).rejects.toThrow('context unavailable');
   });
 
   it('fails closed when the navigation projection cannot verify context', async () => {
@@ -162,7 +166,7 @@ describe('server shell session gate', () => {
           cookie: '__session=opaque',
         }),
       ),
-    ).resolves.toEqual({ status: 'signed-out' });
+    ).rejects.toThrow('projection context unavailable');
   });
 
   it('uses the validated station selection for the shell projection without re-resolving context', async () => {
@@ -199,5 +203,25 @@ describe('server shell session gate', () => {
     await expect(getServerShellAccess(new Headers({ host: 'fuel.shandahr.com' }))).resolves.toEqual(
       { status: 'signed-out' },
     );
+  });
+
+  it('redirects only when verified session resolution reports unauthenticated', async () => {
+    mocks.resolveCurrentContext.mockRejectedValue(
+      new AppError('UNAUTHENTICATED', 'Session expired'),
+    );
+    await expect(
+      getServerShellAccess(new Headers({ host: 'localhost:3000', cookie: '__session=opaque' })),
+    ).resolves.toEqual({ status: 'signed-out' });
+  });
+
+  it('uses verified Clerk context even without the legacy unsuffixed session cookie', async () => {
+    mocks.resolveCurrentContext.mockResolvedValue({
+      available: availableContext,
+      current: { organisationId: 'tenant-1' },
+    });
+    mocks.resolveTenantExecutionContext.mockResolvedValue({ authorization: {} });
+    await expect(
+      getServerShellAccess(new Headers({ host: 'localhost:3000' })),
+    ).resolves.toMatchObject({ status: 'ready' });
   });
 });

@@ -70,7 +70,7 @@ const overview = {
   organisation: { name: 'Sample organisation' },
   currentBusinessDate: '2026-10-12',
   currentBusinessDayId: 'day-2',
-  visibility: { reconciliations: true, auditTimeline: true },
+  visibility: { reconciliations: true },
   actions: {
     OpenBusinessDay: action,
     CloseBusinessDay: action,
@@ -178,15 +178,6 @@ const overview = {
       returnedAt: '2026-10-11T20:45:00.000Z',
       approvedAt: null,
       returnReason: 'Counted cash does not match the declaration',
-    },
-  ],
-  timeline: [
-    {
-      eventCode: 'FORECOURT.OpenBusinessDay',
-      occurredAt: '2026-10-11T04:00:00.000Z',
-      actorName: 'Sample supervisor',
-      subjectType: 'business_day',
-      reason: null,
     },
   ],
 };

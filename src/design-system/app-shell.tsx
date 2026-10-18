@@ -34,6 +34,7 @@ import {
   type NavigationProjection,
   type ResolvedNavigationItem,
   type ResolvedNavigationSection,
+  type WorkContext,
 } from './navigation';
 import { IconButton } from './primitives';
 import {
@@ -69,6 +70,7 @@ export type AppShellProps = {
   navigationProjection: readonly NavigationProjection[];
   /** The operating context the page works in, shown quietly above the content. */
   context?: ShellContext;
+  navigationContext?: WorkContext;
   role?: string;
   userName?: string;
   /**
@@ -151,6 +153,7 @@ export function AppShell({
   children,
   navigationProjection,
   context,
+  navigationContext,
   role,
   userName,
   authProvider,
@@ -163,10 +166,14 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname();
   const search = useLocationSearch();
-  const workContext = useMemo(
-    () => readWorkContext(pathname, new URLSearchParams(search)),
-    [pathname, search],
-  );
+  const workContext = useMemo(() => {
+    const params = new URLSearchParams(search);
+    const explicit = readWorkContext(pathname, params);
+    // Never mix a newly requested organisation/station with an old scope.
+    return Object.keys(explicit).length || params.has('allStations')
+      ? explicit
+      : (navigationContext ?? explicit);
+  }, [pathname, search, navigationContext]);
   const sections = useMemo(
     () => resolveNavigation(navigationProjection, workContext),
     [navigationProjection, workContext],

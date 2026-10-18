@@ -14,34 +14,61 @@ export function ClerkLoginForm({ next, invited = false }: { next?: string; invit
   const router = useRouter();
   const { isLoaded, signIn, setActive } = useSignIn();
   const passwordRef = useRef<HTMLInputElement>(null);
+  const submitting = useRef(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [verificationRequired, setVerificationRequired] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isLoaded) return;
+    if (!isLoaded || submitting.current) return;
+    submitting.current = true;
     setError(undefined);
     setLoading(true);
     const form = new FormData(event.currentTarget);
     const identifier = String(form.get('identifier') ?? '').trim();
     const password = String(form.get('password') ?? '');
+    let activatingSession = false;
     try {
       const result = await signIn.create({ identifier, password });
       if (result.status !== 'complete' || !result.createdSessionId) {
         setVerificationRequired(true);
         return;
       }
+      activatingSession = true;
       await setActive({ session: result.createdSessionId });
       router.push(safePostSignInPath(next));
       router.refresh();
-    } catch {
-      setError('The sign-in details were not accepted. Check them and try again.');
+    } catch (caught) {
+      const codes =
+        typeof caught === 'object' &&
+        caught !== null &&
+        'errors' in caught &&
+        Array.isArray(caught.errors)
+          ? caught.errors.map((item: { code?: string }) => item?.code)
+          : [];
+      const invalidCredentials = codes.some((code) =>
+        [
+          'form_password_incorrect',
+          'form_identifier_not_found',
+          'form_param_format_invalid',
+        ].includes(code ?? ''),
+      );
+      setError(
+        activatingSession
+          ? 'Your details were accepted, but your session could not be started. Refresh the page and try again.'
+          : invalidCredentials
+            ? 'The sign-in details were not accepted. Check them and try again.'
+            : codes.includes('too_many_requests')
+              ? 'Too many sign-in attempts. Please wait before trying again.'
+              : 'Sign-in could not be completed. Check your connection, refresh the page and try again.',
+      );
       if (passwordRef.current) {
         passwordRef.current.value = '';
         passwordRef.current.focus();
       }
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   }
@@ -89,7 +116,7 @@ export function ClerkLoginForm({ next, invited = false }: { next?: string; invit
           size="lg"
           block
           loading={loading}
-          disabled={!isLoaded}
+          disabled={!isLoaded || loading}
         >
           Sign in
         </Button>

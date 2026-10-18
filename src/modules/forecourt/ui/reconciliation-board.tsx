@@ -510,14 +510,6 @@ export function ReconciliationBoard({
     expected: section.expectedSales,
     accounted: section.accountedSales,
   }));
-  const variance = loaded && statement.sections.length > 0 ? statement.totals.salesVariance : null;
-  const cashVariance = loaded ? statement.totals.cashVariance : null;
-  const attentionItems = ordered
-    .filter((item) => groupOf(item.state) === 'returned' || groupOf(item.state) === 'review')
-    .sort((a, b) => RANK[groupOf(a.state)] - RANK[groupOf(b.state)]);
-  const firstAttention = attentionItems[0];
-  const attentionAction = firstAttention ? actionFor(firstAttention) : undefined;
-
   const visible = ordered
     .filter((item) => filter === 'all' || groupOf(item.state) === filter)
     .sort((a, b) => RANK[groupOf(a.state)] - RANK[groupOf(b.state)]);
@@ -565,50 +557,6 @@ export function ReconciliationBoard({
             <SalesBars rows={barRows} />
           )}
         </section>
-      </div>
-
-      <div className="recon-highlights">
-        <article className="recon-highlight" data-accent="true">
-          <p className="recon-highlight-label">Needs attention</p>
-          <p className="recon-highlight-value">{counts.returned + counts.review}</p>
-          <p className="recon-highlight-note">
-            {counts.review} waiting for review · {counts.returned} returned
-          </p>
-          {attentionAction ? (
-            <a className="button button-secondary" href={attentionAction.href}>
-              {attentionAction.label}
-            </a>
-          ) : null}
-        </article>
-        <article className="recon-highlight" data-tone={nonZero(variance) ? 'warning' : undefined}>
-          <p className="recon-highlight-label">Sales variance</p>
-          <p className="recon-highlight-value">{money(variance)}</p>
-          <p className="recon-highlight-note">
-            {variance === null
-              ? 'Shown once shift figures load'
-              : `${money(statement.totals.accountedSales)} accounted of ${money(statement.totals.expectedSales)} expected${
-                  statement.missing.length > 0
-                    ? ` · excludes ${statement.missing.length} ${statement.missing.length === 1 ? 'shift' : 'shifts'} without figures`
-                    : ''
-                }`}
-          </p>
-        </article>
-        <article
-          className="recon-highlight"
-          data-tone={nonZero(cashVariance) ? 'warning' : undefined}
-        >
-          <p className="recon-highlight-label">Cash variance</p>
-          <p className="recon-highlight-value">{money(cashVariance)}</p>
-          <p className="recon-highlight-note">
-            {cashVariance === null
-              ? 'No cash has been counted yet'
-              : `${money(statement.totals.countedCash)} counted across the shifts${
-                  statement.totals.shiftsWithoutCash > 0
-                    ? ` · ${statement.totals.shiftsWithoutCash} not counted`
-                    : ''
-                }`}
-          </p>
-        </article>
       </div>
 
       <section className="card panel cash-panel recon-queue" aria-labelledby="recon-queue-title">

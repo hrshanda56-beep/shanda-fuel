@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import * as schema from '../../src/platform/db/schema';
 import { loadTenantMembershipWithDatabase } from '../../src/modules/tenancy/authority';
 import {
   memoizeRequestRead,
@@ -16,6 +17,7 @@ it.skipIf(!identityId || !tenantId)(
     const client = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
     let queries = 0;
     const db = drizzle(client, {
+      schema,
       logger: {
         logQuery() {
           queries++;

@@ -340,7 +340,7 @@ describe('A11 daily operations composition read', () => {
     expect(invalidStation.status).toBe(400);
   });
 
-  it('enforces reconciliation and audit visibility for the operations overview', async () => {
+  it('enforces reconciliation visibility and omits activity from the operations overview', async () => {
     const supervisorResponse = await operationsOverviewGet(
       await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.day),
     );
@@ -349,8 +349,7 @@ describe('A11 daily operations composition read', () => {
     );
     const supervisorBody = (await supervisorResponse.json()) as {
       reconciliations: Array<{ id: string }>;
-      timeline: Array<{ eventCode: string; subjectId: string | null }>;
-      visibility: { reconciliations: boolean; auditTimeline: boolean };
+      visibility: { reconciliations: boolean };
       status: { close: string; approval: string };
       actions: {
         OpenBusinessDay: { canExecute: boolean };
@@ -368,14 +367,13 @@ describe('A11 daily operations composition read', () => {
     const attendantBody = (await attendantResponse.json()) as {
       shifts: Array<{ id: string }>;
       reconciliations: Array<{ id: string }>;
-      timeline: Array<{ eventCode: string }>;
-      visibility: { reconciliations: boolean; auditTimeline: boolean };
+      visibility: { reconciliations: boolean };
       status: { close: string; approval: string };
       actions: Record<string, { canExecute: boolean }>;
     };
 
     expect(supervisorResponse.status).toBe(200);
-    expect(supervisorBody.visibility).toEqual({ reconciliations: true, auditTimeline: true });
+    expect(supervisorBody.visibility).toEqual({ reconciliations: true });
     expect(supervisorBody.status).toEqual({ close: 'READY_FOR_REVIEW', approval: 'READY' });
     expect(supervisorBody.actions).toMatchObject({
       OpenBusinessDay: { canExecute: true },
@@ -386,20 +384,14 @@ describe('A11 daily operations composition read', () => {
       CompleteShift: { canExecute: true },
     });
     expect(supervisorBody.reconciliations.map((item) => item.id)).toContain(ids.overviewRecon);
-    expect(supervisorBody.timeline).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventCode: 'BUSINESS_DAY_OPENED',
-          subjectId: ids.day,
-        }),
-      ]),
-    );
+    expect(supervisorBody).not.toHaveProperty('timeline');
+    expect(supervisorBody.visibility).not.toHaveProperty('auditTimeline');
     expect(attendantResponse.status).toBe(200);
-    expect(attendantBody.visibility).toEqual({ reconciliations: false, auditTimeline: false });
+    expect(attendantBody.visibility).toEqual({ reconciliations: false });
     expect(attendantBody.status).toEqual({ close: 'IN_PROGRESS', approval: 'NO_REVISION' });
     expect(Object.values(attendantBody.actions).every((action) => !action.canExecute)).toBe(true);
     expect(attendantBody.shifts.map((shift) => shift.id)).toContain(ids.shift);
     expect(attendantBody.reconciliations).toHaveLength(0);
-    expect(attendantBody.timeline).toHaveLength(0);
+    expect(attendantBody).not.toHaveProperty('timeline');
   });
 });

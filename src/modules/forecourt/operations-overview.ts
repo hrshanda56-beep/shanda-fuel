@@ -49,16 +49,6 @@ type ControlRoomActions = {
   [Command in (typeof CONTROL_ROOM_COMMANDS)[number]]: ActionAvailability;
 };
 
-type TimelineRow = {
-  eventCode: string;
-  occurredAt: Date | string;
-  actorName: string | null;
-  membershipId: string | null;
-  subjectType: string | null;
-  subjectId: string | null;
-  reason: string | null;
-};
-
 type BusinessDayRow = {
   id: string;
   date: string;
@@ -91,7 +81,7 @@ async function applyStationTransactionContext(
 
 function hasPermission(
   context: ForecourtCommandContext,
-  permissionCode: 'audit.view' | 'reconciliation.view',
+  permissionCode: 'reconciliation.view',
 ): boolean {
   try {
     authorize({
@@ -194,12 +184,10 @@ export async function getOperationsOverviewFromRequest(
     });
 
     const canViewReconciliations = hasPermission(context, 'reconciliation.view');
-    const canViewAudit = hasPermission(context, 'audit.view');
     const actions = loadControlRoomActions(context);
 
     return loadOperationsOverview(transaction, context, input, {
       actions,
-      canViewAudit,
       canViewReconciliations,
     });
   });
@@ -211,7 +199,6 @@ async function loadOperationsOverview(
   input: OperationsOverviewInput,
   permissions: {
     actions: ControlRoomActions;
-    canViewAudit: boolean;
     canViewReconciliations: boolean;
   },
 ) {
@@ -284,10 +271,8 @@ async function loadOperationsOverview(
       businessDays: [],
       shifts: [],
       reconciliations: [],
-      timeline: [],
       visibility: {
         reconciliations: permissions.canViewReconciliations,
-        auditTimeline: permissions.canViewAudit,
       },
       actions: permissions.actions,
     };
@@ -358,50 +343,6 @@ async function loadOperationsOverview(
   `)
     : [];
 
-  const subjectIds = [
-    selectedDay.id,
-    ...shifts.map((shift) => shift.id),
-    ...reconciliations.map((item) => item.id),
-  ];
-  const subjectIdsFilter = sql.join(
-    subjectIds.map((subjectId) => sql`${subjectId}`),
-    sql`, `,
-  );
-  const shiftTimelineFilter = shifts.length
-    ? sql`or e.details->'metadata'->>'shiftId' in (${sql.join(
-        shifts.map((shift) => sql`${shift.id}`),
-        sql`, `,
-      )})`
-    : sql``;
-  const reconciliationTimelineFilter = reconciliations.length
-    ? sql`or e.details->'metadata'->>'reconciliationId' in (${sql.join(
-        reconciliations.map((item) => sql`${item.id}`),
-        sql`, `,
-      )})`
-    : sql``;
-  const timeline =
-    permissions.canViewAudit && subjectIds.length
-      ? await transaction.execute<TimelineRow>(sql`
-        select e.event_code as "eventCode", e.occurred_at as "occurredAt",
-               coalesce(u.name, e.actor_id::text) as "actorName",
-               e.membership_id as "membershipId",
-               e.details->>'subjectType' as "subjectType",
-               e.details->>'subjectId' as "subjectId",
-               e.details->>'reason' as reason
-        from platform.security_events e
-        left join app.users u on u.id=e.actor_id
-        where e.tenant_id=${context.tenantId}
-          and (
-            e.details->>'subjectId' in (${subjectIdsFilter})
-            or e.details->'metadata'->>'businessDayId' = ${selectedDay.id}
-            ${shiftTimelineFilter}
-            ${reconciliationTimelineFilter}
-          )
-        order by e.occurred_at desc
-        limit 100
-      `)
-      : [];
-
   return {
     station: { id: station.id, code: station.code, name: station.name, timezone: station.timezone },
     organisation: { id: station.tenantId, name: station.tenantName },
@@ -417,7 +358,6 @@ async function loadOperationsOverview(
     }),
     visibility: {
       reconciliations: permissions.canViewReconciliations,
-      auditTimeline: permissions.canViewAudit,
     },
     actions: permissions.actions,
     businessDays: days.map((day) => ({
@@ -463,15 +403,6 @@ async function loadOperationsOverview(
       returnedAt: iso(item.returnedAt),
       approvedAt: iso(item.approvedAt),
       returnReason: item.returnReason,
-    })),
-    timeline: timeline.map((item) => ({
-      eventCode: item.eventCode,
-      occurredAt: iso(item.occurredAt),
-      actorName: item.actorName,
-      membershipId: item.membershipId,
-      subjectType: item.subjectType,
-      subjectId: item.subjectId,
-      reason: item.reason,
     })),
   };
 }

@@ -47,7 +47,9 @@ async function wordsSplitAcrossLines(page: Page, selector: string) {
 }
 
 test.describe('data-filled screens', () => {
-  test('Daily Operations shows shifts, sourced alerts and activity', async ({ page }) => {
+  test('Daily Operations shows shifts and sourced alerts without duplicated day details', async ({
+    page,
+  }) => {
     await mockContext(page, '/operations/daily');
     await mockOverview(page);
     for (const width of [390, 803, 1440]) {
@@ -55,19 +57,17 @@ test.describe('data-filled screens', () => {
       await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
 
       const glance = page.getByLabel('Today at a glance');
-      await expect(glance, `width ${width}`).toContainText('2 · 1 open');
-      await expect(glance).toContainText('Waiting for review');
-      await expect(glance).toContainText('Returned for changes');
+      await expect(glance).toHaveCount(0);
+      await expect(page.locator('section[aria-labelledby="day-history-title"]')).toHaveCount(0);
 
       await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
+      await expect(page.getByText('Shift board ·', { exact: false })).toHaveCount(0);
+      const dayControls = page.locator('section[aria-labelledby="current-day-title"]');
+      await expect(dayControls.getByRole('heading', { name: 'Day controls' })).toBeVisible();
+      await expect(dayControls.locator('.status')).toHaveCount(0);
       const attention = page.locator('section[aria-labelledby="operations-attention-title"]');
-      await expect(attention).toContainText('Business day 11 Oct 2026 is still open');
-      await expect(attention).toContainText('Reconciliation returned for changes');
-      await expect(attention).toContainText('Counted cash does not match the declaration');
-      await expect(attention).toContainText('Reconciliation waiting for review');
-      await expect(page.locator('section[aria-labelledby="timeline-title"]')).toContainText(
-        'Open business day',
-      );
+      await expect(attention).toHaveCount(0);
+      await expect(page.locator('section[aria-labelledby="timeline-title"]')).toHaveCount(0);
 
       await expectNoSidewaysScroll(page, `width ${width}`);
       const results = await new AxeBuilder({ page }).analyze();
@@ -83,6 +83,8 @@ test.describe('data-filled screens', () => {
       await page.goto(`/stations/${STATION}/reconciliations?tenantId=${TENANT}`);
 
       const status = page.getByRole('region', { name: 'Reconciliation status' });
+      await expect(page.locator('.recon-highlights')).toHaveCount(0);
+      await expect(page.locator('section[aria-labelledby="day-history-title"]')).toHaveCount(0);
       await expect(status, `width ${width}`).toContainText('Draft');
       await expect(status).toContainText('Approved');
 

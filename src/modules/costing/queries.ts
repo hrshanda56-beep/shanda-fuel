@@ -8,6 +8,7 @@ import { isAuthorized } from '../../platform/security/permissions';
 import {
   authorizeInventoryCommand,
   resolveInventoryCommandContext,
+  withInventoryReadContext,
 } from '../inventory/application';
 
 const querySchema = z.object({
@@ -129,7 +130,7 @@ const sourceMovementSelect = sql`
            m.movement_type as missing_movement_type,
            m.source_type as missing_source_type,
            m.source_id as missing_source_reference,
-           m.quantity_litres as missing_quantity_litres,
+           m.quantity_litres::text as missing_quantity_litres,
            m.effective_at as missing_effective_at,
            m.business_date as missing_business_date
     from app.inventory_movements m
@@ -224,28 +225,32 @@ function capabilities(context: Awaited<ReturnType<typeof resolveInventoryCommand
 }
 
 export async function getInventoryValuationReadModel(request: Request, input: unknown) {
-  const { context, parsed } = await contextFor(request, input);
+  const parsed = querySchema.parse(input);
   const tankFilter = parsed.tankId ? sql`and s.tank_id = ${parsed.tankId}::uuid` : sql``;
   const productFilter = parsed.productId
     ? sql`and s.product_id = ${parsed.productId}::uuid`
     : sql``;
-  return withTenantTransaction(context.authority.transaction, async (transaction) => {
-    const streamRows = await transaction.execute<DbRow>(sql`
+  return withInventoryReadContext(
+    request,
+    parsed.tenantId,
+    parsed.stationId,
+    async (transaction, context) => {
+      const streamQuery = sql`
       select s.station_id, station.code as station_code, station.name as station_name,
              s.tank_id, tank.code as tank_code, s.product_id, product.code as product_code, product.name as product_name,
-             s.quantity_litres, s.valuation_status, s.inventory_value, s.weighted_average_cost, s.currency,
+             s.quantity_litres::text, s.valuation_status, s.inventory_value::text, s.weighted_average_cost::text, s.currency,
              s.last_cost_event_effective_at, s.last_cost_event_id, s.projection_version,
              missing_source.*, active_revaluation.*
       ${streamFrom}
       where s.tenant_id = ${context.tenantId}::uuid and s.station_id = ${context.stationId}::uuid
         ${tankFilter} ${productFilter}
       order by tank.code, product.code
-    `);
-    const revaluationRows = await transaction.execute<DbRow>(sql`
+    `;
+      const revaluationQuery = sql`
       select r.id as revaluation_id, r.status as revaluation_status, r.reason,
              r.station_id, station.code as station_code, station.name as station_name,
              r.tank_id, tank.code as tank_code, r.product_id, product.code as product_code, product.name as product_name,
-             r.source_type, r.source_id, r.amount, r.currency, r.effective_at, r.business_date,
+             r.source_type, r.source_id, r.amount::text, r.currency, r.effective_at, r.business_date,
              r.requested_by, r.requested_at, r.approved_by, r.approved_at, r.posted_by, r.posted_at, r.replay_fingerprint,
              ${actorSelect}, ${revaluationProjection}
       ${revaluationFrom}
@@ -253,14 +258,64 @@ export async function getInventoryValuationReadModel(request: Request, input: un
         ${parsed.tankId ? sql`and r.tank_id = ${parsed.tankId}::uuid` : sql``}
         ${parsed.productId ? sql`and r.product_id = ${parsed.productId}::uuid` : sql``}
       order by r.requested_at desc, r.id desc
+    `;
+      // One database message for the independent sections; numeric values stay text.
+      // Tank cards do not need sales, creditors, providers, expenses or movement IDs.
+      const rows = await transaction.execute<{
+        streams: DbRow[];
+        revaluations: DbRow[];
+        tanks: Array<Record<string, string | null>>;
+        business_date: string;
+      }>(sql`
+      with streams as (${streamQuery}), revaluations as (${revaluationQuery}),
+      tanks as (
+        select t.station_id::text as "stationId", t.id::text as "tankId",
+          t.code as "tankCode", t.product_id::text as "productId",
+          p.code as "productCode", p.name as "productName",
+          t.capacity_litres::text as "capacityLitres",
+          t.reorder_level_litres::text as "reorderLevelLitres",
+          coalesce(m.expected, 0)::text as "expectedLitres",
+          d.physical_litres::text as "physicalLitres",
+          (d.physical_litres - coalesce(m.expected, 0))::text as "varianceLitres"
+        from app.tanks t
+        join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
+        left join lateral (
+          select sum(quantity_litres) as expected from app.inventory_movements m
+          where m.tenant_id = t.tenant_id and m.station_id = t.station_id
+            and m.tank_id = t.id and m.product_id = t.product_id
+            and m.business_date <= (now() at time zone ${context.stationTimezone})::date::text
+        ) m on true
+        left join lateral (
+          select physical_litres from app.tank_dips d
+          where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
+            and d.measured_at < (((now() at time zone ${context.stationTimezone})::date + 1)::timestamp
+              at time zone ${context.stationTimezone})
+          order by d.measured_at desc, d.id desc limit 1
+        ) d on true
+        where t.tenant_id = ${context.tenantId}::uuid and t.station_id = ${context.stationId}::uuid
+          and t.status <> 'RETIRED'
+        order by t.code
+      )
+      select coalesce((select json_agg(streams) from streams), '[]'::json) as streams,
+        coalesce((select json_agg(revaluations) from revaluations), '[]'::json) as revaluations,
+        coalesce((select json_agg(tanks) from tanks), '[]'::json) as tanks,
+        (now() at time zone ${context.stationTimezone})::date::text as business_date
     `);
-    return {
-      station: { id: context.stationId },
-      capabilities: capabilities(context),
-      streams: streamRows.map(streamFromRow),
-      revaluations: revaluationRows.map(revaluationFromRow),
-    };
-  });
+      const snapshot = rows[0];
+      if (!snapshot)
+        throw new AppError('INVARIANT_VIOLATION', 'Inventory snapshot was not returned');
+      return {
+        station: { id: context.stationId },
+        capabilities: capabilities(context),
+        streams: snapshot.streams.map(streamFromRow),
+        revaluations: snapshot.revaluations.map(revaluationFromRow),
+        tankReport: {
+          filters: { toDate: snapshot.business_date },
+          inventory: { rows: snapshot.tanks },
+        },
+      };
+    },
+  );
 }
 
 export async function getInventoryRevaluationReadModel(request: Request, input: unknown) {

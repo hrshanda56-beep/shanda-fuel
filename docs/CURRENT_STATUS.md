@@ -1,5 +1,46 @@
 # Shanda Fuel — Current Status
 
+## Navigation redirect classification — 2026-10-18
+
+Reproduced Daily Operations bouncing through login/workplace to Today in the
+authenticated development browser. The shared shell no longer labels every
+context/database/permission error as signed-out: only UNAUTHENTICATED redirects;
+other failures are observed and thrown to the error boundary, without rendering
+protected content. Clerk verification replaces the shell's unsuffixed-cookie
+shortcut. Sidebar links use the server-verified remembered context when the URL
+has no explicit scope; explicit URL selections never merge with old scope IDs.
+
+Validated 880 unit tests, typecheck and targeted ESLint. In the live authenticated
+browser, Bindura Daily Operations rendered its business day, shift board and
+history and remained on its route. Other destinations share the corrected gate
+but have not all been individually browser-verified. Database latency remains a
+separate issue; no permission/RLS relaxation, migration or production change.
+
+## Focused inventory valuation reads — 2026-10-18
+
+The valuation page no longer starts a separate full management report for tank
+cards. Its existing no-store valuation endpoint supplies tanks, cost streams and
+revaluation history in one SQL statement. Tank data is restricted to the selected
+station, uses station-local day boundaries, and excludes financial report sections
+and movement/delivery identifier arrays. Exact numeric values are cast to text
+before JSON aggregation. Tank cards consume this shared response; switching
+stations remounts the workspace so prior-station data cannot remain visible.
+
+The station lookup and authorized inventory snapshot share a tenant transaction;
+legal-entity/station settings are applied after permission verification. This
+reduces that portion from nine database exchanges to six (including transaction
+boundaries), excluding identity/membership work, and eliminates the management
+report request entirely. Commands, RLS, authentication and permissions are not
+weakened. Context discovery and first connection latency still remain; no final
+live page speedup is claimed.
+
+Validation: 878 unit tests and eight valuation PostgreSQL integration tests pass,
+including station isolation, persisted lineage and string-valued tank quantities.
+Typecheck and targeted ESLint pass. Tests used a fresh isolated local database;
+initial reruns against an older test database encountered retained fixture keys.
+No migration or production change. Live authenticated browser timing remains to
+be remeasured.
+
 ## Shared navigation read deduplication — 2026-10-18
 
 All sidebar destinations share request/render-local reuse of verified identity
@@ -800,3 +841,16 @@ Use this order unless a current human instruction changes it:
 - Do not assume a Vercel deploy runs database migrations.
 - Do not assume environment-specific HTTP 500s are product defects without baseline/harness comparison.
 - Do not mark observability or rate-limit evidence exceptions as PASS.
+
+## Daily Operations Activity removal — 2026-10-18
+
+Removed the Activity card, its overview audit-history query and response fields, and unused timeline styles. Updated integration assertions and browser fixtures. Audit recording and stored security events remain unchanged. No schema or authorization changes.
+Validation: 91 forecourt unit tests and 6 local PostgreSQL integration tests passed; TypeScript and targeted ESLint passed. No production access, push, merge, or deployment.
+
+Daily Operations heading cleanup: removed the repeated shift-board date and side-panel date/status; the side panel is now labelled “Day controls”. Timestamps and privileged actions are unchanged. Added browser regression assertions (not executed in this slice); 91 forecourt unit tests, TypeScript, and component lint passed.
+
+Lock interaction: removed the separate Clerk verification button. The single Lock business day action confirms the irreversible operation, establishes provider-managed identity assurance, then posts the existing versioned command only after an active step-up response. Cancellation/failure prevents posting; server permission/assurance checks remain unchanged. Updated browser tests for the new entry point and failed-verification refusal; browser suite not run against a real Clerk verification challenge. 91 forecourt unit tests passed; component lint and TypeScript passed. No real business day was locked during verification.
+
+Intermittent re-login investigation: the login form previously labelled all exceptions (including session activation/network errors) as rejected credentials. Separated credential, rate-limit, session-activation and other failures; added an immediate duplicate-submit guard. Seven focused tests, TypeScript and targeted lint passed. The reported intermittent failure has not been reproduced with current credentials and its root cause is unconfirmed; no password or Clerk configuration was changed.
+
+Daily Operations simplification: removed the Needs Attention section and the Shifts / Waiting for review / Returned for changes summary cards, including their unused client-side calculations. The shift board, reconciliation workflows and server authorization remain unchanged. Browser regression assertions updated but not executed; 91 forecourt unit tests, TypeScript, targeted lint and CSS parsing passed. No production access, push, merge or deployment performed.

@@ -1037,9 +1037,32 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
     const stationTwoResponse = await getInventoryValuation(ids.tenant, ids.stationTwo);
     expect(stationTwoResponse.status).toBe(200);
     const stationTwoBody = (await stationTwoResponse.json()) as {
-      streams: Array<{ station: { id: string } }>;
+      streams: Array<{ station: { id: string }; quantityLitres: string }>;
       revaluations: Array<{ id: string; status: string; affectedSales: number }>;
+      tankReport: {
+        filters: { toDate: string };
+        inventory: {
+          rows: Array<{
+            stationId: string;
+            expectedLitres: string;
+            capacityLitres: string;
+          }>;
+        };
+      };
     };
+    expect(stationTwoBody.tankReport.filters.toDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(stationTwoBody.tankReport.inventory.rows.length).toBeGreaterThan(0);
+    for (const tank of stationTwoBody.tankReport.inventory.rows) {
+      expect(tank.stationId).toBe(ids.stationTwo);
+      expect(typeof tank.expectedLitres).toBe('string');
+      expect(typeof tank.capacityLitres).toBe('string');
+      expect(tank).not.toHaveProperty('movementIds');
+      expect(tank).not.toHaveProperty('deliveryIds');
+    }
+    for (const stream of stationTwoBody.streams)
+      expect(typeof stream.quantityLitres).toBe('string');
+    expect(stationTwoBody).not.toHaveProperty('sales');
+    expect(stationTwoBody).not.toHaveProperty('suppliers');
     expect(stationTwoBody.streams.every((stream) => stream.station.id === ids.stationTwo)).toBe(
       true,
     );
