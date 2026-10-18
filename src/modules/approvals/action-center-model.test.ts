@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildActionCenter, type ActionCenterFacts } from './action-center-model';
+import {
+  buildActionCenter,
+  classifyCreditUse,
+  type ActionCenterFacts,
+} from './action-center-model';
 
 const clear: ActionCenterFacts = {
   stationId: 'st-1',
@@ -8,6 +12,7 @@ const clear: ActionCenterFacts = {
   cash: { status: 'ok', value: { collectedButUnbanked: '0.00', pendingBankConfirmation: '0' } },
   settlements: { status: 'ok', value: { toMatch: 0, exceptions: 0, unmatchedPayments: 0 } },
   suppliers: { status: 'ok', value: { overdueSuppliers: 0, overdueTotal: '0' } },
+  customers: { status: 'ok', value: { nearLimit: 0, overLimit: 0 } },
 };
 
 describe('buildActionCenter', () => {
@@ -78,5 +83,44 @@ describe('buildActionCenter', () => {
       settlements: { status: 'restricted' },
     });
     expect(result).toEqual({ items: [], unavailable: ['Cash and banking'] });
+  });
+});
+
+describe('customer credit', () => {
+  it('classifies what is owed against the limit exactly', () => {
+    expect(classifyCreditUse('799.99', '1000')).toBe('ok');
+    expect(classifyCreditUse('800.00', '1000')).toBe('near');
+    expect(classifyCreditUse('1000.00', '1000')).toBe('near');
+    expect(classifyCreditUse('1000.01', '1000')).toBe('over');
+    expect(classifyCreditUse('-50', '1000')).toBe('ok');
+  });
+
+  it('does not judge accounts with no limit, a zero limit or no balance', () => {
+    expect(classifyCreditUse('500', null)).toBe('ok');
+    expect(classifyCreditUse('500', '0')).toBe('ok');
+    expect(classifyCreditUse(null, '1000')).toBe('ok');
+  });
+
+  it('lists customers over and near their limit under Receivables', () => {
+    const result = buildActionCenter({
+      ...clear,
+      customers: { status: 'ok', value: { nearLimit: 2, overLimit: 1 } },
+    });
+    expect(result.items.map((item) => [item.id, item.area, item.tone, item.href])).toEqual([
+      ['customers-over-limit', 'Receivables', 'attention', '/customers'],
+      ['customers-near-limit', 'Receivables', 'info', '/customers'],
+    ]);
+    expect(result.items[0]?.title).toBe('1 customer is over their credit limit');
+    expect(result.items[1]?.title).toBe('2 customers are near their credit limit');
+  });
+
+  it('says so when customer credit could not be checked, and stays quiet when restricted', () => {
+    expect(
+      buildActionCenter({ ...clear, customers: { status: 'unavailable' } }).unavailable,
+    ).toEqual(['Customer credit']);
+    expect(buildActionCenter({ ...clear, customers: { status: 'restricted' } })).toEqual({
+      items: [],
+      unavailable: [],
+    });
   });
 });

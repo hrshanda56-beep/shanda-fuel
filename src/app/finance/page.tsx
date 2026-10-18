@@ -85,6 +85,7 @@ function ActionList({ center, stationId }: { center: ActionCenter; stationId: st
     Banking: `${station}/cash`,
     Settlements: `${station}/settlements`,
     Payables: '/suppliers',
+    Receivables: '/customers',
   };
   const countFor = (area: ActionArea) => center.items.filter((item) => item.area === area);
   return (

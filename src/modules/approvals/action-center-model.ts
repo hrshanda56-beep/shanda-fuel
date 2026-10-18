@@ -1,4 +1,5 @@
 import { formatUsd } from '../../design-system/formatters';
+import { ExactDecimal } from '../../platform/domain/primitives';
 
 /** What one part of the Action Center could tell us. */
 export type Section<T> =
@@ -23,9 +24,10 @@ export type ActionCenterFacts = {
   cash: Section<{ collectedButUnbanked: string; pendingBankConfirmation: string }>;
   settlements: Section<{ toMatch: number; exceptions: number; unmatchedPayments: number }>;
   suppliers: Section<{ overdueSuppliers: number; overdueTotal: string }>;
+  customers: Section<{ nearLimit: number; overLimit: number }>;
 };
 
-export type ActionArea = 'Approvals' | 'Banking' | 'Settlements' | 'Payables';
+export type ActionArea = 'Approvals' | 'Banking' | 'Settlements' | 'Payables' | 'Receivables';
 
 export type ActionItem = {
   id: string;
@@ -41,6 +43,25 @@ export type ActionCenter = {
   /** Areas that could not be checked, so "all clear" is never claimed falsely. */
   unavailable: readonly string[];
 };
+
+/**
+ * A credit account counts as "near its limit" from this share of the limit owed. This is a
+ * reminder threshold, not a credit policy: it never blocks a sale. Replace it with the client's
+ * own figure once they give one.
+ */
+export const NEAR_LIMIT_PERCENT = 80;
+
+export type CreditUse = 'ok' | 'near' | 'over';
+
+/** Exact comparison of what is owed against the limit. No limit (or a zero limit) is not judged. */
+export function classifyCreditUse(balance: string | null, creditLimit: string | null): CreditUse {
+  if (balance === null || creditLimit === null) return 'ok';
+  const owed = new ExactDecimal(balance).value;
+  const limit = new ExactDecimal(creditLimit).value;
+  if (!limit.gt(0)) return 'ok';
+  if (owed.gt(limit)) return 'over';
+  return owed.mul(100).gte(limit.mul(NEAR_LIMIT_PERCENT)) ? 'near' : 'ok';
+}
 
 const isPositive = (value: string) => /^\d+(?:\.\d+)?$/.test(value) && !/^0+(?:\.0+)?$/.test(value);
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
@@ -159,6 +180,31 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     });
   }
 
+  if (facts.customers.status === 'unavailable') unavailable.push('Customer credit');
+  if (facts.customers.status === 'ok') {
+    const { nearLimit, overLimit } = facts.customers.value;
+    if (overLimit > 0) {
+      items.push({
+        id: 'customers-over-limit',
+        area: 'Receivables',
+        title: `${overLimit} ${plural(overLimit, 'customer is', 'customers are')} over their credit limit`,
+        detail: 'They owe more than their agreed limit.',
+        href: '/customers',
+        tone: 'attention',
+      });
+    }
+    if (nearLimit > 0) {
+      items.push({
+        id: 'customers-near-limit',
+        area: 'Receivables',
+        title: `${nearLimit} ${plural(nearLimit, 'customer is', 'customers are')} near their credit limit`,
+        detail: `They owe ${NEAR_LIMIT_PERCENT}% or more of their agreed limit.`,
+        href: '/customers',
+        tone: 'info',
+      });
+    }
+  }
+
   // Attention first, otherwise keep the order above.
   const ordered = [...items].sort(
     (a, b) => Number(b.tone === 'attention') - Number(a.tone === 'attention'),
@@ -171,4 +217,5 @@ export const ACTION_AREAS: readonly ActionArea[] = [
   'Banking',
   'Settlements',
   'Payables',
+  'Receivables',
 ];

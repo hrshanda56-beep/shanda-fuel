@@ -5,6 +5,7 @@ import type { CurrentContext } from '../context/contracts';
 import { getCashStationSummaryFromRequest } from '../cash/queries';
 import { withInventoryReadContext } from '../inventory/application';
 import { getSupplierSummaryFromRequest } from '../creditors/queries';
+import { getCustomerAccountsFromRequest } from '../customers/queries';
 import {
   getProviderSettlementSummaryFromRequest,
   getUnmatchedProviderPaymentsFromRequest,
@@ -14,7 +15,7 @@ import { AppError } from '../../platform/errors';
 import { observeError } from '../../platform/observability';
 import { isAuthorized } from '../../platform/security/permissions';
 import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
-import type { ActionCenterFacts, Section } from './action-center-model';
+import { classifyCreditUse, type ActionCenterFacts, type Section } from './action-center-model';
 
 /** A check the person is not allowed to make is "restricted"; anything else is "unavailable". */
 async function section<T>(
@@ -110,7 +111,7 @@ export async function loadActionCenterFacts(
     return value ? { status: 'ok', value: value as never } : { status: 'restricted' };
   };
 
-  const [cash, settlements, suppliers] = await Promise.all([
+  const [cash, settlements, suppliers, customers] = await Promise.all([
     section(request, 'cash', async () => {
       const summary = await getCashStationSummaryFromRequest(request, { selection: current });
       return {
@@ -146,6 +147,25 @@ export async function loadActionCenterFacts(
           .toString(),
       };
     }),
+    section(request, 'customers', async () => {
+      if (!current.legalEntityId) throw new AppError('FORBIDDEN', 'A legal entity is required');
+      const { customers: all } = await getCustomerAccountsFromRequest(request, { tenantId });
+      // Only credit accounts that this station can serve, in this legal entity.
+      const uses = all
+        .flatMap((customer) => customer.accounts)
+        .filter(
+          (account) =>
+            account.accountType === 'CREDIT' &&
+            account.status === 'ACTIVE' &&
+            account.legalEntityId === current.legalEntityId &&
+            (account.stationScope === 'ALL' || account.allowedStationIds.includes(stationId)),
+        )
+        .map((account) => classifyCreditUse(account.balance, account.creditLimit));
+      return {
+        nearLimit: uses.filter((use) => use === 'near').length,
+        overLimit: uses.filter((use) => use === 'over').length,
+      };
+    }),
   ]);
 
   return {
@@ -155,5 +175,6 @@ export async function loadActionCenterFacts(
     cash,
     settlements,
     suppliers,
+    customers,
   };
 }
