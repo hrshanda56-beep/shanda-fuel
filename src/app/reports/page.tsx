@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { ReportsRail } from '@/modules/reporting/ui/reports-rail';
+import { savedTenantId } from './saved-tenant';
 import { ReportList } from '@/modules/reporting/ui/report-list';
 
 export const metadata = {
@@ -13,7 +14,7 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<{ tenantId?: string }>;
 }) {
-  const { tenantId } = await searchParams;
+  const tenantId = (await searchParams).tenantId ?? (await savedTenantId('/reports'));
   return (
     <AppShell pageSubtitle="Operational Financial Position">
       {tenantId ? (

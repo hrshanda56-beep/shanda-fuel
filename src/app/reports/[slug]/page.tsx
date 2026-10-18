@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { ContextRequiredState } from '@/design-system/primitives';
+import { savedTenantId } from '../saved-tenant';
 import { findReport } from '@/modules/reporting/catalog';
 import { ManagementReportDashboard } from '@/modules/reporting/ui/management-report-dashboard';
 
@@ -16,7 +17,7 @@ export default async function ReportDetailPage({
   const { slug } = await params;
   const report = findReport(slug);
   if (!report) notFound();
-  const { tenantId } = await searchParams;
+  const tenantId = (await searchParams).tenantId ?? (await savedTenantId(`/reports/${slug}`));
 
   return (
     <AppShell pageSubtitle={report.title}>
