@@ -71,12 +71,16 @@ async function command(
   );
 }
 
-async function forecourtCommand(input: Record<string, unknown>, key: string) {
+async function forecourtCommand(
+  input: Record<string, unknown>,
+  key: string,
+  sessionToken = 'a8-session-token',
+) {
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        ...clerkHeaders(await signedCookie('a8-session-token')),
+        ...clerkHeaders(await signedCookie(sessionToken)),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -239,6 +243,7 @@ async function createPostedA5Evidence() {
     await forecourtCommand(
       { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
       'a8-a5-approve',
+      'a8-finance-session-token',
     ),
   );
   await expectForecourtOk(
@@ -333,6 +338,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       true,
     );
     await seedActiveStepUp(client, ids.session, ids.tenant);
+    await seedActiveStepUp(client, ids.financeSession, ids.tenant);
     await withTenantTransaction(
       createTrustedTenantTransactionContext({
         tenantId: ids.tenant,

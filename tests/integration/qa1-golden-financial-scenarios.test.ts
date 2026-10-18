@@ -318,6 +318,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         revaluationId,
       },
       'g2-revaluation-approve',
+      'finance',
     );
     expectStatus(approved, 200);
     const posted = await inventory(
@@ -351,8 +352,13 @@ describe('QA1 cross-module golden financial scenarios', () => {
       row.event_code.startsWith('INVENTORY.COST_REVALUATION_'),
     );
     expect(revaluationAudit).toHaveLength(3);
+    // Request and post are done by admin; approval is a separate actor (separation of duties).
     expect(
-      revaluationAudit.every((row) => row.membership_id === ctx.actors.admin.membershipId),
+      revaluationAudit.every((row) =>
+        row.event_code === 'INVENTORY.COST_REVALUATION_APPROVED'
+          ? row.membership_id === ctx.actors.finance.membershipId
+          : row.membership_id === ctx.actors.admin.membershipId,
+      ),
     ).toBe(true);
     const revaluationLines = revaluationSnapshot.revaluationLines.filter(
       (line) => line.revaluation_id === revaluationId,

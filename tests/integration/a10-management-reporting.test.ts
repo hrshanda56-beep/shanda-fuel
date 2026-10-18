@@ -271,8 +271,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
         on conflict (id) do nothing;
       update app.shifts set state = 'OPEN', opened_at = '2026-09-20T06:00:00Z' where id = '${ids.factShift}' and state = 'PLANNED';
       update app.reconciliations set state = 'READY' where id = '${ids.factRecon}' and state = 'DRAFT';
-      update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
-      update app.reconciliation_revisions set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRevision}' and state = 'READY';
+      update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.scopedMembership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
+      update app.reconciliation_revisions set state = 'SUBMITTED', submitted_by = '${ids.scopedMembership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRevision}' and state = 'READY';
       update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${ids.factRevision}' and state = 'SUBMITTED';
       insert into app.cash_locations
         (id, tenant_id, station_id, code, name, location_type)

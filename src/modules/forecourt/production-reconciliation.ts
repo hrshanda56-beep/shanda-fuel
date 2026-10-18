@@ -763,6 +763,20 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       const header = await loadHeader(transaction, context, payload.reconciliationId);
       if (header.state !== 'SUBMITTED')
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be approved');
+      // Separation of duties: whoever submitted the day cannot also approve it.
+      const submitter = await transaction.execute<{ submitted_by: string | null }>(sql`
+        select submitted_by
+        from app.reconciliations
+        where tenant_id=${context.tenantId}
+          and station_id=${context.stationId}
+          and id=${payload.reconciliationId}
+      `);
+      if (submitter[0]?.submitted_by === context.actor.membershipId) {
+        throw new AppError(
+          'FORBIDDEN',
+          'The person who submitted a reconciliation cannot approve it',
+        );
+      }
       const metrics = await loadMetrics(transaction, context, payload.reconciliationId);
       await requireExplanations(transaction, context, payload.reconciliationId, metrics);
       const bridgeTable = await transaction.execute<{ installed: boolean }>(sql`

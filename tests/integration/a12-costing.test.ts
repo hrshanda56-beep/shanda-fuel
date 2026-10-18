@@ -56,6 +56,9 @@ const ids = {
   businessBoundaryClosing: 'a1220000-0000-4000-8000-000000000111',
   revaluation: 'a1220000-0000-4000-8000-000000000091',
   phase2Session: 'a1220000-0000-4000-8000-000000000112',
+  approver: 'a1220000-0000-4000-8000-000000000121',
+  approverMembership: 'a1220000-0000-4000-8000-000000000122',
+  approverSession: 'a1220000-0000-4000-8000-000000000123',
 };
 
 let client: Sql;
@@ -117,7 +120,11 @@ async function postInventoryCommand(
   input: Record<string, unknown>,
   key: string,
 ): Promise<Response> {
-  const token = 'a122-phase2-session-token';
+  // A revaluation must be approved by someone other than the person who requested it.
+  const token =
+    input.commandType === 'ApproveInventoryCostRevaluation'
+      ? 'a122-approver-session-token'
+      : 'a122-phase2-session-token';
   const signedToken = token;
   return inventoryCommandPost(
     new Request('http://127.0.0.1:3000/api/inventory/commands', {
@@ -167,12 +174,15 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       insert into app.tenants (id, name, slug) values ('${ids.tenant}', 'A12.2 Tenant', 'a122-tenant') on conflict (id) do nothing;
       insert into app.users (id, name, email) values ('${ids.actor}', 'A12.2 Operator', 'a122@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${ids.approver}', 'A12.2 Approver', 'a122-approver@example.test') on conflict (id) do nothing;
+      insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.approverMembership}', '${ids.tenant}', '${ids.approver}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'A12.2 Legal') on conflict (id) do nothing;
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values
         ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A122-1', 'A12.2 Station 1', 'ACTIVE'),
         ('${ids.stationTwo}', '${ids.tenant}', '${ids.legal}', 'A122-2', 'A12.2 Station 2', 'ACTIVE') on conflict (id) do nothing;
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
-      values ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'TENANT', null, null) on conflict do nothing;
+      values ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'TENANT', null, null),
+        ('${ids.tenant}', '${ids.approverMembership}', 'ADMINISTRATOR', 'TENANT', null, null) on conflict do nothing;
       insert into app.products (id, tenant_id, code, name) values
         ('${ids.product}', '${ids.tenant}', 'A122-DIESEL', 'A12.2 Diesel'),
         ('${ids.productTwo}', '${ids.tenant}', 'A122-PETROL', 'A12.2 Petrol') on conflict (id) do nothing;
@@ -256,6 +266,14 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
     `);
     await seedClerkSession(client, ids.phase2Session, 'a122-phase2-session-token', ids.actor, true);
     await seedActiveStepUp(client, ids.phase2Session, ids.tenant);
+    await seedClerkSession(
+      client,
+      ids.approverSession,
+      'a122-approver-session-token',
+      ids.approver,
+      true,
+    );
+    await seedActiveStepUp(client, ids.approverSession, ids.tenant);
   });
 
   afterAll(async () => client?.end());

@@ -823,6 +823,13 @@ export async function approveInventoryCostRevaluationInTransaction(
   if (revaluation.status !== 'REQUESTED') {
     throw new AppError('CONFLICT', 'Only a requested inventory cost revaluation can be approved');
   }
+  // Separation of duties: the person who requested a revaluation cannot approve it.
+  if (revaluation.requestedBy === input.approvedBy) {
+    throw new AppError(
+      'FORBIDDEN',
+      'The person who requested an inventory cost revaluation cannot approve it',
+    );
+  }
   const approvedAt = new Date();
   await transaction
     .update(inventoryCostRevaluations)

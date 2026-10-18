@@ -24,6 +24,9 @@ const ids = {
   managerActor: 'a5b00000-0000-4000-8000-000000000032',
   managerMembership: 'a5b00000-0000-4000-8000-000000000042',
   managerSession: 'a5b00000-0000-4000-8000-000000000052',
+  approverActor: 'a5b00000-0000-4000-8000-000000000034',
+  approverMembership: 'a5b00000-0000-4000-8000-000000000044',
+  approverSession: 'a5b00000-0000-4000-8000-000000000053',
   attendantActor: 'a5b00000-0000-4000-8000-000000000033',
   attendantMembership: 'a5b00000-0000-4000-8000-000000000043',
   product: 'a5b00000-0000-4000-8000-000000000061',
@@ -376,11 +379,13 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       insert into app.users (id, name, email) values
         ('${ids.supervisorActor}', 'A5 Supervisor', 'a5-supervisor@example.test'),
         ('${ids.managerActor}', 'A5 Manager', 'a5-manager@example.test'),
+        ('${ids.approverActor}', 'A5 Approver', 'a5-approver@example.test'),
         ('${ids.attendantActor}', 'A5 Attendant', 'a5-attendant@example.test')
         on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.supervisorMembership}', '${ids.tenant}', '${ids.supervisorActor}', 'ACTIVE'),
         ('${ids.managerMembership}', '${ids.tenant}', '${ids.managerActor}', 'ACTIVE'),
+        ('${ids.approverMembership}', '${ids.tenant}', '${ids.approverActor}', 'ACTIVE'),
         ('${ids.attendantMembership}', '${ids.tenant}', '${ids.attendantActor}', 'ACTIVE')
         on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
@@ -393,6 +398,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       values
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.tenant}', '${ids.managerMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
+        ('${ids.tenant}', '${ids.approverMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
         on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name)
@@ -495,6 +501,14 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     );
     await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
     await seedActiveStepUp(client, ids.managerSession, ids.tenant);
+    await seedClerkSession(
+      client,
+      ids.approverSession,
+      'a5-approver-session-token',
+      ids.approverActor,
+      true,
+    );
+    await seedActiveStepUp(client, ids.approverSession, ids.tenant);
   });
 
   afterAll(async () => {
@@ -1546,7 +1560,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             revaluationId,
           },
           `a5-phase3-approve-revaluation-${phase3TankId}`,
-          'a5-manager-session-token',
+          'a5-approver-session-token',
         ),
       );
       await expectOk(
@@ -1972,6 +1986,29 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.tank}';
       `);
     }
+  });
+
+  it('forbids the submitter from approving their own reconciliation', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-self-submit-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    const own = await postCommand(
+      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+      `a5-self-approve-${reconciliationId}`,
+      'a5-manager-session-token',
+    );
+    expect(own.status).toBe(403);
+    const rows = await client.unsafe<{ state: string }[]>(`
+      select state from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(rows).toEqual([{ state: 'SUBMITTED' }]);
   });
 
   it('rejects insufficient-stock approval atomically', async () => {
