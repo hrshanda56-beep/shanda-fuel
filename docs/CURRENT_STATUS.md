@@ -1,5 +1,37 @@
 # Shanda Fuel — Current Status
 
+## Finance read-path optimization candidate — 2026-10-18
+
+Finance overview starts independent sign-off, cash, settlement and supplier
+sections concurrently, reuses the shared shell's verified context tree and
+streams its work list behind a truthful loading state. Partial restricted/error
+states remain per section. Sign-off uses one SQL exchange for queues and existing
+alternate-approver checks, preserving tenant-bound strong-authentication rules.
+Cash summary batches five data reads into one permission-gated query. Customer
+account summary batches account, product, station and recent-history sections
+into one query and keeps monetary values as text. Finance read loaders use the
+existing persisted authority snapshot rather than command-context station/entity
+discovery transactions. Command loaders, schema, RLS and write behavior are
+unchanged. The settlement workspace now requests /api/settlements/overview once;
+the old summary and unmatched endpoints remain available with their array contracts.
+
+Final checks: 954 unit tests, 8 focused runtime-role integration checks, and
+23 synthetic browser checks passed. TypeScript, focused ESLint and the production
+build passed. Browser checks used the installed Brave Chromium binary through a
+temporary Playwright config because the bundled browser was absent.
+
+Eight focused synthetic local integration checks passed with actual app_runtime
+connections, including exact four-decimal Customer limits, context mismatch and
+cross-tenant denial. The repeatable opt-in suite is:
+`RUN_FINANCE_READ_TESTS=1 CONSOLIDATED_CONTEXT_READS=1 DATABASE_PREPARED_STATEMENTS=1 pnpm exec vitest run --config vitest.finance-read.config.ts`
+It requires explicit local DATABASE_URL for fixture setup and a separate local
+FINANCE_RUNTIME_DATABASE_URL using app_runtime. No Neon or production database
+was contacted. Existing broad command suites also exposed owner/runtime harness
+and write-ACL prerequisites; those attempts are not a passing command-suite gate
+and no privileges or command code were changed to compensate. The focused read
+suite avoids those command-fixture dependencies. Normal authenticated application
+latency remains to be measured after restarting the rebuilt local server.
+
 ## Dashboard API read consolidation — 2026-10-18
 
 The effective driver fix now adapts the exact unsafe(query, parameters) calls
@@ -944,3 +976,61 @@ Lock interaction: removed the separate Clerk verification button. The single Loc
 Intermittent re-login investigation: the login form previously labelled all exceptions (including session activation/network errors) as rejected credentials. Separated credential, rate-limit, session-activation and other failures; added an immediate duplicate-submit guard. Seven focused tests, TypeScript and targeted lint passed. The reported intermittent failure has not been reproduced with current credentials and its root cause is unconfirmed; no password or Clerk configuration was changed.
 
 Daily Operations simplification: removed the Needs Attention section and the Shifts / Waiting for review / Returned for changes summary cards, including their unused client-side calculations. The shift board, reconciliation workflows and server authorization remain unchanged. Browser regression assertions updated but not executed; 91 forecourt unit tests, TypeScript, targeted lint and CSS parsing passed. No production access, push, merge or deployment performed.
+
+
+## 2026-10-18 — Server-loaded dashboard page data (local candidate)
+
+Implemented in `codex/clerk-only-auth-20261017`, without contacting Neon or production:
+
+- The main dashboard, Cash, Settlements, Customers list/detail, Suppliers list/detail,
+  Operations overview/reconciliation list, Daily Operations, My Shift, valuation
+  overview/stream/revaluation detail, and reporting pages load primary initial data
+  through shared server query services. Client workspaces receive serialized initial
+  results and skip duplicate mount-time data requests. Existing API refreshes and
+  command endpoints remain available.
+- A shared server page boundary validates URL context against the authorized tree,
+  keeps navigation/context on the same selection, streams loading states, and keys
+  boundaries by scope to prevent previous-station content persisting on navigation.
+- Dashboard aggregation is shared between the server page and API. Chart range
+  changes use `/api/dashboard/sales` and do not reload daily/customer/operations
+  sections. Reporting station authorization reuses validated request snapshots;
+  missing stations retain an RLS-backed lookup. Daily totals retain their existing
+  date semantics independently of chart range.
+- Request render caching now remains available after shell access resolves.
+  Finance forwards its already-resolved actor into its existing request scope.
+- No migrations, ACL/RLS changes, dependency changes, command semantics, or monetary
+  calculation changes were introduced by this server-loading conversion.
+
+Validation: 991 unit tests passed; 10 focused local `app_runtime` database checks
+passed, including dashboard loading and foreign-station rejection; the combined
+browser run passed 68 checks and intentionally skipped four authenticated reporting
+checks without configured fixture credentials. TypeScript, production build and
+focused lint passed. Browser fixtures were updated from obsolete individual
+Dashboard endpoints to the existing bundled API and new chart-only refresh route.
+The disposable local PostgreSQL cluster was stopped after testing.
+
+Limits: these are synthetic browser checks plus real local runtime-role query
+checks, not signed-in Neon latency measurements. The browser tool still reports
+local browser access disabled, so no new time-to-data improvement is claimed.
+Supplemental reconciliation-board detail reads still load in the browser; primary
+operations overview loading moved to the server. The previously reported stream
+closure was not reproduced or declared fixed. Earlier broad command-suite database
+prerequisites remain as documented above. At initial local validation, no commit, push, merge or deployment had been
+performed for this candidate. Independent review remains a release gate.
+
+
+### PR #146 integration validation
+
+Prepared this performance update on top of `8f25ac2a65faf189970b8a9c3484367c671ab1ed`,
+preserving the eight intervening PR commits. The merged implementation keeps credit-limit
+warnings, station-required Finance context, saved organisation reporting behavior, and
+read-only approval visibility without a fresh step-up. Batched reconciliation sign-off
+facts retain business-day/shift identifiers needed by the existing destination links.
+Approval commands retain their existing assurance requirements.
+
+The combined candidate passed 1,002 unit tests, 10 local runtime-role database checks,
+and 68 browser checks (four authenticated reporting cases intentionally skipped without
+fixture credentials). TypeScript, production build, targeted lint, formatting and
+`git diff --check` passed. No Neon or production operation, migration, merge or deployment
+was performed during this integration. This update is intended for the existing draft
+PR #146; independent release review and live navigation latency verification remain open.

@@ -1,10 +1,6 @@
-import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
-import {
-  DailyOperationsContextRequired,
-  DailyOperationsWorkspace,
-  type DailyOperationsContext,
-} from '@/modules/forecourt/ui/daily-operations-workspace';
-import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
+import { ServerDailyOperations } from '@/modules/forecourt/server-daily';
+import { ServerOperationsOverview } from '@/modules/forecourt/server-overview';
+import { type DailyOperationsContext } from '@/modules/forecourt/ui/daily-operations-workspace';
 
 export const metadata = {
   title: 'Daily operations',
@@ -34,23 +30,6 @@ export default async function DailyOperationsPage({
         reconciliationId: search.reconciliationId,
       }
     : undefined;
-  const hasStationContext = Boolean(search.tenantId && search.stationId);
-
-  return (
-    <AppShell>
-      {context ? (
-        <DailyOperationsWorkspace context={context} />
-      ) : hasStationContext ? (
-        <OperationsControlRoom
-          context={{
-            tenantId: search.tenantId!,
-            stationId: search.stationId!,
-            businessDayId: search.businessDayId,
-          }}
-        />
-      ) : (
-        <DailyOperationsContextRequired />
-      )}
-    </AppShell>
-  );
+  if (!context) return <ServerOperationsOverview search={search} />;
+  return <ServerDailyOperations search={search} context={context} />;
 }

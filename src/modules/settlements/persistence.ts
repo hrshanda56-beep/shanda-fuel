@@ -538,11 +538,8 @@ function mapSettlementSummary(row: ProviderSettlementSummaryRow): ProviderSettle
   return row;
 }
 
-export async function listProviderSettlementSummariesInTransaction(
-  transaction: ForecourtTransaction,
-  context: SettlementCommandContext,
-): Promise<ProviderSettlementSummaryRow[]> {
-  const rows = await transaction.execute<ProviderSettlementSummaryRow>(sql`
+function settlementSummaryQuery(context: SettlementCommandContext) {
+  return sql`
     select s.id as "settlementId",
            p.id as "providerId",
            p.code as "providerCode",
@@ -582,7 +579,10 @@ export async function listProviderSettlementSummariesInTransaction(
               s.provider_fee_amount, s.provider_deduction_amount, s.reported_net_amount,
               s.state, s.version
      order by s.settlement_date desc, s.id desc
-  `);
+`;
+}
+
+function mapSettlementRows(rows: ProviderSettlementSummaryRow[]) {
   return rows.map((row) => {
     const summary = calculateSettlementSummary({
       grossAmount: row.grossAmount,
@@ -601,11 +601,17 @@ export async function listProviderSettlementSummariesInTransaction(
   });
 }
 
-export async function listUnmatchedProviderPaymentsInTransaction(
+export async function listProviderSettlementSummariesInTransaction(
   transaction: ForecourtTransaction,
   context: SettlementCommandContext,
-): Promise<UnmatchedProviderPaymentRow[]> {
-  const rows = await transaction.execute<UnmatchedProviderPaymentRow>(sql`
+): Promise<ProviderSettlementSummaryRow[]> {
+  return mapSettlementRows(
+    await transaction.execute<ProviderSettlementSummaryRow>(settlementSummaryQuery(context)),
+  );
+}
+
+function unmatchedPaymentQuery(context: SettlementCommandContext) {
+  return sql`
     select p.id as "paymentId",
            p.station_id as "stationId",
            p.reconciliation_id as "reconciliationId",
@@ -646,7 +652,10 @@ export async function listUnmatchedProviderPaymentsInTransaction(
          )
      ), 0) < p.amount
      order by bd.business_date desc, p.id desc
-  `);
+`;
+}
+
+function mapUnmatchedRows(rows: UnmatchedProviderPaymentRow[]) {
   return rows.map((row) => ({
     ...row,
     amount: formatSettlementMoney(row.amount),
@@ -655,4 +664,33 @@ export async function listUnmatchedProviderPaymentsInTransaction(
       money(row.amount).subtract(money(row.allocatedAmount)).toString(),
     ),
   }));
+}
+
+export async function listUnmatchedProviderPaymentsInTransaction(
+  transaction: ForecourtTransaction,
+  context: SettlementCommandContext,
+): Promise<UnmatchedProviderPaymentRow[]> {
+  return mapUnmatchedRows(
+    await transaction.execute<UnmatchedProviderPaymentRow>(unmatchedPaymentQuery(context)),
+  );
+}
+
+export async function getSettlementOverviewInTransaction(
+  transaction: ForecourtTransaction,
+  context: SettlementCommandContext,
+) {
+  const result = await transaction.execute<{
+    settlements: ProviderSettlementSummaryRow[];
+    unmatched: UnmatchedProviderPaymentRow[];
+  }>(sql`
+  with settlements as (${settlementSummaryQuery(context)}), unmatched as (${unmatchedPaymentQuery(context)})
+  select coalesce((select json_agg(settlements) from settlements), '[]'::json) as settlements,
+    coalesce((select json_agg(unmatched) from unmatched), '[]'::json) as unmatched
+ `);
+  const rows = result[0];
+  if (!rows) throw new AppError('INVARIANT_VIOLATION', 'Settlement overview was not returned');
+  return {
+    settlements: mapSettlementRows(rows.settlements),
+    unmatched: mapUnmatchedRows(rows.unmatched),
+  };
 }

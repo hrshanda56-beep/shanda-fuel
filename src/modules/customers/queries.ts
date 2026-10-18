@@ -1,3 +1,5 @@
+import { AppError } from '../../platform/errors';
+import { resolveCustomerReadContext } from './read-context';
 import { z } from 'zod';
 import { DECIMAL_POLICIES, ExactDecimal } from '../../platform/domain/primitives';
 import type {
@@ -8,7 +10,7 @@ import type {
   CustomerLifecycleState,
 } from './domain';
 import { customerStatementQuerySchema } from './validation';
-import { authorizeCustomerCommand, resolveCustomerCommandContext } from './application';
+import { authorizeCustomerCommand } from './application';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { deriveAccountBalance } from './domain';
 import { loadAccount } from './persistence';
@@ -277,7 +279,7 @@ export async function getCustomerAccountsFromRequest(
   input: unknown,
 ): Promise<CustomerAccountsResponse> {
   const query = customerAccountsQuerySchema.parse(input);
-  const context = await resolveCustomerCommandContext({
+  const context = await resolveCustomerReadContext({
     request,
     requestedTenantId: query.tenantId,
   });
@@ -296,7 +298,7 @@ export async function getCustomerAccountsFromRequest(
     });
 
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
-    const rows = await transaction.execute<CustomerAccountSummaryRow>(sql`
+    const rowsQuery = sql`
       with monetary_balances as (
         select account_id,
           sum(case when direction = 'INCREASE' then amount else -amount end)::text as balance
@@ -340,12 +342,8 @@ export async function getCustomerAccountsFromRequest(
       left join active_reservations ar on ar.account_id = a.id
       where c.tenant_id = ${context.tenantId}
         ${query.customerId ? sql`and c.id = ${query.customerId}` : sql``}
-      order by c.display_name, c.account_reference, a.account_type, a.id
-    `);
-
-    const accountIds = rows.flatMap((row) => (row.account_id ? [row.account_id] : []));
-    const products = accountIds.length
-      ? await transaction.execute<CustomerProductBalanceRow>(sql`
+      order by c.display_name, c.account_reference, a.account_type, a.id`;
+    const productsQuery = sql`
           with active_litre_reservations as (
             select account_id, product_id, sum(remaining_litres)::text as reserved_litres
             from app.customer_fuel_authorizations
@@ -367,37 +365,18 @@ export async function getCustomerAccountsFromRequest(
             on r.account_id = e.account_id and r.product_id = e.product_id
           where e.tenant_id = ${context.tenantId}
             and e.account_type = 'PREPAID_LITRES'
-            and e.account_id in (${sql.join(
-              accountIds.map((id) => sql`${id}`),
-              sql`, `,
-            )})
+            and e.account_id in (select account_id from account_rows where account_id is not null)
           group by e.account_id, e.product_id, p.code, p.name, r.reserved_litres
-          order by e.account_id, p.code, e.product_id
-        `)
-      : [];
-
-    const stationRows = accountIds.length
-      ? await transaction.execute<CustomerAccountStationRow>(sql`
+          order by e.account_id, p.code, e.product_id`;
+    const stationRowsQuery = sql`
           select account_id, station_id
           from app.customer_account_stations
           where tenant_id = ${context.tenantId}
-            and account_id in (${sql.join(
-              accountIds.map((id) => sql`${id}`),
-              sql`, `,
-            )})
+            and account_id in (select account_id from account_rows where account_id is not null)
             and active = true
-          order by account_id, station_id
-        `)
-      : [];
-    const stationsByAccount = new Map<string, string[]>();
-    for (const station of stationRows) {
-      const current = stationsByAccount.get(station.account_id) ?? [];
-      current.push(station.station_id);
-      stationsByAccount.set(station.account_id, current);
-    }
-
-    const transactionRows = query.customerId
-      ? await transaction.execute<CustomerTransactionRow>(sql`
+          order by account_id, station_id`;
+    const transactionRowsQuery = query.customerId
+      ? sql`
           select
             e.id,
             e.account_id,
@@ -421,9 +400,30 @@ export async function getCustomerAccountsFromRequest(
           where e.tenant_id = ${context.tenantId}
             and e.customer_id = ${query.customerId}
           order by e.occurred_at desc, e.id desc
-          limit 50
-        `)
-      : [];
+          limit 50`
+      : sql`select null as unavailable where false`;
+    const sections = await transaction.execute<{
+      rows: CustomerAccountSummaryRow[];
+      products: CustomerProductBalanceRow[];
+      stationRows: CustomerAccountStationRow[];
+      transactionRows: CustomerTransactionRow[];
+    }>(sql`
+ with account_rows as (${rowsQuery}), product_rows as (${productsQuery}), station_rows as (${stationRowsQuery}), transaction_rows as (${transactionRowsQuery})
+ select coalesce((select json_agg(account_rows) from account_rows),'[]'::json) as rows,
+ coalesce((select json_agg(product_rows) from product_rows),'[]'::json) as products,
+ coalesce((select json_agg(station_rows) from station_rows),'[]'::json) as "stationRows",
+ coalesce((select json_agg(transaction_rows) from transaction_rows),'[]'::json) as "transactionRows"
+ `);
+    const snapshot = sections[0];
+    if (!snapshot)
+      throw new AppError('INVARIANT_VIOLATION', 'Customer account summary was not returned');
+    const { rows, products, stationRows, transactionRows } = snapshot;
+    const stationsByAccount = new Map<string, string[]>();
+    for (const station of stationRows) {
+      const current = stationsByAccount.get(station.account_id) ?? [];
+      current.push(station.station_id);
+      stationsByAccount.set(station.account_id, current);
+    }
 
     const transactionsByCustomer = query.customerId ? transactionRows.map(transactionFromRow) : [];
     const customerMap = new Map<string, CustomerSummary>();
@@ -464,7 +464,7 @@ export async function getCustomerAccountStatementFromRequest(
   input: unknown,
 ): Promise<CustomerAccountStatement> {
   const query = customerStatementQuerySchema.parse(input);
-  const context = await resolveCustomerCommandContext({
+  const context = await resolveCustomerReadContext({
     request,
     requestedTenantId: query.tenantId,
   });

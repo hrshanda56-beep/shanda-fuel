@@ -1,9 +1,12 @@
+import type { AuthenticatedActorContext } from '../identity';
+import { resolveForecourtReadContext } from '../forecourt/read-context';
 import 'server-only';
 
 import { z } from 'zod';
-import { authorizeSettlementCommand, resolveSettlementCommandContext } from './application';
+import { authorizeSettlementCommand } from './application';
 import { databaseForecourtTransactionPort } from '../forecourt/application';
 import {
+  getSettlementOverviewInTransaction,
   listProviderSettlementSummariesInTransaction,
   listUnmatchedProviderPaymentsInTransaction,
 } from './persistence';
@@ -16,11 +19,13 @@ const contextSchema = z.object({
 export async function getProviderSettlementSummaryFromRequest(
   request: Request,
   input: { tenantId: string; stationId: string },
+  authenticatedActor?: AuthenticatedActorContext,
 ) {
-  const context = await resolveSettlementCommandContext({
+  const { context } = await resolveForecourtReadContext({
     request,
-    requestedTenantId: input.tenantId,
+    tenantId: input.tenantId,
     stationId: input.stationId,
+    authenticatedActor,
   });
   authorizeSettlementCommand(context, 'provider.settlement.view');
   return databaseForecourtTransactionPort.run(context, (transaction) =>
@@ -31,11 +36,13 @@ export async function getProviderSettlementSummaryFromRequest(
 export async function getUnmatchedProviderPaymentsFromRequest(
   request: Request,
   input: { tenantId: string; stationId: string },
+  authenticatedActor?: AuthenticatedActorContext,
 ) {
-  const context = await resolveSettlementCommandContext({
+  const { context } = await resolveForecourtReadContext({
     request,
-    requestedTenantId: input.tenantId,
+    tenantId: input.tenantId,
     stationId: input.stationId,
+    authenticatedActor,
   });
   authorizeSettlementCommand(context, 'provider.settlement.view');
   return databaseForecourtTransactionPort.run(context, (transaction) =>
@@ -45,4 +52,16 @@ export async function getUnmatchedProviderPaymentsFromRequest(
 
 export function parseSettlementQuery(input: unknown): { tenantId: string; stationId: string } {
   return contextSchema.parse(input);
+}
+
+export async function getSettlementOverviewFromRequest(
+  request: Request,
+  input: { tenantId: string; stationId: string },
+  authenticatedActor?: AuthenticatedActorContext,
+) {
+  const { context } = await resolveForecourtReadContext({ request, ...input, authenticatedActor });
+  authorizeSettlementCommand(context, 'provider.settlement.view');
+  return databaseForecourtTransactionPort.run(context, (transaction) =>
+    getSettlementOverviewInTransaction(transaction, context),
+  );
 }

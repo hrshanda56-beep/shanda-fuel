@@ -94,9 +94,11 @@ function SummarySkeleton() {
 export function ManagementReportDashboard({
   tenantId,
   view,
+  initialData,
 }: {
   tenantId: string;
   view: 'summary' | ReportDefinition['slug'];
+  initialData?: { report: ManagementReport | null; previous: ManagementReport | null };
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -106,10 +108,10 @@ export function ManagementReportDashboard({
   const range = resolveReportFilters(filters, businessToday());
   const actions = useReportActions();
   const definition = view === 'summary' ? undefined : findReport(view);
-  const [report, setReport] = useState<ManagementReport | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<ManagementReport | null>(initialData?.report ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
-  const [previous, setPrevious] = useState<ManagementReport | null>(null);
+  const [previous, setPrevious] = useState<ManagementReport | null>(initialData?.previous ?? null);
   const [comparing, setComparing] = useState(false);
 
   function detailHref(slug: string) {
@@ -158,7 +160,7 @@ export function ManagementReportDashboard({
 
   // The income statement sets each figure beside the period before it.
   useEffect(() => {
-    if (view === 'summary' || !beforeFrom || !beforeTo) return;
+    if (initialData || view === 'summary' || !beforeFrom || !beforeTo) return;
     const controller = new AbortController();
     const timeout = window.setTimeout(async () => {
       setComparing(true);
@@ -181,9 +183,10 @@ export function ManagementReportDashboard({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [view, tenantId, stationKey, beforeFrom, beforeTo]);
+  }, [view, tenantId, stationKey, beforeFrom, beforeTo, initialData]);
 
   useEffect(() => {
+    if (initialData) return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => void load(controller.signal), 0);
     return () => {

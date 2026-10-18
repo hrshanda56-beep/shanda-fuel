@@ -8,13 +8,13 @@ import { apiErrorResponse, withRequestObservability } from '../../../../platform
 
 export const GET = withRequestObservability(async (request: Request): Promise<Response> => {
   try {
-    await requireAuthenticatedActor(request);
+    const actor = await requireAuthenticatedActor(request);
     const url = new URL(request.url);
     const input = parseSettlementQuery({
       tenantId: url.searchParams.get('tenantId'),
       stationId: url.searchParams.get('stationId'),
     });
-    return NextResponse.json(await getUnmatchedProviderPaymentsFromRequest(request, input), {
+    return NextResponse.json(await getUnmatchedProviderPaymentsFromRequest(request, input, actor), {
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {

@@ -65,8 +65,14 @@ export function mapCaptureError(status: number, code?: string, message?: string)
 
 type Attempt = { value: string; boundaryId: string; key: string };
 
-export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
-  const [load, setLoad] = useState<Load>({ status: 'loading' });
+export function MyShiftWorkspace({
+  tenantId,
+  stationId,
+  initialData,
+}: Scope & { initialData?: MyShiftData }) {
+  const [load, setLoad] = useState<Load>(
+    initialData ? { status: 'ready', data: initialData } : { status: 'loading' },
+  );
   const [openFor, setOpenFor] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>();
   const attempts = useRef(new Map<string, Attempt>());
@@ -99,12 +105,13 @@ export function MyShiftWorkspace({ tenantId, stationId }: Scope) {
   }, [fetchShift]);
 
   useEffect(() => {
+    if (initialData) return;
     const controller = new AbortController();
     void fetchShift(controller.signal).then((result) => {
       if (!controller.signal.aborted) setLoad(result);
     });
     return () => controller.abort();
-  }, [fetchShift]);
+  }, [fetchShift, initialData]);
 
   if (load.status === 'loading') return <MyShiftSkeleton />;
   if (load.status === 'forbidden') {

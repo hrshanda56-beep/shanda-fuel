@@ -168,14 +168,18 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
   );
 }
 
-export function SupplierWorkspace() {
+export function SupplierWorkspace({
+  initial,
+}: {
+  initial?: { resolution: ContextResolution; rows: SupplierSummary[] };
+}) {
   const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const [context, setContext] = useState<ContextResolution | null>(null);
-  const [contextLoading, setContextLoading] = useState(true);
+  const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
+  const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [rows, setRows] = useState<SupplierSummary[]>([]);
+  const [rows, setRows] = useState<SupplierSummary[]>(initial?.rows ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -255,6 +259,7 @@ export function SupplierWorkspace() {
   }
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadContext(controller.signal));
     return () => controller.abort();
@@ -264,7 +269,7 @@ export function SupplierWorkspace() {
   }, [search, contextFetch]);
 
   useEffect(() => {
-    if (!hasRequiredContext || !current) return;
+    if (initial || !hasRequiredContext || !current) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadSummary(current, controller.signal));
     return () => controller.abort();

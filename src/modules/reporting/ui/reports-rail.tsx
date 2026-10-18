@@ -11,8 +11,20 @@ type ActivityState =
   | { status: 'ready'; items: readonly ReportActivityItem[] };
 
 /** The signed-in user's own recent shares and exports; reloads after each new one. */
-function RecentActivity({ tenantId }: { tenantId: string }) {
-  const [state, setState] = useState<ActivityState>({ status: 'loading' });
+export function RecentActivity({
+  tenantId,
+  initialData,
+}: {
+  tenantId: string;
+  initialData?: readonly ReportActivityItem[] | null;
+}) {
+  const [state, setState] = useState<ActivityState>(
+    initialData === undefined
+      ? { status: 'loading' }
+      : initialData
+        ? { status: 'ready', items: initialData }
+        : { status: 'error' },
+  );
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
@@ -32,7 +44,10 @@ function RecentActivity({ tenantId }: { tenantId: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const first = window.setTimeout(() => void load(controller.signal), 0);
+    const first =
+      initialData === undefined
+        ? window.setTimeout(() => void load(controller.signal), 0)
+        : undefined;
     const reload = () => void load();
     window.addEventListener(REPORT_ACTIVITY_CHANGED, reload);
     return () => {
@@ -40,7 +55,7 @@ function RecentActivity({ tenantId }: { tenantId: string }) {
       controller.abort();
       window.removeEventListener(REPORT_ACTIVITY_CHANGED, reload);
     };
-  }, [load]);
+  }, [load, initialData]);
 
   return (
     <section className="card panel rail-card" aria-labelledby="report-activity-title">

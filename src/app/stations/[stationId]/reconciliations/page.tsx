@@ -1,34 +1,19 @@
-import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
-import { DailyOperationsContextRequired } from '@/modules/forecourt/ui/daily-operations-workspace';
-import { OperationsControlRoom } from '@/modules/forecourt/ui/operations-control-room';
-
+import { ServerOperationsOverview } from '@/modules/forecourt/server-overview';
+import type { PageSearch } from '@/modules/context/server-page';
 export const metadata = { title: 'Reconciliations' };
-
-export default async function ReconciliationListPage({
+export default async function Page({
   params,
   searchParams,
 }: {
   params: Promise<{ stationId: string }>;
-  searchParams?: Promise<{ tenantId?: string; businessDayId?: string; shiftId?: string }>;
+  searchParams: Promise<PageSearch>;
 }) {
   const { stationId } = await params;
-  const search = (await searchParams) ?? {};
-
   return (
-    <AppShell
-      breadcrumbs={[
-        { label: 'Operations', href: '/operations/daily' },
-        { label: 'Reconciliations' },
-      ]}
-    >
-      {search.tenantId ? (
-        <OperationsControlRoom
-          context={{ tenantId: search.tenantId, stationId, businessDayId: search.businessDayId }}
-          focus="reconciliations"
-        />
-      ) : (
-        <DailyOperationsContextRequired />
-      )}
-    </AppShell>
+    <ServerOperationsOverview
+      search={await searchParams}
+      stationId={stationId}
+      focus="reconciliations"
+    />
   );
 }

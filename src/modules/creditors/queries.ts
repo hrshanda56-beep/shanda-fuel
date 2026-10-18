@@ -3,7 +3,8 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { authorize } from '../../platform/security/permissions';
 import { withTenantTransaction } from '../../platform/db/transaction';
-import { resolveSupplierCommandContext } from './application';
+import type { AuthenticatedActorContext } from '../identity';
+import { resolveSupplierReadContext } from './read-context';
 
 type SummaryRow = {
   supplier_id: string;
@@ -29,11 +30,13 @@ function signedAmountSql() {
 export async function getSupplierSummaryFromRequest(
   request: Request,
   input: { tenantId: string; legalEntityId: string; supplierId?: string; asOf?: string },
+  authenticatedActor?: AuthenticatedActorContext,
 ) {
-  const context = await resolveSupplierCommandContext({
+  const context = await resolveSupplierReadContext({
     request,
     requestedTenantId: input.tenantId,
     legalEntityId: input.legalEntityId,
+    authenticatedActor,
   });
   authorize({
     actor: context.authority.authorization,
@@ -100,11 +103,13 @@ export async function getSupplierSummaryFromRequest(
 export async function getSupplierStatementFromRequest(
   request: Request,
   input: { tenantId: string; legalEntityId: string; supplierId: string },
+  authenticatedActor?: AuthenticatedActorContext,
 ) {
-  const context = await resolveSupplierCommandContext({
+  const context = await resolveSupplierReadContext({
     request,
     requestedTenantId: input.tenantId,
     legalEntityId: input.legalEntityId,
+    authenticatedActor,
   });
   authorize({
     actor: context.authority.authorization,

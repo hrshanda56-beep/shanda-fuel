@@ -1,3 +1,4 @@
+import type { TankRow } from '../inventory/tank-read-model';
 import { profileDatabaseRead } from '../../platform/observability/read-timing';
 import type { AuthenticatedActorContext } from '../identity';
 import 'server-only';
@@ -270,7 +271,7 @@ export async function getInventoryValuationReadModel(
       const rows = await profileDatabaseRead<{
         streams: DbRow[];
         revaluations: DbRow[];
-        tanks: Array<Record<string, string | null>>;
+        tanks: TankRow[];
         business_date: string;
       }>(
         transaction,

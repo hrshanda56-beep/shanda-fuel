@@ -14,7 +14,7 @@ export type CustomerAccount = {
   legalEntityId: string | null;
   stationScope: 'ALL' | 'SELECTED';
   stationScopeConfigured: boolean;
-  allowedStationIds: string[];
+  allowedStationIds: readonly string[];
   ready: boolean;
   currency: string;
   creditLimit: string | null;
@@ -22,7 +22,7 @@ export type CustomerAccount = {
   availableBalance: string | null;
   availableCredit: string | null;
   reservedAmount: string;
-  productBalances: CustomerProductBalance[];
+  productBalances: readonly CustomerProductBalance[];
 };
 
 export type CustomerTransaction = {
@@ -58,8 +58,8 @@ export type CustomerSummary = {
   legalEntityName: string | null;
   canManageConfiguration: boolean;
   contactMetadata: Record<string, string>;
-  accounts: CustomerAccount[];
-  recentTransactions: CustomerTransaction[];
+  accounts: readonly CustomerAccount[];
+  recentTransactions: readonly CustomerTransaction[];
 };
 
 export type CustomerAccountsResponse = {

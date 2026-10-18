@@ -97,19 +97,23 @@ function initials(name: string): string {
   ).toUpperCase();
 }
 
-export function CustomerWorkspace() {
+export function CustomerWorkspace({
+  initial,
+}: {
+  initial?: { resolution: ContextResolution; customers: CustomerSummary[] };
+}) {
   const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const [context, setContext] = useState<ContextResolution | null>(null);
-  const [contextLoading, setContextLoading] = useState(true);
+  const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
+  const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [customers, setCustomers] = useState<CustomerSummary[]>([]);
+  const [customers, setCustomers] = useState<CustomerSummary[]>(initial?.customers ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<CustomerFilter>('all');
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(Boolean(initial));
 
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(current?.organisationId);
@@ -174,6 +178,7 @@ export function CustomerWorkspace() {
   }
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadContext(controller.signal));
     return () => controller.abort();
@@ -182,7 +187,7 @@ export function CustomerWorkspace() {
   }, [search, contextFetch]);
 
   useEffect(() => {
-    if (!hasRequiredContext || !current) return;
+    if (initial || !hasRequiredContext || !current) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadCustomers(current, controller.signal));
     return () => controller.abort();

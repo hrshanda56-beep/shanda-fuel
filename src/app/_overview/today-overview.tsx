@@ -102,23 +102,31 @@ export function TodayOverview({
   tenantId: urlTenantId,
   stationId: urlStationId,
   initialContext,
-}: Scope & { initialContext?: Scope }) {
+  initialData,
+}: Scope & { initialContext?: Scope; initialData?: DashboardInitialData }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
   const tenantId = urlTenantId ?? resolvedContext?.tenantId;
   const stationId = urlTenantId ? urlStationId : resolvedContext?.stationId;
-  const [operations, setOperations] = useState<Section<TodayOperations>>({ status: 'loading' });
-  const [customers, setCustomers] = useState<Section<{ customers: { status: string }[] }>>({
-    status: 'loading',
-  });
-  const [daily, setDaily] = useState<Section<DailyReport>>({ status: 'loading' });
+  const [operations, setOperations] = useState<Section<TodayOperations>>(
+    initialData?.operations ?? { status: 'loading' },
+  );
+  const [customers, setCustomers] = useState<Section<{ customers: readonly { status: string }[] }>>(
+    initialData?.customers ?? { status: 'loading' },
+  );
+  const [daily, setDaily] = useState<Section<DailyReport>>(
+    initialData?.daily ?? { status: 'loading' },
+  );
   const [attempt, setAttempt] = useState(0);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   const [range, setRange] = useState<ChartRange>('30D');
-  const [chart, setChart] = useState<Section<{ sales: { rows: SalesRow[] } }> & { key?: string }>({
-    status: 'loading',
+  const [chart, setChart] = useState<
+    Section<{ sales: { rows: readonly SalesRow[] } }> & { key?: string }
+  >({
+    ...(initialData?.chart ?? { status: 'loading' as const }),
+    key: initialData?.key,
   });
   const [chartAttempt, setChartAttempt] = useState(0);
   const chartKey = `${tenantId ?? ''}|${stationId ?? ''}|${range}`;
@@ -126,35 +134,37 @@ export function TodayOverview({
 
   useEffect(() => {
     if (!tenantId) return;
+    if (initialData && attempt === 0) return;
     const controller = new AbortController();
     const reset = window.setTimeout(() => {
       setDaily({ status: 'loading' });
       setCustomers({ status: 'loading' });
       setOperations({ status: 'loading' });
     }, 0);
+    const initialWindow = chartBuckets('30D', businessToday());
     const params = new URLSearchParams({
       tenantId,
-      fromDate: rangeWindow.fromDate,
-      toDate: rangeWindow.toDate,
+      fromDate: initialWindow.fromDate,
+      toDate: initialWindow.toDate,
     });
     if (stationId) params.set('stationId', stationId);
     load<{
       daily: Section<DailyReport>;
-      customers: Section<{ customers: { status: string }[] }>;
+      customers: Section<{ customers: readonly { status: string }[] }>;
       operations: Section<TodayOperations> | null;
-      chart: Section<{ sales: { rows: SalesRow[] } }>;
+      chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
     }>(`/api/dashboard?${params}`, controller.signal, 'Sales could not be loaded.').then(
       (section) => {
         if (section.status === 'ready') {
           setDaily(section.data.daily);
           setCustomers(section.data.customers);
           if (section.data.operations) setOperations(section.data.operations);
-          setChart({ ...section.data.chart, key: chartKey });
+          setChart({ ...section.data.chart, key: `${tenantId}|${stationId ?? ''}|30D` });
         } else {
           setDaily(section);
           setCustomers(section);
           setOperations(section);
-          setChart({ ...section, key: chartKey });
+          setChart({ ...section, key: `${tenantId}|${stationId ?? ''}|30D` });
         }
       },
       () => {},
@@ -163,7 +173,32 @@ export function TodayOverview({
       window.clearTimeout(reset);
       controller.abort();
     };
-  }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt, attempt]);
+  }, [tenantId, stationId, attempt, initialData]);
+
+  useEffect(() => {
+    if (
+      !tenantId ||
+      (!initialData && range === '30D' && chartAttempt === 0) ||
+      (initialData?.key === chartKey && chartAttempt === 0)
+    )
+      return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      tenantId,
+      fromDate: rangeWindow.fromDate,
+      toDate: rangeWindow.toDate,
+    });
+    if (stationId) params.set('stationId', stationId);
+    void load<{ sales: { rows: readonly SalesRow[] } }>(
+      `/api/dashboard/sales?${params}`,
+      controller.signal,
+      'Sales could not be loaded.',
+    ).then(
+      (result) => setChart({ ...result, key: chartKey }),
+      () => {},
+    );
+    return () => controller.abort();
+  }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt, initialData, range]);
 
   const customersHref = useMemo(
     () => (tenantId ? `/customers?${new URLSearchParams({ tenantId })}` : '/customers'),
@@ -209,7 +244,8 @@ export function TodayOverview({
       });
     }
   }
-  const attentionLoading = operations.status === 'loading' || customers.status === 'loading';
+  const attentionLoading =
+    (Boolean(stationId) && operations.status === 'loading') || customers.status === 'loading';
 
   const totals = daily.status === 'ready' ? dailyTotals(daily.data.rows) : null;
   const figureValues: (string | null)[] = totals
@@ -435,7 +471,7 @@ const CASH_VARIANCE_WORDS = {
   over: 'Cash over',
 } as const;
 
-type DailyReport = { filters?: { fromDate?: string }; rows: DailyRow[] };
+type DailyReport = { filters?: { fromDate?: string }; rows: readonly DailyRow[] };
 
 type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'none';
 
@@ -588,3 +624,11 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
     </details>
   );
 }
+
+export type DashboardInitialData = {
+  key: string;
+  daily: Section<DailyReport>;
+  customers: Section<{ customers: readonly { status: string }[] }>;
+  operations: Section<TodayOperations> | null;
+  chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
+};

@@ -1,3 +1,9 @@
+import { requireAuthenticatedActor } from '@/modules/identity';
+import { Suspense } from 'react';
+import type { CurrentContext } from '@/modules/context/contracts';
+import { resolveAvailableContext } from '@/modules/context/resolution';
+import { contextRoutePolicy } from '@/modules/context/routes';
+import { readPersistedContext } from '@/modules/context/persistence';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -8,6 +14,7 @@ import { TableScrollRegion } from '@/design-system/table';
 import { Icon } from '@/design-system/icons';
 import {
   AccessDeniedState,
+  LoadingState,
   Card,
   EmptyState,
   ErrorState,
@@ -164,25 +171,22 @@ export default async function FinancePage({
   let current = access.status === 'ready' ? access.current : null;
   if (request && current) {
     try {
-      const resolved = await resolveCurrentContext(request, {
-        route: readContextRoute('/finance', params),
-      });
+      const route = readContextRoute('/finance', params);
+      const resolved =
+        access.status === 'ready' && access.resolution
+          ? resolveAvailableContext(
+              access.resolution.available,
+              route,
+              contextRoutePolicy('/finance'),
+              readPersistedContext(request),
+            )
+          : await resolveCurrentContext(request, { route });
       current = resolved.current ?? current;
     } catch {
       // Keep the shell's scope; the page then asks for a station.
     }
   }
   const stationId = current && !current.allStations ? current.stationId : undefined;
-
-  let center: ActionCenter | null = null;
-  let failed = false;
-  if (allowed && current && stationId && request) {
-    try {
-      center = buildActionCenter(await loadActionCenterFacts(request, { ...current, stationId }));
-    } catch {
-      failed = true;
-    }
-  }
 
   return (
     <AppShell
@@ -196,14 +200,38 @@ export default async function FinancePage({
           title="Choose a station"
           message="Finance work is shown one station at a time. Use the context selector to pick a station."
         />
-      ) : failed || !center ? (
-        <ErrorState
-          title="Finance could not be loaded"
-          message="Reload the page to try again. Nothing has been changed."
-        />
+      ) : request && current ? (
+        <Suspense fallback={<LoadingState label="Loading finance work…" />}>
+          <FinanceWork request={request} current={{ ...current, stationId }} />
+        </Suspense>
       ) : (
-        <ActionList center={center} stationId={stationId} />
+        <ErrorState title="Finance could not be loaded" message="Reload the page to try again." />
       )}
     </AppShell>
   );
+}
+
+async function FinanceWork({
+  request,
+  current,
+}: {
+  request: Request;
+  current: CurrentContext & { stationId: string };
+}) {
+  let center: ActionCenter | null = null;
+  try {
+    const actor = await requireAuthenticatedActor(request);
+    center = buildActionCenter(await loadActionCenterFacts(request, current, actor));
+  } catch {
+    // Rendering remains outside the data-loading try/catch.
+  }
+  if (!center) {
+    return (
+      <ErrorState
+        title="Finance could not be loaded"
+        message="Reload the page to try again. Nothing has been changed."
+      />
+    );
+  }
+  return <ActionList center={center} stationId={current.stationId} />;
 }
