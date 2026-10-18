@@ -835,6 +835,9 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                 const isPendingReason = pendingReconciliationId === row.settlementId;
                 const open = expandedId === row.settlementId;
                 const hasVariance = !isZeroAmount(row.varianceAmount);
+                // Nothing matched yet: the gap is just the amount still to match.
+                const notMatchedYet =
+                  isZeroAmount(row.allocatedAmount) && row.state !== 'EXCEPTION';
                 const detailsId = `settlement-details-${row.settlementId}`;
                 return (
                   <li
@@ -937,9 +940,13 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                               : '—'}
                           </dd>
                         </div>
-                        <div data-tone={hasVariance ? 'warning' : undefined}>
+                        <div data-tone={hasVariance && !notMatchedYet ? 'warning' : undefined}>
                           <dt>Variance</dt>
-                          <dd>{money(row.varianceAmount, row.currency)}</dd>
+                          <dd>
+                            {notMatchedYet
+                              ? 'Not matched yet'
+                              : money(row.varianceAmount, row.currency)}
+                          </dd>
                         </div>
                       </dl>
                     ) : null}
