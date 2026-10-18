@@ -13,7 +13,7 @@ import {
 import { ExactDecimal } from '../../platform/domain/primitives';
 import { AppError } from '../../platform/errors';
 import { observeError } from '../../platform/observability';
-import { isAuthorized } from '../../platform/security/permissions';
+import { isPermissionGranted } from '../../platform/security/permissions';
 import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import { classifyCreditUse, type ActionCenterFacts, type Section } from './action-center-model';
 
@@ -47,8 +47,11 @@ export async function loadActionCenterFacts(
     withInventoryReadContext(request, tenantId, stationId, async (transaction, context) => {
       const actor = context.authority.authorization;
       const me = actor.membershipId;
+      // Listing work is read-only, so ask only whether the role holds the permission. Approving
+      // still needs a fresh step-up at the command, and hiding the list until then would show
+      // "nothing waiting" while work is waiting.
       const can = (permissionCode: 'reconciliation.approve' | 'approval.act') =>
-        isAuthorized({ actor, permissionCode, requestedScope: context.scope });
+        isPermissionGranted({ actor, permissionCode, requestedScope: context.scope });
 
       const reconciliations = can('reconciliation.approve')
         ? {
