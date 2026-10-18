@@ -492,8 +492,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   if (workspaceState !== 'ready') {
     return (
       <div className="content-grid cash-workspace settlement-workspace">
-        <Card as="section" className="panel content-span" aria-label="Provider settlements">
-          <p>Settlements are shown for one station at a time.</p>
+        <Card as="section" className="panel content-span" aria-label="Provider payouts">
+          <p>Payouts are shown for one station at a time.</p>
           {workspaceState === 'loading' ? (
             <LoadingState label="Loading" />
           ) : workspaceState === 'required' ? (
@@ -537,14 +537,14 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       label: share.name,
       total: share.gross,
       count,
-      detail: `${count} ${count === 1 ? 'settlement' : 'settlements'}`,
+      detail: `${count} ${count === 1 ? 'payout' : 'payouts'}`,
       tone: index % 6,
     };
   });
 
   const stateNotice = (
     <>
-      {loading ? <LoadingState label="Loading provider settlements" /> : null}
+      {loading ? <LoadingState label="Loading provider payouts" /> : null}
       {error && errorKind === 'conflict' ? <ConflictState message={error} /> : null}
       {error && errorKind === 'access' ? <AccessDeniedState message={error} /> : null}
       {error && errorKind === 'error' ? <ErrorState message={error} /> : null}
@@ -579,7 +579,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                         </>
                       )}
                     </div>
-                    <p className="channel-label">To match</p>
+                    <p className="channel-label">Waiting</p>
                     <p className="channel-amount">{total ? money(total.remaining) : money('0')}</p>
                     <span className="channel-pill">
                       {total
@@ -595,7 +595,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                       className="channel-card channel-card-action"
                       data-waiting={total ? 'true' : undefined}
                       aria-haspopup={actionable ? 'dialog' : undefined}
-                      aria-label={`${actionable ? 'Match' : 'Check'} ${label} payments, ${money(total?.remaining ?? '0')} to match`}
+                      aria-label={`${actionable ? 'Match' : 'Check'} ${label} payments, ${money(total?.remaining ?? '0')} waiting`}
                       onClick={() => {
                         if (actionable) {
                           setCardNote(null);
@@ -603,7 +603,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                         } else {
                           setCardNote(
                             total
-                              ? 'Add a provider statement before these payments can be matched.'
+                              ? 'Add a provider payout before these payments can be matched.'
                               : `All ${label} payments are matched.`,
                           );
                         }
@@ -615,11 +615,11 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                 );
               })}
             </ul>
-            <ul className="settlement-status-strip" aria-label="Settlement summary">
+            <ul className="settlement-status-strip" aria-label="Payout summary">
               {(
                 [
-                  { key: 'open', label: 'Open settlements', count: counts.open },
-                  { key: 'exceptions', label: 'Exceptions', count: counts.exceptions },
+                  { key: 'open', label: 'Not yet paid out', count: counts.open },
+                  { key: 'exceptions', label: 'Variance', count: counts.exceptions },
                 ] as const
               ).map((tile) => {
                 const tone =
@@ -666,11 +666,11 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             ) : null}
           </div>
         ) : (
-          <LoadingState label="Loading settlement summary" />
+          <LoadingState label="Loading payout summary" />
         )}
         <div className="cash-action-bar">
           <Button aria-haspopup="dialog" onClick={() => openMatch()} disabled={!canMatch}>
-            Match a payment
+            Match
           </Button>
           <Button
             variant="secondary"
@@ -685,7 +685,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         <Modal
           open={matchOpen}
           onClose={() => setMatchOpen(false)}
-          title="Match a payment to a settlement"
+          title="Match a payment"
           presentation="side"
           dismissible={!working}
           className="cash-sheet"
@@ -703,7 +703,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               void allocate();
             }}
           >
-            <Field id="settlement" label="Provider settlement" required>
+            <Field id="settlement" label="Provider payout" required>
               <Select
                 id="settlement"
                 value={settlementId}
@@ -712,10 +712,10 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                   value: row.settlementId,
                   label: `${row.providerName} · ${row.settlementReference} · ${money(row.unallocatedProviderAmount, row.currency)} left`,
                 }))}
-                placeholder="Select a settlement"
+                placeholder="Select a payout"
               />
             </Field>
-            <Field id="payment" label="Payment evidence" required>
+            <Field id="payment" label="Customer payment" required>
               <Select
                 id="payment"
                 value={paymentId}
@@ -724,16 +724,16 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                   value: row.paymentId,
                   label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
                 }))}
-                placeholder="Select payment evidence"
+                placeholder="Select a payment"
               />
             </Field>
             <Field
               id="allocation-amount"
-              label="Allocation amount"
+              label="Amount to match"
               hint={
                 selectedPayment && selectedSettlement
-                  ? `Payment has ${money(selectedPayment.unallocatedAmount)} left. Settlement has ${money(selectedSettlement.unallocatedProviderAmount, selectedSettlement.currency)} left.`
-                  : 'Up to the amount left on both.'
+                  ? `Payment ${money(selectedPayment.unallocatedAmount)} · Payout ${money(selectedSettlement.unallocatedProviderAmount, selectedSettlement.currency)} · Match up to the lower`
+                  : 'Match up to the lower amount.'
               }
               error={amountError}
               required
@@ -756,7 +756,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               loading={working}
               disabled={!selectedSettlement || !paymentId || !context}
             >
-              Allocate evidence
+              Match
             </Button>
           </form>
         </Modal>
@@ -769,21 +769,21 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           </div>
         </div>
         {!dataReady ? (
-          <LoadingState label="Loading settlements" />
+          <LoadingState label="Loading payouts" />
         ) : shares.length === 0 ? (
           <CashDonut
             slices={[]}
             currency="USD"
             centreValue="0"
             centreLabel="settlements"
-            emptyMessage="Settled amounts appear here once a provider statement has been recorded."
+            emptyMessage="Paid-out amounts appear here once a provider statement is recorded."
           />
         ) : shareCurrencies.size === 1 ? (
           <CashDonut
             slices={providerSlices}
             currency={shares[0]?.currency ?? 'USD'}
             centreValue={String(settlements.length)}
-            centreLabel={settlements.length === 1 ? 'settlement' : 'settlements'}
+            centreLabel={settlements.length === 1 ? 'payout' : 'payouts'}
           />
         ) : (
           <ProviderDonut shares={shares} />
@@ -794,15 +794,15 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Provider statements</p>
-            <h2 id="settlements-title">Provider Settlements</h2>
+            <h2 id="settlements-title">Provider Payouts</h2>
           </div>
         </div>
         <p className="field-hint">Providers often pay a few days after the sale.</p>
         {statusFilter !== 'all' ? (
           <p className="filter-chip" role="status">
             {visibleSettlements.length === 0
-              ? `No ${statusFilter === 'open' ? 'open settlements' : 'exceptions'} right now.`
-              : `Showing ${statusFilter === 'open' ? 'open settlements' : 'exceptions'} (${visibleSettlements.length})`}
+              ? `Nothing ${statusFilter === 'open' ? 'not yet paid out' : 'variance'} right now.`
+              : `Showing ${statusFilter === 'open' ? 'not yet paid out' : 'variance'} (${visibleSettlements.length})`}
             <button type="button" onClick={() => setStatusFilter('all')}>
               Show all
             </button>
@@ -816,8 +816,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         ) : null}
         {!loading && !error && settlements.length === 0 ? (
           <EmptyState
-            title="No provider settlements yet"
-            message="Settlements appear here once a provider statement has been recorded."
+            title="No provider payouts yet"
+            message="Payouts appear here once a provider statement is recorded."
           />
         ) : null}
         {canShowSettlementRows && visibleSettlements.length > 0 ? (
@@ -831,7 +831,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               <span>Action</span>
               <span />
             </div>
-            <ul className="list-rows" aria-label="Provider settlement reconciliation">
+            <ul className="list-rows" aria-label="Provider payouts">
               {visibleSettlements.map((row) => {
                 const isPendingReason = pendingReconciliationId === row.settlementId;
                 const open = expandedId === row.settlementId;
@@ -884,7 +884,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                             }}
                             disabled={working}
                           >
-                            {isPendingReason ? 'Confirm reconciliation' : 'Reconcile'}
+                            {isPendingReason ? 'Confirm now' : 'Confirm'}
                           </Button>
                         ) : (
                           <span>Done</span>
@@ -984,8 +984,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       <Card as="section" className="panel content-span" aria-labelledby="matching-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Waiting for a settlement</p>
-            <h2 id="matching-title">Unmatched Payments</h2>
+            <p className="eyebrow">Waiting for a payout</p>
+            <h2 id="matching-title">Payments Waiting</h2>
           </div>
         </div>
         {!loading && !error && unmatched.length === 0 ? (
@@ -1003,7 +1003,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                   <th scope="col">Method / reference</th>
                   <th scope="col">Business date</th>
                   <th scope="col">Reconciliation</th>
-                  <th scope="col">Evidence amount</th>
+                  <th scope="col">Amount</th>
                   <th scope="col">Remaining</th>
                 </tr>
               </thead>
@@ -1039,7 +1039,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                         {formatStatusLabel(row.reconciliationState)}
                       </StatusBadge>
                     </td>
-                    <td data-label="Evidence amount" className="numeric">
+                    <td data-label="Amount" className="numeric">
                       {money(row.amount)}
                     </td>
                     <td data-label="Remaining" className="numeric">

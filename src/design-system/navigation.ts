@@ -159,8 +159,8 @@ export const navigationSections: readonly NavigationSection[] = [
       },
       {
         key: 'settlements',
-        label: 'Provider settlements',
-        searchLabel: 'Provider settlements',
+        label: 'Provider payouts',
+        searchLabel: 'Provider payouts',
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'settlements' },
         availability: 'station-context',

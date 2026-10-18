@@ -114,7 +114,7 @@ describe('navigation destinations', () => {
       'Inventory',
       'Finance overview',
       'Cash & Banking',
-      'Provider settlements',
+      'Provider payouts',
       'Customers',
       'Suppliers',
       'Reports',

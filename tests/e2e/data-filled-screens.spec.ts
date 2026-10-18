@@ -135,17 +135,19 @@ test.describe('data-filled screens', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
       const waiting = page.getByRole('list', { name: 'Payments waiting to match' });
-      const eco = waiting.getByRole('listitem').filter({ hasText: 'EcoCash waiting to match' });
+      const eco = waiting.getByRole('listitem').first();
       await expect(eco, `width ${width}`).toContainText('USD 25.50');
       await expect(eco).toContainText('1 payment');
-      const pos = waiting.getByRole('listitem').filter({ hasText: 'POS (card) waiting to match' });
+      const pos = waiting.getByRole('listitem').nth(1);
       await expect(pos).toContainText('USD 50.00');
       await expect(pos).toContainText('2 payments');
-      const summary = page.getByLabel('Settlement summary');
-      await expect(summary.locator('div', { hasText: 'Settlements not reconciled' })).toContainText(
-        '2',
+      const summary = page.getByLabel('Payout summary');
+      await expect(
+        summary.getByRole('listitem').filter({ hasText: 'Not yet paid out' }),
+      ).toContainText('2');
+      await expect(summary.getByRole('listitem').filter({ hasText: 'Variance' })).toContainText(
+        '1',
       );
-      await expect(summary.locator('div', { hasText: 'Exceptions' })).toContainText('1');
 
       const chart = page.locator('section[aria-labelledby="settled-by-provider-title"]');
       await expect(chart.getByRole('heading', { name: 'Settled By Provider' })).toBeVisible();

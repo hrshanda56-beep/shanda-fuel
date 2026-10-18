@@ -166,11 +166,9 @@ test.describe('shared quality (F4-07)', () => {
     await mockContext(page, `/stations/${STATION}/settlements`);
     await mockSettlements(page);
     await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
-    await page.getByRole('button', { name: 'Match a payment' }).click();
-    await expect(
-      page.getByRole('dialog', { name: 'Match a payment to a settlement' }),
-    ).toBeVisible();
-    await expect(page.getByLabel('Allocation amount')).toBeVisible();
+    await page.getByRole('button', { name: 'Match', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Match a payment' })).toBeVisible();
+    await expect(page.getByLabel('Amount to match')).toBeVisible();
     const form = await fontSizes();
     expect(form.length).toBeGreaterThanOrEqual(3);
     for (const control of form) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
