@@ -455,7 +455,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
 
   if (workspaceState !== 'ready') {
     return (
-      <div className="content-grid cash-workspace">
+      <div className="content-grid cash-workspace settlement-workspace">
         <Card as="section" className="panel content-span" aria-label="Provider settlements">
           <p>Settlements are shown for one station at a time.</p>
           {workspaceState === 'loading' ? (
@@ -509,7 +509,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   );
 
   return (
-    <div className="content-grid cash-workspace">
+    <div className="content-grid cash-workspace settlement-workspace">
       <Card as="section" className="panel cash-panel" aria-labelledby="settlement-actions-title">
         <div className="panel-heading">
           <div>

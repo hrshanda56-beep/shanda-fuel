@@ -2624,23 +2624,14 @@ h3,
   gap: var(--space-2);
   align-content: start;
   min-width: 0;
-  padding: var(--space-4);
+  padding: var(--space-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
-  background: linear-gradient(
-    180deg,
-    var(--bg-surface) 40%,
-    color-mix(in srgb, var(--accent) 6%, var(--bg-surface))
-  );
+  background: var(--bg-surface);
 }
 
 .channel-card[data-waiting='true'] {
-  border-color: color-mix(in srgb, var(--tone-warning-text) 40%, var(--border-subtle));
-  background: linear-gradient(
-    180deg,
-    var(--bg-surface) 30%,
-    color-mix(in srgb, var(--tone-warning-text) 9%, var(--bg-surface))
-  );
+  border-color: var(--border-strong, var(--accent));
 }
 
 .channel-logos {
@@ -2683,14 +2674,10 @@ h3,
 
 .channel-amount {
   margin: 0;
-  font-size: var(--font-size-xl, 1.5rem);
+  font-size: var(--font-size-2xl);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   overflow-wrap: anywhere;
-}
-
-.channel-card[data-waiting='true'] .channel-amount {
-  color: var(--tone-warning-text);
 }
 
 .channel-pill {
@@ -2701,11 +2688,6 @@ h3,
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
   font-weight: 600;
-}
-
-.channel-card[data-waiting='true'] .channel-pill {
-  background: color-mix(in srgb, var(--tone-warning-text) 16%, transparent);
-  color: var(--tone-warning-text);
 }
 
 .settlement-status-strip {
@@ -2724,7 +2706,7 @@ h3,
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
-  background: var(--bg-subtle);
+  background: var(--bg-surface);
 }
 
 .settlement-status-strip dt {
@@ -2741,24 +2723,10 @@ h3,
   margin: 0;
   padding: 0.1rem var(--space-3);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  background: var(--bg-subtle);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   text-align: center;
-}
-
-.settlement-status-strip [data-tone='info'] dd {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.settlement-status-strip [data-tone='ok'] dd {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent);
-}
-
-.settlement-status-strip [data-tone='warning'] dd {
-  background: color-mix(in srgb, var(--tone-warning-text) 22%, transparent);
-  color: var(--tone-warning-text);
 }
 
 @media (max-width: 40rem) {
@@ -4062,4 +4030,30 @@ h3,
   .finance-table tbody td:nth-child(n) {
     padding-block: var(--space-2);
   }
+}
+
+/* Provider settlements: use the full width, like Finance, with small side margins. */
+.shell-main:has(.settlement-workspace) {
+  max-width: none;
+  padding-inline: var(--space-3);
+}
+
+@media (min-width: 64rem) {
+  .shell-main:has(.settlement-workspace) {
+    padding-inline: var(--space-4);
+  }
+
+  .shell-sheet:has(.settlement-workspace) {
+    padding: var(--space-4) var(--space-4) var(--space-8);
+  }
+}
+
+@media (min-width: 64rem) {
+  .cash-workspace.settlement-workspace {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.settlement-workspace .channel-amount {
+  white-space: nowrap;
 }
