@@ -1,3 +1,8 @@
+import { PostgresJsDatabase, PostgresJsSession } from 'drizzle-orm/postgres-js';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import type { Sql } from 'postgres';
+import { preparedDrizzleClient } from '../../src/platform/db/prepared-client';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -36,7 +41,12 @@ describe.skipIf(!enabled)(
       ) {
         throw new Error('TEST_DATABASE_URL host requires explicit operator approval');
       }
-      client = postgres(url, { max: 1, prepare: false, onnotice: () => undefined });
+      client = postgres(url, {
+        max: 1,
+        prepare: process.env.DATABASE_PREPARED_STATEMENTS === '1',
+        onnotice: () => undefined,
+      });
+      if (process.env.DATABASE_PREPARED_STATEMENTS === '1') client = preparedDrizzleClient(client);
     });
     afterAll(async () => {
       await client?.end();
@@ -55,6 +65,7 @@ describe.skipIf(!enabled)(
             other = randomUUID();
           const tenants = [randomUUID(), randomUUID(), randomUUID()];
           await tx`insert into app.users (id, name) values (${actor}, 'Navigation A'), (${other}, 'Navigation B')`;
+          await tx`insert into app.auth_identities (internal_user_id,provider,provider_user_id) values (${actor},'CLERK',${'user_' + actor}),(${other},'CLERK',${'user_' + other})`;
           for (const [index, tenant] of tenants.entries()) {
             const membership = randomUUID(),
               entity = randomUUID(),
@@ -105,6 +116,39 @@ describe.skipIf(!enabled)(
         expect(
           await tx`select * from app.read_navigation_context(${randomUUID()}::uuid)`,
         ).toHaveLength(0);
+      });
+    });
+    it('combines provider identity and authority through Drizzle with reusable actor-isolated plans', async () => {
+      await fixture(async (tx, { actor, other, tenants }) => {
+        const dialect = new PgDialect();
+        const database = new PostgresJsDatabase(
+          dialect,
+          new PostgresJsSession(tx as unknown as Sql, dialect, undefined),
+          undefined,
+        );
+        const read = (providerUserId: string) =>
+          database.execute<{ internal_user_id: string; navigation_snapshot: Snapshot[] }>(sql`
+          select identity.internal_user_id, snapshot.navigation_snapshot
+          from app.resolve_auth_identity('CLERK', ${providerUserId}) identity
+          cross join lateral (
+            select coalesce(jsonb_agg(navigation), '[]'::jsonb) as navigation_snapshot
+            from app.read_navigation_context(identity.internal_user_id) navigation
+          ) snapshot
+        `);
+        const a = await read('user_' + actor);
+        expect(a[0]?.internal_user_id).toBe(actor);
+        expect(a[0]?.navigation_snapshot.map((row) => row.tenant_id).sort()).toEqual(
+          tenants.slice(0, 2).sort(),
+        );
+        const b = await read('user_' + other);
+        expect(b[0]?.internal_user_id).toBe(other);
+        expect(b[0]?.navigation_snapshot.map((row) => row.tenant_id)).toEqual([tenants[2]]);
+        expect(await read('unprovisioned')).toHaveLength(0);
+        if (process.env.DATABASE_PREPARED_STATEMENTS === '1') {
+          const plans =
+            await tx`select name from pg_prepared_statements where statement like '%from app.resolve_auth_identity%' and statement like '%jsonb_agg(navigation)%' and statement not like '%pg_prepared_statements%'`;
+          expect(plans.length).toBeGreaterThan(0);
+        }
       });
     });
     it('restores all five caller context settings inside an outer transaction', async () => {

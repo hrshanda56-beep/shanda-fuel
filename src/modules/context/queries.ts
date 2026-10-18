@@ -28,7 +28,7 @@ import type {
 } from './contracts';
 import { validateContextSelection } from './domain';
 import { resolveAvailableContext } from './resolution';
-import { readNavigationSnapshot } from './navigation-snapshot';
+import { readNavigationSnapshot, decodeNavigationSnapshot } from './navigation-snapshot';
 import { rememberLoadedMembership } from '../tenancy/authority';
 import { readPersistedContext } from './persistence';
 import {
@@ -237,7 +237,9 @@ async function discoverAvailableContextUncached(
   const actor = await requireAuthenticatedActor(request, dependencies.resolveActor, now);
   // Enable only after migration 0034 has been reviewed and applied.
   if (Object.keys(dependencies).length === 0 && process.env.CONSOLIDATED_CONTEXT_READS === '1') {
-    const snapshot = await readNavigationSnapshot(actor.identityId);
+    const snapshot = actor.navigationSnapshot
+      ? decodeNavigationSnapshot(actor.navigationSnapshot, actor.identityId)
+      : await readNavigationSnapshot(actor.identityId);
     const organisations: ContextOrganisation[] = [];
     for (const { membership, rows } of snapshot) {
       await rememberLoadedMembership(membership);

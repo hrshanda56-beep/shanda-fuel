@@ -1,5 +1,46 @@
 # Shanda Fuel — Current Status
 
+## Dashboard API read consolidation — 2026-10-18
+
+The effective driver fix now adapts the exact unsafe(query, parameters) calls
+used by Drizzle: Postgres.js otherwise defaults those calls to prepare=false,
+even when the client enables preparation. A non-mutating adapter supplies the
+per-query option on root and transaction/savepoint clients. SQL and parameters
+are passed unchanged, and all BEGIN/context/COMMIT behavior remains unchanged.
+Combining BEGIN with context establishment was rejected by automatic approval
+review and was not applied. Identity mapping and navigation authority for GETs
+are now one parameterized SELECT using the existing identity and RLS functions;
+the verified actor carries that persisted snapshot to existing binding decoders.
+Mutation authentication retains its original independent discovery behavior.
+Six rolled-back local runtime/RLS integration tests passed, including the actual
+Drizzle query path, cross-actor reuse, unprovisioned identity denial and a catalog
+assertion that a named prepared plan exists. Neon warm/cold latency remains to
+be verified through normal authenticated application requests.
+
+Further local evaluation adds DATABASE_PREPARED_STATEMENTS=1 as an explicit
+opt-in; the default runtime behavior remains prepare=false. This avoids the
+installed Postgres.js driver repeating parameter-description exchanges on warm
+prepared queries. Only the ignored local worktree environment enables it.
+Five local synthetic snapshot/RLS isolation tests passed with prepare=true.
+Operations now also batches shifts and permission-gated reconciliation data.
+For the instrumented API routes, profileSql=1 explicitly repeats selected data
+reads using EXPLAIN ANALYZE in the same RLS transaction and logs only durations.
+This diagnostic is ignored outside APP_ENV=local. Diagnostic request totals are
+not comparable to ordinary page totals because EXPLAIN executes reads again.
+Authenticated Neon timing and pooler compatibility evaluation remains pending.
+
+Operations overview and inventory read-context callers now reuse the existing
+RLS navigation snapshot for fresh membership/permission authority when
+CONSOLIDATED_CONTEXT_READS=1. Active station scope is established in the first
+data transaction context exchange; inactive/historical stations retain the
+original RLS station lookup. Operations station metadata and recent business
+days are returned in one SQL exchange. Command authorization paths are unchanged.
+Obsolete control-room effect requests are aborted; duplicate-request elimination
+has not been verified in a browser. Local-only stage timings remain temporarily
+enabled for evaluation, including separate Clerk-header and identity-mapping
+stages. No new migration or production operation is part of this change.
+Post-change authenticated latency measurements are still pending.
+
 ## Dashboard context reuse and consolidation candidate — 2026-10-18
 
 The authenticated shared shell now passes its verified discovery snapshot to a

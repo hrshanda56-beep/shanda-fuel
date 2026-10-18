@@ -171,35 +171,40 @@ export function OperationsControlRoom({
   }, [context.businessDayId, context.stationId, context.tenantId]);
 
   const load = useCallback(
-    async (preserveConflict = false) => {
+    async (preserveConflict = false, signal?: AbortSignal) => {
       setLoading(true);
       setError(undefined);
       if (!preserveConflict) setConflict(undefined);
       try {
-        const response = await fetch(endpoint, { cache: 'no-store' });
+        const response = await fetch(endpoint, { cache: 'no-store', signal });
         const body = (await response.json()) as Overview & { message?: string; error?: string };
         if (!response.ok) {
           if (response.status === 403)
             throw new Error('You do not have permission to view operations for this station.');
           throw new Error(body.message ?? 'The operations control room could not be loaded.');
         }
-        setOverview(body);
+        if (!signal?.aborted) setOverview(body);
       } catch (caught) {
+        if (signal?.aborted) return;
         setError(
           caught instanceof Error
             ? caught.message
             : 'The operations control room could not be loaded.',
         );
       } finally {
-        setLoading(false);
+        if (!signal?.aborted) setLoading(false);
       }
     },
     [endpoint],
   );
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void load(false, controller.signal), 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [load]);
 
   function stableIdempotencyKey(

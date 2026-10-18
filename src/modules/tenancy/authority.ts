@@ -1,3 +1,4 @@
+import { markReadTiming } from '../../platform/observability/read-timing';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -128,6 +129,7 @@ export async function loadTenantMembershipWithDatabase(
 ): Promise<MembershipRecord | null> {
   return database.transaction(async (transaction) => {
     await transaction.execute(sql`select set_config('app.actor_id', ${identityId}, true)`);
+    markReadTiming('authority.actor.context.ready');
     const membershipRows = (await transaction.execute(sql`
       select
         m.tenant_id,
@@ -139,6 +141,7 @@ export async function loadTenantMembershipWithDatabase(
         and m.identity_id = ${identityId}
       limit 1
     `)) as unknown as MembershipRow[];
+    markReadTiming('authority.membership.loaded');
     const row = membershipRows[0];
     if (!row) return null;
 
@@ -160,6 +163,7 @@ export async function loadTenantMembershipWithDatabase(
         set_config('app.tenant_id', ${row.tenant_id}, true),
         set_config('app.membership_id', ${row.membership_id}, true)
     `);
+    markReadTiming('authority.tenant.context.ready');
     // Both sets require the same verified tenant context. UNION ALL fetches
     // them in one round trip without joining/multiplying independent grants.
     const assignments = (await transaction.execute(sql`
@@ -178,6 +182,7 @@ export async function loadTenantMembershipWithDatabase(
         and revoked_at is null
         and expires_at > now()
     `)) as unknown as Array<RoleAssignmentRow & TemporaryGrantRow & { kind: 'role' | 'grant' }>;
+    markReadTiming('authority.permissions.loaded');
     const roleRows = assignments.filter((row) => row.kind === 'role');
     const grantRows = assignments.filter((row) => row.kind === 'grant');
 

@@ -10,6 +10,8 @@ import { resolveClerkSession, revokeClerkUserSessions } from '../../platform/aut
 /** Clerk authenticates identity; Shanda Fuel resolves business authority. */
 export type AuthenticatedActorContext = {
   identityId: string;
+  /** Persisted authority fetched with identity for this GET only; validated by context readers. */
+  navigationSnapshot?: unknown[];
   session: SessionRecord;
 };
 
@@ -39,6 +41,9 @@ export async function resolveAuthenticatedActor(
   assertSessionActive(session, now);
   return {
     identityId: providerSession.internalUserId,
+    ...(providerSession.navigationSnapshot
+      ? { navigationSnapshot: providerSession.navigationSnapshot }
+      : {}),
     session: invalidateExpiredAssurance(session, now),
   };
 }

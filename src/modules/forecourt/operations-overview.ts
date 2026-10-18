@@ -1,3 +1,4 @@
+import { markReadTiming, profileDatabaseRead } from '../../platform/observability/read-timing';
 import 'server-only';
 
 import { sql } from 'drizzle-orm';
@@ -18,7 +19,7 @@ import { deriveBusinessDate } from '../../platform/domain/business-time';
 import { projectOperationsStatus } from './operations-status';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { type AuthenticatedActorContext } from '../identity';
-import { resolveTenantExecutionContext } from '../tenancy/authority';
+import { resolveStationReadAuthority } from '../context/read-authority';
 
 const uuid = z.string().uuid();
 
@@ -145,18 +146,26 @@ export async function getOperationsOverviewFromRequest(
   input: OperationsOverviewInput,
   authenticatedActor?: AuthenticatedActorContext,
 ) {
-  const authority = await resolveTenantExecutionContext({
+  const { authority, station: snapshotStation } = await resolveStationReadAuthority({
     request,
-    requestedTenantId: input.tenantId,
+    tenantId: input.tenantId,
+    stationId: input.stationId,
     ...(authenticatedActor ? { authenticatedActor } : {}),
   });
 
-  return withTenantTransaction(authority.transaction, async (transaction) => {
-    const station = await loadForecourtStationInTransaction(
-      transaction,
-      authority,
-      input.stationId,
-    );
+  markReadTiming('operations.authority.ready');
+  const transactionContext = snapshotStation
+    ? createTrustedTenantTransactionContext({
+        ...authority.transaction,
+        legalEntityId: snapshotStation.legalEntityId,
+        stationId: snapshotStation.id,
+      })
+    : authority.transaction;
+  return withTenantTransaction(transactionContext, async (transaction) => {
+    markReadTiming('operations.transaction.context.ready');
+    const station =
+      snapshotStation ??
+      (await loadForecourtStationInTransaction(transaction, authority, input.stationId));
     if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
 
     const context = createForecourtCommandContext({
@@ -170,7 +179,9 @@ export async function getOperationsOverviewFromRequest(
       },
       station,
     });
-    await applyStationTransactionContext(transaction, context);
+    markReadTiming('operations.station.loaded');
+    if (!snapshotStation) await applyStationTransactionContext(transaction, context);
+    markReadTiming('operations.station.context.ready');
 
     authorize({
       actor: context.authority.authorization,
@@ -202,7 +213,7 @@ async function loadOperationsOverview(
     canViewReconciliations: boolean;
   },
 ) {
-  const stationRows = await transaction.execute<{
+  const stationRows = await profileDatabaseRead<{
     id: string;
     code: string;
     name: string;
@@ -210,28 +221,33 @@ async function loadOperationsOverview(
     tenantId: string;
     tenantName: string;
     now: Date | string;
-  }>(sql`
+    days: BusinessDayRow[];
+  }>(
+    transaction,
+    sql`
     select s.id, s.code, s.name, s.timezone,
-           t.id as "tenantId", t.name as "tenantName", clock_timestamp() as now
+           t.id as "tenantId", t.name as "tenantName", clock_timestamp() as now,
+      coalesce((select json_agg(recent_days) from (
+        select id, business_date as date, state, version,
+          opened_at as "openedAt", closed_at as "closedAt",
+          created_at as "createdAt", updated_at as "updatedAt"
+        from app.station_business_days
+        where tenant_id = s.tenant_id and station_id = s.id
+        order by business_date desc limit 30
+      ) recent_days), '[]'::json) as days
     from app.stations s
     join app.tenants t on t.id = s.tenant_id
     where s.tenant_id=${context.tenantId} and s.id=${context.stationId}
-  `);
+  `,
+  );
+  markReadTiming('operations.station.details.loaded');
   const station = stationRows[0];
   if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
 
   const currentBusinessDate = deriveBusinessDate(station.now, station.timezone);
 
-  const days = await transaction.execute<BusinessDayRow>(sql`
-    select id, business_date as date, state, version,
-           opened_at as "openedAt", closed_at as "closedAt",
-           created_at as "createdAt", updated_at as "updatedAt"
-    from app.station_business_days
-    where tenant_id=${context.tenantId} and station_id=${context.stationId}
-    order by business_date desc
-    limit 30
-  `);
-
+  const days = station.days;
+  markReadTiming('operations.business.days.loaded');
   let selectedDay: BusinessDayRow | null;
   if (input.businessDayId) {
     const recentDay = days.find((day) => day.id === input.businessDayId);
@@ -278,7 +294,7 @@ async function loadOperationsOverview(
     };
   }
 
-  const shifts = await transaction.execute<{
+  type ShiftRow = {
     id: string;
     state: string;
     businessDate: string;
@@ -290,7 +306,22 @@ async function loadOperationsOverview(
     completedAt: Date | string | null;
     notOperatedReason: string | null;
     attendantCount: number | string;
-  }>(sql`
+  };
+  type ReconciliationRow = {
+    id: string;
+    shiftId: string | null;
+    state: string;
+    version: number | string;
+    createdAt: Date | string;
+    updatedAt: Date | string;
+    submittedAt: Date | string | null;
+    returnedAt: Date | string | null;
+    approvedAt: Date | string | null;
+    returnReason: string | null;
+    revision: number | string | null;
+    revisionState: string | null;
+  };
+  const shiftQuery = sql`
     select s.id, s.state, s.business_date as "businessDate",
            s.planned_start_at as "plannedStartAt", s.planned_end_at as "plannedEndAt",
            s.version, s.opened_at as "openedAt", s.meter_closed_at as "meterClosedAt",
@@ -305,23 +336,9 @@ async function loadOperationsOverview(
       and s.business_day_id=${selectedDay.id}
     group by s.id
     order by s.planned_start_at, s.id
-  `);
-
-  const reconciliations = permissions.canViewReconciliations
-    ? await transaction.execute<{
-        id: string;
-        shiftId: string | null;
-        state: string;
-        version: number | string;
-        createdAt: Date | string;
-        updatedAt: Date | string;
-        submittedAt: Date | string | null;
-        returnedAt: Date | string | null;
-        approvedAt: Date | string | null;
-        returnReason: string | null;
-        revision: number | string | null;
-        revisionState: string | null;
-      }>(sql`
+`;
+  const reconciliationQuery = permissions.canViewReconciliations
+    ? sql`
     select r.id, r.shift_id as "shiftId", r.state, r.version,
            r.created_at as "createdAt", r.updated_at as "updatedAt",
            r.submitted_at as "submittedAt", r.returned_at as "returnedAt",
@@ -340,8 +357,24 @@ async function loadOperationsOverview(
     where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId}
       and r.business_day_id=${selectedDay.id}
     order by r.updated_at desc, r.id
-  `)
-    : [];
+`
+    : sql`select null as unavailable where false`;
+  const sections = await profileDatabaseRead<{
+    shifts: ShiftRow[];
+    reconciliations: ReconciliationRow[];
+  }>(
+    transaction,
+    sql`
+    with shift_rows as (${shiftQuery}), reconciliation_rows as (${reconciliationQuery})
+    select coalesce((select json_agg(shift_rows) from shift_rows), '[]'::json) as shifts,
+      coalesce((select json_agg(reconciliation_rows) from reconciliation_rows), '[]'::json) as reconciliations
+  `,
+  );
+  const section = sections[0];
+  if (!section) throw new AppError('INVARIANT_VIOLATION', 'Operations sections were not returned');
+  const { shifts, reconciliations } = section;
+  markReadTiming('operations.shifts.loaded');
+  markReadTiming('operations.reconciliations.loaded');
 
   return {
     station: { id: station.id, code: station.code, name: station.name, timezone: station.timezone },

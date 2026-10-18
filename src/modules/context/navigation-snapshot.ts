@@ -71,6 +71,12 @@ export function decodeNavigationMembership(input: unknown, actorId: string): Mem
     ),
   };
 }
+export function decodeNavigationSnapshot(rows: unknown[], actorId: string) {
+  return rows.map((input) => {
+    const membership = decodeNavigationMembership(input, actorId);
+    return { membership, rows: snapshotSchema.parse(input).context_rows };
+  });
+}
 const snapshotRead = Symbol('navigation-context-snapshot');
 export function readNavigationSnapshot(
   actorId: string,
@@ -79,9 +85,6 @@ export function readNavigationSnapshot(
     const rows = await getDatabase().execute(
       sql`select * from app.read_navigation_context(${actorId}::uuid)`,
     );
-    return rows.map((input) => {
-      const membership = decodeNavigationMembership(input, actorId);
-      return { membership, rows: snapshotSchema.parse(input).context_rows };
-    });
+    return decodeNavigationSnapshot(rows, actorId);
   });
 }

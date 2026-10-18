@@ -1,3 +1,5 @@
+import { profileDatabaseRead } from '../../platform/observability/read-timing';
+import type { AuthenticatedActorContext } from '../identity';
 import 'server-only';
 
 import { sql } from 'drizzle-orm';
@@ -224,7 +226,11 @@ function capabilities(context: Awaited<ReturnType<typeof resolveInventoryCommand
   };
 }
 
-export async function getInventoryValuationReadModel(request: Request, input: unknown) {
+export async function getInventoryValuationReadModel(
+  request: Request,
+  input: unknown,
+  authenticatedActor?: AuthenticatedActorContext,
+) {
   const parsed = querySchema.parse(input);
   const tankFilter = parsed.tankId ? sql`and s.tank_id = ${parsed.tankId}::uuid` : sql``;
   const productFilter = parsed.productId
@@ -261,12 +267,14 @@ export async function getInventoryValuationReadModel(request: Request, input: un
     `;
       // One database message for the independent sections; numeric values stay text.
       // Tank cards do not need sales, creditors, providers, expenses or movement IDs.
-      const rows = await transaction.execute<{
+      const rows = await profileDatabaseRead<{
         streams: DbRow[];
         revaluations: DbRow[];
         tanks: Array<Record<string, string | null>>;
         business_date: string;
-      }>(sql`
+      }>(
+        transaction,
+        sql`
       with streams as (${streamQuery}), revaluations as (${revaluationQuery}),
       tanks as (
         select t.station_id::text as "stationId", t.id::text as "tankId",
@@ -300,7 +308,8 @@ export async function getInventoryValuationReadModel(request: Request, input: un
         coalesce((select json_agg(revaluations) from revaluations), '[]'::json) as revaluations,
         coalesce((select json_agg(tanks) from tanks), '[]'::json) as tanks,
         (now() at time zone ${context.stationTimezone})::date::text as business_date
-    `);
+    `,
+      );
       const snapshot = rows[0];
       if (!snapshot)
         throw new AppError('INVARIANT_VIOLATION', 'Inventory snapshot was not returned');
@@ -315,6 +324,7 @@ export async function getInventoryValuationReadModel(request: Request, input: un
         },
       };
     },
+    authenticatedActor,
   );
 }
 

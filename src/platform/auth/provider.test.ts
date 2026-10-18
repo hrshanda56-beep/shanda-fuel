@@ -97,3 +97,36 @@ describe('Clerk session boundary', () => {
     expect(session?.stepUpAction).toBeUndefined();
   });
 });
+
+it('returns identity and persisted GET authority from one parameterized database call', async () => {
+  vi.stubEnv('CONSOLIDATED_CONTEXT_READS', '1');
+  mocks.getAuth.mockReturnValue({
+    isAuthenticated: true,
+    userId: 'user_combined',
+    sessionId: 'sess_combined',
+    sessionClaims: { exp: 2100000000 },
+  });
+  const snapshot: unknown[] = [];
+  mocks.execute.mockResolvedValue([
+    { internal_user_id: '11111111-1111-4111-8111-111111111111', navigation_snapshot: snapshot },
+  ]);
+  const session = await resolveClerkSession(new Request('http://localhost/api/probe'));
+  expect(session?.navigationSnapshot).toBe(snapshot);
+  expect(mocks.execute).toHaveBeenCalledTimes(1);
+  expect(mocks.transaction).not.toHaveBeenCalled();
+});
+it('keeps mutation authentication separate from navigation discovery', async () => {
+  vi.stubEnv('CONSOLIDATED_CONTEXT_READS', '1');
+  mocks.getAuth.mockReturnValue({
+    isAuthenticated: true,
+    userId: 'user_mutation',
+    sessionId: 'sess_mutation',
+    sessionClaims: { exp: 2100000000 },
+  });
+  mocks.execute.mockResolvedValue([{ internal_user_id: '11111111-1111-4111-8111-111111111111' }]);
+  const session = await resolveClerkSession(
+    new Request('http://localhost/api/probe', { method: 'POST' }),
+  );
+  expect(session?.navigationSnapshot).toBeUndefined();
+  expect(mocks.execute).toHaveBeenCalledTimes(1);
+});

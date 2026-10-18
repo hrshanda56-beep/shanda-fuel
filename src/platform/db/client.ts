@@ -1,3 +1,4 @@
+import { preparedDrizzleClient } from './prepared-client';
 import 'server-only';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
@@ -14,8 +15,16 @@ export function getDatabase(): Database {
   if (pooledDatabase) return pooledDatabase;
 
   const url = assertDatabaseConfigured();
-  pooledClient = postgres(url, { max: 10, prepare: false, onnotice: () => undefined });
-  pooledDatabase = drizzle(pooledClient, { schema });
+  pooledClient = postgres(url, {
+    max: 10,
+    prepare: process.env.DATABASE_PREPARED_STATEMENTS === '1',
+    onnotice: () => undefined,
+  });
+  const queryClient =
+    process.env.DATABASE_PREPARED_STATEMENTS === '1'
+      ? preparedDrizzleClient(pooledClient)
+      : pooledClient;
+  pooledDatabase = drizzle(queryClient, { schema });
   return pooledDatabase;
 }
 

@@ -1,3 +1,4 @@
+import { markReadTiming } from '../observability/read-timing';
 import 'server-only';
 
 import { clerkClient, getAuth as getClerkAuth } from '@clerk/nextjs/server';
@@ -16,6 +17,7 @@ export type ProviderSession = {
   provider: AuthProviderName;
   providerUserId: string;
   internalUserId: string;
+  navigationSnapshot?: unknown[];
   providerSessionId: string;
   expiresAt: Date;
   strongAuthenticatedAt?: Date;
@@ -44,17 +46,32 @@ const identityRead = Symbol('clerk-internal-identity');
 
 export async function resolveClerkSession(request: Request): Promise<ProviderSession | null> {
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
+  markReadTiming('identity.clerk.headers.ready');
   if (!auth.isAuthenticated || !auth.userId || !auth.sessionId) return null;
 
   // The reviewed identity capability takes explicit provider/user arguments and
   // uses its owner-only RLS policy. It does not read connection-local context.
   // Do not spend BEGIN/context/COMMIT round trips for this single read.
+  const includeSnapshot =
+    request.method === 'GET' && process.env.CONSOLIDATED_CONTEXT_READS === '1';
   const rows = await memoizeRequestRead(identityRead, auth.userId, () =>
-    getDatabase().execute<{ internal_user_id: string }>(sql`
+    getDatabase().execute<{ internal_user_id: string; navigation_snapshot?: unknown[] }>(
+      includeSnapshot
+        ? sql`
+      select identity.internal_user_id, snapshot.navigation_snapshot
+      from app.resolve_auth_identity('CLERK', ${auth.userId}) identity
+      cross join lateral (
+        select coalesce(jsonb_agg(navigation), '[]'::jsonb) as navigation_snapshot
+        from app.read_navigation_context(identity.internal_user_id) navigation
+      ) snapshot
+    `
+        : sql`
       select internal_user_id
       from app.resolve_auth_identity('CLERK', ${auth.userId})
-    `),
+    `,
+    ),
   );
+  markReadTiming('identity.database.mapping.ready');
   const identity = rows[0]?.internal_user_id ?? null;
 
   if (!identity) {
@@ -101,6 +118,7 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
     provider: 'CLERK',
     providerUserId: auth.userId,
     internalUserId: identity,
+    ...(rows[0]?.navigation_snapshot ? { navigationSnapshot: rows[0].navigation_snapshot } : {}),
     providerSessionId: auth.sessionId,
     expiresAt,
     strongAuthenticatedAt: effectiveStrongAuthenticatedAt,
