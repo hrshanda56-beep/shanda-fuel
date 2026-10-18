@@ -91,8 +91,10 @@ async function postInventoryCommand(
   );
 }
 
-async function readReconciliation(reconciliationId: string) {
-  const signedToken = 'a5-supervisor-session-token';
+async function readReconciliation(
+  reconciliationId: string,
+  signedToken = 'a5-supervisor-session-token',
+) {
   return reconciliationGet(
     new Request(
       `http://127.0.0.1:3000/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
@@ -2010,6 +2012,15 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
     `);
     expect(rows).toEqual([{ state: 'SUBMITTED' }]);
+    // The review page hides Approve from the submitter, but not from another approver.
+    const asSubmitter = (await (
+      await readReconciliation(reconciliationId, 'a5-manager-session-token')
+    ).json()) as { approvalBlocked?: boolean };
+    expect(asSubmitter.approvalBlocked).toBe(true);
+    const asOther = (await (
+      await readReconciliation(reconciliationId, 'a5-approver-session-token')
+    ).json()) as { approvalBlocked?: boolean };
+    expect(asOther.approvalBlocked).toBe(false);
   });
 
   it('lists a waiting reconciliation in the finance action center, flagged for its submitter', async () => {

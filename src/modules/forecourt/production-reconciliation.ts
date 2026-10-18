@@ -1284,9 +1284,28 @@ export async function getProductionReconciliationFromRequest(
         ),
       ]);
     const metrics = await loadMetrics(transaction, context, input.reconciliationId);
+    // Tells the review page to hide Approve from the person who submitted the day, using the same
+    // rule the approve command enforces.
+    const submitter = await transaction.execute<{ submitted_by: string | null }>(sql`
+      select submitted_by
+      from app.reconciliations
+      where tenant_id=${context.tenantId}
+        and station_id=${context.stationId}
+        and id=${input.reconciliationId}
+    `);
+    const approvalBlocked =
+      header.state === 'SUBMITTED' &&
+      submitter[0]?.submitted_by === context.actor.membershipId &&
+      (await hasAlternateApprover(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        excludeMembershipId: context.actor.membershipId,
+        permission: 'reconciliation.approve',
+      }));
     return {
       ...header,
       version: Number(header.version),
+      approvalBlocked,
       attendants,
       readings,
       payments,
