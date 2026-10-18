@@ -75,6 +75,17 @@ function isPositiveDecimal(value: string): boolean {
     .some((digit) => digit !== '0');
 }
 
+function toScaled(value: string): bigint {
+  const [whole = '0', fraction = ''] = value.trim().split('.');
+  return BigInt(whole + fraction.padEnd(4, '0').slice(0, 4));
+}
+
+/** The most one allocation can be: the smaller of the two amounts still left. */
+function suggestedAmount(paymentLeft: string, settlementLeft: string): string {
+  const smaller = toScaled(paymentLeft) < toScaled(settlementLeft) ? paymentLeft : settlementLeft;
+  return isPositiveDecimal(smaller) ? smaller : '';
+}
+
 function settlementTone(state: ProviderSettlementSummaryRow['state']) {
   switch (state) {
     case 'RECONCILED':
@@ -126,6 +137,28 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
     () => settlements.find((row) => row.settlementId === settlementId),
     [settlements, settlementId],
   );
+  const selectedPayment = useMemo(
+    () => unmatched.find((row) => row.paymentId === paymentId),
+    [unmatched, paymentId],
+  );
+
+  function chooseMatch(nextSettlementId: string, nextPaymentId: string) {
+    const settlement = settlements.find((row) => row.settlementId === nextSettlementId);
+    const payment = unmatched.find((row) => row.paymentId === nextPaymentId);
+    setSettlementId(nextSettlementId);
+    setPaymentId(nextPaymentId);
+    setAmount(
+      settlement && payment
+        ? suggestedAmount(payment.unallocatedAmount, settlement.unallocatedProviderAmount)
+        : '',
+    );
+    setAmountError(undefined);
+  }
+
+  function openMatch(forPaymentId?: string) {
+    chooseMatch(settlementId, forPaymentId ?? paymentId);
+    setMatchOpen(true);
+  }
 
   const applySettlementData = useCallback(
     (data: {
@@ -137,7 +170,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       setSettlementId((current) =>
         data.settlements.some((row) => row.settlementId === current)
           ? current
-          : (data.settlements[0]?.settlementId ?? ''),
+          : ((data.settlements.find((row) => row.state !== 'RECONCILED') ?? data.settlements[0])
+              ?.settlementId ?? ''),
       );
       setPaymentId((current) =>
         data.unmatched.some((row) => row.paymentId === current)
@@ -563,7 +597,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           <LoadingState label="Loading settlement summary" />
         )}
         <div className="cash-action-bar">
-          <Button aria-haspopup="dialog" onClick={() => setMatchOpen(true)} disabled={!canMatch}>
+          <Button aria-haspopup="dialog" onClick={() => openMatch()} disabled={!canMatch}>
             Match a payment
           </Button>
           <Button
@@ -601,7 +635,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               <Select
                 id="settlement"
                 value={settlementId}
-                onChange={(event) => setSettlementId(event.target.value)}
+                onChange={(event) => chooseMatch(event.target.value, paymentId)}
                 options={settlements.map((row) => ({
                   value: row.settlementId,
                   label: `${row.providerName} · ${row.settlementReference} · ${money(row.unallocatedProviderAmount, row.currency)} left`,
@@ -613,7 +647,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               <Select
                 id="payment"
                 value={paymentId}
-                onChange={(event) => setPaymentId(event.target.value)}
+                onChange={(event) => chooseMatch(settlementId, event.target.value)}
                 options={unmatched.map((row) => ({
                   value: row.paymentId,
                   label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
@@ -624,7 +658,11 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             <Field
               id="allocation-amount"
               label="Allocation amount"
-              hint="Up to the amount left on both the payment and the settlement."
+              hint={
+                selectedPayment && selectedSettlement
+                  ? `Payment has ${money(selectedPayment.unallocatedAmount)} left. Settlement has ${money(selectedSettlement.unallocatedProviderAmount, selectedSettlement.currency)} left.`
+                  : 'Up to the amount left on both.'
+              }
               error={amountError}
               required
             >
@@ -687,10 +725,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             <h2 id="settlements-title">Provider Settlements</h2>
           </div>
         </div>
-        <p className="field-hint">
-          EcoCash and card (POS) payments are matched here, separately from cash and bank deposits.
-          A provider may settle a few days after the sale.
-        </p>
+        <p className="field-hint">Providers often pay a few days after the sale.</p>
         {matchOpen ? null : stateNotice}
         {message && !matchOpen ? (
           <p role="status" aria-live="polite">
@@ -892,7 +927,23 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               </thead>
               <tbody>
                 {unmatched.map((row) => (
-                  <tr key={row.paymentId}>
+                  <tr
+                    key={row.paymentId}
+                    className={canMatch ? 'row-action' : undefined}
+                    onClick={canMatch ? () => openMatch(row.paymentId) : undefined}
+                    onKeyDown={
+                      canMatch
+                        ? (event) => {
+                            if (event.target !== event.currentTarget) return;
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              openMatch(row.paymentId);
+                            }
+                          }
+                        : undefined
+                    }
+                    tabIndex={canMatch ? 0 : undefined}
+                  >
                     <th scope="row" data-label="Method / reference">
                       <strong>{methodLabel(row.method)}</strong>
                       <br />

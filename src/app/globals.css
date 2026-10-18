@@ -4057,3 +4057,12 @@ h3,
 .settlement-workspace .channel-amount {
   white-space: nowrap;
 }
+
+.settlement-workspace .data-table tr.row-action {
+  cursor: pointer;
+}
+
+.settlement-workspace .data-table tr.row-action:hover,
+.settlement-workspace .data-table tr.row-action:focus-visible {
+  background: var(--bg-subtle);
+}
