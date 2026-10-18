@@ -129,6 +129,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [matchOpen, setMatchOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'exceptions'>('all');
   const [pendingReconciliationId, setPendingReconciliationId] = useState('');
   const [reconciliationReason, setReconciliationReason] = useState('');
   const attemptKeys = useRef(new Map<string, AttemptKeys>());
@@ -514,6 +515,13 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
 
   const methods = methodTotals(unmatched);
   const counts = settlementCounts(settlements);
+  const visibleSettlements = settlements.filter((row) =>
+    statusFilter === 'open'
+      ? row.state !== 'RECONCILED'
+      : statusFilter === 'exceptions'
+        ? row.state === 'EXCEPTION'
+        : true,
+  );
   const shares = providerShares(settlements);
   const dataReady = !loading && !error;
   const canMatch = dataReady && unmatched.length > 0 && settlements.length > 0 && Boolean(context);
@@ -555,12 +563,11 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             <ul className="channel-cards" aria-label="Payments waiting to match">
               {(['ECOCASH', 'POS'] as const).map((method) => {
                 const total = methods.find((row) => row.method === method);
-                return (
-                  <li
-                    key={method}
-                    className="channel-card"
-                    data-waiting={total ? 'true' : undefined}
-                  >
+                const target = unmatched.find((row) => row.method === method);
+                const actionable = canMatch && Boolean(total) && Boolean(target);
+                const label = method === 'ECOCASH' ? 'EcoCash' : 'card';
+                const content = (
+                  <>
                     <div className="channel-logos">
                       {method === 'ECOCASH' ? (
                         <EcoCashMark />
@@ -578,20 +585,79 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                         ? `${total.count} ${total.count === 1 ? 'payment' : 'payments'}`
                         : 'Cleared'}
                     </span>
+                  </>
+                );
+                return (
+                  <li key={method}>
+                    {actionable ? (
+                      <button
+                        type="button"
+                        className="channel-card channel-card-action"
+                        data-waiting="true"
+                        aria-haspopup="dialog"
+                        aria-label={`Match ${label} payments, ${money(total?.remaining ?? '0')} to match`}
+                        onClick={() => openMatch(target?.paymentId)}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <div className="channel-card" data-waiting={total ? 'true' : undefined}>
+                        {content}
+                      </div>
+                    )}
                   </li>
                 );
               })}
             </ul>
-            <dl className="settlement-status-strip" aria-label="Settlement summary">
-              <div data-tone={counts.open > 0 ? 'info' : undefined}>
-                <dt>Open settlements</dt>
-                <dd>{counts.open}</dd>
-              </div>
-              <div data-tone={counts.exceptions > 0 ? 'warning' : 'ok'}>
-                <dt>Exceptions</dt>
-                <dd>{counts.exceptions}</dd>
-              </div>
-            </dl>
+            <ul className="settlement-status-strip" aria-label="Settlement summary">
+              {(
+                [
+                  { key: 'open', label: 'Open settlements', count: counts.open },
+                  { key: 'exceptions', label: 'Exceptions', count: counts.exceptions },
+                ] as const
+              ).map((tile) => {
+                const tone =
+                  tile.key === 'exceptions'
+                    ? counts.exceptions > 0
+                      ? 'warning'
+                      : 'ok'
+                    : counts.open > 0
+                      ? 'info'
+                      : undefined;
+                const inner = (
+                  <>
+                    <span className="status-label">{tile.label}</span>
+                    <span className="status-count">{tile.count}</span>
+                  </>
+                );
+                return (
+                  <li key={tile.key}>
+                    {tile.count > 0 ? (
+                      <button
+                        type="button"
+                        className="status-tile status-tile-action"
+                        data-tone={tone}
+                        aria-pressed={statusFilter === tile.key}
+                        aria-label={`Show ${tile.label.toLowerCase()}, ${tile.count}`}
+                        onClick={() => {
+                          setStatusFilter(tile.key);
+                          setExpandedId(null);
+                          document
+                            .getElementById('settlements-title')
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                      >
+                        {inner}
+                      </button>
+                    ) : (
+                      <div className="status-tile" data-tone={tone}>
+                        {inner}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         ) : (
           <LoadingState label="Loading settlement summary" />
@@ -726,6 +792,15 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           </div>
         </div>
         <p className="field-hint">Providers often pay a few days after the sale.</p>
+        {statusFilter !== 'all' ? (
+          <p className="filter-chip" role="status">
+            Showing {statusFilter === 'open' ? 'open settlements' : 'exceptions'} (
+            {visibleSettlements.length})
+            <button type="button" onClick={() => setStatusFilter('all')}>
+              Show all
+            </button>
+          </p>
+        ) : null}
         {matchOpen ? null : stateNotice}
         {message && !matchOpen ? (
           <p role="status" aria-live="polite">
@@ -750,7 +825,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               <span />
             </div>
             <ul className="list-rows" aria-label="Provider settlement reconciliation">
-              {settlements.map((row) => {
+              {visibleSettlements.map((row) => {
                 const isPendingReason = pendingReconciliationId === row.settlementId;
                 const open = expandedId === row.settlementId;
                 const hasVariance = !isZeroAmount(row.varianceAmount);
