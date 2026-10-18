@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from 'react';
 
+import { stepUpIsNeeded } from './step-up-needed';
+
 /** Where a share or export is aimed: one report, its stations and a resolved period. */
 export type ReportActionTarget = Readonly<{
   tenantId: string;
@@ -102,7 +104,7 @@ export function useReportActions() {
       if (!response.ok) {
         const message = await errorMessage(response, 'The export could not be created.');
         // A missing step-up is recoverable: confirm identity once, then retry the same export.
-        if (response.status === 403 && !afterStepUp && /step-up/i.test(message)) {
+        if (!afterStepUp && stepUpIsNeeded(response.status, message)) {
           setStepUpFor(target);
           return;
         }
