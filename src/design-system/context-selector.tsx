@@ -116,6 +116,18 @@ export function ContextSelector({
   }
 
   async function submit(selection: ContextSelection, key: string) {
+    // Tapping where you already are should simply close the sheet, never look like a dead button.
+    const current = state.status === 'ready' ? state.resolution.current : null;
+    if (
+      current &&
+      current.organisationId === selection.organisationId &&
+      current.allStations === selection.allStations &&
+      (current.stationId ?? null) === (selection.stationId ?? null) &&
+      (selection.legalEntityId === undefined || current.legalEntityId === selection.legalEntityId)
+    ) {
+      onClose();
+      return;
+    }
     setPendingKey(key);
     setSubmitting(true);
     setSubmitError(null);
@@ -408,7 +420,7 @@ function ContextOption({
         aria-current={selected || undefined}
         data-selected={selected || undefined}
         disabled={disabled}
-        onClick={selected ? undefined : onSelect}
+        onClick={onSelect}
       >
         <span className="context-selector-option-text">
           <span className="context-selector-option-title">{title}</span>
