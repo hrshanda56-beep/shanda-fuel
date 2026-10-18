@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Icon, type IconName } from '@/design-system/icons';
-import { AccessDeniedState, ContextRequiredState } from '@/design-system/primitives';
+import { AccessDeniedState } from '@/design-system/primitives';
 import { PageContainer } from '@/design-system/layout';
 
 import type { SettingsView } from '../contracts';
@@ -82,8 +82,7 @@ function AccountPanel({ view }: { view: SettingsView }) {
             {initialsOf(view.account.name)}
           </span>
           <p className={styles.note}>
-            Your name and email come from your sign-in account. Ask your administrator to change
-            them.
+            Your name and email come from your sign-in account and are read-only here.
           </p>
         </div>
         <Fields
@@ -167,6 +166,29 @@ export function SettingsSectionMenu({
   );
 }
 
+export function SettingsStations({ context }: { context: SettingsView['context'] }) {
+  const stations = context.selectedStation ? [context.selectedStation] : (context.stations ?? []);
+  return (
+    <Section headingId="stations" title={context.selectedStation ? 'Station details' : 'Stations'}>
+      {stations.length ? (
+        stations.map((station) => (
+          <section key={station.id}>
+            <h3>{station.name}</h3>
+            <Fields
+              items={[
+                { label: 'Code', value: station.code },
+                { label: 'Time zone', value: station.timezone },
+              ]}
+            />
+          </section>
+        ))
+      ) : (
+        <p className={styles.note}>No stations are available to your account in this selection.</p>
+      )}
+    </Section>
+  );
+}
+
 export function SettingsWorkspace({ view }: { view: SettingsView }) {
   const [tab, setTab] = useState<Tab>('organisation');
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
@@ -189,10 +211,14 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
     );
   }
 
-  const visibleTabs = TABS.filter(
-    (item) =>
-      (item.value !== 'staff' && item.value !== 'readiness' && item.value !== 'payments') ||
-      view.staff?.canManage,
+  const visibleTabs = TABS.filter((item) =>
+    item.value === 'staff'
+      ? Boolean(view.staff?.canManage)
+      : item.value === 'readiness'
+        ? Boolean(view.access?.canViewReadiness)
+        : item.value === 'payments'
+          ? Boolean(view.access?.canViewPayments)
+          : true,
   );
   const active = visibleTabs.find((item) => item.value === tab) ?? visibleTabs[0]!;
   const { selectedStation, legalEntities } = view.context;
@@ -219,11 +245,9 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
         <div className={styles.content}>
           <header className={styles.contentHeader}>
             <h2 className={styles.contentTitle}>{active.label}</h2>
-            {tab === 'staff' ? null : (
-              <p className={styles.note}>
-                You can look at these details here. Ask your administrator to change them.
-              </p>
-            )}
+            {['organisation', 'companies', 'stations'].includes(tab) ? (
+              <p className={styles.note}>These details are read-only on this screen.</p>
+            ) : null}
           </header>
 
           {tab === 'organisation' ? (
@@ -247,28 +271,11 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
             </Section>
           ) : null}
 
-          {tab === 'stations' ? (
-            selectedStation ? (
-              <Section headingId="stations" title="Station details">
-                <Fields
-                  items={[
-                    { label: 'Name', value: selectedStation.name },
-                    { label: 'Code', value: selectedStation.code },
-                    { label: 'Time zone', value: selectedStation.timezone },
-                  ]}
-                />
-              </Section>
-            ) : (
-              <ContextRequiredState
-                title="Choose a station"
-                message="Pick a station at the top of the page to see its details."
-              />
-            )
-          ) : null}
+          {tab === 'stations' ? <SettingsStations context={view.context} /> : null}
 
-          {tab === 'readiness' && view.staff?.canManage ? <ReadinessPanel /> : null}
+          {tab === 'readiness' && view.access?.canViewReadiness ? <ReadinessPanel /> : null}
 
-          {tab === 'payments' && view.staff?.canManage ? <PaymentsPanel /> : null}
+          {tab === 'payments' && view.access?.canViewPayments ? <PaymentsPanel /> : null}
 
           {tab === 'staff' && view.staff?.canManage ? (
             <StaffPanel

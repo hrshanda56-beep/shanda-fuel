@@ -1066,3 +1066,18 @@ Narrow Settings workspaces now replace wrapping section buttons with a labelled 
 ### 2026-10-18 — Final Settings navigation scope correction
 
 The styled icon/name/chevron section disclosure is mobile-only (viewport <= 48rem). Above that breakpoint, original desktop section navigation is retained. Four responsive checks assert mobile disclosure visibility and desktop navigation preservation. Combined unit suite: 1,046 passed; type checks and focused lint passed. Production build passed before the final CSS-only desktop correction; the release validation reruns it. These fixture checks do not replace authenticated acceptance or development-database validation of the staff query.
+
+
+### Settings authorized stations and section capabilities — 18 October 2026
+
+Settings now projects the authorized context station tree into its existing DTO, listing stations when no individual station is selected and retaining selected-station details. Station metadata remains read-only in this screen; generic instructions to ask an administrator were removed, including the account profile guidance. Readiness and Payments tab visibility reuse the setup service's existing permission projection rather than membership invitation rights. No schema, role grants, or database changes were made; no extra database request was introduced. Focused Settings/setup/staff tests (40) and TypeScript/lint checks passed. Live signed-in grant verification and database isolation execution were not performed; source inspection of related endpoints is not a complete authorization audit.
+
+
+### Collapsed sidebar tooltip clipping — 18 October 2026
+
+Navigation labels in rail mode now render through a body portal beyond the sidebar frame, avoiding the navigation scroll container's clipping. Expanded navigation retains its normal inline labels. Hover and keyboard focus show labels; Escape, blur, pointer departure, wheel/touch movement, resize and clicks dismiss them. Browser fixture checks passed at 1113px and 1440px; TypeScript, focused lint and diff checks passed. No authorization, database or navigation destination changes. No production contact or push.
+
+
+### Collapsed rail active-item inset — 18 October 2026
+
+Rail mode now removes expanded-navigation horizontal padding and reserved scrollbar gutter, centres 44px destination surfaces within available width, and preserves an inset from the frame and scrolling region. Expanded desktop and mobile navigation are unchanged. Browser regression checks passed at 1113, 1213 and 1440px, covering active-item bounds plus existing hover/focus tooltip behavior. Focused lint and diff checks passed. No production contact, commit or push.

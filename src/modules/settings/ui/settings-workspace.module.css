@@ -405,13 +405,14 @@
 .staffTable {
   display: grid;
   min-width: 0;
+  overflow-x: auto;
 }
 
 .staffHead,
 .staffTableRow {
   display: grid;
   grid-template-columns:
-    minmax(11rem, 1.3fr) minmax(0, 1.6fr) minmax(5.5rem, 0.8fr) minmax(0, 1.1fr)
+    minmax(9rem, 1.3fr) minmax(8rem, 1.6fr) minmax(5.5rem, 0.8fr) minmax(8rem, 1.1fr)
     minmax(5.5rem, 0.7fr);
   align-items: center;
   gap: var(--space-3);
@@ -593,7 +594,7 @@
   }
 }
 
-@container settings-content (max-width: 44rem) {
+@media (max-width: 48rem) {
   .staffHead {
     display: none;
   }

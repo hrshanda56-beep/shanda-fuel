@@ -28,12 +28,14 @@ export type SettingsContext = Readonly<{
   organisation?: SettingsOrganisation;
   legalEntities: readonly SettingsLegalEntity[];
   selectedStation: SettingsStation | null;
+  stations?: readonly SettingsStation[];
 }>;
 
 export type SettingsView = Readonly<{
   account: SettingsAccount;
   context: SettingsContext;
   staff?: StaffOverview;
+  access?: Readonly<{ canViewReadiness: boolean; canViewPayments: boolean }>;
 }>;
 
 export type SettingsContextResolution = ContextResolution;

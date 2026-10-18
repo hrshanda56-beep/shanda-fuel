@@ -59,21 +59,16 @@ for (const width of [390, 824, 1024, 1440]) {
       ).toBe('column');
     }
     const staff = page.locator('.staffTableRow');
-    const contentWidth = await page
-      .locator('.content')
-      .evaluate(
-        (el) =>
-          el.clientWidth -
-          parseFloat(getComputedStyle(el).paddingLeft) -
-          parseFloat(getComputedStyle(el).paddingRight),
-      );
-    if (contentWidth <= 704) {
+    if (width <= 768) {
       await expect(page.locator('.staffHead')).toBeHidden();
       expect(
         (await staff.evaluate((el) => getComputedStyle(el).gridTemplateColumns)).split(' '),
       ).toHaveLength(1);
     } else {
       await expect(page.locator('.staffHead')).toBeVisible();
+      expect(
+        (await staff.evaluate((el) => getComputedStyle(el).gridTemplateColumns)).split(' '),
+      ).toHaveLength(5);
     }
     await expect(page.locator('.list-head').first()).toBeHidden();
     for (const row of await page.locator('.list-row').all()) {
