@@ -4133,3 +4133,40 @@ h3,
   font-size: 0.8125rem;
   opacity: 0.75;
 }
+
+/* Match sheet: small caps labels, bold dark entries, faint hints and placeholders. */
+.payout-sheet .field > label {
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.payout-sheet .field-required {
+  color: var(--text-tertiary);
+}
+
+.payout-sheet .field input,
+.payout-sheet .field select {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: var(--font-weight-medium);
+}
+
+.payout-sheet .field select:has(option[value='']:checked),
+.payout-sheet .field input::placeholder {
+  color: var(--text-tertiary);
+  font-weight: var(--font-weight-regular);
+}
+
+.payout-sheet .field-hint {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.payout-sheet h2 {
+  font-size: 1.375rem;
+  text-transform: none;
+}

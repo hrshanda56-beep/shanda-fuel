@@ -688,7 +688,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
           title="Match a payment"
           presentation="side"
           dismissible={!working}
-          className="cash-sheet"
+          className="cash-sheet payout-sheet"
         >
           {error ? (
             <ErrorState
@@ -732,8 +732,8 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
               label="Amount to match"
               hint={
                 selectedPayment && selectedSettlement
-                  ? `Payment ${money(selectedPayment.unallocatedAmount)} · Payout ${money(selectedSettlement.unallocatedProviderAmount, selectedSettlement.currency)} · Match up to the lower`
-                  : 'Match up to the lower amount.'
+                  ? `Most you can match: ${money(suggestedAmount(selectedPayment.unallocatedAmount, selectedSettlement.unallocatedProviderAmount) || '0', selectedSettlement.currency)}`
+                  : undefined
               }
               error={amountError}
               required
