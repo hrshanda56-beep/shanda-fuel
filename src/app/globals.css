@@ -4022,3 +4022,36 @@ h3,
     border-radius: var(--radius-lg);
   }
 }
+
+/* Finance table: roomier rows. */
+.finance-table tbody :is(th, td) {
+  padding-block: var(--space-5);
+}
+
+.finance-table :is(th, td):first-child {
+  padding-inline-start: var(--space-4);
+}
+
+.finance-table-link {
+  line-height: 1.35;
+}
+
+.finance-table-detail {
+  margin-top: var(--space-2);
+  line-height: 1.45;
+}
+
+@media (max-width: 47.99rem) {
+  .finance-table tbody tr {
+    margin-bottom: var(--space-3);
+    padding: var(--space-4) var(--space-4) var(--space-3);
+  }
+
+  .finance-table tbody th {
+    padding: 0 0 var(--space-3);
+  }
+
+  .finance-table tbody td:nth-child(n) {
+    padding-block: var(--space-2);
+  }
+}
