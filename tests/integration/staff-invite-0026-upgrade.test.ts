@@ -42,7 +42,18 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
     const currentMigrationSql = await readFile(currentMigrationPath, 'utf8');
     const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
-    const latestMigrationSql = await readFile(latestMigrationPath, 'utf8');
+    // Follow the journal so adding a later migration never breaks this check.
+    const journal = JSON.parse(
+      await readFile(
+        resolve(import.meta.dirname, '../../src/platform/db/migrations/meta/_journal.json'),
+        'utf8',
+      ),
+    ) as { entries: { tag: string }[] };
+    const latestTag = journal.entries.at(-1)?.tag ?? '';
+    const latestMigrationSql = await readFile(
+      resolve(import.meta.dirname, `../../src/platform/db/migrations/${latestTag}.sql`),
+      'utf8',
+    );
     const latestMigrationHash = createHash('sha256').update(latestMigrationSql).digest('hex');
     const previousMigrationSql = await readFile(previousMigrationPath, 'utf8');
     const previousMigrationHash = createHash('sha256').update(previousMigrationSql).digest('hex');
@@ -146,11 +157,16 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
   });
 
   it('records 0026 exactly once with the migration source hash', async () => {
-    const latestMigrationSql = await readFile(
-      resolve(
-        import.meta.dirname,
-        '../../src/platform/db/migrations/0033_finance_reconciliation_return.sql',
+    // Follow the journal so adding a later migration never breaks this check.
+    const journal = JSON.parse(
+      await readFile(
+        resolve(import.meta.dirname, '../../src/platform/db/migrations/meta/_journal.json'),
+        'utf8',
       ),
+    ) as { entries: { tag: string }[] };
+    const latestTag = journal.entries.at(-1)?.tag ?? '';
+    const latestMigrationSql = await readFile(
+      resolve(import.meta.dirname, `../../src/platform/db/migrations/${latestTag}.sql`),
       'utf8',
     );
     const latestMigrationHash = createHash('sha256').update(latestMigrationSql).digest('hex');
@@ -172,7 +188,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     expect(rows).toEqual([
       {
-        migration_count: 34,
+        migration_count: journal.entries.length,
         latest_hash: latestMigrationHash,
         exact_hash_count: 1,
       },
