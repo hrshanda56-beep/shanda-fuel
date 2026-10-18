@@ -26,7 +26,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "node --import tsx scripts/seed-development.ts",
-    "db:migrate:test": "drizzle-kit migrate"
+    "db:migrate:test": "drizzle-kit migrate",
+    "db:seed:demo": "vitest run --config vitest.dev-seed.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",
