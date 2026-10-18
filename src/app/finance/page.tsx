@@ -5,17 +5,12 @@ import { redirect } from 'next/navigation';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { getServerShellAccess, requestFromHeaders } from '@/design-system/navigation-server';
 import { Icon } from '@/design-system/icons';
-import {
-  AccessDeniedState,
-  Card,
-  EmptyState,
-  ErrorState,
-  StatusBadge,
-} from '@/design-system/primitives';
+import { AccessDeniedState, Card, EmptyState, ErrorState } from '@/design-system/primitives';
 import {
   ACTION_AREAS,
   buildActionCenter,
   type ActionArea,
+  type ActionItem,
   type ActionCenter,
 } from '@/modules/approvals';
 import { loadActionCenterFacts } from '@/modules/approvals/action-center';
@@ -25,6 +20,39 @@ import { resolveCurrentContext } from '@/modules/context/server';
 export const metadata = { title: 'Finance' };
 export const dynamic = 'force-dynamic';
 
+function ActionGroup({
+  title,
+  tone,
+  items,
+}: {
+  title: string;
+  tone: 'attention' | 'info';
+  items: readonly ActionItem[];
+}) {
+  if (items.length === 0) return null;
+  const headingId = `finance-${tone}-heading`;
+  return (
+    <section className="finance-group content-span" aria-labelledby={headingId}>
+      <h2 id={headingId} className="finance-group-title">
+        {title}
+        <span className="finance-group-count">{items.length}</span>
+      </h2>
+      <ul className="finance-list">
+        {items.map((item) => (
+          <li key={item.id}>
+            <Link className="finance-row" data-tone={item.tone} href={item.href}>
+              <span className="finance-row-area">{item.area}</span>
+              <span className="finance-row-title">{item.title}</span>
+              <span className="finance-row-detail">{item.detail}</span>
+              <Icon name="chevron-right" className="finance-row-chevron" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function ActionList({ center, stationId }: { center: ActionCenter; stationId: string }) {
   const station = `/stations/${encodeURIComponent(stationId)}`;
   const areaHref: Record<ActionArea, string> = {
@@ -32,6 +60,10 @@ function ActionList({ center, stationId }: { center: ActionCenter; stationId: st
     Banking: `${station}/cash`,
     Settlements: `${station}/settlements`,
     Payables: '/suppliers',
+  };
+  const groups = {
+    attention: center.items.filter((item) => item.tone === 'attention'),
+    info: center.items.filter((item) => item.tone !== 'attention'),
   };
   const countFor = (area: ActionArea) => center.items.filter((item) => item.area === area);
   return (
@@ -66,37 +98,19 @@ function ActionList({ center, stationId }: { center: ActionCenter; stationId: st
           );
         })}
       </dl>
-      <Card as="section" className="panel content-span" aria-labelledby="finance-actions-heading">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Finance</p>
-            <h2 id="finance-actions-heading">Needs your attention</h2>
-          </div>
-        </div>
-        {center.items.length > 0 ? (
-          <ul className="finance-list">
-            {center.items.map((item) => (
-              <li key={item.id}>
-                <Link className="finance-row" href={item.href}>
-                  <span className="finance-row-text">
-                    <span className="finance-row-title">{item.title}</span>
-                    <span className="finance-row-detail">{item.detail}</span>
-                  </span>
-                  <StatusBadge tone={item.tone === 'attention' ? 'warning' : 'informational'}>
-                    {item.area}
-                  </StatusBadge>
-                  <Icon name="chevron-right" className="finance-row-chevron" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : center.unavailable.length === 0 ? (
+      {center.items.length > 0 ? (
+        <>
+          <ActionGroup title="Needs action" tone="attention" items={groups.attention} />
+          <ActionGroup title="For information" tone="info" items={groups.info} />
+        </>
+      ) : center.unavailable.length === 0 ? (
+        <Card as="section" className="panel content-span">
           <EmptyState
             title="All clear"
             message="Nothing is waiting for approval, banking or matching at this station."
           />
-        ) : null}
-      </Card>
+        </Card>
+      ) : null}
     </div>
   );
 }
