@@ -12,6 +12,7 @@ const KEYS = [
   'daily-operations',
   'reconciliations',
   'inventory',
+  'finance-home',
   'cash',
   'settlements',
   'customers',

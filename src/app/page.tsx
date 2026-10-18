@@ -34,6 +34,19 @@ export default async function OverviewPage({
     redirect(search ? `/my-shift?${search}` : '/my-shift');
   }
 
+  // Finance sign-off work without running the day lands on the Finance overview.
+  if (
+    access.status === 'ready' &&
+    access.projection?.some((entry) => entry.key === 'finance-home' && entry.visible && entry.home)
+  ) {
+    const query = new URLSearchParams();
+    if (tenantId) query.set('tenantId', tenantId);
+    if (legalEntityId) query.set('legalEntityId', legalEntityId);
+    if (stationId) query.set('stationId', stationId);
+    const search = query.toString();
+    redirect(search ? `/finance?${search}` : '/finance');
+  }
+
   const initialContext =
     access.status === 'ready' && !tenantId
       ? dashboardScopeFromCurrentContext(access.current)

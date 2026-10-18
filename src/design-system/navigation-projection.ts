@@ -54,9 +54,23 @@ function isLoopbackAppUrl(appUrl: string | undefined) {
   }
 }
 
+/** Sign-off work that makes up a finance person's day. */
+const FINANCE_SIGN_OFF_PERMISSIONS: readonly PermissionCode[] = [
+  'reconciliation.approve',
+  'cash.deposit.confirm',
+  'provider.settlement.post',
+];
+
+/** Running the forecourt day; someone who does this keeps the operations Today as their home. */
+const DAY_RUNNING_PERMISSIONS: readonly PermissionCode[] = [
+  'business_day.open',
+  'reconciliation.submit',
+];
+
 const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly PermissionCode[]>> =
   {
     'my-shift': [],
+    'finance-home': FINANCE_SIGN_OFF_PERMISSIONS,
     today: ['business_day.view'],
     'daily-operations': ['business_day.view'],
     reconciliations: ['reconciliation.view'],
@@ -95,18 +109,34 @@ const MANAGEMENT_NAVIGATION_KEYS = (
   Object.keys(NAVIGATION_PERMISSION_CANDIDATES) as NavigationKey[]
 ).filter((key) => key !== 'my-shift');
 
+/**
+ * Finance sign-off work without running the forecourt day lands on the Finance overview.
+ * Decided from permissions, never a role name; it grants nothing.
+ */
+export function isFinanceWorkspaceActor({ actor, scope }: NavigationProjectionInput): boolean {
+  const granted = (permissionCode: PermissionCode) =>
+    isPermissionGranted({ actor, permissionCode, requestedScope: scope });
+  return FINANCE_SIGN_OFF_PERMISSIONS.some(granted) && !DAY_RUNNING_PERMISSIONS.some(granted);
+}
+
 export function buildNavigationProjection({
   actor,
   scope,
 }: NavigationProjectionInput): readonly NavigationProjection[] {
   const attendantWorkspace = isAttendantWorkspaceActor({ actor, scope });
+  const financeWorkspace = isFinanceWorkspaceActor({ actor, scope });
   return (Object.keys(NAVIGATION_PERMISSION_CANDIDATES) as NavigationKey[]).map((key) => {
     if (key === 'my-shift')
       return { key, visible: attendantWorkspace, enabled: attendantWorkspace };
-    const visible = NAVIGATION_PERMISSION_CANDIDATES[key].some((permissionCode) =>
-      isPermissionGranted({ actor, permissionCode, requestedScope: scope }),
-    );
-    return { key, visible, enabled: visible };
+    // The Finance overview replaces Today as that person's home, so Today would only bounce back.
+    const visible =
+      !(key === 'today' && financeWorkspace) &&
+      NAVIGATION_PERMISSION_CANDIDATES[key].some((permissionCode) =>
+        isPermissionGranted({ actor, permissionCode, requestedScope: scope }),
+      );
+    return key === 'finance-home' && financeWorkspace
+      ? { key, visible, enabled: visible, home: true }
+      : { key, visible, enabled: visible };
   });
 }
 

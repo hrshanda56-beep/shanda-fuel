@@ -5,6 +5,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
+import { loadActionCenterFacts } from '../../src/modules/approvals/action-center';
 import { DECIMAL_POLICIES, ExactDecimal } from '../../src/platform/domain/primitives';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -2009,6 +2010,41 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
     `);
     expect(rows).toEqual([{ state: 'SUBMITTED' }]);
+  });
+
+  it('lists a waiting reconciliation in the finance action center, flagged for its submitter', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-center-submit-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    const factsFor = (token: string) =>
+      loadActionCenterFacts(
+        new Request('http://127.0.0.1:3000/finance', { headers: clerkHeaders(token) }),
+        {
+          organisationId: ids.tenant,
+          legalEntityId: ids.legal,
+          stationId: ids.station,
+          allStations: false,
+        },
+      );
+    const waiting = async (token: string) => {
+      const facts = await factsFor(token);
+      if (facts.reconciliations.status !== 'ok') throw new Error('reconciliations not loaded');
+      return {
+        row: facts.reconciliations.value.rows.find((entry) => entry.id === reconciliationId),
+        soleApprover: facts.reconciliations.value.soleApprover,
+      };
+    };
+    const own = await waiting('a5-manager-session-token');
+    expect(own.row?.submittedByMe).toBe(true);
+    expect(own.soleApprover).toBe(false);
+    const other = await waiting('a5-approver-session-token');
+    expect(other.row?.submittedByMe).toBe(false);
   });
 
   it('lets a solo approver approve their own reconciliation when nobody else could', async () => {

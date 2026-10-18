@@ -1,2 +1,2 @@
-/** Approval workflows are owned by later workstreams; this is the public module boundary. */
-export {};
+export { buildActionCenter } from './action-center-model';
+export type { ActionCenter, ActionCenterFacts, ActionItem } from './action-center-model';

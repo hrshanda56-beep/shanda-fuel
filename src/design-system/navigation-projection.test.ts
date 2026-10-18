@@ -163,6 +163,7 @@ describe('server navigation projection', () => {
   it('keeps tenant-scoped owner navigation available', () => {
     const projection = buildNavigationProjection({ actor: actor('OWNER'), scope });
     expect(projection.filter((entry) => entry.visible).map((entry) => entry.key)).toEqual([
+      'finance-home',
       'today',
       'daily-operations',
       'reconciliations',
@@ -174,6 +175,23 @@ describe('server navigation projection', () => {
       'reports',
       'settings',
     ]);
+  });
+
+  it("makes the Finance overview the finance role's home, in place of Today", () => {
+    const projection = buildNavigationProjection({ actor: actor('FINANCE'), scope });
+    const entry = (key: string) => projection.find((item) => item.key === key);
+    expect(entry('finance-home')).toMatchObject({ visible: true, home: true });
+    expect(entry('today')?.visible).toBe(false);
+    expect(entry('cash')?.visible).toBe(true);
+  });
+
+  it('keeps Today as the home for people who run the day, even with sign-off permissions', () => {
+    for (const role of ['OWNER', 'SUPERVISOR'] as const) {
+      const projection = buildNavigationProjection({ actor: actor(role), scope });
+      expect(projection.find((item) => item.key === 'finance-home')?.home).toBeUndefined();
+      if (role === 'OWNER')
+        expect(projection.find((item) => item.key === 'today')?.visible).toBe(true);
+    }
   });
 
   it('does not let a tenant-scoped grant project into another tenant', () => {

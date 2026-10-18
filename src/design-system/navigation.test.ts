@@ -42,7 +42,10 @@ describe('grouped navigation model', () => {
 describe('navigation projection', () => {
   it('hides items that are not visible and drops empty sections', () => {
     const projection: NavigationProjection[] = syntheticNavigationProjection.map((entry) =>
-      entry.key === 'cash' || entry.key === 'settlements' || entry.key === 'customers'
+      entry.key === 'finance-home' ||
+      entry.key === 'cash' ||
+      entry.key === 'settlements' ||
+      entry.key === 'customers'
         ? { ...entry, visible: false }
         : entry,
     );
@@ -109,6 +112,7 @@ describe('navigation destinations', () => {
       'Daily operations',
       'Reconciliations',
       'Inventory',
+      'Finance overview',
       'Cash & Banking',
       'Provider settlements',
       'Customers',

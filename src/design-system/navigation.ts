@@ -17,6 +17,7 @@ export type NavigationKey =
   | 'daily-operations'
   | 'reconciliations'
   | 'inventory'
+  | 'finance-home'
   | 'cash'
   | 'settlements'
   | 'customers'
@@ -31,6 +32,8 @@ export type NavigationProjection = {
   key: NavigationKey;
   visible: boolean;
   enabled: boolean;
+  /** Set on the one entry that is this person's own landing page (decided from permissions). */
+  home?: boolean;
 };
 
 type NavigationDestination =
@@ -136,6 +139,15 @@ export const navigationSections: readonly NavigationSection[] = [
     label: 'Finance',
     icon: 'wallet',
     items: [
+      {
+        key: 'finance-home',
+        label: 'Finance overview',
+        searchLabel: 'Finance overview',
+        icon: 'wallet',
+        destination: { kind: 'route', path: '/finance' },
+        availability: 'active',
+        match: [/^\/finance(\/|$)/],
+      },
       {
         key: 'cash',
         label: 'Cash & Banking',
