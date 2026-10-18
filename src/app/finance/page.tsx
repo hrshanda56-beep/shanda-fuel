@@ -5,9 +5,19 @@ import { redirect } from 'next/navigation';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { getServerShellAccess, requestFromHeaders } from '@/design-system/navigation-server';
 import { Icon } from '@/design-system/icons';
-import { PageHeader } from '@/design-system/layout';
-import { AccessDeniedState, EmptyState, ErrorState } from '@/design-system/primitives';
-import { buildActionCenter, type ActionCenter } from '@/modules/approvals';
+import {
+  AccessDeniedState,
+  Card,
+  EmptyState,
+  ErrorState,
+  StatusBadge,
+} from '@/design-system/primitives';
+import {
+  ACTION_AREAS,
+  buildActionCenter,
+  type ActionArea,
+  type ActionCenter,
+} from '@/modules/approvals';
 import { loadActionCenterFacts } from '@/modules/approvals/action-center';
 import { readContextRoute } from '@/modules/context/routes';
 import { resolveCurrentContext } from '@/modules/context/server';
@@ -16,26 +26,56 @@ export const metadata = { title: 'Finance' };
 export const dynamic = 'force-dynamic';
 
 function ActionList({ center }: { center: ActionCenter }) {
+  const countFor = (area: ActionArea) => center.items.filter((item) => item.area === area);
   return (
-    <div className="today">
+    <div className="content-grid finance-home">
       {center.unavailable.length > 0 ? (
         <ErrorState
           title="Some items could not be checked"
           message={`${center.unavailable.join(', ')} could not be loaded. Reload to try again. Anything listed below is still correct.`}
         />
       ) : null}
-      <section className="today-section" aria-labelledby="finance-actions-heading">
-        <h2 id="finance-actions-heading">Needs your attention</h2>
+      <dl className="operations-summary content-span" aria-label="Work waiting by area">
+        {ACTION_AREAS.map((area) => {
+          const items = countFor(area);
+          const urgent = items.filter((item) => item.tone === 'attention').length;
+          return (
+            <div key={area}>
+              <dt>{area}</dt>
+              <dd>
+                {items.length}
+                <span className="operations-summary-note">
+                  {items.length === 0
+                    ? 'Nothing waiting'
+                    : urgent > 0
+                      ? `${urgent} need${urgent === 1 ? 's' : ''} attention`
+                      : 'For information'}
+                </span>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      <Card as="section" className="panel content-span" aria-labelledby="finance-actions-heading">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Finance</p>
+            <h2 id="finance-actions-heading">Needs your attention</h2>
+          </div>
+        </div>
         {center.items.length > 0 ? (
-          <ul className="today-list">
+          <ul className="finance-list">
             {center.items.map((item) => (
               <li key={item.id}>
-                <Link className="today-row" href={item.href}>
-                  <span className="today-row-text">
-                    <span className="today-row-title">{item.title}</span>
-                    <span className="today-row-detail">{item.detail}</span>
+                <Link className="finance-row" href={item.href}>
+                  <span className="finance-row-text">
+                    <span className="finance-row-title">{item.title}</span>
+                    <span className="finance-row-detail">{item.detail}</span>
                   </span>
-                  <Icon name="chevron-right" className="today-row-chevron" />
+                  <StatusBadge tone={item.tone === 'attention' ? 'warning' : 'informational'}>
+                    {item.area}
+                  </StatusBadge>
+                  <Icon name="chevron-right" className="finance-row-chevron" />
                 </Link>
               </li>
             ))}
@@ -46,7 +86,7 @@ function ActionList({ center }: { center: ActionCenter }) {
             message="Nothing is waiting for approval, banking or matching at this station."
           />
         ) : null}
-      </section>
+      </Card>
     </div>
   );
 }
@@ -102,11 +142,10 @@ export default async function FinancePage({
   }
 
   return (
-    <AppShell shellAccess={access}>
-      <PageHeader
-        title="Finance"
-        description="Approvals, banking, settlements and payables that need attention."
-      />
+    <AppShell
+      shellAccess={access}
+      pageSubtitle="Approvals, banking, settlements and payables that need attention."
+    >
       {!allowed ? (
         <AccessDeniedState />
       ) : !stationId ? (

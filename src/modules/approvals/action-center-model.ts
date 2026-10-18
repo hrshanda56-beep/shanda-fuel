@@ -25,8 +25,11 @@ export type ActionCenterFacts = {
   suppliers: Section<{ overdueSuppliers: number; overdueTotal: string }>;
 };
 
+export type ActionArea = 'Approvals' | 'Banking' | 'Settlements' | 'Payables';
+
 export type ActionItem = {
   id: string;
+  area: ActionArea;
   title: string;
   detail: string;
   href: string;
@@ -55,6 +58,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
       const blocked = row.submittedByMe && !facts.reconciliations.value.soleApprover;
       items.push({
         id: `reconciliation-${row.id}`,
+        area: 'Approvals',
         title: `Reconciliation for ${row.businessDate} is waiting for approval`,
         detail: blocked
           ? 'You submitted this, so someone else needs to approve it.'
@@ -71,6 +75,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
       const blocked = row.requestedByMe && !facts.revaluations.value.soleApprover;
       items.push({
         id: `revaluation-${row.id}`,
+        area: 'Approvals',
         title: 'A stock cost revaluation is waiting for approval',
         detail: blocked
           ? 'You requested this, so someone else needs to approve it.'
@@ -87,6 +92,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     if (isPositive(pendingBankConfirmation)) {
       items.push({
         id: 'cash-pending-confirmation',
+        area: 'Banking',
         title: `${formatUsd(pendingBankConfirmation)} of deposits awaiting bank confirmation`,
         detail: 'Confirm each deposit against the bank record.',
         href: `${station}/cash`,
@@ -96,6 +102,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     if (isPositive(collectedButUnbanked)) {
       items.push({
         id: 'cash-unbanked',
+        area: 'Banking',
         title: `${formatUsd(collectedButUnbanked)} collected but not yet banked`,
         detail: 'Record a deposit once the cash is taken to the bank.',
         href: `${station}/cash`,
@@ -110,6 +117,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     if (exceptions > 0) {
       items.push({
         id: 'settlement-exceptions',
+        area: 'Settlements',
         title: `${exceptions} provider ${plural(exceptions, 'settlement has', 'settlements have')} a difference`,
         detail: 'The settled amount does not match what was expected.',
         href: `${station}/settlements`,
@@ -119,6 +127,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     if (toMatch > 0) {
       items.push({
         id: 'settlement-to-match',
+        area: 'Settlements',
         title: `${toMatch} provider ${plural(toMatch, 'settlement needs', 'settlements need')} matching`,
         detail: 'Match them to the card and mobile payments they cover.',
         href: `${station}/settlements`,
@@ -128,6 +137,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     if (unmatchedPayments > 0) {
       items.push({
         id: 'settlement-unmatched-payments',
+        area: 'Settlements',
         title: `${unmatchedPayments} ${plural(unmatchedPayments, 'payment is', 'payments are')} not matched to a settlement`,
         detail: 'Card and mobile payments waiting for their provider settlement.',
         href: `${station}/settlements`,
@@ -141,6 +151,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     const { overdueSuppliers, overdueTotal } = facts.suppliers.value;
     items.push({
       id: 'suppliers-overdue',
+      area: 'Payables',
       title: `${formatUsd(overdueTotal)} overdue to ${overdueSuppliers} ${plural(overdueSuppliers, 'supplier', 'suppliers')}`,
       detail: 'Past the due date on supplier invoices.',
       href: '/suppliers',
@@ -154,3 +165,10 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
   );
   return { items: ordered, unavailable };
 }
+
+export const ACTION_AREAS: readonly ActionArea[] = [
+  'Approvals',
+  'Banking',
+  'Settlements',
+  'Payables',
+];
