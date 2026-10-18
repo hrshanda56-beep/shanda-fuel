@@ -55,10 +55,13 @@ export async function loadActionCenterFacts(
             rows: (
               await transaction.execute<{
                 id: string;
+                business_day_id: string;
+                shift_id: string | null;
                 business_date: string;
                 submitted_by: string | null;
               }>(sql`
-                select r.id, bd.business_date::text as business_date, r.submitted_by
+                select r.id, r.business_day_id, r.shift_id, bd.business_date::text as business_date,
+                  r.submitted_by
                 from app.reconciliations r
                 join app.station_business_days bd
                   on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
@@ -68,6 +71,8 @@ export async function loadActionCenterFacts(
               `)
             ).map((row) => ({
               id: row.id,
+              businessDayId: row.business_day_id,
+              shiftId: row.shift_id,
               businessDate: row.business_date,
               submittedByMe: row.submitted_by === me,
             })),
@@ -169,6 +174,7 @@ export async function loadActionCenterFacts(
   ]);
 
   return {
+    tenantId,
     stationId,
     reconciliations: fromSign('reconciliations'),
     revaluations: fromSign('revaluations'),

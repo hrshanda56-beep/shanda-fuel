@@ -11,12 +11,16 @@ export type Section<T> =
 
 export type ReconciliationWaiting = {
   id: string;
+  businessDayId: string;
+  /** A reconciliation can be for the whole day, with no single shift. */
+  shiftId: string | null;
   businessDate: string;
   submittedByMe: boolean;
 };
 export type RevaluationWaiting = { id: string; requestedByMe: boolean };
 
 export type ActionCenterFacts = {
+  tenantId: string;
   stationId: string;
   /** `soleApprover`: nobody else could approve, so the person may approve their own work. */
   reconciliations: Section<{ rows: readonly ReconciliationWaiting[]; soleApprover: boolean }>;
@@ -66,6 +70,23 @@ export function classifyCreditUse(balance: string | null, creditLimit: string | 
 const isPositive = (value: string) => /^\d+(?:\.\d+)?$/.test(value) && !/^0+(?:\.0+)?$/.test(value);
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
+/**
+ * The management review screen takes its whole scope from the address, so the link must carry
+ * the organisation, station, business day and shift, or the screen has nothing to open.
+ */
+function reconciliationReviewHref(
+  facts: Pick<ActionCenterFacts, 'tenantId' | 'stationId'>,
+  row: ReconciliationWaiting,
+): string {
+  const params = new URLSearchParams({
+    tenantId: facts.tenantId,
+    stationId: facts.stationId,
+    businessDayId: row.businessDayId,
+  });
+  if (row.shiftId) params.set('shiftId', row.shiftId);
+  return `/operations/reconciliations/${encodeURIComponent(row.id)}/review?${params}`;
+}
+
 /** Turn raw facts into an ordered list of work, most urgent first. Pure and exact. */
 export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
   const items: ActionItem[] = [];
@@ -84,7 +105,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
         detail: blocked
           ? 'You submitted this, so someone else needs to approve it.'
           : 'Review and approve or return it.',
-        href: `${station}/reconciliations/${encodeURIComponent(row.id)}/review`,
+        href: reconciliationReviewHref(facts, row),
         tone: 'attention',
       });
     }

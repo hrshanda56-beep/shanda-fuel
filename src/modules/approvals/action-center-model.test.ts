@@ -6,6 +6,7 @@ import {
 } from './action-center-model';
 
 const clear: ActionCenterFacts = {
+  tenantId: 'org-1',
   stationId: 'st-1',
   reconciliations: { status: 'ok', value: { rows: [], soleApprover: false } },
   revaluations: { status: 'ok', value: { rows: [], soleApprover: false } },
@@ -26,18 +27,37 @@ describe('buildActionCenter', () => {
       reconciliations: {
         status: 'ok',
         value: {
-          rows: [{ id: 'r1', businessDate: '2026-10-16', submittedByMe: false }],
+          rows: [
+            {
+              id: 'r1',
+              businessDayId: 'bd-1',
+              shiftId: 'sh-1',
+              businessDate: '2026-10-16',
+              submittedByMe: false,
+            },
+          ],
           soleApprover: false,
         },
       },
     });
     expect(result.items).toHaveLength(1);
-    expect(result.items[0]?.href).toBe('/stations/st-1/reconciliations/r1/review');
+    // The review screen reads its whole scope from the address.
+    expect(result.items[0]?.href).toBe(
+      '/operations/reconciliations/r1/review?tenantId=org-1&stationId=st-1&businessDayId=bd-1&shiftId=sh-1',
+    );
     expect(result.items[0]?.detail).toBe('Review and approve or return it.');
   });
 
   it('tells the submitter someone else must approve, unless they are the only approver', () => {
-    const rows = [{ id: 'r1', businessDate: '2026-10-16', submittedByMe: true }];
+    const rows = [
+      {
+        id: 'r1',
+        businessDayId: 'bd-1',
+        shiftId: 'sh-1',
+        businessDate: '2026-10-16',
+        submittedByMe: true,
+      },
+    ];
     const blocked = buildActionCenter({
       ...clear,
       reconciliations: { status: 'ok', value: { rows, soleApprover: false } },
