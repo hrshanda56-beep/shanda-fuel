@@ -1185,6 +1185,18 @@ describe('A10 management reporting PostgreSQL read model', () => {
       expect(await eventCount()).toBe(before);
     });
 
+    it('needs a fresh step-up to export, and records nothing without one', async () => {
+      const before = await eventCount();
+      // The scoped user is allowed to report on its own station but has not stepped up.
+      const response = await exportAs(
+        scopedSessionToken,
+        `report=sales&tenantId=${ids.tenant}&stationIds=${ids.scopedStation}&${range}`,
+      );
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as { message: string }).message).toMatch(/step-up/i);
+      expect(await eventCount()).toBe(before);
+    });
+
     it('rejects an unknown report', async () => {
       expect(
         (await exportAs(sessionToken, `report=payroll&tenantId=${ids.tenant}&${range}`)).status,
@@ -1211,6 +1223,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     });
 
     it('lists only the signed-in user’s own real actions, without raw ids', async () => {
+      await seedActiveStepUp(client, ids.scopedSession, ids.tenant);
       await exportAs(
         scopedSessionToken,
         `report=sales&period=this-month&tenantId=${ids.tenant}&stationIds=${ids.scopedStation}&${range}`,

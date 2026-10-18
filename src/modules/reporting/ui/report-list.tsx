@@ -41,7 +41,11 @@ export function ReportList({ tenantId }: { tenantId: string }) {
           <ReportCategoryFilter />
         </div>
       </div>
-      <ReportActionStatus status={actions.status} onDismiss={actions.dismiss} />
+      <ReportActionStatus
+        status={actions.status}
+        onDismiss={actions.dismiss}
+        stepUp={actions.stepUp}
+      />
       <ul className="report-rows">
         {reports.map((report) => {
           const rowPeriod: RowPeriod = overrides[report.slug] ?? {

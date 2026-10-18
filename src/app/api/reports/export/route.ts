@@ -9,7 +9,8 @@ import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/
 /**
  * CSV of one report for the requested stations and dates. It runs the same
  * authorised report query as viewing, so it can never include more than the
- * signed-in user may see, then records the export in the audit log.
+ * signed-in user may see. Taking data out needs a fresh step-up, and the export is recorded in the
+ * audit log only once it has succeeded.
  */
 export const GET = withRequestObservability(
   withPersistentRateLimit(async (request: Request): Promise<Response> => {
@@ -22,7 +23,9 @@ export const GET = withRequestObservability(
       delete query.period;
       if (!findReport(slug)) throw new AppError('NOT_FOUND', 'That report does not exist');
 
-      const report = await getManagementReportFromRequest(request, query);
+      const report = await getManagementReportFromRequest(request, query, {
+        requireStepUp: true,
+      });
       const csv = buildReportCsv(slug, report);
       await recordReportEvent(request, { kind: 'EXPORTED', slug, period, query });
 

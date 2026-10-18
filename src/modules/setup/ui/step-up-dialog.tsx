@@ -13,14 +13,18 @@ type DialogProps = {
   tenantId: string;
   onVerified: () => void;
   onCancel: () => void;
+  /** Wording for the action being confirmed; defaults to saving payment setup. */
+  description?: string;
+  confirmLabel?: string;
+  cancelledMessage?: string;
 };
 
 type StepUpBody = { message?: string; clerk_error?: unknown };
 
 /**
- * Creating a payment provider or account is a privileged command, so the server
- * requires a fresh step-up for this tenant. This dialog uses the existing
- * `/api/auth/step-up` endpoint and adds no new authentication behaviour.
+ * Privileged commands (such as creating a payment provider or exporting a report) need a fresh
+ * step-up for this tenant. This dialog uses the existing `/api/auth/step-up` endpoint and adds no
+ * new authentication behaviour.
  */
 export function StepUpDialog(props: DialogProps) {
   const { open, onCancel } = props;
@@ -29,7 +33,10 @@ export function StepUpDialog(props: DialogProps) {
       open={open}
       onClose={onCancel}
       title="Confirm it is you"
-      description="Saving payment setup needs a fresh identity check. Nothing is saved until you confirm."
+      description={
+        props.description ??
+        'Saving payment setup needs a fresh identity check. Nothing is saved until you confirm.'
+      }
       size="sm"
     >
       <ClerkForm {...props} />
@@ -37,7 +44,13 @@ export function StepUpDialog(props: DialogProps) {
   );
 }
 
-function ClerkForm({ tenantId, onVerified, onCancel }: DialogProps) {
+function ClerkForm({
+  tenantId,
+  onVerified,
+  onCancel,
+  confirmLabel = 'Confirm and save',
+  cancelledMessage = 'The check was cancelled or did not pass. Nothing was saved.',
+}: DialogProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const submitted = useRef(false);
@@ -64,7 +77,7 @@ function ClerkForm({ tenantId, onVerified, onCancel }: DialogProps) {
       await reverify();
       onVerified();
     } catch {
-      setError('The check was cancelled or did not pass. Nothing was saved.');
+      setError(cancelledMessage);
     } finally {
       submitted.current = false;
       setBusy(false);
@@ -81,7 +94,7 @@ function ClerkForm({ tenantId, onVerified, onCancel }: DialogProps) {
       ) : null}
       <div className={styles.formActions}>
         <Button loading={busy} onClick={() => void verify()}>
-          Confirm and save
+          {confirmLabel}
         </Button>
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
           Cancel

@@ -5,6 +5,7 @@ import type { Database } from '../../platform/db';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { authorize } from '../../platform/security/permissions';
+import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
 import { calculateGrossMargin, readCanonicalRevenue, readRestatedCogs } from '../profitability';
@@ -954,8 +955,13 @@ export async function getDashboardSalesFromRequest(request: Request, input: unkn
 export async function getManagementReportFromRequest(
   request: Request,
   input: unknown,
+  options: { requireStepUp?: boolean } = {},
 ): Promise<ManagementReport> {
   const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
+  // Exports leave the application, so they need a fresh step-up for this tenant.
+  if (options.requireStepUp) {
+    assertStepUp(authority.actor.session, 1, new Date(), filters.tenantId);
+  }
   // One station keeps the station-scoped transaction context; several stations
   // are each authorised above and then bounded by the explicit station filter.
   const [single] = stations;
