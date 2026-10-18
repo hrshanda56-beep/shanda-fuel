@@ -793,11 +793,9 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       <Card as="section" className="panel content-span" aria-labelledby="settlements-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Provider statements</p>
             <h2 id="settlements-title">Provider Payouts</h2>
           </div>
         </div>
-        <p className="field-hint">Providers often pay a few days after the sale.</p>
         {statusFilter !== 'all' ? (
           <p className="filter-chip" role="status">
             {visibleSettlements.length === 0
@@ -817,7 +815,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         {!loading && !error && settlements.length === 0 ? (
           <EmptyState
             title="No provider payouts yet"
-            message="Payouts appear here once a provider statement is recorded."
+            message="They show here once a provider statement is recorded."
           />
         ) : null}
         {canShowSettlementRows && visibleSettlements.length > 0 ? (
@@ -984,14 +982,13 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       <Card as="section" className="panel content-span" aria-labelledby="matching-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Waiting for a payout</p>
             <h2 id="matching-title">Payments Waiting</h2>
           </div>
         </div>
         {!loading && !error && unmatched.length === 0 ? (
           <EmptyState
             title="No EcoCash or card payments waiting"
-            message="Payments from approved shift reports appear here until they are matched to a settlement."
+            message="Approved EcoCash and card payments show here until matched."
           />
         ) : null}
         {canShowUnmatchedRows ? (
@@ -1002,7 +999,6 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                 <tr>
                   <th scope="col">Method / reference</th>
                   <th scope="col">Business date</th>
-                  <th scope="col">Reconciliation</th>
                   <th scope="col">Amount</th>
                   <th scope="col">Remaining</th>
                 </tr>
@@ -1033,11 +1029,6 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                     </th>
                     <td data-label="Business date" className="numeric">
                       <span className="numeric">{row.businessDate}</span>
-                    </td>
-                    <td data-label="Reconciliation">
-                      <StatusBadge tone="informational">
-                        {formatStatusLabel(row.reconciliationState)}
-                      </StatusBadge>
                     </td>
                     <td data-label="Amount" className="numeric">
                       {money(row.amount)}
