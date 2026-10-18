@@ -29,13 +29,15 @@ export const dynamic = 'force-dynamic';
 
 function ActionTable({ items }: { items: readonly ActionItem[] }) {
   return (
-    <Card as="section" className="panel content-span" aria-labelledby="finance-actions-heading">
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Finance</p>
-          <h2 id="finance-actions-heading">Needs your attention</h2>
-        </div>
-      </div>
+    <Card
+      as="section"
+      className="panel content-span finance-panel"
+      aria-labelledby="finance-actions-heading"
+    >
+      <h2 id="finance-actions-heading" className="finance-table-title">
+        Needs your attention
+        <span className="finance-table-count">{items.length}</span>
+      </h2>
       <TableScrollRegion label="Finance work waiting">
         <table className="data-table finance-table">
           <caption className="sr-only">Finance work waiting</caption>

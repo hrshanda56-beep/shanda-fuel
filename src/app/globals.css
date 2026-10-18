@@ -3974,3 +3974,51 @@ h3,
     padding: var(--space-4) var(--space-4) var(--space-8);
   }
 }
+
+/* Finance table: compact heading, and rows told apart by stripes and clear dividers. */
+.finance-panel {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.finance-table-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-md);
+}
+
+.finance-table-count {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-table thead th {
+  padding-block: var(--space-2);
+  font-size: var(--font-size-xs);
+}
+
+.finance-table tbody tr {
+  border-top: 1px solid var(--border-strong);
+}
+
+.finance-table tbody tr:nth-child(odd) {
+  background: var(--bg-hover);
+}
+
+.finance-table tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+@media (max-width: 47.99rem) {
+  .finance-table tbody tr {
+    margin-bottom: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+  }
+}
