@@ -9,6 +9,8 @@ import { PageHeader } from '@/design-system/layout';
 import { AccessDeniedState, EmptyState, ErrorState } from '@/design-system/primitives';
 import { buildActionCenter, type ActionCenter } from '@/modules/approvals';
 import { loadActionCenterFacts } from '@/modules/approvals/action-center';
+import { readContextRoute } from '@/modules/context/routes';
+import { resolveCurrentContext } from '@/modules/context/server';
 
 export const metadata = { title: 'Finance' };
 export const dynamic = 'force-dynamic';
@@ -53,16 +55,40 @@ function ActionList({ center }: { center: ActionCenter }) {
  * Finance home: the work that needs a finance person, each item linking to the screen that
  * resolves it. Everything is read through the same per-module authorisation as those screens.
  */
-export default async function FinancePage() {
+export default async function FinancePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const requestHeaders = await headers();
   const access = await getServerShellAccess(requestHeaders);
   if (access.status === 'signed-out') redirect('/login');
 
-  const current = access.status === 'ready' ? access.current : null;
   const allowed =
     access.status === 'ready' &&
     access.projection?.some((entry) => entry.key === 'finance-home' && entry.visible);
-  const request = requestFromHeaders(requestHeaders);
+  const baseRequest = requestFromHeaders(requestHeaders);
+  // The shell request is always `/`, which resolves with the all-stations default. Finance work is
+  // per station, so resolve the scope again against this page's own route and query.
+  const query = await searchParams;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value === 'string') params.set(key, value);
+  }
+  const request = baseRequest
+    ? new Request(new URL(`/finance?${params}`, baseRequest.url), { headers: baseRequest.headers })
+    : null;
+  let current = access.status === 'ready' ? access.current : null;
+  if (request && current) {
+    try {
+      const resolved = await resolveCurrentContext(request, {
+        route: readContextRoute('/finance', params),
+      });
+      current = resolved.current ?? current;
+    } catch {
+      // Keep the shell's scope; the page then asks for a station.
+    }
+  }
   const stationId = current && !current.allStations ? current.stationId : undefined;
 
   let center: ActionCenter | null = null;
