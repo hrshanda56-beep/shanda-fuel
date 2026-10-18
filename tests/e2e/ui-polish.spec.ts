@@ -391,8 +391,19 @@ async function mockApis(page: Page) {
     );
   });
   await page.route('**/api/reports/management**', (route) => route.fulfill(json(report)));
-  await page.route('**/api/settlements/summary**', (route) => route.fulfill(json(settlements)));
-  await page.route('**/api/settlements/unmatched**', (route) => route.fulfill(json(unmatched)));
+  await page.route('**/api/settlements/overview**', (route) => {
+    const summaryFixture = json(settlements);
+    const unmatchedFixture = json(unmatched);
+    if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+    if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+    return route.fulfill(
+      json({
+        settlements: JSON.parse(summaryFixture.body),
+        unmatched: JSON.parse(unmatchedFixture.body),
+      }),
+    );
+  });
+
   await page.route(/\/api\/context(?:\?|$)/, async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
     await route.fulfill(json(stationContext));

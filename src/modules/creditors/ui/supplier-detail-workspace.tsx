@@ -96,15 +96,25 @@ function isExactDecimal(value: string): boolean {
   return /^\d+(?:\.\d+)?$/.test(value);
 }
 
-export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) {
+export function SupplierDetailWorkspace({
+  supplierId,
+  initial,
+}: {
+  supplierId: string;
+  initial?: {
+    resolution: ContextResolution;
+    supplier: SupplierSummary | null;
+    statement: StatementLine[];
+  };
+}) {
   const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const [context, setContext] = useState<ContextResolution | null>(null);
-  const [contextLoading, setContextLoading] = useState(true);
+  const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
+  const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [supplier, setSupplier] = useState<SupplierSummary | null>(null);
-  const [statement, setStatement] = useState<StatementLine[]>([]);
+  const [supplier, setSupplier] = useState<SupplierSummary | null>(initial?.supplier ?? null);
+  const [statement, setStatement] = useState<StatementLine[]>(initial?.statement ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentForm, setDocumentForm] = useState<DocumentForm>(EMPTY_DOCUMENT_FORM);
@@ -211,6 +221,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
   }
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadContext(controller.signal));
     return () => controller.abort();
@@ -219,7 +230,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
   }, [search, supplierId, contextFetch]);
 
   useEffect(() => {
-    if (!hasRequiredContext || !current) return;
+    if (initial || !hasRequiredContext || !current) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadDetails(current, controller.signal));
     return () => controller.abort();

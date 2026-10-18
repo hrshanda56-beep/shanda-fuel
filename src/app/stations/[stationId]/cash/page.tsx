@@ -1,24 +1,42 @@
-import { Suspense } from 'react';
-import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
+import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { ContextRequiredState } from '@/design-system/primitives';
+import { getCashStationSummaryFromRequest } from '@/modules/cash/queries';
 import { CashWorkspace } from '@/modules/cash/ui/cash-workspace';
-
-export const metadata = { title: 'Station collections' };
-
-export default async function CashPage({ params }: { params: Promise<{ stationId: string }> }) {
-  await params;
+export const metadata = { title: 'Cash' };
+export default async function Page({
+  searchParams,
+  params,
+}: {
+  searchParams: Promise<PageSearch>;
+  params: Promise<{ stationId: string }>;
+}) {
+  const { stationId: id } = await params;
+  const search = await searchParams;
+  const pathname = `/stations/${id}/cash`;
   return (
-    <AppShell pageSubtitle="Track custody, collection allocation, and distinct bank confirmation.">
-      <Suspense
-        fallback={
-          <ContextRequiredState
-            title="Checking station context"
-            message="Use the station selector above to choose a station."
+    <ServerDataPage
+      pathname={pathname}
+      search={search}
+      fallback={<CashWorkspace />}
+      load={async (request, resolution) => {
+        const current = resolution.current;
+        if (!current) return null;
+        if (!current.stationId || current.allStations) return null;
+        return getCashStationSummaryFromRequest(request, { selection: current });
+      }}
+      render={(data, resolution) =>
+        data ? (
+          <CashWorkspace
+            key={JSON.stringify(resolution.current)}
+            initial={{ selection: resolution.current!, summary: data }}
           />
-        }
-      >
-        <CashWorkspace />
-      </Suspense>
-    </AppShell>
+        ) : (
+          <ContextRequiredState
+            title="Choose a work context"
+            message="Use the selector above to choose an authorized context."
+          />
+        )
+      }
+    />
   );
 }

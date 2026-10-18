@@ -283,7 +283,7 @@ async function loadOperationsOverview(
       organisation: { id: station.tenantId, name: station.tenantName },
       currentBusinessDate,
       currentBusinessDayId: null,
-      status: { close: 'NOT_STARTED', approval: 'NO_REVISION' },
+      status: { close: 'NOT_STARTED' as const, approval: 'NO_REVISION' as const },
       businessDays: [],
       shifts: [],
       reconciliations: [],

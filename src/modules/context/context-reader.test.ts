@@ -105,3 +105,39 @@ describe('context refresh', () => {
     });
   });
 });
+
+it('keeps the selected station through tenant-only page links', async () => {
+  const network = vi.fn();
+  const read = createContextReader(seed, network);
+  const response = await read('/api/context?pathname=/customers&tenantId=tenant-a');
+  expect(await response.json()).toMatchObject({ data: { current: seed.current } });
+  expect(network).not.toHaveBeenCalled();
+});
+it('keeps All stations through tenant-only settings and customer-detail navigation', async () => {
+  const initial = { ...seed, current: { organisationId: 'tenant-a', allStations: true } };
+  const read = createContextReader(initial, vi.fn());
+  for (const pathname of ['/settings', '/customers/customer', '/reports', '/operations/daily']) {
+    const response = await read(`/api/context?pathname=${pathname}&tenantId=tenant-a`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { current: initial.current } });
+  }
+});
+it('explicit All stations overrides the saved station rather than inheriting it', async () => {
+  const read = createContextReader(seed, vi.fn());
+  const response = await read('/api/context?pathname=/reports&tenantId=tenant-a&allStations=true');
+  const body = await response.json();
+  expect(body.data.current).toEqual({ organisationId: 'tenant-a', allStations: true });
+});
+it('still rejects All stations on individual station action routes', async () => {
+  const read = createContextReader(
+    { ...seed, current: { organisationId: 'tenant-a', allStations: true } },
+    vi.fn(),
+  );
+  expect(
+    (
+      await read(
+        '/api/context?pathname=/stations/station-a/cash&tenantId=tenant-a&allStations=true',
+      )
+    ).status,
+  ).toBe(403);
+});

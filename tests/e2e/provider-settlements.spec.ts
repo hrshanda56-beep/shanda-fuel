@@ -128,13 +128,19 @@ test.describe('provider settlement workspace', () => {
     let summaryRequests = 0;
     let unmatchedRequests = 0;
     await page.route('**/api/context*', (route) => route.fulfill(json(contextBody(null))));
-    await page.route('**/api/settlements/summary**', (route) => {
+    await page.route('**/api/settlements/overview**', (route) => {
       summaryRequests += 1;
-      return route.fulfill(json([]));
-    });
-    await page.route('**/api/settlements/unmatched**', (route) => {
       unmatchedRequests += 1;
-      return route.fulfill(json([]));
+      const summaryFixture = json([]);
+      const unmatchedFixture = json([]);
+      if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+      if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+      return route.fulfill(
+        json({
+          settlements: JSON.parse(summaryFixture.body),
+          unmatched: JSON.parse(unmatchedFixture.body),
+        }),
+      );
     });
 
     await page.goto(`/stations/${stationId}/settlements?tenantId=${organisationId}`);
@@ -155,22 +161,27 @@ test.describe('provider settlement workspace', () => {
     const commands: Array<{ body: Record<string, unknown>; idempotencyKey: string }> = [];
 
     await mockContext(page);
-    await page.route('**/api/settlements/summary**', (route) =>
-      route.fulfill(
-        json([
-          settlementRow({
-            state,
-            allocatedAmount,
-            unallocatedProviderAmount: unallocatedAmount,
-            varianceAmount,
-            version,
-          }),
-        ]),
-      ),
-    );
-    await page.route('**/api/settlements/unmatched**', (route) =>
-      route.fulfill(json(state === 'RECONCILED' ? [] : [unmatchedRow])),
-    );
+    await page.route('**/api/settlements/overview**', (route) => {
+      const summaryFixture = json([
+        settlementRow({
+          state,
+          allocatedAmount,
+          unallocatedProviderAmount: unallocatedAmount,
+          varianceAmount,
+          version,
+        }),
+      ]);
+      const unmatchedFixture = json(state === 'RECONCILED' ? [] : [unmatchedRow]);
+      if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+      if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+      return route.fulfill(
+        json({
+          settlements: JSON.parse(summaryFixture.body),
+          unmatched: JSON.parse(unmatchedFixture.body),
+        }),
+      );
+    });
+
     await page.route('**/api/settlements/commands', async (route) => {
       const body = route.request().postDataJSON() as Record<string, unknown>;
       commands.push({ body, idempotencyKey: route.request().headers()['idempotency-key'] ?? '' });
@@ -223,22 +234,27 @@ test.describe('provider settlement workspace', () => {
     let reconciled = false;
     let commandBody: Record<string, unknown> | null = null;
     await mockContext(page);
-    await page.route('**/api/settlements/summary**', (route) =>
-      route.fulfill(
-        json([
-          settlementRow({
-            state: reconciled ? 'EXCEPTION' : 'PARTIALLY_MATCHED',
-            allocatedAmount: '60.0000',
-            unallocatedProviderAmount: '40.0000',
-            varianceAmount: '40.0000',
-            version: reconciled ? 2 : 1,
-          }),
-        ]),
-      ),
-    );
-    await page.route('**/api/settlements/unmatched**', (route) =>
-      route.fulfill(json([unmatchedRow])),
-    );
+    await page.route('**/api/settlements/overview**', (route) => {
+      const summaryFixture = json([
+        settlementRow({
+          state: reconciled ? 'EXCEPTION' : 'PARTIALLY_MATCHED',
+          allocatedAmount: '60.0000',
+          unallocatedProviderAmount: '40.0000',
+          varianceAmount: '40.0000',
+          version: reconciled ? 2 : 1,
+        }),
+      ]);
+      const unmatchedFixture = json([unmatchedRow]);
+      if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+      if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+      return route.fulfill(
+        json({
+          settlements: JSON.parse(summaryFixture.body),
+          unmatched: JSON.parse(unmatchedFixture.body),
+        }),
+      );
+    });
+
     await page.route('**/api/settlements/commands', async (route) => {
       commandBody = route.request().postDataJSON() as Record<string, unknown>;
       reconciled = true;
@@ -263,13 +279,19 @@ test.describe('provider settlement workspace', () => {
   test('rejects all-stations context before any settlement read or command', async ({ page }) => {
     let settlementRequests = 0;
     await mockContext(page, { organisationId, legalEntityId, allStations: true });
-    await page.route('**/api/settlements/summary**', (route) => {
+    await page.route('**/api/settlements/overview**', (route) => {
       settlementRequests += 1;
-      return route.fulfill(json([]));
-    });
-    await page.route('**/api/settlements/unmatched**', (route) => {
       settlementRequests += 1;
-      return route.fulfill(json([]));
+      const summaryFixture = json([]);
+      const unmatchedFixture = json([]);
+      if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+      if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+      return route.fulfill(
+        json({
+          settlements: JSON.parse(summaryFixture.body),
+          unmatched: JSON.parse(unmatchedFixture.body),
+        }),
+      );
     });
 
     await page.goto(
@@ -286,22 +308,27 @@ test.describe('provider settlement workspace', () => {
     let conflict = true;
     const idempotencyKeys: string[] = [];
     await mockContext(page);
-    await page.route('**/api/settlements/summary**', (route) =>
-      route.fulfill(
-        json([
-          settlementRow({
-            state: 'PARTIALLY_MATCHED',
-            allocatedAmount: '60.0000',
-            unallocatedProviderAmount: '40.0000',
-            varianceAmount: '40.0000',
-            version: 1,
-          }),
-        ]),
-      ),
-    );
-    await page.route('**/api/settlements/unmatched**', (route) =>
-      route.fulfill(json([unmatchedRow])),
-    );
+    await page.route('**/api/settlements/overview**', (route) => {
+      const summaryFixture = json([
+        settlementRow({
+          state: 'PARTIALLY_MATCHED',
+          allocatedAmount: '60.0000',
+          unallocatedProviderAmount: '40.0000',
+          varianceAmount: '40.0000',
+          version: 1,
+        }),
+      ]);
+      const unmatchedFixture = json([unmatchedRow]);
+      if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+      if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+      return route.fulfill(
+        json({
+          settlements: JSON.parse(summaryFixture.body),
+          unmatched: JSON.parse(unmatchedFixture.body),
+        }),
+      );
+    });
+
     await page.route('**/api/settlements/commands', async (route) => {
       idempotencyKeys.push(route.request().headers()['idempotency-key'] ?? '');
       if (conflict) {

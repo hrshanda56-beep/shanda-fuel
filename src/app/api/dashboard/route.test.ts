@@ -52,3 +52,31 @@ it('does not load any dashboard data if membership authorization fails', async (
   expect(mocks.customers).not.toHaveBeenCalled();
   expect(mocks.sales).not.toHaveBeenCalled();
 });
+
+it('keeps chart dates out of the daily totals scope', async () => {
+  await GET(
+    new Request(
+      `http://localhost/api/dashboard?tenantId=${tenant}&fromDate=2026-10-01&toDate=2026-10-18`,
+    ),
+  );
+  expect(mocks.daily).toHaveBeenCalledWith(expect.any(Request), { tenantId: tenant });
+  expect(mocks.sales).toHaveBeenCalledWith(expect.any(Request), {
+    tenantId: tenant,
+    fromDate: '2026-10-01',
+    toDate: '2026-10-18',
+  });
+});
+
+it('starts independent dashboard sections while daily totals are still pending', async () => {
+  let release!: (value: { rows: never[] }) => void;
+  mocks.daily.mockReturnValue(
+    new Promise((resolve) => {
+      release = resolve;
+    }),
+  );
+  const pending = GET(new Request(`http://localhost/api/dashboard?tenantId=${tenant}`));
+  await vi.waitFor(() => expect(mocks.sales).toHaveBeenCalled());
+  expect(mocks.customers).toHaveBeenCalled();
+  release({ rows: [] });
+  expect((await pending).status).toBe(200);
+});

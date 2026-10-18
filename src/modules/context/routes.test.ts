@@ -76,16 +76,42 @@ describe('context route policy', () => {
   });
 });
 
-describe('station-required routes', () => {
-  it('treats Finance as one station at a time, so it never resolves to all stations', () => {
-    for (const path of ['/finance', '/finance/anything']) {
-      expect(contextRoutePolicy(path)).toEqual({
-        legalEntity: 'required',
-        station: 'required',
-        allStationsAllowed: false,
-      });
-    }
-    expect(contextRoutePolicy('/financeish').station).toBe('optional');
+describe('overview and record routes', () => {
+  it('allows all stations on management overviews but keeps individual records station-scoped', () => {
+    for (const path of [
+      '/finance',
+      '/operations/daily',
+      '/operations/reconciliations',
+      '/inventory/valuation',
+      '/cash',
+      '/settlements',
+      '/customers',
+      '/suppliers',
+    ])
+      expect(contextRoutePolicy(path).allStationsAllowed).toBe(true);
+    for (const path of [
+      '/stations/s/cash',
+      '/stations/s/reconciliations',
+      '/inventory/valuation/revaluations/r',
+      '/my-shift',
+    ])
+      expect(contextRoutePolicy(path).station).toBe('required');
+  });
+  it('switches station records back to their overview and discards stale record scope', () => {
+    const all = { organisationId: selection.organisationId, allStations: true };
+    expect(buildContextHref('/stations/old/cash', 'stationId=old&collectionId=old', all)).toBe(
+      `/cash?tenantId=${selection.organisationId}&allStations=true`,
+    );
+    expect(
+      buildContextHref(
+        '/operations/daily',
+        'stationId=old&businessDayId=day&shiftId=shift&reconciliationId=record',
+        all,
+      ),
+    ).toBe(`/operations/daily?tenantId=${selection.organisationId}&allStations=true`);
+    expect(buildContextHref('/cash', '', selection)).toBe(
+      `/stations/${selection.stationId}/cash?tenantId=${selection.organisationId}&legalEntityId=${selection.legalEntityId}`,
+    );
   });
 });
 

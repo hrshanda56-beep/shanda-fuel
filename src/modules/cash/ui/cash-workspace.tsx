@@ -38,7 +38,7 @@ const SHEET_TITLES: Readonly<Record<CashSheet, string>> = {
   confirm: 'Confirm bank deposits',
 };
 
-type CashSummary = {
+export type CashSummary = {
   stationId: string;
   currency: string;
   totals: {
@@ -176,23 +176,29 @@ function optionLabel(value: string, fallback: string): string {
   return value || fallback;
 }
 
-export function CashWorkspace() {
+export function CashWorkspace({
+  initial,
+}: {
+  initial?: { selection: ContextSelection; summary: CashSummary };
+}) {
   const contextFetch = useContextFetch();
   const pathname = usePathname() ?? '/stations/unknown/cash';
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const routeKey = `${pathname}?${search}`;
-  const [context, setContext] = useState<ContextSelection | null>(null);
+  const [context, setContext] = useState<ContextSelection | null>(initial?.selection ?? null);
   const [contextStatus, setContextStatus] = useState<'loading' | 'ready' | 'required' | 'error'>(
-    'loading',
+    initial ? 'ready' : 'loading',
   );
   const [contextError, setContextError] = useState<string | null>(null);
-  const [summary, setSummary] = useState<CashSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<CashSummary | null>(
+    initial ? normalizeSummary(initial.summary) : null,
+  );
+  const [loading, setLoading] = useState(!initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<RequestFailure | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [loadedRouteKey, setLoadedRouteKey] = useState<string | null>(null);
+  const [loadedRouteKey, setLoadedRouteKey] = useState<string | null>(initial ? routeKey : null);
   const [receiveCollectionId, setReceiveCollectionId] = useState('');
   const [depositRows, setDepositRows] = useState([{ collectionId: '', amount: '' }]);
   const [historyKey, setHistoryKey] = useState<string | null>(null);
@@ -243,6 +249,7 @@ export function CashWorkspace() {
   }, []);
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
 
     void loadContext(controller.signal)
@@ -277,7 +284,7 @@ export function CashWorkspace() {
       });
 
     return () => controller.abort();
-  }, [loadContext, loadSummary, routeKey]);
+  }, [loadContext, loadSummary, routeKey, initial]);
 
   async function refresh() {
     if (!context) return;

@@ -1,21 +1,18 @@
+import { loadSignOffFacts } from './sign-off';
+import { withRequestReadScope } from '../../platform/security/request-read-scope';
+import { requireAuthenticatedActor, type AuthenticatedActorContext } from '../identity';
 import 'server-only';
 
-import { sql } from 'drizzle-orm';
 import type { CurrentContext } from '../context/contracts';
 import { getCashStationSummaryFromRequest } from '../cash/queries';
 import { withInventoryReadContext } from '../inventory/application';
 import { getSupplierSummaryFromRequest } from '../creditors/queries';
-import { getCustomerAccountsFromRequest } from '../customers/queries';
-import {
-  getProviderSettlementSummaryFromRequest,
-  getUnmatchedProviderPaymentsFromRequest,
-} from '../settlements/queries';
+import { getSettlementOverviewFromRequest } from '../settlements/queries';
 import { ExactDecimal } from '../../platform/domain/primitives';
 import { AppError } from '../../platform/errors';
 import { observeError } from '../../platform/observability';
-import { isPermissionGranted } from '../../platform/security/permissions';
-import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import { classifyCreditUse, type ActionCenterFacts, type Section } from './action-center-model';
+import { getCustomerAccountsFromRequest } from '../customers/queries';
 
 /** A check the person is not allowed to make is "restricted"; anything else is "unavailable". */
 async function section<T>(
@@ -37,91 +34,31 @@ async function section<T>(
  * goes through the same per-module authorisation as that module's own screen, and a failure in
  * one part never hides the others.
  */
-export async function loadActionCenterFacts(
+async function loadActionCenterFactsUncached(
   request: Request,
   current: CurrentContext & { stationId: string },
+  authenticatedActor?: AuthenticatedActorContext,
 ): Promise<ActionCenterFacts> {
   const { organisationId: tenantId, stationId } = current;
+  const actor = authenticatedActor ?? (await requireAuthenticatedActor(request));
 
-  const sign = await section(request, 'sign-off', () =>
-    withInventoryReadContext(request, tenantId, stationId, async (transaction, context) => {
-      const actor = context.authority.authorization;
-      const me = actor.membershipId;
-      // Listing work is read-only, so ask only whether the role holds the permission. Approving
-      // still needs a fresh step-up at the command, and hiding the list until then would show
-      // "nothing waiting" while work is waiting.
-      const can = (permissionCode: 'reconciliation.approve' | 'approval.act') =>
-        isPermissionGranted({ actor, permissionCode, requestedScope: context.scope });
-
-      const reconciliations = can('reconciliation.approve')
-        ? {
-            rows: (
-              await transaction.execute<{
-                id: string;
-                business_day_id: string;
-                shift_id: string | null;
-                business_date: string;
-                submitted_by: string | null;
-              }>(sql`
-                select r.id, r.business_day_id, r.shift_id, bd.business_date::text as business_date,
-                  r.submitted_by
-                from app.reconciliations r
-                join app.station_business_days bd
-                  on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
-                where r.tenant_id = ${context.tenantId} and r.station_id = ${context.stationId}
-                  and r.state = 'SUBMITTED'
-                order by bd.business_date, r.id
-              `)
-            ).map((row) => ({
-              id: row.id,
-              businessDayId: row.business_day_id,
-              shiftId: row.shift_id,
-              businessDate: row.business_date,
-              submittedByMe: row.submitted_by === me,
-            })),
-            soleApprover: !(await hasAlternateApprover(transaction, {
-              tenantId: context.tenantId,
-              stationId: context.stationId,
-              excludeMembershipId: me,
-              permission: 'reconciliation.approve',
-            })),
-          }
-        : null;
-
-      const revaluations = can('approval.act')
-        ? {
-            rows: (
-              await transaction.execute<{ id: string; requested_by: string | null }>(sql`
-                select id, requested_by
-                from app.inventory_cost_revaluations
-                where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
-                  and status = 'REQUESTED'
-                order by requested_at, id
-              `)
-            ).map((row) => ({ id: row.id, requestedByMe: row.requested_by === me })),
-            soleApprover: !(await hasAlternateApprover(transaction, {
-              tenantId: context.tenantId,
-              stationId: context.stationId,
-              excludeMembershipId: me,
-              permission: 'approval.act',
-            })),
-          }
-        : null;
-      return { reconciliations, revaluations };
-    }),
+  const signPromise = section(request, 'sign-off', () =>
+    withInventoryReadContext(
+      request,
+      tenantId,
+      stationId,
+      (transaction, context) => loadSignOffFacts(transaction, context),
+      actor,
+    ),
   );
-
-  const fromSign = <K extends 'reconciliations' | 'revaluations'>(
-    key: K,
-  ): Section<NonNullable<NonNullable<Extract<typeof sign, { status: 'ok' }>['value']>[K]>> => {
-    if (sign.status !== 'ok') return sign;
-    const value = sign.value[key];
-    return value ? { status: 'ok', value: value as never } : { status: 'restricted' };
-  };
 
   const [cash, settlements, suppliers, customers] = await Promise.all([
     section(request, 'cash', async () => {
-      const summary = await getCashStationSummaryFromRequest(request, { selection: current });
+      const summary = await getCashStationSummaryFromRequest(
+        request,
+        { selection: current },
+        actor,
+      );
       return {
         collectedButUnbanked: summary.totals.collectedButUnbanked,
         pendingBankConfirmation: summary.totals.pendingBankConfirmation,
@@ -129,10 +66,11 @@ export async function loadActionCenterFacts(
     }),
     section(request, 'settlements', async () => {
       const input = { tenantId, stationId };
-      const [rows, unmatched] = await Promise.all([
-        getProviderSettlementSummaryFromRequest(request, input),
-        getUnmatchedProviderPaymentsFromRequest(request, input),
-      ]);
+      const { settlements: rows, unmatched } = await getSettlementOverviewFromRequest(
+        request,
+        input,
+        actor,
+      );
       return {
         toMatch: rows.filter((row) => row.state === 'RECORDED' || row.state === 'PARTIALLY_MATCHED')
           .length,
@@ -143,10 +81,14 @@ export async function loadActionCenterFacts(
     }),
     section(request, 'suppliers', async () => {
       if (!current.legalEntityId) throw new AppError('FORBIDDEN', 'A legal entity is required');
-      const rows = await getSupplierSummaryFromRequest(request, {
-        tenantId,
-        legalEntityId: current.legalEntityId,
-      });
+      const rows = await getSupplierSummaryFromRequest(
+        request,
+        {
+          tenantId,
+          legalEntityId: current.legalEntityId,
+        },
+        actor,
+      );
       const overdue = rows.filter((row) => !new ExactDecimal(row.overdue).value.isZero());
       return {
         overdueSuppliers: overdue.length,
@@ -176,6 +118,15 @@ export async function loadActionCenterFacts(
     }),
   ]);
 
+  const sign = await signPromise;
+  const fromSign = <K extends 'reconciliations' | 'revaluations'>(
+    key: K,
+  ): Section<NonNullable<NonNullable<Extract<typeof sign, { status: 'ok' }>['value']>[K]>> => {
+    if (sign.status !== 'ok') return sign;
+    const value = sign.value[key];
+    return value ? { status: 'ok', value: value as never } : { status: 'restricted' };
+  };
+
   return {
     tenantId,
     stationId,
@@ -186,4 +137,12 @@ export async function loadActionCenterFacts(
     suppliers,
     customers,
   };
+}
+
+export function loadActionCenterFacts(
+  request: Request,
+  current: CurrentContext & { stationId: string },
+  actor?: AuthenticatedActorContext,
+): Promise<ActionCenterFacts> {
+  return withRequestReadScope(() => loadActionCenterFactsUncached(request, current, actor));
 }

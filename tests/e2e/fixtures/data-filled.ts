@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 /**
  * SYNTHETIC responses for data-filled screens, shaped exactly like the
  * existing contracts: /api/context, /api/forecourt/operations/overview,
- * /api/settlements/summary and /api/settlements/unmatched. No backend field
+ * /api/settlements/overview. No backend field
  * is invented here. Used by data-filled-screens.spec.ts and the screenshot
  * matrix.
  */
@@ -231,31 +231,33 @@ export async function mockSettlements(page: Page) {
     allocatedAmount: '0.0000',
     unallocatedAmount: amount,
   });
-  await page.route('**/api/settlements/summary**', (route) =>
-    route.fulfill(
-      json([
-        settlement({
-          id: 'eco',
-          providerName: 'EcoCash merchant',
-          grossAmount: '75.0000',
-          state: 'RECORDED',
-        }),
-        settlement({
-          id: 'pos',
-          providerName: 'Zimswitch POS',
-          grossAmount: '25.0000',
-          state: 'EXCEPTION',
-        }),
-      ]),
-    ),
-  );
-  await page.route('**/api/settlements/unmatched**', (route) =>
-    route.fulfill(
-      json([
-        payment('p1', 'ECOCASH', '25.5000'),
-        payment('p2', 'POS', '40.0000'),
-        payment('p3', 'POS', '10.0000'),
-      ]),
-    ),
-  );
+  await page.route('**/api/settlements/overview**', (route) => {
+    const summaryFixture = json([
+      settlement({
+        id: 'eco',
+        providerName: 'EcoCash merchant',
+        grossAmount: '75.0000',
+        state: 'RECORDED',
+      }),
+      settlement({
+        id: 'pos',
+        providerName: 'Zimswitch POS',
+        grossAmount: '25.0000',
+        state: 'EXCEPTION',
+      }),
+    ]);
+    const unmatchedFixture = json([
+      payment('p1', 'ECOCASH', '25.5000'),
+      payment('p2', 'POS', '40.0000'),
+      payment('p3', 'POS', '10.0000'),
+    ]);
+    if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+    if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+    return route.fulfill(
+      json({
+        settlements: JSON.parse(summaryFixture.body),
+        unmatched: JSON.parse(unmatchedFixture.body),
+      }),
+    );
+  });
 }

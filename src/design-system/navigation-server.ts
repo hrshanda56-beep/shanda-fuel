@@ -1,6 +1,5 @@
 import 'server-only';
 import { cache } from 'react';
-import { withRequestReadScope } from '../platform/security/request-read-scope';
 import type { ContextResolution } from '../modules/context/contracts';
 import { AppError } from '../platform/errors';
 import { observeError } from '../platform/observability';
@@ -116,15 +115,15 @@ export const getServerShellAccess = cache(async function getServerShellAccess(
   // Clerk is the session authority, not an application cookie-name heuristic.
   // Context resolution verifies Clerk before any identity/membership DB read.
   try {
-    return await withRequestReadScope(async () => {
-      const resolution = await resolveCurrentContext(request);
-      if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
-      if (!resolution.current) throw new AppError('FORBIDDEN', 'A valid work context is required');
-      const projection = await buildServerNavigationProjection(request, resolution.current);
-      if (projection === null)
-        throw new AppError('FORBIDDEN', 'Navigation access could not be verified');
-      return { status: 'ready', projection, current: resolution.current, resolution };
-    });
+    // The React render scope survives this function, so page data can reuse
+    // identity/snapshot reads after the shell has resolved.
+    const resolution = await resolveCurrentContext(request);
+    if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
+    if (!resolution.current) throw new AppError('FORBIDDEN', 'A valid work context is required');
+    const projection = await buildServerNavigationProjection(request, resolution.current);
+    if (projection === null)
+      throw new AppError('FORBIDDEN', 'Navigation access could not be verified');
+    return { status: 'ready' as const, projection, current: resolution.current, resolution };
   } catch (error) {
     if (error instanceof AppError && error.code === 'UNAUTHENTICATED')
       return { status: 'signed-out' };
@@ -132,3 +131,18 @@ export const getServerShellAccess = cache(async function getServerShellAccess(
     throw error;
   }
 });
+
+/** Reproject navigation for the same request's validated URL selection. */
+export async function getServerShellAccessForResolution(
+  request: Request,
+  access: Extract<ServerShellAccess, { status: 'ready' }>,
+  resolution: ContextResolution,
+): Promise<Extract<ServerShellAccess, { status: 'ready' }>> {
+  const same = JSON.stringify(access.current) === JSON.stringify(resolution.current);
+  const projection = same
+    ? access.projection
+    : await buildServerNavigationProjection(request, resolution.current);
+  if (resolution.current && projection === null)
+    throw new AppError('FORBIDDEN', 'Navigation access could not be verified');
+  return { ...access, current: resolution.current, resolution, projection };
+}

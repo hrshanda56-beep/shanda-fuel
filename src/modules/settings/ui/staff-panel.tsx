@@ -10,6 +10,7 @@ import { Modal } from '@/design-system/modal';
 import type { RoleCode } from '@/modules/authorization';
 import type { SettingsView } from '../contracts';
 import styles from './settings-workspace.module.css';
+import { matchesStaffScope } from './staff-filter';
 import { formatStaffInvitationMessage } from './staff-invitation-message';
 import {
   ApplicationStepUpError,
@@ -72,7 +73,16 @@ function initials(name: string) {
   ).toUpperCase();
 }
 
-export function StaffPanel({ tenantId, overview }: { tenantId: string; overview: StaffOverview }) {
+export function StaffPanel({
+  tenantId,
+  overview,
+  selectedStationId,
+}: {
+  tenantId: string;
+  overview: StaffOverview;
+  selectedStationId?: string;
+}) {
+  const [roleFilter, setRoleFilter] = useState<Role | ''>('');
   const [filter, setFilter] = useState<StaffFilter>('all');
   const [query, setQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -422,10 +432,23 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
     })),
   ];
 
-  const selectedRow = rows.find((row) => row.id === selectedId);
+  const matchingIds = new Set(
+    [...overview.activeStaff, ...overview.deactivatedStaff, ...overview.pendingInvitations]
+      .filter((person) =>
+        matchesStaffScope(
+          person,
+          selectedStationId,
+          roleFilter || undefined,
+          overview.scopeOptions,
+        ),
+      )
+      .map((person) => ('membershipId' in person ? person.membershipId : person.id)),
+  );
+  const scopedRows = rows.filter((row) => matchingIds.has(row.id));
+  const selectedRow = scopedRows.find((row) => row.id === selectedId);
 
   const needle = query.trim().toLowerCase();
-  const visibleRows = rows.filter(
+  const visibleRows = scopedRows.filter(
     (row) =>
       (filter === 'all' || row.group === filter) &&
       (needle === '' ||
@@ -434,7 +457,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
         )),
   );
   const countFor = (value: StaffFilter) =>
-    value === 'all' ? rows.length : rows.filter((row) => row.group === value).length;
+    value === 'all' ? scopedRows.length : scopedRows.filter((row) => row.group === value).length;
 
   return (
     <div className={styles.staffPanel}>
@@ -448,6 +471,20 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
+        </label>
+        <label className={styles.staffRoleFilter}>
+          Role
+          <select
+            value={roleFilter}
+            onChange={(event) => setRoleFilter(event.target.value as Role | '')}
+          >
+            <option value="">All roles</option>
+            {Object.entries(ROLE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <div className={styles.staffFilters} role="group" aria-label="Filter staff">
           {FILTERS.map((item) => (
@@ -474,6 +511,24 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
         </Button>
       </div>
 
+      <div className={styles.staffResults}>
+        <span>
+          {visibleRows.length} staff matching {selectedStationId ? 'this station' : 'all stations'}
+        </span>
+        {filter !== 'all' || roleFilter || query ? (
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={() => {
+              setFilter('all');
+              setRoleFilter('');
+              setQuery('');
+            }}
+          >
+            Clear filters
+          </Button>
+        ) : null}
+      </div>
       {message ? (
         <p className={styles.staffMessage} role="status">
           {message}
@@ -570,6 +625,15 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
       >
         {selectedRow ? (
           <div className={styles.staffDetail}>
+            <div className={styles.staffIdentity}>
+              <span className={styles.avatar} aria-hidden="true">
+                {initials(selectedRow.name)}
+              </span>
+              <div>
+                <strong>{selectedRow.name}</strong>
+                <p className={styles.note}>{selectedRow.staffNumber ?? 'Staff member'}</p>
+              </div>
+            </div>
             {message ? (
               <p role="status" className={styles.staffMessage}>
                 {message}
@@ -586,7 +650,7 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
             <dl className={styles.staffFacts}>
               <div>
                 <dt>Email</dt>
-                <dd>{selectedRow.email ?? '—'}</dd>
+                <dd>{selectedRow.email ?? 'No email provided'}</dd>
               </div>
               <div>
                 <dt>Role</dt>
@@ -598,7 +662,10 @@ export function StaffPanel({ tenantId, overview }: { tenantId: string; overview:
               </div>
             </dl>
             {selectedRow.actions ? (
-              <div className={styles.staffActions}>{selectedRow.actions}</div>
+              <section className={styles.staffAccountActions}>
+                <h3>Account actions</h3>
+                <div className={styles.staffActions}>{selectedRow.actions}</div>
+              </section>
             ) : (
               <p className={styles.note}>No actions available for this staff member.</p>
             )}

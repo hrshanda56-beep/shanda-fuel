@@ -48,8 +48,23 @@ const STATION_REQUIRED_POLICY: ContextRoutePolicy = {
  */
 export function contextRoutePolicy(pathname: string | null | undefined): ContextRoutePolicy {
   const path = pathname || '/';
-  if (path === '/') return REPORTING_POLICY;
-  if (/^\/reports(?:\/|$)/.test(path)) return REPORTING_POLICY;
+  if (
+    path === '/' ||
+    [
+      '/finance',
+      '/operations/daily',
+      '/operations/reconciliations',
+      '/inventory',
+      '/inventory/valuation',
+      '/cash',
+      '/settlements',
+      '/customers',
+      '/suppliers',
+      '/settings',
+    ].includes(path)
+  )
+    return REPORTING_POLICY;
+  if (/^\/(?:reports|customers)(?:\/|$)/.test(path)) return REPORTING_POLICY;
   if (/^\/suppliers(?:\/|$)/.test(path)) return LEGAL_ENTITY_ALL_STATIONS_POLICY;
   if (
     /^\/stations\/[^/]+(?:\/|$)/.test(path) ||
@@ -120,9 +135,18 @@ export function buildContextHref(
   search: string | URLSearchParams | null | undefined,
   selection: ContextSelection,
 ): string {
-  const path = pathname || '/';
+  const requestedPath = pathname || '/';
+  const path = selection.allStations
+    ? allStationsPath(requestedPath)
+    : selection.stationId && ['/cash', '/settlements'].includes(requestedPath)
+      ? `/stations/${encodeURIComponent(selection.stationId)}${requestedPath}`
+      : requestedPath;
   const policy = contextRoutePolicy(path);
-  const params = new URLSearchParams(search ?? '');
+  const params = new URLSearchParams(
+    selection.allStations && path !== requestedPath ? '' : (search ?? ''),
+  );
+  if (selection.allStations)
+    for (const key of ['businessDayId', 'shiftId', 'reconciliationId']) params.delete(key);
   params.set('tenantId', selection.organisationId);
   params.delete('organisationId');
 
@@ -151,6 +175,18 @@ export function buildContextHref(
   else params.delete('allStations');
 
   return withSearch(path, params);
+}
+
+/** Return to an overview when switching away from an individual station or record. */
+export function allStationsPath(path: string): string {
+  const station = path.match(/^\/stations\/[^/]+\/(cash|settlements|reconciliations)(?:\/|$)/);
+  if (station)
+    return station[1] === 'reconciliations' ? '/operations/reconciliations' : `/${station[1]}`;
+  if (path.startsWith('/inventory/')) return '/inventory/valuation';
+  if (path.startsWith('/operations/') || path === '/my-shift') return '/operations/daily';
+  if (path.startsWith('/customers/')) return '/customers';
+  if (path.startsWith('/suppliers/')) return '/suppliers';
+  return contextRoutePolicy(path).allStationsAllowed ? path : '/';
 }
 
 function withSearch(path: string, params: URLSearchParams): string {

@@ -10,11 +10,13 @@ type Executor = { execute: (query: ReturnType<typeof sql>) => PromiseLike<unknow
  * permission at this station. A solo owner is therefore never locked out, and the moment a second
  * approver exists the block applies again.
  */
-export async function hasAlternateApprover(
-  transaction: Executor,
-  scope: { tenantId: string; stationId: string; excludeMembershipId: string; permission: string },
-): Promise<boolean> {
-  const rows = (await transaction.execute(sql`
+export function alternateApproverQuery(scope: {
+  tenantId: string;
+  stationId: string;
+  excludeMembershipId: string;
+  permission: string;
+}) {
+  return sql`
     select 1 as found
     from app.memberships m
     join app.membership_role_assignments a
@@ -33,6 +35,15 @@ export async function hasAlternateApprover(
         or (a.scope_type = 'STATION' and a.station_id = s.id)
       )
     limit 1
-  `)) as unknown as Array<{ found: number }>;
+  `;
+}
+
+export async function hasAlternateApprover(
+  transaction: Executor,
+  scope: Parameters<typeof alternateApproverQuery>[0],
+): Promise<boolean> {
+  const rows = (await transaction.execute(alternateApproverQuery(scope))) as Array<{
+    found: number;
+  }>;
   return rows.length > 0;
 }

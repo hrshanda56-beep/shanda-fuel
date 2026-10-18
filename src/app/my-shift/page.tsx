@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+import { getMyShiftFromRequest } from '@/modules/forecourt/my-shift';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -6,7 +8,7 @@ import {
   allowsE2ENavigationFixture,
   E2E_NAVIGATION_FIXTURE_HEADER,
 } from '@/design-system/navigation-projection';
-import { AccessDeniedState } from '@/design-system/primitives';
+import { AccessDeniedState, ErrorState } from '@/design-system/primitives';
 import { resolveCurrentContext } from '@/modules/context/server';
 import { MyShiftWorkspace } from '@/modules/forecourt/ui/my-shift-workspace';
 import { AppError } from '@/platform/errors';
@@ -68,10 +70,47 @@ export default async function MyShiftPage({
       ) : failure ? (
         <AccessDeniedState message="Your station could not be loaded. Try again, or tell your supervisor." />
       ) : tenantId && stationId ? (
-        <MyShiftWorkspace tenantId={tenantId} stationId={stationId} />
+        <Suspense
+          key={`${tenantId}|${stationId}`}
+          fallback={<p role="status">Loading your shift…</p>}
+        >
+          <ShiftContent request={request} tenantId={tenantId} stationId={stationId} />
+        </Suspense>
       ) : (
         <AccessDeniedState message="No station is available to you yet. Tell your supervisor." />
       )}
     </AppShell>
+  );
+}
+
+async function ShiftContent({
+  request,
+  tenantId,
+  stationId,
+}: {
+  request: Request;
+  tenantId: string;
+  stationId: string;
+}) {
+  let initialData;
+  try {
+    initialData = await getMyShiftFromRequest(request, { tenantId, stationId });
+  } catch (error) {
+    if (
+      error instanceof AppError &&
+      (error.code === 'FORBIDDEN' || error.code === 'UNAUTHENTICATED')
+    )
+      return <AccessDeniedState />;
+    return (
+      <ErrorState title="Your shift could not be loaded" message="Reload the page to try again." />
+    );
+  }
+  return (
+    <MyShiftWorkspace
+      key={`${tenantId}|${stationId}`}
+      tenantId={tenantId}
+      stationId={stationId}
+      initialData={initialData}
+    />
   );
 }

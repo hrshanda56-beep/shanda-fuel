@@ -4,10 +4,9 @@ import { resolveTenantExecutionContext } from '../tenancy/authority';
 import { readNavigationSnapshot, decodeNavigationSnapshot } from './navigation-snapshot';
 
 /** Fresh authority for a single API read; never reused across HTTP requests. */
-export async function resolveStationReadAuthority(input: {
+export async function resolveTenantReadAuthority(input: {
   request: Request;
   tenantId: string;
-  stationId: string;
   authenticatedActor?: AuthenticatedActorContext;
 }) {
   const actor = input.authenticatedActor ?? (await requireAuthenticatedActor(input.request));
@@ -31,13 +30,24 @@ export async function resolveStationReadAuthority(input: {
         }
       : {}),
   });
-  const row = snapshot
-    .find((item) => item.membership.tenantId === input.tenantId)
-    ?.rows.find((row) => row.station_id === input.stationId && row.legal_entity_id !== null);
-  // Inactive stations are absent from the picker snapshot. Preserve historical
-  // read behavior by falling back to the original RLS station query for those.
+  return {
+    authority,
+    rows: snapshot.find((item) => item.membership.tenantId === input.tenantId)?.rows ?? [],
+  };
+}
+
+export async function resolveStationReadAuthority(input: {
+  request: Request;
+  tenantId: string;
+  stationId: string;
+  authenticatedActor?: AuthenticatedActorContext;
+}) {
+  const read = await resolveTenantReadAuthority(input);
+  const row = read.rows.find(
+    (row) => row.station_id === input.stationId && row.legal_entity_id !== null,
+  );
   const station =
-    row && row.station_id && row.legal_entity_id
+    row?.station_id && row.legal_entity_id
       ? {
           id: row.station_id,
           tenantId: input.tenantId,
@@ -45,5 +55,5 @@ export async function resolveStationReadAuthority(input: {
           timezone: row.station_timezone,
         }
       : undefined;
-  return { authority, station };
+  return { ...read, station };
 }

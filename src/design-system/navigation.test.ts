@@ -5,7 +5,9 @@ import {
   isSingleDestinationSection,
   navigationSections,
   readWorkContext,
+  navigationWorkContext,
   resolveNavigation,
+  resolveNavigationItem,
   selectMobileNavigationItems,
   syntheticNavigationProjection,
   type NavigationProjection,
@@ -183,4 +185,54 @@ describe('current-route indication', () => {
     expect(isNavigationItemActive(item('today'), '/reports')).toBe(false);
     expect(isNavigationItemActive(item('today'), null)).toBe(false);
   });
+});
+
+it('preserves explicit all-stations navigation and never carries a stale station', () => {
+  const context = readWorkContext(
+    '/reports',
+    new URLSearchParams('tenantId=t&allStations=true&stationId=old'),
+  );
+  expect(context).toEqual({ tenantId: 't', allStations: true });
+  const items = navigationSections.flatMap((section) => section.items);
+  for (const key of [
+    'cash',
+    'settlements',
+    'reconciliations',
+    'daily-operations',
+    'finance-home',
+    'customers',
+  ]) {
+    const item = items.find((row) => row.key === key)!;
+    const result = resolveNavigationItem(item, context);
+    expect(result.state).toBe('link');
+    if (result.state === 'link') {
+      expect(result.href).toContain('allStations=true');
+      expect(result.href).not.toContain('stationId=');
+      expect(result.href).not.toContain('/stations/');
+    }
+  }
+});
+
+it('keeps validated navigation scope for partial links without mixing explicit scope changes', () => {
+  const selected = { tenantId: 'owner', legalEntityId: 'entity', stationId: 'station' };
+  expect(
+    navigationWorkContext('/customers', new URLSearchParams('tenantId=owner'), selected),
+  ).toEqual(selected);
+  expect(
+    navigationWorkContext(
+      '/reports',
+      new URLSearchParams('tenantId=owner&allStations=true'),
+      selected,
+    ),
+  ).toEqual({ tenantId: 'owner', allStations: true });
+  expect(
+    navigationWorkContext('/reports', new URLSearchParams('tenantId=other'), selected),
+  ).toEqual({ tenantId: 'other' });
+  expect(
+    navigationWorkContext(
+      '/reports',
+      new URLSearchParams('tenantId=owner&stationId=new'),
+      selected,
+    ),
+  ).toEqual({ tenantId: 'owner', stationId: 'new' });
 });

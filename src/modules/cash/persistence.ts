@@ -430,7 +430,7 @@ export async function getCashStationSummaryInTransaction(
     }>;
   }> = {},
 ) {
-  const rows = await transaction.execute<{
+  type RowsRow = {
     id: string;
     collection_reference: string;
     source_location_id: string;
@@ -442,7 +442,40 @@ export async function getCashStationSummaryInTransaction(
     received_at: string | Date | null;
     allocated_amount: string;
     confirmed_amount: string;
-  }>(sql`
+  };
+  type LocationsRow = {
+    id: string;
+    code: string;
+    name: string;
+    location_type: string;
+  };
+  type ReconciliationSourcesRow = {
+    reconciliation_id: string;
+    business_date: string;
+    counted_cash: string;
+    allocated_cash: string;
+  };
+  type DepositRowsRow = {
+    id: string;
+    deposit_reference: string;
+    amount: string;
+    state: string;
+    version: number | string;
+    source_location_id: string;
+    bank_account_id: string;
+    bank_account_name: string;
+    confirmed_amount: string | null;
+    confirmation_variance: string | null;
+    bank_reference: string | null;
+    deposited_at: string | Date;
+  };
+  type BankAccountsRow = {
+    id: string;
+    name: string;
+    bank_name: string;
+    account_reference_masked: string;
+  };
+  const rowsQuery = sql`
     select c.id, c.collection_reference, c.source_location_id, c.amount::text, c.state,
            c.current_location_id, c.version,
            c.recorded_at, c.received_at,
@@ -459,28 +492,16 @@ export async function getCashStationSummaryInTransaction(
     group by c.id, c.collection_reference, c.source_location_id, c.amount, c.state,
              c.current_location_id, c.version, c.recorded_at, c.received_at
     order by c.recorded_at, c.id
-  `);
-
-  const locations = await transaction.execute<{
-    id: string;
-    code: string;
-    name: string;
-    location_type: string;
-  }>(sql`
+  `;
+  const locationsQuery = sql`
     select id, code, name, location_type
     from app.cash_locations
     where tenant_id = ${context.tenantId}
       and station_id = ${context.stationId}
       and status = 'ACTIVE'
     order by code, id
-  `);
-
-  const reconciliationSources = await transaction.execute<{
-    reconciliation_id: string;
-    business_date: string;
-    counted_cash: string;
-    allocated_cash: string;
-  }>(sql`
+  `;
+  const reconciliationSourcesQuery = sql`
     select r.id as reconciliation_id,
            bd.business_date,
            cd.counted_cash::text as counted_cash,
@@ -504,23 +525,9 @@ export async function getCashStationSummaryInTransaction(
     group by r.id, bd.business_date, cd.counted_cash
     having cd.counted_cash - coalesce(sum(a.amount), 0) > 0
     order by bd.business_date desc, r.id
-  `);
-
-  const depositRows = options.includeDepositDetails
-    ? await transaction.execute<{
-        id: string;
-        deposit_reference: string;
-        amount: string;
-        state: string;
-        version: number | string;
-        source_location_id: string;
-        bank_account_id: string;
-        bank_account_name: string;
-        confirmed_amount: string | null;
-        confirmation_variance: string | null;
-        bank_reference: string | null;
-        deposited_at: string | Date;
-      }>(sql`
+  `;
+  const depositRowsQuery = options.includeDepositDetails
+    ? sql`
         select d.id,
                d.deposit_reference,
                d.amount::text,
@@ -541,16 +548,10 @@ export async function getCashStationSummaryInTransaction(
           and d.station_id = ${context.stationId}
           and d.state <> 'REVERSED'
         order by d.deposited_at desc, d.id desc
-      `)
-    : [];
-
-  const bankAccounts = options.includeDepositDetails
-    ? await transaction.execute<{
-        id: string;
-        name: string;
-        bank_name: string;
-        account_reference_masked: string;
-      }>(sql`
+      `
+    : sql`select null as unavailable where false`;
+  const bankAccountsQuery = options.includeDepositDetails
+    ? sql`
         select id, name, bank_name, account_reference_masked
         from app.bank_accounts
         where tenant_id = ${context.tenantId}
@@ -558,8 +559,29 @@ export async function getCashStationSummaryInTransaction(
           and status = 'ACTIVE'
           and currency = 'USD'
         order by name, id
-      `)
-    : [];
+      `
+    : sql`select null as unavailable where false`;
+  const sections = await transaction.execute<{
+    rows: RowsRow[];
+    locations: LocationsRow[];
+    reconciliationSources: ReconciliationSourcesRow[];
+    depositRows: DepositRowsRow[];
+    bankAccounts: BankAccountsRow[];
+  }>(sql`
+    with rows_rows as (${rowsQuery}),
+locations_rows as (${locationsQuery}),
+reconciliationSources_rows as (${reconciliationSourcesQuery}),
+depositRows_rows as (${depositRowsQuery}),
+bankAccounts_rows as (${bankAccountsQuery})
+    select coalesce((select json_agg(rows_rows) from rows_rows), '[]'::json) as "rows",
+coalesce((select json_agg(locations_rows) from locations_rows), '[]'::json) as "locations",
+coalesce((select json_agg(reconciliationSources_rows) from reconciliationSources_rows), '[]'::json) as "reconciliationSources",
+coalesce((select json_agg(depositRows_rows) from depositRows_rows), '[]'::json) as "depositRows",
+coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json) as "bankAccounts"
+  `);
+  const snapshot = sections[0];
+  if (!snapshot) throw new AppError('INVARIANT_VIOLATION', 'Cash summary was not returned');
+  const { rows, locations, reconciliationSources, depositRows, bankAccounts } = snapshot;
 
   let availableAtStation = new ExactDecimal('0');
   let collectedButUnbanked = new ExactDecimal('0');

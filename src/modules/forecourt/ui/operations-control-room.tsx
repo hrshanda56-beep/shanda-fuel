@@ -62,8 +62,8 @@ type Overview = {
     id: string;
     state: string;
     businessDate: string;
-    plannedStartAt: string;
-    plannedEndAt: string;
+    plannedStartAt: string | null;
+    plannedEndAt: string | null;
     version: number;
     openedAt: string | null;
     meterClosedAt: string | null;
@@ -124,7 +124,8 @@ function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational'
   return 'informational';
 }
 
-function timeRange(start: string, end: string, timeZone: string) {
+function timeRange(start: string | null, end: string | null, timeZone: string) {
+  if (!start || !end) return 'Shift time unavailable';
   const formatter = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
@@ -146,13 +147,15 @@ function formatTimestamp(value: string | null, timeZone: string) {
 export function OperationsControlRoom({
   context,
   focus = 'operations',
+  initialData,
 }: {
   context: Context;
+  initialData?: Overview;
   /** `reconciliations` leads with the station's reconciliations, exceptions first. */
   focus?: 'operations' | 'reconciliations';
 }) {
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [overview, setOverview] = useState<Overview | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [busy, setBusy] = useState(false);
   const verifyLockIdentity = useLockVerification();
   const [error, setError] = useState<string>();
@@ -199,13 +202,14 @@ export function OperationsControlRoom({
   );
 
   useEffect(() => {
+    if (initialData) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => void load(false, controller.signal), 0);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [load]);
+  }, [load, initialData]);
 
   function stableIdempotencyKey(
     commandType: string,

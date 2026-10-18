@@ -16,24 +16,8 @@ import { formatTileLitres } from '../../reporting/format';
 import { TankDrum } from './tank-drum';
 import { fuelKind, tankLabel, tankLevel, tanksForStation } from './tank-overview-model';
 
-type TankRow = {
-  stationId: string;
-  tankId: string;
-  tankCode: string;
-  productId: string;
-  productCode: string;
-  productName: string;
-  capacityLitres: string;
-  reorderLevelLitres: string | null;
-  expectedLitres: string;
-  physicalLitres: string | null;
-  varianceLitres: string | null;
-};
-
-export type InventoryReport = {
-  filters: { toDate: string };
-  inventory: { rows: readonly TankRow[] };
-};
+import type { InventoryReport } from '../tank-read-model';
+export type { InventoryReport } from '../tank-read-model';
 
 type Load =
   | { status: 'loading' }

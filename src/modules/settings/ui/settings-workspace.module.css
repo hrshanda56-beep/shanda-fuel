@@ -10,6 +10,7 @@
 }
 
 .page {
+  container: settings-workspace / inline-size;
   max-width: none;
   padding-block: 0;
 }
@@ -66,6 +67,7 @@
 }
 
 .content {
+  container: settings-content / inline-size;
   display: grid;
   align-content: start;
   gap: var(--space-5);
@@ -588,5 +590,191 @@
     content: attr(data-label);
     min-width: 4.5rem;
     color: var(--text-muted, var(--text-secondary));
+  }
+}
+
+@container settings-content (max-width: 44rem) {
+  .staffHead {
+    display: none;
+  }
+  .staffTableRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .staffCell {
+    display: grid;
+    grid-template-columns: 5rem minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .staffCell::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+  }
+  .staffInviteButton {
+    margin-left: 0;
+  }
+  .staffSearch {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .staffFilters {
+    border-radius: var(--radius-lg);
+  }
+}
+
+@container settings-content (max-width: 28rem) {
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sectionMenu {
+  display: none;
+}
+.staffRoleFilter {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.staffRoleFilter select {
+  min-height: 2.75rem;
+  max-width: 100%;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+.staffResults {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.staffIdentity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.staffIdentity strong {
+  font-size: var(--font-size-lg);
+}
+.staffFacts > div {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.staffAccountActions {
+  width: 100%;
+  margin-top: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.staffAccountActions h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-md);
+}
+
+@media (max-width: 48rem) {
+  .sectionMenu {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .subnav {
+    display: none;
+  }
+}
+
+/* Compact disclosure follows the shell's rounded context control. */
+.sectionMenu {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  z-index: 5;
+}
+.sectionTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  list-style: none;
+}
+.sectionTrigger::-webkit-details-marker {
+  display: none;
+}
+.sectionTrigger:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+}
+.sectionTrigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.sectionChevron {
+  margin-left: var(--space-3);
+}
+.sectionMenu[open] .sectionChevron {
+  transform: rotate(180deg);
+}
+.sectionOptions {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  display: grid;
+  gap: var(--space-1);
+  width: min(18rem, calc(100vw - 3rem));
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+.sectionOptions button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sectionOptions button:hover,
+.sectionOptions button:focus-visible {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+.sectionOptions button[aria-current='page'] {
+  background: var(--bg-selected);
+  color: var(--accent-text);
+}
+
+@media (max-width: 48rem) {
+  .sectionMenu {
+    display: block;
   }
 }

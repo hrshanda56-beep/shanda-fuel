@@ -1,119 +1,15 @@
-import { headers } from 'next/headers';
-
-import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
-import {
-  buildContextHref,
-  contextRoutePolicy,
-  readContextRoute,
-  type ContextResolution,
-} from '@/modules/context';
-import { resolveCurrentContext } from '@/modules/context/server';
-import { ValuationStreamDetail } from '@/modules/costing/ui/valuation-workspace';
-import {
-  InventoryContextRequired,
-  type InventoryContext,
-} from '@/modules/inventory/ui/inventory-workspace';
-
-export const metadata = { title: 'Inventory valuation stream' };
-
-type SearchParams = Record<string, string | string[] | undefined>;
-
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function searchForContext(search: SearchParams): URLSearchParams {
-  const params = new URLSearchParams();
-  for (const name of ['tenantId', 'organisationId', 'legalEntityId', 'stationId', 'allStations']) {
-    const value = first(search[name]);
-    if (value) params.set(name, value);
-  }
-  return params;
-}
-
-function resolvedInventoryContext(resolution: ContextResolution): InventoryContext | null {
-  const selection = resolution.current;
-  if (!selection || selection.allStations || !selection.legalEntityId || !selection.stationId) {
-    return null;
-  }
-  const organisation = resolution.available.organisations.find(
-    (candidate) => candidate.id === selection.organisationId,
-  );
-  const legalEntity = organisation?.legalEntities.find(
-    (candidate) => candidate.id === selection.legalEntityId,
-  );
-  const station = legalEntity?.stations.find((candidate) => candidate.id === selection.stationId);
-  if (!organisation || !legalEntity || !station) return null;
-  return {
-    tenantId: organisation.id,
-    legalEntityId: legalEntity.id,
-    stationId: station.id,
-    organisationName: organisation.name,
-    legalEntityName: legalEntity.name,
-    stationName: station.name,
-    stationTimezone: station.timezone,
-  };
-}
-
-async function loadInventoryContext(search: SearchParams): Promise<InventoryContext | null> {
-  const pathname = '/inventory/valuation';
-  const params = searchForContext(search);
-  const requestHeaders = await headers();
-  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
-  if (!host) return null;
-  const protocol = requestHeaders.get('x-forwarded-proto')?.split(',')[0]?.trim() ?? 'http';
-  const request = new Request(`${protocol}://${host}${pathname}?${params.toString()}`, {
-    headers: new Headers(requestHeaders),
-  });
-  try {
-    const policy = contextRoutePolicy(pathname);
-    const resolution = await resolveCurrentContext(request, {
-      route: readContextRoute(pathname, new URL(request.url).searchParams),
-      policy,
-    });
-    return resolvedInventoryContext(resolution);
-  } catch {
-    return null;
-  }
-}
-
-export default async function InventoryValuationStreamPage({
-  params,
+import { ValuationPage } from '@/modules/costing/server-page';
+import type { PageSearch } from '@/modules/context/server-page';
+export const metadata = { title: 'Inventory valuation' };
+export default async function Page({
   searchParams,
+  params,
 }: {
+  searchParams: Promise<PageSearch>;
   params: Promise<{ tankId: string; productId: string }>;
-  searchParams: Promise<SearchParams>;
 }) {
-  const [route, search] = await Promise.all([params, searchParams]);
-  const context = await loadInventoryContext(search);
-  const contextHref = context
-    ? buildContextHref('/inventory/valuation', '', {
-        organisationId: context.tenantId,
-        legalEntityId: context.legalEntityId,
-        stationId: context.stationId,
-        allStations: false,
-      })
-    : '/inventory/valuation';
+  const route = await params;
   return (
-    <AppShell
-      breadcrumbs={[
-        {
-          label: 'Inventory',
-          href: contextHref,
-        },
-        { label: 'Valuation stream' },
-      ]}
-    >
-      {context ? (
-        <ValuationStreamDetail
-          context={context}
-          contextHref={contextHref}
-          tankId={route.tankId}
-          productId={route.productId}
-        />
-      ) : (
-        <InventoryContextRequired />
-      )}
-    </AppShell>
+    <ValuationPage search={await searchParams} tankId={route.tankId} productId={route.productId} />
   );
 }

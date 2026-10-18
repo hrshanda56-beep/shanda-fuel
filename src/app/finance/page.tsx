@@ -1,3 +1,13 @@
+import { buildContextHref } from '@/modules/context/routes';
+import { PortfolioOverview } from '@/modules/context/portfolio-overview';
+import { getServerShellAccessForResolution } from '@/design-system/navigation-server';
+import { requireAuthenticatedActor } from '@/modules/identity';
+import { Suspense } from 'react';
+import type { ContextResolution } from '@/modules/context/contracts';
+import type { CurrentContext } from '@/modules/context/contracts';
+import { resolveAvailableContext } from '@/modules/context/resolution';
+import { contextRoutePolicy } from '@/modules/context/routes';
+import { readPersistedContext } from '@/modules/context/persistence';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -8,6 +18,7 @@ import { TableScrollRegion } from '@/design-system/table';
 import { Icon } from '@/design-system/icons';
 import {
   AccessDeniedState,
+  LoadingState,
   Card,
   EmptyState,
   ErrorState,
@@ -78,7 +89,15 @@ function ActionTable({ items }: { items: readonly ActionItem[] }) {
   );
 }
 
-function ActionList({ center, stationId }: { center: ActionCenter; stationId: string }) {
+function ActionList({
+  center,
+  stationId,
+  current,
+}: {
+  center: ActionCenter;
+  stationId: string;
+  current: CurrentContext;
+}) {
   const station = `/stations/${encodeURIComponent(stationId)}`;
   const areaHref: Record<ActionArea, string> = {
     Approvals: '/operations/reconciliations',
@@ -104,7 +123,11 @@ function ActionList({ center, stationId }: { center: ActionCenter; stationId: st
           const items = countFor(area);
           const urgent = items.filter((item) => item.tone === 'attention').length;
           return (
-            <Link key={area} className="finance-tile" href={areaHref[area]}>
+            <Link
+              key={area}
+              className="finance-tile"
+              href={buildContextHref(areaHref[area], '', current)}
+            >
               <dt>{area}</dt>
               <dd>
                 {items.length}
@@ -151,8 +174,7 @@ export default async function FinancePage({
     access.status === 'ready' &&
     access.projection?.some((entry) => entry.key === 'finance-home' && entry.visible);
   const baseRequest = requestFromHeaders(requestHeaders);
-  // The shell request is always `/`, which resolves with the all-stations default. Finance work is
-  // per station, so resolve the scope again against this page's own route and query.
+  // Resolve Finance's explicit URL scope against the same authorized context tree as the shell.
   const query = await searchParams;
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
@@ -162,27 +184,38 @@ export default async function FinancePage({
     ? new Request(new URL(`/finance?${params}`, baseRequest.url), { headers: baseRequest.headers })
     : null;
   let current = access.status === 'ready' ? access.current : null;
+  let portfolioResolution: ContextResolution | null = null;
   if (request && current) {
     try {
-      const resolved = await resolveCurrentContext(request, {
-        route: readContextRoute('/finance', params),
-      });
+      const route = readContextRoute('/finance', params);
+      const resolved =
+        access.status === 'ready' && access.resolution
+          ? resolveAvailableContext(
+              access.resolution.available,
+              route,
+              contextRoutePolicy('/finance'),
+              readPersistedContext(request),
+            )
+          : await resolveCurrentContext(request, { route });
       current = resolved.current ?? current;
+      if (current?.allStations) portfolioResolution = resolved;
     } catch {
       // Keep the shell's scope; the page then asks for a station.
     }
   }
-  const stationId = current && !current.allStations ? current.stationId : undefined;
-
-  let center: ActionCenter | null = null;
-  let failed = false;
-  if (allowed && current && stationId && request) {
-    try {
-      center = buildActionCenter(await loadActionCenterFacts(request, { ...current, stationId }));
-    } catch {
-      failed = true;
-    }
+  if (allowed && portfolioResolution && request && access.status === 'ready') {
+    const pageAccess = await getServerShellAccessForResolution(
+      request,
+      access,
+      portfolioResolution,
+    );
+    return (
+      <AppShell shellAccess={pageAccess}>
+        <PortfolioOverview request={request} resolution={portfolioResolution} area="finance" />
+      </AppShell>
+    );
   }
+  const stationId = current && !current.allStations ? current.stationId : undefined;
 
   return (
     <AppShell
@@ -196,14 +229,38 @@ export default async function FinancePage({
           title="Choose a station"
           message="Finance work is shown one station at a time. Use the context selector to pick a station."
         />
-      ) : failed || !center ? (
-        <ErrorState
-          title="Finance could not be loaded"
-          message="Reload the page to try again. Nothing has been changed."
-        />
+      ) : request && current ? (
+        <Suspense fallback={<LoadingState label="Loading finance work…" />}>
+          <FinanceWork request={request} current={{ ...current, stationId }} />
+        </Suspense>
       ) : (
-        <ActionList center={center} stationId={stationId} />
+        <ErrorState title="Finance could not be loaded" message="Reload the page to try again." />
       )}
     </AppShell>
   );
+}
+
+async function FinanceWork({
+  request,
+  current,
+}: {
+  request: Request;
+  current: CurrentContext & { stationId: string };
+}) {
+  let center: ActionCenter | null = null;
+  try {
+    const actor = await requireAuthenticatedActor(request);
+    center = buildActionCenter(await loadActionCenterFacts(request, current, actor));
+  } catch {
+    // Rendering remains outside the data-loading try/catch.
+  }
+  if (!center) {
+    return (
+      <ErrorState
+        title="Finance could not be loaded"
+        message="Reload the page to try again. Nothing has been changed."
+      />
+    );
+  }
+  return <ActionList center={center} stationId={current.stationId} current={current} />;
 }

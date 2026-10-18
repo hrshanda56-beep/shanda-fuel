@@ -1,3 +1,4 @@
+import { resolveTenantReadAuthority } from '../context/read-authority';
 import 'server-only';
 
 import { sql } from 'drizzle-orm';
@@ -924,17 +925,38 @@ const dateBasis: ReportDateBasis = {
  * authenticated tenant member who may view every requested station. One denial
  * rejects the whole request.
  */
-export async function authorizeManagementReportRequest(request: Request, input: unknown) {
-  const filters = parseManagementReportQuery(input);
-  const authority = await resolveTenantExecutionContext({
-    request,
-    requestedTenantId: filters.tenantId,
+async function reportingAuthority(request: Request, filters: ManagementReportQuery) {
+  if (process.env.CONSOLIDATED_CONTEXT_READS !== '1') {
+    const authority = await resolveTenantExecutionContext({
+      request,
+      requestedTenantId: filters.tenantId,
+    });
+    return { authority, rows: [] };
+  }
+  return resolveTenantReadAuthority({ request, tenantId: filters.tenantId });
+}
+async function reportingStations(
+  read: Awaited<ReturnType<typeof reportingAuthority>>,
+  filters: ManagementReportQuery,
+) {
+  if (filters.stationIds.length === 0) return [];
+  const stations = filters.stationIds.flatMap((id) => {
+    const row = read.rows.find((row) => row.station_id === id && row.legal_entity_id);
+    return row?.station_id && row.legal_entity_id
+      ? [{ id: row.station_id, legalEntityId: row.legal_entity_id }]
+      : [];
   });
-  const stations = await withTenantTransaction(authority.transaction, (transaction) =>
+  if (stations.length === filters.stationIds.length) return stations;
+  return withTenantTransaction(read.authority.transaction, (transaction) =>
     selectedStations(transaction, filters),
   );
-  authorizeStations(authority.authorization, filters, stations);
-  return { filters, authority, stations };
+}
+export async function authorizeManagementReportRequest(request: Request, input: unknown) {
+  const filters = parseManagementReportQuery(input);
+  const read = await reportingAuthority(request, filters);
+  const stations = await reportingStations(read, filters);
+  authorizeStations(read.authority.authorization, filters, stations);
+  return { filters, authority: read.authority, stations };
 }
 
 export async function getDashboardSalesFromRequest(request: Request, input: unknown) {
@@ -1035,13 +1057,18 @@ export async function getDailyOperationsFromRequest(
   rows: readonly DailyOperationsRow[];
 }> {
   const filters = parseManagementReportQuery(input);
-  const authority = await resolveTenantExecutionContext({
-    request,
-    requestedTenantId: filters.tenantId,
-  });
+  const read = await reportingAuthority(request, filters);
+  const stations =
+    process.env.CONSOLIDATED_CONTEXT_READS === '1' ? await reportingStations(read, filters) : null;
+  const authority = read.authority;
+  if (stations) authorizeStations(authority.authorization, filters, stations);
   return withTenantTransaction(authority.transaction, async (transaction) => {
-    const stations = await selectedStations(transaction, filters);
-    authorizeStations(authority.authorization, filters, stations);
+    if (!stations)
+      authorizeStations(
+        authority.authorization,
+        filters,
+        await selectedStations(transaction, filters),
+      );
     return {
       report: 'DAILY_OPERATIONS' as const,
       state: 'POSTED' as const,

@@ -109,20 +109,36 @@ function commandFailureKind(error: ApiError): ErrorKind {
   return 'error';
 }
 
-export function SettlementWorkspace({ stationId }: { stationId: string }) {
+export function SettlementWorkspace({
+  stationId,
+  initial,
+}: {
+  stationId: string;
+  initial?: {
+    context: SettlementContext;
+    settlements: ProviderSettlementSummaryRow[];
+    unmatched: UnmatchedProviderPaymentRow[];
+  };
+}) {
   const contextFetch = useContextFetch();
   const pathname = usePathname() ?? `/stations/${encodeURIComponent(stationId)}/settlements`;
   const routePolicy = contextRoutePolicy(pathname);
-  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>('loading');
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(
+    initial ? 'ready' : 'loading',
+  );
   const [contextMessage, setContextMessage] = useState('');
-  const [context, setContext] = useState<SettlementContext | null>(null);
-  const [settlements, setSettlements] = useState<ProviderSettlementSummaryRow[]>([]);
-  const [unmatched, setUnmatched] = useState<UnmatchedProviderPaymentRow[]>([]);
-  const [settlementId, setSettlementId] = useState('');
-  const [paymentId, setPaymentId] = useState('');
+  const [context, setContext] = useState<SettlementContext | null>(initial?.context ?? null);
+  const [settlements, setSettlements] = useState<ProviderSettlementSummaryRow[]>(
+    initial?.settlements ?? [],
+  );
+  const [unmatched, setUnmatched] = useState<UnmatchedProviderPaymentRow[]>(
+    initial?.unmatched ?? [],
+  );
+  const [settlementId, setSettlementId] = useState(initial?.settlements[0]?.settlementId ?? '');
+  const [paymentId, setPaymentId] = useState(initial?.unmatched[0]?.paymentId ?? '');
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState<string | undefined>();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initial);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<ErrorKind>('error');
@@ -225,37 +241,20 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
         tenantId: canonicalUrl.searchParams.get('tenantId') ?? activeContext.organisationId,
         stationId: activeContext.stationId ?? '',
       });
-      const [settlementResponse, unmatchedResponse] = await Promise.all([
-        fetch(`/api/settlements/summary?${params.toString()}`, {
-          credentials: 'same-origin',
-          cache: 'no-store',
-          signal,
-        }),
-        fetch(`/api/settlements/unmatched?${params.toString()}`, {
-          credentials: 'same-origin',
-          cache: 'no-store',
-          signal,
-        }),
-      ]);
-      const settlementBody = (await settlementResponse.json().catch(() => null)) as
-        { message?: string; error?: string } | ProviderSettlementSummaryRow[] | null;
-      const unmatchedBody = (await unmatchedResponse.json().catch(() => null)) as
-        { message?: string; error?: string } | UnmatchedProviderPaymentRow[] | null;
-      if (!settlementResponse.ok) {
-        const body = settlementBody as { message?: string; error?: string } | null;
+      const response = await fetch(`/api/settlements/overview?${params.toString()}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal,
+      });
+      const body = (await response.json().catch(() => null)) as {
+        settlements: ProviderSettlementSummaryRow[];
+        unmatched: UnmatchedProviderPaymentRow[];
+        message?: string;
+        error?: string;
+      } | null;
+      if (!response.ok || !body)
         throw apiError(body?.message ?? 'Provider settlements could not be loaded', body?.error);
-      }
-      if (!unmatchedResponse.ok) {
-        const body = unmatchedBody as { message?: string; error?: string } | null;
-        throw apiError(
-          body?.message ?? 'Unmatched payment evidence could not be loaded',
-          body?.error,
-        );
-      }
-      return {
-        settlements: settlementBody as ProviderSettlementSummaryRow[],
-        unmatched: unmatchedBody as UnmatchedProviderPaymentRow[],
-      };
+      return { settlements: body.settlements, unmatched: body.unmatched };
     },
     [],
   );
@@ -289,6 +288,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
   );
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void (async () => {
       setWorkspaceState('loading');
@@ -329,7 +329,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       }
     })();
     return () => controller.abort();
-  }, [applySettlementData, loadSettlementData, resolveContext]);
+  }, [applySettlementData, loadSettlementData, resolveContext, initial]);
 
   function stableAttempt(logicalKey: string): AttemptKeys {
     const existing = attemptKeys.current.get(logicalKey);

@@ -1,5 +1,37 @@
 # Shanda Fuel — Current Status
 
+## Finance read-path optimization candidate — 2026-10-18
+
+Finance overview starts independent sign-off, cash, settlement and supplier
+sections concurrently, reuses the shared shell's verified context tree and
+streams its work list behind a truthful loading state. Partial restricted/error
+states remain per section. Sign-off uses one SQL exchange for queues and existing
+alternate-approver checks, preserving tenant-bound strong-authentication rules.
+Cash summary batches five data reads into one permission-gated query. Customer
+account summary batches account, product, station and recent-history sections
+into one query and keeps monetary values as text. Finance read loaders use the
+existing persisted authority snapshot rather than command-context station/entity
+discovery transactions. Command loaders, schema, RLS and write behavior are
+unchanged. The settlement workspace now requests /api/settlements/overview once;
+the old summary and unmatched endpoints remain available with their array contracts.
+
+Final checks: 954 unit tests, 8 focused runtime-role integration checks, and
+23 synthetic browser checks passed. TypeScript, focused ESLint and the production
+build passed. Browser checks used the installed Brave Chromium binary through a
+temporary Playwright config because the bundled browser was absent.
+
+Eight focused synthetic local integration checks passed with actual app_runtime
+connections, including exact four-decimal Customer limits, context mismatch and
+cross-tenant denial. The repeatable opt-in suite is:
+`RUN_FINANCE_READ_TESTS=1 CONSOLIDATED_CONTEXT_READS=1 DATABASE_PREPARED_STATEMENTS=1 pnpm exec vitest run --config vitest.finance-read.config.ts`
+It requires explicit local DATABASE_URL for fixture setup and a separate local
+FINANCE_RUNTIME_DATABASE_URL using app_runtime. No Neon or production database
+was contacted. Existing broad command suites also exposed owner/runtime harness
+and write-ACL prerequisites; those attempts are not a passing command-suite gate
+and no privileges or command code were changed to compensate. The focused read
+suite avoids those command-fixture dependencies. Normal authenticated application
+latency remains to be measured after restarting the rebuilt local server.
+
 ## Dashboard API read consolidation — 2026-10-18
 
 The effective driver fix now adapts the exact unsafe(query, parameters) calls
@@ -944,3 +976,93 @@ Lock interaction: removed the separate Clerk verification button. The single Loc
 Intermittent re-login investigation: the login form previously labelled all exceptions (including session activation/network errors) as rejected credentials. Separated credential, rate-limit, session-activation and other failures; added an immediate duplicate-submit guard. Seven focused tests, TypeScript and targeted lint passed. The reported intermittent failure has not been reproduced with current credentials and its root cause is unconfirmed; no password or Clerk configuration was changed.
 
 Daily Operations simplification: removed the Needs Attention section and the Shifts / Waiting for review / Returned for changes summary cards, including their unused client-side calculations. The shift board, reconciliation workflows and server authorization remain unchanged. Browser regression assertions updated but not executed; 91 forecourt unit tests, TypeScript, targeted lint and CSS parsing passed. No production access, push, merge or deployment performed.
+
+
+## 2026-10-18 — Server-loaded dashboard page data (local candidate)
+
+Implemented in `codex/clerk-only-auth-20261017`, without contacting Neon or production:
+
+- The main dashboard, Cash, Settlements, Customers list/detail, Suppliers list/detail,
+  Operations overview/reconciliation list, Daily Operations, My Shift, valuation
+  overview/stream/revaluation detail, and reporting pages load primary initial data
+  through shared server query services. Client workspaces receive serialized initial
+  results and skip duplicate mount-time data requests. Existing API refreshes and
+  command endpoints remain available.
+- A shared server page boundary validates URL context against the authorized tree,
+  keeps navigation/context on the same selection, streams loading states, and keys
+  boundaries by scope to prevent previous-station content persisting on navigation.
+- Dashboard aggregation is shared between the server page and API. Chart range
+  changes use `/api/dashboard/sales` and do not reload daily/customer/operations
+  sections. Reporting station authorization reuses validated request snapshots;
+  missing stations retain an RLS-backed lookup. Daily totals retain their existing
+  date semantics independently of chart range.
+- Request render caching now remains available after shell access resolves.
+  Finance forwards its already-resolved actor into its existing request scope.
+- No migrations, ACL/RLS changes, dependency changes, command semantics, or monetary
+  calculation changes were introduced by this server-loading conversion.
+
+Validation: 991 unit tests passed; 10 focused local `app_runtime` database checks
+passed, including dashboard loading and foreign-station rejection; the combined
+browser run passed 68 checks and intentionally skipped four authenticated reporting
+checks without configured fixture credentials. TypeScript, production build and
+focused lint passed. Browser fixtures were updated from obsolete individual
+Dashboard endpoints to the existing bundled API and new chart-only refresh route.
+The disposable local PostgreSQL cluster was stopped after testing.
+
+Limits: these are synthetic browser checks plus real local runtime-role query
+checks, not signed-in Neon latency measurements. The browser tool still reports
+local browser access disabled, so no new time-to-data improvement is claimed.
+Supplemental reconciliation-board detail reads still load in the browser; primary
+operations overview loading moved to the server. The previously reported stream
+closure was not reproduced or declared fixed. Earlier broad command-suite database
+prerequisites remain as documented above. At initial local validation, no commit, push, merge or deployment had been
+performed for this candidate. Independent review remains a release gate.
+
+
+### PR #146 integration validation
+
+Prepared this performance update on top of `8f25ac2a65faf189970b8a9c3484367c671ab1ed`,
+preserving the eight intervening PR commits. The merged implementation keeps credit-limit
+warnings, station-required Finance context, saved organisation reporting behavior, and
+read-only approval visibility without a fresh step-up. Batched reconciliation sign-off
+facts retain business-day/shift identifiers needed by the existing destination links.
+Approval commands retain their existing assurance requirements.
+
+The combined candidate passed 1,002 unit tests, 10 local runtime-role database checks,
+and 68 browser checks (four authenticated reporting cases intentionally skipped without
+fixture credentials). TypeScript, production build, targeted lint, formatting and
+`git diff --check` passed. No Neon or production operation, migration, merge or deployment
+was performed during this integration. This update is intended for the existing draft
+PR #146; independent release review and live navigation latency verification remain open.
+
+
+### 2026-10-18 — All stations viewing candidate (not pushed)
+
+The clerk-only-auth worktree now preserves explicit All stations navigation and keeps the selector option visible on station record screens. Operations/reconciliation, Finance, Cash, Settlements and Valuation overviews stream station-labelled results through existing authorized query services. Customers retain tenant-wide reads; Suppliers show balances once per legal entity. Station record/action routes still require a station. Existing single-station server initial-data loaders, command handlers, RLS and schema remain unchanged. Station and legal-entity portfolio reads are limited to three concurrent loads per overview; larger portfolios still require live latency evaluation and potentially dedicated batched portfolio queries.
+
+Validation: 1,026 unit tests passed, plus 70 synthetic browser checks; four authenticated reporting tests intentionally skipped without fixture credentials. New browser tests cover All → station → All on phone/desktop, including returning from station Cash to the All stations Cash overview. Type checking and focused lint passed. Signed-in live performance and the new portfolio screens against real development data remain unverified. No database migration, production contact, commit, push, merge or deployment was performed for this candidate.
+
+
+### 2026-10-18 — Cross-station Operations presentation refinement
+
+Replaced the tall raw-definition-list station cards on Daily Operations and Reconciliations with the existing shared table, status badges, formatted business dates and row links. The phone layout groups each station into two compact label/value columns. Other station overview cards now use explicit fact spacing rather than browser-default definition-list margins. Existing station/record links, server reads, concurrency limits, schema, authorization and commands are preserved. Populated synthetic fixtures were visually inspected at desktop/phone widths; all four light/dark layout checks passed. These screenshots verify presentation, not signed-in live-data performance.
+
+
+### 2026-10-18 — Navigation context retention candidate
+
+Explicit station or All stations scope is forwarded by shell and dashboard/report links. Same-organisation partial links retain the validated selection; generic requests can restore the persisted preference. Selector refresh failures retain the display selection and offer retry; expired sessions redirect to login. Retained display state grants no data access. Unit suite: 1,038 passed; type checking, targeted lint and production build passed. Synthetic phone/desktop browser coverage validates All stations switching, navigation and refresh recovery; live authenticated acceptance remains separate. No migration, production operation or push performed.
+
+
+### 2026-10-18 — Responsive settings and record lists
+
+Settings now uses available-width container queries for its section navigation and Staff rows. Customer/Supplier lists and supplier statement rows stack when their own panel is narrow, including tablet widths above the existing phone breakpoint. Existing visual tokens and all data/actions remain intact. Four isolated populated layout checks passed at 390/824/1024/1440px using production styles; these are synthetic CSS checks, not authenticated workflow coverage. Unit suite: 1,038 passed; type check and focused lint passed. No database, production or release operations.
+
+
+### 2026-10-18 — Settings section menu and staff controls
+
+Narrow Settings workspaces now replace wrapping section buttons with a labelled native section menu. Staff details use a profile header, outlined facts and a separated account-actions section. Staff role filtering combines with existing status/search controls and a clear action; counts reflect selected station and role. Existing staff SELECT now returns structured role/scope assignments in the same exchange, allowing display filtering to include tenant-wide and matching legal-entity/station assignments without parsing scope labels. No schema or authorization policy changes. Four synthetic populated browser layout checks and production build passed; actual-component tests cover menu permissions and matching/nonmatching station staff. Live signed-in workflow and development DB query execution are not claimed by these checks.
+
+
+### 2026-10-18 — Final Settings navigation scope correction
+
+The styled icon/name/chevron section disclosure is mobile-only (viewport <= 48rem). Above that breakpoint, original desktop section navigation is retained. Four responsive checks assert mobile disclosure visibility and desktop navigation preservation. Combined unit suite: 1,046 passed; type checks and focused lint passed. Production build passed before the final CSS-only desktop correction; the release validation reruns it. These fixture checks do not replace authenticated acceptance or development-database validation of the staff query.

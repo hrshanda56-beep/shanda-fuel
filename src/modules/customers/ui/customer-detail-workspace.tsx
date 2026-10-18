@@ -214,18 +214,28 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
   );
 }
 
-export function CustomerDetailWorkspace({ customerId }: { customerId: string }) {
+export function CustomerDetailWorkspace({
+  customerId,
+  initial,
+}: {
+  customerId: string;
+  initial?: { resolution: ContextResolution; customer: CustomerSummary | null };
+}) {
   const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const [context, setContext] = useState<ContextResolution | null>(null);
-  const [contextLoading, setContextLoading] = useState(true);
+  const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
+  const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [customer, setCustomer] = useState<CustomerSummary | null>(null);
+  const [customer, setCustomer] = useState<CustomerSummary | null>(initial?.customer ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scopeLegalEntityId, setScopeLegalEntityId] = useState('');
-  const [scopeForms, setScopeForms] = useState<ScopeForms>({});
+  const [scopeLegalEntityId, setScopeLegalEntityId] = useState(
+    initial?.customer?.legalEntityId ?? '',
+  );
+  const [scopeForms, setScopeForms] = useState<ScopeForms>(
+    initial?.customer ? scopeFormsForCustomer(initial.customer) : {},
+  );
   const [scopeSave, setScopeSave] = useState<{
     status: 'idle' | 'saving' | 'success' | 'error';
     message?: string;
@@ -402,6 +412,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
   }
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadContext(controller.signal));
     return () => controller.abort();
@@ -410,7 +421,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
   }, [search, customerId, contextFetch]);
 
   useEffect(() => {
-    if (!hasRequiredContext || !current) return;
+    if (initial || !hasRequiredContext || !current) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadCustomer(current, controller.signal));
     return () => controller.abort();
