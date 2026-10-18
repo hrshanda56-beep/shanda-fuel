@@ -4,8 +4,15 @@ import { redirect } from 'next/navigation';
 
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
 import { getServerShellAccess, requestFromHeaders } from '@/design-system/navigation-server';
+import { TableScrollRegion } from '@/design-system/table';
 import { Icon } from '@/design-system/icons';
-import { AccessDeniedState, Card, EmptyState, ErrorState } from '@/design-system/primitives';
+import {
+  AccessDeniedState,
+  Card,
+  EmptyState,
+  ErrorState,
+  StatusBadge,
+} from '@/design-system/primitives';
 import {
   ACTION_AREAS,
   buildActionCenter,
@@ -20,36 +27,52 @@ import { resolveCurrentContext } from '@/modules/context/server';
 export const metadata = { title: 'Finance' };
 export const dynamic = 'force-dynamic';
 
-function ActionGroup({
-  title,
-  tone,
-  items,
-}: {
-  title: string;
-  tone: 'attention' | 'info';
-  items: readonly ActionItem[];
-}) {
-  if (items.length === 0) return null;
-  const headingId = `finance-${tone}-heading`;
+function ActionTable({ items }: { items: readonly ActionItem[] }) {
   return (
-    <section className="finance-group content-span" aria-labelledby={headingId}>
-      <h2 id={headingId} className="finance-group-title">
-        {title}
-        <span className="finance-group-count">{items.length}</span>
-      </h2>
-      <ul className="finance-list">
-        {items.map((item) => (
-          <li key={item.id}>
-            <Link className="finance-row" data-tone={item.tone} href={item.href}>
-              <span className="finance-row-area">{item.area}</span>
-              <span className="finance-row-title">{item.title}</span>
-              <span className="finance-row-detail">{item.detail}</span>
-              <Icon name="chevron-right" className="finance-row-chevron" />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <Card as="section" className="panel content-span" aria-labelledby="finance-actions-heading">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Finance</p>
+          <h2 id="finance-actions-heading">Needs your attention</h2>
+        </div>
+      </div>
+      <TableScrollRegion label="Finance work waiting">
+        <table className="data-table finance-table">
+          <caption className="sr-only">Finance work waiting</caption>
+          <thead>
+            <tr>
+              <th scope="col">Task</th>
+              <th scope="col">Area</th>
+              <th scope="col">Priority</th>
+              <th scope="col">
+                <span className="sr-only">Open</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <th scope="row">
+                  <Link className="finance-table-link" href={item.href}>
+                    {item.title}
+                  </Link>
+                  <span className="finance-table-detail">{item.detail}</span>
+                </th>
+                <td data-label="Area">{item.area}</td>
+                <td data-label="Priority">
+                  <StatusBadge tone={item.tone === 'attention' ? 'warning' : 'informational'}>
+                    {item.tone === 'attention' ? 'Needs action' : 'For information'}
+                  </StatusBadge>
+                </td>
+                <td className="finance-table-go" aria-hidden="true">
+                  <Icon name="chevron-right" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScrollRegion>
+    </Card>
   );
 }
 
@@ -60,10 +83,6 @@ function ActionList({ center, stationId }: { center: ActionCenter; stationId: st
     Banking: `${station}/cash`,
     Settlements: `${station}/settlements`,
     Payables: '/suppliers',
-  };
-  const groups = {
-    attention: center.items.filter((item) => item.tone === 'attention'),
-    info: center.items.filter((item) => item.tone !== 'attention'),
   };
   const countFor = (area: ActionArea) => center.items.filter((item) => item.area === area);
   return (
@@ -99,10 +118,7 @@ function ActionList({ center, stationId }: { center: ActionCenter; stationId: st
         })}
       </dl>
       {center.items.length > 0 ? (
-        <>
-          <ActionGroup title="Needs action" tone="attention" items={groups.attention} />
-          <ActionGroup title="For information" tone="info" items={groups.info} />
-        </>
+        <ActionTable items={center.items} />
       ) : center.unavailable.length === 0 ? (
         <Card as="section" className="panel content-span">
           <EmptyState
