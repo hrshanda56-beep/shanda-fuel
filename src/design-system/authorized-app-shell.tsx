@@ -1,4 +1,5 @@
 import 'server-only';
+import { WorkContextProvider } from '../modules/context/client-context';
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -51,19 +52,21 @@ export async function AuthorizedAppShell({
     redirect('/my-shift');
   }
   return (
-    <AppShell
-      {...props}
-      authProvider={'CLERK'}
-      navigationContext={
-        access.current
-          ? {
-              tenantId: access.current.organisationId,
-              legalEntityId: access.current.legalEntityId,
-              stationId: access.current.stationId,
-            }
-          : undefined
-      }
-      navigationProjection={access.projection ?? emptyNavigationProjection}
-    />
+    <WorkContextProvider resolution={access.resolution}>
+      <AppShell
+        {...props}
+        authProvider={'CLERK'}
+        navigationContext={
+          access.current
+            ? {
+                tenantId: access.current.organisationId,
+                legalEntityId: access.current.legalEntityId,
+                stationId: access.current.stationId,
+              }
+            : undefined
+        }
+        navigationProjection={access.projection ?? emptyNavigationProjection}
+      />
+    </WorkContextProvider>
   );
 }

@@ -100,7 +100,7 @@ function scopeFromRow(row: {
   return scope;
 }
 
-function roleAssignmentFromRow(row: RoleAssignmentRow): RoleAssignment {
+export function roleAssignmentFromRow(row: RoleAssignmentRow): RoleAssignment {
   return {
     ...scopeFromRow(row),
     roleCode: roleCodeSchema.parse(row.role_code),
@@ -108,7 +108,7 @@ function roleAssignmentFromRow(row: RoleAssignmentRow): RoleAssignment {
   };
 }
 
-function temporaryGrantFromRow(row: TemporaryGrantRow): TemporaryPermissionGrant {
+export function temporaryGrantFromRow(row: TemporaryGrantRow): TemporaryPermissionGrant {
   return {
     ...scopeFromRow(row),
     permissionCode: permissionCodeSchema.parse(row.permission_code),
@@ -194,6 +194,17 @@ export async function loadTenantMembershipWithDatabase(
 }
 
 const membershipRead = Symbol('tenant-membership');
+/** Seed only server-loaded authority inside the current read scope. */
+export function rememberLoadedMembership(
+  record: MembershipRecord,
+): Promise<MembershipRecord | null> {
+  return memoizeRequestRead(
+    membershipRead,
+    JSON.stringify([record.identityId, record.tenantId]),
+    () => Promise.resolve(record),
+  );
+}
+
 export const loadTenantMembership: TenantMembershipLoader = (identityId, tenantId) =>
   memoizeRequestRead(membershipRead, JSON.stringify([identityId, tenantId]), () =>
     loadTenantMembershipWithDatabase(identityId, tenantId, getDatabase()),

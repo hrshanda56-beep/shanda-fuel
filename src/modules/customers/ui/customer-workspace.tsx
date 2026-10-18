@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -97,6 +98,7 @@ function initials(name: string): string {
 }
 
 export function CustomerWorkspace() {
+  const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const [context, setContext] = useState<ContextResolution | null>(null);
@@ -116,7 +118,7 @@ export function CustomerWorkspace() {
     setContextLoading(true);
     setContextError(null);
     try {
-      const response = await fetch(contextRequestUrl('/customers', search), {
+      const response = await contextFetch(contextRequestUrl('/customers', search), {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
@@ -177,7 +179,7 @@ export function CustomerWorkspace() {
     return () => controller.abort();
     // The URL is the server-validated context refresh trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, contextFetch]);
 
   useEffect(() => {
     if (!hasRequiredContext || !current) return;

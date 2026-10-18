@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -168,6 +169,7 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
 }
 
 export function SupplierWorkspace() {
+  const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const [context, setContext] = useState<ContextResolution | null>(null);
@@ -199,7 +201,7 @@ export function SupplierWorkspace() {
     setContextLoading(true);
     setContextError(null);
     try {
-      const response = await fetch(contextRequestUrl('/suppliers', search), {
+      const response = await contextFetch(contextRequestUrl('/suppliers', search), {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
@@ -259,7 +261,7 @@ export function SupplierWorkspace() {
     // The URL is only a context refresh trigger. The server context endpoint
     // validates every requested dimension before returning current.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, contextFetch]);
 
   useEffect(() => {
     if (!hasRequiredContext || !current) return;

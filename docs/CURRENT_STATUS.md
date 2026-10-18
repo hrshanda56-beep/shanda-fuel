@@ -1,5 +1,54 @@
 # Shanda Fuel — Current Status
 
+## Dashboard context reuse and consolidation candidate — 2026-10-18
+
+The authenticated shared shell now passes its verified discovery snapshot to a
+navigation-scoped client provider. The header, Customers list/detail, Suppliers
+list/detail, Cash, Settlements, dashboard fallback and report station filters
+consume it through the same route-selection validator as the server. No global
+identity/permission cache is introduced; data endpoints still authorize every
+request. Snapshot changes refresh consumer effects, and selector retry explicitly
+requests fresh discovery. Live development Customers navigation issued no
+/api/context requests; its server and data requests remain multi-second, so no
+instant-navigation or database speedup claim is made.
+
+Migration 0034 adds a SECURITY INVOKER navigation snapshot function, with fixed
+search path, transaction-local context restoration, PUBLIC execution revoked and
+existing RLS retained. It was applied through the canonical migration runner as
+migration_owner to the explicitly confirmed Neon development endpoint
+(ep-weathered-tooth-b200pl69, shanda_fuel, eu-central-1). The local worktree now
+enables CONSOLIDATED_CONTEXT_READS=1. Identity mapping remains a separate existing
+read; memberships, permissions and organisation/station rows share one snapshot
+call. Application permission filtering and per-endpoint authorization remain.
+
+The first Neon fixture run timed out; after timeout correction it exposed that
+migration_owner cannot SET ROLE app_runtime. No Neon role grants were changed.
+Automatic approval review blocked migration until the security gate passed.
+With explicit user approval, an isolated PostgreSQL 18 cluster was created on
+127.0.0.1:55438 with synthetic data and canonical migrations. All five snapshot
+integration tests passed under app_runtime/FORCE RLS, including tenant/actor
+isolation, expiry/revocation, caller-setting restoration and failure rollback.
+The approved Neon migration then succeeded; its function is not SECURITY DEFINER
+and app_runtime EXECUTE was verified. Runtime read probes succeeded.
+
+895 unit tests, TypeScript and targeted ESLint passed before migration. Final
+post-migration checks are recorded in the task report. Browser remeasurement was
+blocked because local browser use was disabled in Work settings. No production
+contact, commit, push, merge or deployment. No instant-navigation claim is made.
+
+# Workplace all-stations default — 2026-10-18
+
+Multi-station sign-in now offers All stations alongside individual stations.
+The picker appears on each sign-in when more than one station is available,
+including when a prior station context is remembered. A 10-second countdown
+selects all stations for the remembered authorised organisation, or the first
+authorised organisation when none is remembered. The existing `/api/context`
+validation and reporting dashboard aggregation path remain in use; no auth,
+permission, RLS, schema, or database behavior changed. Focused entry tests,
+targeted ESLint, and TypeScript checking passed. Next route type generation could
+not write `next-env.d.ts` in the managed worktree due filesystem permissions.
+No production access, migration, merge, push, or deployment.
+
 ## Navigation redirect classification — 2026-10-18
 
 Reproduced Daily Operations bouncing through login/workplace to Today in the

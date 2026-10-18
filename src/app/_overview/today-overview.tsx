@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
@@ -68,11 +69,12 @@ async function load<T>(url: string, signal: AbortSignal, failure: string): Promi
  * resolved for this person, so the dashboard matches the station selector.
  */
 function useCurrentContext(enabled: boolean): Scope | null {
+  const contextFetch = useContextFetch();
   const [scope, setScope] = useState<Scope | null>(null);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
-    fetch(`/api/context?${new URLSearchParams({ pathname: '/' })}`, {
+    contextFetch(`/api/context?${new URLSearchParams({ pathname: '/' })}`, {
       cache: 'no-store',
       signal: controller.signal,
     })
@@ -87,7 +89,7 @@ function useCurrentContext(enabled: boolean): Scope | null {
       )
       .catch(() => {});
     return () => controller.abort();
-  }, [enabled]);
+  }, [enabled, contextFetch]);
   return scope;
 }
 

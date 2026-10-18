@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -214,6 +215,7 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
 }
 
 export function CustomerDetailWorkspace({ customerId }: { customerId: string }) {
+  const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const [context, setContext] = useState<ContextResolution | null>(null);
@@ -238,7 +240,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
     setContextLoading(true);
     setContextError(null);
     try {
-      const response = await fetch(contextRequestUrl(`/customers/${customerId}`, search), {
+      const response = await contextFetch(contextRequestUrl(`/customers/${customerId}`, search), {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
@@ -405,7 +407,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
     return () => controller.abort();
     // URL changes trigger a fresh server-validated context resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, customerId]);
+  }, [search, customerId, contextFetch]);
 
   useEffect(() => {
     if (!hasRequiredContext || !current) return;

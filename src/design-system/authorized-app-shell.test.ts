@@ -38,7 +38,7 @@ describe('authorized app shell request-local reuse', () => {
     const result = await AuthorizedAppShell({ children: null, shellAccess: access });
 
     expect(mocks.getServerShellAccess).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
+    expect(result.props.children).toMatchObject({
       props: {
         navigationProjection: [],
         authProvider: 'CLERK',
@@ -54,4 +54,25 @@ describe('authorized app shell request-local reuse', () => {
 
     expect(mocks.getServerShellAccess).toHaveBeenCalledTimes(1);
   });
+});
+
+it('forwards the verified discovery snapshot to all shell descendants', async () => {
+  const resolution = {
+    available: { organisations: [] },
+    current: access.current,
+    route: {
+      pathname: '/',
+      policy: {
+        legalEntity: 'optional' as const,
+        station: 'optional' as const,
+        allStationsAllowed: true,
+      },
+    },
+    persistedContextInvalid: false,
+  };
+  const result = await AuthorizedAppShell({
+    children: null,
+    shellAccess: { ...access, resolution },
+  });
+  expect(result.props.resolution).toBe(resolution);
 });

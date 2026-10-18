@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type RefObject, useMemo, useRef, useState } from 'react';
@@ -43,6 +44,7 @@ export function ContextSelector({
   onClose,
   onLabelChange,
 }: ContextSelectorProps) {
+  const contextFetch = useContextFetch();
   const pathname = usePathname() ?? '/';
   const search = useLocationSearch();
   const router = useRouter();
@@ -59,9 +61,9 @@ export function ContextSelector({
     const params = new URLSearchParams(search);
     params.set('pathname', pathname);
 
-    fetch(`/api/context?${params.toString()}`, {
+    contextFetch(`/api/context?${params.toString()}`, {
       credentials: 'same-origin',
-      cache: 'no-store',
+      cache: refresh > 0 ? 'reload' : 'no-store',
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -86,7 +88,7 @@ export function ContextSelector({
       });
 
     return () => controller.abort();
-  }, [pathname, refresh, search]);
+  }, [pathname, refresh, search, contextFetch]);
 
   const currentLabel = useMemo(() => {
     if (state.status === 'loading' && !fallback) return ['Loading work context…'];

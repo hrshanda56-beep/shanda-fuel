@@ -309,44 +309,6 @@ A task is Done only when all applicable items are true:
 
 A task is not Done if the only evidence is “code compiles” or “implementation agent says ready.”
 
-## 15. Multi-agent rules
-
-### 15.1 Divide work along clear boundaries
-
-Prefer parallel work by domain/file boundary, for example:
-
-- access/security operator tooling,
-- Customers query behavior,
-- Daily Operations UI correctness,
-- owner/readiness documentation.
-
-Avoid assigning multiple implementation agents to the same files.
-
-### 15.2 Declare dependencies
-
-Every agent should know whether its work depends on another branch/task and whether it is allowed to proceed before that dependency lands.
-
-### 15.3 Review agents are independent
-
-An independent reviewer must inspect actual code/diff/files and relevant tests. Do not simply restate the implementation agent’s report.
-
-### 15.4 Revalidate after integration
-
-Parallel branches that pass independently can still fail when combined.
-
-After integration, rerun the relevant combined:
-
-- unit,
-- DB/integration,
-- browser,
-- accessibility,
-- type/lint/build,
-- security/release checks.
-
-### 15.5 Do not create filler concurrency
-
-Use only useful parallel lanes. More agents are not automatically faster if they create overlapping diffs and review overhead.
-
 ## 16. Production rules
 
 Do not contact production unless the human explicitly authorizes the production operation and the required review gate is green.

@@ -239,6 +239,13 @@
       "when": 1792281602000,
       "tag": "0033_finance_reconciliation_return",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792310400000,
+      "tag": "0034_navigation_context_snapshot",
+      "breakpoints": true
     }
   ]
 }

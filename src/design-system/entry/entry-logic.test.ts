@@ -73,22 +73,22 @@ describe('validateNewPassword', () => {
 
 describe('planWorkplaceEntry', () => {
   it('shows an access state when there is no organisation', () => {
-    expect(planWorkplaceEntry({ organisations: [] }, false)).toEqual({ kind: 'none' });
+    expect(planWorkplaceEntry({ organisations: [] })).toEqual({ kind: 'none' });
   });
 
   it('continues for one station without asking', () => {
     const available = tree([
       { id: 'o', name: 'Org', entities: [['l', 'LE', [['s1', 'Bindura']]]] },
     ]);
-    expect(planWorkplaceEntry(available, false)).toEqual({ kind: 'continue' });
+    expect(planWorkplaceEntry(available)).toEqual({ kind: 'continue' });
   });
 
   it('continues when an organisation has no stations yet (onboarding)', () => {
     const available = tree([{ id: 'o', name: 'Org', entities: [['l', 'LE', []]] }]);
-    expect(planWorkplaceEntry(available, false)).toEqual({ kind: 'continue' });
+    expect(planWorkplaceEntry(available)).toEqual({ kind: 'continue' });
   });
 
-  it('asks which station for several, and skips when a valid choice is remembered', () => {
+  it('offers all stations and individual stations when several stations are available', () => {
     const available = tree([
       {
         id: 'o',
@@ -105,13 +105,15 @@ describe('planWorkplaceEntry', () => {
         ],
       },
     ]);
-    const plan = planWorkplaceEntry(available, false);
+    const plan = planWorkplaceEntry(available);
     expect(plan.kind).toBe('choose');
     if (plan.kind === 'choose') {
       expect(plan.options.map((o) => o.stationName)).toEqual(['Bindura', 'Maruta']);
       expect(plan.options.every((o) => o.detail === undefined)).toBe(true);
+      expect(plan.allStationsOptions).toEqual([{ organisationId: 'o', organisationName: 'Org' }]);
+      expect(plan.defaultAllStationsOrganisationId).toBe('o');
     }
-    expect(planWorkplaceEntry(available, true)).toEqual({ kind: 'continue' });
+    expect(planWorkplaceEntry(available, 'o').kind).toBe('choose');
   });
 
   it('adds detail only where names would be ambiguous or organisations differ', () => {
@@ -125,7 +127,7 @@ describe('planWorkplaceEntry', () => {
         ],
       },
     ]);
-    const plan = planWorkplaceEntry(same, false);
+    const plan = planWorkplaceEntry(same);
     expect(plan.kind === 'choose' && plan.options.map((o) => o.detail)).toEqual([
       'Entity A',
       'Entity B',
@@ -135,10 +137,21 @@ describe('planWorkplaceEntry', () => {
       { id: 'o1', name: 'Org One', entities: [['l1', 'LE', [['s1', 'A']]]] },
       { id: 'o2', name: 'Org Two', entities: [['l2', 'LE', [['s2', 'B']]]] },
     ]);
-    const manyPlan = planWorkplaceEntry(many, false);
+    const manyPlan = planWorkplaceEntry(many);
     expect(manyPlan.kind === 'choose' && manyPlan.options.map((o) => o.detail)).toEqual([
       'Org One',
       'Org Two',
     ]);
+    if (manyPlan.kind === 'choose') {
+      expect(manyPlan.allStationsOptions).toEqual([
+        { organisationId: 'o1', organisationName: 'Org One' },
+        { organisationId: 'o2', organisationName: 'Org Two' },
+      ]);
+      const rememberedOrganisationPlan = planWorkplaceEntry(many, 'o2');
+      expect(
+        rememberedOrganisationPlan.kind === 'choose' &&
+          rememberedOrganisationPlan.defaultAllStationsOrganisationId,
+      ).toBe('o2');
+    }
   });
 });

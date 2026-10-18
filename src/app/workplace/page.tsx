@@ -26,16 +26,18 @@ export default async function WorkplacePage() {
   try {
     const resolution = await resolveCurrentContext(request);
     const remembered = readPersistedContext(request).selection;
-    let rememberedIsValid = false;
+    let rememberedOrganisationId: string | undefined;
     if (remembered) {
       try {
-        await validateRequestedContext(request, remembered, { pathname: '/' });
-        rememberedIsValid = true;
+        const validatedRemembered = await validateRequestedContext(request, remembered, {
+          pathname: '/',
+        });
+        rememberedOrganisationId = validatedRemembered.organisationId;
       } catch {
-        rememberedIsValid = false;
+        rememberedOrganisationId = undefined;
       }
     }
-    plan = planWorkplaceEntry(resolution.available, rememberedIsValid);
+    plan = planWorkplaceEntry(resolution.available, rememberedOrganisationId);
   } catch (error) {
     if (error instanceof AppError && error.code === 'UNAUTHENTICATED') redirect('/login');
     throw error;
@@ -45,7 +47,15 @@ export default async function WorkplacePage() {
 
   return (
     <EntryShell>
-      {plan.kind === 'none' ? <NoWorkplace /> : <WorkplacePicker options={plan.options} />}
+      {plan.kind === 'none' ? (
+        <NoWorkplace />
+      ) : (
+        <WorkplacePicker
+          options={plan.options}
+          allStationsOptions={plan.allStationsOptions}
+          defaultAllStationsOrganisationId={plan.defaultAllStationsOrganisationId}
+        />
+      )}
     </EntryShell>
   );
 }

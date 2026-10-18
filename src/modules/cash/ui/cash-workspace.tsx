@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
@@ -176,6 +177,7 @@ function optionLabel(value: string, fallback: string): string {
 }
 
 export function CashWorkspace() {
+  const contextFetch = useContextFetch();
   const pathname = usePathname() ?? '/stations/unknown/cash';
   const searchParams = useSearchParams();
   const search = searchParams.toString();
@@ -204,7 +206,7 @@ export function CashWorkspace() {
     async (signal?: AbortSignal): Promise<ContextSelection | null> => {
       const params = new URLSearchParams(search);
       params.set('pathname', pathname);
-      const response = await fetch(`/api/context?${params.toString()}`, {
+      const response = await contextFetch(`/api/context?${params.toString()}`, {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
@@ -218,7 +220,7 @@ export function CashWorkspace() {
       if (!current?.stationId || current.allStations) return null;
       return current;
     },
-    [pathname, search],
+    [pathname, search, contextFetch],
   );
 
   const loadSummary = useCallback(async (selection: ContextSelection, signal?: AbortSignal) => {

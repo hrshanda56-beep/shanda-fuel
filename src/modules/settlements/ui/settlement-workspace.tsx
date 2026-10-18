@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -98,6 +99,7 @@ function commandFailureKind(error: ApiError): ErrorKind {
 }
 
 export function SettlementWorkspace({ stationId }: { stationId: string }) {
+  const contextFetch = useContextFetch();
   const pathname = usePathname() ?? `/stations/${encodeURIComponent(stationId)}/settlements`;
   const routePolicy = contextRoutePolicy(pathname);
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>('loading');
@@ -150,7 +152,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
     async (signal: AbortSignal): Promise<SettlementContext> => {
       const params = new URLSearchParams(window.location.search);
       params.set('pathname', pathname);
-      const response = await fetch(`/api/context?${params.toString()}`, {
+      const response = await contextFetch(`/api/context?${params.toString()}`, {
         credentials: 'same-origin',
         cache: 'no-store',
         signal,
@@ -177,7 +179,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       const canonicalHref = buildContextHref(pathname, window.location.search, current);
       return { ...current, canonicalHref };
     },
-    [pathname, routePolicy.station, stationId],
+    [pathname, routePolicy.station, stationId, contextFetch],
   );
 
   const loadSettlementData = useCallback(

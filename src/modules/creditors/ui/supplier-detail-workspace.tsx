@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -96,6 +97,7 @@ function isExactDecimal(value: string): boolean {
 }
 
 export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) {
+  const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const [context, setContext] = useState<ContextResolution | null>(null);
@@ -135,7 +137,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
     setContextLoading(true);
     setContextError(null);
     try {
-      const response = await fetch(contextRequestUrl(`/suppliers/${supplierId}`, search), {
+      const response = await contextFetch(contextRequestUrl(`/suppliers/${supplierId}`, search), {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
@@ -214,7 +216,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
     return () => controller.abort();
     // URL changes trigger a fresh server-validated context resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, supplierId]);
+  }, [search, supplierId, contextFetch]);
 
   useEffect(() => {
     if (!hasRequiredContext || !current) return;
