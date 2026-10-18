@@ -1,4 +1,4 @@
-import type { ContextSelection } from './contracts';
+import type { ContextSelection, CurrentContext } from './contracts';
 
 export type ContextRoutePolicy = Readonly<{
   legalEntity: 'required' | 'optional';
@@ -90,6 +90,23 @@ export function readContextRoute(
     hasExplicitStation: Boolean(stationId),
     hasExplicitAllStations: allStationsValue !== null && allStationsValue !== undefined,
   };
+}
+
+/**
+ * True when a picked selection is where the user already is. The selector closes instead of
+ * posting in that case, so tapping the current station can never look like a dead button.
+ */
+export function isCurrentSelection(
+  current: CurrentContext | null | undefined,
+  selection: ContextSelection,
+): boolean {
+  if (!current) return false;
+  return (
+    current.organisationId === selection.organisationId &&
+    current.allStations === selection.allStations &&
+    (current.stationId ?? null) === (selection.stationId ?? null) &&
+    (selection.legalEntityId === undefined || current.legalEntityId === selection.legalEntityId)
+  );
 }
 
 /**

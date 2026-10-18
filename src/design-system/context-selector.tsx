@@ -6,6 +6,7 @@ import { useEffect, type RefObject, useMemo, useRef, useState } from 'react';
 
 import {
   buildContextHref,
+  isCurrentSelection,
   type AvailableContext,
   type ContextResolution,
   type ContextSelection,
@@ -120,13 +121,7 @@ export function ContextSelector({
   async function submit(selection: ContextSelection, key: string) {
     // Tapping where you already are should simply close the sheet, never look like a dead button.
     const current = state.status === 'ready' ? state.resolution.current : null;
-    if (
-      current &&
-      current.organisationId === selection.organisationId &&
-      current.allStations === selection.allStations &&
-      (current.stationId ?? null) === (selection.stationId ?? null) &&
-      (selection.legalEntityId === undefined || current.legalEntityId === selection.legalEntityId)
-    ) {
+    if (isCurrentSelection(current, selection)) {
       onClose();
       return;
     }
