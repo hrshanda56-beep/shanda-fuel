@@ -58,7 +58,27 @@ export function resolveAvailableContext(
   policy: ContextRoutePolicy,
   persisted: { selection?: ContextSelection | null; invalid: boolean },
 ): ContextResolution {
-  const explicit = routeSelection(available, route);
+  let explicit = routeSelection(available, route);
+  // Tenant-only links are navigation, not a request to clear the selected scope.
+  const saved = persisted.selection;
+  if (
+    explicit &&
+    saved &&
+    !route.hasExplicitStation &&
+    !route.hasExplicitAllStations &&
+    explicit.organisationId === saved.organisationId &&
+    (!route.hasExplicitLegalEntity || explicit.legalEntityId === saved.legalEntityId)
+  ) {
+    explicit = {
+      ...saved,
+      ...explicit,
+      allStations: saved.allStations,
+      ...(saved.stationId ? { stationId: saved.stationId } : {}),
+      ...((explicit.legalEntityId ?? saved.legalEntityId)
+        ? { legalEntityId: explicit.legalEntityId ?? saved.legalEntityId }
+        : {}),
+    };
+  }
   let current: ContextSelection | null = null;
   let persistedSelectionInvalid = false;
   if (explicit) {

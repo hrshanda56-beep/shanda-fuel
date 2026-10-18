@@ -17,6 +17,8 @@ import { withRequestAuthority } from '@/modules/tenancy/request-authority';
 import { resolveAvailableContext } from './resolution';
 import { contextRoutePolicy, readContextRoute } from './routes';
 import { readPersistedContext } from './persistence';
+import { PortfolioOverview, SupplierPortfolio } from './portfolio-overview';
+import { portfolioArea } from './portfolio';
 import type { ContextResolution } from './contracts';
 
 export type PageSearch = Record<string, string | string[] | undefined>;
@@ -63,8 +65,8 @@ export async function ServerDataPage<T>({
     return (
       <AuthorizedAppShell {...shell} shellAccess={access}>
         <ErrorState
-          title="Work context unavailable"
-          message="Choose an authorized work context using the selector above."
+          title="Selection needs review"
+          message="The selected organisation or station is not available to your account. Open the station selector to review your access."
         />
       </AuthorizedAppShell>
     );
@@ -73,6 +75,19 @@ export async function ServerDataPage<T>({
     headers: request.headers,
   });
   const pageAccess = await getServerShellAccessForResolution(pageRequest, access, resolution);
+  if (resolution.current?.allStations && pathname === '/suppliers')
+    return (
+      <AuthorizedAppShell {...shell} shellAccess={pageAccess}>
+        <SupplierPortfolio request={pageRequest} resolution={resolution} />
+      </AuthorizedAppShell>
+    );
+  const area = portfolioArea(pathname);
+  if (resolution.current?.allStations && area)
+    return (
+      <AuthorizedAppShell {...shell} shellAccess={pageAccess}>
+        <PortfolioOverview request={pageRequest} resolution={resolution} area={area} />
+      </AuthorizedAppShell>
+    );
   return (
     <AuthorizedAppShell {...shell} shellAccess={pageAccess}>
       <Suspense

@@ -62,6 +62,7 @@ export async function AuthorizedAppShell({
                 tenantId: access.current.organisationId,
                 legalEntityId: access.current.legalEntityId,
                 stationId: access.current.stationId,
+                allStations: access.current.allStations,
               }
             : undefined
         }

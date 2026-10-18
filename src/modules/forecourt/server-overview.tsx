@@ -15,7 +15,11 @@ export function ServerOperationsOverview({
   const tenantId = typeof search.tenantId === 'string' ? search.tenantId : undefined;
   const fallbackStationId =
     stationId ?? (typeof search.stationId === 'string' ? search.stationId : undefined);
-  const pathname = stationId ? `/stations/${stationId}/reconciliations` : '/operations/daily';
+  const pathname = stationId
+    ? `/stations/${stationId}/reconciliations`
+    : focus === 'reconciliations'
+      ? '/operations/reconciliations'
+      : '/operations/daily';
   return (
     <ServerDataPage
       pathname={pathname}

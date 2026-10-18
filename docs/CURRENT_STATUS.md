@@ -1034,3 +1034,35 @@ fixture credentials). TypeScript, production build, targeted lint, formatting an
 `git diff --check` passed. No Neon or production operation, migration, merge or deployment
 was performed during this integration. This update is intended for the existing draft
 PR #146; independent release review and live navigation latency verification remain open.
+
+
+### 2026-10-18 — All stations viewing candidate (not pushed)
+
+The clerk-only-auth worktree now preserves explicit All stations navigation and keeps the selector option visible on station record screens. Operations/reconciliation, Finance, Cash, Settlements and Valuation overviews stream station-labelled results through existing authorized query services. Customers retain tenant-wide reads; Suppliers show balances once per legal entity. Station record/action routes still require a station. Existing single-station server initial-data loaders, command handlers, RLS and schema remain unchanged. Station and legal-entity portfolio reads are limited to three concurrent loads per overview; larger portfolios still require live latency evaluation and potentially dedicated batched portfolio queries.
+
+Validation: 1,026 unit tests passed, plus 70 synthetic browser checks; four authenticated reporting tests intentionally skipped without fixture credentials. New browser tests cover All → station → All on phone/desktop, including returning from station Cash to the All stations Cash overview. Type checking and focused lint passed. Signed-in live performance and the new portfolio screens against real development data remain unverified. No database migration, production contact, commit, push, merge or deployment was performed for this candidate.
+
+
+### 2026-10-18 — Cross-station Operations presentation refinement
+
+Replaced the tall raw-definition-list station cards on Daily Operations and Reconciliations with the existing shared table, status badges, formatted business dates and row links. The phone layout groups each station into two compact label/value columns. Other station overview cards now use explicit fact spacing rather than browser-default definition-list margins. Existing station/record links, server reads, concurrency limits, schema, authorization and commands are preserved. Populated synthetic fixtures were visually inspected at desktop/phone widths; all four light/dark layout checks passed. These screenshots verify presentation, not signed-in live-data performance.
+
+
+### 2026-10-18 — Navigation context retention candidate
+
+Explicit station or All stations scope is forwarded by shell and dashboard/report links. Same-organisation partial links retain the validated selection; generic requests can restore the persisted preference. Selector refresh failures retain the display selection and offer retry; expired sessions redirect to login. Retained display state grants no data access. Unit suite: 1,038 passed; type checking, targeted lint and production build passed. Synthetic phone/desktop browser coverage validates All stations switching, navigation and refresh recovery; live authenticated acceptance remains separate. No migration, production operation or push performed.
+
+
+### 2026-10-18 — Responsive settings and record lists
+
+Settings now uses available-width container queries for its section navigation and Staff rows. Customer/Supplier lists and supplier statement rows stack when their own panel is narrow, including tablet widths above the existing phone breakpoint. Existing visual tokens and all data/actions remain intact. Four isolated populated layout checks passed at 390/824/1024/1440px using production styles; these are synthetic CSS checks, not authenticated workflow coverage. Unit suite: 1,038 passed; type check and focused lint passed. No database, production or release operations.
+
+
+### 2026-10-18 — Settings section menu and staff controls
+
+Narrow Settings workspaces now replace wrapping section buttons with a labelled native section menu. Staff details use a profile header, outlined facts and a separated account-actions section. Staff role filtering combines with existing status/search controls and a clear action; counts reflect selected station and role. Existing staff SELECT now returns structured role/scope assignments in the same exchange, allowing display filtering to include tenant-wide and matching legal-entity/station assignments without parsing scope labels. No schema or authorization policy changes. Four synthetic populated browser layout checks and production build passed; actual-component tests cover menu permissions and matching/nonmatching station staff. Live signed-in workflow and development DB query execution are not claimed by these checks.
+
+
+### 2026-10-18 — Final Settings navigation scope correction
+
+The styled icon/name/chevron section disclosure is mobile-only (viewport <= 48rem). Above that breakpoint, original desktop section navigation is retained. Four responsive checks assert mobile disclosure visibility and desktop navigation preservation. Combined unit suite: 1,046 passed; type checks and focused lint passed. Production build passed before the final CSS-only desktop correction; the release validation reruns it. These fixture checks do not replace authenticated acceptance or development-database validation of the staff query.

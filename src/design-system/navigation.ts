@@ -155,7 +155,7 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'cash' },
         availability: 'station-context',
-        match: [/^\/stations\/[^/]+\/cash(\/|$)/],
+        match: [/^\/cash(\/|$)/, /^\/stations\/[^/]+\/cash(\/|$)/],
       },
       {
         key: 'settlements',
@@ -164,7 +164,7 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'settlements' },
         availability: 'station-context',
-        match: [/^\/stations\/[^/]+\/settlements(\/|$)/],
+        match: [/^\/settlements(\/|$)/, /^\/stations\/[^/]+\/settlements(\/|$)/],
       },
       {
         key: 'customers',
@@ -249,6 +249,7 @@ export type WorkContext = {
   tenantId?: string;
   legalEntityId?: string;
   stationId?: string;
+  allStations?: boolean;
 };
 
 const FORWARDED_PARAMS = ['tenantId', 'legalEntityId'] as const;
@@ -264,8 +265,36 @@ export function readWorkContext(
   }
   const stationInPath = pathname?.match(/^\/stations\/([^/]+)/)?.[1];
   const stationId = stationInPath ? safeDecode(stationInPath) : searchParams?.get('stationId');
-  if (stationId) context.stationId = stationId;
+  const all = searchParams?.get('allStations');
+  if (all === 'true' || all === '1') context.allStations = true;
+  else if (stationId) context.stationId = stationId;
   return context;
+}
+
+/** Retain the server-validated scope when a same-organisation link supplies only part of it. */
+export function navigationWorkContext(
+  pathname: string | null,
+  params: URLSearchParams,
+  validated?: WorkContext,
+): WorkContext {
+  const explicit = readWorkContext(pathname, params);
+  if (!Object.keys(explicit).length && !params.has('allStations')) return validated ?? explicit;
+  if (
+    validated &&
+    explicit.tenantId === validated.tenantId &&
+    !explicit.stationId &&
+    !params.has('allStations') &&
+    (!explicit.legalEntityId || explicit.legalEntityId === validated.legalEntityId)
+  )
+    return { ...validated, ...explicit };
+  if (
+    validated &&
+    !explicit.tenantId &&
+    explicit.stationId &&
+    explicit.stationId === validated.stationId
+  )
+    return { ...validated, ...explicit };
+  return explicit;
 }
 
 function safeDecode(value: string) {
@@ -319,6 +348,13 @@ export function resolveNavigationItem(
         message: destination.message,
       };
     case 'station-route': {
+      if (context.allStations) {
+        const path =
+          destination.segment === 'reconciliations'
+            ? '/operations/reconciliations'
+            : `/${destination.segment}`;
+        return { ...rest, state: 'link', href: withQuery(path, context, false) };
+      }
       if (!context.stationId) {
         return {
           ...rest,
@@ -342,7 +378,9 @@ function withQuery(path: string, context: WorkContext, includeStation: boolean) 
     const value = context[name];
     if (value) query.set(name, value);
   }
-  if (includeStation && context.stationId) query.set('stationId', context.stationId);
+  if (context.allStations) query.set('allStations', 'true');
+  if (!context.allStations && includeStation && context.stationId)
+    query.set('stationId', context.stationId);
   const search = query.toString();
   return search ? `${path}?${search}` : path;
 }

@@ -27,7 +27,7 @@ import { Modal } from './modal';
 import {
   isNavigationItemActive,
   isSingleDestinationSection,
-  readWorkContext,
+  navigationWorkContext,
   resolveNavigation,
   selectMobileNavigationItems,
   type MobileNavigationItem,
@@ -168,11 +168,7 @@ export function AppShell({
   const search = useLocationSearch();
   const workContext = useMemo(() => {
     const params = new URLSearchParams(search);
-    const explicit = readWorkContext(pathname, params);
-    // Never mix a newly requested organisation/station with an old scope.
-    return Object.keys(explicit).length || params.has('allStations')
-      ? explicit
-      : (navigationContext ?? explicit);
+    return navigationWorkContext(pathname, params, navigationContext);
   }, [pathname, search, navigationContext]);
   const sections = useMemo(
     () => resolveNavigation(navigationProjection, workContext),

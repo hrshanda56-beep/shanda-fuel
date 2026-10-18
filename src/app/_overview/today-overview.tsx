@@ -201,13 +201,17 @@ export function TodayOverview({
   }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt, initialData, range]);
 
   const customersHref = useMemo(
-    () => (tenantId ? `/customers?${new URLSearchParams({ tenantId })}` : '/customers'),
-    [tenantId],
+    () =>
+      tenantId
+        ? `/customers?${new URLSearchParams({ tenantId, ...(stationId ? { stationId } : { allStations: 'true' }) })}`
+        : '/customers',
+    [tenantId, stationId],
   );
   const reportsHref = useMemo(() => {
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
     if (stationId) params.set('stationId', stationId);
+    else params.set('allStations', 'true');
     return `/reports?${params}`;
   }, [tenantId, stationId]);
 
@@ -215,6 +219,7 @@ export function TodayOverview({
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
     if (stationId) params.set('stationId', stationId);
+    else params.set('allStations', 'true');
     return `/operations/daily?${params}`;
   }, [tenantId, stationId]);
 
@@ -240,7 +245,7 @@ export function TodayOverview({
         id: 'customers-suspended',
         title: suspended === 1 ? '1 customer is suspended' : `${suspended} customers are suspended`,
         detail: 'They cannot start new account transactions.',
-        href: `/customers?${new URLSearchParams({ tenantId })}`,
+        href: customersHref,
       });
     }
   }

@@ -50,6 +50,17 @@ it('checks the supplied tenant directly without full membership discovery', asyn
   expect(mocks.resolve).toHaveBeenCalledTimes(1);
   expect(mocks.execute).toHaveBeenCalledTimes(1);
   expect(mocks.database).not.toHaveBeenCalled();
+  const all = { organisationId: tenant, allStations: true };
+  expect(
+    await validateRequestedContext(new Request('http://localhost/api/context'), all, {
+      pathname: '/cash',
+    }),
+  ).toEqual(all);
+  await expect(
+    validateRequestedContext(new Request('http://localhost/api/context'), all, {
+      pathname: `/stations/${station}/cash`,
+    }),
+  ).rejects.toThrow();
   mocks.execute.mockResolvedValue([]);
   await expect(
     validateRequestedContext(new Request('http://localhost/api/context'), selection, {

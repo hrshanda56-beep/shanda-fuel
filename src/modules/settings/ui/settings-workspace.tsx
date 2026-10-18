@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Icon, type IconName } from '@/design-system/icons';
 import { AccessDeniedState, ContextRequiredState } from '@/design-system/primitives';
@@ -106,6 +106,67 @@ function AccountPanel({ view }: { view: SettingsView }) {
   );
 }
 
+export function SettingsSectionMenu({
+  items,
+  active,
+  onSelect,
+}: {
+  items: typeof TABS;
+  active: (typeof TABS)[number];
+  onSelect: (tab: Tab) => void;
+}) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menu.current?.contains(event.target) && menu.current)
+        menu.current.open = false;
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, []);
+  function close() {
+    if (menu.current) {
+      menu.current.open = false;
+      menu.current.querySelector('summary')?.focus();
+    }
+  }
+  return (
+    <details
+      ref={menu}
+      className={styles.sectionMenu}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          close();
+        }
+      }}
+    >
+      <summary className={styles.sectionTrigger} aria-label={`Settings section: ${active.label}`}>
+        <Icon name={active.icon} />
+        <span>{active.label}</span>
+        <Icon name="chevron-down" className={styles.sectionChevron} />
+      </summary>
+      <nav className={styles.sectionOptions} aria-label="Choose Settings section">
+        {items.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            aria-current={item.value === active.value ? 'page' : undefined}
+            onClick={() => {
+              onSelect(item.value);
+              close();
+            }}
+          >
+            <Icon name={item.icon} />
+            <span>{item.label}</span>
+            {item.value === active.value ? <Icon name="check" /> : null}
+          </button>
+        ))}
+      </nav>
+    </details>
+  );
+}
+
 export function SettingsWorkspace({ view }: { view: SettingsView }) {
   const [tab, setTab] = useState<Tab>('organisation');
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
@@ -139,6 +200,7 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
   return (
     <PageContainer width="wide" className={`settings-page ${styles.page}`}>
       <div className={styles.layout}>
+        <SettingsSectionMenu items={visibleTabs} active={active} onSelect={setTab} />
         <nav className={styles.subnav} aria-label="Settings sections">
           {visibleTabs.map((item) => (
             <button
@@ -209,7 +271,11 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
           {tab === 'payments' && view.staff?.canManage ? <PaymentsPanel /> : null}
 
           {tab === 'staff' && view.staff?.canManage ? (
-            <StaffPanel tenantId={organisation.id} overview={view.staff} />
+            <StaffPanel
+              tenantId={organisation.id}
+              overview={view.staff}
+              selectedStationId={selectedStation?.id}
+            />
           ) : null}
 
           {tab === 'account' ? <AccountPanel view={view} /> : null}

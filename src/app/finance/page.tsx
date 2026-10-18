@@ -1,5 +1,9 @@
+import { buildContextHref } from '@/modules/context/routes';
+import { PortfolioOverview } from '@/modules/context/portfolio-overview';
+import { getServerShellAccessForResolution } from '@/design-system/navigation-server';
 import { requireAuthenticatedActor } from '@/modules/identity';
 import { Suspense } from 'react';
+import type { ContextResolution } from '@/modules/context/contracts';
 import type { CurrentContext } from '@/modules/context/contracts';
 import { resolveAvailableContext } from '@/modules/context/resolution';
 import { contextRoutePolicy } from '@/modules/context/routes';
@@ -85,7 +89,15 @@ function ActionTable({ items }: { items: readonly ActionItem[] }) {
   );
 }
 
-function ActionList({ center, stationId }: { center: ActionCenter; stationId: string }) {
+function ActionList({
+  center,
+  stationId,
+  current,
+}: {
+  center: ActionCenter;
+  stationId: string;
+  current: CurrentContext;
+}) {
   const station = `/stations/${encodeURIComponent(stationId)}`;
   const areaHref: Record<ActionArea, string> = {
     Approvals: '/operations/reconciliations',
@@ -111,7 +123,11 @@ function ActionList({ center, stationId }: { center: ActionCenter; stationId: st
           const items = countFor(area);
           const urgent = items.filter((item) => item.tone === 'attention').length;
           return (
-            <Link key={area} className="finance-tile" href={areaHref[area]}>
+            <Link
+              key={area}
+              className="finance-tile"
+              href={buildContextHref(areaHref[area], '', current)}
+            >
               <dt>{area}</dt>
               <dd>
                 {items.length}
@@ -158,8 +174,7 @@ export default async function FinancePage({
     access.status === 'ready' &&
     access.projection?.some((entry) => entry.key === 'finance-home' && entry.visible);
   const baseRequest = requestFromHeaders(requestHeaders);
-  // The shell request is always `/`, which resolves with the all-stations default. Finance work is
-  // per station, so resolve the scope again against this page's own route and query.
+  // Resolve Finance's explicit URL scope against the same authorized context tree as the shell.
   const query = await searchParams;
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
@@ -169,6 +184,7 @@ export default async function FinancePage({
     ? new Request(new URL(`/finance?${params}`, baseRequest.url), { headers: baseRequest.headers })
     : null;
   let current = access.status === 'ready' ? access.current : null;
+  let portfolioResolution: ContextResolution | null = null;
   if (request && current) {
     try {
       const route = readContextRoute('/finance', params);
@@ -182,9 +198,22 @@ export default async function FinancePage({
             )
           : await resolveCurrentContext(request, { route });
       current = resolved.current ?? current;
+      if (current?.allStations) portfolioResolution = resolved;
     } catch {
       // Keep the shell's scope; the page then asks for a station.
     }
+  }
+  if (allowed && portfolioResolution && request && access.status === 'ready') {
+    const pageAccess = await getServerShellAccessForResolution(
+      request,
+      access,
+      portfolioResolution,
+    );
+    return (
+      <AppShell shellAccess={pageAccess}>
+        <PortfolioOverview request={request} resolution={portfolioResolution} area="finance" />
+      </AppShell>
+    );
   }
   const stationId = current && !current.allStations ? current.stationId : undefined;
 
@@ -233,5 +262,5 @@ async function FinanceWork({
       />
     );
   }
-  return <ActionList center={center} stationId={current.stationId} />;
+  return <ActionList center={center} stationId={current.stationId} current={current} />;
 }

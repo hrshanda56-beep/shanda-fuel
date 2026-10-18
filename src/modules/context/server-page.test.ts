@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToReadableStream } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ access: vi.fn(), resolve: vi.fn() }));
+const mocks = vi.hoisted(() => ({ access: vi.fn(), resolve: vi.fn(), portfolio: vi.fn() }));
+vi.mock('./portfolio-data', () => ({ loadPortfolioStation: mocks.portfolio }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers({ host: 'localhost' }) }));
 vi.mock('@/design-system/navigation-server', () => ({
   getServerShellAccess: mocks.access,
@@ -60,7 +61,7 @@ it('does not start reads when context validation fails', async () => {
         fallback: 'fallback',
       }),
     ),
-  ).toContain('Work context unavailable');
+  ).toContain('Selection needs review');
   expect(load).not.toHaveBeenCalled();
 });
 it('renders a truthful unavailable state without leaking query errors', async () => {
@@ -103,4 +104,41 @@ it('renders denied data access without exposing query data', async () => {
   expect(output).not.toContain('secret');
   expect(output).not.toContain('private permission detail');
   expect(output).toContain('Access');
+});
+
+it('server-loads an all-stations overview without mounting the station-only loader', async () => {
+  const allResolution = {
+    ...resolution,
+    current: { organisationId: 'tenant', allStations: true },
+    available: {
+      organisations: [
+        {
+          id: 'tenant',
+          name: 'Owner',
+          legalEntities: [
+            {
+              id: 'entity',
+              name: 'Entity',
+              stations: [{ id: 'station', name: 'Alpha', code: 'A', timezone: 'UTC' }],
+            },
+          ],
+        },
+      ],
+    },
+  };
+  mocks.resolve.mockReturnValue(allResolution);
+  mocks.portfolio.mockResolvedValue([{ label: 'Operations', value: 'OPEN' }]);
+  const load = vi.fn();
+  const output = await html(
+    await ServerDataPage({
+      pathname: '/operations/daily',
+      load,
+      render: () => 'station only',
+      fallback: 'fallback',
+    }),
+  );
+  expect(output).toContain('All stations overview');
+  expect(output).toContain('Open');
+  expect(load).not.toHaveBeenCalled();
+  expect(mocks.portfolio).toHaveBeenCalledTimes(1);
 });

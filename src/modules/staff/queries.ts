@@ -43,6 +43,7 @@ type StaffRow = {
   status: StaffMemberSummary['status'];
   roles: string[] | null;
   scope_labels: string[] | null;
+  assignments: StaffMemberSummary['assignments'] | null;
 };
 
 export type StaffOverviewDependencies = Readonly<{
@@ -80,6 +81,7 @@ function staffSummary(row: StaffRow): StaffMemberSummary {
     status: row.status,
     roles: (row.roles ?? []).map(role),
     scopeLabels: row.scope_labels ?? [],
+    assignments: row.assignments ?? [],
   };
 }
 
@@ -162,7 +164,11 @@ async function readOverview(transaction: StaffTransaction): Promise<{
         when assignment.scope_type = 'TENANT' then 'All organisation'
         when assignment.scope_type = 'LEGAL_ENTITY' then concat('Legal entity ', assignment.legal_entity_id::text)
         else concat('Station ', assignment.station_id::text)
-      end) filter (where assignment.id is not null), '{}') as scope_labels
+      end) filter (where assignment.id is not null), '{}') as scope_labels,
+      coalesce(jsonb_agg(distinct jsonb_build_object(
+        'role', assignment.role_code, 'scopeType', assignment.scope_type,
+        'legalEntityId', assignment.legal_entity_id, 'stationId', assignment.station_id
+      )) filter (where assignment.id is not null), '[]'::jsonb) as assignments
     from app.memberships membership
     join app.users identity on identity.id = membership.identity_id
     left join app.membership_role_assignments assignment
