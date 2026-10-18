@@ -16,6 +16,8 @@ import { authorize } from '../../platform/security';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
 import { resolveStaffOverview } from '../staff';
 
+import { resolveSetupAccess } from '../setup/readiness-queries';
+
 import type { SettingsAccount, SettingsView } from './contracts';
 
 const sessionSchema = z.object({
@@ -131,6 +133,16 @@ export function buildSettingsView(
         id: legalEntity.id,
         name: legalEntity.name,
       })),
+      stations: organisation.legalEntities
+        .filter((entity) => !current.legalEntityId || entity.id === current.legalEntityId)
+        .flatMap((entity) =>
+          entity.stations.map((station) => ({
+            id: station.id,
+            name: station.name,
+            code: station.code,
+            timezone: station.timezone,
+          })),
+        ),
       selectedStation: buildStation(
         resolution.available,
         organisation.id,
@@ -167,7 +179,10 @@ export async function resolveSettings(
       now: dependencies.now,
     });
     const staff = await resolveStaffOverview(authority, { now: dependencies.now });
-    return buildSettingsView(account, resolution, staff);
+    return {
+      ...buildSettingsView(account, resolution, staff),
+      access: resolveSetupAccess(authority, dependencies.now),
+    };
   }
 
   return buildSettingsView(account, resolution);

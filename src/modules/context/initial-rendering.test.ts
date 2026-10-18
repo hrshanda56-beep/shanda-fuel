@@ -108,6 +108,8 @@ it('renders settlement data instead of its loading state', () => {
     }),
   );
   expect(html).not.toContain('Loading settlements');
+  expect(html).not.toContain('Loading payouts');
+  expect(html).not.toContain('Loading provider payouts');
   expect(html).toContain('No provider payouts yet');
 });
 it('renders cash data instead of its loading state', () => {

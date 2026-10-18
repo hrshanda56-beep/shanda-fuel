@@ -6,7 +6,7 @@ vi.mock('@clerk/nextjs', () => ({
   useClerk: () => ({ signOut: vi.fn() }),
 }));
 import { writeFileSync } from 'node:fs';
-import { SettingsSectionMenu, SettingsWorkspace } from './settings-workspace';
+import { SettingsSectionMenu, SettingsWorkspace, SettingsStations } from './settings-workspace';
 import { StaffPanel } from './staff-panel';
 import type { StaffOverview } from '@/modules/staff/contracts';
 const overview: StaffOverview = {
@@ -110,4 +110,53 @@ it('renders the styled section disclosure without a native select', () => {
     const normalized = html.replace(/_([A-Za-z]+)_[a-f0-9]+/g, '$1');
     writeFileSync('/private/tmp/shanda-settings-menu.html', normalized);
   }
+});
+
+it('lists authorized stations in all-stations mode and narrows selected details', () => {
+  const station = { id: 'a', name: 'Alpha', code: 'AL', timezone: 'Africa/Harare' };
+  const other = { ...station, id: 'b', name: 'Beta' };
+  const context = {
+    status: 'ready' as const,
+    legalEntities: [],
+    selectedStation: null,
+    stations: [station, other],
+  };
+  const all = renderToStaticMarkup(createElement(SettingsStations, { context }));
+  expect(all).toContain('Alpha');
+  expect(all).toContain('Beta');
+  expect(all).not.toContain('Choose a station');
+  const selected = renderToStaticMarkup(
+    createElement(SettingsStations, { context: { ...context, selectedStation: station } }),
+  );
+  expect(selected).toContain('Alpha');
+  expect(selected).not.toContain('Beta');
+  const empty = renderToStaticMarkup(
+    createElement(SettingsStations, { context: { ...context, stations: [] } }),
+  );
+  expect(empty).toContain('No stations are available');
+});
+
+it('uses setup capabilities independently of staff invitation access', () => {
+  const view = {
+    account: { name: 'Finance', email: null },
+    context: {
+      status: 'ready' as const,
+      organisation: { id: 't', name: 'Tenant' },
+      legalEntities: [],
+      selectedStation: null,
+    },
+    access: { canViewPayments: true, canViewReadiness: false },
+  };
+  const html = renderToStaticMarkup(createElement(SettingsWorkspace, { view }));
+  expect(html).toContain('<span>Payments</span>');
+  expect(html).not.toContain('<span>Readiness</span>');
+  expect(html).not.toContain('<span>Staff</span>');
+  expect(html).not.toContain('Ask your administrator');
+  const denied = renderToStaticMarkup(
+    createElement(SettingsWorkspace, {
+      view: { ...view, access: { canViewPayments: false, canViewReadiness: true } },
+    }),
+  );
+  expect(denied).not.toContain('<span>Payments</span>');
+  expect(denied).toContain('<span>Readiness</span>');
 });

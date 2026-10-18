@@ -21,6 +21,7 @@ import { WorkInProgressDialog } from './dialogs';
 import { ContextSelector } from './context-selector';
 import { useLocationSearch } from './location-search';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
+import { SidebarTooltip } from './sidebar-tooltip';
 import { BrandMark } from './brand-mark';
 import { Icon } from './icons';
 import { Modal } from './modal';
@@ -332,6 +333,7 @@ export function AppShell({
         </nav>
 
         <aside className="shell-sidebar" aria-label="Sidebar">
+          <SidebarTooltip key={rail ? 'rail' : 'expanded'} enabled={rail} />
           <BrandLink href={todayHref} />
           <div className="shell-sidebar-nav-region">
             <nav className="shell-nav" aria-label="Primary navigation">

@@ -238,3 +238,15 @@ describe('Settings read model', () => {
     ).toThrow('legal entity');
   });
 });
+
+it('projects only the authorized station hierarchy for all-stations settings', () => {
+  const all = buildSettingsView(
+    { name: 'Owner', email: null },
+    { ...resolution, current: { organisationId: ids.organisation, allStations: true } },
+  );
+  expect(all.context.selectedStation).toBeNull();
+  expect(all.context.stations).toEqual([
+    { id: ids.station, code: 'STA', name: 'Authorised station', timezone: 'Africa/Harare' },
+  ]);
+  expect(all.context.stations?.some((station) => station.id === ids.otherStation)).toBe(false);
+});
