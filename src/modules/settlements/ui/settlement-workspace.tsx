@@ -513,7 +513,6 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       <Card as="section" className="panel cash-panel" aria-labelledby="settlement-actions-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Provider payments</p>
             <h2 id="settlement-actions-title">Match Payments</h2>
           </div>
         </div>
@@ -538,12 +537,12 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
                         </>
                       )}
                     </div>
-                    <p className="channel-label">{methodLabel(method)} waiting to match</p>
+                    <p className="channel-label">To match</p>
                     <p className="channel-amount">{total ? money(total.remaining) : money('0')}</p>
                     <span className="channel-pill">
                       {total
                         ? `${total.count} ${total.count === 1 ? 'payment' : 'payments'}`
-                        : 'All matched'}
+                        : 'Cleared'}
                     </span>
                   </li>
                 );
@@ -551,7 +550,7 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
             </ul>
             <dl className="settlement-status-strip" aria-label="Settlement summary">
               <div data-tone={counts.open > 0 ? 'info' : undefined}>
-                <dt>Settlements not reconciled</dt>
+                <dt>Open settlements</dt>
                 <dd>{counts.open}</dd>
               </div>
               <div data-tone={counts.exceptions > 0 ? 'warning' : 'ok'}>
@@ -656,7 +655,6 @@ export function SettlementWorkspace({ stationId }: { stationId: string }) {
       <Card as="section" className="panel cash-panel" aria-labelledby="settled-by-provider-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Overview</p>
             <h2 id="settled-by-provider-title">Settled By Provider</h2>
           </div>
         </div>
