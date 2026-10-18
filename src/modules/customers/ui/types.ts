@@ -48,6 +48,13 @@ export type CustomerTransaction = {
   note: string | null;
 };
 
+export type CustomerCapabilities = {
+  recordPayment: boolean;
+  topUp: boolean;
+  manageCustomer: boolean;
+  openAccount: boolean;
+};
+
 export type CustomerSummary = {
   customerId: string;
   accountReference: string;
@@ -57,6 +64,7 @@ export type CustomerSummary = {
   legalEntityId: string | null;
   legalEntityName: string | null;
   canManageConfiguration: boolean;
+  capabilities: CustomerCapabilities;
   contactMetadata: Record<string, string>;
   accounts: readonly CustomerAccount[];
   recentTransactions: readonly CustomerTransaction[];
@@ -64,4 +72,6 @@ export type CustomerSummary = {
 
 export type CustomerAccountsResponse = {
   customers: CustomerSummary[];
+  /** Active fuels for prepaid-litres top-ups; only sent for a single-customer read. */
+  fuelProducts?: Array<{ id: string; code: string; name: string }>;
 };

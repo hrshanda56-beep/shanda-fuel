@@ -20,6 +20,7 @@ it('loads all cash sections in one exchange and preserves exact arithmetic', asy
           amount: '100.25',
           state: 'RECEIVED',
           version: 1,
+          business_date: '2026-10-17',
           recorded_at: '2026-10-18T00:00:00Z',
           received_at: null,
           allocated_amount: '40.10',
@@ -29,6 +30,25 @@ it('loads all cash sections in one exchange and preserves exact arithmetic', asy
       locations: [],
       reconciliationSources: [],
       depositRows: [],
+      depositLinks: [
+        {
+          collection_id: 'collection',
+          collection_reference: 'C',
+          deposit_id: 'deposit',
+          deposit_reference: 'DEP',
+          amount: '40.10',
+          state: 'RECORDED',
+          deposited_at: '2026-10-18T08:00:00Z',
+        },
+      ],
+      shiftLinks: [
+        {
+          collection_id: 'collection',
+          reconciliation_id: 'recon',
+          business_date: '2026-10-17',
+          amount: '100.25',
+        },
+      ],
       bankAccounts: [],
     },
   ]);
@@ -41,6 +61,13 @@ it('loads all cash sections in one exchange and preserves exact arithmetic', asy
     availableAtStation: '60.15',
     collectedButUnbanked: '90.2',
     pendingBankConfirmation: '30.05',
+  });
+  expect(result.collections[0]).toMatchObject({
+    businessDate: '2026-10-17',
+    deposits: [
+      { depositReference: 'DEP', amount: '40.1', depositedAt: '2026-10-18T08:00:00.000Z' },
+    ],
+    shiftReports: [{ businessDate: '2026-10-17', amount: '100.25' }],
   });
   const query = execute.mock.calls[0]?.[0];
   if (!query) throw new Error('Expected query');

@@ -4089,19 +4089,22 @@ h3,
 
 /* Provider payouts and Cash and banking: use the full width, like Finance, with small side margins. */
 .shell-main:has(.settlement-workspace),
-.shell-main:has(.cash-workspace) {
+.shell-main:has(.cash-workspace),
+.shell-main:has(.customer-workspace) {
   max-width: none;
   padding-inline: var(--space-3);
 }
 
 @media (min-width: 64rem) {
   .shell-main:has(.settlement-workspace),
-  .shell-main:has(.cash-workspace) {
+  .shell-main:has(.cash-workspace),
+  .shell-main:has(.customer-workspace) {
     padding-inline: var(--space-4);
   }
 
   .shell-sheet:has(.settlement-workspace),
-  .shell-sheet:has(.cash-workspace) {
+  .shell-sheet:has(.cash-workspace),
+  .shell-sheet:has(.customer-workspace) {
     padding: var(--space-4) var(--space-4) var(--space-8);
   }
 }
@@ -4123,6 +4126,98 @@ h3,
 .cash-workspace .data-table tr.row-action:hover,
 .cash-workspace .data-table tr.row-action:focus-visible {
   background: var(--bg-subtle);
+}
+
+.cash-workspace .data-table td.cash-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.cash-toggle {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cash-toggle svg {
+  width: 1rem;
+  height: 1rem;
+  transition: transform 0.15s ease;
+}
+
+.cash-workspace .data-table tr[data-open] .cash-toggle svg {
+  transform: rotate(180deg);
+}
+
+.cash-workspace .data-table tr[data-open] > * {
+  border-bottom-color: transparent;
+}
+
+.cash-workspace .data-table tr.row-detail > td {
+  height: auto;
+  padding: 0 0 var(--space-3);
+}
+
+.cash-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+}
+
+.cash-details > div {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cash-details > div[data-wide] {
+  grid-column: 1 / -1;
+}
+
+.cash-details dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cash-details dd {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 47.99rem) {
+  .cash-workspace .data-table td.cash-row-actions:nth-child(n),
+  .cash-workspace .data-table tr.row-detail > td:nth-child(n) {
+    padding-left: 0;
+    text-align: left;
+  }
+
+  .cash-workspace .data-table td.cash-row-actions::before,
+  .cash-workspace .data-table tr.row-detail > td::before {
+    content: none;
+  }
+
+  .cash-workspace .data-table td.cash-row-actions:nth-child(n) {
+    justify-content: flex-start;
+  }
 }
 
 .cash-workspace .heading-inline {
@@ -4393,4 +4488,238 @@ h3,
 
 .cash-allocations-head h3 {
   margin: 0;
+}
+
+/* Customers list: the essentials on the row, everything else under it. */
+.customer-table .list-head,
+.customer-row {
+  grid-template-columns:
+    minmax(12rem, 1.4fr) minmax(7rem, 0.8fr) minmax(6rem, 0.6fr) minmax(0, 1.8fr)
+    2rem;
+}
+
+.customer-row::after {
+  display: none;
+}
+
+.customer-item {
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.customer-item:last-child {
+  border-bottom: 0;
+}
+
+.customer-item .list-row {
+  border-bottom: 0;
+}
+
+.customer-toggle {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.customer-toggle svg {
+  width: 1rem;
+  height: 1rem;
+  transition: transform 0.15s ease;
+}
+
+.customer-item[data-open] .customer-toggle svg {
+  transform: rotate(180deg);
+}
+
+.customer-expanded {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+}
+
+.customer-expanded > .button {
+  justify-self: start;
+}
+
+.customer-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.customer-details > div {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.customer-details dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.customer-details dd {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.customer-account {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.customer-account h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.customer-activity {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+
+.customer-activity li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.2fr) auto;
+  gap: var(--space-3);
+}
+
+.customer-activity-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 48rem) {
+  .customer-row {
+    grid-template-columns: minmax(0, 1fr);
+    padding-right: 3rem;
+  }
+
+  .customer-toggle {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-2);
+  }
+
+  .customer-activity li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .customer-activity li > span:nth-child(2) {
+    grid-column: 1 / -1;
+    order: 3;
+    color: var(--text-secondary);
+  }
+}
+
+.customer-open {
+  gap: var(--space-2);
+}
+
+.customer-open svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Setup sections that stay out of the way until needed. */
+.fold > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  list-style: none;
+  cursor: pointer;
+}
+
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold > summary h2 {
+  margin: 0;
+}
+
+.fold[open] > summary {
+  margin-bottom: var(--space-4);
+}
+
+.fold > :not(summary) + :not(summary) {
+  margin-top: var(--space-4);
+}
+
+.fold > summary > svg {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.fold[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.customer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.page-header-actions:has(.customer-actions) {
+  flex: none;
+}
+
+.page-header-actions .customer-actions {
+  justify-content: flex-end;
+}
+
+@media (min-width: 900px) {
+  .page-header-actions .customer-actions {
+    flex-wrap: nowrap;
+  }
+}
+
+.content-grid > .page-header {
+  grid-column: 1 / -1;
+}
+
+.customer-account-list {
+  display: grid;
+  gap: var(--space-5);
+}
+.customer-account {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+.customer-side details.fold {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
 }

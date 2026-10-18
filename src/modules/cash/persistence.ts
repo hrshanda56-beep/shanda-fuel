@@ -439,6 +439,7 @@ export async function getCashStationSummaryInTransaction(
     state: string;
     current_location_id: string;
     version: number | string;
+    business_date: string;
     recorded_at: string | Date;
     received_at: string | Date | null;
     allocated_amount: string;
@@ -469,6 +470,23 @@ export async function getCashStationSummaryInTransaction(
     confirmation_variance: string | null;
     bank_reference: string | null;
     deposited_at: string | Date;
+    expected_confirmation_at: string | Date | null;
+    confirmed_at: string | Date | null;
+  };
+  type DepositLinkRow = {
+    collection_id: string;
+    collection_reference: string;
+    deposit_id: string;
+    deposit_reference: string;
+    amount: string;
+    state: string;
+    deposited_at: string | Date;
+  };
+  type ShiftLinkRow = {
+    collection_id: string;
+    reconciliation_id: string;
+    business_date: string;
+    amount: string;
   };
   type BankAccountsRow = {
     id: string;
@@ -478,7 +496,7 @@ export async function getCashStationSummaryInTransaction(
   };
   const rowsQuery = sql`
     select c.id, c.collection_reference, c.source_location_id, c.amount::text, c.state,
-           c.current_location_id, c.version,
+           c.current_location_id, c.version, c.business_date,
            c.recorded_at, c.received_at,
            coalesce(sum(case when d.state <> 'REVERSED' then a.amount else 0 end), 0)::text as allocated_amount,
            coalesce(sum(case when d.state = 'CONFIRMED' then a.amount else 0 end), 0)::text as confirmed_amount
@@ -491,7 +509,7 @@ export async function getCashStationSummaryInTransaction(
       and c.station_id = ${context.stationId}
       and c.state <> 'REVERSED'
     group by c.id, c.collection_reference, c.source_location_id, c.amount, c.state,
-             c.current_location_id, c.version, c.recorded_at, c.received_at
+             c.current_location_id, c.version, c.business_date, c.recorded_at, c.received_at
     order by c.recorded_at, c.id
   `;
   const locationsQuery = sql`
@@ -540,7 +558,9 @@ export async function getCashStationSummaryInTransaction(
                d.confirmed_amount::text,
                d.confirmation_variance::text,
                d.bank_reference,
-               d.deposited_at
+               d.deposited_at,
+               d.expected_confirmation_at,
+               d.confirmed_at
         from app.bank_deposits d
         join app.bank_accounts ba
           on ba.tenant_id = d.tenant_id
@@ -551,6 +571,38 @@ export async function getCashStationSummaryInTransaction(
         order by d.deposited_at desc, d.id desc
       `
     : sql`select null as unavailable where false`;
+  // Which deposits each collection went into (and so what each deposit holds). Reversed
+  // deposits are kept so the history stays complete; the UI labels them.
+  const depositLinksQuery = options.includeDepositDetails
+    ? sql`
+        select a.collection_id,
+               c.collection_reference,
+               a.deposit_id,
+               d.deposit_reference,
+               a.amount::text,
+               d.state,
+               d.deposited_at
+        from app.bank_deposit_allocations a
+        join app.bank_deposits d
+          on d.tenant_id = a.tenant_id and d.station_id = a.station_id and d.id = a.deposit_id
+        join app.cash_collections c
+          on c.tenant_id = a.tenant_id and c.station_id = a.station_id and c.id = a.collection_id
+        where a.tenant_id = ${context.tenantId}
+          and a.station_id = ${context.stationId}
+        order by d.deposited_at, a.id
+      `
+    : sql`select null as unavailable where false`;
+  const shiftLinksQuery = sql`
+    select a.collection_id, a.reconciliation_id, bd.business_date, a.amount::text
+    from app.cash_collection_allocations a
+    join app.reconciliations r
+      on r.tenant_id = a.tenant_id and r.station_id = a.station_id and r.id = a.reconciliation_id
+    join app.station_business_days bd
+      on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
+    where a.tenant_id = ${context.tenantId}
+      and a.station_id = ${context.stationId}
+    order by bd.business_date, a.id
+  `;
   const bankAccountsQuery = options.includeDepositDetails
     ? sql`
         select id, name, bank_name, account_reference_masked
@@ -567,22 +619,37 @@ export async function getCashStationSummaryInTransaction(
     locations: LocationsRow[];
     reconciliationSources: ReconciliationSourcesRow[];
     depositRows: DepositRowsRow[];
+    depositLinks: DepositLinkRow[];
+    shiftLinks: ShiftLinkRow[];
     bankAccounts: BankAccountsRow[];
   }>(sql`
     with rows_rows as (${rowsQuery}),
 locations_rows as (${locationsQuery}),
 reconciliationSources_rows as (${reconciliationSourcesQuery}),
 depositRows_rows as (${depositRowsQuery}),
+depositLinks_rows as (${depositLinksQuery}),
+shiftLinks_rows as (${shiftLinksQuery}),
 bankAccounts_rows as (${bankAccountsQuery})
     select coalesce((select json_agg(rows_rows) from rows_rows), '[]'::json) as "rows",
 coalesce((select json_agg(locations_rows) from locations_rows), '[]'::json) as "locations",
 coalesce((select json_agg(reconciliationSources_rows) from reconciliationSources_rows), '[]'::json) as "reconciliationSources",
 coalesce((select json_agg(depositRows_rows) from depositRows_rows), '[]'::json) as "depositRows",
+coalesce((select json_agg(depositLinks_rows) from depositLinks_rows), '[]'::json) as "depositLinks",
+coalesce((select json_agg(shiftLinks_rows) from shiftLinks_rows), '[]'::json) as "shiftLinks",
 coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json) as "bankAccounts"
   `);
   const snapshot = sections[0];
   if (!snapshot) throw new AppError('INVARIANT_VIOLATION', 'Cash summary was not returned');
-  const { rows, locations, reconciliationSources, depositRows, bankAccounts } = snapshot;
+  const {
+    rows,
+    locations,
+    reconciliationSources,
+    depositRows,
+    depositLinks,
+    shiftLinks,
+    bankAccounts,
+  } = snapshot;
+  const iso = (value: string | Date | null) => (value ? new Date(value).toISOString() : null);
 
   let availableAtStation = new ExactDecimal('0');
   let collectedButUnbanked = new ExactDecimal('0');
@@ -620,8 +687,25 @@ coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json
       sourceLocationId: row.source_location_id,
       currentLocationId: row.current_location_id,
       version: Number(row.version),
+      businessDate: row.business_date,
       recordedAt: new Date(row.recorded_at).toISOString(),
-      receivedAt: row.received_at ? new Date(row.received_at).toISOString() : null,
+      receivedAt: iso(row.received_at),
+      deposits: depositLinks
+        .filter((link) => link.collection_id === row.id)
+        .map((link) => ({
+          depositId: link.deposit_id,
+          depositReference: link.deposit_reference,
+          amount: decimal(link.amount).toString(),
+          state: link.state,
+          depositedAt: new Date(link.deposited_at).toISOString(),
+        })),
+      shiftReports: shiftLinks
+        .filter((link) => link.collection_id === row.id)
+        .map((link) => ({
+          reconciliationId: link.reconciliation_id,
+          businessDate: link.business_date,
+          amount: decimal(link.amount).toString(),
+        })),
     };
   });
 
@@ -648,6 +732,15 @@ coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json
       : null,
     bankReference: row.bank_reference,
     depositedAt: new Date(row.deposited_at).toISOString(),
+    expectedConfirmationAt: iso(row.expected_confirmation_at),
+    confirmedAt: iso(row.confirmed_at),
+    collections: depositLinks
+      .filter((link) => link.deposit_id === row.id)
+      .map((link) => ({
+        collectionId: link.collection_id,
+        collectionReference: link.collection_reference,
+        amount: decimal(link.amount).toString(),
+      })),
   }));
 
   return {

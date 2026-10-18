@@ -2,7 +2,15 @@
 import { useContextFetch } from '@/modules/context/client-context';
 
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import { type ContextResolution, type ContextSelection } from '@/modules/context';
 import { Select } from '../../../design-system/forms';
 import {
@@ -17,6 +25,7 @@ import {
   StatusBadge,
   SuccessState,
 } from '../../../design-system/primitives';
+import { Icon } from '../../../design-system/icons';
 import { Modal } from '../../../design-system/modal';
 import { TableScrollRegion } from '../../../design-system/table';
 import { formatTileMoney } from '../../reporting/format';
@@ -86,8 +95,19 @@ export type CashSummary = {
     sourceLocationId: string;
     currentLocationId: string;
     version: number;
+    businessDate?: string;
     recordedAt?: string;
     receivedAt?: string | null;
+    /** Every bank deposit this cash went into. */
+    deposits?: Array<{
+      depositId: string;
+      depositReference: string;
+      amount: string;
+      state: string;
+      depositedAt: string;
+    }>;
+    /** The shift reports this cash was counted in. */
+    shiftReports?: Array<{ reconciliationId: string; businessDate: string; amount: string }>;
   }>;
   locations: Array<{
     locationId: string;
@@ -121,6 +141,10 @@ export type CashSummary = {
     confirmationVariance: string | null;
     bankReference: string | null;
     depositedAt?: string;
+    expectedConfirmationAt?: string | null;
+    confirmedAt?: string | null;
+    /** The cash this deposit holds. */
+    collections?: Array<{ collectionId: string; collectionReference: string; amount: string }>;
   }>;
   capabilities: CashCapabilities;
 };
@@ -187,6 +211,44 @@ function requestFailure(response: Response, result: unknown, fallback: string): 
       .filter((field): field is string => typeof field === 'string' && field in FIELD_TARGETS);
   }
   return failure;
+}
+
+// Fixed to the station's timezone so the server and browser always print the same text.
+const STATION_TIME_ZONE = 'Africa/Harare';
+
+function formatWhen(value: string | null | undefined): string {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: STATION_TIME_ZONE,
+  }).format(new Date(value));
+}
+
+function formatDay(value: string | null | undefined): string {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(
+    new Date(`${value.slice(0, 10)}T12:00:00Z`),
+  );
+}
+
+function DetailList({
+  id,
+  items,
+}: {
+  id: string;
+  items: Array<{ label: string; value: ReactNode; wide?: boolean }>;
+}) {
+  return (
+    <dl className="cash-details" id={id}>
+      {items.map((item) => (
+        <div key={item.label} data-wide={item.wide || undefined}>
+          <dt>{item.label}</dt>
+          <dd>{item.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function displayState(value: string): string {
@@ -275,6 +337,7 @@ export function CashWorkspace({
   const [confirmOnly, setConfirmOnly] = useState<string | null>(null);
   const [historyKey, setHistoryKey] = useState<string | null>(null);
   const [amountsHidden, setAmountsHidden] = useState(false);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [sheet, setSheet] = useState<CashSheet | null>(null);
   const [sheetDirty, setSheetDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -645,6 +708,15 @@ export function CashWorkspace({
     },
   ];
 
+  const toggleRow = (key: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  const locationName = (locationId: string) =>
+    summary?.locations.find((location) => location.locationId === locationId)?.name ??
+    'Unknown location';
   const plain = (value: string) => (amountsHidden ? `${MASK} USD` : `${value} USD`);
 
   const canBank =
@@ -1133,46 +1205,138 @@ export function CashWorkspace({
                   <thead>
                     <tr>
                       <th scope="col">Reference</th>
+                      <th scope="col">Collected</th>
                       <th scope="col">Amount</th>
                       <th scope="col">Still to bank</th>
                       <th scope="col">Where it is</th>
+                      <th scope="col">
+                        <span className="sr-only">Actions and details</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.collections.map((collection) => {
                       const bankable = canBank && Number(collection.availableAtStation) > 0;
+                      const key = `collection-${collection.collectionId}`;
+                      const open = expanded.has(key);
                       return (
-                        <tr
-                          key={collection.collectionId}
-                          className={bankable ? 'row-action' : undefined}
-                          onClick={bankable ? () => openDepositFor(collection) : undefined}
-                          onKeyDown={
-                            bankable
-                              ? (event) => {
-                                  if (event.target !== event.currentTarget) return;
-                                  if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault();
+                        <Fragment key={collection.collectionId}>
+                          <tr
+                            className="row-action"
+                            data-open={open || undefined}
+                            onClick={() => toggleRow(key)}
+                          >
+                            <th scope="row">{collection.collectionReference}</th>
+                            <td data-label="Collected">{formatWhen(collection.recordedAt)}</td>
+                            <td data-label="Amount">{plain(collection.amount)}</td>
+                            <td data-label="Still to bank">
+                              {plain(collection.collectedButUnbanked)}
+                            </td>
+                            <td data-label="Where it is">
+                              <StatusBadge
+                                tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
+                              >
+                                {CUSTODY_LABELS[collection.custodyState] ??
+                                  displayState(collection.custodyState)}
+                              </StatusBadge>
+                            </td>
+                            <td className="cash-row-actions">
+                              {bankable ? (
+                                <Button
+                                  variant="quiet"
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
                                     openDepositFor(collection);
-                                  }
-                                }
-                              : undefined
-                          }
-                          tabIndex={bankable ? 0 : undefined}
-                        >
-                          <th scope="row">{collection.collectionReference}</th>
-                          <td data-label="Amount">{plain(collection.amount)}</td>
-                          <td data-label="Still to bank">
-                            {plain(collection.collectedButUnbanked)}
-                          </td>
-                          <td data-label="Where it is">
-                            <StatusBadge
-                              tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
-                            >
-                              {CUSTODY_LABELS[collection.custodyState] ??
-                                displayState(collection.custodyState)}
-                            </StatusBadge>
-                          </td>
-                        </tr>
+                                  }}
+                                >
+                                  Bank it
+                                </Button>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="cash-toggle"
+                                aria-expanded={open}
+                                aria-controls={`${key}-details`}
+                                aria-label={`${open ? 'Hide' : 'Show'} details for ${collection.collectionReference}`}
+                              >
+                                <Icon name="chevron-down" />
+                              </button>
+                            </td>
+                          </tr>
+                          {open ? (
+                            <tr className="row-detail">
+                              <td colSpan={6}>
+                                <DetailList
+                                  id={`${key}-details`}
+                                  items={[
+                                    {
+                                      label: 'Business date',
+                                      value: formatDay(collection.businessDate),
+                                    },
+                                    {
+                                      label: 'Collected on',
+                                      value: formatWhen(collection.recordedAt),
+                                    },
+                                    {
+                                      label: 'Received at the station',
+                                      value: collection.receivedAt
+                                        ? formatWhen(collection.receivedAt)
+                                        : 'Not marked as received',
+                                    },
+                                    {
+                                      label: 'Collected from',
+                                      value: locationName(collection.sourceLocationId),
+                                    },
+                                    {
+                                      label: 'Now at',
+                                      value: locationName(collection.currentLocationId),
+                                    },
+                                    { label: 'Total collected', value: plain(collection.amount) },
+                                    {
+                                      label: 'Still at the station',
+                                      value: plain(collection.availableAtStation),
+                                    },
+                                    {
+                                      label: 'Waiting for the bank',
+                                      value: plain(collection.pendingBankConfirmation),
+                                    },
+                                    {
+                                      label: 'Banked (bank confirmed)',
+                                      value: plain(collection.confirmedAmount),
+                                    },
+                                    {
+                                      label: 'Counted in shift report',
+                                      wide: true,
+                                      value: collection.shiftReports?.length
+                                        ? collection.shiftReports.map((report) => (
+                                            <div key={report.reconciliationId}>
+                                              {formatDay(report.businessDate)} ·{' '}
+                                              {plain(report.amount)}
+                                            </div>
+                                          ))
+                                        : 'No shift report linked',
+                                    },
+                                    {
+                                      label: 'Bank deposits',
+                                      wide: true,
+                                      value: collection.deposits?.length
+                                        ? collection.deposits.map((deposit) => (
+                                            <div key={deposit.depositId}>
+                                              {deposit.depositReference} · {plain(deposit.amount)} ·{' '}
+                                              {DEPOSIT_LABELS[deposit.state] ??
+                                                displayState(deposit.state)}{' '}
+                                              · {formatWhen(deposit.depositedAt)}
+                                            </div>
+                                          ))
+                                        : 'Not sent to the bank yet',
+                                    },
+                                  ]}
+                                />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
                       );
                     })}
                   </tbody>
@@ -1200,10 +1364,14 @@ export function CashWorkspace({
                 <thead>
                   <tr>
                     <th scope="col">Reference</th>
+                    <th scope="col">Deposited</th>
                     <th scope="col">Account</th>
                     <th scope="col">Amount</th>
                     <th scope="col">Status</th>
                     <th scope="col">Bank difference</th>
+                    <th scope="col">
+                      <span className="sr-only">Actions and details</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1213,42 +1381,115 @@ export function CashWorkspace({
                       confirmableDeposits.some(
                         (candidate) => candidate.depositId === deposit.depositId,
                       );
+                    const key = `deposit-${deposit.depositId}`;
+                    const open = expanded.has(key);
+                    const account = summary.bankAccounts.find(
+                      (candidate) => candidate.bankAccountId === deposit.bankAccountId,
+                    );
+                    const difference = deposit.confirmationVariance
+                      ? sumDecimals([deposit.confirmationVariance]) === '0.00'
+                        ? 'None'
+                        : plain(deposit.confirmationVariance)
+                      : '—';
                     return (
-                      <tr
-                        key={deposit.depositId}
-                        className={confirmable ? 'row-action' : undefined}
-                        onClick={confirmable ? () => openConfirmFor(deposit.depositId) : undefined}
-                        onKeyDown={
-                          confirmable
-                            ? (event) => {
-                                if (event.target !== event.currentTarget) return;
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                  event.preventDefault();
+                      <Fragment key={deposit.depositId}>
+                        <tr
+                          className="row-action"
+                          data-open={open || undefined}
+                          onClick={() => toggleRow(key)}
+                        >
+                          <th scope="row">{deposit.depositReference}</th>
+                          <td data-label="Deposited">{formatWhen(deposit.depositedAt)}</td>
+                          <td data-label="Account">{deposit.bankAccountName}</td>
+                          <td data-label="Amount">{plain(deposit.amount)}</td>
+                          <td data-label="Status">
+                            <StatusBadge
+                              tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}
+                            >
+                              {DEPOSIT_LABELS[deposit.state] ?? displayState(deposit.state)}
+                            </StatusBadge>
+                          </td>
+                          <td data-label="Bank difference">{difference}</td>
+                          <td className="cash-row-actions">
+                            {confirmable ? (
+                              <Button
+                                variant="quiet"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
                                   openConfirmFor(deposit.depositId);
-                                }
-                              }
-                            : undefined
-                        }
-                        tabIndex={confirmable ? 0 : undefined}
-                      >
-                        <th scope="row">{deposit.depositReference}</th>
-                        <td data-label="Account">{deposit.bankAccountName}</td>
-                        <td data-label="Amount">{plain(deposit.amount)}</td>
-                        <td data-label="Status">
-                          <StatusBadge
-                            tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}
-                          >
-                            {DEPOSIT_LABELS[deposit.state] ?? displayState(deposit.state)}
-                          </StatusBadge>
-                        </td>
-                        <td data-label="Bank difference">
-                          {deposit.confirmationVariance
-                            ? sumDecimals([deposit.confirmationVariance]) === '0.00'
-                              ? 'None'
-                              : plain(deposit.confirmationVariance)
-                            : '—'}
-                        </td>
-                      </tr>
+                                }}
+                              >
+                                Confirm
+                              </Button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="cash-toggle"
+                              aria-expanded={open}
+                              aria-controls={`${key}-details`}
+                              aria-label={`${open ? 'Hide' : 'Show'} details for ${deposit.depositReference}`}
+                            >
+                              <Icon name="chevron-down" />
+                            </button>
+                          </td>
+                        </tr>
+                        {open ? (
+                          <tr className="row-detail">
+                            <td colSpan={7}>
+                              <DetailList
+                                id={`${key}-details`}
+                                items={[
+                                  { label: 'Deposited on', value: formatWhen(deposit.depositedAt) },
+                                  {
+                                    label: 'Cash taken from',
+                                    value: locationName(deposit.sourceLocationId),
+                                  },
+                                  {
+                                    label: 'Bank account',
+                                    value: account
+                                      ? `${account.name} · ${account.bankName} · ${account.accountReferenceMasked}`
+                                      : deposit.bankAccountName,
+                                  },
+                                  {
+                                    label: 'Bank reference',
+                                    value: deposit.bankReference ?? 'Not given yet',
+                                  },
+                                  {
+                                    label: 'Bank expected to confirm by',
+                                    value: formatWhen(deposit.expectedConfirmationAt),
+                                  },
+                                  {
+                                    label: 'Confirmed on',
+                                    value: deposit.confirmedAt
+                                      ? formatWhen(deposit.confirmedAt)
+                                      : 'Not confirmed yet',
+                                  },
+                                  { label: 'Amount deposited', value: plain(deposit.amount) },
+                                  {
+                                    label: 'Amount the bank shows',
+                                    value: deposit.confirmedAmount
+                                      ? plain(deposit.confirmedAmount)
+                                      : 'Not confirmed yet',
+                                  },
+                                  { label: 'Bank difference', value: difference },
+                                  {
+                                    label: 'Cash in this deposit',
+                                    wide: true,
+                                    value: deposit.collections?.length
+                                      ? deposit.collections.map((item) => (
+                                          <div key={item.collectionId}>
+                                            {item.collectionReference} · {plain(item.amount)}
+                                          </div>
+                                        ))
+                                      : '—',
+                                  },
+                                ]}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     );
                   })}
                 </tbody>

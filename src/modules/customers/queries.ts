@@ -83,6 +83,13 @@ export type CustomerTransactionSummary = Readonly<{
   note: string | null;
 }>;
 
+export type CustomerCapabilities = Readonly<{
+  recordPayment: boolean;
+  topUp: boolean;
+  manageCustomer: boolean;
+  openAccount: boolean;
+}>;
+
 export type CustomerSummary = Readonly<{
   customerId: string;
   accountReference: string;
@@ -92,6 +99,8 @@ export type CustomerSummary = Readonly<{
   legalEntityId: string | null;
   legalEntityName: string | null;
   canManageConfiguration: boolean;
+  /** What the signed-in person may do with this customer; the server still checks every command. */
+  capabilities: CustomerCapabilities;
   contactMetadata: Readonly<Record<string, string>>;
   accounts: readonly CustomerAccountSummary[];
   recentTransactions: readonly CustomerTransactionSummary[];
@@ -99,6 +108,8 @@ export type CustomerSummary = Readonly<{
 
 export type CustomerAccountsResponse = Readonly<{
   customers: readonly CustomerSummary[];
+  /** Active fuels a prepaid-litres top-up can be for; only filled for a single-customer read. */
+  fuelProducts: ReadonlyArray<Readonly<{ id: string; code: string; name: string }>>;
 }>;
 
 const customerAccountsQuerySchema = z.object({
@@ -297,6 +308,25 @@ export async function getCustomerAccountsFromRequest(
       requestedScope: { tenantId: context.tenantId, scopeType: 'TENANT' },
     });
 
+  const may = (permissionCode: 'customer.payment.record' | 'customer.prepaid.top_up') =>
+    isPermissionGranted({
+      actor: context.authority.authorization,
+      permissionCode,
+      requestedScope: { tenantId: context.tenantId, scopeType: 'TENANT' },
+    });
+  const manage = (permissionCode: 'customer.manage' | 'customer.account.manage') =>
+    isPermissionGranted({
+      actor: context.authority.authorization,
+      permissionCode,
+      requestedScope: { tenantId: context.tenantId, scopeType: 'TENANT' },
+    });
+  const capabilities: CustomerCapabilities = {
+    recordPayment: may('customer.payment.record'),
+    topUp: may('customer.prepaid.top_up'),
+    manageCustomer: manage('customer.manage'),
+    openAccount: manage('customer.account.manage'),
+  };
+
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const rowsQuery = sql`
       with monetary_balances as (
@@ -439,6 +469,7 @@ export async function getCustomerAccountsFromRequest(
           legalEntityId: row.customer_legal_entity_id,
           legalEntityName: row.customer_legal_entity_name,
           canManageConfiguration,
+          capabilities,
           contactMetadata: contactMetadata(row.contact_metadata),
           accounts: [],
           recentTransactions: transactionsByCustomer,
@@ -455,7 +486,17 @@ export async function getCustomerAccountsFromRequest(
       }
     }
 
-    return { customers: [...customerMap.values()] };
+    const fuelProducts = query.customerId
+      ? [
+          ...(await transaction.execute<{ id: string; code: string; name: string }>(sql`
+            select id, code, name
+            from app.products
+            where tenant_id = ${context.tenantId} and status = 'ACTIVE'
+            order by code`)),
+        ]
+      : [];
+
+    return { customers: [...customerMap.values()], fuelProducts };
   });
 }
 

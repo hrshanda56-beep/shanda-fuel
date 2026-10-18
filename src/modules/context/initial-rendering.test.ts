@@ -78,7 +78,7 @@ it('renders customer not-found state without a client request', () => {
       initial: { resolution, customer: null },
     }),
   );
-  expect(html).toContain('not found');
+  expect(html).toContain('We could not find this customer');
 });
 it('renders supplier list data during server rendering', () => {
   const html = renderToStaticMarkup(

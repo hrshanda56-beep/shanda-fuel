@@ -40,6 +40,7 @@ const summary: CashSummary = {
       sourceLocationId: 'l1',
       currentLocationId: 'l1',
       version: 1,
+      recordedAt: '2026-10-17T14:05:00.000Z',
     },
     {
       collectionId: 'c2',
@@ -55,6 +56,7 @@ const summary: CashSummary = {
       sourceLocationId: 'l1',
       currentLocationId: 'l1',
       version: 1,
+      recordedAt: '2026-10-18T06:30:00.000Z',
     },
   ],
   locations: [
@@ -77,6 +79,7 @@ const summary: CashSummary = {
       confirmedAmount: null,
       confirmationVariance: null,
       bankReference: null,
+      depositedAt: '2026-10-18T08:15:00.000Z',
     },
   ],
   capabilities: {
@@ -95,12 +98,16 @@ function render(next: CashSummary) {
 }
 
 describe('Cash and banking, plain-language guidance', () => {
-  it('puts a waiting deposit first, and makes its row and the cash row clickable', () => {
+  it('puts a waiting deposit first, and gives each row a way to open its details', () => {
     const html = render(summary);
     expect(html).toContain('1 bank deposit is waiting');
     expect(html).toContain('Confirm deposits');
-    // Collection row with cash at the station and the deposit row waiting on the bank.
-    expect(html.match(/class="row-action"/g)).toHaveLength(2);
+    // Two collections and one deposit, each expandable.
+    expect(html.match(/class="row-action"/g)).toHaveLength(3);
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(3);
+    // The cash at the station and the deposit waiting on the bank each get their own action.
+    expect(html).toContain('>Bank it<');
+    expect(html).toContain('>Confirm<');
   });
 
   it('tells the person to bank cash when nothing is waiting on the bank', () => {
@@ -129,7 +136,14 @@ describe('Cash and banking, plain-language guidance', () => {
     expect(html).not.toContain('Confirmation variance');
   });
 
-  it('does not make rows clickable for a view-only role', () => {
+  it('shows when cash was collected and deposited, in station time', () => {
+    const html = render(summary);
+    expect(html).toContain('17 Oct 2026, 16:05');
+    expect(html).toContain('18 Oct 2026, 08:30');
+    expect(html).toContain('18 Oct 2026, 10:15');
+  });
+
+  it('does not offer actions to a view-only role, but still lets rows open', () => {
     const html = render({
       ...summary,
       capabilities: {
@@ -140,7 +154,8 @@ describe('Cash and banking, plain-language guidance', () => {
         confirmDeposit: false,
       },
     });
-    expect(html).not.toContain('row-action');
+    expect(html).not.toContain('>Bank it<');
+    expect(html).not.toContain('>Confirm<');
     expect(html).not.toContain('is at the station and not banked yet');
     expect(html).toContain('No cash actions available');
   });

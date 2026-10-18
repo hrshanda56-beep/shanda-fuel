@@ -29,7 +29,7 @@ it('loads account, product, station and history sections in one data exchange', 
   ]);
   expect(
     await getCustomerAccountsFromRequest(new Request('http://localhost'), { tenantId }),
-  ).toEqual({ customers: [] });
+  ).toEqual({ customers: [], fuelProducts: [] });
   expect(mocks.execute).toHaveBeenCalledTimes(1);
 });
 it('does not turn a missing database snapshot into empty financial data', async () => {

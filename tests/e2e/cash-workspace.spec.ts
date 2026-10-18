@@ -328,8 +328,11 @@ test.describe('Cash workspace', () => {
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
     await expect(page.getByRole('status')).toContainText('USD 700.00 is at the station');
 
-    // The whole row is the target, and the cash and its full amount are already filled in.
-    await page.getByRole('row', { name: /COL-001/ }).click();
+    // The row's own button opens the sheet with the cash and its full amount already filled in.
+    await page
+      .getByRole('row', { name: /COL-001/ })
+      .getByRole('button', { name: 'Bank it' })
+      .click();
     const sheet = page.getByRole('dialog', { name: 'Bank cash' });
     await expect(sheet.getByRole('combobox', { name: 'Cash' })).toHaveValue('collection-1');
     await expect(sheet.getByLabel('Amount')).toHaveValue('700.00');
@@ -339,9 +342,23 @@ test.describe('Cash workspace', () => {
     await mockCash(page);
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
     await expect(page.getByRole('status')).toContainText('1 bank deposit is waiting');
-    await page.getByRole('row', { name: /DEP-001/ }).click();
+    await page
+      .getByRole('row', { name: /DEP-001/ })
+      .getByRole('button', { name: 'Confirm' })
+      .click();
     const sheet = page.getByRole('dialog', { name: 'Confirm bank deposits' });
     await expect(sheet.getByLabel('Amount the bank shows')).toHaveValue('100.00');
+  });
+
+  test('opens a row downwards to show every detail', async ({ page }) => {
+    await mockCash(page);
+    await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    const row = page.getByRole('row', { name: /COL-001/ });
+    await row.click();
+    await expect(page.getByText('Collected from')).toBeVisible();
+    await expect(page.getByText('Counted in shift report')).toBeVisible();
+    await row.click();
+    await expect(page.getByText('Collected from')).toBeHidden();
   });
 
   test('explains an empty sheet instead of showing a blank, disabled form', async ({ page }) => {
