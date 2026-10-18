@@ -267,6 +267,8 @@ export async function createBankDepositInTransaction(
   },
 ) {
   await assertActiveCashLocation(transaction, context, input.sourceLocationId);
+  // No row lock: the runtime role may only SELECT/INSERT bank accounts (migration 0006),
+  // and `for update` needs UPDATE, so it failed every deposit with a permission error.
   const bankRows = await transaction.execute<{ id: string }>(sql`
     select id
     from app.bank_accounts
@@ -275,7 +277,6 @@ export async function createBankDepositInTransaction(
       and id = ${input.bankAccountId}
       and status = 'ACTIVE'
       and currency = 'USD'
-    for update
   `);
   if (!bankRows[0])
     throw new AppError('NOT_FOUND', 'The bank account was not found or is inactive');

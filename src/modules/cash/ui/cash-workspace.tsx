@@ -2,7 +2,7 @@
 import { useContextFetch } from '@/modules/context/client-context';
 
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { type ContextResolution, type ContextSelection } from '@/modules/context';
 import { Select } from '../../../design-system/forms';
 import {
@@ -19,6 +19,7 @@ import {
 } from '../../../design-system/primitives';
 import { Modal } from '../../../design-system/modal';
 import { TableScrollRegion } from '../../../design-system/table';
+import { formatTileMoney } from '../../reporting/format';
 import { CashDonut, CashWallet, MASK, sumDecimals, type DonutSlice } from './cash-visuals';
 
 type CashCapabilities = {
@@ -32,10 +33,35 @@ type CashCapabilities = {
 type CashSheet = 'record' | 'receive' | 'deposit' | 'confirm';
 
 const SHEET_TITLES: Readonly<Record<CashSheet, string>> = {
-  record: 'Record a cash collection',
-  receive: 'Receive a Collection',
-  deposit: 'Record a bank deposit',
+  record: 'Collect cash',
+  receive: 'Receive cash',
+  deposit: 'Bank cash',
   confirm: 'Confirm bank deposits',
+};
+
+const COMMAND_DONE: Readonly<Record<string, string>> = {
+  RecordCashCollection: 'Cash collected.',
+  ReceiveCashCollection: 'Cash received.',
+  CreateBankDeposit: 'Bank deposit recorded.',
+  ConfirmBankDeposit: 'Deposit confirmed.',
+};
+
+/** Where a collection is, in plain words. */
+const CUSTODY_LABELS: Readonly<Record<string, string>> = {
+  AT_STATION: 'At the station',
+  RECEIVED: 'At the station',
+  PARTIALLY_DEPOSITED: 'Part sent to bank',
+  IN_TRANSIT: 'Sent to bank',
+  BANKED: 'Banked',
+};
+
+/** A bank deposit's status, in plain words. */
+const DEPOSIT_LABELS: Readonly<Record<string, string>> = {
+  RECORDED: 'Waiting for bank',
+  SUBMITTED: 'Waiting for bank',
+  CONFIRMED: 'Confirmed',
+  REJECTED: 'Rejected',
+  REVERSED: 'Reversed',
 };
 
 export type CashSummary = {
@@ -99,7 +125,28 @@ export type CashSummary = {
   capabilities: CashCapabilities;
 };
 
-type RequestFailure = Error & { status?: number; conflict?: boolean };
+type RequestFailure = Error & {
+  status?: number;
+  conflict?: boolean;
+  /** Names of the form fields the server rejected, when it says which. */
+  fields?: string[];
+};
+
+/** Which form control (by name) and plain label each rejected server field maps to. */
+const FIELD_TARGETS: Record<string, { name: string; label: string }> = {
+  bankAccountId: { name: 'bankAccountId', label: 'Bank account' },
+  sourceLocationId: { name: 'sourceLocationId', label: 'where the cash is' },
+  targetLocationId: { name: 'targetLocationId', label: 'Receiving location' },
+  collectionId: { name: 'collectionId', label: 'Cash to receive' },
+  reconciliationId: { name: 'reconciliationId', label: 'Shift cash' },
+  sources: { name: 'amount', label: 'Amount' },
+  amount: { name: 'amount', label: 'Amount' },
+  allocations: { name: 'allocationAmount', label: 'Amount' },
+  collectionReference: { name: 'collectionReference', label: 'Reference' },
+  depositReference: { name: 'depositReference', label: 'Deposit reference' },
+  confirmedAmount: { name: 'confirmedAmount', label: 'Amount the bank shows' },
+  bankReference: { name: 'bankReference', label: 'Bank reference' },
+};
 
 const emptyCapabilities: CashCapabilities = {
   viewDeposits: false,
@@ -128,6 +175,17 @@ function requestFailure(response: Response, result: unknown, fallback: string): 
   const failure = new Error(message) as RequestFailure;
   failure.status = response.status;
   failure.conflict = response.status === 409;
+  const issues =
+    typeof result === 'object' && result !== null && 'issues' in result
+      ? (result as { issues?: unknown }).issues
+      : undefined;
+  if (Array.isArray(issues)) {
+    failure.fields = issues
+      .map((issue) =>
+        (issue as { path?: unknown[] }).path?.find((part) => typeof part === 'string'),
+      )
+      .filter((field): field is string => typeof field === 'string' && field in FIELD_TARGETS);
+  }
   return failure;
 }
 
@@ -140,32 +198,38 @@ function displayState(value: string): string {
 
 type SummaryCollection = CashSummary['collections'][number];
 
-/** The four cash positions, each drawn as a slice: blue at station, purple unbanked, yellow pending, green banked. */
+/**
+ * Where the collected cash is. The three parts never overlap, so they add up to
+ * everything collected: blue at the station, yellow waiting for the bank, green banked.
+ */
 const POSITIONS: ReadonlyArray<{
   key: string;
   label: string;
+  detail: string;
   tone: number;
   includes: (collection: SummaryCollection) => boolean;
 }> = [
   {
     key: 'at-station',
-    label: 'Cash at station',
+    label: 'At the station',
+    detail: 'Not in a bank deposit yet',
     tone: 1,
     includes: (c) => isPositive(c.availableAtStation),
   },
   {
-    key: 'unbanked',
-    label: 'Collected, not banked',
-    tone: 3,
-    includes: (c) => isPositive(c.collectedButUnbanked),
-  },
-  {
     key: 'pending',
-    label: 'Awaiting bank confirmation',
+    label: 'Waiting for the bank',
+    detail: 'Deposited, not yet confirmed',
     tone: 2,
     includes: (c) => isPositive(c.pendingBankConfirmation),
   },
-  { key: 'banked', label: 'Banked', tone: 0, includes: (c) => isPositive(c.confirmedAmount) },
+  {
+    key: 'banked',
+    label: 'Banked',
+    detail: 'Confirmed by the bank',
+    tone: 0,
+    includes: (c) => isPositive(c.confirmedAmount),
+  },
 ];
 
 function isPositive(value: string): boolean {
@@ -174,6 +238,12 @@ function isPositive(value: string): boolean {
 
 function optionLabel(value: string, fallback: string): string {
   return value || fallback;
+}
+
+const FIRST_ROW_ID = 0;
+
+function freshRows(collectionId = '', amount = '') {
+  return [{ id: FIRST_ROW_ID, collectionId, amount }];
 }
 
 export function CashWorkspace({
@@ -200,13 +270,18 @@ export function CashWorkspace({
   const [success, setSuccess] = useState<string | null>(null);
   const [loadedRouteKey, setLoadedRouteKey] = useState<string | null>(initial ? routeKey : null);
   const [receiveCollectionId, setReceiveCollectionId] = useState('');
-  const [depositRows, setDepositRows] = useState([{ collectionId: '', amount: '' }]);
+  const [depositRows, setDepositRows] = useState([{ id: 0, collectionId: '', amount: '' }]);
+  const [recordPick, setRecordPick] = useState({ id: '', amount: '' });
+  const [confirmOnly, setConfirmOnly] = useState<string | null>(null);
   const [historyKey, setHistoryKey] = useState<string | null>(null);
   const [amountsHidden, setAmountsHidden] = useState(false);
   const [sheet, setSheet] = useState<CashSheet | null>(null);
   const [sheetDirty, setSheetDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const intentKeys = useRef(new Map<string, string>());
+  /** Where the cash being banked is; it follows the cash picked, so it is never a silent default. */
+  const [depositFrom, setDepositFrom] = useState('');
+  const [lastForm, setLastForm] = useState<HTMLFormElement | null>(null);
 
   const loadContext = useCallback(
     async (signal?: AbortSignal): Promise<ContextSelection | null> => {
@@ -303,6 +378,7 @@ export function CashWorkspace({
     event.preventDefault();
     if (!context) return;
     const form = event.currentTarget;
+    setLastForm(form);
     const data = new FormData(form);
     const commandType = String(data.get('commandType'));
     const payload: Record<string, unknown> = { commandType, context };
@@ -358,21 +434,67 @@ export function CashWorkspace({
       const result = await response.json();
       if (!response.ok) throw requestFailure(response, result, 'Cash command failed');
       intentKeys.current.delete(signature);
-      setSuccess(`${displayState(commandType)} recorded.`);
+      setSuccess(COMMAND_DONE[commandType] ?? 'Saved.');
       form.reset();
-      if (commandType === 'CreateBankDeposit') setDepositRows([{ collectionId: '', amount: '' }]);
+      if (commandType === 'CreateBankDeposit') setDepositRows(freshRows());
       setSheet(null);
       setSheetDirty(false);
       setConfirmDiscard(false);
       await refresh();
     } catch (cause) {
-      const failure = cause as RequestFailure;
-      if (failure.conflict)
-        failure.message = `${failure.message} Refresh the station position before retrying.`;
-      setError(failure);
+      setError(cause as RequestFailure);
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Turns a failed save into a plain message plus the button that gets the person unstuck. */
+  function failureHelp(failure: RequestFailure): { message: string; action?: ReactNode } {
+    const status = failure.status ?? 0;
+    const target = failure.fields?.map((field) => FIELD_TARGETS[field]).find(Boolean);
+    if (target) {
+      return {
+        message: `Please check “${target.label}”.`,
+        action: (
+          <Button
+            onClick={() => {
+              const control = lastForm?.elements.namedItem(target.name);
+              if (control instanceof HTMLElement) {
+                control.scrollIntoView({ block: 'center' });
+                control.focus();
+              }
+            }}
+          >
+            Go to {target.label}
+          </Button>
+        ),
+      };
+    }
+    if (status === 409) {
+      return {
+        message: /[.!?]$/.test(failure.message) ? failure.message : `${failure.message}.`,
+        action: <Button onClick={() => void refresh()}>Update and keep my details</Button>,
+      };
+    }
+    if (status === 404) {
+      return {
+        message: 'Something you picked is no longer available.',
+        action: <Button onClick={() => void refresh()}>Update the lists</Button>,
+      };
+    }
+    if (status === 401 || status === 403) {
+      return {
+        message: 'You do not have permission to do this, or your sign-in has expired.',
+        action: <Button onClick={() => window.location.reload()}>Reload the page</Button>,
+      };
+    }
+    if (status === 400) {
+      return { message: 'Some of the details are not right. Please check the form and try again.' };
+    }
+    return {
+      message: 'We could not save this. Nothing was changed, and what you typed is still here.',
+      action: <Button onClick={() => lastForm?.requestSubmit()}>Try again</Button>,
+    };
   }
 
   if (loadedRouteKey !== routeKey || contextStatus === 'loading') {
@@ -426,19 +548,19 @@ export function CashWorkspace({
     })) ?? [];
   const collectionOptions = depositableCollections.map((collection) => ({
     value: collection.collectionId,
-    label: `${collection.collectionReference} · ${collection.availableAtStation} USD available`,
+    label: `${collection.collectionReference} · USD ${collection.availableAtStation}`,
   }));
 
   const collectionsList = summary?.collections ?? [];
   const positionTotals: Record<string, string> = {
     'at-station': summary?.totals.availableAtStation ?? '0',
-    unbanked: summary?.totals.collectedButUnbanked ?? '0',
     pending: summary?.totals.pendingBankConfirmation ?? '0',
     banked: sumDecimals(collectionsList.map((collection) => collection.confirmedAmount)),
   };
   const custodySlices: DonutSlice[] = POSITIONS.map((position) => ({
     key: position.key,
     label: position.label,
+    detail: position.detail,
     tone: position.tone,
     total: positionTotals[position.key] ?? '0',
     count: collectionsList.filter(position.includes).length,
@@ -451,14 +573,38 @@ export function CashWorkspace({
     setSuccess(null);
     setSheetDirty(false);
     setConfirmDiscard(false);
+    setConfirmOnly(null);
+    setRecordPick({ id: '', amount: '' });
+    setDepositRows(freshRows());
+    setDepositFrom('');
     setSheet(next);
+  }
+
+  /** Opens the bank sheet with this collection chosen and its full amount filled in. */
+  function openDepositFor(collection?: SummaryCollection) {
+    openSheet('deposit');
+    if (collection) {
+      setDepositRows(freshRows(collection.collectionId, collection.availableAtStation));
+      setDepositFrom(collection.currentLocationId);
+    }
+  }
+
+  /** Bank cash with the only bankable collection already chosen, when there is just one. */
+  function openDepositSheet() {
+    openDepositFor(depositableCollections.length === 1 ? depositableCollections[0] : undefined);
+  }
+
+  function openConfirmFor(depositId: string) {
+    openSheet('confirm');
+    setConfirmOnly(depositId);
   }
 
   function closeSheet() {
     setSheet(null);
     setSheetDirty(false);
     setConfirmDiscard(false);
-    setDepositRows([{ collectionId: '', amount: '' }]);
+    setConfirmOnly(null);
+    setDepositRows(freshRows());
   }
 
   function requestCloseSheet() {
@@ -475,39 +621,92 @@ export function CashWorkspace({
   }> = [
     {
       key: 'record',
-      label: 'New Collection',
-      shortLabel: 'New Collection',
+      label: 'Collect cash',
+      shortLabel: 'Collect cash',
       available: capabilities.recordCollection,
     },
     {
       key: 'receive',
-      label: 'Receive a Collection',
-      shortLabel: 'Receive Collection',
+      label: 'Receive cash',
+      shortLabel: 'Receive cash',
       available: capabilities.receiveCollection,
     },
     {
       key: 'deposit',
-      label: 'New Bank Deposit',
-      shortLabel: 'New Deposit',
+      label: 'Bank cash',
+      shortLabel: 'Bank cash',
       available: capabilities.recordDeposit,
     },
     {
       key: 'confirm',
-      label: `Confirm Deposits (${confirmableDeposits.length})`,
-      shortLabel: `Confirm Deposits (${confirmableDeposits.length})`,
+      label: `Confirm deposits (${confirmableDeposits.length})`,
+      shortLabel: `Confirm deposits (${confirmableDeposits.length})`,
       available: capabilities.confirmDeposit && confirmableDeposits.length > 0,
     },
   ];
 
   const plain = (value: string) => (amountsHidden ? `${MASK} USD` : `${value} USD`);
 
+  const canBank =
+    capabilities.recordDeposit &&
+    depositableCollections.length > 0 &&
+    !!summary?.bankAccounts.length;
+  const canConfirm = capabilities.confirmDeposit && confirmableDeposits.length > 0;
+  const canCollect = capabilities.recordCollection && recordableSources.length > 0;
+  const hasAnyAction =
+    capabilities.recordCollection ||
+    capabilities.receiveCollection ||
+    capabilities.recordDeposit ||
+    capabilities.confirmDeposit;
+
+  /** One plain sentence saying what to do next, with a button that starts it. */
+  const nextStep: { text: string; label?: string; run?: () => void } | null =
+    !summary || !hasAnyAction
+      ? null
+      : canConfirm
+        ? {
+            text:
+              confirmableDeposits.length === 1
+                ? '1 bank deposit is waiting. Check it against your bank statement.'
+                : `${confirmableDeposits.length} bank deposits are waiting. Check them against your bank statement.`,
+            label: 'Confirm deposits',
+            run: () => openSheet('confirm'),
+          }
+        : canBank
+          ? {
+              text: `${amountsHidden ? `${summary.currency} ${MASK}` : formatTileMoney(summary.totals.availableAtStation, summary.currency)} is at the station and not banked yet.`,
+              label: 'Bank cash',
+              run: openDepositSheet,
+            }
+          : canCollect
+            ? {
+                text: 'Approved shift cash is ready to collect.',
+                label: 'Collect cash',
+                run: () => openSheet('record'),
+              }
+            : {
+                text:
+                  summary.collections.length === 0
+                    ? 'Nothing to do yet. Cash shows up here once a shift report is approved.'
+                    : 'All caught up. Nothing needs doing right now.',
+              };
+
   return (
     <div className="content-grid cash-workspace">
+      {nextStep ? (
+        <div className="content-span cash-next" role="status">
+          <p>{nextStep.text}</p>
+          {nextStep.run ? (
+            <Button aria-haspopup="dialog" onClick={nextStep.run}>
+              {nextStep.label}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <Card as="section" className="panel cash-panel" aria-labelledby="cash-actions-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Cash custody</p>
-            <h2 id="cash-actions-title">Move/ Bank Cash</h2>
+            <h2 id="cash-actions-title">Cash on hand</h2>
           </div>
         </div>
         {summary ? (
@@ -526,9 +725,11 @@ export function CashWorkspace({
             .map((action) => (
               <Button
                 key={action.key}
-                variant={action.key === 'record' ? 'primary' : 'secondary'}
+                variant="secondary"
                 aria-haspopup="dialog"
-                onClick={() => openSheet(action.key)}
+                onClick={() =>
+                  action.key === 'deposit' ? openDepositSheet() : openSheet(action.key)
+                }
               >
                 <span className="cash-action-full">{action.label}</span>
                 <span className="cash-action-short">{action.shortLabel}</span>
@@ -559,8 +760,9 @@ export function CashWorkspace({
           ) : null}
           {error ? (
             <ErrorState
-              message={error.message}
-              action={<Button onClick={() => void refresh()}>Refresh</Button>}
+              title="This could not be saved"
+              message={failureHelp(error).message}
+              action={failureHelp(error).action}
             />
           ) : null}
           <div
@@ -569,258 +771,290 @@ export function CashWorkspace({
             onChange={() => setSheetDirty(true)}
           >
             {sheet === 'record' && capabilities.recordCollection ? (
-              <form className="form-stack" onSubmit={(event) => void postCommand(event)}>
-                <input type="hidden" name="commandType" value="RecordCashCollection" />
-                <Field id="collection-reference" label="Collection reference" required>
-                  <input id="collection-reference" name="collectionReference" />
-                </Field>
-                <Field
-                  id="reconciliation-id"
-                  label="Approved reconciliation cash evidence"
-                  hint="Only cash from approved reconciliations can be collected."
-                  required
-                >
-                  <Select
-                    id="reconciliation-id"
-                    name="reconciliationId"
-                    options={recordableSources.map((source) => ({
-                      value: source.reconciliationId,
-                      label: `${source.businessDate} · ${source.availableCash} USD available`,
-                    }))}
-                    placeholder="Choose approved cash evidence"
-                    disabled={recordableSources.length === 0}
+              recordableSources.length === 0 || locationOptions.length === 0 ? (
+                <p className="cash-sheet-note">
+                  {recordableSources.length === 0
+                    ? 'There is no approved shift cash to collect yet. It shows up here once a shift report is approved.'
+                    : 'This station has no cash locations set up yet. Ask an administrator to add one.'}
+                </p>
+              ) : (
+                <form className="form-stack" onSubmit={(event) => void postCommand(event)}>
+                  <input type="hidden" name="commandType" value="RecordCashCollection" />
+                  <p className="cash-sheet-intro">
+                    Record the cash you collected from an approved shift.
+                  </p>
+                  <Field id="reconciliation-id" label="Shift cash" required>
+                    <Select
+                      id="reconciliation-id"
+                      name="reconciliationId"
+                      options={recordableSources.map((source) => ({
+                        value: source.reconciliationId,
+                        label: `${source.businessDate} · USD ${source.availableCash} available`,
+                      }))}
+                      placeholder="Choose a shift"
+                      onChange={(event) => {
+                        const source = recordableSources.find(
+                          (candidate) => candidate.reconciliationId === event.currentTarget.value,
+                        );
+                        setRecordPick({
+                          id: event.currentTarget.value,
+                          amount: source?.availableCash ?? '',
+                        });
+                      }}
+                    />
+                  </Field>
+                  <Field id="source-location-id" label="Where the cash is" required>
+                    <Select
+                      id="source-location-id"
+                      name="sourceLocationId"
+                      options={locationOptions}
+                      placeholder="Choose a location"
+                    />
+                  </Field>
+                  <NumericInput
+                    key={recordPick.id}
+                    id="collection-amount"
+                    name="amount"
+                    label="Amount"
+                    unit="USD"
+                    defaultValue={recordPick.amount}
+                    required
                   />
-                </Field>
-                <Field id="source-location-id" label="Source cash location" required>
-                  <Select
-                    id="source-location-id"
-                    name="sourceLocationId"
-                    options={locationOptions}
-                    placeholder="Choose a station location"
-                    disabled={locationOptions.length === 0}
-                  />
-                </Field>
-                <NumericInput
-                  id="collection-amount"
-                  name="amount"
-                  label="Collected amount"
-                  unit="USD"
-                  required
-                />
-                <Button type="submit" loading={busy} disabled={recordableSources.length === 0}>
-                  Record collection
-                </Button>
-              </form>
+                  <Field id="collection-reference" label="Reference" required>
+                    <input id="collection-reference" name="collectionReference" />
+                  </Field>
+                  <Button type="submit" loading={busy}>
+                    Collect cash
+                  </Button>
+                </form>
+              )
             ) : null}
 
             {sheet === 'receive' && capabilities.receiveCollection ? (
-              <form
-                className="form-stack form-section"
-                onSubmit={(event) => void postCommand(event)}
-              >
-                <input type="hidden" name="commandType" value="ReceiveCashCollection" />
-                <Field
-                  id="receive-collection-id"
-                  label="Recorded collection"
-                  hint="Choose the collection that has arrived at this location."
-                  required
+              receiveableCollections.length === 0 || locationOptions.length < 2 ? (
+                <p className="cash-sheet-note">
+                  {receiveableCollections.length === 0
+                    ? 'No cash is waiting to be received.'
+                    : 'Receiving needs at least two cash locations, and this station has one.'}
+                </p>
+              ) : (
+                <form
+                  className="form-stack form-section"
+                  onSubmit={(event) => void postCommand(event)}
                 >
-                  <Select
-                    id="receive-collection-id"
-                    name="collectionId"
-                    value={receiveCollectionId}
-                    onChange={(event) => setReceiveCollectionId(event.currentTarget.value)}
-                    options={receiveableCollections.map((collection) => ({
-                      value: collection.collectionId,
-                      label: `${collection.collectionReference} · ${collection.amount} USD`,
-                    }))}
-                    placeholder="Choose a recorded collection"
-                    disabled={receiveableCollections.length === 0}
-                  />
-                </Field>
-                <Field id="receive-location-id" label="Receiving cash location" required>
-                  <Select
-                    id="receive-location-id"
-                    name="targetLocationId"
-                    options={locationOptions}
-                    placeholder="Choose a different location"
-                    disabled={locationOptions.length < 2}
-                  />
-                </Field>
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  loading={busy}
-                  disabled={receiveableCollections.length === 0}
-                >
-                  Receive collection
-                </Button>
-              </form>
+                  <input type="hidden" name="commandType" value="ReceiveCashCollection" />
+                  <p className="cash-sheet-intro">
+                    Confirm that cash handed over from another location has arrived.
+                  </p>
+                  <Field id="receive-collection-id" label="Cash to receive" required>
+                    <Select
+                      id="receive-collection-id"
+                      name="collectionId"
+                      value={receiveCollectionId}
+                      onChange={(event) => setReceiveCollectionId(event.currentTarget.value)}
+                      options={receiveableCollections.map((collection) => ({
+                        value: collection.collectionId,
+                        label: `${collection.collectionReference} · USD ${collection.amount}`,
+                      }))}
+                      placeholder="Choose cash"
+                    />
+                  </Field>
+                  <Field id="receive-location-id" label="Receiving location" required>
+                    <Select
+                      id="receive-location-id"
+                      name="targetLocationId"
+                      options={locationOptions}
+                      placeholder="Choose where it arrived"
+                    />
+                  </Field>
+                  <Button type="submit" variant="secondary" loading={busy}>
+                    Receive cash
+                  </Button>
+                </form>
+              )
             ) : null}
 
             {sheet === 'deposit' && capabilities.recordDeposit ? (
-              <form
-                className="form-stack form-section"
-                onSubmit={(event) => void postCommand(event)}
-              >
-                <input type="hidden" name="commandType" value="CreateBankDeposit" />
-                <Field id="bank-account-id" label="USD bank account" required>
-                  <Select
-                    id="bank-account-id"
-                    name="bankAccountId"
-                    options={
-                      summary?.bankAccounts.map((account) => ({
+              !summary?.bankAccounts.length || depositableCollections.length === 0 ? (
+                <p className="cash-sheet-note">
+                  {depositableCollections.length === 0
+                    ? 'There is no cash at the station to bank right now.'
+                    : 'This station has no bank account set up yet. Ask an administrator to add one.'}
+                </p>
+              ) : (
+                <form
+                  className="form-stack form-section"
+                  onSubmit={(event) => void postCommand(event)}
+                >
+                  <input type="hidden" name="commandType" value="CreateBankDeposit" />
+                  <p className="cash-sheet-intro">Record the cash you are taking to the bank.</p>
+                  <Field id="bank-account-id" label="Bank account" required>
+                    <Select
+                      id="bank-account-id"
+                      name="bankAccountId"
+                      options={summary.bankAccounts.map((account) => ({
                         value: account.bankAccountId,
                         label: `${account.name} · ${account.bankName} ${account.accountReferenceMasked}`,
-                      })) ?? []
-                    }
-                    placeholder="Choose an active legal-entity account"
-                    disabled={!summary?.bankAccounts.length}
-                  />
-                </Field>
-                <Field id="deposit-location-id" label="Deposit source location" required>
-                  <Select
-                    id="deposit-location-id"
-                    name="sourceLocationId"
-                    options={locationOptions}
-                    placeholder="Choose the location handing over cash"
-                    disabled={locationOptions.length === 0}
-                  />
-                </Field>
-                <Field id="deposit-reference" label="Deposit reference" required>
-                  <input id="deposit-reference" name="depositReference" />
-                </Field>
-                <div className="form-stack">
-                  <div className="panel-heading">
-                    <div>
-                      <h3>Collection allocations</h3>
-                      <p className="field-hint">
-                        Allocate exact decimal amounts from collections available at the source
-                        location.
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="quiet"
-                      onClick={() =>
-                        setDepositRows((rows) => [...rows, { collectionId: '', amount: '' }])
-                      }
-                      disabled={depositableCollections.length === 0}
-                    >
-                      Add allocation
-                    </Button>
-                  </div>
-                  {depositRows.map((row, index) => (
-                    <div className="form-grid" key={`${index}-${row.collectionId}`}>
-                      <Field
-                        id={`allocation-collection-${index}`}
-                        label={`Collection ${index + 1}`}
-                        required
+                      }))}
+                      placeholder="Choose an account"
+                    />
+                  </Field>
+                  <Field id="deposit-location-id" label="Taking the cash from" required>
+                    <Select
+                      key={`deposit-from-${depositFrom}`}
+                      id="deposit-location-id"
+                      name="sourceLocationId"
+                      options={locationOptions}
+                      placeholder="Choose a location"
+                      defaultValue={depositFrom}
+                      onChange={(event) => setDepositFrom(event.currentTarget.value)}
+                    />
+                  </Field>
+                  <div className="form-stack">
+                    <div className="cash-allocations-head">
+                      <h3>Cash to bank</h3>
+                      <Button
+                        type="button"
+                        variant="quiet"
+                        onClick={() =>
+                          setDepositRows((rows) => [
+                            ...rows,
+                            {
+                              id: Math.max(...rows.map((row) => row.id)) + 1,
+                              collectionId: '',
+                              amount: '',
+                            },
+                          ])
+                        }
                       >
-                        <Select
-                          id={`allocation-collection-${index}`}
-                          name="allocationCollectionId"
-                          options={collectionOptions}
-                          placeholder="Choose a collection"
-                          defaultValue={row.collectionId}
-                          disabled={depositableCollections.length === 0}
-                        />
-                      </Field>
-                      <NumericInput
-                        id={`allocation-amount-${index}`}
-                        name="allocationAmount"
-                        label="Amount"
-                        unit="USD"
-                        defaultValue={row.amount}
-                        required
-                      />
-                      {depositRows.length > 1 ? (
-                        <Button
-                          type="button"
-                          variant="quiet"
-                          onClick={() =>
-                            setDepositRows((rows) =>
-                              rows.filter((_, rowIndex) => rowIndex !== index),
-                            )
-                          }
-                        >
-                          Remove
-                        </Button>
-                      ) : null}
+                        Add more cash
+                      </Button>
                     </div>
-                  ))}
-                </div>
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  loading={busy}
-                  disabled={!summary?.bankAccounts.length || depositableCollections.length === 0}
-                >
-                  Record bank deposit
-                </Button>
-              </form>
+                    {depositRows.map((row, index) => (
+                      <div className="form-grid" key={row.id}>
+                        <Field
+                          id={`allocation-collection-${index}`}
+                          label={depositRows.length > 1 ? `Cash ${index + 1}` : 'Cash'}
+                          required
+                        >
+                          <Select
+                            id={`allocation-collection-${index}`}
+                            name="allocationCollectionId"
+                            options={collectionOptions}
+                            placeholder="Choose cash"
+                            defaultValue={row.collectionId}
+                            onChange={(event) => {
+                              const picked = depositableCollections.find(
+                                (collection) =>
+                                  collection.collectionId === event.currentTarget.value,
+                              );
+                              if (index === 0 && picked) setDepositFrom(picked.currentLocationId);
+                              setDepositRows((rows) =>
+                                rows.map((candidate) =>
+                                  candidate.id === row.id
+                                    ? {
+                                        ...candidate,
+                                        collectionId: event.currentTarget.value,
+                                        amount: picked?.availableAtStation ?? '',
+                                      }
+                                    : candidate,
+                                ),
+                              );
+                            }}
+                          />
+                        </Field>
+                        <NumericInput
+                          key={`${row.id}-${row.collectionId}`}
+                          id={`allocation-amount-${index}`}
+                          name="allocationAmount"
+                          label="Amount"
+                          unit="USD"
+                          defaultValue={row.amount}
+                          required
+                        />
+                        {depositRows.length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="quiet"
+                            onClick={() =>
+                              setDepositRows((rows) =>
+                                rows.filter((candidate) => candidate.id !== row.id),
+                              )
+                            }
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  <Field
+                    id="deposit-reference"
+                    label="Deposit reference"
+                    hint="The bank or deposit reference, for example from the deposit slip."
+                    required
+                  >
+                    <input id="deposit-reference" name="depositReference" />
+                  </Field>
+                  <Button type="submit" variant="secondary" loading={busy}>
+                    Bank cash
+                  </Button>
+                </form>
+              )
             ) : null}
 
-            {sheet === 'confirm' &&
-            capabilities.confirmDeposit &&
-            confirmableDeposits.length > 0 ? (
-              <div className="form-section">
-                <div className="panel-heading">
-                  <div>
-                    <h3>Confirm bank deposit</h3>
-                    <p className="field-hint">
-                      Confirm each deposit against the bank statement. You may be asked to sign in
-                      again.
-                    </p>
-                  </div>
+            {sheet === 'confirm' && capabilities.confirmDeposit ? (
+              confirmableDeposits.length === 0 ? (
+                <p className="cash-sheet-note">No bank deposits are waiting to be confirmed.</p>
+              ) : (
+                <div className="form-section">
+                  <p className="cash-sheet-intro">Match each deposit to your bank statement.</p>
+                  {confirmableDeposits
+                    .filter((deposit) => !confirmOnly || deposit.depositId === confirmOnly)
+                    .map((deposit) => (
+                      <form
+                        className="form-stack"
+                        key={deposit.depositId}
+                        onSubmit={(event) => void postCommand(event)}
+                      >
+                        <input type="hidden" name="commandType" value="ConfirmBankDeposit" />
+                        <input type="hidden" name="depositId" value={deposit.depositId} />
+                        <Field
+                          id={`confirm-deposit-${deposit.depositId}`}
+                          label={deposit.depositReference}
+                        >
+                          <span className="field-hint">
+                            {deposit.amount} USD ·{' '}
+                            {optionLabel(deposit.bankAccountName, 'Bank account')}
+                          </span>
+                        </Field>
+                        <NumericInput
+                          id={`confirmed-amount-${deposit.depositId}`}
+                          name="confirmedAmount"
+                          label="Amount the bank shows"
+                          unit="USD"
+                          defaultValue={deposit.amount}
+                          required
+                        />
+                        <Field
+                          id={`bank-reference-${deposit.depositId}`}
+                          label="Bank reference"
+                          required
+                        >
+                          <input id={`bank-reference-${deposit.depositId}`} name="bankReference" />
+                        </Field>
+                        <Button type="submit" variant="secondary" loading={busy}>
+                          Confirm deposit
+                        </Button>
+                      </form>
+                    ))}
                 </div>
-                {confirmableDeposits.map((deposit) => (
-                  <form
-                    className="form-stack"
-                    key={deposit.depositId}
-                    onSubmit={(event) => void postCommand(event)}
-                  >
-                    <input type="hidden" name="commandType" value="ConfirmBankDeposit" />
-                    <input type="hidden" name="depositId" value={deposit.depositId} />
-                    <Field
-                      id={`confirm-deposit-${deposit.depositId}`}
-                      label={deposit.depositReference}
-                    >
-                      <span className="field-hint">
-                        {deposit.amount} USD ·{' '}
-                        {optionLabel(deposit.bankAccountName, 'Bank account')} ·{' '}
-                        {displayState(deposit.state)}
-                      </span>
-                    </Field>
-                    <NumericInput
-                      id={`confirmed-amount-${deposit.depositId}`}
-                      name="confirmedAmount"
-                      label="Confirmed amount"
-                      unit="USD"
-                      defaultValue={deposit.amount}
-                      required
-                    />
-                    <Field
-                      id={`bank-reference-${deposit.depositId}`}
-                      label="Bank reference"
-                      required
-                    >
-                      <input id={`bank-reference-${deposit.depositId}`} name="bankReference" />
-                    </Field>
-                    <Button type="submit" variant="secondary" loading={busy}>
-                      Confirm deposit
-                    </Button>
-                  </form>
-                ))}
-              </div>
+              )
             ) : null}
           </div>
         </Modal>
 
-        {!capabilities.recordCollection &&
-        !capabilities.receiveCollection &&
-        !capabilities.recordDeposit &&
-        !capabilities.confirmDeposit ? (
+        {!hasAnyAction ? (
           <EmptyState
             title="No cash actions available"
             message="You can view this station’s cash position but cannot record collections or deposits."
@@ -831,7 +1065,6 @@ export function CashWorkspace({
       <Card as="section" className="panel cash-panel" aria-labelledby="cash-split-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Overview</p>
             <h2 id="cash-split-title">Cash Position</h2>
           </div>
         </div>
@@ -850,7 +1083,7 @@ export function CashWorkspace({
         <Modal
           open={historyGroup !== null}
           onClose={() => setHistoryKey(null)}
-          title={historyGroup ? `${historyGroup.label} history` : 'History'}
+          title={historyGroup ? historyGroup.label : 'Cash'}
           presentation="side"
         >
           <ul className="cash-history-list">
@@ -859,11 +1092,12 @@ export function CashWorkspace({
                 <div>
                   <strong>{collection.collectionReference}</strong>
                   <StatusBadge tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}>
-                    {displayState(collection.custodyState)}
+                    {CUSTODY_LABELS[collection.custodyState] ??
+                      displayState(collection.custodyState)}
                   </StatusBadge>
                 </div>
                 <span>{plain(collection.amount)}</span>
-                <small>Unbanked {plain(collection.collectedButUnbanked)}</small>
+                <small>Still to bank {plain(collection.collectedButUnbanked)}</small>
               </li>
             ))}
           </ul>
@@ -872,9 +1106,9 @@ export function CashWorkspace({
 
       <Card as="section" className="panel content-span" aria-labelledby="cash-position-title">
         <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Cash custody</p>
+          <div className="heading-inline">
             <h2 id="cash-position-title">Collections</h2>
+            {canBank ? <span className="heading-hint">Select cash to bank it</span> : null}
           </div>
         </div>
         {loading ? <LoadingState label="Loading cash position" /> : null}
@@ -890,18 +1124,7 @@ export function CashWorkspace({
             {summary.collections.length === 0 ? (
               <EmptyState
                 title="No collections yet"
-                message="Approved collections show up here."
-                action={
-                  capabilities.recordCollection ? (
-                    <Button
-                      variant="secondary"
-                      aria-haspopup="dialog"
-                      onClick={() => openSheet('record')}
-                    >
-                      New Collection
-                    </Button>
-                  ) : undefined
-                }
+                message="Cash from approved shift reports shows here."
               />
             ) : (
               <TableScrollRegion label="Station cash collections">
@@ -911,25 +1134,47 @@ export function CashWorkspace({
                     <tr>
                       <th scope="col">Reference</th>
                       <th scope="col">Amount</th>
-                      <th scope="col">Unbanked</th>
-                      <th scope="col">Custody</th>
+                      <th scope="col">Still to bank</th>
+                      <th scope="col">Where it is</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {summary.collections.map((collection) => (
-                      <tr key={collection.collectionId}>
-                        <th scope="row">{collection.collectionReference}</th>
-                        <td data-label="Amount">{plain(collection.amount)}</td>
-                        <td data-label="Unbanked">{plain(collection.collectedButUnbanked)}</td>
-                        <td data-label="Custody">
-                          <StatusBadge
-                            tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
-                          >
-                            {displayState(collection.custodyState)}
-                          </StatusBadge>
-                        </td>
-                      </tr>
-                    ))}
+                    {summary.collections.map((collection) => {
+                      const bankable = canBank && Number(collection.availableAtStation) > 0;
+                      return (
+                        <tr
+                          key={collection.collectionId}
+                          className={bankable ? 'row-action' : undefined}
+                          onClick={bankable ? () => openDepositFor(collection) : undefined}
+                          onKeyDown={
+                            bankable
+                              ? (event) => {
+                                  if (event.target !== event.currentTarget) return;
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    openDepositFor(collection);
+                                  }
+                                }
+                              : undefined
+                          }
+                          tabIndex={bankable ? 0 : undefined}
+                        >
+                          <th scope="row">{collection.collectionReference}</th>
+                          <td data-label="Amount">{plain(collection.amount)}</td>
+                          <td data-label="Still to bank">
+                            {plain(collection.collectedButUnbanked)}
+                          </td>
+                          <td data-label="Where it is">
+                            <StatusBadge
+                              tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
+                            >
+                              {CUSTODY_LABELS[collection.custodyState] ??
+                                displayState(collection.custodyState)}
+                            </StatusBadge>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </TableScrollRegion>
@@ -941,9 +1186,11 @@ export function CashWorkspace({
       {capabilities.viewDeposits ? (
         <Card as="section" className="panel content-span" aria-labelledby="deposit-list-title">
           <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Banking</p>
+            <div className="heading-inline">
               <h2 id="deposit-list-title">Bank Deposits</h2>
+              {canConfirm ? (
+                <span className="heading-hint">Select a deposit to confirm it</span>
+              ) : null}
             </div>
           </div>
           {summary?.deposits.length ? (
@@ -955,46 +1202,62 @@ export function CashWorkspace({
                     <th scope="col">Reference</th>
                     <th scope="col">Account</th>
                     <th scope="col">Amount</th>
-                    <th scope="col">State</th>
-                    <th scope="col">Confirmation variance</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Bank difference</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.deposits.map((deposit) => (
-                    <tr key={deposit.depositId}>
-                      <th scope="row">{deposit.depositReference}</th>
-                      <td data-label="Account">{deposit.bankAccountName}</td>
-                      <td data-label="Amount">{plain(deposit.amount)}</td>
-                      <td data-label="State">
-                        <StatusBadge tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}>
-                          {displayState(deposit.state)}
-                        </StatusBadge>
-                      </td>
-                      <td data-label="Confirmation variance">
-                        {deposit.confirmationVariance
-                          ? plain(deposit.confirmationVariance)
-                          : 'Pending'}
-                      </td>
-                    </tr>
-                  ))}
+                  {summary.deposits.map((deposit) => {
+                    const confirmable =
+                      canConfirm &&
+                      confirmableDeposits.some(
+                        (candidate) => candidate.depositId === deposit.depositId,
+                      );
+                    return (
+                      <tr
+                        key={deposit.depositId}
+                        className={confirmable ? 'row-action' : undefined}
+                        onClick={confirmable ? () => openConfirmFor(deposit.depositId) : undefined}
+                        onKeyDown={
+                          confirmable
+                            ? (event) => {
+                                if (event.target !== event.currentTarget) return;
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  openConfirmFor(deposit.depositId);
+                                }
+                              }
+                            : undefined
+                        }
+                        tabIndex={confirmable ? 0 : undefined}
+                      >
+                        <th scope="row">{deposit.depositReference}</th>
+                        <td data-label="Account">{deposit.bankAccountName}</td>
+                        <td data-label="Amount">{plain(deposit.amount)}</td>
+                        <td data-label="Status">
+                          <StatusBadge
+                            tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}
+                          >
+                            {DEPOSIT_LABELS[deposit.state] ?? displayState(deposit.state)}
+                          </StatusBadge>
+                        </td>
+                        <td data-label="Bank difference">
+                          {deposit.confirmationVariance
+                            ? sumDecimals([deposit.confirmationVariance]) === '0.00'
+                              ? 'None'
+                              : plain(deposit.confirmationVariance)
+                            : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </TableScrollRegion>
           ) : (
             <EmptyState
               title="No bank deposits yet"
-              message="Deposits show up here once recorded."
-              action={
-                capabilities.recordDeposit ? (
-                  <Button
-                    variant="secondary"
-                    aria-haspopup="dialog"
-                    onClick={() => openSheet('deposit')}
-                  >
-                    New Bank Deposit
-                  </Button>
-                ) : undefined
-              }
+              message="Deposits show up here once you bank some cash."
             />
           )}
         </Card>

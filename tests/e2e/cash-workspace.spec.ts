@@ -130,6 +130,8 @@ async function mockCash(
   );
 }
 
+const actionBar = (page: import('@playwright/test').Page) => page.locator('.cash-action-bar');
+
 test.describe('Cash workspace', () => {
   test('loads the selected station and keeps collection/deposit evidence distinct', async ({
     page,
@@ -142,18 +144,20 @@ test.describe('Cash workspace', () => {
     await expect(page.getByRole('heading', { name: 'Bank deposits' })).toBeVisible();
     const collection = page.getByRole('row', { name: /COL-001/ });
     await expect(collection.locator('[data-label="Amount"]')).toHaveText('800.00 USD');
-    await expect(collection.locator('[data-label="Unbanked"]')).toHaveText('800.00 USD');
+    await expect(collection.locator('[data-label="Still to bank"]')).toHaveText('800.00 USD');
     const deposit = page.getByRole('row', { name: /DEP-001/ });
     await expect(deposit).toContainText('100.00 USD');
-    await expect(deposit).toContainText('Pending');
+    await expect(deposit).toContainText('Waiting for bank');
 
     // Forms live in a side sheet opened from the action bar.
-    await page.getByRole('button', { name: 'Receive a collection' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Receive a collection' });
-    await expect(sheet.getByRole('button', { name: 'Receive collection' })).toBeVisible();
+    await actionBar(page).getByRole('button', { name: 'Receive cash' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Receive cash' });
+    await expect(sheet.getByRole('button', { name: 'Receive cash' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
-    await page.getByRole('button', { name: /^Confirm deposits/i }).click();
+    await actionBar(page)
+      .getByRole('button', { name: /^Confirm deposits/i })
+      .click();
     await expect(
       page
         .getByRole('dialog', { name: 'Confirm bank deposits' })
@@ -167,12 +171,12 @@ test.describe('Cash workspace', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/stations/station-1/cash?tenantId=tenant-1');
       const position = page.getByRole('region', { name: 'Cash Position' });
-      await expect(position).toContainText('Cash at station');
+      // Three parts that never overlap, so they add up to everything collected.
+      await expect(position).toContainText('At the station');
       await expect(position).toContainText('USD 700.00');
-      await expect(position).toContainText('Collected, not banked');
-      await expect(position).toContainText('USD 800.00');
-      await expect(position).toContainText('Awaiting bank confirmation');
+      await expect(position).toContainText('Waiting for the bank');
       await expect(position).toContainText('USD 100.00');
+      await expect(position).toContainText('Banked');
       const results = await new AxeBuilder({ page }).include('.cash-panel').analyze();
       expect(results.violations, `width ${width}`).toEqual([]);
     }
@@ -224,12 +228,15 @@ test.describe('Cash workspace', () => {
       });
     });
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-    await page.getByRole('button', { name: 'Receive a collection' }).click();
-    await page.getByRole('combobox', { name: 'Recorded collection' }).selectOption('collection-1');
-    await page
-      .getByRole('combobox', { name: 'Receiving cash location' })
+    await actionBar(page).getByRole('button', { name: 'Receive cash' }).click();
+    const receiveSheet = page.getByRole('dialog', { name: 'Receive cash' });
+    await receiveSheet
+      .getByRole('combobox', { name: 'Cash to receive' })
+      .selectOption('collection-1');
+    await receiveSheet
+      .getByRole('combobox', { name: 'Receiving location' })
       .selectOption('location-2');
-    await page.getByRole('button', { name: 'Receive collection' }).click();
+    await receiveSheet.getByRole('button', { name: 'Receive cash' }).click();
 
     await expect
       .poll(() => commandPayload)
@@ -260,14 +267,19 @@ test.describe('Cash workspace', () => {
       }),
     );
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-    await page.getByRole('button', { name: 'New collection' }).click();
-    await page
-      .getByRole('combobox', { name: 'Approved reconciliation cash evidence' })
+    await actionBar(page).getByRole('button', { name: 'Collect cash' }).click();
+    const collectSheet = page.getByRole('dialog', { name: 'Collect cash' });
+    await collectSheet
+      .getByRole('combobox', { name: 'Shift cash' })
       .selectOption('reconciliation-1');
-    await page.getByRole('combobox', { name: 'Source cash location' }).selectOption('location-1');
-    await page.getByLabel('Collection reference').fill('COL-002');
-    await page.getByLabel('Collected amount').fill('25.00');
-    await page.getByRole('button', { name: 'Record collection' }).click();
+    await collectSheet
+      .getByRole('combobox', { name: 'Where the cash is' })
+      .selectOption('location-1');
+    // Choosing a shift fills in the amount available; it can still be changed.
+    await expect(collectSheet.getByLabel('Amount')).toHaveValue('1000.00');
+    await collectSheet.getByLabel('Reference').fill('COL-002');
+    await collectSheet.getByLabel('Amount').fill('25.00');
+    await collectSheet.getByRole('button', { name: 'Collect cash' }).click();
 
     await expect(
       page.getByText(/The cash collection is stale.*Refresh the station position/),
@@ -287,12 +299,7 @@ test.describe('Cash workspace', () => {
     });
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
     await expect(page.getByLabel('Cash position')).toBeVisible();
-    for (const name of [
-      'New collection',
-      'Receive a collection',
-      'New bank deposit',
-      /Confirm deposits/,
-    ]) {
+    for (const name of ['Collect cash', 'Receive cash', 'Bank cash', /Confirm deposits/]) {
       await expect(page.getByRole('button', { name })).toHaveCount(0);
     }
     await expect(page.getByRole('heading', { name: 'No cash actions available' })).toBeVisible();
@@ -301,15 +308,48 @@ test.describe('Cash workspace', () => {
   test('asks before discarding an unsaved sheet', async ({ page }) => {
     await mockCash(page);
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-    await page.getByRole('button', { name: 'New collection' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Record a cash collection' });
-    await sheet.getByLabel('Collection reference').fill('COL-003');
+    await actionBar(page).getByRole('button', { name: 'Collect cash' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Collect cash' });
+    await sheet.getByLabel('Reference').fill('COL-003');
     await page.keyboard.press('Escape');
     await expect(sheet.getByText('Discard what you have entered?')).toBeVisible();
     await sheet.getByRole('button', { name: 'Keep editing' }).click();
-    await expect(sheet.getByLabel('Collection reference')).toHaveValue('COL-003');
+    await expect(sheet.getByLabel('Reference')).toHaveValue('COL-003');
     await page.keyboard.press('Escape');
     await sheet.getByRole('button', { name: 'Discard' }).click();
     await expect(sheet).toBeHidden();
+  });
+
+  test('says what to do next and opens the bank sheet from a collection row', async ({ page }) => {
+    await mockCash(page, context(), {
+      ...summary,
+      capabilities: { ...summary.capabilities, confirmDeposit: false },
+    });
+    await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await expect(page.getByRole('status')).toContainText('USD 700.00 is at the station');
+
+    // The whole row is the target, and the cash and its full amount are already filled in.
+    await page.getByRole('row', { name: /COL-001/ }).click();
+    const sheet = page.getByRole('dialog', { name: 'Bank cash' });
+    await expect(sheet.getByRole('combobox', { name: 'Cash' })).toHaveValue('collection-1');
+    await expect(sheet.getByLabel('Amount')).toHaveValue('700.00');
+  });
+
+  test('opens a single deposit to confirm from its row', async ({ page }) => {
+    await mockCash(page);
+    await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await expect(page.getByRole('status')).toContainText('1 bank deposit is waiting');
+    await page.getByRole('row', { name: /DEP-001/ }).click();
+    const sheet = page.getByRole('dialog', { name: 'Confirm bank deposits' });
+    await expect(sheet.getByLabel('Amount the bank shows')).toHaveValue('100.00');
+  });
+
+  test('explains an empty sheet instead of showing a blank, disabled form', async ({ page }) => {
+    await mockCash(page, context(), { ...summary, reconciliationSources: [] });
+    await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await actionBar(page).getByRole('button', { name: 'Collect cash' }).click();
+    await expect(
+      page.getByRole('dialog', { name: 'Collect cash' }).getByText(/no approved shift cash/i),
+    ).toBeVisible();
   });
 });

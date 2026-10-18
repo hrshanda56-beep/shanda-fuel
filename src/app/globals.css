@@ -4087,18 +4087,21 @@ h3,
   }
 }
 
-/* Provider settlements: use the full width, like Finance, with small side margins. */
-.shell-main:has(.settlement-workspace) {
+/* Provider payouts and Cash and banking: use the full width, like Finance, with small side margins. */
+.shell-main:has(.settlement-workspace),
+.shell-main:has(.cash-workspace) {
   max-width: none;
   padding-inline: var(--space-3);
 }
 
 @media (min-width: 64rem) {
-  .shell-main:has(.settlement-workspace) {
+  .shell-main:has(.settlement-workspace),
+  .shell-main:has(.cash-workspace) {
     padding-inline: var(--space-4);
   }
 
-  .shell-sheet:has(.settlement-workspace) {
+  .shell-sheet:has(.settlement-workspace),
+  .shell-sheet:has(.cash-workspace) {
     padding: var(--space-4) var(--space-4) var(--space-8);
   }
 }
@@ -4113,23 +4116,23 @@ h3,
   white-space: nowrap;
 }
 
-.settlement-workspace .data-table tr.row-action {
+.cash-workspace .data-table tr.row-action {
   cursor: pointer;
 }
 
-.settlement-workspace .data-table tr.row-action:hover,
-.settlement-workspace .data-table tr.row-action:focus-visible {
+.cash-workspace .data-table tr.row-action:hover,
+.cash-workspace .data-table tr.row-action:focus-visible {
   background: var(--bg-subtle);
 }
 
-.settlement-workspace .heading-inline {
+.cash-workspace .heading-inline {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.25rem 0.75rem;
 }
 
-.settlement-workspace .heading-hint {
+.cash-workspace .heading-hint {
   color: var(--text-secondary);
   font-size: 0.8125rem;
   opacity: 0.75;
@@ -4340,4 +4343,54 @@ h3,
     top: var(--space-3);
     transform: none;
   }
+}
+
+/* Cash and banking: one plain "what to do next" line, and a clear note when a sheet has nothing to act on. */
+.cash-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.cash-next p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.cash-sheet-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+}
+
+.cash-donut-name small {
+  text-transform: none;
+}
+
+.cash-sheet-intro {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+}
+
+.cash-allocations-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cash-allocations-head h3 {
+  margin: 0;
 }
