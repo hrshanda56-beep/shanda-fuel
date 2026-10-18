@@ -54,6 +54,7 @@ export function contextRoutePolicy(pathname: string | null | undefined): Context
   if (
     /^\/stations\/[^/]+(?:\/|$)/.test(path) ||
     /^\/my-shift(?:\/|$)/.test(path) ||
+    /^\/finance(?:\/|$)/.test(path) ||
     /^\/operations\/daily(?:\/|$)/.test(path) ||
     /^\/operations\/reconciliations(?:\/|$)/.test(path) ||
     /^\/inventory(?:\/|$)/.test(path)

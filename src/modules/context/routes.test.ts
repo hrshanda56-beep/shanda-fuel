@@ -76,6 +76,19 @@ describe('context route policy', () => {
   });
 });
 
+describe('station-required routes', () => {
+  it('treats Finance as one station at a time, so it never resolves to all stations', () => {
+    for (const path of ['/finance', '/finance/anything']) {
+      expect(contextRoutePolicy(path)).toEqual({
+        legalEntity: 'required',
+        station: 'required',
+        allStationsAllowed: false,
+      });
+    }
+    expect(contextRoutePolicy('/financeish').station).toBe('optional');
+  });
+});
+
 describe('isCurrentSelection', () => {
   const current = { ...selection };
 
