@@ -1359,23 +1359,17 @@ a.operations-attention-row:hover {
 }
 
 @media (min-width: 64rem) {
-  .finance-home .operations-summary {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
   .cash-workspace {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 .cash-workspace .operations-summary,
-.finance-home .operations-summary,
 .operations-control-room .operations-summary {
   gap: var(--space-4);
 }
 
 .cash-workspace .operations-summary > div,
-.finance-home .operations-summary > div,
 .operations-control-room .operations-summary > div {
   gap: var(--space-2);
   padding: var(--space-5);
@@ -1389,7 +1383,6 @@ a.operations-attention-row:hover {
 }
 
 .cash-workspace .operations-summary dt,
-.finance-home .operations-summary dt,
 .operations-control-room .operations-summary dt {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -1399,7 +1392,6 @@ a.operations-attention-row:hover {
 }
 
 .cash-workspace .operations-summary dd,
-.finance-home .operations-summary dd,
 .operations-control-room .operations-summary dd {
   font-size: var(--font-size-2xl);
   font-weight: 700;
@@ -1407,7 +1399,6 @@ a.operations-attention-row:hover {
 }
 
 .cash-workspace .operations-summary dd .operations-summary-note,
-.finance-home .operations-summary dd .operations-summary-note,
 .operations-control-room .operations-summary dd .operations-summary-note {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -3915,5 +3906,88 @@ h3,
 
   .finance-row-text {
     flex-basis: calc(100% - 2rem);
+  }
+}
+
+/* Finance home tiles: flat, single colour, each one a link. Mobile first: two across, then four. */
+.finance-home .finance-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.finance-tile {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.finance-tile:hover {
+  border-color: var(--border-strong, var(--accent));
+}
+
+.finance-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.finance-tile dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.finance-tile dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-tile .operations-summary-note {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+
+@media (min-width: 48rem) {
+  .finance-home .finance-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+
+  .finance-tile {
+    padding: var(--space-5);
+  }
+}
+
+/* Use the full width: no centred max-width column, small side margins. */
+.shell-main:has(.finance-home) {
+  max-width: none;
+  padding-inline: var(--space-3);
+}
+
+@media (min-width: 64rem) {
+  .shell-main:has(.finance-home) {
+    padding-inline: var(--space-4);
+  }
+}
+
+@media (min-width: 64rem) {
+  .shell-sheet:has(.finance-home) {
+    padding: var(--space-4) var(--space-4) var(--space-8);
   }
 }

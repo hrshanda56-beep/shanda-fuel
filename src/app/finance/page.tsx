@@ -25,7 +25,14 @@ import { resolveCurrentContext } from '@/modules/context/server';
 export const metadata = { title: 'Finance' };
 export const dynamic = 'force-dynamic';
 
-function ActionList({ center }: { center: ActionCenter }) {
+function ActionList({ center, stationId }: { center: ActionCenter; stationId: string }) {
+  const station = `/stations/${encodeURIComponent(stationId)}`;
+  const areaHref: Record<ActionArea, string> = {
+    Approvals: '/operations/reconciliations',
+    Banking: `${station}/cash`,
+    Settlements: `${station}/settlements`,
+    Payables: '/suppliers',
+  };
   const countFor = (area: ActionArea) => center.items.filter((item) => item.area === area);
   return (
     <div className="content-grid finance-home">
@@ -35,12 +42,15 @@ function ActionList({ center }: { center: ActionCenter }) {
           message={`${center.unavailable.join(', ')} could not be loaded. Reload to try again. Anything listed below is still correct.`}
         />
       ) : null}
-      <dl className="operations-summary content-span" aria-label="Work waiting by area">
+      <dl
+        className="operations-summary finance-tiles content-span"
+        aria-label="Work waiting by area"
+      >
         {ACTION_AREAS.map((area) => {
           const items = countFor(area);
           const urgent = items.filter((item) => item.tone === 'attention').length;
           return (
-            <div key={area}>
+            <Link key={area} className="finance-tile" href={areaHref[area]}>
               <dt>{area}</dt>
               <dd>
                 {items.length}
@@ -52,7 +62,7 @@ function ActionList({ center }: { center: ActionCenter }) {
                       : 'For information'}
                 </span>
               </dd>
-            </div>
+            </Link>
           );
         })}
       </dl>
@@ -159,7 +169,7 @@ export default async function FinancePage({
           message="Reload the page to try again. Nothing has been changed."
         />
       ) : (
-        <ActionList center={center} />
+        <ActionList center={center} stationId={stationId} />
       )}
     </AppShell>
   );
