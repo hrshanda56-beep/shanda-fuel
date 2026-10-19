@@ -830,3 +830,8 @@ must be revisited before production promotion if the dependency path changes.
 At Jordan's request, an explicit All stations selection survives management navigation and remains reachable after selecting an individual station. Management overview routes may show authorized stations side by side. Individual station records and commands keep their existing station authorization and assurance requirements. Switching from a station record to All returns to that area's overview and drops record-specific URL filters. Opening a record supplies its station in the URL without changing the persisted viewing preference.
 
 Cross-station presentation reuses existing server read services and streaming. Financial values retain exact decimal strings and currency; no new cross-currency totals or averaging rules are introduced. Supplier balances are presented once per legal entity. Route support is explicitly allowed, rather than changing the default policy for unknown routes.
+
+
+### Unified expense integration — 2026-10-19
+
+Jordan approved using incoming PR #146 expenses as the base and adding operational fact versions and shift links. Keep finance lifecycle and postings. No second editable shift-expense authority. Applied migration streams require explicit conversion, not checksum rewriting or blind renumbering. Existing posted corrections retain reversals.

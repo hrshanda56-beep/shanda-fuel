@@ -47,15 +47,37 @@ export const setExpensePolicySchema = z.object({
   expectedVersion: version.optional(),
 });
 
-export const submitExpenseSchema = stationBase.extend({
-  commandType: z.literal('SubmitExpense'),
-  categoryId: uuid,
-  expenseDate: date,
-  description: z.string().trim().min(1).max(500),
-  payee: z.string().trim().max(160).optional(),
-  reference: z.string().trim().max(120).optional(),
-  amount: decimal,
-});
+export const submitExpenseSchema = stationBase
+  .extend({
+    shiftId: uuid.optional(),
+    observedAt: z.string().datetime({ offset: true }).optional(),
+    commandType: z.literal('SubmitExpense'),
+    categoryId: uuid,
+    expenseDate: date,
+    description: z.string().trim().min(1).max(500),
+    payee: z.string().trim().max(160).optional(),
+    reference: z.string().trim().max(120).optional(),
+    amount: decimal,
+  })
+  .strict()
+  .refine((value) => Boolean(value.shiftId) === Boolean(value.observedAt), {
+    message: 'Shift expense requires an observation time',
+    path: ['observedAt'],
+  });
+
+export const correctExpenseFactsSchema = stationBase
+  .extend({
+    commandType: z.literal('CorrectExpenseFacts'),
+    expenseId: uuid,
+    expectedVersion: version,
+    expectedVersionId: uuid,
+    amount: decimal,
+    description: z.string().trim().min(1).max(500),
+    payee: z.string().trim().max(160).optional(),
+    reference: z.string().trim().max(120).optional(),
+    reason,
+  })
+  .strict();
 
 export const approveExpenseSchema = stationBase.extend({
   commandType: z.literal('ApproveExpense'),
@@ -144,6 +166,7 @@ export const adjustRecurringCostRecognitionSchema = stationBase.extend({
 });
 
 export const EXPENSE_COMMAND_SCHEMAS = {
+  CorrectExpenseFacts: correctExpenseFactsSchema,
   CreateExpenseCategory: createExpenseCategorySchema,
   SetExpensePolicy: setExpensePolicySchema,
   SubmitExpense: submitExpenseSchema,
@@ -174,6 +197,13 @@ export type ExpenseCommandPolicy = Readonly<{
 }>;
 
 export const EXPENSE_COMMAND_POLICY: Readonly<Record<ExpenseCommandType, ExpenseCommandPolicy>> = {
+  CorrectExpenseFacts: {
+    permissionCode: 'expense.submit',
+    alwaysStepUp: false,
+    thresholdStepUp: false,
+    requiresExpectedVersion: true,
+    auditActionCode: 'EXPENSE.FACTS_CORRECTED',
+  },
   CreateExpenseCategory: {
     permissionCode: 'expense.manage',
     alwaysStepUp: false,

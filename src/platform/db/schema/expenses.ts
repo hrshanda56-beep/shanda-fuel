@@ -14,6 +14,7 @@ import {
 import { appSchema } from './namespaces';
 import { legalEntities, memberships, stations } from './a1';
 import { cashMovements } from './a6';
+import { shifts } from './a3';
 
 const id = () =>
   uuid('id')
@@ -100,6 +101,9 @@ export const expenses = appSchema.table(
     tenantId: tenantId(),
     legalEntityId: uuid('legal_entity_id').notNull(),
     stationId: uuid('station_id').notNull(),
+    shiftId: uuid('shift_id'),
+    observedAt: utcTimestamp('observed_at'),
+    currentVersionId: uuid('current_version_id').notNull(),
     categoryId: uuid('category_id').notNull(),
     expenseDate: text('expense_date').notNull(),
     description: text('description').notNull(),
@@ -125,6 +129,12 @@ export const expenses = appSchema.table(
   },
   (table) => [
     unique('expenses_tenant_id_id_uidx').on(table.tenantId, table.id),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.shiftId],
+      foreignColumns: [shifts.tenantId, shifts.stationId, shifts.id],
+      name: 'unified_expense_shift_fk',
+    }),
+    // The deferred current-version FK is SQL-owned (atomic cyclic identity/version creation).
     unique('expenses_tenant_station_id_id_uidx').on(table.tenantId, table.stationId, table.id),
     uniqueIndex('expenses_tenant_station_reference_uidx')
       .on(table.tenantId, table.stationId, table.reference)

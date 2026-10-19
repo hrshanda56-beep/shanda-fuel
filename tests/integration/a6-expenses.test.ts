@@ -1143,4 +1143,31 @@ describe('A6 expenses PostgreSQL persistence', () => {
       await client`select count(*)::int as n from app.expenses where tenant_id = ${ids.tenant}`;
     expect(submitted).toBe(expenses[0]!.n);
   });
+  it('keeps one expense identity and creates exact immutable facts without a duplicate payment source', async () => {
+    const result = await submit('25.1234', { reference: `VERSION-${randomUUID()}` });
+    expect(result.status).toBe(201);
+    const rows =
+      await client`select e.id,e.current_version_id,v.amount,v.version_number,v.lineage_status from app.expenses e join app.expense_versions v on v.tenant_id=e.tenant_id and v.station_id=e.station_id and v.expense_id=e.id and v.id=e.current_version_id where e.id=${result.json.expenseId}`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.amount).toBe('25.1234');
+    expect(rows[0]!.version_number).toBe(1);
+    expect(rows[0]!.lineage_status).toBe('COMPLETE');
+    await expect(
+      client`update app.expense_versions set amount=30 where id=${rows[0]!.current_version_id}`,
+    ).rejects.toThrow(/immutable/);
+    expect(
+      await client`select id from app.expense_payments where expense_id=${result.json.expenseId}`,
+    ).toHaveLength(0);
+  });
+  it('pins recognition to the original expense version and preserves settlement and reversal behavior', async () => {
+    const result = await approvedAndPosted('12.5000', { reference: `PINNED-${randomUUID()}` });
+    const expenseId = result.expenseId;
+    const sources =
+      await client`select s.expense_version_id,v.amount from app.expense_recognition_version_sources s join app.expense_versions v on v.tenant_id=s.tenant_id and v.station_id=s.station_id and v.id=s.expense_version_id where s.expense_id=${expenseId}`;
+    expect(sources).toHaveLength(1);
+    expect(sources[0]!.amount).toBe('12.5000');
+    await expect(
+      client`delete from app.expense_recognition_version_sources where expense_id=${expenseId}`,
+    ).rejects.toThrow(/immutable/);
+  });
 });

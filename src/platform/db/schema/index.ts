@@ -20,3 +20,4 @@ export * from './revenue';
 export * from './staff';
 export * from './identity';
 export * from './purchasing';
+export * from './expense-versions';

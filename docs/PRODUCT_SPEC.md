@@ -495,3 +495,8 @@ assumptions:
 The owner decisions for Supervisor accountability, account-sale references,
 approved-fuel auditability, cash custody minimums, customer-account sequencing,
 and close-summary content are recorded above and are no longer unresolved.
+
+
+### Unified expense integration — 2026-10-19
+
+Approved unified expense direction: one independent expense identity combines incoming finance approvals/settlements/attachments/recognition with immutable fact versions and optional shift association. Payment remains separate from expense recognition. Reconciliation must use exact immutable source versions.

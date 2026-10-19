@@ -1241,3 +1241,8 @@ This plan does not authorize an agent to:
 - skip independent review for release-critical security changes.
 
 When a required domain decision is missing, mark the task blocked with `TODO — Requires confirmation` rather than guessing.
+
+
+### Unified expense integration — 2026-10-19
+
+Unify expenses before integrating the dirty operational work: retain incoming IDs/finance workflow; version facts and add shift context; verify corrections and exact-source integrity; prepare explicit category/payment/history conversion; integrate reconciliation manifests; rerun combined finance/operational gates. No drop, checksum rewrite or remote conversion is authorized.

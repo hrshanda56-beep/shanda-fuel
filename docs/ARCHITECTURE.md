@@ -491,3 +491,8 @@ Before a future architecture rewrite or major feature expansion, verify in the r
 - exact CI workflow commands and release automation;
 - current observability implementation and exception expiry;
 - current dependency advisory status.
+
+
+### Unified expense integration — 2026-10-19
+
+The isolated integration candidate adds domain-specific expense versions, guarded current projection updates and typed recognition/reconciliation version links on incoming expense IDs. Applied 0047/0048 exist only in the separately approved local unified test database. See architecture/unified-expense-integration.md.

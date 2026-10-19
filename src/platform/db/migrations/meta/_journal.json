@@ -288,6 +288,20 @@
       "when": 1792600002000,
       "tag": "0040_recurring_cost_adjustments",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792600003000,
+      "tag": "0047_unified_expense_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792600004000,
+      "tag": "0048_unified_expense_corrections",
+      "breakpoints": true
     }
   ]
 }
