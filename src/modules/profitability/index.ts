@@ -1,5 +1,6 @@
 export {
   calculateGrossMargin,
+  classifyGrossMargin,
   normalizeCanonicalRevenueAmount,
   normalizeValuedSaleCogs,
   summarizeCanonicalRevenue,
@@ -11,6 +12,8 @@ export type {
   CanonicalRevenueStatus,
   CanonicalSaleRevenue,
   CostingStatus,
+  GrossMarginStatus,
+  ProfitabilityReport,
   RestatedCogsQueryFilters,
   RestatedCogsReport,
   RestatedSaleCogs,

@@ -45,7 +45,7 @@ export function validateMovementQuantity(
   if (quantity.value.isZero()) {
     throw new AppError('VALIDATION_FAILED', 'Inventory movement quantity cannot be zero');
   }
-  if (positiveMovementTypes.has(movementType) && !quantity.value.isPositive()) {
+  if (positiveMovementTypes.has(movementType) && !quantity.value.gt(0)) {
     throw new AppError('VALIDATION_FAILED', `${movementType} movement quantity must be positive`);
   }
   if (negativeMovementTypes.has(movementType) && !quantity.value.isNegative()) {
@@ -77,7 +77,7 @@ export function validateDeliveryAllocations(
   let allocated = decimal('0');
   for (const allocation of allocations) {
     const quantity = litres(allocation);
-    if (!quantity.value.isPositive()) {
+    if (!quantity.value.gt(0)) {
       throw new AppError('VALIDATION_FAILED', 'Delivery allocation quantity must be positive');
     }
     allocated = allocated.add(quantity);

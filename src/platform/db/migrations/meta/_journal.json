@@ -246,6 +246,34 @@
       "when": 1792310400000,
       "tag": "0034_navigation_context_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792314000000,
+      "tag": "0035_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792400000000,
+      "tag": "0036_purchase_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792500000000,
+      "tag": "0037_supplier_invoice_lines_and_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792600000000,
+      "tag": "0038_supplier_document_reference_reuse",
+      "breakpoints": true
     }
   ]
 }

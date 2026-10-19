@@ -514,6 +514,7 @@ async function run(client: Sql) {
       documentDate: '2026-09-01',
       dueDate: '2026-09-30',
       amount: '12500.0000',
+      lines: [{ description: 'Diesel 50 (bulk delivery)', quantity: '10000', unitPrice: '1.25' }],
     },
     'invoice',
     'finance',

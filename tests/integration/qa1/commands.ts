@@ -346,7 +346,13 @@ export async function completeShift(
 export async function createDelivery(
   ctx: Qa1ScenarioContext,
   keyPrefix: string,
-  input: { quantityLitres: string; deliveredAt: string; noteQuantityLitres?: string },
+  input: {
+    quantityLitres: string;
+    deliveredAt: string;
+    noteQuantityLitres?: string;
+    /** Every delivery names its supplier (ADR-018 D1). */
+    supplierId: string;
+  },
 ): Promise<{ deliveryId: string; allocationId: string }> {
   const result = await inventory(
     ctx,
@@ -355,6 +361,7 @@ export async function createDelivery(
       tenantId: ctx.tenantId,
       stationId: ctx.stationId,
       productId: ctx.productId,
+      supplierId: input.supplierId,
       deliveryNoteNumber: `QA1-DN-${keyPrefix}`,
       deliveredAt: input.deliveredAt,
       noteQuantityLitres: input.noteQuantityLitres ?? input.quantityLitres,

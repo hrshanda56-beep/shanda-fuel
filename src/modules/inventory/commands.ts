@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
@@ -20,6 +20,7 @@ import {
   validateDeliveryAllocations,
 } from './domain';
 import {
+  authorizeInventoryCommand,
   executeInventoryCommand,
   requestHash,
   resolveInventoryCommandContext,
@@ -76,6 +77,8 @@ const dipPayload = authorityPayload.extend({
 const allocationPayload = z.object({ tankId: uuid, quantityLitres: decimalText });
 const deliveryPayload = authorityPayload.extend({
   productId: uuid,
+  /** Mandatory: who delivered the fuel. Must be an active supplier of this tenant. */
+  supplierId: uuid,
   deliveryNoteNumber: z.string().trim().min(1).max(80),
   deliveredAt: instant,
   noteQuantityLitres: decimalText,
@@ -100,6 +103,11 @@ const deliveryPayload = authorityPayload.extend({
 });
 
 const confirmDeliveryPayload = authorityPayload.extend({ deliveryId: uuid });
+const correctDeliverySupplierPayload = authorityPayload.extend({
+  deliveryId: uuid,
+  supplierId: uuid,
+  reason: z.string().trim().min(1).max(500),
+});
 const adjustmentPayload = authorityPayload.extend({
   tankId: uuid,
   quantityLitres: decimalText,
@@ -325,12 +333,35 @@ export async function recordTankDipFromRequest(request: Request, input: unknown)
   });
 }
 
+async function assertActiveSupplier(
+  transaction: InventoryTransaction,
+  tenantId: string,
+  supplierId: string,
+): Promise<void> {
+  const rows = await transaction.execute<{ status: string }>(sql`
+    select status from app.suppliers where tenant_id = ${tenantId} and id = ${supplierId}
+  `);
+  if (!rows[0]) {
+    throw new AppError(
+      'NOT_FOUND',
+      'That supplier was not found. Pick a supplier from your supplier list, or add the supplier first.',
+    );
+  }
+  if (rows[0].status !== 'ACTIVE') {
+    throw new AppError(
+      'CONFLICT',
+      'That supplier is inactive, so it cannot receive new deliveries. Pick an active supplier or reactivate this one.',
+    );
+  }
+}
+
 async function insertDelivery(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   payload: z.infer<typeof deliveryPayload>,
 ): Promise<{ deliveryId: string; allocationIds: readonly string[] }> {
   await assertProductBelongsToTenant(transaction, context.tenantId, payload.productId);
+  await assertActiveSupplier(transaction, context.tenantId, payload.supplierId);
   validateDeliveryAllocations(
     payload.actualQuantityLitres,
     payload.allocations.map((item) => item.quantityLitres),
@@ -365,6 +396,7 @@ async function insertDelivery(
     tenantId: context.tenantId,
     stationId: context.stationId,
     productId: payload.productId,
+    supplierId: payload.supplierId,
     deliveryNoteNumber: payload.deliveryNoteNumber,
     deliveredAt: new Date(payload.deliveredAt),
     businessDate: deriveBusinessDate(payload.deliveredAt, context.stationTimezone),
@@ -450,6 +482,13 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
       if (!delivery) throw new AppError('NOT_FOUND', 'The requested delivery was not found');
       if (delivery.status === 'CONFIRMED')
         return { deliveryId: delivery.id, status: delivery.status };
+      if (delivery.supplierId === null) {
+        throw new AppError(
+          'CONFLICT',
+          'This delivery has no supplier recorded. Every delivery must say who delivered the fuel, so assign a supplier (Correct delivery supplier) before confirming it.',
+        );
+      }
+      await assertActiveSupplier(transaction, context.tenantId, delivery.supplierId);
       if (delivery.status !== 'DRAFT')
         throw new AppError('CONFLICT', 'Only draft deliveries can be confirmed');
       const allocations = await transaction
@@ -537,6 +576,101 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
         })
         .where(eq(fuelDeliveries.id, delivery.id));
       return { deliveryId: delivery.id, status: 'CONFIRMED', movementCount: allocations.length };
+    },
+  });
+}
+
+/**
+ * Named, audited correction of the supplier on a delivery (never a plain edit). Allowed on
+ * a draft or confirmed delivery, also to assign a legacy "supplier unassigned" delivery, and
+ * refused once any posted supplier document references the delivery. Needs the delivery
+ * permission (high-risk, so a current step-up) plus the supplier-link permission, and a
+ * reason.
+ */
+export async function correctDeliverySupplierFromRequest(request: Request, input: unknown) {
+  const payload = correctDeliverySupplierPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  authorizeInventoryCommand(context, 'supplier.delivery.link');
+  return executeInventoryCommand({
+    context,
+    commandType: 'CorrectDeliverySupplier',
+    permissionCode: 'inventory.delivery.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.DELIVERY_SUPPLIER_CORRECTED',
+      subjectType: 'FuelDelivery',
+      subjectId: payload.deliveryId,
+      reason: payload.reason,
+    },
+    execute: async (transaction) => {
+      // Lock order matches PostSupplierDocument: the delivery row first.
+      const rows = await transaction.execute<{
+        id: string;
+        status: string;
+        supplier_id: string | null;
+        delivery_note_number: string;
+      }>(sql`
+        select id, status, supplier_id, delivery_note_number
+        from app.fuel_deliveries
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.deliveryId}
+        for update
+      `);
+      const delivery = rows[0];
+      if (!delivery) throw new AppError('NOT_FOUND', 'The requested delivery was not found');
+      if (delivery.status === 'CANCELLED') {
+        throw new AppError('CONFLICT', 'A cancelled delivery cannot be changed.');
+      }
+      if (delivery.supplier_id === payload.supplierId) {
+        throw new AppError(
+          'CONFLICT',
+          'That supplier is already recorded on this delivery, so there is nothing to correct.',
+        );
+      }
+      await assertActiveSupplier(transaction, context.tenantId, payload.supplierId);
+      const posted = await transaction.execute<{ reference_number: string }>(sql`
+        select distinct d.reference_number
+        from app.supplier_document_delivery_refs r
+        join app.supplier_documents d on d.tenant_id = r.tenant_id and d.id = r.supplier_document_id
+        where r.tenant_id = ${context.tenantId} and r.delivery_id = ${delivery.id}
+          and d.state in ('POSTED', 'PARTIALLY_PAID', 'PAID')
+        order by d.reference_number
+      `);
+      if (posted.length > 0) {
+        throw new AppError(
+          'CONFLICT',
+          `Delivery note ${delivery.delivery_note_number} is already covered by posted supplier document ${posted
+            .map((row) => row.reference_number)
+            .join(', ')}, so its supplier can no longer be changed. Reverse that document first.`,
+        );
+      }
+      await transaction.execute(
+        sql`select set_config('app.delivery_supplier_correction', 'on', true)`,
+      );
+      await transaction.execute(sql`
+        update app.fuel_deliveries
+        set supplier_id = ${payload.supplierId}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${delivery.id}
+      `);
+      await transaction.execute(
+        sql`select set_config('app.delivery_supplier_correction', 'off', true)`,
+      );
+      await transaction.execute(sql`
+        insert into app.delivery_supplier_corrections (
+          tenant_id, station_id, delivery_id, previous_supplier_id, supplier_id, reason,
+          actor_membership_id
+        ) values (
+          ${context.tenantId}, ${context.stationId}, ${delivery.id}, ${delivery.supplier_id},
+          ${payload.supplierId}, ${payload.reason}, ${context.authority.membership.membershipId}
+        )
+      `);
+      return {
+        deliveryId: delivery.id,
+        previousSupplierId: delivery.supplier_id,
+        supplierId: payload.supplierId,
+      };
     },
   });
 }

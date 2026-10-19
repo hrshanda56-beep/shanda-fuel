@@ -483,6 +483,11 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
         values ('${ids.unvaluedAllocation}', '${ids.tenant}', '${ids.station}', '${ids.unvaluedDelivery}', '${ids.unvaluedTank}', '${ids.product}', 100)
         on conflict (id) do nothing;
+      insert into app.suppliers (id, tenant_id, code, legal_name, status, created_by, updated_by)
+        values ('a5b00000-0000-4000-8000-0000000001a2', '${ids.tenant}', 'A5-SUP-SEED', 'A5 Seeded Supplier', 'ACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      update app.fuel_deliveries set supplier_id = 'a5b00000-0000-4000-8000-0000000001a2'
+        where id in ('${ids.delivery}', '${ids.transitionDelivery}', '${ids.unvaluedDelivery}') and status = 'DRAFT';
       insert into app.tank_dips
         (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
         values ('${ids.dip}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '2026-09-22T23:00:00Z', '2026-09-22', 1100, '${ids.supervisorMembership}')
@@ -1389,6 +1394,12 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       const historicalSaleBeforeRevaluation = { ...historicalSale[0]! };
       const lateEffectiveAt = new Date(historicalSale[0]!.effective_at.getTime() - 1);
 
+      const a5SupplierId = 'a5b00000-0000-4000-8000-0000000001a1';
+      await client`
+        insert into app.suppliers (id, tenant_id, code, legal_name, status, created_by, updated_by)
+        values (${a5SupplierId}, ${ids.tenant}, 'A5-SUP-1', 'A5 Fuel Supplier', 'ACTIVE',
+                ${ids.supervisorMembership}, ${ids.supervisorMembership})
+        on conflict (id) do nothing`;
       const createdDelivery = await expectOk(
         await postInventoryCommand(
           {
@@ -1396,6 +1407,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             tenantId: ids.tenant,
             stationId: ids.station,
             productId: ids.product,
+            supplierId: a5SupplierId,
             deliveryNoteNumber: `A5-P3-LATE-${phase3TankId.slice(0, 8)}`,
             deliveredAt: lateEffectiveAt.toISOString(),
             noteQuantityLitres: '100.000',

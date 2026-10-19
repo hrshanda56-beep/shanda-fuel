@@ -51,7 +51,7 @@ async function assertActiveCashLocation(
       and status = 'ACTIVE'
     for update
   `);
-  if (!rows[0]) throw new AppError('NOT_FOUND', 'The cash location was not found or is inactive');
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'That cash location is no longer available');
 }
 
 async function loadCollection(
@@ -111,7 +111,7 @@ export async function recordCashCollectionInTransaction(
     if (sourceIds.has(source.reconciliationId)) {
       throw new AppError(
         'VALIDATION_FAILED',
-        'A reconciliation may appear only once per collection',
+        'Each shift report can be added to a collection only once',
       );
     }
     sourceIds.add(source.reconciliationId);
@@ -145,7 +145,7 @@ export async function recordCashCollectionInTransaction(
     if (!row) {
       throw new AppError(
         'CONFLICT',
-        'Only approved A5 reconciliations with cash evidence can fund a collection',
+        'Only approved shift reports that include cash can be collected',
         { reconciliationId: source.reconciliationId },
       );
     }
@@ -207,16 +207,26 @@ export async function receiveCashCollectionInTransaction(
 ) {
   const collection = await loadCollection(transaction, context, input.collectionId);
   if (collection.state !== 'RECORDED') {
-    throw new AppError('CONFLICT', 'Only a recorded cash collection can be received');
+    throw new AppError(
+      'CONFLICT',
+      'Only cash that has been recorded and not yet received can be received',
+    );
   }
   if (Number(collection.version) !== input.expectedVersion) {
-    throw new AppError('CONFLICT', 'The cash collection is stale', {
-      expectedVersion: input.expectedVersion,
-      actualVersion: Number(collection.version),
-    });
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this cash collection. Refresh and try again.',
+      {
+        expectedVersion: input.expectedVersion,
+        actualVersion: Number(collection.version),
+      },
+    );
   }
   if (collection.current_location_id === input.targetLocationId) {
-    throw new AppError('VALIDATION_FAILED', 'The custody location must change on receipt');
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Choose a different location from where the cash is now',
+    );
   }
   await assertActiveCashLocation(transaction, context, input.targetLocationId);
 
@@ -247,7 +257,11 @@ export async function receiveCashCollectionInTransaction(
       and state = 'RECORDED'
     returning version
   `);
-  if (!updated[0]) throw new AppError('CONFLICT', 'The cash collection became stale');
+  if (!updated[0])
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this cash collection. Refresh and try again.',
+    );
   return {
     collectionId: collection.id,
     state: 'RECEIVED' as const,
@@ -278,8 +292,7 @@ export async function createBankDepositInTransaction(
       and status = 'ACTIVE'
       and currency = 'USD'
   `);
-  if (!bankRows[0])
-    throw new AppError('NOT_FOUND', 'The bank account was not found or is inactive');
+  if (!bankRows[0]) throw new AppError('NOT_FOUND', 'That bank account is no longer available');
 
   const allocationValues: BankDepositAllocation[] = [];
   for (const allocation of input.allocations) {
@@ -378,13 +391,17 @@ export async function confirmBankDepositInTransaction(
   const deposit = rows[0];
   if (!deposit) throw new AppError('NOT_FOUND', 'The bank deposit was not found');
   if (deposit.state !== 'RECORDED' && deposit.state !== 'SUBMITTED') {
-    throw new AppError('CONFLICT', 'Only an unconfirmed bank deposit can be confirmed');
+    throw new AppError('CONFLICT', 'This bank deposit has already been confirmed');
   }
   if (Number(deposit.version) !== input.expectedVersion) {
-    throw new AppError('CONFLICT', 'The bank deposit is stale', {
-      expectedVersion: input.expectedVersion,
-      actualVersion: Number(deposit.version),
-    });
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this bank deposit. Refresh and try again.',
+      {
+        expectedVersion: input.expectedVersion,
+        actualVersion: Number(deposit.version),
+      },
+    );
   }
   const confirmed = decimal(input.confirmedAmount);
   if (confirmed.value.lt(0)) {
@@ -407,7 +424,11 @@ export async function confirmBankDepositInTransaction(
       and version = ${input.expectedVersion}
     returning version
   `);
-  if (!updated[0]) throw new AppError('CONFLICT', 'The bank deposit became stale');
+  if (!updated[0])
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this bank deposit. Refresh and try again.',
+    );
   return {
     depositId: deposit.id,
     state: 'CONFIRMED' as const,

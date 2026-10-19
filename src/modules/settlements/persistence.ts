@@ -43,13 +43,19 @@ type SettlementRow = {
 };
 
 function money(value: string): ExactDecimal {
-  return new ExactDecimal(value, DECIMAL_POLICIES.money);
+  try {
+    return new ExactDecimal(value, DECIMAL_POLICIES.money);
+  } catch {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Enter an amount in dollars with at most 4 decimal places',
+    );
+  }
 }
 
 function assertPositiveMoney(value: string, label: string): void {
   const parsed = money(value);
-  if (!parsed.value.isPositive())
-    throw new AppError('VALIDATION_FAILED', `${label} must be positive`);
+  if (!parsed.value.gt(0)) throw new AppError('VALIDATION_FAILED', `${label} must be positive`);
 }
 
 function assertNonNegativeMoney(value: string | null | undefined, label: string): void {

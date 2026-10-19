@@ -17,6 +17,7 @@ import {
   setCustomerLegalEntityFromRequest,
   updateCustomerFromRequest,
 } from '../../../../modules/customers/commands';
+import { AppError } from '../../../../platform/errors';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
 
@@ -28,7 +29,15 @@ export const POST = withRequestObservability(
   withPersistentRateLimit(async (request: Request): Promise<Response> => {
     try {
       await requireAuthenticatedActor(request);
-      const body: unknown = await request.json();
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'The request could not be read. Reload the page and try again.',
+        );
+      }
       const commandType =
         typeof body === 'object' && body !== null && 'commandType' in body
           ? (body as { commandType: unknown }).commandType

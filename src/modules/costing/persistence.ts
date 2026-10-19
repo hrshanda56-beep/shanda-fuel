@@ -64,7 +64,7 @@ function currency(value: string): CurrencyCode {
 
 function positiveMoney(value: string): string {
   const amount = new ExactDecimal(value).quantize(DECIMAL_POLICIES.money);
-  if (!amount.value.isPositive()) {
+  if (!amount.value.gt(0)) {
     throw new AppError('VALIDATION_FAILED', 'An authoritative inventory cost must be positive');
   }
   return amount.toString();
@@ -266,7 +266,7 @@ export async function persistHistoricalLateSourceUnvaluedProjectionInTransaction
   if (
     !sourceMovement ||
     !['OPENING_BALANCE', 'DELIVERY'].includes(sourceMovement.movementType) ||
-    !new ExactDecimal(sourceMovement.quantityLitres).value.isPositive()
+    !new ExactDecimal(sourceMovement.quantityLitres).value.gt(0)
   ) {
     return false;
   }
@@ -491,7 +491,7 @@ async function loadLateCostSourceForUpdate(
     (input.sourceType === 'OPENING_BALANCE' && movement.movementType !== 'OPENING_BALANCE') ||
     (input.sourceType === 'FUEL_DELIVERY_ALLOCATION' &&
       (movement.movementType !== 'DELIVERY' || movement.sourceId !== input.sourceId)) ||
-    !new ExactDecimal(movement.quantityLitres).value.isPositive()
+    !new ExactDecimal(movement.quantityLitres).value.gt(0)
   ) {
     throw new AppError(
       'INVARIANT_VIOLATION',
@@ -1216,7 +1216,7 @@ export async function postReceiptCostInTransaction(
     movement.sourceId !== allocation.id ||
     movement.tankId !== allocation.tankId ||
     movement.productId !== allocation.productId ||
-    !new ExactDecimal(movement.quantityLitres).value.isPositive()
+    !new ExactDecimal(movement.quantityLitres).value.gt(0)
   ) {
     throw new AppError(
       'INVARIANT_VIOLATION',

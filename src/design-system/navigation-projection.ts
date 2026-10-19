@@ -79,6 +79,9 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     settlements: ['provider.settlement.view'],
     customers: ['customer.view'],
     suppliers: ['supplier.view'],
+    purchasing: ['purchase_order.view'],
+    expenses: ['expense.view'],
+    profitability: ['report.view'],
     reports: ['report.view'],
     settings: ['tenant.view'],
   };

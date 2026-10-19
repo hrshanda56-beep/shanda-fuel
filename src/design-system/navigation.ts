@@ -22,6 +22,9 @@ export type NavigationKey =
   | 'settlements'
   | 'customers'
   | 'suppliers'
+  | 'purchasing'
+  | 'expenses'
+  | 'profitability'
   | 'reports'
   | 'settings';
 
@@ -167,6 +170,24 @@ export const navigationSections: readonly NavigationSection[] = [
         match: [/^\/settlements(\/|$)/, /^\/stations\/[^/]+\/settlements(\/|$)/],
       },
       {
+        key: 'expenses',
+        label: 'Expenses',
+        searchLabel: 'Expenses',
+        icon: 'receipt',
+        destination: { kind: 'route', path: '/expenses' },
+        availability: 'active',
+        match: [/^\/expenses(\/|$)/],
+      },
+      {
+        key: 'profitability',
+        label: 'Profit',
+        searchLabel: 'Profit',
+        icon: 'chart',
+        destination: { kind: 'route', path: '/profitability' },
+        availability: 'active',
+        match: [/^\/profitability(\/|$)/],
+      },
+      {
         key: 'customers',
         label: 'Customers',
         searchLabel: 'Customers',
@@ -190,6 +211,15 @@ export const navigationSections: readonly NavigationSection[] = [
         destination: { kind: 'route', path: '/suppliers' },
         availability: 'active',
         match: [/^\/suppliers(\/|$)/],
+      },
+      {
+        key: 'purchasing',
+        label: 'Purchase orders',
+        searchLabel: 'Purchase orders',
+        icon: 'inbox',
+        destination: { kind: 'route', path: '/purchasing' },
+        availability: 'active',
+        match: [/^\/purchasing(\/|$)/],
       },
     ],
   },

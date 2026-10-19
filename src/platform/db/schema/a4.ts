@@ -196,6 +196,12 @@ export const fuelDeliveries = appSchema.table(
     actualQuantityLitres: litresColumn('actual_quantity_litres').notNull(),
     shortageExcessLitres: numeric('shortage_excess_litres', { precision: 18, scale: 3 }).notNull(),
     supplierReference: text('supplier_reference'),
+    /**
+     * Mandatory for new deliveries (CreateDelivery); NULL only on legacy rows ("supplier
+     * unassigned"). The composite (tenant_id, supplier_id) FK to app.suppliers lives in
+     * migration 0037 because a7 imports this file.
+     */
+    supplierId: uuid('supplier_id'),
     transporter: text('transporter'),
     driver: text('driver'),
     truckRegistration: text('truck_registration'),

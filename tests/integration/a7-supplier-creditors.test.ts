@@ -87,6 +87,7 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         referenceNumber: 'INV-A7-001',
         documentDate: '2026-09-24',
         amount: '100.2500',
+        lines: [{ description: 'A7 fuel supply', quantity: '1', unitPrice: '100.25' }],
       },
       'a7-submit-document',
     );

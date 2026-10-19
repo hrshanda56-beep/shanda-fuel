@@ -65,7 +65,8 @@ export function contextRoutePolicy(pathname: string | null | undefined): Context
   )
     return REPORTING_POLICY;
   if (/^\/(?:reports|customers)(?:\/|$)/.test(path)) return REPORTING_POLICY;
-  if (/^\/suppliers(?:\/|$)/.test(path)) return LEGAL_ENTITY_ALL_STATIONS_POLICY;
+  if (/^\/(?:suppliers|expenses|purchasing|profitability)(?:\/|$)/.test(path))
+    return LEGAL_ENTITY_ALL_STATIONS_POLICY;
   if (
     /^\/stations\/[^/]+(?:\/|$)/.test(path) ||
     /^\/my-shift(?:\/|$)/.test(path) ||
@@ -186,6 +187,7 @@ export function allStationsPath(path: string): string {
   if (path.startsWith('/operations/') || path === '/my-shift') return '/operations/daily';
   if (path.startsWith('/customers/')) return '/customers';
   if (path.startsWith('/suppliers/')) return '/suppliers';
+  if (path.startsWith('/purchasing/')) return '/purchasing';
   return contextRoutePolicy(path).allStationsAllowed ? path : '/';
 }
 

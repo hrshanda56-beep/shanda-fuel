@@ -1,13 +1,16 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { appSchema } from './namespaces';
@@ -85,16 +88,24 @@ export const supplierDocuments = appSchema.table(
     reversedBy: uuid('reversed_by'),
     reversedAt: utcTimestamp('reversed_at'),
     reversalReason: text('reversal_reason'),
+    /** NULL net/vat/mode marks a legacy header-only document (migration 0037). */
+    netAmount: moneyColumn('net_amount'),
+    vatAmount: moneyColumn('vat_amount'),
+    vatMode: text('vat_mode'),
+    varianceStatus: text('variance_status').notNull().default('NOT_EVALUATED'),
+    varianceSnapshot: jsonb('variance_snapshot'),
+    varianceApprovalReason: text('variance_approval_reason'),
+    varianceApprovedBy: uuid('variance_approved_by'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },
   (table) => [
     unique('supplier_documents_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('supplier_documents_tenant_supplier_reference_uidx').on(
-      table.tenantId,
-      table.supplierId,
-      table.referenceNumber,
-    ),
+    // Duplicate control for non-reversed documents only (migration 0038): a corrected invoice
+    // may reuse the reference of one that was reversed.
+    uniqueIndex('supplier_documents_tenant_supplier_reference_uidx')
+      .on(table.tenantId, table.supplierId, table.referenceNumber)
+      .where(sql`${table.state} <> 'REVERSED'`),
     index('supplier_documents_tenant_supplier_state_idx').on(
       table.tenantId,
       table.supplierId,
@@ -166,6 +177,13 @@ export const supplierDocumentDeliveryRefs = appSchema.table(
     allocationId: uuid('allocation_id'),
     linkedBy: uuid('linked_by').notNull(),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+    /** Coverage facts (migration 0037): see ADR-018 D2. Only active/released_at ever change. */
+    documentType: text('document_type').notNull(),
+    invoicedQuantityLitres: numeric('invoiced_quantity_litres', { precision: 18, scale: 3 }),
+    invoicedAmount: moneyColumn('invoiced_amount'),
+    active: boolean('active').notNull().default(false),
+    releasedAt: utcTimestamp('released_at'),
+    needsFinanceReview: boolean('needs_finance_review').notNull().default(false),
   },
   (table) => [
     unique('supplier_document_delivery_refs_tenant_id_id_uidx').on(table.tenantId, table.id),

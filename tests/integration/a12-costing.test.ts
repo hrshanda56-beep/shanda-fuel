@@ -599,12 +599,19 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       values ('${phase.openingLateAttribution}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateTank}', '${ids.productTwo}', '${phase.openingLateSaleMovement}', '${phase.openingLateSegment}', '10.000', '1.00000000', '10.0000', 'VALUED', 'PRE_SALE_WAC', 'a122-phase2-opening-original', '${phase.openingLateSaleCost}', '2026-09-27T12:00:00Z', '2026-09-27');
     `);
 
+    const a122SupplierId = 'a1220000-0000-4000-8000-0000000001a1';
+    await client`
+      insert into app.suppliers (id, tenant_id, code, legal_name, status, created_by, updated_by)
+      values (${a122SupplierId}, ${ids.tenant}, 'A122-SUP-1', 'A12 Fuel Supplier', 'ACTIVE',
+              ${ids.membership}, ${ids.membership})
+      on conflict (id) do nothing`;
     const createdDelivery = await postInventoryCommand(
       {
         commandType: 'CreateDelivery',
         tenantId: ids.tenant,
         stationId: ids.stationTwo,
         productId: ids.productTwo,
+        supplierId: a122SupplierId,
         deliveryNoteNumber: 'A122-PHASE2-1',
         deliveredAt: '2026-09-27T07:00:00Z',
         noteQuantityLitres: '100.000',

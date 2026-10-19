@@ -4,11 +4,14 @@ const uuid = z.string().uuid();
 const decimalText = z
   .string()
   .trim()
-  .regex(/^\d+(?:\.\d+)?$/, 'A non-negative decimal string is required');
+  .regex(
+    /^\d+(?:\.\d+)?$/,
+    'Enter a number using digits and an optional decimal point, for example 250.00',
+  );
 const currency = z
   .string()
   .trim()
-  .regex(/^[A-Z]{3}$/, 'An uppercase ISO-style currency code is required');
+  .regex(/^[A-Z]{3}$/, 'Use a three-letter currency code in capitals, for example USD');
 const instant = z.string().datetime({ offset: true });
 const statementPeriod = z
   .string()
@@ -60,7 +63,7 @@ export const updateCustomerSchema = customerLifecycleCommandBase
       refinement.addIssue({
         code: 'custom',
         path: ['accountReference'],
-        message: 'At least one customer field must be provided',
+        message: 'Change at least one detail before saving.',
       });
     }
   });
@@ -89,21 +92,21 @@ function refineStationScope(
     refinement.addIssue({
       code: 'custom',
       path: ['stationIds'],
-      message: 'Choose at least one station, or use all stations',
+      message: 'Choose at least one station, or use all stations.',
     });
   }
   if (input.stationScope !== 'SELECTED' && count > 0) {
     refinement.addIssue({
       code: 'custom',
       path: ['stationIds'],
-      message: 'Stations can only be listed when the scope is SELECTED',
+      message: 'Stations can only be listed when you choose specific stations.',
     });
   }
   if (new Set(input.stationIds).size !== count) {
     refinement.addIssue({
       code: 'custom',
       path: ['stationIds'],
-      message: 'Each station may be listed once',
+      message: 'Each station can only be listed once.',
     });
   }
 }
@@ -147,7 +150,7 @@ export const createCustomerAccountSchema = z
       refinement.addIssue({
         code: 'custom',
         path: ['creditLimit'],
-        message: 'Credit limits apply only to credit accounts',
+        message: 'Only credit accounts have a credit limit.',
       });
     }
   });
@@ -258,7 +261,7 @@ export const recordPrepaidTopUpSchema = z
       refinement.addIssue({
         code: 'custom',
         path: ['litres'],
-        message: 'Prepaid litre top-ups require a product and litres',
+        message: 'Prepaid fuel top-ups need a fuel and a number of litres.',
       });
     }
   });

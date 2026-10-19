@@ -32,7 +32,7 @@ describe('grouped navigation model', () => {
   it('renders single-destination sections as links and multi-item sections as groups', () => {
     expect(
       navigationSections.filter((s) => !isSingleDestinationSection(s)).map((s) => s.key),
-    ).toEqual(['operations', 'finance']);
+    ).toEqual(['operations', 'finance', 'suppliers']);
   });
 
   it('uses unique keys so projections are unambiguous', () => {
@@ -47,6 +47,8 @@ describe('navigation projection', () => {
       entry.key === 'finance-home' ||
       entry.key === 'cash' ||
       entry.key === 'settlements' ||
+      entry.key === 'expenses' ||
+      entry.key === 'profitability' ||
       entry.key === 'customers'
         ? { ...entry, visible: false }
         : entry,
@@ -117,8 +119,11 @@ describe('navigation destinations', () => {
       'Finance overview',
       'Cash & Banking',
       'Provider payouts',
+      'Expenses',
+      'Profit',
       'Customers',
       'Suppliers',
+      'Purchase orders',
       'Reports',
       'Settings',
     ]);

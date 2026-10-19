@@ -4723,3 +4723,148 @@ h3,
   padding-top: var(--space-4);
   border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
 }
+
+/* Profit page */
+.profit-workspace {
+  display: grid;
+  gap: var(--space-4);
+}
+.profit-intro {
+  display: grid;
+  gap: var(--space-3);
+}
+.profit-intro > p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.profit-body {
+  display: grid;
+  gap: var(--space-4);
+}
+.profit-body[data-pending] {
+  opacity: 0.55;
+}
+.profit-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+.profit-title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.profit-headline {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+.profit-explain,
+.profit-footnote {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.profit-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+.profit-tile {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+.profit-tile dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.profit-tile dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.profit-tile[data-tone='bad'] dd {
+  color: var(--status-critical, #b42318);
+}
+.profit-tile[data-tone='missing'] dd {
+  color: var(--text-secondary);
+}
+.profit-tile-note,
+.profit-row-note {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+.profit-table {
+  width: 100%;
+}
+.profit-table td[data-negative] {
+  color: var(--status-critical, #b42318);
+}
+.profit-links {
+  display: grid;
+  gap: var(--space-2);
+}
+.profit-links a,
+.profit-print {
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+}
+@media (min-width: 48rem) {
+  .profit-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 47.99rem) {
+  .profit-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .profit-table,
+  .profit-table tbody,
+  .profit-table tr,
+  .profit-table th,
+  .profit-table td {
+    display: block;
+    width: 100%;
+  }
+  .profit-table tr {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .profit-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+    border: 0;
+    text-align: right;
+  }
+  .profit-table td::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    text-align: left;
+  }
+  .profit-table th[scope='row'] {
+    font-weight: 600;
+  }
+}

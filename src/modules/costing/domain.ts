@@ -441,10 +441,10 @@ export function deriveSaleCogsFromPreSaleState(input: {
   const quantity = quantizedQuantity(new ExactDecimal(input.quantityLitres));
   const value = quantizedMoney(new ExactDecimal(input.inventoryValue));
   const soldLitres = quantizedQuantity(new ExactDecimal(input.saleQuantityLitres));
-  if (!quantity.value.isPositive()) {
+  if (!quantity.value.gt(0)) {
     throw new AppError('CONFLICT', 'A sale requires positive pre-sale inventory');
   }
-  if (value.value.isNegative() || !soldLitres.value.isPositive()) {
+  if (value.value.isNegative() || !soldLitres.value.gt(0)) {
     throw new AppError('CONFLICT', 'A sale requires a valued positive pre-sale state');
   }
   if (soldLitres.value.gt(quantity.value)) {
@@ -630,7 +630,7 @@ function replayRevaluationChronology(input: {
     if (item.eventType === 'SALE_COGS') {
       if (item.sourceType === 'METER_SEGMENT_SALE') encounteredSaleCostEvents.add(item.id);
     } else if (item.eventType === 'OPENING_COST' || item.eventType === 'RECEIPT_COST') {
-      if (!amount.value.isPositive()) {
+      if (!amount.value.gt(0)) {
         throw new AppError('INVARIANT_VIOLATION', `${item.eventType} must be positive`);
       }
       const eventSource = sourceKey(item.sourceType, item.sourceId);
@@ -700,8 +700,8 @@ export function calculateLateCostRevaluation(input: {
     canonicalEffectiveAt(input.lateCostMovement.effectiveAt) !==
       canonicalEffectiveAt(input.lateCostEvent.effectiveAt) ||
     (input.lateCostMovement.businessDate ?? null) !== (input.lateCostEvent.businessDate ?? null) ||
-    !new ExactDecimal(input.lateCostMovement.quantityLitres).value.isPositive() ||
-    !new ExactDecimal(input.lateCostEvent.amount).value.isPositive()
+    !new ExactDecimal(input.lateCostMovement.quantityLitres).value.gt(0) ||
+    !new ExactDecimal(input.lateCostEvent.amount).value.gt(0)
   ) {
     throw new AppError('INVARIANT_VIOLATION', 'Late cost must match its authoritative A4 movement');
   }

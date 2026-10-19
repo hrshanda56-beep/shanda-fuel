@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import {
   Button,
@@ -487,6 +487,8 @@ function DeliveryForm({
   const createKey = useRef<string | null>(null);
   const confirmKey = useRef<string | null>(null);
   const [deliveryId, setDeliveryId] = useState<string | null>(null);
+  const [suppliers, setSuppliers] = useState<{ id: string; label: string }[] | null>(null);
+  const [supplierId, setSupplierId] = useState('');
   const [deliveryNoteNumber, setDeliveryNoteNumber] = useState('');
   const [deliveredAt, setDeliveredAt] = useState('');
   const [noteQuantityLitres, setNoteQuantityLitres] = useState('');
@@ -495,6 +497,27 @@ function DeliveryForm({
   const [error, setError] = useState<CommandFailure | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState<'create' | 'confirm' | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+    });
+    fetch(`/api/inventory/suppliers?${params.toString()}`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('failed'))))
+      .then((body: { data: { id: string; code: string; name: string }[] }) =>
+        setSuppliers(body.data.map((row) => ({ id: row.id, label: `${row.name} (${row.code})` }))),
+      )
+      .catch(() => {
+        if (!controller.signal.aborted) setSuppliers([]);
+      });
+    return () => controller.abort();
+  }, [context.tenantId, context.stationId]);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -507,6 +530,7 @@ function DeliveryForm({
         context,
         {
           commandType: 'CreateDelivery',
+          supplierId,
           productId,
           deliveryNoteNumber: deliveryNoteNumber.trim(),
           deliveredAt: isoFromLocal(deliveredAt),
@@ -560,6 +584,33 @@ function DeliveryForm({
         separate commercial comparison.
       </p>
       <form onSubmit={create}>
+        <Field
+          id="delivery-supplier"
+          label="Supplier"
+          hint={
+            suppliers && suppliers.length === 0
+              ? 'There are no suppliers to choose from yet. Add the supplier on the Suppliers page first, then come back.'
+              : 'Every delivery must say who supplied it.'
+          }
+          required
+        >
+          <select
+            id="delivery-supplier"
+            value={supplierId}
+            onChange={(event) => setSupplierId(event.target.value)}
+            required
+            disabled={suppliers === null}
+          >
+            <option value="">
+              {suppliers === null ? 'Loading suppliers…' : 'Choose a supplier'}
+            </option>
+            {(suppliers ?? []).map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.label}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field id="delivery-note-number" label="Delivery note number" required>
           <input
             id="delivery-note-number"

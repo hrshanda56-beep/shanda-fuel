@@ -2,7 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { resolveTenantReadAuthority } from '../context/read-authority';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
-import { resolveCustomerCommandContext } from './application';
+import { resolveCustomerCommandContext, withPlainAccessErrors } from './application';
 import { resolveStationReadAuthority } from '../context/read-authority';
 import type { CustomerCommandContext } from './application';
 export async function resolveCustomerReadContext(input: {
@@ -11,11 +11,13 @@ export async function resolveCustomerReadContext(input: {
   stationId?: string;
 }): Promise<CustomerCommandContext> {
   if (input.stationId) {
-    const read = await resolveStationReadAuthority({
-      request: input.request,
-      tenantId: input.requestedTenantId,
-      stationId: input.stationId,
-    });
+    const read = await withPlainAccessErrors(() =>
+      resolveStationReadAuthority({
+        request: input.request,
+        tenantId: input.requestedTenantId,
+        stationId: input.stationId!,
+      }),
+    );
     if (!read.station) return resolveCustomerCommandContext(input);
     const station = read.station;
     const transaction = createTrustedTenantTransactionContext({
@@ -36,10 +38,12 @@ export async function resolveCustomerReadContext(input: {
       },
     };
   }
-  const { authority } = await resolveTenantReadAuthority({
-    request: input.request,
-    tenantId: input.requestedTenantId,
-  });
+  const { authority } = await withPlainAccessErrors(() =>
+    resolveTenantReadAuthority({
+      request: input.request,
+      tenantId: input.requestedTenantId,
+    }),
+  );
   return {
     authority,
     tenantId: input.requestedTenantId,

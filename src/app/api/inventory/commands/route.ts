@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   confirmDeliveryFromRequest,
+  correctDeliverySupplierFromRequest,
   createDeliveryFromRequest,
   createTankFromRequest,
   deactivateTankFromRequest,
@@ -24,6 +25,7 @@ const COMMANDS = [
   'RecordTankDip',
   'CreateDelivery',
   'ConfirmDelivery',
+  'CorrectDeliverySupplier',
   'PostInventoryAdjustment',
   'RecordOpeningBalance',
   'RecordOpeningInventoryCost',
@@ -67,6 +69,9 @@ export const POST = withRequestObservability(
           break;
         case 'ConfirmDelivery':
           result = await confirmDeliveryFromRequest(request, body);
+          break;
+        case 'CorrectDeliverySupplier':
+          result = await correctDeliverySupplierFromRequest(request, body);
           break;
         case 'PostInventoryAdjustment':
           result = await postInventoryAdjustmentFromRequest(request, body);

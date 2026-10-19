@@ -13,6 +13,7 @@ export {
   createDeliveryFromRequest,
   createTankFromRequest,
   confirmDeliveryFromRequest,
+  correctDeliverySupplierFromRequest,
   deactivateTankFromRequest,
   approveInventoryCostRevaluationFromRequest,
   postInventoryAdjustmentFromRequest,
@@ -23,7 +24,8 @@ export {
   recordTankDipFromRequest,
   requestInventoryCostRevaluationFromRequest,
 } from './commands';
-export { queryInventoryStock } from './queries';
+export { queryDeliverySuppliers, queryInventoryStock } from './queries';
+export type { DeliverySupplierOption } from './queries';
 export {
   getExpectedTankStock,
   getPhysicalTankStock,

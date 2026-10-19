@@ -17,6 +17,8 @@ export const SUPPLIER_PERMISSION_CODES = [
   'supplier.payment.allocate',
   'supplier.payment.reverse',
   'supplier.creditor.review',
+  'supplier.delivery.link',
+  'purchasing.policy.manage',
 ] as const;
 export type SupplierPermissionCode = (typeof SUPPLIER_PERMISSION_CODES)[number];
 
@@ -36,7 +38,8 @@ export type SupplierCommandType =
   | 'SubmitSupplierPayment'
   | 'PostSupplierPayment'
   | 'AllocateSupplierPayment'
-  | 'ReverseSupplierPayment';
+  | 'ReverseSupplierPayment'
+  | 'SetPurchasingPolicy';
 
 export type SupplierCommandEnvelope = Readonly<{
   commandType: SupplierCommandType;
@@ -97,6 +100,13 @@ export const SUPPLIER_COMMAND_POLICY: Readonly<Record<SupplierCommandType, Suppl
       permissionCode: 'supplier.payment.reverse',
       requiresApproval: true,
       requiresExpectedVersion: true,
+    },
+    // High-risk permission: always needs a current step-up. The version is only sent when
+    // changing an existing policy, so it is not mandatory on the envelope.
+    SetPurchasingPolicy: {
+      permissionCode: 'purchasing.policy.manage',
+      requiresApproval: true,
+      requiresExpectedVersion: false,
     },
   };
 
