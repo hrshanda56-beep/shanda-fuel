@@ -10,6 +10,9 @@ import type { CanonicalSaleRevenue, RestatedSaleCogs } from './contracts';
 function sale(overrides: Partial<RestatedSaleCogs> = {}): RestatedSaleCogs {
   return {
     stationId: '00000000-0000-4000-8000-000000000000',
+    productId: '00000000-0000-4000-8000-00000000000a',
+    productCode: 'PMS',
+    productName: 'Petrol',
     reconciliationId: '00000000-0000-4000-8000-000000000001',
     revisionId: '00000000-0000-4000-8000-000000000002',
     meterSegmentId: '00000000-0000-4000-8000-000000000003',
@@ -32,6 +35,9 @@ function sale(overrides: Partial<RestatedSaleCogs> = {}): RestatedSaleCogs {
 function revenue(overrides: Partial<CanonicalSaleRevenue> = {}): CanonicalSaleRevenue {
   return {
     stationId: '00000000-0000-4000-8000-000000000000',
+    productId: '00000000-0000-4000-8000-00000000000a',
+    productCode: 'PMS',
+    productName: 'Petrol',
     reconciliationId: '00000000-0000-4000-8000-000000000001',
     revisionId: '00000000-0000-4000-8000-000000000002',
     meterSegmentId: '00000000-0000-4000-8000-000000000003',

@@ -8,6 +8,7 @@
  */
 import type { ReportDefinition } from './catalog';
 import type { ManagementReport } from './contracts';
+import { addExact, subtractExact } from './domain';
 
 type Cell = string | number | null | undefined;
 type Column<Row> = Readonly<{
@@ -54,6 +55,30 @@ type SalesRow = ManagementReport['sales']['rows'][number];
 type ProviderRow = ManagementReport['providers']['rows'][number];
 type InventoryRow = ManagementReport['inventory']['rows'][number];
 type MeasureRow = readonly [string, string];
+type ProfitLossRow = Readonly<{
+  section: string;
+  label: string;
+  businessDate: string | null;
+  stationCode: string;
+  category: string | null;
+  classification?: string | null;
+  description?: string | null;
+  payee?: string | null;
+  reference?: string | null;
+  productCode: string | null;
+  productName: string | null;
+  litres: string | null;
+  revenue: string | null;
+  cost: string | null;
+  profit: string | null;
+  status: string | null;
+  sourceType?: string | null;
+  expenseIds?: string | null;
+  recurringRecognitionIds?: string | null;
+  recognitionMovementIds?: string | null;
+  attachmentIds?: string | null;
+  sourceIds: string | null;
+}>;
 
 type CommercialRow = {
   section: 'SUPPLIER' | 'CUSTOMER_BALANCE' | 'CUSTOMER_CREDIT_DRAWN';
@@ -117,9 +142,182 @@ function commercialRows(report: ManagementReport, code: (id: string) => string):
   ];
 }
 
+function profitLossRows(report: ManagementReport, code: (id: string) => string): ProfitLossRow[] {
+  const rows: ProfitLossRow[] = [
+    {
+      section: 'SUMMARY',
+      label: 'Revenue',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: report.revenue.recognizedRevenue,
+      cost: null,
+      profit: null,
+      status: report.revenue.revenueStatus,
+      sourceIds: report.revenue.sales.map((sale) => sale.revenueMovementId).join(';'),
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Cost of sales',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: report.costing.restatedCogs,
+      profit: null,
+      status: report.costing.costingStatus,
+      sourceIds: report.costing.sales.map((sale) => sale.saleMovementId).join(';'),
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Gross profit',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: null,
+      profit: report.grossMargin,
+      status: report.grossMargin === null ? 'UNAVAILABLE' : 'COMPLETE',
+      sourceIds: null,
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Operating expenses',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: report.expenses.operatingTotal,
+      profit: null,
+      status: 'POSTED',
+      sourceIds: null,
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Fixed costs',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: report.expenses.fixedCostTotal,
+      profit: null,
+      status: 'RECOGNIZED',
+      sourceIds: null,
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Net operating result',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: null,
+      profit:
+        report.grossMargin === null
+          ? null
+          : subtractExact(
+              report.grossMargin,
+              addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
+            ),
+      status: report.grossMargin === null ? 'UNAVAILABLE' : 'COMPLETE',
+      sourceIds: null,
+    },
+  ];
+  rows.push(
+    ...report.fuelProfit.map((fuel) => ({
+      section: 'FUEL',
+      label: 'Fuel profit',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: fuel.productCode,
+      productName: fuel.productName,
+      litres: fuel.litres,
+      revenue: fuel.revenue,
+      cost: fuel.cost,
+      profit: fuel.profit,
+      status: fuel.status,
+      sourceIds: [...fuel.revenueMovementIds, ...fuel.costMovementIds].join(';'),
+    })),
+  );
+  rows.push(
+    ...report.expenses.rows.map((expense) => ({
+      section: 'EXPENSE',
+      label: 'Recognized expense',
+      businessDate: expense.businessDate,
+      stationCode: code(expense.stationId),
+      category: expense.category,
+      classification: expense.classification,
+      description: expense.description,
+      payee: expense.payee,
+      reference: expense.reference,
+      state: expense.state,
+      sourceType: expense.sourceType,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: expense.amount,
+      profit: null,
+      status: 'RECOGNIZED',
+      expenseIds: expense.expenseIds.join(';'),
+      recurringRecognitionIds: expense.recurringRecognitionIds.join(';'),
+      recognitionMovementIds: expense.recognitionMovementIds.join(';'),
+      sourceIds: expense.sourceIds.join(';'),
+    })),
+  );
+  return rows;
+}
+
 export function buildReportCsv(slug: ReportDefinition['slug'], report: ManagementReport): string {
   const code = stationCodes(report);
   switch (slug) {
+    case 'profit-loss':
+      return table<ProfitLossRow>(
+        [
+          text('section', (row) => row.section),
+          text('label', (row) => row.label),
+          text('business_date', (row) => row.businessDate),
+          text('station_code', (row) => row.stationCode),
+          text('category', (row) => row.category),
+          text('classification', (row) => row.classification),
+          text('description', (row) => row.description),
+          text('payee', (row) => row.payee),
+          text('reference', (row) => row.reference),
+          text('product_code', (row) => row.productCode),
+          text('product_name', (row) => row.productName),
+          number('litres', (row) => row.litres),
+          number('revenue', (row) => row.revenue),
+          number('cost', (row) => row.cost),
+          number('profit', (row) => row.profit),
+          text('status', (row) => row.status),
+          text('source_type', (row) => row.sourceType),
+          text('expense_ids', (row) => row.expenseIds),
+          text('recurring_recognition_ids', (row) => row.recurringRecognitionIds),
+          text('recognition_movement_ids', (row) => row.recognitionMovementIds),
+          text('attachment_ids', (row) => row.attachmentIds),
+          text('source_ids', (row) => row.sourceIds),
+        ],
+        profitLossRows(report, code),
+      );
     case 'sales':
       return table<SalesRow>(
         [
@@ -149,6 +347,25 @@ export function buildReportCsv(slug: ReportDefinition['slug'], report: Managemen
           ['collected_not_banked', position.collectedButNotBanked],
           ['cash_variance', position.cashVariance],
         ] as const,
+      );
+    }
+    case 'cash-movement': {
+      const rows: readonly MeasureRow[] = [
+        ['cash_evidence', report.cash.cashEvidence],
+        ['collected', report.cash.collected],
+        ['awaiting_collection', report.cash.awaitingCollection],
+        ['banked', report.cash.banked],
+        ['collected_not_banked', report.cash.collectedButNotBanked],
+        ['provider_payment_evidence', report.providers.paymentEvidence],
+        ['settlements_received', report.providers.settlementGross],
+        ['fees_and_deductions', report.providers.feesAndDeductions],
+        ['provider_not_allocated', report.providers.unallocatedProviderAmount],
+        ['payments_not_matched', report.providers.unmatchedEvidenceAmount],
+        ['supplier_payments', report.suppliers.payments],
+      ];
+      return table<MeasureRow>(
+        [text('measure', (row) => row[0]), number('amount', (row) => row[1])],
+        rows,
       );
     }
     case 'providers':

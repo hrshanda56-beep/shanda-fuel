@@ -52,11 +52,13 @@ export type ReportDateBasis = {
   suppliers: 'A7 effective_date <= toDate; balance as of toDate';
   customers: 'A8 balance as of toDate using ledger business_date and authorization requested_at';
   inventory: 'A4 movement business date and latest dip measured_at as of toDate';
-  expenses: 'A5 business date';
+  expenses: 'expense_recognition_movements.recognition_date';
+  dailyRecordedExpenses: 'A5 business date';
 };
 
 export type ReportMoney = string;
 export type ReportLitres = string;
+export type ReportExpenseClassification = 'OPERATING' | 'FIXED_COST' | 'DIRECT_INVENTORY_COST';
 
 export type ReportStation = Readonly<{
   stationId: string;
@@ -217,14 +219,28 @@ export type ManagementReport = Readonly<{
   inventory: InventoryPosition;
   expenses: Readonly<{
     total: ReportMoney;
+    operatingTotal: ReportMoney;
+    fixedCostTotal: ReportMoney;
+    directInventoryCostTotal: ReportMoney;
     rows: readonly {
       businessDate: string;
       stationId: string;
       category: string;
+      classification: ReportExpenseClassification;
+      description: string;
+      payee: string | null;
+      reference: string | null;
+      state: string | null;
+      sourceType: 'EXPENSE' | 'RECURRING_COST_RECOGNITION';
       amount: ReportMoney;
       expenseIds: readonly string[];
+      recurringRecognitionIds: readonly string[];
+      sourceIds: readonly string[];
+      recognitionMovementIds: readonly string[];
+      attachmentIds: readonly string[];
     }[];
   }>;
+  fuelProfit: readonly import('../profitability/contracts').FuelProfitRow[];
   revenue: CanonicalRevenueReport;
   costing: RestatedCogsReport;
   grossMargin: ReportMoney | null;

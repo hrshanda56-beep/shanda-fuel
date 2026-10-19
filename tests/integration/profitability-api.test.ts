@@ -286,6 +286,16 @@ describe('profitability read API (PostgreSQL)', () => {
     });
     expect(body.grossMargin).toBe('42.0833');
     expect(body.grossMarginStatus).toBe('COMPLETE');
+    expect(body.fuelProfit).toEqual([
+      expect.objectContaining({
+        productId: ids.product,
+        productCode: `PMS-${run}`,
+        revenue: '123.4567',
+        cost: '81.3734',
+        profit: '42.0833',
+        status: 'COMPLETE',
+      }),
+    ]);
     expect(body.expensesIncluded).toBe(false);
     expect(JSON.stringify(body)).not.toContain('999.0000');
     expect(body.dateBasis.revenue).toContain('REV1');

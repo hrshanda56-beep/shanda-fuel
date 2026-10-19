@@ -1025,6 +1025,23 @@ Provide the owner-required expense, fixed-cost, and profit views/workflows using
 
 - Calculation/backend and UI work can parallelize after contracts are fixed.
 
+**Bounded finance backend candidate — 2026-10-19**
+
+- Expense recognition movements now feed management expense totals and daily
+  expense figures, with source and recognition-movement lineage.
+- Profitability now exposes exact-decimal profit by fuel type from REV1 and A12
+  authorities, preserving unavailable and mismatch states.
+- Recurring expense demo scenarios and append-only correction assertions cover
+  rent, subscriptions, insurance, salary, reversals, and payment states.
+- Private expense evidence supports multiple image/PDF/DOCX files up to 10 MB
+  per file through the existing private R2 path, with immutable metadata and
+  audit evidence.
+
+This candidate does not add till-to-expense payment, tax handling, finance-wide
+period locking, role redesign, or a finance UI redesign. Database integration
+and R2-backed runtime validation remain required before this item can be marked
+complete.
+
 ---
 
 ## M5-T04 — Implement reusable approval infrastructure
@@ -1148,6 +1165,14 @@ Expand reporting/export behavior around confirmed owner needs and established ca
 **Parallel safety**
 
 - Separate reports can parallelize if calculation/data-source contracts are independent.
+
+**Bounded finance backend candidate — 2026-10-19**
+
+The authorised report export route now supports browser downloads as CSV, PDF,
+and XLSX using the same report query and step-up/audit path. The profit/loss
+CSV includes revenue, cost of sales, gross profit, recognised expenses, net
+operating result, fuel rows, and source lineage. No saved report artifacts or
+new UI export surface is introduced.
 
 ---
 

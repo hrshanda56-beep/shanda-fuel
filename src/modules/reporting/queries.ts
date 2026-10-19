@@ -9,7 +9,7 @@ import { authorize } from '../../platform/security/permissions';
 import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
-import { calculateGrossMargin, readCanonicalRevenue, readRestatedCogs } from '../profitability';
+import { buildProfitabilityReport, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
   customerScopeAvailability,
@@ -29,6 +29,7 @@ import {
   type DailyOperationsRow,
   type ManagementReport,
   type ManagementReportQuery,
+  type ReportExpenseClassification,
   type ReportDateBasis,
   type SalesPaymentRow,
 } from './contracts';
@@ -676,26 +677,79 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
     business_date: string;
     station_id: string;
     category: string;
+    classification: ReportExpenseClassification;
+    description: string;
+    payee: string | null;
+    reference: string | null;
+    state: string | null;
+    source_type: 'EXPENSE' | 'RECURRING_COST_RECOGNITION';
     amount: string;
-    ids: string[] | null;
+    expense_ids: string[] | null;
+    recurring_recognition_ids: string[] | null;
+    source_ids: string[] | null;
+    movement_ids: string[] | null;
+    attachment_ids: string[] | null;
   }>(sql`
-    with approved as (${approvedReconciliations(filters)})
-    select a.business_date, a.station_id, e.category, coalesce(sum(e.amount), 0)::text as amount,
-      coalesce(array_agg(e.id order by e.id), ARRAY[]::uuid[]) as ids
-    from approved a
-    join app.reconciliation_expenses e on e.tenant_id = ${filters.tenantId}
-      and e.station_id = a.station_id and e.reconciliation_id = a.reconciliation_id
-    group by a.business_date, a.station_id, e.category
-    order by a.business_date, a.station_id, e.category
+    select m.recognition_date as business_date, m.station_id, c.code as category, m.classification,
+      coalesce(e.description, t.name, 'Recognized expense') as description,
+      e.payee, e.reference, coalesce(e.state, r.state) as state, m.source_type,
+      coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount,
+      coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'EXPENSE'), ARRAY[]::uuid[]) as expense_ids,
+      coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'RECURRING_COST_RECOGNITION'), ARRAY[]::uuid[]) as recurring_recognition_ids,
+      coalesce(array_agg(distinct m.source_id order by m.source_id), ARRAY[]::uuid[]) as source_ids,
+      coalesce(array_agg(m.id order by m.id), ARRAY[]::uuid[]) as movement_ids,
+      coalesce(attachments.attachment_ids, ARRAY[]::uuid[]) as attachment_ids
+    from app.expense_recognition_movements m
+    join app.expense_categories c on c.tenant_id = m.tenant_id and c.id = m.category_id
+    left join app.expenses e on e.tenant_id = m.tenant_id
+      and e.id = m.source_id and m.source_type = 'EXPENSE'
+    left join app.recurring_cost_recognitions r on r.tenant_id = m.tenant_id
+      and r.id = m.source_id and m.source_type = 'RECURRING_COST_RECOGNITION'
+    left join app.recurring_cost_periods p on p.tenant_id = r.tenant_id and p.id = r.period_id
+    left join app.recurring_cost_templates t on t.tenant_id = p.tenant_id and t.id = p.template_id
+    left join lateral (
+      select array_agg(a.id order by a.id) as attachment_ids
+      from app.expense_attachments a
+      where a.tenant_id = e.tenant_id and a.expense_id = e.id
+    ) attachments on true
+    where m.tenant_id = ${filters.tenantId}
+      and m.recognition_date between ${filters.fromDate} and ${filters.toDate}
+      ${stationClause('m', filters.stationIds)}
+    group by m.recognition_date, m.station_id, c.code, m.classification,
+      e.description, t.name, e.payee, e.reference, e.state, r.state, m.source_type,
+      attachments.attachment_ids, m.source_id
+    order by m.recognition_date, m.station_id, c.code, m.classification, m.source_id
   `);
   const mapped = rows.map((row) => ({
     businessDate: row.business_date,
     stationId: row.station_id,
     category: row.category,
+    classification: row.classification,
+    description: row.description,
+    payee: row.payee,
+    reference: row.reference,
+    state: row.state,
     amount: formatMoney(row.amount),
-    expenseIds: uniqueIds(row.ids ?? []),
+    expenseIds: uniqueIds(row.expense_ids ?? []),
+    recurringRecognitionIds: uniqueIds(row.recurring_recognition_ids ?? []),
+    sourceIds: uniqueIds(row.source_ids ?? []),
+    recognitionMovementIds: uniqueIds(row.movement_ids ?? []),
+    attachmentIds: uniqueIds(row.attachment_ids ?? []),
+    sourceType: row.source_type,
   }));
-  return { total: formatMoney(sumExact(mapped.map((row) => row.amount))), rows: mapped };
+  const totalFor = (classification: ReportExpenseClassification) =>
+    formatMoney(
+      sumExact(
+        mapped.filter((row) => row.classification === classification).map((row) => row.amount),
+      ),
+    );
+  return {
+    total: formatMoney(sumExact(mapped.map((row) => row.amount))),
+    operatingTotal: totalFor('OPERATING'),
+    fixedCostTotal: totalFor('FIXED_COST'),
+    directInventoryCostTotal: totalFor('DIRECT_INVENTORY_COST'),
+    rows: mapped,
+  };
 }
 
 async function readDaily(
@@ -917,7 +971,8 @@ const dateBasis: ReportDateBasis = {
   suppliers: 'A7 effective_date <= toDate; balance as of toDate',
   customers: 'A8 balance as of toDate using ledger business_date and authorization requested_at',
   inventory: 'A4 movement business date and latest dip measured_at as of toDate',
-  expenses: 'A5 business date',
+  expenses: 'expense_recognition_movements.recognition_date',
+  dailyRecordedExpenses: 'A5 business date',
 };
 
 /**
@@ -1020,6 +1075,14 @@ export async function getManagementReportFromRequest(
       readRestatedCogs(transaction, filters),
       readCanonicalRevenue(transaction, filters),
     ]);
+    const profitability = buildProfitabilityReport({
+      tenantId: filters.tenantId,
+      stationIds: filters.stationIds,
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+      revenue,
+      costing,
+    });
     return {
       report: 'MANAGEMENT_OVERVIEW',
       state: 'POSTED',
@@ -1041,7 +1104,8 @@ export async function getManagementReportFromRequest(
       expenses,
       revenue,
       costing,
-      grossMargin: calculateGrossMargin(revenue, costing),
+      fuelProfit: profitability.fuelProfit,
+      grossMargin: profitability.grossMargin,
     };
   });
 }

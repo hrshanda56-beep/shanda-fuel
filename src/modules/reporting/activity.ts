@@ -23,6 +23,7 @@ export type ReportEventMetadata = Readonly<{
   toDate: string;
   stationLabel: string;
   stationCount: number;
+  exportFormat?: 'csv' | 'pdf' | 'xlsx';
 }>;
 
 export type ReportActivityItem = Readonly<{
@@ -52,6 +53,7 @@ export function buildReportEventMetadata(input: {
   fromDate: string;
   toDate: string;
   stationNames: readonly string[];
+  exportFormat?: 'csv' | 'pdf' | 'xlsx';
 }): ReportEventMetadata {
   const report = findReport(input.slug);
   if (!report) throw new Error(`Unknown report "${input.slug}"`);
@@ -63,6 +65,7 @@ export function buildReportEventMetadata(input: {
     toDate: input.toDate,
     stationLabel: stationScopeLabel(input.stationNames),
     stationCount: input.stationNames.length,
+    ...(input.exportFormat ? { exportFormat: input.exportFormat } : {}),
   };
 }
 

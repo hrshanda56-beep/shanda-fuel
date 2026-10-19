@@ -1,6 +1,7 @@
 /**
  * Local demo data for the Finance overview: reconciliations waiting for approval, cash collected
- * and banked, a provider settlement with unmatched payments, and a supplier invoice that is overdue.
+ * and banked, recurring costs with recognition/payment states, a provider settlement with
+ * unmatched payments, and a supplier invoice that is overdue.
  *
  * It drives the real commands as the users created by `pnpm db:seed`, so every record is created
  * through the same code paths as the application. Run it once against a fresh local database:
@@ -17,6 +18,7 @@ import { clerkHeaders, seedActiveStepUp } from '../../tests/integration/auth-ses
 import { POST as forecourtPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryPost } from '../../src/app/api/inventory/commands/route';
 import { POST as cashPost } from '../../src/app/api/cash/commands/route';
+import { POST as expensePost } from '../../src/app/api/expenses/commands/route';
 import { POST as settlementPost } from '../../src/app/api/settlements/commands/route';
 import { POST as supplierPost } from '../../src/app/api/suppliers/commands/route';
 
@@ -33,6 +35,7 @@ const routes = {
   forecourt: forecourtPost,
   inventory: inventoryPost,
   cash: cashPost,
+  expense: expensePost,
   settlement: settlementPost,
   supplier: supplierPost,
 } as const;
@@ -40,6 +43,7 @@ const paths = {
   forecourt: 'forecourt',
   inventory: 'inventory',
   cash: 'cash',
+  expense: 'expenses',
   settlement: 'settlements',
   supplier: 'suppliers',
 } as const;
@@ -530,5 +534,239 @@ async function run(client: Sql) {
     },
     'invoice-post',
     'finance',
+  );
+
+  // Finance expense scenarios use the real command path so the demo exercises the same
+  // approval, posting, recognition, payment, reversal, audit, and exact-decimal rules as the
+  // application. The recurring templates are deliberately different so the owner can inspect
+  // rent, subscription, insurance, and salary obligations independently.
+  const expenseCategory = async (
+    code: string,
+    name: string,
+    classification: 'OPERATING' | 'FIXED_COST',
+  ) =>
+    (
+      await call(
+        'expense',
+        {
+          commandType: 'CreateExpenseCategory',
+          tenantId,
+          legalEntityId: legalId,
+          code,
+          name,
+          classification,
+        },
+        `expense-category-${code}`,
+        'finance',
+      )
+    ).categoryId as string;
+
+  const operatingCategory = await expenseCategory('DEMO-UTILITIES', 'Utilities', 'OPERATING');
+  const rentCategory = await expenseCategory('DEMO-RENT', 'Rent', 'FIXED_COST');
+  const subscriptionCategory = await expenseCategory(
+    'DEMO-SUBSCRIPTION',
+    'Subscriptions',
+    'FIXED_COST',
+  );
+  const insuranceCategory = await expenseCategory('DEMO-INSURANCE', 'Insurance', 'FIXED_COST');
+  const salaryCategory = await expenseCategory('DEMO-SALARY', 'Salaries', 'FIXED_COST');
+
+  const expenseCommand = (input: Record<string, unknown>, key: string, who: Who = 'finance') =>
+    call('expense', { tenantId, stationId, ...input }, `expense-${key}`, who);
+
+  // Pending approval: the supervisor can submit, while Finance/Owner can approve.
+  await expenseCommand(
+    {
+      commandType: 'SubmitExpense',
+      categoryId: operatingCategory,
+      expenseDate: businessDate,
+      description: 'Station utilities awaiting approval',
+      payee: 'Demo Utilities',
+      reference: 'DEMO-UTILITY-PENDING',
+      amount: '125.2500',
+    },
+    'pending-utility',
+    'supervisor',
+  );
+
+  // Approved and posted, but unpaid: this remains visible as an outstanding payable.
+  const posted = await expenseCommand(
+    {
+      commandType: 'SubmitExpense',
+      categoryId: operatingCategory,
+      expenseDate: businessDate,
+      description: 'Station maintenance approved and posted',
+      payee: 'Demo Maintenance',
+      reference: 'DEMO-MAINTENANCE-POSTED',
+      amount: '275.0000',
+    },
+    'posted-maintenance-submit',
+    'supervisor',
+  );
+  const approvedPosted = await expenseCommand(
+    { commandType: 'ApproveExpense', expenseId: posted.expenseId, expectedVersion: 0 },
+    'posted-maintenance-approve',
+  );
+  await expenseCommand(
+    {
+      commandType: 'PostExpense',
+      expenseId: posted.expenseId,
+      expectedVersion: approvedPosted.version,
+    },
+    'posted-maintenance-post',
+  );
+
+  // Approved, posted, and paid by bank reference.
+  const paid = await expenseCommand(
+    {
+      commandType: 'SubmitExpense',
+      categoryId: operatingCategory,
+      expenseDate: businessDate,
+      description: 'Station cleaning paid by bank',
+      payee: 'Demo Cleaning',
+      reference: 'DEMO-CLEANING-PAID',
+      amount: '80.1250',
+    },
+    'paid-cleaning-submit',
+    'supervisor',
+  );
+  const paidApproved = await expenseCommand(
+    { commandType: 'ApproveExpense', expenseId: paid.expenseId, expectedVersion: 0 },
+    'paid-cleaning-approve',
+  );
+  const paidPosted = await expenseCommand(
+    {
+      commandType: 'PostExpense',
+      expenseId: paid.expenseId,
+      expectedVersion: paidApproved.version,
+    },
+    'paid-cleaning-post',
+  );
+  await expenseCommand(
+    {
+      commandType: 'RecordExpensePayment',
+      expenseId: paid.expenseId,
+      expectedVersion: paidPosted.version,
+      paymentDate: businessDate,
+      amount: '80.1250',
+      settlementSource: 'BANK',
+      externalReference: 'DEMO-BANK-CLEANING',
+    },
+    'paid-cleaning-payment',
+  );
+
+  const recurringTemplate = async (
+    key: string,
+    categoryId: string,
+    name: string,
+    amount: string,
+    startDate: string,
+  ) =>
+    expenseCommand(
+      {
+        commandType: 'CreateRecurringCostTemplate',
+        categoryId,
+        name,
+        amount,
+        startDate,
+      },
+      `${key}-template`,
+    );
+
+  const recurringPeriod = async (key: string, templateId: string, periodStart: string) =>
+    expenseCommand(
+      { commandType: 'GenerateRecurringCostPeriod', templateId, periodStart },
+      `${key}-period`,
+    );
+
+  const recognize = (key: string, periodId: string, recognitionDate: string) =>
+    expenseCommand(
+      { commandType: 'RecognizeRecurringCost', periodId, recognitionDate },
+      `${key}-recognition-${recognitionDate}`,
+    );
+
+  // Rent is recognized and paid for September.
+  const rent = await recurringTemplate(
+    'rent',
+    rentCategory,
+    'Monthly station rent',
+    '1000.0000',
+    '2026-09-01',
+  );
+  const rentPeriod = await recurringPeriod('rent', rent.templateId, '2026-09-01');
+  await recognize('rent', rentPeriod.periodId, '2026-09-01');
+  await recognize('rent', rentPeriod.periodId, '2026-09-30');
+  await expenseCommand(
+    {
+      commandType: 'RecordExpensePayment',
+      recurringPeriodId: rentPeriod.periodId,
+      expectedVersion: 0,
+      paymentDate: '2026-09-02',
+      amount: '1000.0000',
+      settlementSource: 'BANK',
+      externalReference: 'DEMO-RENT-SEP',
+    },
+    'rent-payment',
+  );
+
+  // Subscription is recognized but unpaid, demonstrating an outstanding recurring payable.
+  const subscription = await recurringTemplate(
+    'subscription',
+    subscriptionCategory,
+    'Monthly software subscription',
+    '99.9900',
+    '2026-10-01',
+  );
+  const subscriptionPeriod = await recurringPeriod(
+    'subscription',
+    subscription.templateId,
+    '2026-10-01',
+  );
+  await recognize('subscription', subscriptionPeriod.periodId, '2026-10-01');
+
+  // Insurance uses a four-decimal amount so the daily split and final remainder are visible in
+  // demo data without passing through JavaScript floating point arithmetic.
+  const insurance = await recurringTemplate(
+    'insurance',
+    insuranceCategory,
+    'Monthly insurance allocation',
+    '1234.5678',
+    '2026-10-01',
+  );
+  const insurancePeriod = await recurringPeriod('insurance', insurance.templateId, '2026-10-01');
+  await recognize('insurance', insurancePeriod.periodId, '2026-10-01');
+  await recognize('insurance', insurancePeriod.periodId, '2026-10-31');
+
+  // Salary is recognized and paid, while one recognition is reversed with the original kept.
+  const salary = await recurringTemplate(
+    'salary',
+    salaryCategory,
+    'Monthly station salaries',
+    '3000.0000',
+    '2026-10-01',
+  );
+  const salaryPeriod = await recurringPeriod('salary', salary.templateId, '2026-10-01');
+  await recognize('salary', salaryPeriod.periodId, '2026-10-01');
+  await recognize('salary', salaryPeriod.periodId, '2026-10-02');
+  await expenseCommand(
+    {
+      commandType: 'ReverseRecurringCostRecognition',
+      periodId: salaryPeriod.periodId,
+      recognitionDate: '2026-10-01',
+      reason: 'Demo correction: payroll date moved',
+    },
+    'salary-reversal',
+  );
+  await expenseCommand(
+    {
+      commandType: 'RecordExpensePayment',
+      recurringPeriodId: salaryPeriod.periodId,
+      expectedVersion: 0,
+      paymentDate: '2026-10-02',
+      amount: '3000.0000',
+      settlementSource: 'BANK',
+      externalReference: 'DEMO-SALARY-OCT',
+    },
+    'salary-payment',
   );
 }

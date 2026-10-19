@@ -1,5 +1,24 @@
 # Shanda Fuel — Current Status
 
+## Finance backend completion candidate — 2026-10-19
+
+The requested finance backend work is being implemented on branch
+`codex/clerk-only-auth-20261017` in the clerk-only-auth worktree. The candidate
+uses the existing expense recognition ledger for authoritative management
+expense reporting, adds exact-decimal fuel-profit grouping with REV1/A12
+lineage, extends browser exports to CSV/PDF/XLSX, adds immutable private expense
+attachments (image/PDF/DOCX, multiple files, 10 MB per file, private R2 keys,
+tenant/station authorization and audit evidence), and adds realistic recurring
+expense demo scenarios plus append-only recurring recognition adjustments.
+
+Till-to-expense payment, finance-wide period locking, tax treatment, role or
+permission redesign, UI redesign, staging, and production deployment are not
+part of this candidate. The 0039 attachment and 0040 recurring-adjustment
+migrations are prepared but have not been applied. Database integration tests cannot run in this environment because
+`DATABASE_URL` is unset, and R2 runtime credentials are not configured. Unit,
+type, lint, schema, and generated-document checks are being run locally; this
+candidate is not a production-release declaration.
+
 ## Finance read-path optimization candidate — 2026-10-18
 
 Finance overview starts independent sign-off, cash, settlement and supplier
@@ -919,7 +938,8 @@ The following are explicitly not Phase 0 completion requirements unless promoted
 - full cash custody/banking workflow,
 - provider integrations,
 - interrupted delivery/calibration/transfer workflows,
-- full profitability/exports/Action Center,
+- broader profitability/exports/Action Center work beyond the bounded finance
+  backend candidate above,
 - offline sync/interrupted drafts,
 - alerts,
 - full editable settings behavior,

@@ -94,6 +94,7 @@ describe('expense command contracts', () => {
       'ReverseExpensePayment',
       'SetExpensePolicy',
       'ReverseRecurringCostRecognition',
+      'AdjustRecurringCostRecognition',
     ] as const) {
       expect(EXPENSE_COMMAND_POLICY[type].alwaysStepUp).toBe(true);
     }

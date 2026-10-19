@@ -10,6 +10,9 @@ export type SaleValuationStatus = 'VALUED' | 'UNVALUED';
  */
 export type RestatedSaleCogs = Readonly<{
   stationId: string;
+  productId: string;
+  productCode: string;
+  productName: string;
   reconciliationId: string;
   revisionId: string;
   meterSegmentId: string;
@@ -51,6 +54,9 @@ export type CanonicalRevenueStatus = 'NO_SALES' | 'POSTED';
 
 export type CanonicalSaleRevenue = Readonly<{
   stationId: string;
+  productId: string;
+  productCode: string;
+  productName: string;
   reconciliationId: string;
   revisionId: string;
   meterSegmentId: string;
@@ -77,6 +83,25 @@ export type CanonicalRevenueReport = Readonly<{
 export type GrossMarginStatus =
   'NOT_APPLICABLE' | 'COMPLETE' | 'REVENUE_MISSING' | 'COSTING_UNVALUED' | 'SALE_COUNT_MISMATCH';
 
+export type FuelProfitStatus =
+  'NO_SALES' | 'COMPLETE' | 'REVENUE_MISSING' | 'COSTING_UNVALUED' | 'SALE_COUNT_MISMATCH';
+
+export type FuelProfitRow = Readonly<{
+  productId: string;
+  productCode: string;
+  productName: string;
+  litres: string;
+  revenue: string;
+  cost: string | null;
+  profit: string | null;
+  status: FuelProfitStatus;
+  saleCount: number;
+  valuedSaleCount: number;
+  unvaluedSaleCount: number;
+  revenueMovementIds: readonly string[];
+  costMovementIds: readonly string[];
+}>;
+
 /**
  * Profitability deliberately excludes operating expenses: revenue minus
  * restated COGS is gross margin only. Expenses are a separate domain.
@@ -93,6 +118,7 @@ export type ProfitabilityReport = Readonly<{
   dateBasis: Readonly<{ revenue: string; cogs: string }>;
   revenue: CanonicalRevenueReport;
   costing: RestatedCogsReport;
+  fuelProfit: readonly FuelProfitRow[];
   grossMargin: string | null;
   grossMarginStatus: GrossMarginStatus;
   expensesIncluded: false;

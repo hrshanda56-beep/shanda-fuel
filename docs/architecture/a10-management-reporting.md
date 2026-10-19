@@ -16,7 +16,8 @@ All routes require an authenticated actor, a valid tenant membership, `report.vi
 
 | Report area | Canonical source | Finalized/read rule |
 | --- | --- | --- |
-| Sales, litres, payment evidence, variance, expenses | A5 reconciliation revisions, meter readings, payments, expenses, cash declarations | Latest revision per reconciliation with state `APPROVED`, `POSTED`, or `LOCKED` |
+| Sales, litres, payment evidence, variance, daily recorded expenses | A5 reconciliation revisions, meter readings, payments, expenses, cash declarations | Latest revision per reconciliation with state `APPROVED`, `POSTED`, or `LOCKED` |
+| Recognised operating expenses and fixed costs | `app.expense_recognition_movements` joined to expense categories | Recognition date in range; reversals offset the original; operating and fixed-cost classifications remain separate |
 | Cash collected and banked | A6 cash collections, collection allocations, bank deposits and deposit allocations | Collections use non-reversed collections; banked uses confirmed deposit allocations on deposits whose `deposited_at` UTC calendar date is in range |
 | Provider exposure | A9 provider settlements and settlement allocations, A5 POS/ECOCASH payments | A5 evidence uses finalized reconciliations; allocations use active `POSTED` allocations; settlement totals use settlement date |
 | Supplier exposure | A7 supplier account movements | Balance as of `toDate` using movements with `effective_date <= toDate`; movement signs remain A7-owned |
@@ -29,8 +30,9 @@ The selected latest revision prevents an approved correction and its superseded 
 
 The API includes a `dateBasis` object so a range is not presented as if every source shared one date field:
 
-- sales, A5 cash evidence, provider evidence, and A5 expenses: A5 `business_date`.
+- sales, A5 cash evidence, provider evidence, and daily recorded expenses: A5 `business_date`.
 - recognized revenue: REV1 `sale_recognition_movements.business_date`.
+- recognised operating expenses and fixed costs in management reports: expense recognition `recognition_date`.
 - collections: A6 `cash_collections.business_date`.
 - banked cash: A6 `bank_deposits.deposited_at` interpreted as a UTC calendar date; the deposit state must be `CONFIRMED`. This is intentionally independent of the linked collection's business date.
 - provider settlements: A9 `settlement_date`.
@@ -38,7 +40,7 @@ The API includes a `dateBasis` object so a range is not presented as if every so
 - customers: A8 ledger `business_date <= toDate` and authorization `requested_at` before the end of `toDate`; balances are positions as of `toDate`, not period flows.
 - inventory: A4 `business_date` for movements and `measured_at` for the latest physical dip as of `toDate`.
 
-Daily rows use a neutral `reportDate` key. Each metric is placed on that date using its own source-specific basis above; the row must not be read as a shared A5 business-date bucket. A provider settlement can therefore appear on its settlement date even when its A5 payment evidence belongs to an earlier business date, and a bank deposit can appear on its `deposited_at` UTC date even when its linked collection has another business date.
+Daily rows use a neutral `reportDate` key. Each metric is placed on that date using its own source-specific basis above; the row must not be read as a shared A5 business-date bucket. Daily recorded expenses retain their A5 reconciliation semantics, while management expense totals use the append-only recognition movements. A provider settlement can therefore appear on its settlement date even when its A5 payment evidence belongs to an earlier business date, and a bank deposit can appear on its `deposited_at` UTC date even when its linked collection has another business date.
 
 ## Exact-decimal and security rules
 
@@ -68,5 +70,7 @@ A10 requires no schema migration. The service uses existing indexed source
 predicates and bounded aggregates; daily provider positions exclude reversed
 A9 allocations, matching the settlement read model. It does not add
 materialized views, a reporting warehouse, or summary transaction tables.
-Export and artifact persistence remain future work; the returned row shape is
-ready for CSV/XLSX serialization without changing calculations.
+The authorised export route supports browser downloads as CSV, PDF, and XLSX
+without persisting report artifacts. Profit/loss exports include recognised
+expense and fuel-profit lineage IDs; the report query itself remains the sole
+calculation source.

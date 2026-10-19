@@ -16,6 +16,7 @@ import {
 } from './contracts';
 import {
   approveExpenseInTransaction,
+  adjustRecurringCostRecognitionInTransaction,
   createExpenseCategoryInTransaction,
   createRecurringCostTemplateInTransaction,
   generateRecurringCostPeriodInTransaction,
@@ -135,6 +136,13 @@ const HANDLERS: { [K in ExpenseCommandType]: Handler<K> } = {
     reason: (input) => input.reason,
     created: false,
     run: reverseRecurringCostRecognitionInTransaction,
+  },
+  AdjustRecurringCostRecognition: {
+    subjectType: 'RecurringCostRecognition',
+    subjectId: idOf('recognitionId'),
+    reason: (input) => input.reason,
+    created: true,
+    run: adjustRecurringCostRecognitionInTransaction,
   },
 };
 

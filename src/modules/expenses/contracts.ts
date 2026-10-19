@@ -135,6 +135,14 @@ export const reverseRecurringCostRecognitionSchema = stationBase.extend({
   reason,
 });
 
+export const adjustRecurringCostRecognitionSchema = stationBase.extend({
+  commandType: z.literal('AdjustRecurringCostRecognition'),
+  periodId: uuid,
+  recognitionDate: date,
+  amount: decimal,
+  reason,
+});
+
 export const EXPENSE_COMMAND_SCHEMAS = {
   CreateExpenseCategory: createExpenseCategorySchema,
   SetExpensePolicy: setExpensePolicySchema,
@@ -149,6 +157,7 @@ export const EXPENSE_COMMAND_SCHEMAS = {
   GenerateRecurringCostPeriod: generateRecurringCostPeriodSchema,
   RecognizeRecurringCost: recognizeRecurringCostSchema,
   ReverseRecurringCostRecognition: reverseRecurringCostRecognitionSchema,
+  AdjustRecurringCostRecognition: adjustRecurringCostRecognitionSchema,
 } as const;
 
 export type ExpenseCommandType = keyof typeof EXPENSE_COMMAND_SCHEMAS;
@@ -255,6 +264,13 @@ export const EXPENSE_COMMAND_POLICY: Readonly<Record<ExpenseCommandType, Expense
     thresholdStepUp: false,
     requiresExpectedVersion: false,
     auditActionCode: 'EXPENSE.RECURRING_RECOGNITION_REVERSED',
+  },
+  AdjustRecurringCostRecognition: {
+    permissionCode: 'expense.recurring.recognize',
+    alwaysStepUp: true,
+    thresholdStepUp: false,
+    requiresExpectedVersion: false,
+    auditActionCode: 'EXPENSE.RECURRING_RECOGNITION_ADJUSTED',
   },
 };
 

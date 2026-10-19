@@ -20,6 +20,9 @@ type ProfitabilityTransaction = Parameters<Parameters<Database['transaction']>[0
 
 type RestatedCogsRow = {
   station_id: string;
+  product_id: string;
+  product_code: string;
+  product_name: string;
   reconciliation_id: string;
   revision_id: string;
   meter_segment_id: string;
@@ -82,6 +85,9 @@ function mapSale(row: RestatedCogsRow): RestatedSaleCogs {
 
   return {
     stationId: row.station_id,
+    productId: row.product_id,
+    productCode: row.product_code,
+    productName: row.product_name,
     reconciliationId: row.reconciliation_id,
     revisionId: row.revision_id,
     meterSegmentId: row.meter_segment_id,
@@ -170,6 +176,9 @@ export async function readRestatedCogs(
     )
     select
       latest.station_id,
+      movement.product_id,
+      product.code as product_code,
+      product.name as product_name,
       latest.reconciliation_id,
       latest.revision_id,
       segment.id as meter_segment_id,
@@ -202,6 +211,9 @@ export async function readRestatedCogs(
      and movement.source_type = 'METER_SEGMENT_SALE'
      and movement.source_id = segment.id
      and movement.business_date between ${filters.fromDate} and ${filters.toDate}
+    join app.products product
+      on product.tenant_id = movement.tenant_id
+     and product.id = movement.product_id
     left join app.inventory_sale_cost_attributions attribution
       on attribution.tenant_id = movement.tenant_id
      and attribution.station_id = movement.station_id
@@ -250,6 +262,9 @@ export async function readRestatedCogs(
 
 type CanonicalRevenueRow = {
   station_id: string;
+  product_id: string;
+  product_code: string;
+  product_name: string;
   reconciliation_id: string;
   revision_id: string;
   meter_segment_id: string;
@@ -288,6 +303,9 @@ export async function readCanonicalRevenue(
     )
     select
       revenue.station_id,
+      revenue.product_id,
+      product.code as product_code,
+      product.name as product_name,
       revenue.reconciliation_id,
       revenue.reconciliation_revision_id as revision_id,
       revenue.meter_segment_id,
@@ -306,11 +324,17 @@ export async function readCanonicalRevenue(
      and revenue.classification = 'ORDINARY_FUEL_SALE'
      and revenue.source_type = 'METER_SEGMENT_SALE'
      and revenue.business_date between ${filters.fromDate} and ${filters.toDate}
+    join app.products product
+      on product.tenant_id = revenue.tenant_id
+     and product.id = revenue.product_id
     order by revenue.business_date, revenue.effective_at, revenue.id
   `);
 
   const sales = rows.map((row): CanonicalSaleRevenue => ({
     stationId: row.station_id,
+    productId: row.product_id,
+    productCode: row.product_code,
+    productName: row.product_name,
     reconciliationId: row.reconciliation_id,
     revisionId: row.revision_id,
     meterSegmentId: row.meter_segment_id,

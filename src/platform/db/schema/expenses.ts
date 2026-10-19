@@ -188,6 +188,58 @@ export const expenses = appSchema.table(
   ],
 );
 
+/** Immutable private evidence metadata associated with one exact expense. */
+export const expenseAttachments = appSchema.table(
+  'expense_attachments',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    legalEntityId: uuid('legal_entity_id').notNull(),
+    stationId: uuid('station_id').notNull(),
+    expenseId: uuid('expense_id').notNull(),
+    objectKey: text('object_key').notNull(),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    sha256: text('sha256').notNull(),
+    uploadedBy: uuid('uploaded_by').notNull(),
+    uploadedAt: utcTimestamp('uploaded_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('expense_attachments_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('expense_attachments_tenant_object_key_uidx').on(table.tenantId, table.objectKey),
+    index('expense_attachments_expense_idx').on(table.tenantId, table.stationId, table.expenseId),
+    check('expense_attachments_filename_nonempty_ck', sql`btrim(${table.fileName}) <> ''`),
+    check(
+      'expense_attachments_content_type_ck',
+      sql`${table.contentType} in (
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )`,
+    ),
+    check(
+      'expense_attachments_byte_size_ck',
+      sql`${table.byteSize} > 0 and ${table.byteSize} <= 10485760`,
+    ),
+    check('expense_attachments_sha256_ck', sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId, table.stationId],
+      foreignColumns: [stations.tenantId, stations.legalEntityId, stations.id],
+      name: 'expense_attachments_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.expenseId],
+      foreignColumns: [expenses.tenantId, expenses.stationId, expenses.id],
+      name: 'expense_attachments_expense_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.uploadedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'expense_attachments_uploaded_by_fk',
+    }),
+  ],
+);
+
 /** Append-only approval decisions, one per actor per expense. */
 export const expenseApprovals = appSchema.table(
   'expense_approvals',
@@ -355,14 +407,13 @@ export const recurringCostRecognitions = appSchema.table(
     reversedBy: uuid('reversed_by'),
     reversedAt: utcTimestamp('reversed_at'),
     reversalReason: text('reversal_reason'),
+    adjustmentOfId: uuid('adjustment_of_id'),
   },
   (table) => [
     unique('recurring_cost_recognitions_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('recurring_cost_recognitions_period_date_uidx').on(
-      table.tenantId,
-      table.periodId,
-      table.recognitionDate,
-    ),
+    uniqueIndex('recurring_cost_recognitions_active_period_date_uidx')
+      .on(table.tenantId, table.periodId, table.recognitionDate)
+      .where(sql`${table.state} = 'RECOGNIZED'`),
     check('recurring_cost_recognitions_currency_ck', sql`${table.currency} = 'USD'`),
     check('recurring_cost_recognitions_amount_positive_ck', sql`${table.amount} > 0`),
     check('recurring_cost_recognitions_state_ck', sql`${table.state} in ('RECOGNIZED','REVERSED')`),
@@ -389,6 +440,11 @@ export const recurringCostRecognitions = appSchema.table(
       columns: [table.tenantId, table.reversedBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'recurring_cost_recognitions_reversed_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.adjustmentOfId],
+      foreignColumns: [table.tenantId, table.id],
+      name: 'recurring_cost_recognitions_adjustment_of_fk',
     }),
   ],
 );

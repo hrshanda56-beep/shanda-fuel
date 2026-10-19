@@ -787,6 +787,75 @@ describe('A6 expenses PostgreSQL persistence', () => {
       from app.expense_recognition_movements
       where tenant_id = ${ids.tenant} and source_type = 'RECURRING_COST_RECOGNITION'`;
     expect(net[0]!.net).toBe('33.3343');
+
+    // Reversal changes state and adds compensating evidence; it never rewrites the original
+    // recognition fact. The recurring payment follows the same append-oriented correction rule.
+    const recognitionRows = await client`
+      select state, amount::text as amount, reversed_by, reversal_reason
+      from app.recurring_cost_recognitions
+      where tenant_id = ${ids.tenant} and period_id = ${period.json.periodId}
+        and recognition_date = '2026-09-01'`;
+    expect(recognitionRows).toHaveLength(1);
+    expect(recognitionRows[0]).toMatchObject({
+      state: 'REVERSED',
+      amount: '33.3333',
+      reversal_reason: 'Mistake',
+    });
+    expect(recognitionRows[0]!.reversed_by).toBe(ids.financeMembership);
+    await expect(
+      client`update app.recurring_cost_recognitions set amount = 1 where id = ${recognitionRows[0]!.id}`,
+    ).rejects.toThrow(/immutable/);
+
+    const adjusted = await command(tokens.finance, {
+      ...station,
+      commandType: 'AdjustRecurringCostRecognition',
+      periodId: period.json.periodId,
+      recognitionDate: '2026-09-01',
+      amount: '40.0000',
+      reason: 'Corrected amount',
+    });
+    expect(adjusted.status).toBe(201);
+    const adjustedRows = await client`
+      select id, state, amount::text as amount, adjustment_of_id
+      from app.recurring_cost_recognitions
+      where tenant_id = ${ids.tenant} and period_id = ${period.json.periodId}
+        and recognition_date = '2026-09-01'
+      order by recognized_at`;
+    expect(adjustedRows).toHaveLength(2);
+    expect(adjustedRows[1]).toMatchObject({
+      state: 'RECOGNIZED',
+      amount: '40.0000',
+      adjustment_of_id: adjustedRows[0]!.id,
+    });
+    const adjustedNet = await client`
+      select coalesce(sum(case when movement_type = 'RECOGNITION' then amount else -amount end), 0)::text as net
+      from app.expense_recognition_movements
+      where tenant_id = ${ids.tenant} and source_type = 'RECURRING_COST_RECOGNITION'`;
+    expect(adjustedNet[0]!.net).toBe('73.3343');
+
+    const recurringPayment = await client`
+      select amount::text as amount, state, reversal_reason
+      from app.expense_payments
+      where tenant_id = ${ids.tenant} and recurring_period_id = ${period.json.periodId}`;
+    expect(recurringPayment).toHaveLength(1);
+    expect(recurringPayment[0]).toMatchObject({ amount: '1000.0000', state: 'RECORDED' });
+    const reversedPayment = await command(tokens.finance, {
+      ...station,
+      commandType: 'ReverseExpensePayment',
+      paymentId: paid.json.paymentId,
+      expectedVersion: 1,
+      reason: 'Bank transfer returned',
+    });
+    expect(reversedPayment.status).toBe(200);
+    const reversedPaymentRows = await client`
+      select state, amount::text as amount, reversal_reason
+      from app.expense_payments where id = ${paid.json.paymentId}`;
+    expect(reversedPaymentRows).toEqual([
+      { state: 'REVERSED', amount: '1000.0000', reversal_reason: 'Bank transfer returned' },
+    ]);
+    await expect(
+      client`update app.expense_payments set amount = 1 where id = ${paid.json.paymentId}`,
+    ).rejects.toThrow(/immutable/);
   });
 
   it('serializes concurrent settlements with optimistic versions', async () => {
