@@ -116,10 +116,6 @@ export function OrdersPanel({
 
   return (
     <div className={styles.stack}>
-      <p className={styles.intro}>
-        An order is what you ask a supplier to deliver. When the fuel arrives, link the delivery to
-        its order so the supplier&apos;s invoice can be checked against it.
-      </p>
       {notice ? <SuccessState title="Done" message={notice} /> : null}
       <Card as="section" className="panel" aria-labelledby="po-orders-title">
         <h3 id="po-orders-title" className="visually-hidden">
