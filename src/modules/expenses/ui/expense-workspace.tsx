@@ -139,6 +139,26 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [filter, setFilter] = useState<ExpenseFilter>('all');
   const [period, setPeriod] = useState<PeriodKey>('month');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftPeriod, setDraftPeriod] = useState<PeriodKey>('month');
+  const [draftCategory, setDraftCategory] = useState('');
+  const filtersRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!filtersRef.current?.contains(event.target as Node)) setFiltersOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFiltersOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [filtersOpen]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, Payment[]>>({});
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -451,6 +471,24 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     }
   }
 
+  function showFilter(next: ExpenseFilter) {
+    setFilter(next);
+    setPeriod('all');
+    setSearch('');
+    setCategoryFilter('');
+    document.getElementById('expense-list-title')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function toggleFilters() {
+    if (!filtersOpen) {
+      setDraftPeriod(period);
+      setDraftCategory(categoryFilter);
+    }
+    setFiltersOpen((open) => !open);
+  }
+
+  const activeFilters = (period !== 'month' ? 1 : 0) + (categoryFilter ? 1 : 0);
+
   // Derived lists.
   const range = periodRange(today, period);
   const base = items.filter(
@@ -467,11 +505,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
 
   return (
     <div className={styles.page}>
-      <p className={styles.intro}>
-        Money spent running the station, such as repairs, cleaning and staff meals. Enter each one,
-        get it approved, then record how it was paid.
-      </p>
-
       {notice ? <SuccessState title="Done" message={notice} /> : null}
       {loadError ? (
         <ErrorState
@@ -480,75 +513,78 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
         />
       ) : null}
 
-      <dl className={styles.tiles} aria-label="Expenses at a glance">
-        <div className={styles.tile}>
-          <dt>Spent this month</dt>
-          <dd>
-            {formatTileMoney(spent)}
-            <span className={styles.tileNote}>Recorded expenses in {monthTitle(month.from)}</span>
-          </dd>
-        </div>
-        <button
-          type="button"
-          className={`${styles.tile}`}
-          onClick={() => setFilter('waiting')}
-          aria-label={`Waiting for approval: ${waiting.length}. Show them.`}
-        >
-          <dt>Waiting for approval</dt>
-          <dd>
-            {waiting.length === 0 ? 'None' : `${waiting.length} · ${formatTileMoney(waitingTotal)}`}
-            <span className={styles.tileNote}>
-              {ready.length > 0
-                ? `${ready.length} more approved and ready to record`
-                : 'Nothing else is held up'}
-            </span>
-          </dd>
-        </button>
-        <button
-          type="button"
-          className={styles.tile}
-          onClick={() => setFilter('unpaid')}
-          aria-label="Not paid yet. Show these expenses."
-        >
-          <dt>Not paid yet</dt>
-          <dd>
-            {formatTileMoney(summary.payables.postedExpensesOutstanding)}
-            <span className={styles.tileNote}>Recorded expenses still owed</span>
-          </dd>
-        </button>
-      </dl>
-
-      <Card as="section" aria-labelledby="expense-categories-title">
-        <div className={styles.sectionHead}>
-          <h2 id="expense-categories-title">Where the money went in {monthTitle(month.from)}</h2>
-          {caps?.manageCategories ? (
-            <Button variant="quiet" size="sm" onClick={() => openSheet({ kind: 'categories' })}>
-              Manage categories
+      <div className={styles.overview}>
+        <Card as="section" className="panel" aria-labelledby="expense-spent-title">
+          <div className="panel-heading">
+            <h2 id="expense-spent-title">Spent in {monthTitle(month.from)}</h2>
+          </div>
+          <p className={styles.heroAmount}>{formatTileMoney(spent)}</p>
+          <div className={styles.stats}>
+            <button
+              type="button"
+              className={styles.stat}
+              data-attention={waiting.length > 0 ? 'true' : undefined}
+              onClick={() => showFilter('waiting')}
+              aria-label={`Waiting for approval: ${waiting.length}. Show them.`}
+            >
+              <span>Waiting for approval</span>
+              <strong>
+                {waiting.length === 0
+                  ? 'None'
+                  : `${waiting.length} · ${formatTileMoney(waitingTotal)}`}
+              </strong>
+              {ready.length > 0 ? <small>{ready.length} ready to record</small> : null}
+            </button>
+            <button
+              type="button"
+              className={styles.stat}
+              onClick={() => showFilter('unpaid')}
+              aria-label="Not paid yet. Show these expenses."
+            >
+              <span>Not paid yet</span>
+              <strong>{formatTileMoney(summary.payables.postedExpensesOutstanding)}</strong>
+            </button>
+          </div>
+          {caps?.submit ? (
+            <Button className={styles.primaryAction} onClick={() => openSheet({ kind: 'new' })}>
+              Enter an expense
             </Button>
           ) : null}
-        </div>
-        {shares.length === 0 ? (
-          <p className={styles.muted}>
-            Nothing has been recorded this month yet. Spending shows here once an approved expense
-            is recorded.
-          </p>
-        ) : (
-          <ul className={styles.categories}>
-            {shares.map((row) => (
-              <li key={row.categoryId} className={styles.categoryRow}>
-                <span className={styles.categoryName}>{row.name}</span>
-                <span className={styles.bar} aria-hidden="true">
-                  <span style={{ width: `${row.percent}%` }} />
-                </span>
-                <span className={styles.amount}>{formatTileMoney(row.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+        </Card>
 
-      <Card as="section" aria-labelledby="expense-list-title">
-        <div className={styles.sectionHead}>
+        <Card as="section" className="panel" aria-labelledby="expense-categories-title">
+          <div className="panel-heading">
+            <h2 id="expense-categories-title">Where the money went</h2>
+            {caps?.manageCategories ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => openSheet({ kind: 'categories' })}
+              >
+                Manage categories
+              </Button>
+            ) : null}
+          </div>
+          {shares.length === 0 ? (
+            <p className={styles.muted}>Nothing recorded this month yet.</p>
+          ) : (
+            <ul className={styles.categories}>
+              {shares.map((row) => (
+                <li key={row.categoryId} className={styles.categoryRow}>
+                  <span className={styles.categoryName}>{row.name}</span>
+                  <span className={styles.bar} aria-hidden="true">
+                    <span style={{ width: `${row.percent}%` }} />
+                  </span>
+                  <span className={styles.amount}>{formatTileMoney(row.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <Card as="section" className="panel" aria-labelledby="expense-list-title">
+        <div className="panel-heading">
           <h2 id="expense-list-title">All expenses</h2>
           {items.length >= 200 ? (
             <span className={styles.muted}>Showing the latest 200 expenses.</span>
@@ -562,46 +598,89 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                 <input
                   type="search"
                   aria-label="Search expenses"
-                  placeholder="Search by what, who or receipt number…"
+                  placeholder="Search expenses"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   autoComplete="off"
                 />
               </label>
-              <select
-                aria-label="Show expenses from"
-                value={period}
-                onChange={(event) => setPeriod(event.target.value as PeriodKey)}
-              >
-                {PERIODS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Kind of expense"
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-              >
-                <option value="">All kinds</option>
-                {(reference.categories ?? []).map((category) => (
-                  <option key={category.categoryId} value={category.categoryId}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+              <div className={styles.filterMenu} ref={filtersRef}>
+                <Button
+                  variant="secondary"
+                  aria-expanded={filtersOpen}
+                  aria-controls="expense-filter-panel"
+                  onClick={toggleFilters}
+                >
+                  Filters{activeFilters > 0 ? ` · ${activeFilters}` : ''}
+                </Button>
+                {filtersOpen ? (
+                  <div
+                    className={styles.filterPanel}
+                    id="expense-filter-panel"
+                    role="group"
+                    aria-label="Filter expenses"
+                  >
+                    <label>
+                      <span>Date</span>
+                      <select
+                        value={draftPeriod}
+                        onChange={(event) => setDraftPeriod(event.target.value as PeriodKey)}
+                      >
+                        {PERIODS.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Kind</span>
+                      <select
+                        value={draftCategory}
+                        onChange={(event) => setDraftCategory(event.target.value)}
+                      >
+                        <option value="">All kinds</option>
+                        {(reference.categories ?? []).map((category) => (
+                          <option key={category.categoryId} value={category.categoryId}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className={styles.filterActions}>
+                      <Button
+                        variant="quiet"
+                        size="sm"
+                        onClick={() => {
+                          setDraftPeriod('month');
+                          setDraftCategory('');
+                        }}
+                      >
+                        Reset
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => setFiltersOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setPeriod(draftPeriod);
+                          setCategoryFilter(draftCategory);
+                          setFiltersOpen(false);
+                        }}
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </>
-          ) : null}
-          {caps?.submit ? (
-            <Button className={styles.toolbarAction} onClick={() => openSheet({ kind: 'new' })}>
-              Enter an expense
-            </Button>
           ) : null}
         </div>
 
         {items.length > 0 ? (
-          <div className={styles.chips} role="group" aria-label="Filter expenses">
+          <div className={`list-filters ${styles.chips}`} role="group" aria-label="Filter expenses">
             {EXPENSE_FILTERS.map((item) => (
               <button
                 key={item.value}
@@ -623,10 +702,17 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             layout="block"
             icon="receipt"
             title="No expenses yet"
+            action={
+              caps?.submit ? (
+                <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'new' })}>
+                  Enter an expense
+                </Button>
+              ) : undefined
+            }
             message={
               caps?.submit
-                ? 'When money is spent, for example on a repair or tea for staff, use Enter an expense.'
-                : 'Expenses entered by your team will show here.'
+                ? 'Enter the first one when money is spent.'
+                : 'Expenses entered by your team show here.'
             }
           />
         ) : null}
@@ -635,7 +721,20 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             layout="block"
             icon="search"
             title="No expenses match"
-            message="Try another word, another month, or choose All."
+            message="Try a different search or filter."
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFilter('all');
+                  setSearch('');
+                  setCategoryFilter('');
+                  setPeriod('all');
+                }}
+              >
+                Clear filters
+              </Button>
+            }
           />
         ) : null}
 
@@ -652,38 +751,51 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               {visible.map((row) => {
                 const status = statusView(row);
                 const open = openId === row.expenseId;
+                const quick = quickAction(row, caps);
                 return (
                   <li key={row.expenseId} className={styles.item}>
-                    <button
-                      type="button"
-                      className={styles.row}
-                      aria-expanded={open}
-                      aria-controls={`expense-${row.expenseId}`}
-                      onClick={() => setOpenId(open ? null : row.expenseId)}
-                    >
-                      <span className={styles.cell}>{formatFriendlyDate(row.expenseDate)}</span>
-                      <span className={`${styles.cell} ${styles.what}`}>
-                        <strong>{row.description}</strong>
-                        <small>
-                          {[
-                            row.category.name,
-                            row.payee,
-                            stations.length > 1 ? stationName(row.stationId) : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </small>
-                      </span>
-                      <span className={`${styles.cell} ${styles.amount}`}>
-                        {formatTileMoney(row.amount)}
-                      </span>
-                      <span className={styles.cell}>
-                        <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                      </span>
-                      <span className={styles.chevron} aria-hidden="true">
-                        <Icon name="chevron-right" />
-                      </span>
-                    </button>
+                    <div className={styles.rowWrap}>
+                      <button
+                        type="button"
+                        className={styles.row}
+                        aria-expanded={open}
+                        aria-controls={`expense-${row.expenseId}`}
+                        onClick={() => setOpenId(open ? null : row.expenseId)}
+                      >
+                        <span className={styles.cell}>{formatFriendlyDate(row.expenseDate)}</span>
+                        <span className={`${styles.cell} ${styles.what}`}>
+                          <strong>{row.description}</strong>
+                          <small>
+                            {[
+                              row.category.name,
+                              row.payee,
+                              stations.length > 1 ? stationName(row.stationId) : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </small>
+                        </span>
+                        <span className={`${styles.cell} ${styles.amount}`}>
+                          {formatTileMoney(row.amount)}
+                        </span>
+                        <span className={styles.cell}>
+                          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                        </span>
+                        <span className={styles.chevron} aria-hidden="true">
+                          <Icon name="chevron-right" />
+                        </span>
+                      </button>
+                      {quick ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className={styles.quick}
+                          onClick={() => openSheet({ kind: quick.kind, expense: row })}
+                        >
+                          {quick.label}
+                        </Button>
+                      ) : null}
+                    </div>
                     {open ? (
                       <div id={`expense-${row.expenseId}`} className={styles.detail}>
                         <ExpenseDetail
@@ -749,13 +861,21 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             <>
               {activeCategories.length === 0 ? (
                 <p className={styles.hint}>
-                  There are no expense kinds yet.{' '}
-                  {caps?.manageCategories
-                    ? 'Close this and use Manage categories to add one, for example Repairs.'
-                    : 'Ask a manager to add one, for example Repairs.'}
+                  No kinds yet.{' '}
+                  {caps?.manageCategories ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openSheet({ kind: 'categories' })}
+                    >
+                      Add one
+                    </Button>
+                  ) : (
+                    'Ask a manager to add one.'
+                  )}
                 </p>
               ) : null}
-              <Field id="expense-category" label="What kind of expense is it?" required>
+              <Field id="expense-category" label="Kind of expense" required>
                 <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
                   <option value="">Choose…</option>
                   {activeCategories.map((category) => (
@@ -770,29 +890,31 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   value={description}
                   maxLength={500}
                   onChange={(event) => setDescription(event.target.value)}
-                  placeholder="For example: Replaced pump hose"
+                  placeholder="e.g. Replaced pump hose"
                   autoComplete="off"
                 />
               </Field>
-              <Field id="expense-amount" label="Amount (USD)" required>
-                <input
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  placeholder="0.00"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field id="expense-date" label="Date spent" required>
-                <input
-                  type="date"
-                  value={date}
-                  max={today}
-                  onChange={(event) => setDate(event.target.value)}
-                />
-              </Field>
+              <div className={styles.pair}>
+                <Field id="expense-amount" label="Amount (USD)" required>
+                  <input
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="0.00"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field id="expense-date" label="Date" required>
+                  <input
+                    type="date"
+                    value={date}
+                    max={today}
+                    onChange={(event) => setDate(event.target.value)}
+                  />
+                </Field>
+              </div>
               {stations.length > 1 && !(current.stationId && !current.allStations) ? (
-                <Field id="expense-station" label="Which station?" required>
+                <Field id="expense-station" label="Station" required>
                   <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
                     <option value="">Choose…</option>
                     {stations.map((station) => (
@@ -803,21 +925,16 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   </select>
                 </Field>
               ) : null}
-              <Field id="expense-payee" label="Who was it paid to?" optional>
+              <Field id="expense-payee" label="Paid to" optional>
                 <input
                   value={payee}
                   maxLength={160}
                   onChange={(event) => setPayee(event.target.value)}
-                  placeholder="Shop, supplier or person"
+                  placeholder="Shop or person"
                   autoComplete="off"
                 />
               </Field>
-              <Field
-                id="expense-receipt"
-                label="Receipt or invoice number"
-                hint="Helps stop the same receipt being entered twice."
-                optional
-              >
+              <Field id="expense-receipt" label="Receipt number" optional>
                 <input
                   value={receipt}
                   maxLength={120}
@@ -888,22 +1005,24 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
 
           {sheet?.kind === 'pay' ? (
             <>
-              <Field id="pay-amount" label="Amount paid (USD)" required>
-                <input
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  autoComplete="off"
-                />
-              </Field>
-              <Field id="pay-date" label="Date paid" required>
-                <input
-                  type="date"
-                  value={date}
-                  max={today}
-                  onChange={(event) => setDate(event.target.value)}
-                />
-              </Field>
+              <div className={styles.pair}>
+                <Field id="pay-amount" label="Amount paid (USD)" required>
+                  <input
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field id="pay-date" label="Date paid" required>
+                  <input
+                    type="date"
+                    value={date}
+                    max={today}
+                    onChange={(event) => setDate(event.target.value)}
+                  />
+                </Field>
+              </div>
               <fieldset className={styles.choices}>
                 <legend>How was it paid?</legend>
                 {PAY_SOURCES.map((source) => (
@@ -962,6 +1081,22 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   );
 }
 
+function quickAction(
+  row: ExpenseRow,
+  caps: ExpenseCapabilities | undefined,
+): { kind: 'approve' | 'post' | 'pay'; label: string } | null {
+  if (row.state === 'SUBMITTED' && caps?.approve) return { kind: 'approve', label: 'Approve' };
+  if (row.state === 'APPROVED' && caps?.post) return { kind: 'post', label: 'Record' };
+  if (
+    row.state === 'POSTED' &&
+    caps?.recordPayment &&
+    row.outstanding !== null &&
+    Number(row.outstanding) > 0
+  )
+    return { kind: 'pay', label: 'Record payment' };
+  return null;
+}
+
 function sheetTitle(sheet: Sheet | null): string {
   switch (sheet?.kind) {
     case 'new':
@@ -1010,21 +1145,21 @@ function sheetDescription(sheet: Sheet | null): string {
   if (!sheet) return '';
   switch (sheet.kind) {
     case 'new':
-      return 'It will wait for someone to approve it before it counts as spending.';
+      return 'It counts as spending once approved and recorded.';
     case 'categories':
-      return 'These choices appear when an expense is entered.';
+      return 'Choices shown when entering an expense.';
     case 'approve':
-      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}”. Approving says the money was properly spent. It is not counted as spending until it is recorded.`;
+      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}”. It counts as spending once recorded.`;
     case 'reject':
-      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}” will not be paid or counted. The person who entered it will see your reason.`;
+      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}” will not be paid or counted. Your reason is shown to whoever entered it.`;
     case 'post':
-      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}” will count as spending in ${monthTitle(sheet.expense.expenseDate)} and show as not paid yet.`;
+      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}” will count as spending in ${monthTitle(sheet.expense.expenseDate)}.`;
     case 'reverse':
-      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}” will be taken out of the month’s spending. The record stays in the history and this cannot be undone.`;
+      return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}” will be taken out of the month’s spending. This cannot be undone.`;
     case 'pay':
-      return `Still owed: ${formatTileMoney(sheet.expense.outstanding)}. This records that money was paid out; it does not move any money.`;
+      return `Still owed: ${formatTileMoney(sheet.expense.outstanding)}. Records a payment; no money moves.`;
     case 'undoPay':
-      return `The ${formatTileMoney(sheet.payment.amount)} payment will be marked as undone and the amount will be owed again. The record stays in the history.`;
+      return `The ${formatTileMoney(sheet.payment.amount)} payment will be undone and owed again.`;
   }
 }
 
