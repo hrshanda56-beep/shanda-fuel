@@ -166,19 +166,19 @@ export type ActiveReservation = Readonly<{
 
 function requireText(value: string, label: string): string {
   if (!value || value.trim() === '')
-    throw new AppError('VALIDATION_FAILED', `${label} is required`);
+    throw new AppError('VALIDATION_FAILED', `${label} is required.`);
   return value.trim();
 }
 
 function requirePositiveMoney(value: Money, label: string): Money {
   if (value.amount.value.isNegative() || value.amount.value.isZero())
-    throw new AppError('VALIDATION_FAILED', `${label} must be positive`);
+    throw new AppError('VALIDATION_FAILED', `${label} must be more than zero.`);
   return value;
 }
 
 function requirePositiveLitres(value: Litres, label: string): Litres {
   if (value.value.isNegative() || value.value.isZero())
-    throw new AppError('VALIDATION_FAILED', `${label} must be positive`);
+    throw new AppError('VALIDATION_FAILED', `${label} must be more than zero.`);
   return value;
 }
 
@@ -209,8 +209,7 @@ export function assertSourceReferenceUnused(
   if (entries.some((entry) => sameSource(entry.source, source))) {
     throw new AppError(
       'IDEMPOTENCY_CONFLICT',
-      'The customer ledger source reference has already been posted',
-      { source: customerLedgerSourceKey(source) },
+      'This payment or top-up has already been posted, so it was not recorded a second time.',
     );
   }
 }
@@ -311,7 +310,7 @@ export function assertCustomerAccountTransactionAllowed(
   if (customerStatus !== 'ACTIVE' || accountStatus !== 'ACTIVE') {
     throw new AppError(
       'CONFLICT',
-      'Customer account transactions require an active customer and customer account',
+      'This customer or account is not active. Reactivate the customer before recording payments or fuel.',
     );
   }
 }
@@ -466,14 +465,18 @@ export function deriveAccountBalance(
   }
 
   if (account.accountType === 'PREPAID_VALUE' && amount.value.isNegative()) {
-    throw new AppError('INVARIANT_VIOLATION', 'Prepaid value balance cannot be negative');
+    throw new AppError(
+      'INVARIANT_VIOLATION',
+      'This would take the prepaid money balance below zero, so it was not saved.',
+    );
   }
   if (account.accountType === 'PREPAID_LITRES') {
     for (const [productId, balance] of productBalances) {
       if (balance.value.isNegative()) {
-        throw new AppError('INVARIANT_VIOLATION', 'Prepaid litre balance cannot be negative', {
-          productId,
-        });
+        throw new AppError(
+          'INVARIANT_VIOLATION',
+          'This would take the prepaid litres balance below zero, so it was not saved.',
+        );
       }
     }
     return {
@@ -584,14 +587,20 @@ export function reserveCustomerFuelAuthorization(input: {
       throw new AppError('CONFLICT', 'Credit account is disabled without a positive credit limit');
     }
     if (owed.add(authorization.requested.amount.amount).value.gt(limit.value)) {
-      throw new AppError('CONFLICT', 'Credit authorization exceeds the configured credit limit');
+      throw new AppError(
+        'CONFLICT',
+        'This would put the customer over their credit limit. Lower the amount or record a payment first.',
+      );
     }
   } else if (account.accountType === 'PREPAID_VALUE') {
     if (balance.accountType !== 'PREPAID_VALUE')
       throw new AppError('INVARIANT_VIOLATION', 'Prepaid value balance has the wrong shape');
     const available = balance.amount.amount.subtract(reserved.amount);
     if (available.value.lt(authorization.requested.amount.amount.value)) {
-      throw new AppError('CONFLICT', 'Prepaid value is insufficient for this authorization');
+      throw new AppError(
+        'CONFLICT',
+        'The customer does not have enough prepaid money for this. Top up the account or lower the amount.',
+      );
     }
   } else {
     if (balance.accountType !== 'PREPAID_LITRES')
@@ -602,7 +611,10 @@ export function reserveCustomerFuelAuthorization(input: {
     );
     const available = (productBalance?.litres ?? new ExactDecimal('0')).subtract(reserved.litres);
     if (available.value.lt(authorization.requested.litres.value)) {
-      throw new AppError('CONFLICT', 'Prepaid litres are insufficient for this authorization');
+      throw new AppError(
+        'CONFLICT',
+        'The customer does not have enough prepaid litres of this fuel. Top up the account or lower the litres.',
+      );
     }
   }
   return { ...authorization, state: 'AUTHORIZED', version: authorization.version + 1 };

@@ -211,6 +211,97 @@
       "when": 1791816395000,
       "tag": "0029_staff_number_registry_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0030_clerk_only_application_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0031_manual_activation_attempt_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792281601000,
+      "tag": "0032_custom_staff_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792281602000,
+      "tag": "0033_finance_reconciliation_return",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792310400000,
+      "tag": "0034_navigation_context_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792314000000,
+      "tag": "0035_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792400000000,
+      "tag": "0036_purchase_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792500000000,
+      "tag": "0037_supplier_invoice_lines_and_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792600000000,
+      "tag": "0038_supplier_document_reference_reuse",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792600001000,
+      "tag": "0039_expense_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792600002000,
+      "tag": "0040_recurring_cost_adjustments",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792600003000,
+      "tag": "0047_unified_expense_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792600004000,
+      "tag": "0048_unified_expense_corrections",
+      "breakpoints": true
     }
   ]
 }

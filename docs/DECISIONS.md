@@ -1,5 +1,26 @@
 # Shanda Fuel — Decision Log
 
+## Activation security clarification — 2026-10-18
+
+Explicit human instruction: after five incorrect activation codes the code is
+permanently invalid, not temporarily locked. A manager must generate a new code.
+The database persists failure counts, serializes concurrent attempts and burns
+the old hash. Replacement resets the budget; time alone does not. Keep one-time
+acceptance, 72-hour expiry and independent client throttling.
+
+## DEC-043 — Use Clerk alone; simplify the development authentication cutover
+
+Date: 2026-10-18. Explicit human instruction supersedes historical provider choices.
+Clerk owns credentials, recovery, MFA and authentication sessions. Shanda Fuel
+owns internal UUIDs, tenant memberships, scoped permissions and audit. Remove
+provider switching and Better Auth runtime/dependencies. The target development
+authentication data is disposable: drop obsolete credential/session tables and
+legacy mappings rather than archive them. Preserve business foreign keys and do
+not reset financial/operational data. Remove the hard-coded production Owner CLI;
+provide a configurable development seed with preview and explicit apply. Review
+the exact migration and test evidence before applying to the confirmed Neon dev
+database. This is not production migration or deployment authorization.
+
 This file records meaningful product, architecture, security, and delivery decisions that have already been made. It exists so future agents do not casually reverse established choices without understanding the context.
 
 Status values:
@@ -802,3 +823,15 @@ deployed application runtime.
 the existing scoped high-advisory exception remains unchanged. This exception
 must not be generalized to runtime dependencies or unrelated advisories, and
 must be revisited before production promotion if the dependency path changes.
+
+
+## 2026-10-18 — Separate cross-station viewing from station actions
+
+At Jordan's request, an explicit All stations selection survives management navigation and remains reachable after selecting an individual station. Management overview routes may show authorized stations side by side. Individual station records and commands keep their existing station authorization and assurance requirements. Switching from a station record to All returns to that area's overview and drops record-specific URL filters. Opening a record supplies its station in the URL without changing the persisted viewing preference.
+
+Cross-station presentation reuses existing server read services and streaming. Financial values retain exact decimal strings and currency; no new cross-currency totals or averaging rules are introduced. Supplier balances are presented once per legal entity. Route support is explicitly allowed, rather than changing the default policy for unknown routes.
+
+
+### Unified expense integration — 2026-10-19
+
+Jordan approved using incoming PR #146 expenses as the base and adding operational fact versions and shift links. Keep finance lifecycle and postings. No second editable shift-expense authority. Applied migration streams require explicit conversion, not checksum rewriting or blind renumbering. Existing posted corrections retain reversals.

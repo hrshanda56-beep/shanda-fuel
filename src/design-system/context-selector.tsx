@@ -1,10 +1,12 @@
 'use client';
+import { useContextFetch, useWorkContextSnapshot } from '@/modules/context/client-context';
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type RefObject, useMemo, useRef, useState } from 'react';
 
 import {
   buildContextHref,
+  isCurrentSelection,
   type AvailableContext,
   type ContextResolution,
   type ContextSelection,
@@ -13,6 +15,8 @@ import {
 import { Button } from './primitives';
 import { Icon } from './icons';
 import { Modal } from './modal';
+import { allStationsPath, contextRoutePolicy } from '@/modules/context/routes';
+import { contextReadFailure, selectionForDisplay } from '@/modules/context/selector-state';
 import { useLocationSearch } from './location-search';
 
 type FallbackShellContext = Readonly<{
@@ -32,9 +36,9 @@ type ContextSelectorProps = Readonly<{
 }>;
 
 type SelectorState =
-  | { status: 'loading'; resolution?: undefined; error?: undefined }
+  | { status: 'loading'; resolution?: ContextResolution; error?: undefined }
   | { status: 'ready'; resolution: ContextResolution; error?: undefined }
-  | { status: 'error'; resolution?: undefined; error: string };
+  | { status: 'error'; resolution?: ContextResolution; error: string; title: string };
 
 export function ContextSelector({
   fallback,
@@ -43,12 +47,17 @@ export function ContextSelector({
   onClose,
   onLabelChange,
 }: ContextSelectorProps) {
+  const contextFetch = useContextFetch();
+  const initialSnapshot = useWorkContextSnapshot();
   const pathname = usePathname() ?? '/';
   const search = useLocationSearch();
   const router = useRouter();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<SelectorState>({ status: 'loading' });
+  const [state, setState] = useState<SelectorState>(() => ({
+    status: 'loading',
+    resolution: initialSnapshot,
+  }));
   const [refresh, setRefresh] = useState(0);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -59,9 +68,9 @@ export function ContextSelector({
     const params = new URLSearchParams(search);
     params.set('pathname', pathname);
 
-    fetch(`/api/context?${params.toString()}`, {
+    contextFetch(`/api/context?${params.toString()}`, {
       credentials: 'same-origin',
-      cache: 'no-store',
+      cache: refresh > 0 ? 'reload' : 'no-store',
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -70,33 +79,42 @@ export function ContextSelector({
           message?: string;
         } | null;
         if (!response.ok || !body?.data) {
-          throw new Error(body?.message ?? 'The available work context could not be loaded.');
+          if (response.status === 401) router.replace('/login');
+          throw Object.assign(new Error('Context refresh failed'), { status: response.status });
         }
         return body.data;
       })
       .then((resolution) => {
-        setState({ status: 'ready', resolution });
+        if (!controller.signal.aborted) setState({ status: 'ready', resolution });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setState({
+        const status =
+          typeof error === 'object' && error && 'status' in error
+            ? Number(error.status)
+            : undefined;
+        const failure = contextReadFailure(status);
+        setState((previous) => ({
           status: 'error',
-          error: error instanceof Error ? error.message : 'The work context could not be loaded.',
-        });
+          resolution: previous.resolution ?? initialSnapshot,
+          error: failure.message,
+          title: failure.title,
+        }));
       });
 
     return () => controller.abort();
-  }, [pathname, refresh, search]);
+  }, [pathname, refresh, search, contextFetch, initialSnapshot, router]);
 
   const currentLabel = useMemo(() => {
-    if (state.status === 'loading' && !fallback) return ['Loading work context…'];
-    if (state.status === 'error' && !fallback) return ['Work context unavailable'];
-    return contextDisplay(
-      state.status === 'ready' ? state.resolution.available : undefined,
-      state.status === 'ready' ? state.resolution.current : null,
-      fallback,
-    );
-  }, [fallback, state]);
+    const display = selectionForDisplay(initialSnapshot ?? state.resolution, pathname, search);
+    if (!display && !fallback) {
+      const requested = new URLSearchParams(search);
+      if (requested.get('allStations') === 'true' || requested.get('allStations') === '1')
+        return ['All stations'];
+      return [state.status === 'error' ? 'Refresh stations' : 'Choose station'];
+    }
+    return contextDisplay(display?.available, display?.current ?? null, fallback);
+  }, [fallback, state, initialSnapshot, pathname, search]);
 
   const fullLabel = currentLabel.join(', ');
   // The resolved context ends with its station (or "All stations"); the
@@ -111,11 +129,20 @@ export function ContextSelector({
   }, [currentLabel, onLabelChange, pillLabel]);
 
   function retry() {
-    setState({ status: 'loading' });
+    setState((previous) => ({
+      status: 'loading',
+      resolution: previous.resolution ?? initialSnapshot,
+    }));
     setRefresh((value) => value + 1);
   }
 
   async function submit(selection: ContextSelection, key: string) {
+    // Tapping where you already are should simply close the sheet, never look like a dead button.
+    const current = state.status === 'ready' ? state.resolution.current : null;
+    if (isCurrentSelection(current, selection)) {
+      onClose();
+      return;
+    }
     setPendingKey(key);
     setSubmitting(true);
     setSubmitError(null);
@@ -124,7 +151,10 @@ export function ContextSelector({
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ pathname, selection }),
+        body: JSON.stringify({
+          pathname: selection.allStations ? allStationsPath(pathname) : pathname,
+          selection,
+        }),
       });
       const body = (await response.json().catch(() => null)) as {
         data?: { current?: ContextSelection };
@@ -188,7 +218,9 @@ export function ContextSelector({
         dismissible={!submitting}
       >
         {state.status === 'loading' ? <ContextLoading /> : null}
-        {state.status === 'error' ? <ContextError message={state.error} onRetry={retry} /> : null}
+        {state.status === 'error' ? (
+          <ContextError title={state.title} message={state.error} onRetry={retry} />
+        ) : null}
         {state.status === 'ready' && state.resolution.available.organisations.length === 0 ? (
           <ContextEmpty />
         ) : null}
@@ -197,7 +229,7 @@ export function ContextSelector({
         state.resolution.available.organisations.length > 0 ? (
           <ContextForm
             available={state.resolution.available}
-            policy={state.resolution.route.policy}
+            policy={contextRoutePolicy(allStationsPath(pathname))}
             current={state.resolution.current}
             submitting={submitting}
             pendingKey={pendingKey}
@@ -220,10 +252,18 @@ function ContextLoading() {
   );
 }
 
-function ContextError({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ContextError({
+  title,
+  message,
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <div className="context-selector-state" role="alert">
-      <h3>Context unavailable</h3>
+      <h3>{title}</h3>
       <p>{message}</p>
       <Button variant="secondary" onClick={onRetry}>
         Try again
@@ -375,6 +415,7 @@ function ContextForm({
         <p className="context-selector-note">No stations are available in this organisation.</p>
       ) : null}
 
+      {submitting ? <p role="status">Checking your access and switching station…</p> : null}
       {submitError ? (
         <p className="context-selector-error" role="alert">
           {submitError}
@@ -407,7 +448,7 @@ function ContextOption({
         aria-current={selected || undefined}
         data-selected={selected || undefined}
         disabled={disabled}
-        onClick={selected ? undefined : onSelect}
+        onClick={onSelect}
       >
         <span className="context-selector-option-text">
           <span className="context-selector-option-title">{title}</span>

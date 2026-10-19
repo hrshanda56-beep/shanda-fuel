@@ -1,3 +1,4 @@
+import { seedClerkSession, fixtureSession } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
@@ -80,7 +81,7 @@ function signedRevokeEvent(
       details: {
         actorType: 'SUPPORT',
         initiatedBy: 'first-production-user-provisioning',
-        subjectType: 'auth.user',
+        subjectType: 'app.users',
         subjectId: result.userId,
         metadata: { operationId: result.operationId, outcome: 'success' },
       },
@@ -260,9 +261,8 @@ integration('first-user provisioning PostgreSQL hardening', () => {
             scope: requestScope,
             expiresAt: new Date(Date.now() + 30 * 60 * 1000),
           },
-          password: 'integration-only-password',
+          clerkUserId: `user_provisioning${randomUUID().replaceAll('-', '')}`,
           auditKey,
-          hasher: async () => 'integration-password-hash',
         }),
       );
 
@@ -299,15 +299,17 @@ integration('first-user provisioning PostgreSQL hardening', () => {
     let revoked = false;
 
     await adminClient!`
-      insert into auth."user" (id, name, email, email_verified)
+      insert into app.users (id, name, email, email_verified)
       values (${unrelatedUserId}::uuid, 'Synthetic Unrelated User',
         ${`unrelated-${Date.now()}@example.test`}, false)
     `;
-    await adminClient!`
-      insert into auth.session (id, expires_at, token, user_id)
-      values (${unrelatedSessionId}::uuid, now() + interval '1 hour',
-        ${unrelatedSessionToken}, ${unrelatedUserId}::uuid)
-    `;
+    await seedClerkSession(
+      adminClient!,
+      unrelatedSessionId,
+      unrelatedSessionToken,
+      unrelatedUserId,
+      false,
+    );
 
     try {
       result = await client!.begin(async (transaction) =>
@@ -319,9 +321,8 @@ integration('first-user provisioning PostgreSQL hardening', () => {
             scope: scope!,
             expiresAt: new Date(Date.now() + 30 * 60 * 1000),
           },
-          password: 'integration-only-password',
+          clerkUserId: `user_provisioning${randomUUID().replaceAll('-', '')}`,
           auditKey,
-          hasher: async () => 'integration-password-hash',
         }),
       );
 
@@ -435,7 +436,7 @@ integration('first-user provisioning PostgreSQL hardening', () => {
             details: {
               actorType: 'SUPPORT',
               initiatedBy: 'first-production-user-provisioning',
-              subjectType: 'auth.user',
+              subjectType: 'app.users',
               subjectId: replayUserId,
               metadata: { operationId: result!.operationId, outcome: 'replay' },
             },
@@ -447,7 +448,7 @@ integration('first-user provisioning PostgreSQL hardening', () => {
           select platform.first_user_provisioning_provision(
             ${replayUserId}::uuid, ${replayMembershipId}::uuid, ${result!.operationId}::uuid,
             ${scope!.tenantId}::uuid, ${scope!.legalEntityId}::uuid, ${scope!.stationId}::uuid,
-            ${replayEmail}, 'Replay Attempt', 'integration-password-hash',
+            ${replayEmail}, 'Replay Attempt', 'user_provisioningReplay',
             now() + interval '30 minutes',
             ${client!.json(JSON.parse(JSON.stringify(replayEvent('ACCESS.PROVISIONING_INITIATED'))))}::jsonb,
             ${client!.json(JSON.parse(JSON.stringify(replayEvent('ACCESS.PROVISIONING_COMPLETED'))))}::jsonb
@@ -525,9 +526,8 @@ integration('first-user provisioning PostgreSQL hardening', () => {
               scope: scope!,
               expiresAt: new Date(Date.now() + 30 * 60 * 1000),
             },
-            password: 'integration-only-password',
+            clerkUserId: `user_provisioning${randomUUID().replaceAll('-', '')}`,
             auditKey,
-            hasher: async () => 'integration-password-hash',
           }),
         ),
       ).rejects.toThrow('duplicate provisioning is refused');
@@ -546,13 +546,7 @@ integration('first-user provisioning PostgreSQL hardening', () => {
         revokedGrantCount: READ_ONLY_GRANT_PLAN.length,
         membershipDisabled: true,
       });
-      const unrelatedSessions = await adminClient!<{ revokedAt: Date | null }[]>`
-        select revoked_at as "revokedAt"
-        from auth.session
-        where id = ${unrelatedSessionId}::uuid
-      `;
-      expect(unrelatedSessions).toHaveLength(1);
-      expect(unrelatedSessions[0]?.revokedAt).toBeNull();
+      expect(fixtureSession(unrelatedSessionId).revoked).toBe(false);
       revoked = true;
 
       await expect(
@@ -565,9 +559,8 @@ integration('first-user provisioning PostgreSQL hardening', () => {
               scope: scope!,
               expiresAt: new Date(Date.now() + 30 * 60 * 1000),
             },
-            password: 'integration-only-password',
+            clerkUserId: `user_provisioning${randomUUID().replaceAll('-', '')}`,
             auditKey,
-            hasher: async () => 'integration-password-hash',
           }),
         ),
       ).rejects.toThrow('already been consumed');
@@ -589,7 +582,8 @@ integration('first-user provisioning PostgreSQL hardening', () => {
           )
           .catch(() => undefined);
       }
-      await adminClient!`delete from auth."user" where id = ${unrelatedUserId}::uuid`;
+      await adminClient!`delete from app.auth_identities where internal_user_id = ${unrelatedUserId}::uuid`;
+      await adminClient!`delete from app.users where id = ${unrelatedUserId}::uuid`;
     }
   });
 
@@ -608,9 +602,8 @@ integration('first-user provisioning PostgreSQL hardening', () => {
             scope: crossTenantScope!,
             expiresAt: new Date(Date.now() + 30 * 60 * 1000),
           },
-          password: 'integration-only-password',
+          clerkUserId: `user_provisioning${randomUUID().replaceAll('-', '')}`,
           auditKey,
-          hasher: async () => 'integration-password-hash',
         }),
       );
 
@@ -745,9 +738,8 @@ integration('first-user provisioning PostgreSQL hardening', () => {
               scope: rollbackScope!,
               expiresAt,
             },
-            password: 'integration-only-password',
+            clerkUserId: `user_provisioning${randomUUID().replaceAll('-', '')}`,
             auditKey: { keyId: 'integration-first-user', secret: 'integration-only-secret' },
-            hasher: async () => 'integration-password-hash',
           });
           const grants = await repository.listUnrevokedTemporaryGrants({
             tenantId: rollbackScope!.tenantId,
@@ -781,7 +773,7 @@ integration('first-user provisioning PostgreSQL hardening', () => {
 
       const users = await adminClient!<
         { id: string }[]
-      >`select id::text from auth."user" where email = ${email}`;
+      >`select id::text from app.users where email = ${email}`;
       expect(users).toHaveLength(0);
     },
   );

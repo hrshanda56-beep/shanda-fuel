@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
@@ -68,11 +69,12 @@ async function load<T>(url: string, signal: AbortSignal, failure: string): Promi
  * resolved for this person, so the dashboard matches the station selector.
  */
 function useCurrentContext(enabled: boolean): Scope | null {
+  const contextFetch = useContextFetch();
   const [scope, setScope] = useState<Scope | null>(null);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
-    fetch(`/api/context?${new URLSearchParams({ pathname: '/' })}`, {
+    contextFetch(`/api/context?${new URLSearchParams({ pathname: '/' })}`, {
       cache: 'no-store',
       signal: controller.signal,
     })
@@ -87,7 +89,7 @@ function useCurrentContext(enabled: boolean): Scope | null {
       )
       .catch(() => {});
     return () => controller.abort();
-  }, [enabled]);
+  }, [enabled, contextFetch]);
   return scope;
 }
 
@@ -100,62 +102,31 @@ export function TodayOverview({
   tenantId: urlTenantId,
   stationId: urlStationId,
   initialContext,
-}: Scope & { initialContext?: Scope }) {
+  initialData,
+}: Scope & { initialContext?: Scope; initialData?: DashboardInitialData }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
   const tenantId = urlTenantId ?? resolvedContext?.tenantId;
   const stationId = urlTenantId ? urlStationId : resolvedContext?.stationId;
-  const [operations, setOperations] = useState<Section<TodayOperations>>({ status: 'loading' });
-  const [customers, setCustomers] = useState<Section<{ customers: { status: string }[] }>>({
-    status: 'loading',
-  });
-  const [daily, setDaily] = useState<Section<DailyReport>>({ status: 'loading' });
+  const [operations, setOperations] = useState<Section<TodayOperations>>(
+    initialData?.operations ?? { status: 'loading' },
+  );
+  const [customers, setCustomers] = useState<Section<{ customers: readonly { status: string }[] }>>(
+    initialData?.customers ?? { status: 'loading' },
+  );
+  const [daily, setDaily] = useState<Section<DailyReport>>(
+    initialData?.daily ?? { status: 'loading' },
+  );
   const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    if (!tenantId) return;
-    const controller = new AbortController();
-    const { signal } = controller;
-    const reset = window.setTimeout(() => {
-      setOperations({ status: 'loading' });
-      setCustomers({ status: 'loading' });
-      setDaily({ status: 'loading' });
-    }, 0);
-
-    // Today's approved figures; without a station, every station this person may see.
-    const reportParams = new URLSearchParams({ tenantId });
-    if (stationId) reportParams.set('stationIds', stationId);
-    load<DailyReport>(
-      `/api/reports/daily?${reportParams}`,
-      signal,
-      'Today’s figures could not be loaded.',
-    ).then(setDaily, () => {});
-
-    if (stationId) {
-      const params = new URLSearchParams({ tenantId, stationId });
-      load<TodayOperations>(
-        `/api/forecourt/operations/overview?${params}`,
-        signal,
-        'Daily operations could not be loaded.',
-      ).then(setOperations, () => {});
-    }
-    load<{ customers: { status: string }[] }>(
-      `/api/customers/summary?${new URLSearchParams({ tenantId })}`,
-      signal,
-      'Customers could not be loaded.',
-    ).then(setCustomers, () => {});
-
-    return () => {
-      window.clearTimeout(reset);
-      controller.abort();
-    };
-  }, [tenantId, stationId, attempt]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   const [range, setRange] = useState<ChartRange>('30D');
-  const [chart, setChart] = useState<Section<{ sales: { rows: SalesRow[] } }> & { key?: string }>({
-    status: 'loading',
+  const [chart, setChart] = useState<
+    Section<{ sales: { rows: readonly SalesRow[] } }> & { key?: string }
+  >({
+    ...(initialData?.chart ?? { status: 'loading' as const }),
+    key: initialData?.key,
   });
   const [chartAttempt, setChartAttempt] = useState(0);
   const chartKey = `${tenantId ?? ''}|${stationId ?? ''}|${range}`;
@@ -163,32 +134,84 @@ export function TodayOverview({
 
   useEffect(() => {
     if (!tenantId) return;
+    if (initialData && attempt === 0) return;
+    const controller = new AbortController();
+    const reset = window.setTimeout(() => {
+      setDaily({ status: 'loading' });
+      setCustomers({ status: 'loading' });
+      setOperations({ status: 'loading' });
+    }, 0);
+    const initialWindow = chartBuckets('30D', businessToday());
+    const params = new URLSearchParams({
+      tenantId,
+      fromDate: initialWindow.fromDate,
+      toDate: initialWindow.toDate,
+    });
+    if (stationId) params.set('stationId', stationId);
+    load<{
+      daily: Section<DailyReport>;
+      customers: Section<{ customers: readonly { status: string }[] }>;
+      operations: Section<TodayOperations> | null;
+      chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
+    }>(`/api/dashboard?${params}`, controller.signal, 'Sales could not be loaded.').then(
+      (section) => {
+        if (section.status === 'ready') {
+          setDaily(section.data.daily);
+          setCustomers(section.data.customers);
+          if (section.data.operations) setOperations(section.data.operations);
+          setChart({ ...section.data.chart, key: `${tenantId}|${stationId ?? ''}|30D` });
+        } else {
+          setDaily(section);
+          setCustomers(section);
+          setOperations(section);
+          setChart({ ...section, key: `${tenantId}|${stationId ?? ''}|30D` });
+        }
+      },
+      () => {},
+    );
+    return () => {
+      window.clearTimeout(reset);
+      controller.abort();
+    };
+  }, [tenantId, stationId, attempt, initialData]);
+
+  useEffect(() => {
+    if (
+      !tenantId ||
+      (!initialData && range === '30D' && chartAttempt === 0) ||
+      (initialData?.key === chartKey && chartAttempt === 0)
+    )
+      return;
     const controller = new AbortController();
     const params = new URLSearchParams({
       tenantId,
       fromDate: rangeWindow.fromDate,
       toDate: rangeWindow.toDate,
     });
-    if (stationId) params.set('stationIds', stationId);
-    load<{ sales: { rows: SalesRow[] } }>(
-      `/api/reports/management?${params}`,
+    if (stationId) params.set('stationId', stationId);
+    void load<{ sales: { rows: readonly SalesRow[] } }>(
+      `/api/dashboard/sales?${params}`,
       controller.signal,
       'Sales could not be loaded.',
     ).then(
-      (section) => setChart({ ...section, key: chartKey }),
+      (result) => setChart({ ...result, key: chartKey }),
       () => {},
     );
     return () => controller.abort();
-  }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt]);
+  }, [tenantId, stationId, rangeWindow, chartKey, chartAttempt, initialData, range]);
 
   const customersHref = useMemo(
-    () => (tenantId ? `/customers?${new URLSearchParams({ tenantId })}` : '/customers'),
-    [tenantId],
+    () =>
+      tenantId
+        ? `/customers?${new URLSearchParams({ tenantId, ...(stationId ? { stationId } : { allStations: 'true' }) })}`
+        : '/customers',
+    [tenantId, stationId],
   );
   const reportsHref = useMemo(() => {
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
     if (stationId) params.set('stationId', stationId);
+    else params.set('allStations', 'true');
     return `/reports?${params}`;
   }, [tenantId, stationId]);
 
@@ -196,6 +219,7 @@ export function TodayOverview({
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
     if (stationId) params.set('stationId', stationId);
+    else params.set('allStations', 'true');
     return `/operations/daily?${params}`;
   }, [tenantId, stationId]);
 
@@ -221,11 +245,12 @@ export function TodayOverview({
         id: 'customers-suspended',
         title: suspended === 1 ? '1 customer is suspended' : `${suspended} customers are suspended`,
         detail: 'They cannot start new account transactions.',
-        href: `/customers?${new URLSearchParams({ tenantId })}`,
+        href: customersHref,
       });
     }
   }
-  const attentionLoading = operations.status === 'loading' || customers.status === 'loading';
+  const attentionLoading =
+    (Boolean(stationId) && operations.status === 'loading') || customers.status === 'loading';
 
   const totals = daily.status === 'ready' ? dailyTotals(daily.data.rows) : null;
   const figureValues: (string | null)[] = totals
@@ -451,7 +476,7 @@ const CASH_VARIANCE_WORDS = {
   over: 'Cash over',
 } as const;
 
-type DailyReport = { filters?: { fromDate?: string }; rows: DailyRow[] };
+type DailyReport = { filters?: { fromDate?: string }; rows: readonly DailyRow[] };
 
 type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'none';
 
@@ -604,3 +629,11 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
     </details>
   );
 }
+
+export type DashboardInitialData = {
+  key: string;
+  daily: Section<DailyReport>;
+  customers: Section<{ customers: readonly { status: string }[] }>;
+  operations: Section<TodayOperations> | null;
+  chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
+};

@@ -211,7 +211,7 @@
   }
 
   .shell-sidebar .nav-row:is(:hover, :focus-visible) .nav-label {
-    opacity: 1;
+    opacity: 0;
     transform: translate(0, -50%);
   }
 
@@ -1726,4 +1726,21 @@ button.today-period {
     ) {
     font-size: max(1rem, 16px);
   }
+}
+
+/* Portal labels sit outside the clipped, independently scrollable rail. */
+.shell-rail-tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip, 1000);
+  width: max-content;
+  max-width: min(16rem, calc(100vw - 7rem));
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  transform: translateY(-50%);
+  box-shadow: var(--shadow-md);
 }

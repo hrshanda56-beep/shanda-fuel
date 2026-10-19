@@ -1,9 +1,8 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 import { stationBusinessDayBounds } from './station-business-time';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -79,12 +78,12 @@ async function postCommand(
   key: string,
   token = 'a3c-session-token',
 ) {
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        ...clerkHeaders(signedToken, input),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -109,7 +108,7 @@ describe('A3 shift templates and multi-segment shifts through production command
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-a3-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-a3-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
@@ -158,7 +157,7 @@ describe('A3 shift templates and multi-segment shifts through production command
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A3 Segmented Tenant', 'a3-segmented-tenant') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.actor}', 'A3 Segmented Attendant A', 'a3-segmented-attendant-a@example.test'),
         ('${ids.actorB}', 'A3 Segmented Attendant B', 'a3-segmented-attendant-b@example.test'),
         ('${ids.approverActor}', 'A3 Segmented Approver', 'a3-segmented-approver@example.test')
@@ -236,13 +235,16 @@ describe('A3 shift templates and multi-segment shifts through production command
         ('${ids.priceHandover}', '${ids.priceCorrection}', '${ids.priceMidnight}') and state = 'PENDING_STATION_ACTIVATION';
       update app.selling_prices set state = 'ACTIVE' where id in
         ('${ids.priceHandover}', '${ids.priceCorrection}', '${ids.priceMidnight}') and state = 'BOUNDARIES_IN_PROGRESS';
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values
-          ('${ids.session}', '2030-01-01T00:00:00Z', 'a3c-session-token', '${ids.actor}', true, now()),
-          ('${ids.sessionB}', '2030-01-01T00:00:00Z', 'a3c-session-token-b', '${ids.actorB}', true, now()),
-          ('${ids.approverSession}', '2030-01-01T00:00:00Z', 'a3c-approver-session-token', '${ids.approverActor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(client, ids.session, 'a3c-session-token', ids.actor, true);
+    await seedClerkSession(client, ids.sessionB, 'a3c-session-token-b', ids.actorB, true);
+    await seedClerkSession(
+      client,
+      ids.approverSession,
+      'a3c-approver-session-token',
+      ids.approverActor,
+      true,
+    );
     await seedActiveStepUp(client, ids.session, ids.tenant);
     await seedActiveStepUp(client, ids.approverSession, ids.tenant);
   });

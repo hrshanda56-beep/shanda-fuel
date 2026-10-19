@@ -46,10 +46,19 @@ function categoryLabel(category: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function recognizedOperatingExpenses(report: ManagementReport): string {
+  return addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal);
+}
+
 /** Recorded expenses summed by category, largest first. */
-export function expensesByCategory(report: ManagementReport): StatementLine[] {
+export function expensesByCategory(
+  report: ManagementReport,
+  classification?: 'OPERATING' | 'FIXED_COST',
+): StatementLine[] {
   const totals = new Map<string, string>();
-  for (const row of report.expenses.rows) {
+  for (const row of report.expenses.rows.filter(
+    (expense) => !classification || expense.classification === classification,
+  )) {
     totals.set(row.category, addExact(totals.get(row.category) ?? '0', row.amount));
   }
   return [...totals.entries()]
@@ -61,12 +70,12 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
   const revenue = report.revenue.recognizedRevenue;
   const cogs = report.costing.restatedCogs;
   const gross = report.grossMargin;
-  const expenses = report.expenses.total;
-  const net = gross === null ? null : subtractExact(gross, expenses);
+  const operatingExpenses = recognizedOperatingExpenses(report);
+  const net = gross === null ? null : subtractExact(gross, operatingExpenses);
   const margin = gross === null ? null : ratioPercentage(gross, revenue);
   const notes = [
     'Revenue is recognised revenue and cost of sales is restated landed cost, both from approved records.',
-    'Expenses are those recorded for the period. Depreciation, tax and financing costs are not included.',
+    'Operating expenses and fixed costs are recognised separately. Depreciation, tax and financing costs are not included.',
   ];
   if (report.costing.unvaluedSaleCount > 0) {
     notes.unshift(
@@ -102,8 +111,19 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
       {
         heading: 'Operating expenses',
         lines: [
-          ...expensesByCategory(report),
-          { label: 'Total operating expenses', value: expenses, kind: 'subtotal' },
+          ...expensesByCategory(report, 'OPERATING'),
+          {
+            label: 'Total operating expenses',
+            value: report.expenses.operatingTotal,
+            kind: 'subtotal',
+          },
+        ],
+      },
+      {
+        heading: 'Fixed costs',
+        lines: [
+          ...expensesByCategory(report, 'FIXED_COST'),
+          { label: 'Total fixed costs', value: report.expenses.fixedCostTotal, kind: 'subtotal' },
         ],
       },
       { lines: [{ label: 'Net operating result', value: net, kind: 'total' }] },
@@ -353,7 +373,7 @@ export function buildIncomeStatement(
   const net = (report: ManagementReport | null) =>
     report === null || report.grossMargin === null
       ? null
-      : subtractExact(report.grossMargin, report.expenses.total);
+      : subtractExact(report.grossMargin, recognizedOperatingExpenses(report));
   const margin =
     current.grossMargin === null
       ? null
@@ -397,8 +417,8 @@ export function buildIncomeStatement(
       id: 'expenses',
       label: 'Operating expenses',
       kind: 'section',
-      current: current.expenses.total,
-      previous: previous?.expenses.total ?? null,
+      current: recognizedOperatingExpenses(current),
+      previous: previous ? recognizedOperatingExpenses(previous) : null,
     },
     ...labels.map((label): IncomeRow => ({
       id: `expense-${label}`,

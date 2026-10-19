@@ -132,7 +132,7 @@ async function loadDailyOperationsContext(
     transaction.execute<{ id: string; name: string; email: string }>(sql`
       select m.id, u.name, u.email
       from app.memberships m
-      join auth."user" u on u.id = m.identity_id
+      join app.users u on u.id = m.identity_id
       join app.membership_role_assignments a
         on a.tenant_id = m.tenant_id and a.membership_id = m.id
       where m.tenant_id = ${context.tenantId}

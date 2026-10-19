@@ -1,11 +1,10 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as commandPost } from '../../src/app/api/settlements/commands/route';
 import { GET as summaryGet } from '../../src/app/api/settlements/summary/route';
 import { GET as unmatchedGet } from '../../src/app/api/settlements/unmatched/route';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -46,7 +45,7 @@ const ids = {
 let client: Sql;
 
 async function signedCookie(token: string): Promise<string> {
-  return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return token;
 }
 
 async function command(input: Record<string, unknown>, key: string, token = 'a9-session-token') {
@@ -54,7 +53,7 @@ async function command(input: Record<string, unknown>, key: string, token = 'a9-
     new Request('http://127.0.0.1:3000/api/settlements/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie(token)}`,
+        ...clerkHeaders(await signedCookie(token)),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -73,7 +72,7 @@ async function openBusinessDay(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie(token)}`,
+        ...clerkHeaders(await signedCookie(token)),
         'content-type': 'application/json',
         'idempotency-key': `a9-open-business-day-${businessDayId}`,
       },
@@ -99,7 +98,7 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-a9-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-a9-secret';
     client = postgres(databaseUrl!, { max: 8, prepare: false });
@@ -108,7 +107,7 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
         ('${ids.tenant}', 'A9 Provider Tenant', 'a9-provider-tenant'),
         ('${ids.otherTenant}', 'A9 Other Tenant', 'a9-other-tenant')
       on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.actor}', 'A9 Finance', 'a9-finance@example.test'),
         ('${ids.otherActor}', 'A9 Other Finance', 'a9-other-finance@example.test'),
         ('${ids.supervisorActor}', 'A9 Supervisor', 'a9-supervisor@example.test')
@@ -136,12 +135,6 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
         ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.otherStationSameTenant}'),
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}')
       on conflict do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values
-        ('${ids.session}', '2030-01-01T00:00:00Z', 'a9-session-token', '${ids.actor}', true, now()),
-        ('${ids.otherSession}', '2030-01-01T00:00:00Z', 'a9-other-session-token', '${ids.otherActor}', true, now()),
-        ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', 'a9-supervisor-session-token', '${ids.supervisorActor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
       values
         ('${ids.day}', '${ids.tenant}', '${ids.station}', '2026-09-20', 'NOT_STARTED'),
@@ -174,6 +167,21 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
          set state = 'APPROVED', approved_by = '${ids.otherMembership}', approved_at = now(), version = version + 1
        where id = '${ids.otherReconciliation}' and state = 'SUBMITTED';
     `);
+    await seedClerkSession(client, ids.session, 'a9-session-token', ids.actor, true);
+    await seedClerkSession(
+      client,
+      ids.otherSession,
+      'a9-other-session-token',
+      ids.otherActor,
+      true,
+    );
+    await seedClerkSession(
+      client,
+      ids.supervisorSession,
+      'a9-supervisor-session-token',
+      ids.supervisorActor,
+      true,
+    );
     await seedActiveStepUp(client, ids.session, ids.tenant);
     await seedActiveStepUp(client, ids.otherSession, ids.otherTenant);
     await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
@@ -285,7 +293,7 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
         `http://127.0.0.1:3000/api/settlements/summary?tenantId=${ids.tenant}&stationId=${ids.station}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie('a9-session-token')}`,
+            ...clerkHeaders(await signedCookie('a9-session-token')),
           },
         },
       ),
@@ -313,7 +321,7 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
         `http://127.0.0.1:3000/api/settlements/unmatched?tenantId=${ids.tenant}&stationId=${ids.station}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie('a9-session-token')}`,
+            ...clerkHeaders(await signedCookie('a9-session-token')),
           },
         },
       ),

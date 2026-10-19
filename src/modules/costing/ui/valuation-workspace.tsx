@@ -16,6 +16,7 @@ import {
 } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import { TankOverview, type InventoryReport } from '@/modules/inventory/ui/tank-overview';
 import {
   InventoryOperationalActions,
   type InventoryContext,
@@ -69,6 +70,7 @@ type Revaluation = {
 };
 
 type ValuationResponse = {
+  tankReport?: InventoryReport;
   capabilities: Capabilities;
   streams: Stream[];
   revaluations: Revaluation[];
@@ -168,7 +170,7 @@ function knownError(error: string, message: string) {
       title: 'Check the revaluation details',
       message: message || 'Review the amount, currency, and reason before retrying.',
     };
-  if (message.includes('BETTER_AUTH_SECRET'))
+  if (message.includes('CLERK_SECRET_KEY'))
     return {
       title: 'Authentication is unavailable',
       message:
@@ -200,13 +202,15 @@ function Status({ status }: { status: string }) {
 export function ValuationOverview({
   context,
   contextHref,
+  initialData,
 }: {
   context: InventoryContext;
   contextHref: string;
+  initialData?: ValuationResponse;
 }) {
-  const [data, setData] = useState<ValuationResponse | null>(null);
+  const [data, setData] = useState<ValuationResponse | null>(initialData ?? null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
   const [refreshing, setRefreshing] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -230,9 +234,10 @@ export function ValuationOverview({
   }, [context]);
 
   useEffect(() => {
+    if (initialData) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, initialData]);
   if (loading) return <LoadingState label="Loading valuation streams" />;
   if (error?.code === 'FORBIDDEN')
     return <AccessDeniedState message="You don’t have access to stock value for this station." />;
@@ -255,6 +260,14 @@ export function ValuationOverview({
   const unvalued = data.streams.filter((stream) => stream.valuationStatus === 'UNVALUED');
   return (
     <div className="valuation-workspace valuation-overview">
+      {data.tankReport ? (
+        <TankOverview
+          tenantId={context.tenantId}
+          stationId={context.stationId}
+          contextHref={contextHref}
+          report={data.tankReport}
+        />
+      ) : null}
       <div className="page-heading">
         <div>
           <p>Cost streams and their valuation.</p>
@@ -580,17 +593,19 @@ function RequestRevaluationDialog({
 export function ValuationStreamDetail({
   context,
   contextHref,
+  initialData,
   tankId,
   productId,
 }: {
   context: InventoryContext;
   contextHref: string;
+  initialData?: ValuationResponse;
   tankId: string;
   productId: string;
 }) {
-  const [data, setData] = useState<ValuationResponse | null>(null);
+  const [data, setData] = useState<ValuationResponse | null>(initialData ?? null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -610,9 +625,10 @@ export function ValuationStreamDetail({
     }
   }, [context, productId, tankId]);
   useEffect(() => {
+    if (initialData) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, initialData]);
   if (loading) return <LoadingState label="Loading valuation stream" />;
   if (error?.code === 'FORBIDDEN') return <AccessDeniedState />;
   if (error) {
@@ -805,15 +821,17 @@ export function ValuationStreamDetail({
 export function RevaluationDetail({
   context,
   contextHref,
+  initialData,
   revaluationId,
 }: {
   context: InventoryContext;
   contextHref: string;
+  initialData?: RevaluationResponse;
   revaluationId: string;
 }) {
-  const [data, setData] = useState<RevaluationResponse | null>(null);
+  const [data, setData] = useState<RevaluationResponse | null>(initialData ?? null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
   const [action, setAction] = useState<'approve' | 'post' | null>(null);
   const [confirmPost, setConfirmPost] = useState(false);
   const [actionError, setActionError] = useState<{ code: string; message: string } | null>(null);
@@ -837,9 +855,10 @@ export function RevaluationDetail({
     }
   }, [context, revaluationId]);
   useEffect(() => {
+    if (initialData) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, initialData]);
   const execute = async (
     commandType: 'ApproveInventoryCostRevaluation' | 'PostInventoryCostRevaluation',
   ) => {

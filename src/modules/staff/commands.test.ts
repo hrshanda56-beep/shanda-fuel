@@ -26,7 +26,12 @@ vi.mock('../../platform/auth/provider', () => ({
   revokeClerkUserSessions: vi.fn(),
 }));
 
-import { deactivateStaffMemberFromRequest } from './commands';
+import {
+  deactivateStaffMemberFromRequest,
+  signUpFromInvitation,
+  generateManualStaffActivationFromRequest,
+} from './commands';
+import { getDatabase } from '../../platform/db';
 
 const tenantId = '10000000-0000-4000-8000-000000000001';
 const ownerMembershipId = '10000000-0000-4000-8000-000000000021';
@@ -46,6 +51,8 @@ const authority = {
       stepUpLevel: 2,
       stepUpExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
       stepUpTenantId: tenantId,
+      stepUpAction: 'DEACTIVATE_STAFF_MEMBER',
+      strongAuthenticationMethod: 'clerk-mfa',
     },
   },
   membership: {
@@ -92,6 +99,88 @@ beforeEach(() => {
 });
 
 describe('Clerk staff deactivation revocation contract', () => {
+  it('regenerates a code for the existing staff number and appends an audit event', async () => {
+    transactionExecute.mockReset();
+    transactionExecute
+      .mockResolvedValueOnce([
+        {
+          id: targetMembershipId,
+          status: 'PENDING',
+          delivery_method: 'MANUAL',
+          staff_number_registry_id: ownerMembershipId,
+          staff_number: 'SF-12345678',
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const result = await generateManualStaffActivationFromRequest(request, {
+      commandType: 'GenerateManualStaffActivation',
+      tenantId,
+      invitationId: targetMembershipId,
+    });
+    expect(result.staffNumber).toBe('SF-12345678');
+    expect(result.activationCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(transactionExecute).toHaveBeenCalledTimes(2);
+    expect(appendSecurityEvent).toHaveBeenCalled();
+  });
+  it('rejects invalid signup input before database access', async () => {
+    await expect(signUpFromInvitation({ token: 'unused', password: 'short' })).rejects.toThrow();
+    expect(transactionExecute).not.toHaveBeenCalled();
+  });
+
+  it('creates an invited Clerk account and registers its mapping', async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          invited_email: 'invited@example.test',
+          invited_name: 'Invited user',
+          existing_identity: false,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    vi.mocked(getDatabase).mockReturnValue({
+      transaction: async (work: Function) => work({ execute }),
+    } as never);
+    const createClerkIdentity = vi.fn().mockResolvedValue({ providerUserId: 'user_invited' });
+    await expect(
+      signUpFromInvitation(
+        { token: 'a'.repeat(43), password: 'valid-fixture-password' },
+        { createClerkIdentity },
+      ),
+    ).resolves.toEqual({ email: 'invited@example.test' });
+    expect(createClerkIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'invited@example.test' }),
+    );
+    expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('cleans up the provider identity if database registration fails', async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          invited_email: 'invited@example.test',
+          invited_name: 'Invited user',
+          existing_identity: false,
+        },
+      ])
+      .mockRejectedValueOnce(new Error('registration failed'));
+    vi.mocked(getDatabase).mockReturnValue({
+      transaction: async (work: Function) => work({ execute }),
+    } as never);
+    const createClerkIdentity = vi.fn().mockResolvedValue({ providerUserId: 'user_invited' });
+    const deleteClerkIdentity = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      signUpFromInvitation(
+        { token: 'a'.repeat(43), password: 'valid-fixture-password' },
+        { createClerkIdentity, deleteClerkIdentity },
+      ),
+    ).rejects.toMatchObject({ code: 'INTERNAL_ERROR' });
+    expect(deleteClerkIdentity).toHaveBeenCalledWith('user_invited');
+  });
+
   it('returns REVOKED only after complete provider revocation', async () => {
     setupTransaction('ACTIVE', 'clerk_user_redacted');
     const revokeClerkSessions = vi.fn().mockResolvedValue({
@@ -102,7 +191,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({
@@ -118,7 +206,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({
@@ -134,7 +221,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({
@@ -153,7 +239,6 @@ describe('Clerk staff deactivation revocation contract', () => {
 
     await expect(
       deactivateStaffMemberFromRequest(request, body(), {
-        getAuthProviderName: () => 'CLERK',
         revokeClerkSessions,
       }),
     ).resolves.toMatchObject({

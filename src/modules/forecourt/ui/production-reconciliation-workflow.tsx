@@ -15,6 +15,8 @@ export type ProductionReconciliationContext = Readonly<{
 type RecordData = {
   state: string;
   version: number;
+  /** The signed-in person submitted this day and someone else can approve it. */
+  approvalBlocked?: boolean;
   business_date: string;
   attendants: Array<{ attendantId: string }>;
   readings: Array<{
@@ -446,16 +448,23 @@ export function ProductionReconciliationWorkflow({
               >
                 Return for correction
               </Button>
-              <Button
-                variant="primary"
-                onClick={() => void transition('ApproveProductionReconciliation')}
-                disabled={busy}
-              >
-                Approve production reconciliation
-              </Button>
+              {record.approvalBlocked ? null : (
+                <Button
+                  variant="primary"
+                  onClick={() => void transition('ApproveProductionReconciliation')}
+                  disabled={busy}
+                >
+                  Approve production reconciliation
+                </Button>
+              )}
             </>
           ) : null}
         </div>
+        {role === 'MANAGEMENT' && record.state === 'SUBMITTED' && record.approvalBlocked ? (
+          <p className="state" role="status">
+            You submitted this day, so someone else needs to approve it.
+          </p>
+        ) : null}
         {role === 'MANAGEMENT' && record.state === 'SUBMITTED' ? (
           <Field id="production-return-reason" label="Return reason">
             <textarea

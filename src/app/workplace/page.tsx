@@ -6,7 +6,6 @@ import { requestFromHeaders } from '@/design-system/navigation-server';
 import { readPersistedContext, resolveCurrentContext } from '@/modules/context/server';
 import { validateRequestedContext } from '@/modules/context/server';
 import { AppError } from '@/platform/errors';
-import { getAuthProviderName } from '@/platform/auth/provider';
 
 import { planWorkplaceEntry } from '@/design-system/entry/entry-logic';
 import { EntryShell } from '@/design-system/entry/entry-shell';
@@ -27,30 +26,35 @@ export default async function WorkplacePage() {
   try {
     const resolution = await resolveCurrentContext(request);
     const remembered = readPersistedContext(request).selection;
-    let rememberedIsValid = false;
+    let rememberedOrganisationId: string | undefined;
     if (remembered) {
       try {
-        await validateRequestedContext(request, remembered, { pathname: '/' });
-        rememberedIsValid = true;
+        const validatedRemembered = await validateRequestedContext(request, remembered, {
+          pathname: '/',
+        });
+        rememberedOrganisationId = validatedRemembered.organisationId;
       } catch {
-        rememberedIsValid = false;
+        rememberedOrganisationId = undefined;
       }
     }
-    plan = planWorkplaceEntry(resolution.available, rememberedIsValid);
+    plan = planWorkplaceEntry(resolution.available, rememberedOrganisationId);
   } catch (error) {
     if (error instanceof AppError && error.code === 'UNAUTHENTICATED') redirect('/login');
     throw error;
   }
 
   if (plan.kind === 'continue') redirect('/');
-  const provider = getAuthProviderName();
 
   return (
     <EntryShell>
       {plan.kind === 'none' ? (
-        <NoWorkplace provider={provider} />
+        <NoWorkplace />
       ) : (
-        <WorkplacePicker options={plan.options} />
+        <WorkplacePicker
+          options={plan.options}
+          allStationsOptions={plan.allStationsOptions}
+          defaultAllStationsOrganisationId={plan.defaultAllStationsOrganisationId}
+        />
       )}
     </EntryShell>
   );

@@ -13,6 +13,18 @@ import {
   type SupplierDocumentType,
 } from './domain';
 import type { SupplierCommandContext, SupplierTransaction } from './application';
+import { assertHeaderMatchesLines, type InvoiceLineInput } from './purchasing-policy';
+import {
+  assertDeliveryUsable,
+  evaluateDocumentVariance,
+  findCoverageConflict,
+  loadPurchasingPolicy,
+  lockDeliveries,
+  prepareSubmission,
+  uniqueViolationOf,
+  type DeliveryLinkInput,
+  type PostedRef,
+} from './purchasing-persistence';
 
 type DocumentRow = {
   id: string;
@@ -27,6 +39,7 @@ type DocumentRow = {
   amount: string;
   state: string;
   version: number | string;
+  submitted_by: string | null;
 };
 
 type PaymentRow = {
@@ -59,7 +72,7 @@ async function assertSupplierAndEntity(
       and s.status = 'ACTIVE'
     limit 1
   `);
-  if (!rows[0]) throw new AppError('NOT_FOUND', 'The supplier was not found or is inactive');
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'That supplier is no longer available');
 }
 
 export async function createSupplierInTransaction(
@@ -92,13 +105,12 @@ export async function submitSupplierDocumentInTransaction(
     documentType: SupplierDocumentType;
     referenceNumber: string;
     documentDate: string;
-    dueDate?: string;
+    dueDate?: string | undefined;
     amount: string;
-    deliveryReferences?: readonly {
-      stationId: string;
-      deliveryId: string;
-      allocationId?: string;
-    }[];
+    netAmount?: string | undefined;
+    vatAmount?: string | undefined;
+    lines?: readonly InvoiceLineInput[] | undefined;
+    deliveryReferences?: readonly DeliveryLinkInput[] | undefined;
   },
 ) {
   await assertSupplierAndEntity(transaction, context, input.supplierId);
@@ -109,38 +121,82 @@ export async function submitSupplierDocumentInTransaction(
     documentType: input.documentType,
     referenceNumber: input.referenceNumber,
     documentDate: input.documentDate,
-    dueDate: input.dueDate,
+    ...(input.dueDate === undefined ? {} : { dueDate: input.dueDate }),
     currency: 'USD',
     amount: input.amount,
     deliveryReferences: (input.deliveryReferences ?? []).map((reference) => ({
       tenantId: context.tenantId,
-      ...reference,
+      stationId: reference.stationId,
+      deliveryId: reference.deliveryId,
+      ...(reference.allocationId === undefined ? {} : { allocationId: reference.allocationId }),
     })),
   });
+  if ((input.lines ?? []).length === 0 && (input.netAmount || input.vatAmount)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Net and VAT amounts can only be checked against invoice lines. Add the lines or remove the net and VAT amounts.',
+    );
+  }
+  const prepared = await prepareSubmission(transaction, context, input, (totals) =>
+    assertHeaderMatchesLines(
+      { amount: input.amount, netAmount: input.netAmount, vatAmount: input.vatAmount },
+      totals,
+    ),
+  );
+  // Reference duplicate control applies to non-reversed documents only (migration 0038), so a
+  // corrected invoice can reuse the reference of one that was reversed.
+  const existing = await transaction.execute<{ id: string }>(sql`
+    select id from app.supplier_documents
+    where tenant_id = ${context.tenantId} and supplier_id = ${input.supplierId}
+      and reference_number = ${validated.referenceNumber} and state <> 'REVERSED'
+    limit 1
+  `);
+  if (existing[0]) {
+    throw new AppError(
+      'CONFLICT',
+      `This supplier already has a document with reference ${validated.referenceNumber}. Use a different reference, or reverse the earlier document first if it was entered wrongly.`,
+    );
+  }
   const id = randomUUID();
-  const deliveryReferences = validated.deliveryReferences ?? [];
+  const actor = context.authority.membership.membershipId;
   await transaction.execute(sql`
     insert into app.supplier_documents (
       id, tenant_id, legal_entity_id, supplier_id, document_type,
       reference_number, document_date, due_date, currency, amount,
+      net_amount, vat_amount, vat_mode,
       state, version, created_by, submitted_by, submitted_at
     ) values (
       ${id}, ${context.tenantId}, ${context.legalEntityId}, ${input.supplierId},
       ${validated.documentType}, ${validated.referenceNumber}, ${validated.documentDate},
       ${validated.dueDate ?? null}, 'USD', ${validated.amount.amount.toString()},
-      'SUBMITTED', 0, ${context.authority.membership.membershipId},
-      ${context.authority.membership.membershipId}, now()
+      ${prepared.totals?.net ?? null}, ${prepared.totals?.vat ?? null},
+      ${prepared.totals ? prepared.policy.vatMode : null},
+      'SUBMITTED', 0, ${actor}, ${actor}, now()
     )
   `);
-  for (const reference of deliveryReferences) {
+  for (const reference of prepared.refs) {
     await transaction.execute(sql`
       insert into app.supplier_document_delivery_refs (
         id, tenant_id, legal_entity_id, station_id, supplier_document_id,
-        delivery_id, allocation_id, linked_by
+        delivery_id, allocation_id, linked_by, document_type,
+        invoiced_quantity_litres, invoiced_amount
       ) values (
-        ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${reference.stationId},
-        ${id}, ${reference.deliveryId}, ${reference.allocationId ?? null},
-        ${context.authority.membership.membershipId}
+        ${reference.id}, ${context.tenantId}, ${context.legalEntityId}, ${reference.stationId},
+        ${id}, ${reference.deliveryId}, ${reference.allocationId}, ${actor},
+        ${validated.documentType}, ${reference.invoicedQuantityLitres}, ${reference.invoicedAmount}
+      )
+    `);
+  }
+  for (const line of prepared.lines) {
+    await transaction.execute(sql`
+      insert into app.supplier_document_lines (
+        id, tenant_id, legal_entity_id, supplier_document_id, line_no, product_id, description,
+        quantity, unit_price, net_amount, vat_rate, vat_amount, gross_amount, delivery_ref_id
+      ) values (
+        ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${id}, ${line.lineNo},
+        ${line.productId}, ${line.description}, ${line.quantity}, ${line.unitPrice},
+        ${line.netAmount}, ${line.vatRate}, ${line.vatAmount}, ${line.grossAmount},
+        ${prepared.lineRefIds.get(line.lineNo) ?? null}
       )
     `);
   }
@@ -148,17 +204,41 @@ export async function submitSupplierDocumentInTransaction(
     documentId: id,
     state: 'SUBMITTED' as const,
     amount: validated.amount.amount.toString(),
+    netAmount: prepared.totals?.net ?? null,
+    vatAmount: prepared.totals?.vat ?? null,
+    vatMode: prepared.totals ? prepared.policy.vatMode : null,
+    lineCount: prepared.lines.length,
   };
 }
 
 export async function postSupplierDocumentInTransaction(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,
-  input: { documentId: string; expectedVersion: number },
+  input: {
+    documentId: string;
+    expectedVersion: number;
+    varianceApprovalReason?: string | undefined;
+  },
 ) {
+  // Fixed lock order (ADR-018 D6): referenced deliveries by id, then the document.
+  const refs = await transaction.execute<PostedRef & { allocation_quantity: string | null }>(sql`
+    select r.id, r.station_id, r.delivery_id, r.allocation_id, r.document_type,
+           r.invoiced_quantity_litres::text, r.invoiced_amount::text,
+           a.quantity_litres::text as allocation_quantity
+    from app.supplier_document_delivery_refs r
+    left join app.fuel_delivery_allocations a
+      on a.tenant_id = r.tenant_id and a.id = r.allocation_id
+    where r.tenant_id = ${context.tenantId} and r.supplier_document_id = ${input.documentId}
+    order by r.delivery_id, r.id
+  `);
+  const deliveries = await lockDeliveries(
+    transaction,
+    context.tenantId,
+    refs.map((ref) => ref.delivery_id),
+  );
   const rows = await transaction.execute<DocumentRow>(sql`
     select id, tenant_id, legal_entity_id, supplier_id, document_type, reference_number,
-           document_date, due_date, currency, amount, state, version
+           document_date, due_date, currency, amount, state, version, submitted_by
     from app.supplier_documents
     where tenant_id = ${context.tenantId}
       and legal_entity_id = ${context.legalEntityId}
@@ -168,19 +248,136 @@ export async function postSupplierDocumentInTransaction(
   const document = rows[0];
   if (!document) throw new AppError('NOT_FOUND', 'The supplier document was not found');
   if (Number(document.version) !== input.expectedVersion) {
-    throw new AppError('CONFLICT', 'The supplier document is stale', {
-      expectedVersion: input.expectedVersion,
-      actualVersion: Number(document.version),
-    });
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this supplier document. Refresh and try again.',
+      {
+        expectedVersion: input.expectedVersion,
+        actualVersion: Number(document.version),
+      },
+    );
   }
   assertSupplierDocumentTransition(document.state as never, 'POSTED');
+
+  const labels = new Map<string, string>();
+  for (const ref of refs) {
+    const delivery = assertDeliveryUsable(deliveries.get(ref.delivery_id), {
+      supplierId: document.supplier_id,
+      legalEntityId: document.legal_entity_id,
+      stationId: ref.station_id,
+    });
+    labels.set(delivery.id, delivery.delivery_note_number);
+  }
+  if (document.document_type === 'INVOICE') {
+    const conflict = await findCoverageConflict(transaction, {
+      tenantId: context.tenantId,
+      excludeDocumentId: document.id,
+      links: refs.map((ref) => ({ deliveryId: ref.delivery_id, allocationId: ref.allocation_id })),
+      deliveryLabels: labels,
+    });
+    if (conflict) throw conflict;
+  }
+
+  // Defence in depth: the lines (when present) must still add up to the payable header.
+  const lines = await transaction.execute<{
+    delivery_ref_id: string | null;
+    quantity: string;
+    net_amount: string;
+    gross_amount: string;
+  }>(sql`
+    select delivery_ref_id, quantity::text, net_amount::text, gross_amount::text
+    from app.supplier_document_lines
+    where tenant_id = ${context.tenantId} and supplier_document_id = ${document.id}
+  `);
+  if (lines.length > 0) {
+    const gross = lines.reduce(
+      (sum, line) => sum.add(decimal(line.gross_amount)),
+      new ExactDecimal('0'),
+    );
+    if (!gross.equals(decimal(document.amount))) {
+      throw new AppError(
+        'INVARIANT_VIOLATION',
+        'This invoice no longer agrees with its lines, so it cannot be posted. Submit a corrected invoice.',
+      );
+    }
+  }
+
+  // Variance against the customizable policy (invoices only; a credit note is a reduction).
+  let varianceStatus: 'NOT_EVALUATED' | 'WITHIN_TOLERANCE' | 'FLAGGED' | 'APPROVED' =
+    'NOT_EVALUATED';
+  let varianceSnapshot: unknown = null;
+  let approvalReason: string | null = null;
+  if (document.document_type === 'INVOICE' && refs.length > 0) {
+    const policy = await loadPurchasingPolicy(transaction, context.tenantId, document.supplier_id);
+    const evaluated = evaluateDocumentVariance({ policy, refs, deliveries, lines });
+    const exceeded = evaluated.some((item) => item.result.invoiceExceeded);
+    varianceSnapshot = {
+      policySource: policy.source,
+      action: policy.toleranceAction,
+      deliveries: evaluated.map((item) => ({
+        deliveryId: item.deliveryId,
+        deliveryNoteNumber: item.deliveryNoteNumber,
+        findings: item.result.findings,
+        skipped: item.result.skipped,
+      })),
+    };
+    if (!exceeded) {
+      varianceStatus = 'WITHIN_TOLERANCE';
+    } else if (policy.toleranceAction === 'FLAG') {
+      varianceStatus = 'FLAGGED';
+    } else {
+      const reason = input.varianceApprovalReason?.trim();
+      const messages = evaluated
+        .flatMap((item) => item.result.findings)
+        .filter((finding) => finding.severity === 'EXCEPTION')
+        .map((finding) => finding.message);
+      if (!reason) {
+        throw new AppError(
+          'CONFLICT',
+          `This invoice is outside your purchasing tolerances and needs approval before it can be posted. ${messages.join(' ')} Review the differences, then post again with an approval reason.`,
+          { varianceApprovalRequired: true, findings: messages },
+        );
+      }
+      if (document.submitted_by === context.authority.membership.membershipId) {
+        throw new AppError(
+          'FORBIDDEN',
+          'This invoice is outside your purchasing tolerances. Someone other than the person who submitted it must approve and post it.',
+          { varianceApprovalRequired: true },
+        );
+      }
+      varianceStatus = 'APPROVED';
+      approvalReason = reason;
+    }
+  }
+
   await transaction.execute(sql`
     update app.supplier_documents
     set state = 'POSTED', posted_by = ${context.authority.membership.membershipId},
-        posted_at = now(), version = version + 1, updated_at = now()
+        posted_at = now(), version = version + 1, updated_at = now(),
+        variance_status = ${varianceStatus},
+        variance_snapshot = ${varianceSnapshot === null ? null : JSON.stringify(varianceSnapshot)}::jsonb,
+        variance_approval_reason = ${approvalReason},
+        variance_approved_by = ${approvalReason ? context.authority.membership.membershipId : null}
     where tenant_id = ${context.tenantId} and id = ${document.id}
       and version = ${input.expectedVersion}
   `);
+  if (refs.length > 0) {
+    try {
+      await transaction.execute(sql`
+        update app.supplier_document_delivery_refs
+        set active = true
+        where tenant_id = ${context.tenantId} and supplier_document_id = ${document.id}
+      `);
+    } catch (error) {
+      if (uniqueViolationOf(error) !== null) {
+        throw new AppError(
+          'CONFLICT',
+          'Another invoice was posted for the same delivery a moment ago. A delivery can only be invoiced once; refresh and review.',
+        );
+      }
+      throw error;
+    }
+  }
   await transaction.execute(sql`
     insert into app.supplier_account_movements (
       id, tenant_id, legal_entity_id, supplier_id, movement_type, amount, currency,
@@ -191,7 +388,12 @@ export async function postSupplierDocumentInTransaction(
       ${document.document_date}, ${context.authority.membership.membershipId}
     )
   `);
-  return { documentId: document.id, state: 'POSTED' as const, version: input.expectedVersion + 1 };
+  return {
+    documentId: document.id,
+    state: 'POSTED' as const,
+    version: input.expectedVersion + 1,
+    varianceStatus,
+  };
 }
 
 export async function reverseSupplierDocumentInTransaction(
@@ -203,7 +405,7 @@ export async function reverseSupplierDocumentInTransaction(
     throw new AppError('VALIDATION_FAILED', 'A reversal reason is required');
   const rows = await transaction.execute<DocumentRow>(sql`
     select id, tenant_id, legal_entity_id, supplier_id, document_type, reference_number,
-           document_date, due_date, currency, amount, state, version
+           document_date, due_date, currency, amount, state, version, submitted_by
     from app.supplier_documents
     where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
       and id = ${input.documentId}
@@ -212,7 +414,10 @@ export async function reverseSupplierDocumentInTransaction(
   const document = rows[0];
   if (!document) throw new AppError('NOT_FOUND', 'The supplier document was not found');
   if (Number(document.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The supplier document is stale');
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this supplier document. Refresh and try again.',
+    );
   if (document.document_type !== 'INVOICE') {
     throw new AppError(
       'CONFLICT',
@@ -233,6 +438,12 @@ export async function reverseSupplierDocumentInTransaction(
         version = version + 1, updated_at = now()
     where tenant_id = ${context.tenantId} and id = ${document.id}
       and version = ${input.expectedVersion}
+  `);
+  // Reversal reopens the exposure: the delivery links stop covering their deliveries.
+  await transaction.execute(sql`
+    update app.supplier_document_delivery_refs
+    set active = false, released_at = now()
+    where tenant_id = ${context.tenantId} and supplier_document_id = ${document.id} and active
   `);
   await transaction.execute(sql`
     insert into app.supplier_account_movements (
@@ -333,7 +544,10 @@ export async function postSupplierPaymentInTransaction(
   const payment = rows[0];
   if (!payment) throw new AppError('NOT_FOUND', 'The supplier payment was not found');
   if (Number(payment.version) !== input.expectedVersion) {
-    throw new AppError('CONFLICT', 'The supplier payment is stale');
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this supplier payment. Refresh and try again.',
+    );
   }
   assertSupplierPaymentTransition(payment.state as never, 'POSTED');
   await transaction.execute(sql`
@@ -376,7 +590,10 @@ export async function allocateSupplierPaymentInTransaction(
   const payment = paymentRows[0];
   if (!payment) throw new AppError('NOT_FOUND', 'The supplier payment was not found');
   if (Number(payment.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The supplier payment is stale');
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this supplier payment. Refresh and try again.',
+    );
   const ids = [...new Set(input.allocations.map((item) => item.documentId))].sort();
   if (ids.length !== input.allocations.length)
     throw new AppError('CONFLICT', 'Each document may appear once per allocation command');
@@ -475,7 +692,10 @@ export async function reverseSupplierPaymentInTransaction(
   const payment = rows[0];
   if (!payment) throw new AppError('NOT_FOUND', 'The supplier payment was not found');
   if (Number(payment.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The supplier payment is stale');
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this supplier payment. Refresh and try again.',
+    );
   assertSupplierPaymentTransition(payment.state as never, 'REVERSED');
   const original = await transaction.execute<{ id: string }>(sql`
     select id from app.supplier_account_movements

@@ -16,11 +16,9 @@ export const TOOL_NAME = 'first-production-user-provisioning';
 export const PROVISIONING_REASON = TOOL_NAME;
 export const ACCEPTED_PROVISIONING_DB_ROLE = 'first_user_provisioner';
 export const MAX_GRANT_TTL_MS = 2 * 60 * 60 * 1000;
-export const CREDENTIAL_PROVIDER_ID = 'credential';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_MIN_LENGTH = 12;
 
 export type ReadOnlyGrantScope = 'TENANT' | 'LEGAL_ENTITY' | 'STATION';
 
@@ -72,13 +70,7 @@ export type IdentitySnapshot = Readonly<{
   id: string;
   name: string;
   email: string;
-  accounts: readonly {
-    id: string;
-    accountId: string;
-    providerId: string;
-    userId: string;
-    hasPassword: boolean;
-  }[];
+  providerIdentities: readonly { provider: string; providerUserId: string }[];
   memberships: readonly {
     id: string;
     tenantId: string;
@@ -120,7 +112,8 @@ export type RevokeResult = Readonly<{
   userId: string;
   membershipId: string;
   revokedGrantCount: number;
-  revokedSessionCount: number;
+  /** Local application assurance rows only; Clerk sessions are provider-owned. */
+  revokedAssuranceCount: number;
   membershipDisabled: boolean;
   auditEventId?: string;
 }>;
@@ -133,12 +126,7 @@ export type ProvisioningRepository = Readonly<{
   listPermissionDefinitions: () => Promise<readonly string[]>;
   setTenantContext: (scope: ScopeIds & { actorId: string; membershipId: string }) => Promise<void>;
   insertUser: (input: { id: string; name: string; email: string }) => Promise<void>;
-  insertCredentialAccount: (input: {
-    userId: string;
-    accountId: string;
-    providerId: string;
-    passwordHash: string;
-  }) => Promise<void>;
+  insertClerkIdentity: (input: { userId: string; clerkUserId: string }) => Promise<void>;
   insertMembership: (input: { id: string; tenantId: string; identityId: string }) => Promise<void>;
   insertGrant: (input: {
     tenantId: string;
@@ -162,7 +150,7 @@ export type ProvisioningRepository = Readonly<{
     grantIds: readonly string[];
     reason: string;
   }) => Promise<number>;
-  revokeSessions: (userId: string) => Promise<number>;
+  revokeAssurance: (userId: string) => Promise<number>;
   disableMembership: (input: {
     tenantId: string;
     membershipId: string;
@@ -177,7 +165,7 @@ export type ProvisioningRepository = Readonly<{
     stationId: string;
     email: string;
     displayName: string;
-    passwordHash: string;
+    clerkUserId: string;
     expiresAt: Date;
     initiatedEvent: SignedSecurityEvent;
     completedEvent: SignedSecurityEvent;
@@ -192,7 +180,7 @@ export type ProvisioningRepository = Readonly<{
     event: SignedSecurityEvent;
   }) => Promise<{
     revokedGrantCount: number;
-    revokedSessionCount: number;
+    revokedAssuranceCount: number;
     membershipDisabled: boolean;
   }>;
 }>;
@@ -218,11 +206,6 @@ export class ProvisioningError extends Error {
 export class DuplicateProvisioningError extends ProvisioningError {}
 export class ScopeValidationError extends ProvisioningError {}
 
-async function defaultPasswordHasher(password: string): Promise<string> {
-  const { hashPassword } = await import('better-auth/crypto');
-  return hashPassword(password);
-}
-
 function assertUuid(name: string, value: string): void {
   if (!UUID_PATTERN.test(value)) throw new ScopeValidationError(`${name} must be a UUID`);
 }
@@ -243,9 +226,28 @@ export function validateDisplayName(input: string): string {
   return displayName;
 }
 
-export function validatePassword(password: string): void {
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    throw new ProvisioningError(`Password must contain at least ${PASSWORD_MIN_LENGTH} characters`);
+export function validateClerkUserId(value: string): string {
+  if (!/^user_[a-zA-Z0-9]+$/.test(value)) {
+    throw new ProvisioningError('An existing Clerk user ID is required');
+  }
+  return value;
+}
+
+/** Read-only identity verification; this tool never creates Clerk credentials. */
+export async function verifyExistingClerkUser(clerkUserId: string, email: string): Promise<void> {
+  validateClerkUserId(clerkUserId);
+  const { createClerkClient } = await import('@clerk/backend');
+  const user = await createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY }).users.getUser(
+    clerkUserId,
+  );
+  if (
+    !user.emailAddresses.some(
+      (address) =>
+        normalizeEmail(address.emailAddress) === normalizeEmail(email) &&
+        address.verification?.status === 'verified',
+    )
+  ) {
+    throw new ProvisioningError('Clerk user must have the verified provisioning email');
   }
 }
 
@@ -378,7 +380,7 @@ function auditEvent(input: {
       details: {
         actorType: 'SUPPORT',
         initiatedBy: TOOL_NAME,
-        subjectType: 'auth.user',
+        subjectType: 'app.users',
         subjectId: input.subjectId,
         metadata: {
           legalEntityId: input.plan.scope.legalEntity.id,
@@ -396,18 +398,13 @@ function auditEvent(input: {
 export async function provisionFirstUser(input: {
   repository: ProvisioningRepository;
   request: ProvisioningInput;
-  password: string;
+  clerkUserId: string;
   auditKey: { keyId: string; secret: string };
-  hasher?: (password: string) => Promise<string>;
 }): Promise<ProvisioningResult> {
-  validatePassword(input.password);
+  const clerkUserId = validateClerkUserId(input.clerkUserId);
   const email = normalizeEmail(input.request.email);
   const displayName = validateDisplayName(input.request.displayName);
   const plan = await preparePlan(input.repository, { ...input.request, email, displayName });
-  const passwordHash = await (input.hasher ?? defaultPasswordHasher)(input.password);
-  if (!passwordHash || passwordHash === input.password) {
-    throw new ProvisioningError('Better Auth did not return a valid password hash');
-  }
 
   if (input.repository.provisionAtomic) {
     const initiated = auditEvent({
@@ -443,7 +440,7 @@ export async function provisionFirstUser(input: {
       stationId: plan.scope.station.id,
       email,
       displayName,
-      passwordHash,
+      clerkUserId,
       expiresAt: plan.expiresAt,
       initiatedEvent: initiated,
       completedEvent: completed,
@@ -459,12 +456,7 @@ export async function provisionFirstUser(input: {
   }
 
   await input.repository.insertUser({ id: plan.userId, name: displayName, email });
-  await input.repository.insertCredentialAccount({
-    userId: plan.userId,
-    accountId: plan.userId,
-    providerId: CREDENTIAL_PROVIDER_ID,
-    passwordHash,
-  });
+  await input.repository.insertClerkIdentity({ userId: plan.userId, clerkUserId });
   await input.repository.insertMembership({
     id: plan.membershipId,
     tenantId: plan.scope.tenant.id,
@@ -665,7 +657,7 @@ export async function revokeFirstUserAccess(input: {
   if (revokedGrantCount !== matchingGrantIds.length) {
     throw new ProvisioningError('Cleanup could not revoke the exact operation grant set');
   }
-  const revokedSessionCount = await input.repository.revokeSessions(existing.id);
+  const revokedAssuranceCount = await input.repository.revokeAssurance(existing.id);
   const event = auditEvent({
     actionCode: 'ACCESS.PROVISIONING_REVOKED',
     plan,
@@ -675,7 +667,7 @@ export async function revokeFirstUserAccess(input: {
     metadata: {
       permissionCodes: READ_ONLY_GRANT_PLAN.map((grant) => grant.permissionCode),
       revokedGrantCount,
-      revokedSessionCount,
+      revokedAssuranceCount,
       membershipDisabled: true,
       outcome: 'success',
     },
@@ -695,7 +687,7 @@ export async function revokeFirstUserAccess(input: {
     userId: existing.id,
     membershipId: membership.id,
     revokedGrantCount,
-    revokedSessionCount,
+    revokedAssuranceCount,
     membershipDisabled,
     auditEventId: event.eventId,
   };
@@ -710,22 +702,6 @@ type ScopeRow = {
   tenant_id?: string;
   legal_entity_id?: string;
   code?: string;
-};
-
-type UserRow = { id: string; name: string; email: string };
-type AccountRow = {
-  id: string;
-  account_id: string;
-  provider_id: string;
-  user_id: string;
-  password: string | null;
-};
-type MembershipRow = {
-  id: string;
-  tenant_id: string;
-  identity_id: string;
-  status: string;
-  role_assignment_count: number;
 };
 
 type ScopeOptionsPayload = {
@@ -745,13 +721,7 @@ type IdentityPayload = {
   id: string;
   name: string;
   email: string;
-  accounts: Array<{
-    id: string;
-    accountId: string;
-    providerId: string;
-    userId: string;
-    hasPassword: boolean;
-  }>;
+  providerIdentities: Array<{ provider: string; providerUserId: string }>;
   memberships: Array<{
     id: string;
     tenantId: string;
@@ -851,7 +821,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
         'PostgreSQL provisioning requires the atomic database capability',
       );
     },
-    async insertCredentialAccount(input) {
+    async insertClerkIdentity(input) {
       void input;
       throw new ProvisioningError(
         'PostgreSQL provisioning requires the atomic database capability',
@@ -891,7 +861,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
       void input;
       throw new ProvisioningError('PostgreSQL revoke requires the atomic database capability');
     },
-    async revokeSessions(userId) {
+    async revokeAssurance(userId) {
       void userId;
       throw new ProvisioningError('PostgreSQL revoke requires the atomic database capability');
     },
@@ -910,7 +880,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
           ${input.stationId}::uuid,
           ${input.email},
           ${input.displayName},
-          ${input.passwordHash},
+          ${input.clerkUserId},
           ${input.expiresAt}::timestamptz,
           ${query.json(JSON.parse(JSON.stringify(input.initiatedEvent)))}::jsonb,
           ${query.json(JSON.parse(JSON.stringify(input.completedEvent)))}::jsonb
@@ -922,7 +892,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
         {
           value: {
             revokedGrantCount: number;
-            revokedSessionCount: number;
+            revokedAssuranceCount: number;
             membershipDisabled: boolean;
           };
         }[]
@@ -939,7 +909,7 @@ export function createPostgresRepository(query: Query): ProvisioningRepository {
       `;
       return parseJson<{
         revokedGrantCount: number;
-        revokedSessionCount: number;
+        revokedAssuranceCount: number;
         membershipDisabled: boolean;
       }>(
         one(rows, 'Database returned no revoke result').value,
@@ -1189,55 +1159,6 @@ export async function assertPrivilegedDirectConnection(client: Sql): Promise<voi
   await client`select platform.first_user_provisioning_assert_runtime_role()`;
 }
 
-export type HiddenPasswordInput = NodeJS.ReadableStream & {
-  isTTY?: boolean;
-  setRawMode?: (mode: boolean) => void;
-};
-
-export type HiddenPasswordOutput = NodeJS.WritableStream & { isTTY?: boolean };
-
-export function readHiddenPassword(
-  input: HiddenPasswordInput = process.stdin,
-  output: HiddenPasswordOutput = process.stdout,
-): Promise<string> {
-  if (!input.isTTY || !output.isTTY || !input.setRawMode) {
-    throw new ProvisioningError('Provisioning password input requires an interactive local TTY');
-  }
-  return new Promise<string>((resolve, reject) => {
-    let password = '';
-    const cleanup = () => {
-      input.off('data', onData);
-      input.setRawMode?.(false);
-      input.pause();
-    };
-    const onData = (chunk: Buffer | string) => {
-      const value = chunk.toString();
-      for (const character of value) {
-        if (character === '\u0003') {
-          cleanup();
-          reject(new ProvisioningError('Password input cancelled'));
-          return;
-        }
-        if (character === '\r' || character === '\n') {
-          cleanup();
-          output.write('\n');
-          resolve(password);
-          return;
-        }
-        if (character === '\u007f' || character === '\b') {
-          password = password.slice(0, -1);
-        } else {
-          password += character;
-        }
-      }
-    };
-    output.write('Password (hidden): ');
-    input.setRawMode!(true);
-    input.resume();
-    input.on('data', onData);
-  });
-}
-
 export function formatSafeError(error: unknown): string {
   if (error instanceof ProvisioningError) return error.message;
   return 'Provisioning tool failed; inspect the local audit event for the classified failure';
@@ -1356,7 +1277,7 @@ function usage(): string {
     'Dry-run (zero writes):',
     '  node --conditions=react-server --import tsx scripts/first-user-provisioning.ts --dry-run --environment production --confirm-production-provisioning --email <email> --display-name <name> --tenant-id <tenant-uuid> --legal-entity-id <legal-entity-uuid> --station-id <station-uuid> --expires-at <iso-timestamp>',
     '',
-    'Provision (hidden TTY password; never a password argument):',
+    'Provision (CLERK_USER_ID must identify an existing verified Clerk user):',
     '  node --conditions=react-server --import tsx scripts/first-user-provisioning.ts --provision --environment production --confirm-production-provisioning --email <email> --display-name <name> --tenant-id <tenant-uuid> --legal-entity-id <legal-entity-uuid> --station-id <station-uuid> --expires-at <iso-timestamp>',
     '',
     'Cleanup:',
@@ -1400,7 +1321,7 @@ function printRedactedPlan(plan: ProvisioningPlan): void {
       mode: 'dry-run',
       writes: {
         authUser: 1,
-        credentialAccount: 1,
+        clerkIdentity: 1,
         membership: 1,
         temporaryPermissionGrants: plan.grants.length,
         sessions: 0,
@@ -1418,7 +1339,7 @@ function printRedactedPlan(plan: ProvisioningPlan): void {
       operationId: plan.operationId,
       expiresAt: plan.expiresAt.toISOString(),
       audit: ['ACCESS.PROVISIONING_INITIATED', 'ACCESS.PROVISIONING_COMPLETED'],
-      password: 'hidden',
+      authProvider: 'CLERK',
     }),
   );
 }
@@ -1523,8 +1444,9 @@ async function main(): Promise<void> {
         );
       }
       failureAuditContext = { mode: 'provision', scope, auditKey };
-      let password = await readHiddenPassword();
-      try {
+      const clerkUserId = validateClerkUserId(process.env.CLERK_USER_ID ?? '');
+      await verifyExistingClerkUser(clerkUserId, options.email!);
+      {
         const result = await withDirectTransaction(client, false, async (transaction) =>
           provisionFirstUser({
             repository: createPostgresRepository(transaction),
@@ -1534,7 +1456,7 @@ async function main(): Promise<void> {
               scope,
               expiresAt: parseExpiryText(options.expiresAt!),
             },
-            password,
+            clerkUserId,
             auditKey,
           }),
         );
@@ -1547,11 +1469,9 @@ async function main(): Promise<void> {
             permissionCodes: result.permissionCodes,
             expiresAt: result.expiresAt.toISOString(),
             auditEventIds: result.auditEventIds,
-            password: 'hidden',
+            authProvider: 'CLERK',
           }),
         );
-      } finally {
-        password = '';
       }
       return;
     }

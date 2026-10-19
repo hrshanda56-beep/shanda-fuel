@@ -1,12 +1,17 @@
+import {
+  seedClerkIdentity,
+  authenticateClerk,
+  establishClerkStepUp,
+  clerkSessionStatus,
+} from './clerk-fixtures';
+import { clerk } from '@clerk/testing/playwright';
 import { createHash } from 'node:crypto';
 
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 
 const databaseUrl = process.env.DATABASE_URL;
-const authSecret = process.env.BETTER_AUTH_SECRET;
 
 const ids = {
   tenant: 'b26e0000-0000-4000-8000-000000000001',
@@ -61,24 +66,15 @@ function tokenHash(token: string) {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-async function signedCookie(token: string, secret: string) {
-  return `${token}.${await makeSignature(token, secret)}`;
-}
-
-async function installSessionCookie(context: BrowserContext, token: string) {
-  await context.clearCookies();
-  await context.addCookies([
-    {
-      name: 'shanda-fuel.session_token',
-      value: await signedCookie(token, authSecret!),
-      domain: '127.0.0.1',
-      path: '/',
-    },
-  ]);
+async function installClerkSession(context: BrowserContext, token: string) {
+  const actor = Object.entries(sessions).find(([, value]) => value === token)?.[0] as
+    keyof typeof sessions | undefined;
+  if (!actor) throw new Error('Unknown Staff E2E actor');
+  await authenticateClerk(context, ids[actor]);
 }
 
 async function openSettings(page: Page, token: string) {
-  await installSessionCookie(page.context(), token);
+  await installClerkSession(page.context(), token);
   const url = `/settings?tenantId=${ids.tenant}&legalEntityId=${ids.legalEntity}&stationId=${ids.bindura}`;
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -115,13 +111,10 @@ async function seed(client: Sql) {
     delete from platform.security_events where tenant_id = '${ids.tenant}';
     delete from app.membership_role_assignments where tenant_id = '${ids.tenant}';
     delete from app.memberships where tenant_id = '${ids.tenant}';
-    delete from auth.session where user_id in ('${ids.owner}', '${ids.administrator}', '${ids.finance}', '${ids.supervisor}', '${ids.attendant}', '${ids.existingJoin}');
-    delete from auth.account where user_id in ('${ids.owner}', '${ids.administrator}', '${ids.finance}', '${ids.supervisor}', '${ids.attendant}', '${ids.existingJoin}');
-    delete from auth."user" where id in ('${ids.owner}', '${ids.administrator}', '${ids.finance}', '${ids.supervisor}', '${ids.attendant}', '${ids.existingJoin}');
-    delete from auth.account where user_id in (
-      select id from auth."user" where lower(email) = 'new-user.staff-e2e@example.test'
-    );
-    delete from auth."user" where lower(email) = 'new-user.staff-e2e@example.test';
+    delete from app.auth_identities where internal_user_id in ('${ids.owner}', '${ids.administrator}', '${ids.finance}', '${ids.supervisor}', '${ids.attendant}', '${ids.existingJoin}');
+    delete from app.auth_identities where internal_user_id in (select id from app.users where lower(email) = 'new-user.staff-e2e@example.test');
+    delete from app.users where id in ('${ids.owner}', '${ids.administrator}', '${ids.finance}', '${ids.supervisor}', '${ids.attendant}', '${ids.existingJoin}');
+    delete from app.users where lower(email) = 'new-user.staff-e2e@example.test';
     delete from app.stations where tenant_id = '${ids.tenant}';
     delete from app.legal_entities where tenant_id = '${ids.tenant}';
     delete from app.tenants where id = '${ids.tenant}';
@@ -133,7 +126,7 @@ async function seed(client: Sql) {
       ('${ids.bindura}', '${ids.tenant}', '${ids.legalEntity}', 'BND-E2E', 'Bindura station', 'Africa/Harare', 'ACTIVE'),
       ('${ids.harare}', '${ids.tenant}', '${ids.legalEntity}', 'HRE-E2E', 'Harare station', 'Africa/Harare', 'ACTIVE');
 
-    insert into auth."user" (id, name, email, email_verified) values
+    insert into app.users (id, name, email, email_verified) values
       ('${ids.owner}', 'E2E Owner', 'owner.staff-e2e@example.test', true),
       ('${ids.administrator}', 'E2E Administrator', 'administrator.staff-e2e@example.test', true),
       ('${ids.finance}', 'E2E Finance', 'finance.staff-e2e@example.test', true),
@@ -155,16 +148,6 @@ async function seed(client: Sql) {
       ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legalEntity}', '${ids.bindura}'),
       ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legalEntity}', '${ids.bindura}');
 
-    insert into auth.session
-      (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at, strong_authentication_expires_at, step_up_level, step_up_expires_at, step_up_tenant_id)
-    values
-      ('${ids.ownerSession}', '2030-01-01T00:00:00Z', '${sessions.owner}', '${ids.owner}', true, now(), '2030-01-01T00:00:00Z', 2, '2030-01-01T00:00:00Z', '${ids.tenant}'),
-      ('${ids.administratorSession}', '2030-01-01T00:00:00Z', '${sessions.administrator}', '${ids.administrator}', true, now(), '2030-01-01T00:00:00Z', 2, '2030-01-01T00:00:00Z', '${ids.tenant}'),
-      ('${ids.financeSession}', '2030-01-01T00:00:00Z', '${sessions.finance}', '${ids.finance}', true, now(), '2030-01-01T00:00:00Z', 2, '2030-01-01T00:00:00Z', '${ids.tenant}'),
-      ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', '${sessions.supervisor}', '${ids.supervisor}', true, now(), '2030-01-01T00:00:00Z', 2, '2030-01-01T00:00:00Z', '${ids.tenant}'),
-      ('${ids.attendantSession}', '2030-01-01T00:00:00Z', '${sessions.attendant}', '${ids.attendant}', true, now(), '2030-01-01T00:00:00Z', 2, '2030-01-01T00:00:00Z', '${ids.tenant}'),
-      ('${ids.existingJoinSession}', '2030-01-01T00:00:00Z', '${sessions.existingJoin}', '${ids.existingJoin}', true, now(), '2030-01-01T00:00:00Z', 2, '2030-01-01T00:00:00Z', '${ids.tenant}');
-
     insert into app.staff_invitations
       (id, tenant_id, invited_email, invited_name, assigned_role, scope_type, legal_entity_id, token_hash, status, expires_at, revoked_at, created_at, created_by_user_id, created_by_membership_id)
     values
@@ -180,12 +163,18 @@ async function seed(client: Sql) {
       ('${ids.tenant}', '${invitationIds.expired}', '${ids.legalEntity}', '${ids.bindura}'),
       ('${ids.tenant}', '${invitationIds.revoke}', '${ids.legalEntity}', '${ids.bindura}');
   `);
+  await seedClerkIdentity(client, ids.owner);
+  await seedClerkIdentity(client, ids.administrator);
+  await seedClerkIdentity(client, ids.finance);
+  await seedClerkIdentity(client, ids.supervisor);
+  await seedClerkIdentity(client, ids.attendant);
+  await seedClerkIdentity(client, ids.existingJoin);
 }
 
 test.describe('authenticated Staff lifecycle', () => {
   test.skip(
-    !databaseUrl || !authSecret,
-    'Staff lifecycle E2E requires the disposable PostgreSQL database and Better Auth secret',
+    !databaseUrl,
+    'Staff lifecycle E2E requires the disposable PostgreSQL database and Clerk development instance',
   );
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(90_000);
@@ -309,9 +298,7 @@ test.describe('authenticated Staff lifecycle', () => {
     await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
     await expect(page.getByLabel('Role').locator('option', { hasText: 'Owner' })).toHaveCount(0);
 
-    const adminCookie = await signedCookie(sessions.administrator, authSecret!);
     const canInvite = await page.request.post('/api/staff/commands', {
-      headers: { cookie: `shanda-fuel.session_token=${adminCookie}` },
       data: {
         tenantId: ids.tenant,
         commandType: 'CreateStaffInvitation',
@@ -327,7 +314,6 @@ test.describe('authenticated Staff lifecycle', () => {
 
     for (const role of ['OWNER', 'ADMINISTRATOR']) {
       const response = await page.request.post('/api/staff/commands', {
-        headers: { cookie: `shanda-fuel.session_token=${adminCookie}` },
         data: {
           tenantId: ids.tenant,
           commandType: 'CreateStaffInvitation',
@@ -371,7 +357,7 @@ test.describe('authenticated Staff lifecycle', () => {
       ).toBeVisible();
     }
 
-    await installSessionCookie(page.context(), sessions.existingJoin);
+    await installClerkSession(page.context(), sessions.existingJoin);
     await page.goto(`/invite/${inviteTokens.existing}`);
     await expect(
       page.getByRole('heading', { name: 'Join your new workspace', level: 1 }),
@@ -419,8 +405,12 @@ test.describe('authenticated Staff lifecycle', () => {
       await newPage.getByLabel('Create password').fill('synthetic-password');
       await newPage.getByLabel('Confirm password').fill('synthetic-password');
       await newPage.getByRole('button', { name: 'Join workspace' }).click();
-      // Signup, Better Auth session establishment and the first acceptance
-      // request can each cold-compile under the serial browser suite.
+      await expect(
+        newPage.getByRole('heading', { name: 'Sign in to join your workspace' }),
+      ).toBeVisible();
+      await clerk.signIn({ page: newPage, emailAddress: 'new-user.staff-e2e@example.test' });
+      await newPage.goto(`/invite/${inviteTokens.newUser}`);
+      await newPage.getByRole('button', { name: 'Accept invitation' }).click();
       await expect(newPage).not.toHaveURL(new RegExp(`/invite/${inviteTokens.newUser}$`), {
         timeout: 30_000,
       });
@@ -431,7 +421,7 @@ test.describe('authenticated Staff lifecycle', () => {
     const newAccepted = await client.unsafe<
       { status: string; email: string; role_code: string; scope_type: string }[]
     >(
-      `select invitation.status, identity.email, assignment.role_code, assignment.scope_type from app.staff_invitations invitation join auth."user" identity on identity.email = invitation.invited_email join app.membership_role_assignments assignment on assignment.membership_id = invitation.accepted_membership_id where invitation.id = '${invitationIds.newUser}'`,
+      `select invitation.status, identity.email, assignment.role_code, assignment.scope_type from app.staff_invitations invitation join app.users identity on identity.email = invitation.invited_email join app.membership_role_assignments assignment on assignment.membership_id = invitation.accepted_membership_id where invitation.id = '${invitationIds.newUser}'`,
     );
     expect(newAccepted[0]).toMatchObject({
       status: 'ACCEPTED',
@@ -453,10 +443,8 @@ test.describe('authenticated Staff lifecycle', () => {
     await deactivationDialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(deactivationDialog).toHaveCount(0);
 
+    await establishClerkStepUp(page.context(), ids.tenant, 'DEACTIVATE_STAFF_MEMBER');
     const deactivation = await page.request.post('/api/staff/commands', {
-      headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie(sessions.owner, authSecret!)}`,
-      },
       data: {
         tenantId: ids.tenant,
         commandType: 'DeactivateStaffMember',
@@ -475,10 +463,10 @@ test.describe('authenticated Staff lifecycle', () => {
     const deactivated = await client.unsafe<
       { status: string; revoked_at: Date | null; audit_count: string }[]
     >(
-      `select membership.status, session.revoked_at, (select count(*) from platform.security_events where tenant_id = '${ids.tenant}' and event_code = 'STAFF.MEMBERSHIP_DEACTIVATED')::text as audit_count from app.memberships membership left join auth.session session on session.user_id = membership.identity_id where membership.id = '${ids.attendantMembership}'`,
+      `select membership.status, (select count(*) from platform.security_events where tenant_id = '${ids.tenant}' and event_code = 'STAFF.MEMBERSHIP_DEACTIVATED')::text as audit_count from app.memberships membership where membership.id = '${ids.attendantMembership}'`,
     );
     expect(deactivated[0]).toMatchObject({ status: 'DISABLED' });
-    expect(deactivated[0]?.revoked_at).toBeTruthy();
+    expect(await clerkSessionStatus(ids.attendant)).toHaveLength(0);
     expect(Number(deactivated[0]?.audit_count)).toBeGreaterThan(0);
 
     const lastOwner = await page.request.post('/api/staff/commands', {
@@ -490,7 +478,7 @@ test.describe('authenticated Staff lifecycle', () => {
     });
     expect(lastOwner.status()).toBe(403);
 
-    await installSessionCookie(page.context(), sessions.attendant);
+    await installClerkSession(page.context(), sessions.attendant);
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/login$/);
   });

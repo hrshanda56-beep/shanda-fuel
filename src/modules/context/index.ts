@@ -19,6 +19,7 @@ export {
 export {
   buildContextHref,
   contextRoutePolicy,
+  isCurrentSelection,
   readContextRoute,
   type ContextRoute,
   type ContextRoutePolicy,

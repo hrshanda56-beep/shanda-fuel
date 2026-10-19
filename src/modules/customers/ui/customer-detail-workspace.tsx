@@ -1,4 +1,5 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -10,12 +11,8 @@ import {
   type ContextSelection,
 } from '@/modules/context';
 import { Notice } from '@/design-system/feedback';
-import {
-  formatDate,
-  formatLitres,
-  formatMoney,
-  formatStatusLabel,
-} from '@/design-system/formatters';
+import { formatLitres, formatMoney, formatStatusLabel } from '@/design-system/formatters';
+import { Icon } from '@/design-system/icons';
 import { PageHeader, MetricCard } from '@/design-system/layout';
 import { formatTileMoney } from '@/modules/reporting/format';
 import {
@@ -29,6 +26,8 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
+import { CustomerActions, type ActionProduct } from './customer-actions';
+import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type {
   CustomerAccount,
   CustomerAccountsResponse,
@@ -111,9 +110,9 @@ function transactionLabel(transaction: CustomerTransaction): string {
     case 'PREPAID_FUEL_USAGE':
       return 'Fuel usage';
     case 'ADJUSTMENT':
-      return 'Adjustment';
+      return 'Balance correction';
     case 'REVERSAL':
-      return 'Reversal';
+      return 'Entry cancelled';
   }
 }
 
@@ -123,17 +122,27 @@ function transactionValue(transaction: CustomerTransaction): string {
   return '—';
 }
 
+const NOTHING_HELD = /^[0.]*$/;
+
 function AccountPosition({ account }: { account: CustomerAccount }) {
   if (account.accountType === 'CREDIT') {
     return (
       <section className="metric-grid metric-list" aria-label="Credit account position">
+        {account.balance !== null && account.balance.trim().startsWith('-') ? (
+          <MetricCard
+            label="Paid more than they owe"
+            value={money(account.balance.replace('-', ''), account.currency)}
+            meta="This will be used against their next fuel on credit"
+          />
+        ) : (
+          <MetricCard
+            label="Owes us"
+            value={money(account.balance, account.currency)}
+            meta="Fuel taken on credit, less payments received"
+          />
+        )}
         <MetricCard
-          label="Outstanding balance"
-          value={money(account.balance, account.currency)}
-          meta="Posted credit charges less payments"
-        />
-        <MetricCard
-          label="Available credit"
+          label="Can still buy on credit"
           value={
             account.availableCredit === null
               ? 'Not set'
@@ -141,8 +150,8 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
           }
           meta={
             account.creditLimit === null
-              ? 'No credit limit is recorded'
-              : `Limit ${money(account.creditLimit, account.currency)}`
+              ? 'No credit limit has been set'
+              : `Credit limit ${money(account.creditLimit, account.currency)}`
           }
         />
       </section>
@@ -153,54 +162,56 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
     return (
       <section className="metric-grid metric-list" aria-label="Prepaid value account position">
         <MetricCard
-          label="Available prepaid value"
+          label="Available to spend"
           value={money(account.availableBalance, account.currency)}
-          meta="After active fuel reservations"
-        />
-        <MetricCard
-          label="Posted balance"
-          value={money(account.balance, account.currency)}
           meta={
-            account.reservedAmount === '0'
-              ? 'No active reservation'
-              : `${money(account.reservedAmount, account.currency)} reserved`
+            NOTHING_HELD.test(account.reservedAmount)
+              ? 'Nothing is held for pending fuel'
+              : 'Balance, less fuel being held'
           }
         />
+        {NOTHING_HELD.test(account.reservedAmount) ? null : (
+          <MetricCard
+            label="Balance"
+            value={money(account.balance, account.currency)}
+            meta={`${money(account.reservedAmount, account.currency)} held for pending fuel`}
+          />
+        )}
       </section>
     );
   }
 
   return (
     <section aria-labelledby={`product-balances-${account.accountId}`}>
-      <h3 id={`product-balances-${account.accountId}`}>Product balances</h3>
+      <h3 id={`product-balances-${account.accountId}`}>Prepaid fuel</h3>
       {account.productBalances.length === 0 ? (
         <EmptyState
-          title="No posted litre balance"
-          message="Product-specific prepaid litres will appear after an authorised top-up is posted."
+          title="No prepaid fuel yet"
+          message="Litres will show here once a top-up has been recorded."
         />
       ) : (
-        <TableScrollRegion label="Product-specific prepaid litre balances">
+        <TableScrollRegion label="Prepaid litres by fuel">
           <table className="responsive-table">
-            <caption className="visually-hidden">Product-specific prepaid litre balances</caption>
+            <caption className="visually-hidden">Prepaid litres by fuel</caption>
             <thead>
               <tr>
-                <th scope="col">Product</th>
-                <th scope="col">Posted balance</th>
-                <th scope="col">Available</th>
+                <th scope="col">Fuel</th>
+                <th scope="col">Litres paid for</th>
+                <th scope="col">Litres left to use</th>
               </tr>
             </thead>
             <tbody>
               {account.productBalances.map((product) => (
                 <tr key={product.productId}>
-                  <th scope="row" data-label="Product">
-                    {product.productCode}
+                  <th scope="row" data-label="Fuel">
+                    {product.productName}
                     <br />
-                    <small>{product.productName}</small>
+                    <small>{product.productCode}</small>
                   </th>
-                  <td data-label="Posted balance" className="numeric">
+                  <td data-label="Litres paid for" className="numeric">
                     {formatLitres(product.balanceLitres)}
                   </td>
-                  <td data-label="Available" className="numeric">
+                  <td data-label="Litres left to use" className="numeric">
                     {formatLitres(product.availableLitres)}
                   </td>
                 </tr>
@@ -213,22 +224,54 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
   );
 }
 
-export function CustomerDetailWorkspace({ customerId }: { customerId: string }) {
+// Fixed to the station's timezone so the server and browser always print the same text.
+function formatWhen(value: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Africa/Harare',
+  }).format(new Date(value));
+}
+
+/** Why the customer cannot buy fuel yet, in plain words; null when they can. */
+function notReadyReason(customer: CustomerSummary): string | null {
+  if (customer.accounts.length === 0) return 'No account has been opened yet';
+  if (!customer.legalEntityId) return 'The company they buy from has not been chosen';
+  if (customer.accounts.some((account) => !account.stationScopeConfigured))
+    return 'The stations they can buy at have not been chosen';
+  return customer.accounts.every((account) => account.ready) ? null : 'Setup is not finished';
+}
+
+export function CustomerDetailWorkspace({
+  customerId,
+  initial,
+}: {
+  customerId: string;
+  initial?: { resolution: ContextResolution; customer: CustomerSummary | null };
+}) {
+  const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const [context, setContext] = useState<ContextResolution | null>(null);
-  const [contextLoading, setContextLoading] = useState(true);
+  const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
+  const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [customer, setCustomer] = useState<CustomerSummary | null>(null);
+  const [customer, setCustomer] = useState<CustomerSummary | null>(initial?.customer ?? null);
+  const [fuelProducts, setFuelProducts] = useState<ActionProduct[]>([]);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scopeLegalEntityId, setScopeLegalEntityId] = useState('');
-  const [scopeForms, setScopeForms] = useState<ScopeForms>({});
+  const [scopeLegalEntityId, setScopeLegalEntityId] = useState(
+    initial?.customer?.legalEntityId ?? '',
+  );
+  const [scopeForms, setScopeForms] = useState<ScopeForms>(
+    initial?.customer ? scopeFormsForCustomer(initial.customer) : {},
+  );
   const [scopeSave, setScopeSave] = useState<{
     status: 'idle' | 'saving' | 'success' | 'error';
     message?: string;
   }>({ status: 'idle' });
 
+  const [scopeStepUp, setScopeStepUp] = useState(false);
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(current?.organisationId);
   const scopeLabel = contextLabel(context, current);
@@ -238,14 +281,16 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
     setContextLoading(true);
     setContextError(null);
     try {
-      const response = await fetch(contextRequestUrl(`/customers/${customerId}`, search), {
+      const response = await contextFetch(contextRequestUrl(`/customers/${customerId}`, search), {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
       });
       const result = (await response.json()) as Partial<ContextApiResponse> & { message?: string };
       if (!response.ok || !result.data) {
-        throw new Error(getErrorMessage(result, 'Authorised customer context could not be loaded'));
+        throw new Error(
+          getErrorMessage(result, 'This page could not be loaded. Please try again.'),
+        );
       }
       setContext(result.data);
     } catch (cause) {
@@ -254,7 +299,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
         setContextError(
           cause instanceof Error
             ? cause.message
-            : 'Authorised customer context could not be loaded',
+            : 'This page could not be loaded. Please try again.',
         );
       }
     } finally {
@@ -283,8 +328,11 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
       !('customers' in result) ||
       !Array.isArray((result as { customers?: unknown }).customers)
     ) {
-      throw new Error(getErrorMessage(result, 'Customer detail could not be loaded'));
+      throw new Error(
+        getErrorMessage(result, 'This customer could not be loaded. Please try again.'),
+      );
     }
+    setFuelProducts((result as CustomerAccountsResponse).fuelProducts ?? []);
     return (result as CustomerAccountsResponse).customers[0] ?? null;
   }
 
@@ -300,37 +348,44 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
       }
     } catch (cause) {
       if (!signal?.aborted) {
-        setError(cause instanceof Error ? cause.message : 'Customer detail could not be loaded');
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'This customer could not be loaded. Please try again.',
+        );
       }
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
   }
 
-  async function postCustomerCommand(input: Record<string, unknown>) {
+  async function postCustomerCommand(
+    input: Record<string, unknown>,
+    idempotencyKey: string = crypto.randomUUID(),
+  ) {
     const response = await fetch('/api/customers/commands', {
       method: 'POST',
       credentials: 'same-origin',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': crypto.randomUUID(),
+        'idempotency-key': idempotencyKey,
       },
       body: JSON.stringify(input),
     });
     const result: unknown = await response.json();
     if (!response.ok) {
-      throw new Error(getErrorMessage(result, 'Customer configuration could not be saved'));
+      throw new Error(getErrorMessage(result, 'This could not be saved'));
     }
     return result;
   }
 
-  async function saveCustomerScope() {
+  async function saveCustomerScope(alreadyConfirmed = false) {
     if (!current || !customer || !customer.canManageConfiguration) return;
     const legalEntityId = scopeLegalEntityId.trim();
     if (!legalEntityId) {
       setScopeSave({
         status: 'error',
-        message: 'Confirm a legal entity before saving the account scope.',
+        message: 'Choose the company before saving.',
       });
       return;
     }
@@ -339,14 +394,14 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
       if (!form?.stationScope) {
         setScopeSave({
           status: 'error',
-          message: 'Choose ALL or SELECTED stations for every customer account before saving.',
+          message: 'Choose where each account can buy fuel before saving.',
         });
         return;
       }
       if (form.stationScope === 'SELECTED' && form.stationIds.length === 0) {
         setScopeSave({
           status: 'error',
-          message: 'Choose at least one station for each SELECTED account scope.',
+          message: 'Tick at least one station for each account.',
         });
         return;
       }
@@ -389,40 +444,45 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
       setCustomer(saved);
       setScopeLegalEntityId(saved.legalEntityId ?? '');
       setScopeForms(scopeFormsForCustomer(saved));
-      setScopeSave({ status: 'success', message: 'Customer access scope saved and confirmed.' });
+      setScopeSave({
+        status: 'success',
+        message: 'Saved. This customer’s fuel-buying settings are up to date.',
+      });
     } catch (cause) {
+      if (
+        !alreadyConfirmed &&
+        cause instanceof Error &&
+        /not authorized|step-up/i.test(cause.message)
+      ) {
+        setScopeSave({ status: 'idle' });
+        setScopeStepUp(true);
+        return;
+      }
       setScopeSave({
         status: 'error',
         message:
-          cause instanceof Error ? cause.message : 'Customer configuration could not be saved',
+          cause instanceof Error ? cause.message : 'This could not be saved. Please try again.',
       });
     }
   }
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadContext(controller.signal));
     return () => controller.abort();
     // URL changes trigger a fresh server-validated context resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, customerId]);
+  }, [search, customerId, contextFetch]);
 
   useEffect(() => {
-    if (!hasRequiredContext || !current) return;
+    if (initial || !hasRequiredContext || !current) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadCustomer(current, controller.signal));
     return () => controller.abort();
     // Customer accounts are tenant-scoped; context changes refresh the read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.organisationId, current?.legalEntityId, current?.stationId, current?.allStations]);
-
-  const customerHref = useMemo(
-    () =>
-      current
-        ? buildContextHref(`/customers/${encodeURIComponent(customerId)}`, search, current)
-        : `/customers/${encodeURIComponent(customerId)}`,
-    [current, customerId, search],
-  );
 
   const availableLegalEntities = current
     ? (context?.available.organisations.find(
@@ -432,32 +492,100 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
   const selectedLegalEntity = availableLegalEntities.find(
     (legalEntity) => legalEntity.id === scopeLegalEntityId,
   );
+  const stationName = (stationId: string) =>
+    availableLegalEntities
+      .flatMap((legalEntity) => legalEntity.stations)
+      .find((station) => station.id === stationId)?.name ?? 'A station';
+  const readOnlyScope = (account: CustomerAccount) =>
+    !account.stationScopeConfigured
+      ? 'Not chosen yet'
+      : account.stationScope === 'ALL'
+        ? 'All stations'
+        : account.allowedStationIds.map(stationName).join(', ') || 'No stations chosen';
+  const actionStations = (
+    customer?.legalEntityId
+      ? availableLegalEntities.filter((legalEntity) => legalEntity.id === customer.legalEntityId)
+      : availableLegalEntities
+  ).flatMap((legalEntity) => legalEntity.stations);
+  const [refreshState, setRefreshState] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle');
+  async function refreshNow() {
+    if (!current) return;
+    setRefreshState('busy');
+    try {
+      const refreshed = await fetchCustomerSummary(current);
+      if (refreshed) {
+        setCustomer(refreshed);
+        setScopeLegalEntityId(refreshed.legalEntityId ?? '');
+        setScopeForms(scopeFormsForCustomer(refreshed));
+      }
+      setRefreshState('done');
+    } catch {
+      setRefreshState('failed');
+    }
+  }
+  async function actionDone(message: string) {
+    setActionMessage(message);
+    if (!current) return;
+    try {
+      const refreshed = await fetchCustomerSummary(current);
+      if (refreshed) {
+        setCustomer(refreshed);
+        setScopeLegalEntityId(refreshed.legalEntityId ?? '');
+        setScopeForms(scopeFormsForCustomer(refreshed));
+      }
+    } catch {
+      setActionMessage(`${message} Refresh the page to see the new figures.`);
+    }
+  }
+  const reason = customer ? notReadyReason(customer) : null;
+  // Open by itself while setup is unfinished, and then stay as the person left it, so the
+  // "saved" message does not vanish when the customer becomes ready.
+  const [setupOpen, setSetupOpen] = useState<boolean | null>(null);
+  if (setupOpen === null && reason !== null && customer?.canManageConfiguration) setSetupOpen(true);
+  const showProduct = customer?.recentTransactions.some((t) => t.productId !== null) ?? false;
+
+  const backLink = (
+    <Link className="button button-quiet" href={backHref}>
+      Back to customers
+    </Link>
+  );
 
   return (
-    <div className="content-grid">
+    <div className="content-grid customer-workspace">
       <PageHeader
-        eyebrow={scopeLabel ?? 'Commercial accounts'}
+        eyebrow={scopeLabel ?? 'Customers'}
         title={customer?.displayName ?? 'Customer detail'}
         headingLevel="h2"
         titleId="customer-detail-title"
         description={
           customer
             ? `Account reference ${customer.accountReference}`
-            : 'Review the authorised customer identity and account position.'
+            : 'What this customer owes or has paid in, and what they can do.'
         }
         actions={
-          <Link className="button button-secondary" href={backHref}>
-            Back to customers
-          </Link>
+          customer && current ? (
+            <CustomerActions
+              customer={customer}
+              tenantId={current.organisationId}
+              currentStationId={current.stationId ?? null}
+              stations={actionStations}
+              fuelProducts={fuelProducts}
+              post={postCustomerCommand}
+              onDone={(message) => void actionDone(message)}
+              trailing={backLink}
+            />
+          ) : (
+            backLink
+          )
         }
       />
 
-      {contextLoading ? <LoadingState label="Loading authorised context" /> : null}
+      {contextLoading ? <LoadingState label="Loading" /> : null}
       {contextError ? <ErrorState message={contextError} /> : null}
       {!contextLoading && !contextError && !hasRequiredContext ? (
         <ContextRequiredState
-          title="Select an organisation"
-          message="Use the work context selector above to choose an organisation."
+          title="Choose a business first"
+          message="Use the selector at the top of the page to choose which business you are working in."
         />
       ) : null}
       {error ? (
@@ -475,14 +603,14 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
           }
         />
       ) : null}
-      {loading ? <LoadingState label="Loading customer detail" /> : null}
+      {loading ? <LoadingState label="Loading this customer" /> : null}
       {!loading && !error && hasRequiredContext && !customer ? (
         <EmptyState
-          title="Customer not found in this organisation"
-          message="The customer may not belong to the selected organisation, or the record is not available to this authorised view."
+          title="We could not find this customer"
+          message="They may belong to a different business than the one you have chosen at the top of the page."
           action={
             <Link className="button button-secondary" href={backHref}>
-              Return to customers
+              Back to customers
             </Link>
           }
         />
@@ -490,23 +618,62 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
 
       {customer && hasRequiredContext ? (
         <>
-          <Card as="section" className="panel" aria-labelledby="customer-identity-title">
+          {actionMessage ? (
+            <div className="content-span">
+              <SuccessState message={actionMessage} />
+            </div>
+          ) : null}
+          {customer.accounts.length === 0 ? (
+            <Card
+              as="section"
+              className="panel content-span"
+              aria-labelledby="customer-accounts-title"
+            >
+              <EmptyState
+                title="No account opened yet"
+                message="This customer is on file but has no credit or prepaid account, so they cannot buy on account yet."
+              />
+            </Card>
+          ) : (
+            <Card as="section" className="panel" aria-labelledby="customer-accounts-title">
+              <div className="panel-heading">
+                <div>
+                  <h2 id="customer-accounts-title">Accounts</h2>
+                </div>
+              </div>
+              <div className="customer-account-list">
+                {customer.accounts.map((account) => (
+                  <section
+                    className="customer-account"
+                    key={account.accountId}
+                    aria-labelledby={`account-${account.accountId}`}
+                  >
+                    <div className="panel-heading">
+                      <h3 id={`account-${account.accountId}`}>
+                        {accountTypeLabel(account.accountType)}
+                      </h3>
+                      {account.status === 'ACTIVE' ? null : (
+                        <StatusBadge tone="neutral">
+                          {formatStatusLabel(account.status)}
+                        </StatusBadge>
+                      )}
+                    </div>
+                    <AccountPosition account={account} />
+                  </section>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          <Card as="section" className="panel customer-side" aria-labelledby="customer-scope-title">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Customer identity</p>
-                <h2 id="customer-identity-title">Basic details</h2>
+                <h2 id="customer-identity-title">Customer details</h2>
               </div>
-              <StatusBadge tone={customer.status === 'ACTIVE' ? 'positive' : 'neutral'}>
-                {formatStatusLabel(customer.status)}
-              </StatusBadge>
             </div>
             <dl className="detail-list">
-              <dt>Account reference</dt>
-              <dd>{customer.accountReference}</dd>
-              <dt>Organisation</dt>
-              <dd>{scopeLabel ?? 'Authorised organisation'}</dd>
-              <dt>Account scope</dt>
-              <dd>Tenant-wide customer account</dd>
+              <dt>Company</dt>
+              <dd>{customer.legalEntityName ?? scopeLabel ?? 'Not chosen yet'}</dd>
               {Object.entries(customer.contactMetadata).map(([key, value]) => (
                 <Fragment key={key}>
                   <dt>{formatStatusLabel(key)}</dt>
@@ -514,212 +681,184 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
                 </Fragment>
               ))}
             </dl>
-          </Card>
 
-          <Card as="section" className="panel content-span" aria-labelledby="customer-scope-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Customer credit readiness</p>
-                <h2 id="customer-scope-title">Legal entity and station scope</h2>
-              </div>
-              <StatusBadge
-                tone={
-                  customer.accounts.length > 0 &&
-                  customer.accounts.every((account) => account.ready)
-                    ? 'positive'
-                    : 'warning'
-                }
-              >
-                {customer.accounts.length > 0 && customer.accounts.every((account) => account.ready)
-                  ? 'Ready'
-                  : 'Not ready'}
-              </StatusBadge>
-            </div>
+            <details
+              open={setupOpen ?? false}
+              onToggle={(event) => setSetupOpen(event.currentTarget.open)}
+              className="fold"
+            >
+              <summary>
+                <span>
+                  <h2 id="customer-scope-title">Where this customer can buy fuel</h2>
+                  {reason !== null ? <small>{reason}. Tap to fix.</small> : null}
+                </span>
+                <StatusBadge tone={reason === null ? 'positive' : 'warning'}>
+                  {reason === null ? 'Ready' : 'Needs setup'}
+                </StatusBadge>
+                <Icon name="chevron-down" />
+              </summary>
 
-            {!customer.accounts.every((account) => account.ready) ? (
-              <Notice tone="warning" title="Customer account is not ready">
-                Confirm the legal entity and explicitly choose ALL or SELECTED stations before this
-                account can be used. The product will not assume a default station scope.
-              </Notice>
-            ) : null}
+              {reason !== null ? (
+                <Notice tone="warning" title="This customer cannot buy fuel yet">
+                  {reason}. Choose the company and the stations this customer may buy at, then press
+                  Save changes.
+                </Notice>
+              ) : null}
 
-            {!customer.canManageConfiguration ? (
-              <Notice tone="info" title="Configuration is restricted">
-                Only an OWNER or ADMINISTRATOR can manage this customer scope. Finance access
-                remains read-only, including historical account activity.
-              </Notice>
-            ) : (
-              <div className="form-stack">
-                <Field
-                  id="customer-legal-entity"
-                  label="Customer legal entity"
-                  hint={
-                    customer.legalEntityId
-                      ? 'The confirmed legal entity cannot be moved here because it anchors the customer receivable.'
-                      : 'Choose the legal entity that owns this customer credit relationship.'
-                  }
-                  required
-                >
-                  <select
-                    id="customer-legal-entity"
-                    value={scopeLegalEntityId}
-                    disabled={Boolean(customer.legalEntityId) || scopeSave.status === 'saving'}
-                    onChange={(event) => {
-                      const nextLegalEntityId = event.target.value;
-                      setScopeLegalEntityId(nextLegalEntityId);
-                      setScopeForms((currentForms) =>
-                        Object.fromEntries(
-                          Object.keys(currentForms).map((accountId) => [
-                            accountId,
-                            { stationScope: '', stationIds: [] },
-                          ]),
-                        ),
-                      );
-                      setScopeSave({ status: 'idle' });
-                    }}
-                  >
-                    <option value="">Choose a legal entity</option>
-                    {availableLegalEntities.map((legalEntity) => (
-                      <option key={legalEntity.id} value={legalEntity.id}>
-                        {legalEntity.name}
-                      </option>
+              {!customer.canManageConfiguration ? (
+                <>
+                  <dl className="detail-list">
+                    {customer.accounts.map((account) => (
+                      <Fragment key={account.accountId}>
+                        <dt>{accountTypeLabel(account.accountType)}</dt>
+                        <dd>{readOnlyScope(account)}</dd>
+                      </Fragment>
                     ))}
-                  </select>
-                </Field>
-
-                {customer.accounts.map((account) => {
-                  const form = scopeForms[account.accountId] ?? {
-                    stationScope: '',
-                    stationIds: [],
-                  };
-                  const stations = selectedLegalEntity?.stations ?? [];
-                  return (
-                    <div className="card" key={account.accountId}>
-                      <div className="panel-heading">
-                        <div>
-                          <p className="eyebrow">{accountTypeLabel(account.accountType)}</p>
-                          <h3>Station access</h3>
-                        </div>
-                        <StatusBadge tone={account.ready ? 'positive' : 'warning'}>
-                          {account.ready ? 'Ready' : 'Not ready'}
-                        </StatusBadge>
-                      </div>
-                      <Field
-                        id={`customer-station-scope-${account.accountId}`}
-                        label="Station scope"
-                        hint="This must be explicitly confirmed; ALL is not assumed for existing accounts."
-                        required
-                      >
-                        <select
-                          id={`customer-station-scope-${account.accountId}`}
-                          value={form.stationScope}
-                          disabled={!scopeLegalEntityId || scopeSave.status === 'saving'}
-                          onChange={(event) => {
-                            const stationScope = event.target.value as StationScope;
-                            setScopeForms((currentForms) => ({
-                              ...currentForms,
-                              [account.accountId]: {
-                                stationScope,
-                                stationIds: stationScope === 'SELECTED' ? form.stationIds : [],
-                              },
-                            }));
-                            setScopeSave({ status: 'idle' });
-                          }}
-                        >
-                          <option value="">Choose a station scope</option>
-                          <option value="ALL">ALL — every station in the legal entity</option>
-                          <option value="SELECTED">SELECTED — choose stations</option>
-                        </select>
-                      </Field>
-
-                      {form.stationScope === 'SELECTED' ? (
-                        <fieldset disabled={scopeSave.status === 'saving'}>
-                          <legend>Selected stations</legend>
-                          {stations.length === 0 ? (
-                            <p className="field-hint">
-                              No active stations are available for this legal entity.
-                            </p>
-                          ) : (
-                            <div className="stack-sm">
-                              {stations.map((station) => (
-                                <label key={station.id}>
-                                  <input
-                                    type="checkbox"
-                                    checked={form.stationIds.includes(station.id)}
-                                    onChange={(event) => {
-                                      const stationIds = event.target.checked
-                                        ? [...form.stationIds, station.id]
-                                        : form.stationIds.filter(
-                                            (stationId) => stationId !== station.id,
-                                          );
-                                      setScopeForms((currentForms) => ({
-                                        ...currentForms,
-                                        [account.accountId]: { ...form, stationIds },
-                                      }));
-                                      setScopeSave({ status: 'idle' });
-                                    }}
-                                  />{' '}
-                                  {station.name} ({station.code})
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                        </fieldset>
-                      ) : null}
-                    </div>
-                  );
-                })}
-
-                <div className="button-row">
-                  <button
-                    className="button button-primary"
-                    type="button"
-                    disabled={scopeSave.status === 'saving'}
-                    onClick={() => void saveCustomerScope()}
+                  </dl>
+                  <Notice tone="info" title="Only an owner or administrator can change this">
+                    You can look at these settings and the account activity, but not change them.
+                  </Notice>
+                </>
+              ) : (
+                <div className="form-stack">
+                  <Field
+                    id="customer-legal-entity"
+                    label="Company the customer buys from"
+                    hint={
+                      customer.legalEntityId
+                        ? 'Already chosen. It cannot be changed here because the customer’s balance belongs to it.'
+                        : 'Choose the company that this customer pays.'
+                    }
+                    required
                   >
-                    {scopeSave.status === 'saving' ? 'Saving scope…' : 'Save customer scope'}
-                  </button>
-                </div>
-                {scopeSave.status === 'success' && scopeSave.message ? (
-                  <SuccessState message={scopeSave.message} />
-                ) : null}
-                {scopeSave.status === 'error' && scopeSave.message ? (
-                  <ErrorState message={scopeSave.message} />
-                ) : null}
-              </div>
-            )}
-          </Card>
+                    <select
+                      id="customer-legal-entity"
+                      value={scopeLegalEntityId}
+                      disabled={Boolean(customer.legalEntityId) || scopeSave.status === 'saving'}
+                      onChange={(event) => {
+                        const nextLegalEntityId = event.target.value;
+                        setScopeLegalEntityId(nextLegalEntityId);
+                        setScopeForms((currentForms) =>
+                          Object.fromEntries(
+                            Object.keys(currentForms).map((accountId) => [
+                              accountId,
+                              { stationScope: '', stationIds: [] },
+                            ]),
+                          ),
+                        );
+                        setScopeSave({ status: 'idle' });
+                      }}
+                    >
+                      <option value="">Choose a company</option>
+                      {availableLegalEntities.map((legalEntity) => (
+                        <option key={legalEntity.id} value={legalEntity.id}>
+                          {legalEntity.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
 
-          {customer.accounts.length === 0 ? (
-            <Card as="section" className="panel" aria-labelledby="customer-accounts-title">
-              <EmptyState
-                title="No account is opened"
-                message="This customer identity exists, but no credit or prepaid account is currently modelled for it."
-              />
-            </Card>
-          ) : (
-            customer.accounts.map((account) => (
-              <Card
-                as="section"
-                className="panel content-span"
-                key={account.accountId}
-                aria-labelledby={`account-${account.accountId}`}
-              >
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Customer account</p>
-                    <h2 id={`account-${account.accountId}`}>
-                      {accountTypeLabel(account.accountType)}
-                    </h2>
+                  {customer.accounts.map((account) => {
+                    const form = scopeForms[account.accountId] ?? {
+                      stationScope: '',
+                      stationIds: [],
+                    };
+                    const stations = selectedLegalEntity?.stations ?? [];
+                    return (
+                      <div className="card" key={account.accountId}>
+                        <div className="panel-heading">
+                          <div>
+                            <p className="eyebrow">{accountTypeLabel(account.accountType)}</p>
+                            <h3>Stations</h3>
+                          </div>
+                          <StatusBadge tone={account.ready ? 'positive' : 'warning'}>
+                            {account.ready ? 'Ready' : 'Not ready'}
+                          </StatusBadge>
+                        </div>
+                        <Field
+                          id={`customer-station-scope-${account.accountId}`}
+                          label="Where can they buy fuel?"
+                          hint="Please choose one."
+                          required
+                        >
+                          <select
+                            id={`customer-station-scope-${account.accountId}`}
+                            value={form.stationScope}
+                            disabled={!scopeLegalEntityId || scopeSave.status === 'saving'}
+                            onChange={(event) => {
+                              const stationScope = event.target.value as StationScope;
+                              setScopeForms((currentForms) => ({
+                                ...currentForms,
+                                [account.accountId]: {
+                                  stationScope,
+                                  stationIds: stationScope === 'SELECTED' ? form.stationIds : [],
+                                },
+                              }));
+                              setScopeSave({ status: 'idle' });
+                            }}
+                          >
+                            <option value="">Choose…</option>
+                            <option value="ALL">Every station of this company</option>
+                            <option value="SELECTED">Only the stations I choose</option>
+                          </select>
+                        </Field>
+
+                        {form.stationScope === 'SELECTED' ? (
+                          <fieldset disabled={scopeSave.status === 'saving'}>
+                            <legend>Stations they can buy at</legend>
+                            {stations.length === 0 ? (
+                              <p className="field-hint">This company has no active stations.</p>
+                            ) : (
+                              <div className="stack-sm">
+                                {stations.map((station) => (
+                                  <label key={station.id}>
+                                    <input
+                                      type="checkbox"
+                                      checked={form.stationIds.includes(station.id)}
+                                      onChange={(event) => {
+                                        const stationIds = event.target.checked
+                                          ? [...form.stationIds, station.id]
+                                          : form.stationIds.filter(
+                                              (stationId) => stationId !== station.id,
+                                            );
+                                        setScopeForms((currentForms) => ({
+                                          ...currentForms,
+                                          [account.accountId]: { ...form, stationIds },
+                                        }));
+                                        setScopeSave({ status: 'idle' });
+                                      }}
+                                    />{' '}
+                                    {station.name} ({station.code})
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </fieldset>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+
+                  <div className="button-row">
+                    <button
+                      className="button button-primary"
+                      type="button"
+                      disabled={scopeSave.status === 'saving'}
+                      onClick={() => void saveCustomerScope()}
+                    >
+                      {scopeSave.status === 'saving' ? 'Saving…' : 'Save changes'}
+                    </button>
                   </div>
-                  <StatusBadge tone={account.status === 'ACTIVE' ? 'positive' : 'neutral'}>
-                    {formatStatusLabel(account.status)}
-                  </StatusBadge>
+                  {scopeSave.status === 'success' && scopeSave.message ? (
+                    <SuccessState message={scopeSave.message} />
+                  ) : null}
+                  {scopeSave.status === 'error' && scopeSave.message ? (
+                    <ErrorState message={scopeSave.message} />
+                  ) : null}
                 </div>
-                <AccountPosition account={account} />
-              </Card>
-            ))
-          )}
+              )}
+            </details>
+          </Card>
 
           <Card
             as="section"
@@ -728,40 +867,36 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
           >
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Posted ledger activity</p>
-                <h2 id="customer-transactions-title">Recent account transactions</h2>
+                <p className="eyebrow">Latest first</p>
+                <h2 id="customer-transactions-title">Recent activity</h2>
               </div>
             </div>
             {customer.recentTransactions.length === 0 ? (
               <EmptyState
-                title="No posted account activity"
-                message="Authorised payments, top-ups and fuel usage will appear here after they are posted."
+                title="Nothing recorded yet"
+                message="Payments, top-ups and fuel bought will show here once they are recorded."
               />
             ) : (
-              <TableScrollRegion label="Recent customer account transactions">
+              <TableScrollRegion label="Recent customer activity">
                 <table className="responsive-table">
-                  <caption className="visually-hidden">
-                    Recent customer account transactions
-                  </caption>
+                  <caption className="visually-hidden">Recent customer activity</caption>
                   <thead>
                     <tr>
-                      <th scope="col">Date</th>
-                      <th scope="col">Account</th>
-                      <th scope="col">Activity</th>
-                      <th scope="col">Product</th>
-                      <th scope="col">Value</th>
+                      <th scope="col">When</th>
+                      {customer.accounts.length > 1 ? <th scope="col">Account</th> : null}
+                      <th scope="col">What happened</th>
+                      {showProduct ? <th scope="col">Fuel</th> : null}
+                      <th scope="col">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {customer.recentTransactions.map((transaction) => (
                       <tr key={transaction.id}>
-                        <td data-label="Date">
-                          {formatDate(transaction.occurredAt)}
-                          <br />
-                          <small>{transaction.businessDate}</small>
-                        </td>
-                        <td data-label="Account">{accountTypeLabel(transaction.accountType)}</td>
-                        <td data-label="Activity">
+                        <td data-label="When">{formatWhen(transaction.occurredAt)}</td>
+                        {customer.accounts.length > 1 ? (
+                          <td data-label="Account">{accountTypeLabel(transaction.accountType)}</td>
+                        ) : null}
+                        <td data-label="What happened">
                           {transactionLabel(transaction)}
                           {transaction.note ? (
                             <>
@@ -770,10 +905,12 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
                             </>
                           ) : null}
                         </td>
-                        <td data-label="Product">
-                          {transaction.productName ?? transaction.productCode ?? '—'}
-                        </td>
-                        <td data-label="Value" className="numeric">
+                        {showProduct ? (
+                          <td data-label="Fuel">
+                            {transaction.productName ?? transaction.productCode ?? '—'}
+                          </td>
+                        ) : null}
+                        <td data-label="Amount" className="numeric">
                           {transactionValue(transaction)}
                         </td>
                       </tr>
@@ -783,17 +920,41 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
               </TableScrollRegion>
             )}
           </Card>
-
-          <Notice tone="info" title="Not shown here yet">
-            Invoices, statements, overdue ageing, customer terms, and vehicle or driver rules are
-            not recorded for customers yet, so they are not shown.
-          </Notice>
         </>
       ) : null}
+      {current ? (
+        <StepUpDialog
+          open={scopeStepUp}
+          tenantId={current.organisationId}
+          description="This change needs a fresh identity check first. Nothing is saved until you confirm."
+          confirmLabel="Confirm and continue"
+          cancelledMessage="The check was cancelled or did not pass. Nothing was saved."
+          onVerified={() => {
+            setScopeStepUp(false);
+            void saveCustomerScope(true);
+          }}
+          onCancel={() => {
+            setScopeStepUp(false);
+            setScopeSave({
+              status: 'error',
+              message: 'The identity check was cancelled, so nothing was saved.',
+            });
+          }}
+        />
+      ) : null}
       {customer ? (
-        <Link className="field-hint" href={customerHref}>
-          Refresh this customer view
-        </Link>
+        <p className="field-hint" role="status">
+          <button
+            type="button"
+            className="button button-quiet"
+            disabled={refreshState === 'busy'}
+            onClick={() => void refreshNow()}
+          >
+            {refreshState === 'busy' ? 'Refreshing…' : 'Refresh this page'}
+          </button>{' '}
+          {refreshState === 'done' ? 'Up to date.' : null}
+          {refreshState === 'failed' ? 'Could not refresh. Try again.' : null}
+        </p>
       ) : null}
     </div>
   );

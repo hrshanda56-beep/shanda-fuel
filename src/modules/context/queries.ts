@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -25,7 +26,10 @@ import type {
   ContextResolution,
   ContextSelection,
 } from './contracts';
-import { defaultContextSelection, invalidContext, validateContextSelection } from './domain';
+import { validateContextSelection } from './domain';
+import { resolveAvailableContext } from './resolution';
+import { readNavigationSnapshot, decodeNavigationSnapshot } from './navigation-snapshot';
+import { rememberLoadedMembership } from '../tenancy/authority';
 import { readPersistedContext } from './persistence';
 import {
   contextRoutePolicy,
@@ -79,7 +83,10 @@ async function listActiveTenantIds(
   });
 }
 
-async function readTenantRows(authority: TenantExecutionContext): Promise<ContextRow[]> {
+async function readTenantRows(
+  authority: TenantExecutionContext,
+  selection?: ContextSelection,
+): Promise<ContextRow[]> {
   return withTenantTransaction(authority.transaction, async (transaction: ContextTransaction) => {
     return transaction.execute<ContextRow>(sql`
       select
@@ -101,6 +108,8 @@ async function readTenantRows(authority: TenantExecutionContext): Promise<Contex
        and s.status = 'ACTIVE'
       where t.id = ${authority.membership.tenantId}
         and t.status = 'ACTIVE'
+        ${selection?.legalEntityId ? sql`and le.id = ${selection.legalEntityId}` : sql``}
+        ${selection?.stationId ? sql`and s.id = ${selection.stationId}` : sql``}
       order by le.legal_name, le.id, s.code, s.id
     `);
   });
@@ -210,12 +219,41 @@ export function filterAuthorizedContextRows(
 }
 
 /** Discover only the context tree the current authenticated actor may use. */
-export async function discoverAvailableContext(
+const discoverForRender = cache((request: Request) => discoverAvailableContextUncached(request));
+export function discoverAvailableContext(
+  request: Request,
+  dependencies: QueryDependencies = {},
+): Promise<AvailableContext> {
+  return Object.keys(dependencies).length > 0
+    ? discoverAvailableContextUncached(request, dependencies)
+    : discoverForRender(request);
+}
+
+async function discoverAvailableContextUncached(
   request: Request,
   dependencies: QueryDependencies = {},
 ): Promise<AvailableContext> {
   const now = dependencies.now ?? new Date();
   const actor = await requireAuthenticatedActor(request, dependencies.resolveActor, now);
+  // Enable only after migration 0034 has been reviewed and applied.
+  if (Object.keys(dependencies).length === 0 && process.env.CONSOLIDATED_CONTEXT_READS === '1') {
+    const snapshot = actor.navigationSnapshot
+      ? decodeNavigationSnapshot(actor.navigationSnapshot, actor.identityId)
+      : await readNavigationSnapshot(actor.identityId);
+    const organisations: ContextOrganisation[] = [];
+    for (const { membership, rows } of snapshot) {
+      await rememberLoadedMembership(membership);
+      const authority = await resolveTenantExecutionContext({
+        request,
+        requestedTenantId: membership.tenantId,
+        authenticatedActor: actor,
+        loadMembership: async () => membership,
+        now,
+      });
+      organisations.push(...filterAuthorizedContextRows(authority, rows, now).organisations);
+    }
+    return { organisations };
+  }
   const database = dependencies.database ?? getDatabase();
   const tenantIds = await listActiveTenantIds(actor.identityId, database);
   const membershipLoader = dependencies.loadMembership ?? loadTenantMembership;
@@ -239,56 +277,6 @@ export async function discoverAvailableContext(
   return { organisations };
 }
 
-function routeSelection(available: AvailableContext, route: ContextRoute): ContextSelection | null {
-  if (
-    !route.hasExplicitOrganisation &&
-    !route.hasExplicitLegalEntity &&
-    !route.hasExplicitStation &&
-    !route.hasExplicitAllStations
-  ) {
-    return null;
-  }
-
-  if (route.organisationId) {
-    return {
-      organisationId: route.organisationId,
-      ...(route.legalEntityId ? { legalEntityId: route.legalEntityId } : {}),
-      ...(route.stationId ? { stationId: route.stationId } : {}),
-      allStations: route.allStations,
-    };
-  }
-
-  const matches = available.organisations.flatMap((organisation) =>
-    organisation.legalEntities.flatMap((legalEntity) => {
-      const legalMatches = route.legalEntityId ? legalEntity.id === route.legalEntityId : true;
-      const stationMatches = route.stationId
-        ? legalEntity.stations.some((station) => station.id === route.stationId)
-        : true;
-      return legalMatches && stationMatches ? [{ organisation, legalEntity }] : [];
-    }),
-  );
-  if (matches.length !== 1) throw invalidContext('route context');
-  const match = matches[0]!;
-  return {
-    organisationId: match.organisation.id,
-    ...(route.legalEntityId || route.stationId ? { legalEntityId: match.legalEntity.id } : {}),
-    ...(route.stationId ? { stationId: route.stationId } : {}),
-    allStations: route.allStations,
-  };
-}
-
-function validatePersistedSelection(
-  available: AvailableContext,
-  persisted: ContextSelection,
-  policy: ContextRoutePolicy,
-): ContextSelection | null {
-  try {
-    return validateContextSelection(available, persisted, policy);
-  } catch {
-    return null;
-  }
-}
-
 export async function resolveCurrentContext(
   request: Request,
   input: Readonly<{
@@ -303,23 +291,7 @@ export async function resolveCurrentContext(
   const available = await discoverAvailableContext(request, input.dependencies);
   const persisted = readPersistedContext(request);
 
-  const explicit = routeSelection(available, route);
-  let current: ContextSelection | null = null;
-  let persistedSelectionInvalid = false;
-  if (explicit) {
-    current = validateContextSelection(available, explicit, policy);
-  } else if (persisted.selection) {
-    current = validatePersistedSelection(available, persisted.selection, policy);
-    persistedSelectionInvalid = current === null;
-  }
-  current ??= defaultContextSelection(available, policy);
-
-  return {
-    available,
-    current,
-    route: { pathname: route.pathname, policy },
-    persistedContextInvalid: persisted.invalid || persistedSelectionInvalid,
-  };
+  return resolveAvailableContext(available, route, policy, persisted);
 }
 
 export async function validateRequestedContext(
@@ -333,6 +305,17 @@ export async function validateRequestedContext(
 ): Promise<ContextSelection> {
   const pathname = input.pathname ?? new URL(request.url).pathname;
   const policy = input.policy ?? contextRoutePolicy(pathname);
+  if (!input.dependencies) {
+    // A switch supplies the target organisation already. Verify that membership
+    // directly rather than enumerating every membership and station first.
+    const authority = await resolveTenantExecutionContext({
+      request,
+      requestedTenantId: selection.organisationId,
+    });
+    const rows = await readTenantRows(authority, selection);
+    const available = filterAuthorizedContextRows(authority, rows);
+    return validateContextSelection(available, selection, policy);
+  }
   const available = await discoverAvailableContext(request, input.dependencies);
   return validateContextSelection(available, selection, policy);
 }

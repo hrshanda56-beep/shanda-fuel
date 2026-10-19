@@ -14,7 +14,7 @@ export type CustomerAccount = {
   legalEntityId: string | null;
   stationScope: 'ALL' | 'SELECTED';
   stationScopeConfigured: boolean;
-  allowedStationIds: string[];
+  allowedStationIds: readonly string[];
   ready: boolean;
   currency: string;
   creditLimit: string | null;
@@ -22,7 +22,7 @@ export type CustomerAccount = {
   availableBalance: string | null;
   availableCredit: string | null;
   reservedAmount: string;
-  productBalances: CustomerProductBalance[];
+  productBalances: readonly CustomerProductBalance[];
 };
 
 export type CustomerTransaction = {
@@ -48,6 +48,13 @@ export type CustomerTransaction = {
   note: string | null;
 };
 
+export type CustomerCapabilities = {
+  recordPayment: boolean;
+  topUp: boolean;
+  manageCustomer: boolean;
+  openAccount: boolean;
+};
+
 export type CustomerSummary = {
   customerId: string;
   accountReference: string;
@@ -57,11 +64,14 @@ export type CustomerSummary = {
   legalEntityId: string | null;
   legalEntityName: string | null;
   canManageConfiguration: boolean;
+  capabilities: CustomerCapabilities;
   contactMetadata: Record<string, string>;
-  accounts: CustomerAccount[];
-  recentTransactions: CustomerTransaction[];
+  accounts: readonly CustomerAccount[];
+  recentTransactions: readonly CustomerTransaction[];
 };
 
 export type CustomerAccountsResponse = {
   customers: CustomerSummary[];
+  /** Active fuels for prepaid-litres top-ups; only sent for a single-customer read. */
+  fuelProducts?: Array<{ id: string; code: string; name: string }>;
 };

@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 import {
   methodTotals,
+  orderPaymentsFor,
+  pickSettlementFor,
   providerShares,
   settlementCounts,
   settlementStateLabel,
@@ -62,5 +64,39 @@ describe('providerShares', () => {
       settlement('OneMoney', '5', 'RECORDED', 'ZWG'),
     ]);
     expect(shares.every((share) => share.share === 1)).toBe(true);
+  });
+});
+
+describe('matching suggestions', () => {
+  const eco = {
+    ...settlement('EcoCash', '10'),
+    providerCode: 'ECOCASH',
+    unallocatedProviderAmount: '10',
+    settlementId: 'a',
+  };
+  const cbz = {
+    ...settlement('CBZ POS', '10'),
+    providerCode: 'CBZ',
+    unallocatedProviderAmount: '10',
+    settlementId: 'b',
+  };
+  const done = {
+    ...settlement('CBZ POS', '10', 'RECONCILED'),
+    providerCode: 'CBZ',
+    unallocatedProviderAmount: '0',
+    settlementId: 'c',
+  };
+
+  it('picks the only open payout, otherwise the one for the same provider', () => {
+    expect(pickSettlementFor(payment('POS', '1'), [done, eco])?.settlementId).toBe('a');
+    expect(pickSettlementFor(payment('POS', '1'), [eco, cbz])?.settlementId).toBe('b');
+    expect(pickSettlementFor(payment('ECOCASH', '1'), [cbz, eco])?.settlementId).toBe('a');
+    expect(pickSettlementFor(payment('POS', '1'), [done])).toBeUndefined();
+  });
+
+  it('lists payments for the chosen provider first', () => {
+    const rows = [payment('POS', '1'), payment('ECOCASH', '2')];
+    expect(orderPaymentsFor(eco, rows).map((row) => row.method)).toEqual(['ECOCASH', 'POS']);
+    expect(orderPaymentsFor(undefined, rows)).toEqual(rows);
   });
 });

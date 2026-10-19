@@ -7,11 +7,15 @@ import {
   activateManualStaffFromRequest,
   resendStaffInvitationFromRequest,
   revokeStaffInvitationFromRequest,
-} from '@/modules/staff';
-import { requireAuthenticatedActor } from '@/modules/identity';
-import { apiErrorResponse, withRequestObservability } from '@/platform/observability';
-import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '@/platform/security';
+} from '../../../../modules/staff';
+import { requireAuthenticatedActor } from '../../../../modules/identity';
+import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
+import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
 import { staffDeactivationResponseStatus } from '../../../../modules/staff/revocation';
+import {
+  consumePersistentRateLimit,
+  rateLimitResponse,
+} from '../../../../platform/security/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -29,8 +33,15 @@ export const POST = withRequestObservability(
           : undefined;
       if (commandType !== 'ActivateManualStaff') await requireAuthenticatedActor(request);
       switch (commandType) {
-        case 'ActivateManualStaff':
+        case 'ActivateManualStaff': {
+          const clientLimit = await consumePersistentRateLimit(request, {
+            scope: 'auth',
+            limit: 20,
+            windowSeconds: 900,
+          });
+          if (!clientLimit.allowed) return rateLimitResponse(clientLimit);
           return response(await activateManualStaffFromRequest(body));
+        }
         case 'CreateStaffInvitation':
           return response(await createStaffInvitationFromRequest(request, body), 201);
         case 'GenerateManualStaffActivation':

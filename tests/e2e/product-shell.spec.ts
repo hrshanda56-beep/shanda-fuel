@@ -138,7 +138,7 @@ test.describe('desktop sidebar', () => {
       'aria-expanded',
       'true',
     );
-    await expect(page.locator('.shell-header h1')).toHaveText('Provider settlements');
+    await expect(page.locator('.shell-header h1')).toHaveText('Provider payouts');
     await expect(page.locator('.shell-sheet h1')).toHaveCount(0);
   });
 
@@ -216,7 +216,7 @@ test.describe('desktop sidebar', () => {
       'href',
       '/reports?tenantId=tenant-1&stationId=station-1',
     );
-    await expect(nav.getByRole('link', { name: 'Provider settlements' })).toHaveAttribute(
+    await expect(nav.getByRole('link', { name: 'Provider payouts' })).toHaveAttribute(
       'aria-current',
       'page',
     );

@@ -23,6 +23,7 @@ vi.mock('./navigation-projection', () => ({
 }));
 
 import { getServerShellAccess } from './navigation-server';
+import { AppError } from '../platform/errors';
 
 const availableContext = {
   organisations: [
@@ -37,14 +38,16 @@ const availableContext = {
 describe('server shell session gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resolveCurrentContext.mockRejectedValue(
+      new AppError('UNAUTHENTICATED', 'No Clerk session'),
+    );
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it('keeps a prefixed Better Auth session on the authenticated root-shell path', async () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+  it('keeps a Clerk session on the authenticated root-shell path', async () => {
     mocks.resolveCurrentContext.mockResolvedValue({
       available: availableContext,
       current: { organisationId: 'tenant-1', legalEntityId: 'legal-entity-1' },
@@ -59,7 +62,7 @@ describe('server shell session gate', () => {
       getServerShellAccess(
         new Headers({
           host: 'fuel.shandahr.com',
-          cookie: 'shanda-fuel.session_token=opaque',
+          cookie: '__session=opaque',
         }),
       ),
     ).resolves.toMatchObject({
@@ -68,8 +71,7 @@ describe('server shell session gate', () => {
     });
   });
 
-  it('keeps a production Secure-prefixed Better Auth session on the root-shell path after station selection', async () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
+  it('keeps a Clerk session on the root-shell path after station selection', async () => {
     mocks.resolveCurrentContext.mockResolvedValue({
       available: {
         organisations: [
@@ -110,7 +112,7 @@ describe('server shell session gate', () => {
       getServerShellAccess(
         new Headers({
           host: 'fuel.shandahr.com',
-          cookie: '__Secure-shanda-fuel.session_token=opaque; shanda-fuel-context=validated',
+          cookie: '__session=opaque; shanda-fuel-context=validated',
         }),
       ),
     ).resolves.toMatchObject({
@@ -123,9 +125,7 @@ describe('server shell session gate', () => {
     });
   });
 
-  it('does not treat the unprefixed Better Auth cookie as authentication', async () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-
+  it('does not treat an unrelated session cookie as authentication', async () => {
     await expect(
       getServerShellAccess(
         new Headers({
@@ -134,25 +134,23 @@ describe('server shell session gate', () => {
         }),
       ),
     ).resolves.toEqual({ status: 'signed-out' });
-    expect(mocks.resolveCurrentContext).not.toHaveBeenCalled();
+    expect(mocks.resolveCurrentContext).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed when authenticated context resolution rejects', async () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
     mocks.resolveCurrentContext.mockRejectedValue(new Error('context unavailable'));
 
     await expect(
       getServerShellAccess(
         new Headers({
           host: 'fuel.shandahr.com',
-          cookie: 'shanda-fuel.session_token=opaque',
+          cookie: '__session=opaque',
         }),
       ),
-    ).resolves.toEqual({ status: 'signed-out' });
+    ).rejects.toThrow('context unavailable');
   });
 
   it('fails closed when the navigation projection cannot verify context', async () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
     mocks.resolveCurrentContext.mockResolvedValue({
       available: availableContext,
       current: { organisationId: 'tenant-1' },
@@ -165,14 +163,13 @@ describe('server shell session gate', () => {
       getServerShellAccess(
         new Headers({
           host: 'fuel.shandahr.com',
-          cookie: 'shanda-fuel.session_token=opaque',
+          cookie: '__session=opaque',
         }),
       ),
-    ).resolves.toEqual({ status: 'signed-out' });
+    ).rejects.toThrow('projection context unavailable');
   });
 
   it('uses the validated station selection for the shell projection without re-resolving context', async () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
     mocks.resolveCurrentContext.mockResolvedValue({
       available: availableContext,
       current: {
@@ -192,7 +189,7 @@ describe('server shell session gate', () => {
       getServerShellAccess(
         new Headers({
           host: 'fuel.shandahr.com',
-          cookie: 'shanda-fuel.session_token=opaque; shanda-fuel-context=validated',
+          cookie: '__session=opaque; shanda-fuel-context=validated',
         }),
       ),
     ).resolves.toMatchObject({ status: 'ready' });
@@ -203,10 +200,28 @@ describe('server shell session gate', () => {
   });
 
   it('returns signed-out for an unauthenticated request so the shell redirects', async () => {
-    vi.stubEnv('AUTH_PROVIDER', 'BETTER_AUTH');
-
     await expect(getServerShellAccess(new Headers({ host: 'fuel.shandahr.com' }))).resolves.toEqual(
       { status: 'signed-out' },
     );
+  });
+
+  it('redirects only when verified session resolution reports unauthenticated', async () => {
+    mocks.resolveCurrentContext.mockRejectedValue(
+      new AppError('UNAUTHENTICATED', 'Session expired'),
+    );
+    await expect(
+      getServerShellAccess(new Headers({ host: 'localhost:3000', cookie: '__session=opaque' })),
+    ).resolves.toEqual({ status: 'signed-out' });
+  });
+
+  it('uses verified Clerk context even without the legacy unsuffixed session cookie', async () => {
+    mocks.resolveCurrentContext.mockResolvedValue({
+      available: availableContext,
+      current: { organisationId: 'tenant-1' },
+    });
+    mocks.resolveTenantExecutionContext.mockResolvedValue({ authorization: {} });
+    await expect(
+      getServerShellAccess(new Headers({ host: 'localhost:3000' })),
+    ).resolves.toMatchObject({ status: 'ready' });
   });
 });

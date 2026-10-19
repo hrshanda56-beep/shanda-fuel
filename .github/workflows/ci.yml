@@ -35,8 +35,8 @@ jobs:
     env:
       APP_ENV: test
       APP_URL: http://127.0.0.1:3100
-      AUTH_PROVIDER: BETTER_AUTH
-      BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_TEST_PUBLISHABLE_KEY }}
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
@@ -51,6 +51,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Require dedicated Clerk test configuration
+        shell: bash
+        run: |
+          test -n "$CLERK_SECRET_KEY" || { echo 'Configure secret CLERK_TEST_SECRET_KEY for the dedicated Clerk test instance.' >&2; exit 1; }
+          test -n "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" || { echo 'Configure variable CLERK_TEST_PUBLISHABLE_KEY for the dedicated Clerk test instance.' >&2; exit 1; }
       - name: Wait for PostgreSQL
         run: pg_isready --host 127.0.0.1 --port 5432 --username postgres --dbname shanda_fuel_test
       - name: Bootstrap database roles
@@ -207,8 +212,8 @@ jobs:
     env:
       APP_ENV: test
       APP_URL: http://127.0.0.1:3100
-      AUTH_PROVIDER: BETTER_AUTH
-      BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_TEST_PUBLISHABLE_KEY }}
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
       DATABASE_DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test

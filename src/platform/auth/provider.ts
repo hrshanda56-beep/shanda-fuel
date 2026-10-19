@@ -1,3 +1,4 @@
+import { markReadTiming } from '../observability/read-timing';
 import 'server-only';
 
 import { clerkClient, getAuth as getClerkAuth } from '@clerk/nextjs/server';
@@ -7,13 +8,16 @@ import { getServerEnv } from '../config/env';
 import { getDatabase } from '../db';
 import { AppError } from '../errors';
 import { readClerkStepUpAssertion } from './clerk-step-up';
+import { clerkCredentialName } from './credential-name';
+import { memoizeRequestRead } from '../security/request-read-scope';
 
-export type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
+export type AuthProviderName = 'CLERK';
 
 export type ProviderSession = {
   provider: AuthProviderName;
   providerUserId: string;
   internalUserId: string;
+  navigationSnapshot?: unknown[];
   providerSessionId: string;
   expiresAt: Date;
   strongAuthenticatedAt?: Date;
@@ -23,7 +27,7 @@ export type ProviderSession = {
   stepUpExpiresAt?: Date;
   stepUpTenantId?: string;
   stepUpAction?: string;
-  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification' | 'better-auth-totp';
+  strongAuthenticationMethod?: 'clerk-mfa' | 'clerk-reverification';
 };
 
 export type ClerkCredentialIdentity = {
@@ -38,37 +42,37 @@ export type ClerkSessionRevocationResult = {
 };
 
 const CLERK_STEP_UP_MAX_AGE_MINUTES = 10;
-
-export function getAuthProviderName(): AuthProviderName {
-  const configured = assertAuthProviderName(process.env.AUTH_PROVIDER);
-  const env = getServerEnv();
-  if (env.AUTH_PROVIDER !== configured) {
-    throw new AppError('INVARIANT_VIOLATION', 'Authentication provider configuration is invalid');
-  }
-  return configured;
-}
-
-export function assertAuthProviderName(value: unknown): AuthProviderName {
-  if (value === 'BETTER_AUTH' || value === 'CLERK') return value;
-  throw new AppError('INVARIANT_VIOLATION', 'Authentication provider configuration is invalid');
-}
+const identityRead = Symbol('clerk-internal-identity');
 
 export async function resolveClerkSession(request: Request): Promise<ProviderSession | null> {
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
+  markReadTiming('identity.clerk.headers.ready');
   if (!auth.isAuthenticated || !auth.userId || !auth.sessionId) return null;
 
-  const identity = await getDatabase().transaction(async (transaction) => {
-    await transaction.execute(sql`
-      select
-        set_config('app.auth_provider', 'CLERK', true),
-        set_config('app.provider_user_id', ${auth.userId}, true)
-    `);
-    const rows = await transaction.execute<{ internal_user_id: string }>(sql`
+  // The reviewed identity capability takes explicit provider/user arguments and
+  // uses its owner-only RLS policy. It does not read connection-local context.
+  // Do not spend BEGIN/context/COMMIT round trips for this single read.
+  const includeSnapshot =
+    request.method === 'GET' && process.env.CONSOLIDATED_CONTEXT_READS === '1';
+  const rows = await memoizeRequestRead(identityRead, auth.userId, () =>
+    getDatabase().execute<{ internal_user_id: string; navigation_snapshot?: unknown[] }>(
+      includeSnapshot
+        ? sql`
+      select identity.internal_user_id, snapshot.navigation_snapshot
+      from app.resolve_auth_identity('CLERK', ${auth.userId}) identity
+      cross join lateral (
+        select coalesce(jsonb_agg(navigation), '[]'::jsonb) as navigation_snapshot
+        from app.read_navigation_context(identity.internal_user_id) navigation
+      ) snapshot
+    `
+        : sql`
       select internal_user_id
       from app.resolve_auth_identity('CLERK', ${auth.userId})
-    `);
-    return rows[0]?.internal_user_id ?? null;
-  });
+    `,
+    ),
+  );
+  markReadTiming('identity.database.mapping.ready');
+  const identity = rows[0]?.internal_user_id ?? null;
 
   if (!identity) {
     throw new AppError('FORBIDDEN', 'The authentication identity is not provisioned');
@@ -82,7 +86,10 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
     factorAges.length === 2 &&
     factorAges.every(
       (age) =>
-        typeof age === 'number' && Number.isFinite(age) && age <= CLERK_STEP_UP_MAX_AGE_MINUTES,
+        typeof age === 'number' &&
+        Number.isFinite(age) &&
+        age >= 0 &&
+        age < CLERK_STEP_UP_MAX_AGE_MINUTES,
     );
   const strongAuthenticatedAt = hasRecentMfa
     ? new Date(Date.now() - Math.max(factorAges[0], factorAges[1]) * 60_000)
@@ -93,7 +100,8 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
   const clerkAssertion = readClerkStepUpAssertion(request);
   const assertionMatchesSession =
     clerkAssertion?.providerSessionId === auth.sessionId &&
-    clerkAssertion.internalUserId === identity;
+    clerkAssertion.internalUserId === identity &&
+    (clerkAssertion.level === 'strict_mfa' || !getServerEnv().REQUIRE_LOGIN_MFA);
   const assertionIsStrictMfa = assertionMatchesSession && clerkAssertion.level === 'strict_mfa';
   const effectiveStrongAuthentication = hasRecentMfa || assertionMatchesSession;
   const effectiveStrongAuthenticatedAt = hasRecentMfa
@@ -110,6 +118,7 @@ export async function resolveClerkSession(request: Request): Promise<ProviderSes
     provider: 'CLERK',
     providerUserId: auth.userId,
     internalUserId: identity,
+    ...(rows[0]?.navigation_snapshot ? { navigationSnapshot: rows[0].navigation_snapshot } : {}),
     providerSessionId: auth.sessionId,
     expiresAt,
     strongAuthenticatedAt: effectiveStrongAuthenticatedAt,
@@ -151,17 +160,18 @@ export async function clerkUserHasMfa(providerUserId: string): Promise<boolean> 
 }
 
 export async function createClerkCredentialIdentity(input: {
-  username: string;
+  username?: string;
+  email?: string;
   password: string;
   firstName?: string;
   lastName?: string;
 }): Promise<ClerkCredentialIdentity> {
   const client = await clerkClient();
   const user = await client.users.createUser({
-    username: input.username,
+    ...(input.username ? { username: input.username } : {}),
+    ...(input.email ? { emailAddress: [input.email] } : {}),
     password: input.password,
-    ...(input.firstName ? { firstName: input.firstName } : {}),
-    ...(input.lastName ? { lastName: input.lastName } : {}),
+    ...clerkCredentialName(input.firstName, input.lastName),
   });
   return { providerUserId: user.id };
 }
@@ -175,17 +185,27 @@ export async function revokeClerkUserSessions(
   providerUserId: string,
 ): Promise<ClerkSessionRevocationResult> {
   const client = await clerkClient();
-  const sessions = await client.sessions.getSessionList({
-    userId: providerUserId,
-    status: 'active',
-  });
+  // Collect all pages before revoking: mutations would otherwise shift offsets.
+  const sessionIds = new Set<string>();
+  let offset = 0;
+  while (true) {
+    const page = await client.sessions.getSessionList({
+      userId: providerUserId,
+      status: 'active',
+      limit: 100,
+      offset,
+    });
+    for (const session of page.data) sessionIds.add(session.id);
+    offset += page.data.length;
+    if (page.data.length === 0 || offset >= page.totalCount || page.data.length < 100) break;
+  }
   const results = await Promise.allSettled(
-    sessions.data.map((session) => client.sessions.revokeSession(session.id)),
+    [...sessionIds].map((id) => client.sessions.revokeSession(id)),
   );
   const sessionsRevoked = results.filter((result) => result.status === 'fulfilled').length;
   return {
-    activeSessionsFound: sessions.data.length,
+    activeSessionsFound: sessionIds.size,
     sessionsRevoked,
-    complete: sessionsRevoked === sessions.data.length,
+    complete: sessionsRevoked === sessionIds.size,
   };
 }

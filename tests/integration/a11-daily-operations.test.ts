@@ -1,6 +1,6 @@
+import { seedClerkSession, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { GET as dailyOperationsGet } from '../../src/app/api/forecourt/operations/daily/route';
 import { GET as operationsOverviewGet } from '../../src/app/api/forecourt/operations/overview/route';
 
@@ -63,7 +63,7 @@ function requestFor(
     `http://127.0.0.1:3000/api/forecourt/operations/daily?tenantId=${tenantId}&stationId=${stationId}&businessDayId=${ids.day}&shiftId=${ids.shift}`,
     {
       headers: {
-        cookie: `shanda-fuel.session_token=${token}.${'signature-placeholder'}`,
+        ...clerkHeaders(token),
       },
     },
   );
@@ -76,9 +76,10 @@ async function signedRequest(
 ) {
   const token =
     actor === 'supervisor' ? 'a11-supervisor-session-token' : 'a11-attendant-session-token';
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   const request = requestFor(tenantId, stationId, actor);
-  request.headers.set('cookie', `shanda-fuel.session_token=${signedToken}`);
+  for (const [key, value] of Object.entries(clerkHeaders(signedToken)))
+    request.headers.set(key, value);
   return request;
 }
 
@@ -90,12 +91,12 @@ async function signedOverviewRequest(
 ) {
   const token =
     actor === 'supervisor' ? 'a11-supervisor-session-token' : 'a11-attendant-session-token';
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   const params = new URLSearchParams({ tenantId, stationId });
   if (businessDayId) params.set('businessDayId', businessDayId);
   return new Request(`http://127.0.0.1:3000/api/forecourt/operations/overview?${params}`, {
     headers: {
-      cookie: `shanda-fuel.session_token=${signedToken}`,
+      ...clerkHeaders(signedToken),
     },
   });
 }
@@ -104,13 +105,13 @@ describe('A11 daily operations composition read', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     client = postgres(databaseUrl!, { max: 1, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A11 Operations Tenant', 'a11-operations-tenant')
         on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.supervisorActor}', 'A11 Supervisor', 'a11-supervisor@example.test'),
         ('${ids.attendantActor}', 'A11 Attendant', 'a11-attendant@example.test')
         on conflict (id) do nothing;
@@ -175,12 +176,21 @@ describe('A11 daily operations composition read', () => {
           ('${ids.oldBoundary}', '${ids.tenant}', '${ids.station}', '${ids.nozzle}', '${ids.installation}', '${ids.day}', '${ids.shift}', 'SHIFT_OPEN', 'AVAILABLE', 100000.000, '2026-09-23T05:00:00Z', '2026-09-23T05:01:00Z', '${ids.supervisorMembership}', '${ids.supervisorMembership}', '${ids.attendantMembership}'),
           ('${ids.futureBoundary}', '${ids.tenant}', '${ids.station}', '${ids.nozzle}', '${ids.futureInstallation}', '${ids.day}', '${ids.shift}', 'SHIFT_CLOSE', 'AVAILABLE', 100500.000, '2026-09-23T15:00:00Z', '2026-09-23T15:01:00Z', '${ids.supervisorMembership}', '${ids.supervisorMembership}', '${ids.attendantMembership}')
         on conflict (id) do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values
-          ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', 'a11-supervisor-session-token', '${ids.supervisorActor}', true, now()),
-          ('${ids.attendantSession}', '2030-01-01T00:00:00Z', 'a11-attendant-session-token', '${ids.attendantActor}', false, null)
-        on conflict (id) do update set expires_at = excluded.expires_at;
     `);
+    await seedClerkSession(
+      client,
+      ids.supervisorSession,
+      'a11-supervisor-session-token',
+      ids.supervisorActor,
+      true,
+    );
+    await seedClerkSession(
+      client,
+      ids.attendantSession,
+      'a11-attendant-session-token',
+      ids.attendantActor,
+      false,
+    );
     await client.unsafe(`
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
       values
@@ -312,20 +322,17 @@ describe('A11 daily operations composition read', () => {
   });
 
   it('fails closed for missing or invalid station context', async () => {
-    const signedToken = `a11-supervisor-session-token.${await makeSignature(
-      'a11-supervisor-session-token',
-      process.env.BETTER_AUTH_SECRET!,
-    )}`;
+    const signedToken = 'a11-supervisor-session-token';
     const missingStation = await operationsOverviewGet(
       new Request(
         `http://127.0.0.1:3000/api/forecourt/operations/overview?tenantId=${ids.tenant}`,
-        { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+        { headers: { ...clerkHeaders(signedToken) } },
       ),
     );
     const invalidStation = await operationsOverviewGet(
       new Request(
         `http://127.0.0.1:3000/api/forecourt/operations/overview?tenantId=${ids.tenant}&stationId=not-a-uuid`,
-        { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+        { headers: { ...clerkHeaders(signedToken) } },
       ),
     );
 
@@ -333,7 +340,7 @@ describe('A11 daily operations composition read', () => {
     expect(invalidStation.status).toBe(400);
   });
 
-  it('enforces reconciliation and audit visibility for the operations overview', async () => {
+  it('enforces reconciliation visibility and omits activity from the operations overview', async () => {
     const supervisorResponse = await operationsOverviewGet(
       await signedOverviewRequest(ids.tenant, ids.station, 'supervisor', ids.day),
     );
@@ -342,8 +349,7 @@ describe('A11 daily operations composition read', () => {
     );
     const supervisorBody = (await supervisorResponse.json()) as {
       reconciliations: Array<{ id: string }>;
-      timeline: Array<{ eventCode: string; subjectId: string | null }>;
-      visibility: { reconciliations: boolean; auditTimeline: boolean };
+      visibility: { reconciliations: boolean };
       status: { close: string; approval: string };
       actions: {
         OpenBusinessDay: { canExecute: boolean };
@@ -361,14 +367,13 @@ describe('A11 daily operations composition read', () => {
     const attendantBody = (await attendantResponse.json()) as {
       shifts: Array<{ id: string }>;
       reconciliations: Array<{ id: string }>;
-      timeline: Array<{ eventCode: string }>;
-      visibility: { reconciliations: boolean; auditTimeline: boolean };
+      visibility: { reconciliations: boolean };
       status: { close: string; approval: string };
       actions: Record<string, { canExecute: boolean }>;
     };
 
     expect(supervisorResponse.status).toBe(200);
-    expect(supervisorBody.visibility).toEqual({ reconciliations: true, auditTimeline: true });
+    expect(supervisorBody.visibility).toEqual({ reconciliations: true });
     expect(supervisorBody.status).toEqual({ close: 'READY_FOR_REVIEW', approval: 'READY' });
     expect(supervisorBody.actions).toMatchObject({
       OpenBusinessDay: { canExecute: true },
@@ -379,20 +384,14 @@ describe('A11 daily operations composition read', () => {
       CompleteShift: { canExecute: true },
     });
     expect(supervisorBody.reconciliations.map((item) => item.id)).toContain(ids.overviewRecon);
-    expect(supervisorBody.timeline).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventCode: 'BUSINESS_DAY_OPENED',
-          subjectId: ids.day,
-        }),
-      ]),
-    );
+    expect(supervisorBody).not.toHaveProperty('timeline');
+    expect(supervisorBody.visibility).not.toHaveProperty('auditTimeline');
     expect(attendantResponse.status).toBe(200);
-    expect(attendantBody.visibility).toEqual({ reconciliations: false, auditTimeline: false });
+    expect(attendantBody.visibility).toEqual({ reconciliations: false });
     expect(attendantBody.status).toEqual({ close: 'IN_PROGRESS', approval: 'NO_REVISION' });
     expect(Object.values(attendantBody.actions).every((action) => !action.canExecute)).toBe(true);
     expect(attendantBody.shifts.map((shift) => shift.id)).toContain(ids.shift);
     expect(attendantBody.reconciliations).toHaveLength(0);
-    expect(attendantBody.timeline).toHaveLength(0);
+    expect(attendantBody).not.toHaveProperty('timeline');
   });
 });

@@ -17,14 +17,27 @@ type State =
   { status: 'loading' } | { status: 'error' } | { status: 'ready'; report: ManagementReport };
 
 /** The owner's first-glance figures for one period, each opening the report behind it. */
-export function QuickLook({ tenantId }: { tenantId: string }) {
+export function QuickLook({
+  tenantId,
+  initialData,
+}: {
+  tenantId: string;
+  initialData?: ManagementReport | null;
+}) {
   const searchParams = useSearchParams();
   const stationIds = useMemo(() => parseReportFilters(searchParams).stationIds, [searchParams]);
   const stationKey = stationIds.join(',');
   const [period, setPeriod] = useState<ReportPeriod>('this-month');
-  const [state, setState] = useState<State>({ status: 'loading' });
+  const [state, setState] = useState<State>(
+    initialData === undefined
+      ? { status: 'loading' }
+      : initialData
+        ? { status: 'ready', report: initialData }
+        : { status: 'error' },
+  );
 
   useEffect(() => {
+    if (initialData !== undefined && period === 'this-month') return;
     const controller = new AbortController();
     const range = resolvePeriod(period, businessToday());
     if (!range) return;
@@ -51,7 +64,7 @@ export function QuickLook({ tenantId }: { tenantId: string }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [tenantId, stationKey, period]);
+  }, [tenantId, stationKey, period, initialData]);
 
   function href(slug: string) {
     const params = applyReportFilters(new URLSearchParams({ tenantId }), {

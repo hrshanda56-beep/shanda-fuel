@@ -18,7 +18,7 @@ export type ReportDefinition = Readonly<{
   title: string;
   description: string;
   category: ReportCategoryId;
-  /** False when the report is a statement with no CSV layout. */
+  /** True when the report has a browser-downloadable CSV layout. */
   exportable: boolean;
 }>;
 
@@ -28,14 +28,14 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     title: 'Income Statement',
     description: 'Revenue, cost of sales, expenses and the operating result.',
     category: 'statements',
-    exportable: false,
+    exportable: true,
   },
   {
     slug: 'cash-movement',
     title: 'Cash Movement',
     description: 'Cash collected, banked and settled, and what is still outstanding.',
     category: 'statements',
-    exportable: false,
+    exportable: true,
   },
   {
     slug: 'sales',

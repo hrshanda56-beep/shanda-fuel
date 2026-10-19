@@ -1,5 +1,7 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
+import Decimal from 'decimal.js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -45,12 +47,15 @@ type StatementLine = {
   currency: string;
 };
 
+type LineForm = { description: string; quantity: string; unitPrice: string };
+
 type DocumentForm = {
   documentType: 'INVOICE' | 'CREDIT_NOTE';
   referenceNumber: string;
   documentDate: string;
   dueDate: string;
   amount: string;
+  lines: LineForm[];
 };
 
 type PaymentForm = {
@@ -60,12 +65,14 @@ type PaymentForm = {
 };
 
 const SUPPLIER_ROUTE_POLICY = contextRoutePolicy('/suppliers/:supplierId');
+const EMPTY_LINE: LineForm = { description: '', quantity: '', unitPrice: '' };
 const EMPTY_DOCUMENT_FORM: DocumentForm = {
   documentType: 'INVOICE',
   referenceNumber: '',
   documentDate: '',
   dueDate: '',
   amount: '',
+  lines: [EMPTY_LINE],
 };
 const EMPTY_PAYMENT_FORM: PaymentForm = {
   paymentDate: '',
@@ -95,14 +102,34 @@ function isExactDecimal(value: string): boolean {
   return /^\d+(?:\.\d+)?$/.test(value);
 }
 
-export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) {
+function lineTotal(line: LineForm): Decimal | null {
+  if (!isExactDecimal(line.quantity.trim()) || !isExactDecimal(line.unitPrice.trim())) return null;
+  return new Decimal(line.quantity.trim()).mul(line.unitPrice.trim());
+}
+
+function linesSubtotal(lines: LineForm[]): string {
+  return lines.reduce((sum, line) => sum.add(lineTotal(line) ?? 0), new Decimal(0)).toFixed(4);
+}
+
+export function SupplierDetailWorkspace({
+  supplierId,
+  initial,
+}: {
+  supplierId: string;
+  initial?: {
+    resolution: ContextResolution;
+    supplier: SupplierSummary | null;
+    statement: StatementLine[];
+  };
+}) {
+  const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const [context, setContext] = useState<ContextResolution | null>(null);
-  const [contextLoading, setContextLoading] = useState(true);
+  const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
+  const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [supplier, setSupplier] = useState<SupplierSummary | null>(null);
-  const [statement, setStatement] = useState<StatementLine[]>([]);
+  const [supplier, setSupplier] = useState<SupplierSummary | null>(initial?.supplier ?? null);
+  const [statement, setStatement] = useState<StatementLine[]>(initial?.statement ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentForm, setDocumentForm] = useState<DocumentForm>(EMPTY_DOCUMENT_FORM);
@@ -135,7 +162,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
     setContextLoading(true);
     setContextError(null);
     try {
-      const response = await fetch(contextRequestUrl(`/suppliers/${supplierId}`, search), {
+      const response = await contextFetch(contextRequestUrl(`/suppliers/${supplierId}`, search), {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
@@ -209,15 +236,16 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
   }
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadContext(controller.signal));
     return () => controller.abort();
     // URL changes trigger a fresh server-validated context resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, supplierId]);
+  }, [search, supplierId, contextFetch]);
 
   useEffect(() => {
-    if (!hasRequiredContext || !current) return;
+    if (initial || !hasRequiredContext || !current) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadDetails(current, controller.signal));
     return () => controller.abort();
@@ -273,9 +301,26 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       setActionError('Due date cannot be before the document date.');
       return;
     }
+    const filledLines = form.lines.filter(
+      (line) => line.description.trim() || line.quantity.trim() || line.unitPrice.trim(),
+    );
+    if (
+      filledLines.length === 0 ||
+      filledLines.some((line) => !line.description.trim() || lineTotal(line) === null)
+    ) {
+      setActionError(
+        'Add at least one invoice line. Each line needs a description, a quantity and a unit price.',
+      );
+      return;
+    }
     const submitted = await submitCommand(
       'SubmitSupplierDocument',
       {
+        lines: filledLines.map((line) => ({
+          description: line.description.trim(),
+          quantity: line.quantity.trim(),
+          unitPrice: line.unitPrice.trim(),
+        })),
         documentType: form.documentType,
         referenceNumber: form.referenceNumber.trim(),
         documentDate: form.documentDate,
@@ -310,6 +355,13 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       setPaymentForm(EMPTY_PAYMENT_FORM);
       setOpenForm(null);
     }
+  }
+
+  function setDocumentLine(index: number, patch: Partial<LineForm>) {
+    setDocumentForm((form) => ({
+      ...form,
+      lines: form.lines.map((line, at) => (at === index ? { ...line, ...patch } : line)),
+    }));
   }
 
   function openSubmitForm(form: 'document' | 'payment') {
@@ -542,10 +594,71 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
                   />
                 </Field>
               </div>
+              <fieldset className="stack">
+                <legend>Invoice lines</legend>
+                {documentForm.lines.map((line, index) => (
+                  <div className="form-grid" key={index}>
+                    <Field id={`document-line-${index}-description`} label="Description" required>
+                      <input
+                        id={`document-line-${index}-description`}
+                        value={line.description}
+                        maxLength={300}
+                        onChange={(event) =>
+                          setDocumentLine(index, { description: event.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field id={`document-line-${index}-quantity`} label="Quantity" required>
+                      <input
+                        id={`document-line-${index}-quantity`}
+                        inputMode="decimal"
+                        value={line.quantity}
+                        onChange={(event) =>
+                          setDocumentLine(index, { quantity: event.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field id={`document-line-${index}-price`} label="Unit price" required>
+                      <input
+                        id={`document-line-${index}-price`}
+                        inputMode="decimal"
+                        value={line.unitPrice}
+                        onChange={(event) =>
+                          setDocumentLine(index, { unitPrice: event.target.value })
+                        }
+                      />
+                    </Field>
+                    {documentForm.lines.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() =>
+                          setDocumentForm((form) => ({
+                            ...form,
+                            lines: form.lines.filter((_, at) => at !== index),
+                          }))
+                        }
+                      >
+                        Remove line
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    setDocumentForm((form) => ({ ...form, lines: [...form.lines, EMPTY_LINE] }))
+                  }
+                >
+                  Add line
+                </Button>
+                <p className="muted-small">Lines add up to {linesSubtotal(documentForm.lines)}.</p>
+              </fieldset>
               <Field
                 id="document-amount"
-                label="Amount"
-                hint="Enter an exact decimal amount; binary floating point is not used."
+                label="Total payable"
+                hint="The total printed on the invoice. It must equal the lines, plus VAT if your company adds VAT."
                 required
               >
                 <input

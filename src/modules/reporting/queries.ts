@@ -1,3 +1,4 @@
+import { resolveTenantReadAuthority } from '../context/read-authority';
 import 'server-only';
 
 import { sql } from 'drizzle-orm';
@@ -5,9 +6,10 @@ import type { Database } from '../../platform/db';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { authorize } from '../../platform/security/permissions';
+import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
-import { calculateGrossMargin, readCanonicalRevenue, readRestatedCogs } from '../profitability';
+import { buildProfitabilityReport, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
   customerScopeAvailability,
@@ -27,6 +29,7 @@ import {
   type DailyOperationsRow,
   type ManagementReport,
   type ManagementReportQuery,
+  type ReportExpenseClassification,
   type ReportDateBasis,
   type SalesPaymentRow,
 } from './contracts';
@@ -674,26 +677,79 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
     business_date: string;
     station_id: string;
     category: string;
+    classification: ReportExpenseClassification;
+    description: string;
+    payee: string | null;
+    reference: string | null;
+    state: string | null;
+    source_type: 'EXPENSE' | 'RECURRING_COST_RECOGNITION';
     amount: string;
-    ids: string[] | null;
+    expense_ids: string[] | null;
+    recurring_recognition_ids: string[] | null;
+    source_ids: string[] | null;
+    movement_ids: string[] | null;
+    attachment_ids: string[] | null;
   }>(sql`
-    with approved as (${approvedReconciliations(filters)})
-    select a.business_date, a.station_id, e.category, coalesce(sum(e.amount), 0)::text as amount,
-      coalesce(array_agg(e.id order by e.id), ARRAY[]::uuid[]) as ids
-    from approved a
-    join app.reconciliation_expenses e on e.tenant_id = ${filters.tenantId}
-      and e.station_id = a.station_id and e.reconciliation_id = a.reconciliation_id
-    group by a.business_date, a.station_id, e.category
-    order by a.business_date, a.station_id, e.category
+    select m.recognition_date as business_date, m.station_id, c.code as category, m.classification,
+      coalesce(e.description, t.name, 'Recognized expense') as description,
+      e.payee, e.reference, coalesce(e.state, r.state) as state, m.source_type,
+      coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount,
+      coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'EXPENSE'), ARRAY[]::uuid[]) as expense_ids,
+      coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'RECURRING_COST_RECOGNITION'), ARRAY[]::uuid[]) as recurring_recognition_ids,
+      coalesce(array_agg(distinct m.source_id order by m.source_id), ARRAY[]::uuid[]) as source_ids,
+      coalesce(array_agg(m.id order by m.id), ARRAY[]::uuid[]) as movement_ids,
+      coalesce(attachments.attachment_ids, ARRAY[]::uuid[]) as attachment_ids
+    from app.expense_recognition_movements m
+    join app.expense_categories c on c.tenant_id = m.tenant_id and c.id = m.category_id
+    left join app.expenses e on e.tenant_id = m.tenant_id
+      and e.id = m.source_id and m.source_type = 'EXPENSE'
+    left join app.recurring_cost_recognitions r on r.tenant_id = m.tenant_id
+      and r.id = m.source_id and m.source_type = 'RECURRING_COST_RECOGNITION'
+    left join app.recurring_cost_periods p on p.tenant_id = r.tenant_id and p.id = r.period_id
+    left join app.recurring_cost_templates t on t.tenant_id = p.tenant_id and t.id = p.template_id
+    left join lateral (
+      select array_agg(a.id order by a.id) as attachment_ids
+      from app.expense_attachments a
+      where a.tenant_id = e.tenant_id and a.expense_id = e.id
+    ) attachments on true
+    where m.tenant_id = ${filters.tenantId}
+      and m.recognition_date between ${filters.fromDate} and ${filters.toDate}
+      ${stationClause('m', filters.stationIds)}
+    group by m.recognition_date, m.station_id, c.code, m.classification,
+      e.description, t.name, e.payee, e.reference, e.state, r.state, m.source_type,
+      attachments.attachment_ids, m.source_id
+    order by m.recognition_date, m.station_id, c.code, m.classification, m.source_id
   `);
   const mapped = rows.map((row) => ({
     businessDate: row.business_date,
     stationId: row.station_id,
     category: row.category,
+    classification: row.classification,
+    description: row.description,
+    payee: row.payee,
+    reference: row.reference,
+    state: row.state,
     amount: formatMoney(row.amount),
-    expenseIds: uniqueIds(row.ids ?? []),
+    expenseIds: uniqueIds(row.expense_ids ?? []),
+    recurringRecognitionIds: uniqueIds(row.recurring_recognition_ids ?? []),
+    sourceIds: uniqueIds(row.source_ids ?? []),
+    recognitionMovementIds: uniqueIds(row.movement_ids ?? []),
+    attachmentIds: uniqueIds(row.attachment_ids ?? []),
+    sourceType: row.source_type,
   }));
-  return { total: formatMoney(sumExact(mapped.map((row) => row.amount))), rows: mapped };
+  const totalFor = (classification: ReportExpenseClassification) =>
+    formatMoney(
+      sumExact(
+        mapped.filter((row) => row.classification === classification).map((row) => row.amount),
+      ),
+    );
+  return {
+    total: formatMoney(sumExact(mapped.map((row) => row.amount))),
+    operatingTotal: totalFor('OPERATING'),
+    fixedCostTotal: totalFor('FIXED_COST'),
+    directInventoryCostTotal: totalFor('DIRECT_INVENTORY_COST'),
+    rows: mapped,
+  };
 }
 
 async function readDaily(
@@ -915,7 +971,8 @@ const dateBasis: ReportDateBasis = {
   suppliers: 'A7 effective_date <= toDate; balance as of toDate',
   customers: 'A8 balance as of toDate using ledger business_date and authorization requested_at',
   inventory: 'A4 movement business date and latest dip measured_at as of toDate',
-  expenses: 'A5 business date',
+  expenses: 'expense_recognition_movements.recognition_date',
+  dailyRecordedExpenses: 'A5 business date',
 };
 
 /**
@@ -923,24 +980,65 @@ const dateBasis: ReportDateBasis = {
  * authenticated tenant member who may view every requested station. One denial
  * rejects the whole request.
  */
-export async function authorizeManagementReportRequest(request: Request, input: unknown) {
-  const filters = parseManagementReportQuery(input);
-  const authority = await resolveTenantExecutionContext({
-    request,
-    requestedTenantId: filters.tenantId,
+async function reportingAuthority(request: Request, filters: ManagementReportQuery) {
+  if (process.env.CONSOLIDATED_CONTEXT_READS !== '1') {
+    const authority = await resolveTenantExecutionContext({
+      request,
+      requestedTenantId: filters.tenantId,
+    });
+    return { authority, rows: [] };
+  }
+  return resolveTenantReadAuthority({ request, tenantId: filters.tenantId });
+}
+async function reportingStations(
+  read: Awaited<ReturnType<typeof reportingAuthority>>,
+  filters: ManagementReportQuery,
+) {
+  if (filters.stationIds.length === 0) return [];
+  const stations = filters.stationIds.flatMap((id) => {
+    const row = read.rows.find((row) => row.station_id === id && row.legal_entity_id);
+    return row?.station_id && row.legal_entity_id
+      ? [{ id: row.station_id, legalEntityId: row.legal_entity_id }]
+      : [];
   });
-  const stations = await withTenantTransaction(authority.transaction, (transaction) =>
+  if (stations.length === filters.stationIds.length) return stations;
+  return withTenantTransaction(read.authority.transaction, (transaction) =>
     selectedStations(transaction, filters),
   );
-  authorizeStations(authority.authorization, filters, stations);
-  return { filters, authority, stations };
+}
+export async function authorizeManagementReportRequest(request: Request, input: unknown) {
+  const filters = parseManagementReportQuery(input);
+  const read = await reportingAuthority(request, filters);
+  const stations = await reportingStations(read, filters);
+  authorizeStations(read.authority.authorization, filters, stations);
+  return { filters, authority: read.authority, stations };
+}
+
+export async function getDashboardSalesFromRequest(request: Request, input: unknown) {
+  const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
+  const single = stations.length === 1 ? stations[0] : undefined;
+  const context = single
+    ? createTrustedTenantTransactionContext({
+        ...authority.transaction,
+        legalEntityId: single.legalEntityId,
+        stationId: single.id,
+      })
+    : authority.transaction;
+  return withTenantTransaction(context, async (transaction) => ({
+    sales: await readSales(transaction, filters),
+  }));
 }
 
 export async function getManagementReportFromRequest(
   request: Request,
   input: unknown,
+  options: { requireStepUp?: boolean } = {},
 ): Promise<ManagementReport> {
   const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
+  // Exports leave the application, so they need a fresh step-up for this tenant.
+  if (options.requireStepUp) {
+    assertStepUp(authority.actor.session, 1, new Date(), filters.tenantId);
+  }
   // One station keeps the station-scoped transaction context; several stations
   // are each authorised above and then bounded by the explicit station filter.
   const [single] = stations;
@@ -977,6 +1075,14 @@ export async function getManagementReportFromRequest(
       readRestatedCogs(transaction, filters),
       readCanonicalRevenue(transaction, filters),
     ]);
+    const profitability = buildProfitabilityReport({
+      tenantId: filters.tenantId,
+      stationIds: filters.stationIds,
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+      revenue,
+      costing,
+    });
     return {
       report: 'MANAGEMENT_OVERVIEW',
       state: 'POSTED',
@@ -998,7 +1104,8 @@ export async function getManagementReportFromRequest(
       expenses,
       revenue,
       costing,
-      grossMargin: calculateGrossMargin(revenue, costing),
+      fuelProfit: profitability.fuelProfit,
+      grossMargin: profitability.grossMargin,
     };
   });
 }
@@ -1014,24 +1121,29 @@ export async function getDailyOperationsFromRequest(
   rows: readonly DailyOperationsRow[];
 }> {
   const filters = parseManagementReportQuery(input);
-  const authority = await resolveTenantExecutionContext({
-    request,
-    requestedTenantId: filters.tenantId,
+  const read = await reportingAuthority(request, filters);
+  const stations =
+    process.env.CONSOLIDATED_CONTEXT_READS === '1' ? await reportingStations(read, filters) : null;
+  const authority = read.authority;
+  if (stations) authorizeStations(authority.authorization, filters, stations);
+  return withTenantTransaction(authority.transaction, async (transaction) => {
+    if (!stations)
+      authorizeStations(
+        authority.authorization,
+        filters,
+        await selectedStations(transaction, filters),
+      );
+    return {
+      report: 'DAILY_OPERATIONS' as const,
+      state: 'POSTED' as const,
+      filters: {
+        tenantId: filters.tenantId,
+        stationIds: filters.stationIds,
+        fromDate: filters.fromDate,
+        toDate: filters.toDate,
+      },
+      dateBasis,
+      rows: await readDaily(transaction, filters),
+    };
   });
-  const stations = await withTenantTransaction(authority.transaction, (transaction) =>
-    selectedStations(transaction, filters),
-  );
-  authorizeStations(authority.authorization, filters, stations);
-  return withTenantTransaction(authority.transaction, async (transaction) => ({
-    report: 'DAILY_OPERATIONS' as const,
-    state: 'POSTED' as const,
-    filters: {
-      tenantId: filters.tenantId,
-      stationIds: filters.stationIds,
-      fromDate: filters.fromDate,
-      toDate: filters.toDate,
-    },
-    dateBasis,
-    rows: await readDaily(transaction, filters),
-  }));
 }

@@ -1,9 +1,11 @@
+import type { RecordData } from './daily-operations-read-model';
 import 'server-only';
 
 import { createHash, randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
+import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import { ExactDecimal, money } from '../../platform/domain/primitives';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { postInventoryMovementInTransaction } from '../inventory/persistence';
@@ -763,6 +765,29 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       const header = await loadHeader(transaction, context, payload.reconciliationId);
       if (header.state !== 'SUBMITTED')
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be approved');
+      // Separation of duties: whoever submitted the day cannot also approve it, unless they are the
+      // only person who could (solo owner).
+      const submitter = await transaction.execute<{ submitted_by: string | null }>(sql`
+        select submitted_by
+        from app.reconciliations
+        where tenant_id=${context.tenantId}
+          and station_id=${context.stationId}
+          and id=${payload.reconciliationId}
+      `);
+      if (
+        submitter[0]?.submitted_by === context.actor.membershipId &&
+        (await hasAlternateApprover(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          excludeMembershipId: context.actor.membershipId,
+          permission: 'reconciliation.approve',
+        }))
+      ) {
+        throw new AppError(
+          'FORBIDDEN',
+          'The person who submitted a reconciliation cannot approve it',
+        );
+      }
       const metrics = await loadMetrics(transaction, context, payload.reconciliationId);
       await requireExplanations(transaction, context, payload.reconciliationId, metrics);
       const bridgeTable = await transaction.execute<{ installed: boolean }>(sql`
@@ -1234,35 +1259,54 @@ export async function getProductionReconciliationFromRequest(
     const header = await loadHeader(transaction, context, input.reconciliationId);
     const [attendants, readings, payments, expenses, deliveries, dips, cash, explanations] =
       await Promise.all([
-        transaction.execute(
+        transaction.execute<RecordData['attendants'][number]>(
           sql`select attendant_id as "attendantId" from app.reconciliation_attendants where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by attendant_id`,
         ),
-        transaction.execute(
+        transaction.execute<RecordData['readings'][number]>(
           sql`select id, nozzle_id as "nozzleId", product_id as "productId", shift_id as "shiftId", opening_reading as "openingReading", closing_reading as "closingReading", litres_sold as "litresSold", selling_price_id as "sellingPriceId", unit_price as "unitPrice", sales_value as "salesValue" from app.reconciliation_meter_readings where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
         ),
-        transaction.execute(
+        transaction.execute<RecordData['payments'][number]>(
           sql`select id, method, amount, reference, note from app.reconciliation_payments where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
         ),
-        transaction.execute(
+        transaction.execute<RecordData['expenses'][number]>(
           sql`select id, category, description, amount, payment_method as "paymentMethod", person_paid as "personPaid", reference from app.reconciliation_expenses where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
         ),
-        transaction.execute(
+        transaction.execute<RecordData['deliveries'][number]>(
           sql`select r.delivery_id as "deliveryId", r.allocation_id as "allocationId", r.product_id as "productId", r.tank_id as "tankId", d.delivery_note_number as "deliveryNoteNumber", d.actual_quantity_litres as "actualQuantityLitres" from app.reconciliation_delivery_refs r join app.fuel_deliveries d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.delivery_id where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${input.reconciliationId} order by r.id`,
         ),
-        transaction.execute(
+        transaction.execute<RecordData['dips'][number]>(
           sql`select r.dip_id as "dipId", r.tank_id as "tankId", r.product_id as "productId", d.physical_litres as "physicalLitres", d.measured_at as "measuredAt" from app.reconciliation_dip_refs r join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${input.reconciliationId} order by r.id`,
         ),
-        transaction.execute(
+        transaction.execute<NonNullable<RecordData['cash']>>(
           sql`select counted_cash as "countedCash", expected_physical_cash as "expectedPhysicalCash", cash_paid_expenses as "cashPaidExpenses", net_expected_cash as "netExpectedCash", cash_variance as "cashVariance" from app.reconciliation_cash_declarations where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId}`,
         ),
-        transaction.execute(
+        transaction.execute<RecordData['explanations'][number]>(
           sql`select category, explanation from app.reconciliation_variance_explanations where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by category`,
         ),
       ]);
     const metrics = await loadMetrics(transaction, context, input.reconciliationId);
+    // Tells the review page to hide Approve from the person who submitted the day, using the same
+    // rule the approve command enforces.
+    const submitter = await transaction.execute<{ submitted_by: string | null }>(sql`
+      select submitted_by
+      from app.reconciliations
+      where tenant_id=${context.tenantId}
+        and station_id=${context.stationId}
+        and id=${input.reconciliationId}
+    `);
+    const approvalBlocked =
+      header.state === 'SUBMITTED' &&
+      submitter[0]?.submitted_by === context.actor.membershipId &&
+      (await hasAlternateApprover(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        excludeMembershipId: context.actor.membershipId,
+        permission: 'reconciliation.approve',
+      }));
     return {
       ...header,
       version: Number(header.version),
+      approvalBlocked,
       attendants,
       readings,
       payments,

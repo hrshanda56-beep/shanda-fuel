@@ -21,19 +21,21 @@ import { WorkInProgressDialog } from './dialogs';
 import { ContextSelector } from './context-selector';
 import { useLocationSearch } from './location-search';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
+import { SidebarTooltip } from './sidebar-tooltip';
 import { BrandMark } from './brand-mark';
 import { Icon } from './icons';
 import { Modal } from './modal';
 import {
   isNavigationItemActive,
   isSingleDestinationSection,
-  readWorkContext,
+  navigationWorkContext,
   resolveNavigation,
   selectMobileNavigationItems,
   type MobileNavigationItem,
   type NavigationProjection,
   type ResolvedNavigationItem,
   type ResolvedNavigationSection,
+  type WorkContext,
 } from './navigation';
 import { IconButton } from './primitives';
 import {
@@ -69,6 +71,7 @@ export type AppShellProps = {
   navigationProjection: readonly NavigationProjection[];
   /** The operating context the page works in, shown quietly above the content. */
   context?: ShellContext;
+  navigationContext?: WorkContext;
   role?: string;
   userName?: string;
   /**
@@ -151,6 +154,7 @@ export function AppShell({
   children,
   navigationProjection,
   context,
+  navigationContext,
   role,
   userName,
   authProvider,
@@ -163,10 +167,10 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname();
   const search = useLocationSearch();
-  const workContext = useMemo(
-    () => readWorkContext(pathname, new URLSearchParams(search)),
-    [pathname, search],
-  );
+  const workContext = useMemo(() => {
+    const params = new URLSearchParams(search);
+    return navigationWorkContext(pathname, params, navigationContext);
+  }, [pathname, search, navigationContext]);
   const sections = useMemo(
     () => resolveNavigation(navigationProjection, workContext),
     [navigationProjection, workContext],
@@ -219,6 +223,7 @@ export function AppShell({
     parts: readonly string[];
   } | null>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const tabletMenuButtonRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const headerHidden = useHideOnScroll(headerRef);
 
@@ -328,6 +333,7 @@ export function AppShell({
         </nav>
 
         <aside className="shell-sidebar" aria-label="Sidebar">
+          <SidebarTooltip key={rail ? 'rail' : 'expanded'} enabled={rail} />
           <BrandLink href={todayHref} />
           <div className="shell-sidebar-nav-region">
             <nav className="shell-nav" aria-label="Primary navigation">
@@ -345,13 +351,31 @@ export function AppShell({
           </div>
           <div className="shell-sidebar-footer">
             <div className="shell-sidebar-controls">
-              <IconButton
-                icon="panel-left"
-                size="sm"
-                className="shell-collapse-button"
-                label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                onClick={() => setSidebarCollapsed(!collapsed)}
-              />
+              {shellMode === 'desktop' ? (
+                <IconButton
+                  icon="panel-left"
+                  size="sm"
+                  className="shell-collapse-button"
+                  label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  onClick={() => setSidebarCollapsed(!collapsed)}
+                />
+              ) : shellMode === 'tablet' ? (
+                <button
+                  ref={tabletMenuButtonRef}
+                  type="button"
+                  className="icon-button icon-button-sm shell-collapse-button"
+                  aria-label="Expand menu"
+                  title="Expand menu"
+                  aria-haspopup="dialog"
+                  aria-expanded={menuOpen}
+                  onClick={() => {
+                    setDrawerClosedGroups(new Set());
+                    setMenuOpen(true);
+                  }}
+                >
+                  <Icon name="panel-left" size="sm" />
+                </button>
+              ) : null}
             </div>
           </div>
         </aside>
@@ -430,9 +454,11 @@ export function AppShell({
         <Modal
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
-          title="More"
+          title={shellMode === 'tablet' ? 'Navigation' : 'More'}
           className="modal-more"
-          returnFocus={() => moreButtonRef.current}
+          returnFocus={() =>
+            shellMode === 'tablet' ? tabletMenuButtonRef.current : moreButtonRef.current
+          }
         >
           <button
             type="button"

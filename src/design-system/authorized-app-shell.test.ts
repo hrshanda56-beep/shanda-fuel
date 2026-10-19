@@ -14,7 +14,6 @@ vi.mock('./navigation-projection', () => ({ emptyNavigationProjection: [] }));
 vi.mock('./navigation-server', () => ({
   getServerShellAccess: mocks.getServerShellAccess,
 }));
-vi.mock('@/platform/auth/provider', () => ({ getAuthProviderName: () => 'BETTER_AUTH' }));
 vi.mock('./entry/entry-shell', () => ({ EntryShell: () => null }));
 vi.mock('./entry/workplace-views', () => ({ NoWorkplace: () => null }));
 
@@ -39,8 +38,12 @@ describe('authorized app shell request-local reuse', () => {
     const result = await AuthorizedAppShell({ children: null, shellAccess: access });
 
     expect(mocks.getServerShellAccess).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      props: { navigationProjection: [], authProvider: 'BETTER_AUTH' },
+    expect(result.props.children).toMatchObject({
+      props: {
+        navigationProjection: [],
+        authProvider: 'CLERK',
+        navigationContext: { tenantId: 'tenant-1', stationId: 'station-1' },
+      },
     });
   });
 
@@ -51,4 +54,25 @@ describe('authorized app shell request-local reuse', () => {
 
     expect(mocks.getServerShellAccess).toHaveBeenCalledTimes(1);
   });
+});
+
+it('forwards the verified discovery snapshot to all shell descendants', async () => {
+  const resolution = {
+    available: { organisations: [] },
+    current: access.current,
+    route: {
+      pathname: '/',
+      policy: {
+        legalEntity: 'optional' as const,
+        station: 'optional' as const,
+        allStationsAllowed: true,
+      },
+    },
+    persistedContextInvalid: false,
+  };
+  const result = await AuthorizedAppShell({
+    children: null,
+    shellAccess: { ...access, resolution },
+  });
+  expect(result.props.resolution).toBe(resolution);
 });

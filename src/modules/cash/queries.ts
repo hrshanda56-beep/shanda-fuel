@@ -1,3 +1,9 @@
+import type { AuthenticatedActorContext } from '../identity';
+import { resolveForecourtReadContext } from '../forecourt/read-context';
+import { filterAuthorizedContextRows } from '../context/queries';
+import { validateContextSelection } from '../context/domain';
+import { contextRoutePolicy } from '../context/routes';
+import { AppError } from '../../platform/errors';
 import 'server-only';
 
 import type { ContextSelection } from '../context';
@@ -9,11 +15,28 @@ import { getCashStationSummaryInTransaction } from './persistence';
 export async function getCashStationSummaryFromRequest(
   request: Request,
   input: { selection: ContextSelection },
+  authenticatedActor?: AuthenticatedActorContext,
 ) {
-  const context = await resolveCashCommandContext({
+  const { selection } = input;
+  if (!selection.stationId || selection.allStations)
+    throw new AppError('FORBIDDEN', 'One authorised station is required');
+  const read = await resolveForecourtReadContext({
     request,
-    selection: input.selection,
+    tenantId: selection.organisationId,
+    stationId: selection.stationId,
+    authenticatedActor,
   });
+  let context = read.context;
+  if (read.fromSnapshot) {
+    const available = filterAuthorizedContextRows(context.authority, read.rows);
+    validateContextSelection(
+      available,
+      selection,
+      contextRoutePolicy(`/stations/${selection.stationId}/cash`),
+    );
+  } else {
+    context = await resolveCashCommandContext({ request, selection });
+  }
   authorizeCashCommand(context, 'cash.collection.view');
   const canViewDeposits = isAuthorized({
     actor: context.authority.authorization,

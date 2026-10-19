@@ -25,14 +25,15 @@
     "db:check": "drizzle-kit check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:migrate:test": "drizzle-kit migrate"
+    "db:seed": "node --import tsx scripts/seed-development.ts",
+    "db:migrate:test": "drizzle-kit migrate",
+    "db:seed:demo": "vitest run --config vitest.dev-seed.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",
     "@aws-sdk/s3-request-presigner": "^3.1146.0",
     "@clerk/backend": "^3.23.1",
     "@clerk/nextjs": "^7.9.13",
-    "better-auth": "^1.7.7",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.3",
     "next": "^16.3.8",
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.0",
+    "@clerk/testing": "^2.2.47",
     "@playwright/test": "^1.56.1",
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.2",

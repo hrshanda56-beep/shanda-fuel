@@ -3,6 +3,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   text,
   timestamp,
   unique,
@@ -10,7 +11,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { authUser } from './auth';
+import { users } from './users';
 import { legalEntities, memberships, roleDefinitions, stations, tenants } from './a1';
 import { appSchema } from './namespaces';
 
@@ -29,7 +30,7 @@ export const staffNumberRegistry = appSchema.table(
     staffNumber: text('staff_number').notNull(),
     normalizedStaffNumber: text('normalized_staff_number').notNull(),
     reservedInvitationId: uuid('reserved_invitation_id'),
-    internalUserId: uuid('internal_user_id').references(() => authUser.id, {
+    internalUserId: uuid('internal_user_id').references(() => users.id, {
       onDelete: 'restrict',
     }),
     status: text('status').notNull().default('RESERVED'),
@@ -43,7 +44,10 @@ export const staffNumberRegistry = appSchema.table(
     index('staff_number_registry_invitation_idx')
       .on(table.reservedInvitationId)
       .where(sql`${table.reservedInvitationId} is not null`),
-    check('staff_number_registry_staff_number_ck', sql`${table.staffNumber} ~ '^SF-[0-9]{8}$'`),
+    check(
+      'staff_number_registry_staff_number_ck',
+      sql`${table.staffNumber} ~ '^[A-Z0-9][A-Z0-9_-]{3,31}$'`,
+    ),
     check(
       'staff_number_registry_normalized_ck',
       sql`${table.normalizedStaffNumber} = upper(btrim(${table.staffNumber}))`,
@@ -70,6 +74,7 @@ export const staffInvitations = appSchema.table(
     scopeType: text('scope_type').notNull(),
     legalEntityId: uuid('legal_entity_id'),
     tokenHash: text('token_hash').notNull(),
+    activationFailedAttempts: integer('activation_failed_attempts').notNull().default(0),
     status: text('status').notNull().default('PENDING'),
     expiresAt: utcTimestamp('expires_at').notNull(),
     acceptedAt: utcTimestamp('accepted_at'),
@@ -90,6 +95,10 @@ export const staffInvitations = appSchema.table(
     ),
   },
   (table) => [
+    check(
+      'staff_invitations_activation_attempts_ck',
+      sql`${table.activationFailedAttempts} between 0 and 5`,
+    ),
     unique('staff_invitations_tenant_id_id_uidx').on(table.tenantId, table.id),
     unique('staff_invitations_tenant_id_id_legal_entity_uidx').on(
       table.tenantId,
@@ -155,7 +164,7 @@ export const staffInvitations = appSchema.table(
     }),
     foreignKey({
       columns: [table.createdByUserId],
-      foreignColumns: [authUser.id],
+      foreignColumns: [users.id],
       name: 'staff_invitations_created_by_user_fk',
     }),
     foreignKey({
@@ -165,12 +174,12 @@ export const staffInvitations = appSchema.table(
     }),
     foreignKey({
       columns: [table.revokedByUserId],
-      foreignColumns: [authUser.id],
+      foreignColumns: [users.id],
       name: 'staff_invitations_revoked_by_user_fk',
     }),
     foreignKey({
       columns: [table.acceptedByUserId],
-      foreignColumns: [authUser.id],
+      foreignColumns: [users.id],
       name: 'staff_invitations_accepted_by_user_fk',
     }),
     foreignKey({

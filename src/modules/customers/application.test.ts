@@ -135,7 +135,7 @@ describe('customer command assurance', () => {
         }),
         ...command,
       }),
-    ).toThrow(/not authorized|Strong authentication/);
+    ).toThrow(/step-up|Strong authentication/);
 
     expect(() =>
       assertCustomerCommandAuthorization({

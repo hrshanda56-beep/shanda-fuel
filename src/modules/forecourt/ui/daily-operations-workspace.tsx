@@ -1,4 +1,5 @@
 'use client';
+import type { RecordData } from '../daily-operations-read-model';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -99,62 +100,6 @@ type Expense = {
   paymentMethod: PaymentMethod;
   personPaid: string;
   reference: string;
-};
-
-type RecordData = {
-  state: string;
-  version: number;
-  business_date: string;
-  attendants: Array<{ attendantId: string }>;
-  readings: Array<{
-    id: string;
-    nozzleId: string;
-    productId: string;
-    shiftId: string;
-    openingReading: string;
-    closingReading: string;
-    sellingPriceId: string;
-    unitPrice: string;
-    litresSold: string;
-    salesValue: string;
-  }>;
-  payments: Array<{
-    id: string;
-    method: string;
-    amount: string;
-    reference: string | null;
-    note: string | null;
-  }>;
-  expenses: Array<{
-    id: string;
-    category: string;
-    description: string;
-    amount: string;
-    paymentMethod: string;
-    personPaid: string | null;
-    reference: string | null;
-  }>;
-  deliveries: Array<{
-    deliveryId: string;
-    deliveryNoteNumber: string;
-    actualQuantityLitres: string;
-  }>;
-  dips: Array<{ dipId: string; tankId: string; physicalLitres: string }>;
-  cash: {
-    countedCash: string;
-    expectedPhysicalCash: string;
-    cashPaidExpenses: string;
-    netExpectedCash: string;
-    cashVariance: string;
-  } | null;
-  explanations: Array<{ category: string; explanation: string }>;
-  totals: {
-    expectedSales: string;
-    accountedSales: string;
-    salesVariance: string;
-    cashVariance: string | null;
-    stockVariance: Record<string, string>;
-  };
 };
 
 type CommandResult = { version?: number; state?: string };
@@ -258,20 +203,51 @@ function SectionHeading({
 export function DailyOperationsWorkspace({
   context,
   role = 'SUPERVISOR',
+  initialData,
 }: {
   context: DailyOperationsContext;
+  initialData?: {
+    operation: OperationsContext;
+    record: RecordData | null;
+    cash?: {
+      availableAtStation: string;
+      collectedButUnbanked: string;
+      pendingBankConfirmation: string;
+    };
+    settlements: Array<{ providerName: string; state: string; unallocatedProviderAmount: string }>;
+  };
   role?: 'SUPERVISOR' | 'MANAGEMENT';
 }) {
   const [activeReconciliationId, setActiveReconciliationId] = useState(context.reconciliationId);
-  const [operation, setOperation] = useState<OperationsContext | null>(null);
-  const [record, setRecord] = useState<RecordData | null>(null);
-  const [readings, setReadings] = useState<Array<Reading & { rowKey: string }>>([]);
-  const [payments, setPayments] = useState<Array<Payment & { rowKey: string }>>([]);
-  const [expenses, setExpenses] = useState<Array<Expense & { rowKey: string }>>([]);
-  const [attendantIds, setAttendantIds] = useState<string[]>([]);
-  const [cashCounted, setCashCounted] = useState('');
-  const [explanations, setExplanations] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const [operation, setOperation] = useState<OperationsContext | null>(
+    initialData?.operation ?? null,
+  );
+  const [record, setRecord] = useState<RecordData | null>(initialData?.record ?? null);
+  const [readings, setReadings] = useState<Array<Reading & { rowKey: string }>>(
+    initialData
+      ? initialData.record?.readings.length
+        ? initialData.record.readings.map((reading) => ({ ...reading, rowKey: reading.id }))
+        : initialData.operation.availableReadings.map((reading) =>
+            readingFromContext(reading, context.shiftId),
+          )
+      : [],
+  );
+  const [payments, setPayments] = useState<Array<Payment & { rowKey: string }>>(
+    initialData?.record?.payments.map(paymentFromRecord) ?? [],
+  );
+  const [expenses, setExpenses] = useState<Array<Expense & { rowKey: string }>>(
+    initialData?.record?.expenses.map(expenseFromRecord) ?? [],
+  );
+  const [attendantIds, setAttendantIds] = useState<string[]>(
+    initialData?.record?.attendants.map((row) => row.attendantId) ?? [],
+  );
+  const [cashCounted, setCashCounted] = useState(initialData?.record?.cash?.countedCash ?? '');
+  const [explanations, setExplanations] = useState<Record<string, string>>(
+    Object.fromEntries(
+      initialData?.record?.explanations.map((row) => [row.category, row.explanation]) ?? [],
+    ),
+  );
+  const [loading, setLoading] = useState(!initialData);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState(false);
@@ -279,14 +255,17 @@ export function DailyOperationsWorkspace({
   const [dirty, setDirty] = useState(false);
   const [returnReason, setReturnReason] = useState('');
   const saveJournal = useRef<DraftSaveJournal | undefined>(undefined);
-  const [cashSummary, setCashSummary] = useState<{
-    availableAtStation: string;
-    collectedButUnbanked: string;
-    pendingBankConfirmation: string;
-  }>();
+  const [cashSummary, setCashSummary] = useState<
+    | {
+        availableAtStation: string;
+        collectedButUnbanked: string;
+        pendingBankConfirmation: string;
+      }
+    | undefined
+  >(initialData?.cash);
   const [settlementSummary, setSettlementSummary] = useState<
     Array<{ providerName: string; state: string; unallocatedProviderAmount: string }>
-  >([]);
+  >(initialData?.settlements ?? []);
 
   const contextQuery = useMemo(
     () =>
@@ -378,9 +357,10 @@ export function DailyOperationsWorkspace({
   }, [activeReconciliationId, context.stationId, context.tenantId, contextQuery, syncDraft]);
 
   useEffect(() => {
+    if (initialData && activeReconciliationId === context.reconciliationId) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, initialData, activeReconciliationId, context.reconciliationId]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -393,7 +373,7 @@ export function DailyOperationsWorkspace({
   }, [dirty]);
 
   useEffect(() => {
-    if (!operation) return;
+    if (!operation || operation === initialData?.operation) return;
     const controller = new AbortController();
     void Promise.all([
       fetch(
@@ -418,7 +398,7 @@ export function DailyOperationsWorkspace({
       })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [context.stationId, context.tenantId, operation]);
+  }, [context.stationId, context.tenantId, operation, initialData]);
 
   async function sendCommand(
     commandType: string,

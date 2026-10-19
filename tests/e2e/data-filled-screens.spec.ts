@@ -47,7 +47,9 @@ async function wordsSplitAcrossLines(page: Page, selector: string) {
 }
 
 test.describe('data-filled screens', () => {
-  test('Daily Operations shows shifts, sourced alerts and activity', async ({ page }) => {
+  test('Daily Operations shows shifts and sourced alerts without duplicated day details', async ({
+    page,
+  }) => {
     await mockContext(page, '/operations/daily');
     await mockOverview(page);
     for (const width of [390, 803, 1440]) {
@@ -55,19 +57,17 @@ test.describe('data-filled screens', () => {
       await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
 
       const glance = page.getByLabel('Today at a glance');
-      await expect(glance, `width ${width}`).toContainText('2 · 1 open');
-      await expect(glance).toContainText('Waiting for review');
-      await expect(glance).toContainText('Returned for changes');
+      await expect(glance).toHaveCount(0);
+      await expect(page.locator('section[aria-labelledby="day-history-title"]')).toHaveCount(0);
 
       await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
+      await expect(page.getByText('Shift board ·', { exact: false })).toHaveCount(0);
+      const dayControls = page.locator('section[aria-labelledby="current-day-title"]');
+      await expect(dayControls.getByRole('heading', { name: 'Day controls' })).toBeVisible();
+      await expect(dayControls.locator('.status')).toHaveCount(0);
       const attention = page.locator('section[aria-labelledby="operations-attention-title"]');
-      await expect(attention).toContainText('Business day 11 Oct 2026 is still open');
-      await expect(attention).toContainText('Reconciliation returned for changes');
-      await expect(attention).toContainText('Counted cash does not match the declaration');
-      await expect(attention).toContainText('Reconciliation waiting for review');
-      await expect(page.locator('section[aria-labelledby="timeline-title"]')).toContainText(
-        'Open business day',
-      );
+      await expect(attention).toHaveCount(0);
+      await expect(page.locator('section[aria-labelledby="timeline-title"]')).toHaveCount(0);
 
       await expectNoSidewaysScroll(page, `width ${width}`);
       const results = await new AxeBuilder({ page }).analyze();
@@ -83,6 +83,8 @@ test.describe('data-filled screens', () => {
       await page.goto(`/stations/${STATION}/reconciliations?tenantId=${TENANT}`);
 
       const status = page.getByRole('region', { name: 'Reconciliation status' });
+      await expect(page.locator('.recon-highlights')).toHaveCount(0);
+      await expect(page.locator('section[aria-labelledby="day-history-title"]')).toHaveCount(0);
       await expect(status, `width ${width}`).toContainText('Draft');
       await expect(status).toContainText('Approved');
 
@@ -133,17 +135,19 @@ test.describe('data-filled screens', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
       const waiting = page.getByRole('list', { name: 'Payments waiting to match' });
-      const eco = waiting.getByRole('listitem').filter({ hasText: 'EcoCash waiting to match' });
+      const eco = waiting.getByRole('listitem').first();
       await expect(eco, `width ${width}`).toContainText('USD 25.50');
       await expect(eco).toContainText('1 payment');
-      const pos = waiting.getByRole('listitem').filter({ hasText: 'POS (card) waiting to match' });
+      const pos = waiting.getByRole('listitem').nth(1);
       await expect(pos).toContainText('USD 50.00');
       await expect(pos).toContainText('2 payments');
-      const summary = page.getByLabel('Settlement summary');
-      await expect(summary.locator('div', { hasText: 'Settlements not reconciled' })).toContainText(
-        '2',
+      const summary = page.getByLabel('Payout summary');
+      await expect(
+        summary.getByRole('listitem').filter({ hasText: 'Not yet paid out' }),
+      ).toContainText('2');
+      await expect(summary.getByRole('listitem').filter({ hasText: 'Variance' })).toContainText(
+        '1',
       );
-      await expect(summary.locator('div', { hasText: 'Exceptions' })).toContainText('1');
 
       const chart = page.locator('section[aria-labelledby="settled-by-provider-title"]');
       await expect(chart.getByRole('heading', { name: 'Settled By Provider' })).toBeVisible();
