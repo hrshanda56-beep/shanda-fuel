@@ -123,11 +123,11 @@ export function buildProfitView(report: ManagementReport): ProfitView {
 
   const explanation =
     state === 'no-sales'
-      ? 'Sales appear here once a day’s reconciliation is finalised. Try a longer period if you expected figures.'
+      ? 'Sales show here once a day is closed and checked. Try a longer period if you expected figures.'
       : state === 'cost-missing'
-        ? `The cost of fuel is missing for ${report.costing.unvaluedSaleCount} of ${report.costing.saleCount} sales, so profit would be wrong if we showed it. Check that fuel deliveries and their costs are recorded under Inventory costs.`
+        ? `We don’t know what the fuel cost for ${report.costing.unvaluedSaleCount} of ${report.costing.saleCount} sales, so profit would be wrong. Check that fuel deliveries and their prices have been entered.`
         : state === 'mismatch'
-          ? 'Sales and fuel costs do not line up for this period yet, so profit is held back rather than guessed. Check the reconciliations and inventory costs for these dates.'
+          ? 'Sales and fuel costs don’t match for this period yet, so profit is held back rather than guessed. Check that each day was closed and each fuel delivery entered.'
           : null;
 
   // Per station: sales and cost are matched on the station that made the sale.
