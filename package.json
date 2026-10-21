@@ -20,6 +20,7 @@
     "smoke:staging-platform": "node --conditions=react-server --import tsx scripts/staging-platform-smoke.ts",
     "drill:staging-r2-recovery": "node --conditions=react-server --import tsx scripts/staging-r2-recovery-drill.ts",
     "test:e2e": "playwright test",
+    "test:e2e:owner-demo": "OWNER_DEMO_E2E=1 playwright test --config playwright.owner-demo.config.ts",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
     "smoke:production-readonly": "node --conditions=react-server --import tsx scripts/production-readonly-smoke.ts",
     "db:check": "drizzle-kit check",

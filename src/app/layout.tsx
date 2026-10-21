@@ -34,11 +34,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  const content = (
-    <ClerkProvider publishableKey={publishableKey} proxyUrl="/api/clerk">
-      {children}
-    </ClerkProvider>
-  );
+  // The isolated owner-demo build has no Clerk session or product data path.
+  // Every normal environment retains the Clerk provider.
+  const content =
+    process.env.APP_ENV === 'demo' ? (
+      children
+    ) : (
+      <ClerkProvider publishableKey={publishableKey} proxyUrl="/api/clerk">
+        {children}
+      </ClerkProvider>
+    );
   return (
     // The init scripts may set data-theme / data-sidebar before hydration.
     // data-scroll-behavior: in-page anchors scroll smoothly; route changes jump.
