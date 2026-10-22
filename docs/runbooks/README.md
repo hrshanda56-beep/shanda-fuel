@@ -22,6 +22,8 @@ evidence that the operational exercise has passed.
 | [`tenant-recovery.md`](tenant-recovery.md) | Missing tested procedure | Define isolated extract tooling, repair ownership, and execute a drill. |
 | [`milestone-a-release.md`](milestone-a-release.md) | Prepared; owner execution open | Vercel access/plan decisions, pre-migration Neon branch + dump, rehearsal, then 0027-0029 and smoke. |
 | [`staging-recovery-rehearsal.md`](staging-recovery-rehearsal.md) | Repository rehearsal ready; provider execution open | Prepare the isolated Neon target, known-good timestamp, staging read-only session, and R2 controls, then run the two-phase rehearsal. |
+| [`v1-migration-and-release.md`](v1-migration-and-release.md) | Draft; nothing executed | Owner review, then the operator runs it step by step with the owner present. |
+| [`v1-uat-training-shadow-week.md`](v1-uat-training-shadow-week.md) | Draft | Run user testing, training and the shadow week with TEI staff. |
 
 There is no separate job/outbox operations runbook yet. It should be added if
 background jobs are enabled for production scope, with lease/retry,
