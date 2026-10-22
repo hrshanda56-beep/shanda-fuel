@@ -15,6 +15,7 @@ export * from './a7-purchasing';
 export * from './a8';
 export * from './a9';
 export * from './expenses';
+export * from './documents';
 export * from './a12';
 export * from './revenue';
 export * from './staff';

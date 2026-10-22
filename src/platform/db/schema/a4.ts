@@ -104,17 +104,20 @@ export const tankCalibrationPoints = appSchema.table(
     measurementValue: numeric('measurement_value', { precision: 18, scale: 3 }).notNull(),
     measurementUnit: text('measurement_unit').notNull(),
     litres: litresColumn('litres').notNull(),
+    chartVersion: integer('chart_version').notNull().default(1),
     recordedBy: uuid('recorded_by').notNull(),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
     unique('tank_calibration_points_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('tank_calibration_points_tank_measurement_uidx').on(
+    unique('tank_calibration_points_tank_version_measurement_uidx').on(
       table.tenantId,
       table.tankId,
       table.measurementUnit,
+      table.chartVersion,
       table.measurementValue,
     ),
+    check('tank_calibration_points_chart_version_ck', sql`${table.chartVersion} >= 1`),
     index('tank_calibration_points_tank_idx').on(table.tenantId, table.stationId, table.tankId),
     check(
       'tank_calibration_points_measurement_nonnegative_chk',

@@ -1,9 +1,12 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   foreignKey,
   index,
+  integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -63,6 +66,8 @@ export const stations = appSchema.table(
     name: text('name').notNull(),
     timezone: text('timezone').notNull().default('Africa/Harare'),
     status: text('status').notNull().default('ONBOARDING'),
+    /** The supervisor accountable for this station (DEC-044); set through Setup.SetResponsibleSupervisor. */
+    responsibleSupervisorMembershipId: uuid('responsible_supervisor_membership_id'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -79,6 +84,11 @@ export const stations = appSchema.table(
       columns: [table.tenantId, table.legalEntityId],
       foreignColumns: [legalEntities.tenantId, legalEntities.id],
       name: 'stations_tenant_legal_entity_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.responsibleSupervisorMembershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'stations_responsible_supervisor_fk',
     }),
   ],
 );
@@ -262,6 +272,36 @@ export const securityEvents = platformSchema.table(
       columns: [table.tenantId, table.membershipId],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'security_events_membership_fk',
+    }),
+  ],
+);
+
+/** Per-organisation reminder thresholds. A missing row means the built-in defaults apply. */
+export const alertSettings = appSchema.table(
+  'alert_settings',
+  {
+    tenantId: uuid('tenant_id')
+      .primaryKey()
+      .references(() => tenants.id),
+    dueSoonDays: integer('due_soon_days').notNull().default(7),
+    posSettlementLagDays: integer('pos_settlement_lag_days').notNull().default(3),
+    reportGraceDays: integer('report_grace_days').notNull().default(1),
+    cashShortageMinimum: numeric('cash_shortage_minimum', { precision: 20, scale: 4 })
+      .notNull()
+      .default('0.01'),
+    version: integer('version').notNull().default(0),
+    updatedBy: uuid('updated_by').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('alert_settings_due_soon_ck', sql`${table.dueSoonDays} between 1 and 60`),
+    check('alert_settings_pos_lag_ck', sql`${table.posSettlementLagDays} between 0 and 30`),
+    check('alert_settings_report_grace_ck', sql`${table.reportGraceDays} between 0 and 14`),
+    check('alert_settings_cash_minimum_ck', sql`${table.cashShortageMinimum} >= 0`),
+    foreignKey({
+      columns: [table.tenantId, table.updatedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'alert_settings_updated_by_fk',
     }),
   ],
 );

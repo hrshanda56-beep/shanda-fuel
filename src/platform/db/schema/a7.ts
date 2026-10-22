@@ -34,6 +34,7 @@ export const suppliers = appSchema.table(
     legalName: text('legal_name').notNull(),
     registrationReference: text('registration_reference'),
     status: text('status').notNull().default('ACTIVE'),
+    creditLimit: numeric('credit_limit', { precision: 20, scale: 4 }),
     version: integer('version').notNull().default(0),
     createdBy: uuid('created_by').notNull(),
     updatedBy: uuid('updated_by').notNull(),
@@ -47,6 +48,10 @@ export const suppliers = appSchema.table(
     check('suppliers_code_nonempty_ck', sql`btrim(${table.code}) <> ''`),
     check('suppliers_legal_name_nonempty_ck', sql`btrim(${table.legalName}) <> ''`),
     check('suppliers_status_ck', sql`${table.status} in ('ACTIVE','INACTIVE')`),
+    check(
+      'suppliers_credit_limit_ck',
+      sql`${table.creditLimit} is null or ${table.creditLimit} >= 0`,
+    ),
     foreignKey({
       columns: [table.tenantId],
       foreignColumns: [tenants.id],
