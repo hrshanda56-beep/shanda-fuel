@@ -314,6 +314,10 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, station_id, deposit_id, collection_id, amount, allocated_by)
         values ('${ids.factDepositAllocation}', '${ids.tenant}', '${ids.station}', '${ids.factDeposit}', '${ids.factCollection}', 40.0000, '${ids.membership}')
         on conflict (id) do nothing;
+      insert into app.cash_handovers
+        (id, tenant_id, station_id, from_location_id, to_location_id, expected_amount, counted_amount, variance, state, dispute_reason, delivered_by, submitted_at)
+        values ('a10b0000-0000-4000-8000-0000000000f9', '${ids.tenant}', '${ids.station}', '${ids.factTill}', '${ids.factSafe}', 60.0000, 58.0000, -2.0000, 'DISPUTED', 'A10 short count', '${ids.membership}', '2026-09-20T22:00:00Z')
+        on conflict (id) do nothing;
       insert into app.payment_providers
         (id, tenant_id, code, name, provider_type, created_by)
         values ('${ids.factProvider}', '${ids.tenant}', 'A10-PROVIDER', 'A10 Provider', 'MOBILE_MONEY', '${ids.membership}')
@@ -1412,6 +1416,17 @@ describe('A10 management reporting PostgreSQL read model', () => {
       expect(expenses).toContain('2026-09-20');
       expect(expenses).toContain('A10 test expense');
       expect(expenses).toContain(',2.0000');
+    });
+
+    it('reports cash handovers and bank deposits with plain-language status', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const custody = await (await exportAs(sessionToken, `report=cash-custody&${base}`)).text();
+      expect(custody).toContain('A10 Till,A10 Safe');
+      expect(custody).toContain('60.0000,58.0000,-2.0000,Does not add up,A10 short count');
+
+      const deposits = await (await exportAs(sessionToken, `report=bank-deposits&${base}`)).text();
+      expect(deposits).toContain('2026-09-22');
+      expect(deposits).toContain('A10 Bank,A10-DEPOSIT,40.0000,40.0000,0.0000,Confirmed');
     });
 
     it('applies station authorisation to the table reports too', async () => {

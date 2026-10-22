@@ -285,6 +285,99 @@ export const readCustomerStatement: TableReportReader = async (transaction, filt
   }));
 };
 
+export const readCashCustody: TableReportReader = async (transaction, filters) => {
+  const rows = await transaction.execute<{
+    date: string;
+    station: string;
+    from_name: string;
+    to_name: string;
+    handed_by: string | null;
+    received_by: string | null;
+    expected: string;
+    counted: string | null;
+    difference: string | null;
+    state: string;
+    note: string | null;
+  }>(sql`
+    select to_char((coalesce(h.submitted_at, h.created_at) at time zone st.timezone)::date, 'YYYY-MM-DD') as date,
+      st.name as station, fl.name as from_name, tl.name as to_name,
+      du.name as handed_by, ru.name as received_by,
+      h.expected_amount::text as expected, h.counted_amount::text as counted,
+      h.variance::text as difference, h.state,
+      coalesce(h.resolution_note, h.dispute_reason) as note
+    from app.cash_handovers h
+    join app.stations st on st.tenant_id = h.tenant_id and st.id = h.station_id
+    join app.cash_locations fl on fl.tenant_id = h.tenant_id and fl.id = h.from_location_id
+    join app.cash_locations tl on tl.tenant_id = h.tenant_id and tl.id = h.to_location_id
+    left join app.memberships dm on dm.tenant_id = h.tenant_id and dm.id = h.delivered_by
+    left join app.users du on du.id = dm.identity_id
+    left join app.memberships rm on rm.tenant_id = h.tenant_id
+      and rm.id = coalesce(h.resolved_by, h.received_by)
+    left join app.users ru on ru.id = rm.identity_id
+    where h.tenant_id = ${filters.tenantId} and h.state <> 'DRAFT'
+      and (coalesce(h.submitted_at, h.created_at) at time zone st.timezone)::date between ${filters.fromDate}::date and ${filters.toDate}::date
+      ${stationClause('h', filters.stationIds)}
+    order by coalesce(h.submitted_at, h.created_at) desc, h.id desc
+    limit ${limit}
+  `);
+  const statuses: Record<string, string> = {
+    SUBMITTED: 'Waiting to be accepted',
+    ACCEPTED: 'Accepted',
+    DISPUTED: 'Does not add up',
+    RESOLVED: 'Settled',
+    CANCELLED: 'Withdrawn',
+  };
+  return rows.map((row) => ({
+    date: row.date,
+    station: row.station,
+    from: row.from_name,
+    to: row.to_name,
+    handedBy: row.handed_by,
+    receivedBy: row.received_by,
+    expected: row.expected,
+    counted: row.counted,
+    difference: row.difference,
+    status: statuses[row.state] ?? row.state,
+    note: row.note,
+  }));
+};
+
+export const readBankDeposits: TableReportReader = async (transaction, filters) => {
+  const rows = await transaction.execute<{
+    date: string;
+    station: string;
+    bank_account: string;
+    deposit_reference: string;
+    amount: string;
+    confirmed: string | null;
+    difference: string | null;
+    state: string;
+  }>(sql`
+    select to_char((d.deposited_at at time zone st.timezone)::date, 'YYYY-MM-DD') as date,
+      st.name as station, b.name as bank_account, d.deposit_reference,
+      d.amount::text as amount, d.confirmed_amount::text as confirmed,
+      d.confirmation_variance::text as difference, d.state
+    from app.bank_deposits d
+    join app.stations st on st.tenant_id = d.tenant_id and st.id = d.station_id
+    join app.bank_accounts b on b.tenant_id = d.tenant_id and b.id = d.bank_account_id
+    where d.tenant_id = ${filters.tenantId}
+      and (d.deposited_at at time zone st.timezone)::date between ${filters.fromDate}::date and ${filters.toDate}::date
+      ${stationClause('d', filters.stationIds)}
+    order by d.deposited_at desc, d.id desc
+    limit ${limit}
+  `);
+  return rows.map((row) => ({
+    date: row.date,
+    station: row.station,
+    bankAccount: row.bank_account,
+    depositReference: row.deposit_reference,
+    amount: row.amount,
+    confirmed: row.confirmed,
+    difference: row.difference,
+    status: row.state.charAt(0) + row.state.slice(1).toLowerCase().replaceAll('_', ' '),
+  }));
+};
+
 export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> = {
   'tank-dip-history': readTankDipHistory,
   'stock-movements': readStockMovements,
@@ -292,4 +385,6 @@ export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> =
   'expenses-detail': readExpensesDetail,
   'supplier-statement': readSupplierStatement,
   'customer-statement': readCustomerStatement,
+  'cash-custody': readCashCustody,
+  'bank-deposits': readBankDeposits,
 };
