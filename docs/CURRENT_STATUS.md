@@ -1,5 +1,127 @@
 # Shanda Fuel — Current Status
 
+## v1 delivery baseline — 2026-10-21
+
+Integration branch: `codex/clerk-only-auth-20261017` (contains all of `origin/main`,
+55 commits ahead, clean at start). Scope and decisions are in DEC-044. Production
+was not contacted. Nothing was committed, pushed, merged or deployed.
+
+Verified locally on a disposable PostgreSQL 18.6 cluster (UTC, roles from
+`scripts/db/bootstrap-test.sh`, migrations 0000–0040, migration-owner metadata
+step applied), with `DATABASE_URL` pinned away from Neon:
+
+| Gate | Result |
+| --- | --- |
+| `pnpm typecheck`, `pnpm lint`, `pnpm format:check` | PASS |
+| `pnpm db:check` | PASS |
+| `pnpm test:unit` | PASS: 170 files, 1,193 tests |
+| `pnpm build` | PASS |
+| `pnpm test:integration` | PASS: 222 passed, 40 intentionally skipped (first-user provisioning, role-specific read-performance and navigation-snapshot suites are opt-in); needed three fixes below |
+| `pnpm test:e2e` | NOT GREEN: 259 passed, 77 failed, 21 did not run, 4 skipped. A rerun of the failures gave the same result, so it is not caused by the machine sleeping. |
+
+Baseline defects found and fixed in this pass (all pre-existing on the branch):
+
+- `a6-expenses` test read an `id` it never selected; the recurring-cost adjustment
+  then failed with 404 because adjusting a recognition that had already been
+  reversed was not allowed. `adjustRecurringCostRecognition` now corrects from the
+  latest recognition for the date: an active one is reversed and replaced, a
+  reversed one is only replaced. The later summary assertion now expects 73.3343.
+- `profitability-api` seeded the second tenant's sale against the first tenant's
+  product, so the product-grouped report correctly hid it. The fixture now gives
+  the second tenant its own product.
+
+### v1 build progress (2026-10-21, uncommitted on the branch)
+
+Done and tested (unit 1,310 and integration 259 passing, 40 intentional opt-in skips; 15 browser checks on the new screens; lint,
+format, `db:check`, typecheck green):
+
+- Guided "Station setup" screen (Settings): fuel types, prices, tanks, pumps and nozzles, shifts,
+  supervisor in charge; plain language, no codes shown. Browser tests run on sample API answers.
+- Station responsible supervisor (migration 0041, `Setup.SetResponsibleSupervisor`).
+- Credit and prepaid sales name the customer and are checked against the credit limit or prepaid
+  balance when entered; approved fuel names its beneficiary (migration 0042). Approved fuel is shown
+  as a benefit cost in the Profit statement.
+- Cash handover between people (migration 0043): `SubmitCashHandover`, `AcceptCashHandover`,
+  `ResolveCashHandover`, `CancelCashHandover`. The receiver must be a different person from the
+  sender; a count that differs from the expected amount needs a reason and goes to review; accepted
+  or settled handovers post a cash movement between the two locations. "Handing over cash" card on
+  the station cash screen. Role permissions were already in place (attendant and supervisor submit;
+  admin and owner accept and resolve).
+- Tank calibration (migration 0044): `SetTankCalibration` stores a versioned dipstick chart
+  (insert-only, older dips keep their litres); `RecordTankDip` accepts a dipstick reading and works
+  the litres out by exact straight-line interpolation between chart rows, refusing readings outside
+  the chart. Tank cards show a green, yellow or red stock-versus-book signal from each tank's
+  acceptable difference.
+- Landed cost build-up: `RecordReceiptCost` accepts fuel cost plus freight plus other direct costs
+  and spreads the total over the litres that actually arrived; each tank gets its share.
+- Supplier credit limits (migration 0045): `SetSupplierCreditLimit`, used/near (80%)/over status in
+  the supplier summary, a credit-limit card on the supplier page and Action Center alerts. A limit
+  warns; it never blocks a purchase.
+- Supplier due-today, due-soon and 1-7/8-14/15-30/30+ day ageing in the summary data.
+- Operations alerts in the Action Center: late reports, cash shortages, dip-versus-book stock with
+  tolerance colours, low stock, overdue card/mobile settlement, supplier due dates and credit
+  limits. Thresholds are defaults in code (7-day due soon, 3-day settlement lag, 1-day report
+  grace) until the client chooses.
+- Expenses screen now has "Regular costs" (add a monthly cost, add each month, count it in
+  spending) and "Approval limits" (extra identity check and second-approver thresholds), on top of
+  the commands that already existed.
+
+- Activity log (Settings, organisation-level audit permission only): the signed audit log in plain
+  words with who, when and the before/after values; secret-looking fields are never shown; paged
+  and filterable by area. Station-level administrators and supervisors are refused.
+- Reminder settings (migration 0046, `Setup.SetAlertSettings`, Settings > Reminders): when supplier
+  invoices count as due soon, how late a card payment or daily report must be, and the smallest
+  cash shortage worth flagging. Organisation-wide (needs organisation-level `tenant.manage`);
+  defaults apply until saved; the Action Center and the supplier due-soon window read them.
+- Offline drafts, stage 1: the daily operations screen keeps a copy of unsent entries on the device
+  (24 hours, tied to the saved record version, cleared once the server save succeeds) and offers
+  them back after a crash. The copy is kept per person (membership), station and shift. Not
+  browser-tested; the storage rules are unit-tested.
+- Offline drafts, stage 2 (narrow): if a daily-report save fails because there is no connection, the
+  exact commands, idempotency keys and running record version are queued on the device
+  (`src/platform/drafts/outbox.ts`, per person, 7 days, 20 entries) and sent again when the browser
+  comes back online or on "Send now". A refused old version shows as a conflict for a person to
+  resolve; nothing is overwritten and conflicts are never retried. Other screens (cash counts,
+  handovers) are not queued yet. Queue rules are unit-tested; the offline-to-online flow has not
+  been run in a browser.
+
+- Documents (migration 0047): `app.documents`, append-only private files (photo, PDF, DOCX; 10 MB)
+  attached to a fuel delivery, bank deposit, cash handover, daily report or expense at one station.
+  Validated by the same checks as expense receipts, stored under a random private key, opened only
+  through a short-lived link after the viewer's station access is checked, uploads audited. Reusable
+  `DocumentAttachments` component, shown on new delivery drafts, bank deposit details and the daily report review step. Tested
+  against the real database with a fake storage port; real R2 is not exercised locally.
+- Net current position report (Reports > Financial Statements; CSV, PDF and XLSX): cash not yet
+  banked + card/mobile payments not yet received + owed by credit customers, less owed to suppliers
+  and prepaid customer balances. Shown as unavailable (never zero) for a single station, because
+  customer balances are organisation-wide. Stock at cost and unpaid expenses are not included.
+- Alert email, prepared but not enabled: digest wording and send rules plus the per-person run are
+  built and unit-tested without any database change; the cross-organisation recipient list and
+  scheduled trigger are written up in ADR-020 for security review.
+- Browser checks (Playwright, sample API answers, no Clerk user needed) for the cash handover card,
+  activity log, document attachments and reminder settings, including accessibility and overflow
+  checks at 320, 390, 768 and 1280 px. These caught one real mistake (a function passed from a
+  server page to a client component) before it reached a signed-in page.
+
+Found already built while checking (not new work): CSV, PDF and XLSX report downloads with step-up,
+and the report activity log. They have not been re-verified in a browser in this pass.
+
+Not yet built: enabling alert email (needs ADR-020 approved), dashboard tiles (left alone: the
+owner-approved dashboard already has a needs-attention area), offline queue for screens other than the
+daily report, employee profiles polish, documents on supplier payments (they have no station, so
+need a design choice) and handovers, a Clerk-backed run of the signed-in browser suite.
+
+Open items for the owner: alert thresholds and default tank tolerance are placeholders; email
+delivery needs a security design (a scheduled job must read across organisations); the browser
+suite needs real Clerk development users.
+
+E2E classification (harness/environment, not product regressions): the
+authenticated specs need real users in a dedicated Clerk development instance
+(`E2E_CLERK_USERS`), and several specs (for example `smoke`) still expect the old
+unauthenticated "Demo user" shell that Clerk-only authentication removed. The
+browser suite cannot be called green until those users exist and stale specs are
+updated.
+
 ## Finance backend completion candidate — 2026-10-19
 
 The requested finance backend work is being implemented on branch

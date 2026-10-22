@@ -1,5 +1,82 @@
 # Shanda Fuel — Decision Log
 
+## DEC-045 — Implementation choices made while building the v1 scope (for review)
+
+Date: 2026-10-21. Made by the implementing agent inside DEC-044, without a separate human
+answer. **Status:** PROPOSED. Each is small, reversible, and easy to change; confirm or correct.
+
+- **Cash handover rules.** The person receiving cash must be a different person from the one who
+  handed it over (nobody accepts their own handover). A count that differs from the expected
+  amount needs a written reason and goes to review; only a person who can resolve handovers
+  (administrator or owner) settles it, with a note. Accepting or settling moves the *counted*
+  amount between the two cash locations. Anyone who can accept a handover may also withdraw one
+  that is still open; otherwise only the sender may.
+- **Tank charts.** A dipstick chart is versioned and insert-only. A new chart applies to new dips;
+  old dips keep the litres they were recorded with. A reading outside the chart is refused, never
+  extrapolated. Litres between two chart rows are worked out in a straight line.
+- **Landed cost.** Fuel cost plus freight plus other direct costs, divided by the litres that
+  actually arrived (not the delivery-note litres). Each tank receives its share of the litres.
+- **Supplier credit limit.** A supplier may have a limit. 80% or more used is "near", above it is
+  "over". It warns (supplier page and Action Center); it never blocks a purchase.
+- **Reminder thresholds.** Stored per organisation, changeable by the owner or an administrator
+  (Settings > Reminders). Starting values until the client chooses: invoices due soon 7 days,
+  card/mobile payments late after 3 days, daily report late after 1 day, ignore cash shortages
+  under 0.01. Supplier ageing buckets are 1-7, 8-14, 15-30 and over 30 days.
+- **Stock signal.** A tank dip within its acceptable difference is green ("matches books"), up to
+  twice that is yellow, beyond is red; a tank without a dip or a tolerance shows "not checked",
+  never green.
+- **Offline queue.** Only a daily-report save that fails for lack of connection is queued, per
+  person, on the device (7 days). It is replayed with the same idempotency keys; if the record has
+  changed meanwhile it is shown as a conflict and never overwrites anything. Cash counts and
+  handovers are not queued until the client says they need it.
+- **Activity log.** Readable only with the audit permission held at organisation level.
+  Secret-looking fields are never displayed.
+- **Documents.** Files (photo, PDF, DOCX; 10 MB) attach to a delivery, bank deposit, cash
+  handover, daily report or expense at one station; stored privately under a random key; append
+  only. Uploading needs the document-upload permission (supervisor, finance, administrator,
+  owner); attendants cannot upload.
+- **Offline drafts, stage 1.** Unsent entries on the daily operations screen are copied to the
+  device (24 hours, tied to the saved record version, cleared after a successful save) and offered
+  back, never applied silently. They are per station and shift, not per person, so on a shared
+  device the next person could be offered them.
+
+## DEC-044 — Deliver the client's full v1 on the Clerk-only integration branch
+
+Date: 2026-10-21. Explicit human instruction. **Status:** ACCEPTED.
+
+- **Scope.** The finish line is the client's full v1 list, not Phase 0 alone. This
+  promotes the items listed in PRODUCT_SPEC §16.2 (cash custody and banking
+  workflow, approved-fuel accounting, alerts, offline drafts, editable settings,
+  richer exports and reports) into scope. **Deferred:** the ShandaHR link.
+- **Branch.** All work lands on `codex/clerk-only-auth-20261017` (Clerk is the
+  only authentication provider, DEC-043). Other branches are mined for finished
+  work only. Nothing merges to `main` or deploys without a separate instruction.
+- **Offline drafts.** In scope, staged: (1) local autosave and restore of unsent
+  form input; (2) queued entry and sync with conflict handling, scoped after
+  stage 1 is proven.
+- **Alerts.** Email only for now (Resend). In-app feed and dashboard tiles are
+  also in scope; SMS/WhatsApp/push are not.
+- **Supervisor.** The person responsible for a station. A station has a
+  responsible-supervisor assignment used for sign-off and cash handover. This
+  extends, and does not replace, the approver meaning in PRODUCT_SPEC §8.1.
+- **Account sale reference.** The customer. An account sale must carry a
+  customer account and is checked against that account's limit at entry.
+- **Approved fuel.** Accounted exactly like fuel sold: litres leave stock, cost
+  of fuel sold is recognised, a named beneficiary is recorded, and it is
+  included in expected-versus-accounted totals and in profit reporting as a
+  benefit cost.
+- **Cash handover.** No minimum amounts. The attendant surrenders cash to the
+  supervisor; an administrator or owner collects it from the supervisor. Every
+  hand-off records who held the cash, and the held, in-transit and banked states
+  are visible. A bank deposit still requires a bank/deposit reference
+  (PRODUCT_SPEC §8.4).
+- **Setup screens.** Designed for non-technical users: guided, plain language,
+  one task per screen, no identifiers shown, phone-friendly.
+
+Still open: default tank-variance tolerances and reminder windows (the client
+brief suggests 7, 14 and 30 days). Until decided they are configurable settings
+with no hard-coded production default beyond the brief.
+
 ## Activation security clarification — 2026-10-18
 
 Explicit human instruction: after five incorrect activation codes the code is

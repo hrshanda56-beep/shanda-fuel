@@ -49,8 +49,9 @@ Important established constraints include:
 - Production migrations are explicit operations and are not assumed to run automatically on deploy.
 - First-user production bootstrap is a one-time, tightly constrained security path with a dry run, zero-write proof, explicit human approval, and mandatory credential cleanup.
 - Production secrets must not appear in chat, committed files, generated credential files, logs, or process argv.
-- Phase 0 Customers is read-oriented and tenant-authorised; do not add write/schema/RLS/auth behavior unless explicitly assigned.
-- Phase 0 Daily Operations work is primarily composition/alignment and correctness; do not invent new accounting/ledger/approval semantics.
+- Delivery scope is the client's full v1 (DEC-044, 2026-10-21), built on `codex/clerk-only-auth-20261017`; the ShandaHR link is deferred. Customer, cash, approved-fuel, alert and offline-draft work is in scope. Phase 0 release gates still apply to every release.
+- Clerk is the only authentication provider (DEC-043). Do not reintroduce Better Auth or provider switching.
+- New schema, RLS, write workflows and accounting rules are allowed when they implement the recorded v1 scope. Follow existing migration, RLS and audit patterns; do not invent semantics that DEC-044, PRODUCT_SPEC or the human have not settled.
 - Dashboard/management UI must not display synthetic production figures.
 - Station operational time must use station timezone metadata, not browser-local guesses.
 - Exact monetary precision must be preserved where the schema/API contract requires it.
@@ -103,13 +104,12 @@ Examples:
 
 Major ambiguities must be surfaced, not hidden behind assumptions.
 
+Resolved by DEC-044: Supervisor meaning (the person responsible for a station), account-sale reference (the customer), approved-fuel accounting (like fuel sold), and cash handover roles (no minimum amounts; bank deposits still need a reference).
+
 Examples of currently unresolved product semantics include:
 
-- exact Daily Operations “supervisor” meaning,
-- account-sale reference requirements,
-- approved-fuel authorization/terminology,
-- minimum cash handover/deposit/bank-reference rules,
-- full customer lifecycle priorities,
+- default tank-variance tolerances and reminder windows,
+- full customer lifecycle priorities beyond DEC-041,
 - full end-state human role/permission matrix.
 
 Do not turn these into code-level requirements without a recorded human decision.
@@ -261,7 +261,7 @@ Preserve established shared-shell patterns:
 - preserve light/dark compatibility,
 - use truthful loading/empty/error/context-required states.
 
-For Phase 0, do not expand Daily Operations or Customers into unapproved write workflows merely because the UI could accommodate them.
+Do not add write workflows beyond the recorded v1 scope (DEC-044) merely because the UI could accommodate them. Setup and access screens must suit non-technical users: guided, plain language, no identifiers shown, phone friendly.
 
 ## 12. Dependencies
 
