@@ -12,6 +12,7 @@ import {
 } from '../../../design-system/primitives';
 import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
 import { eventLabel, isEarlierOpenDay } from './operations-labels';
+import { NextStepCard } from './next-step-card';
 import { ReconciliationBoard } from './reconciliation-board';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
@@ -555,6 +556,14 @@ export function OperationsControlRoom({
           ) : null}
         </div>
       </header>
+
+      {focus === 'operations' ? (
+        <NextStepCard
+          tenantId={context.tenantId}
+          stationId={context.stationId}
+          onChanged={() => void load()}
+        />
+      ) : null}
 
       {error ? (
         <ErrorState

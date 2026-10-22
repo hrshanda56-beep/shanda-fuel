@@ -117,6 +117,24 @@ export function SettingsWorkspace({
   const [tab, setTab] = useState<Tab>('organisation');
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
+  if (view.accountOnly) {
+    return (
+      <PageContainer width="wide" className={`settings-page ${styles.page}`}>
+        <div className={styles.layout}>
+          <div className={styles.content}>
+            <header className={styles.contentHeader}>
+              <h2 className={styles.contentTitle}>Account</h2>
+              <p className={styles.note}>
+                Your account details. Organisation settings are managed by your administrator.
+              </p>
+            </header>
+            <AccountPanel view={view} provider={provider} />
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
+
   if (!organisation) {
     return (
       <PageContainer width="wide" className={`settings-page ${styles.page}`}>

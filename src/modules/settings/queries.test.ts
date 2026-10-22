@@ -164,10 +164,14 @@ describe('Settings read model', () => {
     ).resolves.toMatchObject({ account: { name: 'Ava Operator', email: null } });
   });
 
-  it('rejects an actor without organisation-view permission', async () => {
-    await expect(
-      resolveSettings(request, dependencies(resolution, stationOnlyAuthorization)),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  it('gives an actor without organisation-view permission their account only', async () => {
+    const view = await resolveSettings(request, dependencies(resolution, stationOnlyAuthorization));
+
+    expect(view).toEqual({
+      account: { name: 'Ava Operator', email: 'ava@example.test' },
+      context: { status: 'unavailable', legalEntities: [], selectedStation: null },
+      accountOnly: true,
+    });
   });
 
   it('keeps an authenticated account available when no authorised work context exists', async () => {
