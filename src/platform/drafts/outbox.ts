@@ -183,11 +183,28 @@ export type SyncOutcome = Readonly<{
  * accept; steps before it are never sent again. Nothing is sent for a save that already needs a
  * person (conflict or rejected). Returns what happened so the screen can say so.
  */
-export async function syncQueued(
+export function syncQueued(
   key: string,
   send: (step: QueuedStep, version: number, save: QueuedSave) => Promise<StepResult>,
   now: number = Date.now(),
   store: Store | null = browserStore(),
+): Promise<SyncOutcome> {
+  // The screen asks to send on load and again when the browser reports it is online. Two runs
+  // reading the same storage could send one step twice, so a second request joins the first.
+  const running = inFlight.get(key);
+  if (running) return running;
+  const run = sendQueuedSaves(key, send, now, store).finally(() => inFlight.delete(key));
+  inFlight.set(key, run);
+  return run;
+}
+
+const inFlight = new Map<string, Promise<SyncOutcome>>();
+
+async function sendQueuedSaves(
+  key: string,
+  send: (step: QueuedStep, version: number, save: QueuedSave) => Promise<StepResult>,
+  now: number,
+  store: Store | null,
 ): Promise<SyncOutcome> {
   const sent: string[] = [];
   const conflicts: string[] = [];

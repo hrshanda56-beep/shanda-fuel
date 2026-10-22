@@ -136,6 +136,26 @@ describe('syncQueued', () => {
     expect(listQueued(KEY, NOW, store)).toEqual([]);
   });
 
+  it('joins a second request made while the first is still sending, so no step goes twice', async () => {
+    const store = memoryStore();
+    enqueueSave(KEY, save('a'), NOW, store);
+    const sentKeys: string[] = [];
+    const send = async (step: QueuedStep, version: number): Promise<StepResult> => {
+      sentKeys.push(step.idempotencyKey);
+      await Promise.resolve();
+      return ok(version + 1);
+    };
+    const first = syncQueued(KEY, send, NOW, store);
+    const second = syncQueued(KEY, send, NOW, store);
+    const [one, two] = await Promise.all([first, second]);
+    expect(sentKeys).toEqual(['key-0', 'key-1', 'key-2']);
+    expect(two).toBe(one);
+    // once finished, a later request starts a fresh run
+    enqueueSave(KEY, save('b'), NOW + 1, store);
+    const third = await syncQueued(KEY, send, NOW + 1, store);
+    expect(third.sent).toEqual(['b']);
+  });
+
   it('resumes after the last accepted step and never resends it', async () => {
     const store = memoryStore();
     enqueueSave(KEY, save('a'), NOW, store);
