@@ -206,7 +206,12 @@ function zip(entries: readonly ZipEntry[]): Buffer {
 }
 
 export function buildReportXlsx(slug: ReportDefinition['slug'], report: ManagementReport): Buffer {
-  const rows = parseCsv(buildReportCsv(slug, report));
+  return buildXlsxFromCsv(buildReportCsv(slug, report));
+}
+
+/** Same workbook, from CSV text the repository itself produced. */
+export function buildXlsxFromCsv(csv: string): Buffer {
+  const rows = parseCsv(csv);
   const sheet = Buffer.from(worksheetXml(rows), 'utf8');
   const entries: ZipEntry[] = [
     {
@@ -258,7 +263,12 @@ function pdfText(value: string): string {
 }
 
 export function buildReportPdf(slug: ReportDefinition['slug'], report: ManagementReport): Buffer {
-  const rows = parseCsv(buildReportCsv(slug, report));
+  return buildPdfFromCsv(buildReportCsv(slug, report));
+}
+
+/** Same PDF, from CSV text the repository itself produced. */
+export function buildPdfFromCsv(csv: string): Buffer {
+  const rows = parseCsv(csv);
   const lines = rows.flatMap((row) => {
     const line = row.join(' | ');
     const chunks: string[] = [];
@@ -327,4 +337,10 @@ export function buildReportExport(
   if (format === 'csv') return buildReportCsv(slug, report);
   if (format === 'pdf') return buildReportPdf(slug, report);
   return buildReportXlsx(slug, report);
+}
+
+export function buildExportFromCsv(format: ReportExportFormat, csv: string): string | Buffer {
+  if (format === 'csv') return csv;
+  if (format === 'pdf') return buildPdfFromCsv(csv);
+  return buildXlsxFromCsv(csv);
 }

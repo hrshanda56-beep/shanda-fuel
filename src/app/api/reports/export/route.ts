@@ -1,12 +1,16 @@
 import { AppError } from '../../../../platform/errors';
 import { findReport } from '../../../../modules/reporting/catalog';
 import {
+  buildExportFromCsv,
   buildReportExport,
   parseReportExportFormat,
   reportExportContentType,
   reportExportFilename,
 } from '../../../../modules/reporting/export-documents';
 import { getManagementReportFromRequest } from '../../../../modules/reporting/queries';
+import { buildTableReportCsv } from '../../../../modules/reporting/table-reports/csv';
+import { runTableReport } from '../../../../modules/reporting/table-reports/run';
+import { findTableReport } from '../../../../modules/reporting/table-reports/definitions';
 import { recordReportEvent } from '../../../../modules/reporting/report-events';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
@@ -34,10 +38,31 @@ export const GET = withRequestObservability(
         throw new AppError('VALIDATION_FAILED', 'That report is not available as a download');
       }
 
-      const report = await getManagementReportFromRequest(request, query, {
-        requireStepUp: true,
-      });
-      const document = buildReportExport(format, slug, report);
+      let document: string | Buffer;
+      let filename: string;
+      if (findTableReport(slug)) {
+        const result = await runTableReport(request, slug, query, { requireStepUp: true });
+        document = buildExportFromCsv(format, buildTableReportCsv(result.definition, result.rows));
+        filename = reportExportFilename(
+          slug,
+          result.fromDate,
+          result.toDate,
+          result.stationCount,
+          format,
+        );
+      } else {
+        const report = await getManagementReportFromRequest(request, query, {
+          requireStepUp: true,
+        });
+        document = buildReportExport(format, slug, report);
+        filename = reportExportFilename(
+          slug,
+          report.filters.fromDate,
+          report.filters.toDate,
+          report.filters.stationIds.length,
+          format,
+        );
+      }
       await recordReportEvent(request, {
         kind: 'EXPORTED',
         slug,
@@ -46,13 +71,6 @@ export const GET = withRequestObservability(
         exportFormat: format,
       });
 
-      const filename = reportExportFilename(
-        slug,
-        report.filters.fromDate,
-        report.filters.toDate,
-        report.filters.stationIds.length,
-        format,
-      );
       const body =
         typeof document === 'string' ? document : (new Uint8Array(document) as unknown as BodyInit);
       return new Response(body, {

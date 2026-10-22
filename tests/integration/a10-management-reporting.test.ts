@@ -1340,5 +1340,52 @@ describe('A10 management reporting PostgreSQL read model', () => {
         );
       }
     });
+
+    it('exports the table reports from the same fixtures, as CSV, Excel and PDF', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const delivery = await exportAs(sessionToken, `report=delivery-variance&${base}`);
+      expect(delivery.status).toBe(200);
+      expect(delivery.headers.get('content-disposition')).toBe(
+        'attachment; filename="delivery-variance_2026-09-01_to_2026-09-30.csv"',
+      );
+      const deliveryCsv = (await delivery.text()).split('\r\n');
+      expect(deliveryCsv[0]).toContain('Short (−) / over (+) (L)');
+      expect(
+        deliveryCsv.some((line) => line.includes('A10-DELIVERY') && line.includes('20.000')),
+      ).toBe(true);
+
+      const movements = await exportAs(sessionToken, `report=stock-movements&${base}`);
+      expect(movements.status).toBe(200);
+      const movementCsv = await movements.text();
+      expect(movementCsv).toContain('Opening stock');
+      expect(movementCsv).toContain('A10-TANK');
+      expect(movementCsv).toContain('95.000');
+
+      const dips = await exportAs(sessionToken, `report=tank-dip-history&${base}`);
+      expect(dips.status).toBe(200);
+      expect((await dips.text()).trim().split('\r\n')).toHaveLength(1);
+
+      const xlsx = await exportAs(sessionToken, `report=stock-movements&format=xlsx&${base}`);
+      expect(xlsx.headers.get('content-disposition')).toContain('.xlsx"');
+      expect(
+        Buffer.from(await xlsx.arrayBuffer())
+          .subarray(0, 2)
+          .toString(),
+      ).toBe('PK');
+      const pdf = await exportAs(sessionToken, `report=stock-movements&format=pdf&${base}`);
+      expect(
+        Buffer.from(await pdf.arrayBuffer())
+          .subarray(0, 5)
+          .toString(),
+      ).toBe('%PDF-');
+    });
+
+    it('applies station authorisation to the table reports too', async () => {
+      const response = await exportAs(
+        scopedSessionToken,
+        `report=stock-movements&tenantId=${ids.tenant}&stationIds=${ids.station}&${range}`,
+      );
+      expect(response.status).toBe(403);
+    });
   });
 });

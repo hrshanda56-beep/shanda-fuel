@@ -2,6 +2,8 @@
  * The report types a user can open. Each is one row on the Reports page and one
  * section of the management report. Pure data; no UI or database code.
  */
+import { TABLE_REPORTS } from './table-reports/definitions';
+
 export const REPORT_CATEGORIES = [
   { id: 'statements', label: 'Financial Statements' },
   { id: 'sales', label: 'Sales' },
@@ -22,7 +24,7 @@ export type ReportDefinition = Readonly<{
   exportable: boolean;
 }>;
 
-export const REPORT_CATALOG: readonly ReportDefinition[] = [
+const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
   {
     slug: 'profit-loss',
     title: 'Income Statement',
@@ -79,6 +81,18 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     category: 'inventory',
     exportable: true,
   },
+];
+
+/** The management-overview views first, then the plain table reports. */
+export const REPORT_CATALOG: readonly ReportDefinition[] = [
+  ...MANAGEMENT_REPORTS,
+  ...TABLE_REPORTS.map(({ slug, title, description, category }) => ({
+    slug,
+    title,
+    description,
+    category,
+    exportable: true,
+  })),
 ];
 
 export function findReport(slug: string): ReportDefinition | undefined {

@@ -12,6 +12,11 @@ describe('report catalog', () => {
   it('finds reports by slug and groups them by category', () => {
     expect(findReport('cash')?.title).toBe('Cash Evidence to Bank');
     expect(findReport('nope')).toBeUndefined();
-    expect(reportsInCategory('inventory').map((report) => report.slug)).toEqual(['inventory']);
+    expect(reportsInCategory('inventory').map((report) => report.slug)).toEqual([
+      'inventory',
+      'tank-dip-history',
+      'stock-movements',
+      'delivery-variance',
+    ]);
   });
 });
