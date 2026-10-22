@@ -138,6 +138,19 @@ Not built, waiting for an owner rule: **sales by attendant** (how a shift's sale
 several attendants share it) and **customer ageing** (how payments are applied to older charges).
 Supplier ageing already exists in the supplier summary.
 
+### Release drafts, dependency bumps and offline sending (2026-10-22, committed on the integration branch)
+
+- Drafts, nothing executed: `docs/runbooks/v1-migration-and-release.md` (migrations 0025 to 0049 with
+  file hashes, ordered steps, rollback rules, release record), `docs/v1-owner-decisions.md` (owner
+  decision sheet) and `docs/runbooks/v1-uat-training-shadow-week.md`.
+- Patch-level dependency bumps applied (Clerk, Resend, Zod, AWS SDK, upload-artifact). Held back:
+  next and eslint-config-next 16.4, @types/node 26, dotenv 18, setup-python 7, setup-node 7.1, codeql 4.39.
+  Typecheck, lint, format and the 1,350 unit tests pass.
+- Offline sending: a second request to send queued saves now joins the run in progress, so a step
+  cannot go twice when the screen loads and the browser reports "online" together. Still not run in a
+  browser: the daily operations screen needs a signed-in Clerk user. Queueing cash counts and
+  handovers needs owner approval and an unlock of locked screens (decision sheet, item 5).
+
 ## Finance backend completion candidate — 2026-10-19
 
 The requested finance backend work is being implemented on branch
