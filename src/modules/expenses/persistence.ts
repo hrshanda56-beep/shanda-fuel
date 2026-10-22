@@ -241,18 +241,43 @@ export async function submitExpenseInTransaction(
       });
     }
   }
+  if (input.shiftId) {
+    const shifts = await transaction.execute<{
+      opened_at: Date | string;
+      state: string;
+      business_date: string;
+    }>(
+      sql`select opened_at,state,business_date from app.shifts where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${input.shiftId} for update`,
+    );
+    const shift = shifts[0];
+    const now = await transaction.execute<{ now: Date | string }>(
+      sql`select clock_timestamp() as now`,
+    );
+    if (
+      !shift ||
+      shift.state !== 'OPEN' ||
+      !input.observedAt ||
+      Date.parse(input.observedAt) < new Date(shift.opened_at).getTime() ||
+      Date.parse(input.observedAt) > new Date(now[0]!.now).getTime() ||
+      input.expenseDate !== shift.business_date
+    )
+      throw new AppError(
+        'CONFLICT',
+        'Shift expense must belong to the open station shift and its business date',
+      );
+  }
   const policy = await loadExpensePolicy(transaction, context);
   const approvalsRequired = requiredApprovals(validated.amount.amount.toString(), policy);
   const expenseId = randomUUID();
   await transaction.execute(sql`
     insert into app.expenses (
       id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description,
-      payee, reference, currency, amount, state, version, required_approvals, submitted_by
+      payee, reference, currency, amount, state, version, required_approvals, submitted_by, shift_id, observed_at
     ) values (
       ${expenseId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
       ${input.categoryId}, ${validated.expenseDate}, ${validated.description},
       ${validated.payee}, ${validated.reference}, 'USD', ${validated.amount.amount.toString()},
-      'SUBMITTED', 0, ${approvalsRequired}, ${actorId(context)}
+      'SUBMITTED', 0, ${approvalsRequired}, ${actorId(context)}, ${input.shiftId ?? null}, ${input.observedAt ?? null}::timestamptz
     )
   `);
   return {
@@ -929,4 +954,38 @@ export async function adjustRecurringCostRecognitionInTransaction(
     recognitionDate: input.recognitionDate,
     amount,
   };
+}
+
+export async function correctExpenseFactsInTransaction(
+  transaction: ExpenseTransaction,
+  rawContext: ExpenseCommandContext,
+  input: ExpenseCommandInput<'CorrectExpenseFacts'>,
+) {
+  const context = requireStation(rawContext);
+  const rows = await transaction.execute<{ version: number }>(
+    sql`select version from app.expenses where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${input.expenseId}`,
+  );
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'Expense not found');
+  assertVersion(rows[0].version, input.expectedVersion, 'expense');
+  try {
+    const result = await transaction.execute<{ result: Record<string, unknown> }>(
+      sql`select app.correct_expense_version(${input.expenseId},${input.expectedVersionId},${input.amount},${input.description},${input.payee ?? null},${input.reference ?? null},${input.reason}) as result`,
+    );
+    return result[0]!.result;
+  } catch (error) {
+    const code =
+      (error as { cause?: { code?: string }; code?: string }).cause?.code ??
+      (error as { code?: string }).code;
+    if (code === '42501')
+      throw new AppError('FORBIDDEN', 'You cannot correct this station expense');
+    if (code === '40001')
+      throw new AppError(
+        'CONFLICT',
+        'Expense changed or is already in review; reload and use the controlled return or reversal process',
+      );
+    if (code === 'P0002') throw new AppError('NOT_FOUND', 'Expense not found');
+    if (['22023', '23505', '23514'].includes(code ?? ''))
+      throw new AppError('VALIDATION_FAILED', 'Invalid expense correction');
+    throw error;
+  }
 }

@@ -610,7 +610,56 @@ function OpeningInventoryForm({
   );
 }
 
-function DeliveryForm({
+export type DeliveryFormValues = Readonly<{
+  supplierId: string;
+  productId: string;
+  deliveryNoteNumber: string;
+  deliveredAt: string;
+  noteQuantityLitres: string;
+  actualQuantityLitres: string;
+  allocationQuantityLitres: string;
+  supplierReference?: string;
+  transporter?: string;
+  driver?: string;
+  truckRegistration?: string;
+  sealReference?: string;
+  preDeliveryDipId?: string;
+  postDeliveryDipId?: string;
+  tankId: string;
+}>;
+
+/**
+ * Build the existing CreateDelivery command without sending empty optional strings.
+ * Dip references are existing tank-dip IDs; this helper deliberately does not create or
+ * reinterpret dip evidence.
+ */
+export function buildDeliveryCommand(values: DeliveryFormValues): Record<string, unknown> {
+  const command: Record<string, unknown> = {
+    commandType: 'CreateDelivery',
+    supplierId: values.supplierId,
+    productId: values.productId,
+    deliveryNoteNumber: values.deliveryNoteNumber.trim(),
+    deliveredAt: values.deliveredAt,
+    noteQuantityLitres: values.noteQuantityLitres,
+    actualQuantityLitres: values.actualQuantityLitres,
+    allocations: [{ tankId: values.tankId, quantityLitres: values.allocationQuantityLitres }],
+  };
+  const optional = {
+    supplierReference: values.supplierReference,
+    transporter: values.transporter,
+    driver: values.driver,
+    truckRegistration: values.truckRegistration,
+    sealReference: values.sealReference,
+    preDeliveryDipId: values.preDeliveryDipId,
+    postDeliveryDipId: values.postDeliveryDipId,
+  } as const;
+  for (const [key, value] of Object.entries(optional)) {
+    if (value?.trim()) command[key] = value.trim();
+  }
+  return command;
+}
+
+export function DeliveryForm({
   context,
   tankId,
   productId,
@@ -627,6 +676,13 @@ function DeliveryForm({
   const [suppliers, setSuppliers] = useState<{ id: string; label: string }[] | null>(null);
   const [supplierId, setSupplierId] = useState('');
   const [deliveryNoteNumber, setDeliveryNoteNumber] = useState('');
+  const [supplierReference, setSupplierReference] = useState('');
+  const [transporter, setTransporter] = useState('');
+  const [driver, setDriver] = useState('');
+  const [truckRegistration, setTruckRegistration] = useState('');
+  const [sealReference, setSealReference] = useState('');
+  const [preDeliveryDipId, setPreDeliveryDipId] = useState('');
+  const [postDeliveryDipId, setPostDeliveryDipId] = useState('');
   const [deliveredAt, setDeliveredAt] = useState('');
   const [noteQuantityLitres, setNoteQuantityLitres] = useState('');
   const [actualQuantityLitres, setActualQuantityLitres] = useState('');
@@ -665,16 +721,23 @@ function DeliveryForm({
     try {
       const result = (await postInventoryCommand(
         context,
-        {
-          commandType: 'CreateDelivery',
+        buildDeliveryCommand({
           supplierId,
           productId,
-          deliveryNoteNumber: deliveryNoteNumber.trim(),
+          tankId,
+          deliveryNoteNumber,
           deliveredAt: isoFromLocal(deliveredAt),
           noteQuantityLitres,
           actualQuantityLitres,
-          allocations: [{ tankId, quantityLitres: allocationQuantityLitres }],
-        },
+          allocationQuantityLitres,
+          supplierReference,
+          transporter,
+          driver,
+          truckRegistration,
+          sealReference,
+          preDeliveryDipId,
+          postDeliveryDipId,
+        }),
         createKey.current,
       )) as { deliveryId?: string } | null;
       createKey.current = null;
@@ -754,6 +817,72 @@ function DeliveryForm({
             value={deliveryNoteNumber}
             onChange={(event) => setDeliveryNoteNumber(event.target.value)}
             required
+          />
+        </Field>
+        <Field
+          id="delivery-supplier-reference"
+          label="Supplier reference"
+          hint="Optional supplier or purchase reference already recorded for this delivery."
+          optional
+        >
+          <input
+            id="delivery-supplier-reference"
+            value={supplierReference}
+            onChange={(event) => setSupplierReference(event.target.value)}
+          />
+        </Field>
+        <Field id="delivery-transporter" label="Transporter" optional>
+          <input
+            id="delivery-transporter"
+            value={transporter}
+            onChange={(event) => setTransporter(event.target.value)}
+          />
+        </Field>
+        <Field id="delivery-driver" label="Driver" optional>
+          <input
+            id="delivery-driver"
+            value={driver}
+            onChange={(event) => setDriver(event.target.value)}
+          />
+        </Field>
+        <Field id="delivery-truck-registration" label="Truck registration" optional>
+          <input
+            id="delivery-truck-registration"
+            value={truckRegistration}
+            onChange={(event) => setTruckRegistration(event.target.value)}
+          />
+        </Field>
+        <Field id="delivery-seal-reference" label="Seal reference" optional>
+          <input
+            id="delivery-seal-reference"
+            value={sealReference}
+            onChange={(event) => setSealReference(event.target.value)}
+          />
+        </Field>
+        <Field
+          id="delivery-pre-dip-reference"
+          label="Pre-delivery dip reference"
+          hint="Optional existing tank-dip ID. This form does not create or alter the dip."
+          optional
+        >
+          <input
+            id="delivery-pre-dip-reference"
+            value={preDeliveryDipId}
+            onChange={(event) => setPreDeliveryDipId(event.target.value)}
+            inputMode="text"
+          />
+        </Field>
+        <Field
+          id="delivery-post-dip-reference"
+          label="Post-delivery dip reference"
+          hint="Optional existing tank-dip ID. This form does not create or alter the dip."
+          optional
+        >
+          <input
+            id="delivery-post-dip-reference"
+            value={postDeliveryDipId}
+            onChange={(event) => setPostDeliveryDipId(event.target.value)}
+            inputMode="text"
           />
         </Field>
         <Field id="delivery-delivered-at" label="Delivered at" required>

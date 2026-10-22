@@ -44,6 +44,45 @@ describe('expense command contracts', () => {
     ).toBe(true);
   });
 
+  it('retains optional shift capture and rejects forged version or author fields', () => {
+    const body = {
+      commandType: 'SubmitExpense',
+      tenantId,
+      stationId,
+      categoryId: expenseId,
+      expenseDate: '2026-10-19',
+      description: 'Repair',
+      amount: '25',
+      shiftId: expenseId,
+      observedAt: '2026-10-19T10:00:00Z',
+    };
+    const schema = EXPENSE_COMMAND_SCHEMAS.SubmitExpense;
+    expect(schema.parse(body)).toMatchObject({ shiftId: expenseId, observedAt: body.observedAt });
+    expect(schema.safeParse({ ...body, observedAt: undefined }).success).toBe(false);
+    expect(
+      schema.safeParse({ ...body, currentVersionId: expenseId, submittedBy: expenseId }).success,
+    ).toBe(false);
+  });
+
+  it('requires exact expected evidence and a reason for an expense correction', () => {
+    const schema = EXPENSE_COMMAND_SCHEMAS.CorrectExpenseFacts;
+    const body = {
+      commandType: 'CorrectExpenseFacts',
+      tenantId,
+      stationId,
+      expenseId,
+      expectedVersion: 0,
+      expectedVersionId: expenseId,
+      amount: '30.0000',
+      description: 'Corrected receipt',
+      reason: 'Receipt typo',
+    };
+    expect(schema.safeParse(body).success).toBe(true);
+    expect(schema.safeParse({ ...body, reason: '' }).success).toBe(false);
+    expect(schema.safeParse({ ...body, expectedVersionId: undefined }).success).toBe(false);
+    expect(schema.safeParse({ ...body, actorId: expenseId }).success).toBe(false);
+  });
+
   it('requires expectedVersion on state-changing commands and a reason on reversals', () => {
     const common = { tenantId, stationId, expenseId };
     expect(

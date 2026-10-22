@@ -16,6 +16,7 @@ import {
 } from './contracts';
 import {
   approveExpenseInTransaction,
+  correctExpenseFactsInTransaction,
   adjustRecurringCostRecognitionInTransaction,
   createExpenseCategoryInTransaction,
   createRecurringCostTemplateInTransaction,
@@ -55,6 +56,13 @@ const idOf = (key: string) => (_: unknown, result: Record<string, unknown>) =>
   String(result[key] ?? '');
 
 const HANDLERS: { [K in ExpenseCommandType]: Handler<K> } = {
+  CorrectExpenseFacts: {
+    subjectType: 'Expense',
+    subjectId: (input) => input.expenseId,
+    reason: (input) => input.reason,
+    created: false,
+    run: correctExpenseFactsInTransaction,
+  },
   CreateExpenseCategory: {
     subjectType: 'ExpenseCategory',
     subjectId: idOf('categoryId'),

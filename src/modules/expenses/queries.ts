@@ -72,6 +72,9 @@ async function readContext(
 
 type ExpenseListRow = {
   id: string;
+  current_version_id: string;
+  shift_id: string | null;
+  observed_at: string | null;
   station_id: string;
   category_id: string;
   category_code: string;
@@ -102,7 +105,7 @@ export async function listExpensesFromRequest(
   const context = await readContext(request, input, actor);
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const rows = await transaction.execute<ExpenseListRow>(sql`
-      select e.id, e.station_id, e.category_id, c.code as category_code, c.name as category_name,
+      select e.id,e.current_version_id,e.shift_id,e.observed_at::text as observed_at, e.station_id, e.category_id, c.code as category_code, c.name as category_name,
         e.expense_date, e.description, e.payee, e.reference, e.amount::text as amount, e.state,
         e.version, e.required_approvals,
         (select count(*) from app.expense_approvals a
@@ -131,6 +134,9 @@ export async function listExpensesFromRequest(
         stationId: row.station_id,
         category: { id: row.category_id, code: row.category_code, name: row.category_name },
         expenseDate: row.expense_date,
+        currentVersionId: row.current_version_id,
+        shiftId: row.shift_id,
+        observedAt: row.observed_at,
         description: row.description,
         payee: row.payee,
         reference: row.reference,

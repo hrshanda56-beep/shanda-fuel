@@ -1223,3 +1223,8 @@ Navigation labels in rail mode now render through a body portal beyond the sideb
 ### Collapsed rail active-item inset — 18 October 2026
 
 Rail mode now removes expanded-navigation horizontal padding and reserved scrollbar gutter, centres 44px destination surfaces within available width, and preserves an inset from the frame and scrolling region. Expanded desktop and mobile navigation are unchanged. Browser regression checks passed at 1113, 1213 and 1440px, covering active-item bounds plus existing hover/focus tooltip behavior. Focused lint and diff checks passed. No production contact, commit or push.
+
+
+### Unified expense integration — 2026-10-19
+
+Unified expense integration is an incomplete isolated candidate based on 186f66d. Separate local database created and incoming 0000–0040 plus 0047/0048 applied with approval. Five focused runtime-role version/correction/API tests pass, including concurrent correction serialization; the full incoming-plus-candidate unit suite passed 171 files / 1,199 tests. TypeScript, focused lint, formatting and diff checks passed. The wider expense suite has unresolved self-approval, recurring-fixture and dependent audit failures. These also reproduce using unchanged incoming test assertions on this test environment; no clean-baseline production-code proof is claimed. Original worktree/local DB preserved. No Neon/production contact, merge, commit, push or deployment. Full refactor conversion and report-submission wiring remain outstanding.
