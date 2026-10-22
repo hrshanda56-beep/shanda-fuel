@@ -13,6 +13,15 @@ const clerkProxy = clerkMiddleware({
 });
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
+  // The owner-demo route is a dedicated browser-local artifact with no Clerk
+  // session. Keep the bypass limited to that exact route and explicit env;
+  // every other request continues through Clerk middleware.
+  if (
+    process.env.APP_ENV === 'demo' &&
+    (request.nextUrl.pathname === '/owner-demo' || request.nextUrl.pathname === '/owner-demo/')
+  ) {
+    return NextResponse.next();
+  }
   const response = await clerkProxy(request, event);
   if (!response) return NextResponse.next();
 
