@@ -8,7 +8,10 @@ import {
   calculateBankDepositAmount,
   calculateCashCollectionAmount,
   remainingCashAmount,
+  submitCashHandover,
+  transitionCashHandover,
   type BankDepositAllocation,
+  type CashHandoverState,
   type CashCollectionSource,
 } from './domain';
 import type { CashCommandContext } from './application';
@@ -449,6 +452,9 @@ export async function getCashStationSummaryInTransaction(
       receiveCollection: boolean;
       recordDeposit: boolean;
       confirmDeposit: boolean;
+      submitHandover: boolean;
+      acceptHandover: boolean;
+      resolveHandover: boolean;
     }>;
   }> = {},
 ) {
@@ -508,6 +514,24 @@ export async function getCashStationSummaryInTransaction(
     reconciliation_id: string;
     business_date: string;
     amount: string;
+  };
+  type HandoverSummaryRow = {
+    id: string;
+    from_location_id: string;
+    to_location_id: string;
+    expected_amount: string;
+    counted_amount: string | null;
+    variance: string | null;
+    state: string;
+    version: number | string;
+    dispute_reason: string | null;
+    resolution_note: string | null;
+    delivered_by: string;
+    delivered_by_name: string;
+    received_by_name: string | null;
+    submitted_at: string | Date | null;
+    accepted_at: string | Date | null;
+    resolved_at: string | Date | null;
   };
   type BankAccountsRow = {
     id: string;
@@ -624,6 +648,24 @@ export async function getCashStationSummaryInTransaction(
       and a.station_id = ${context.stationId}
     order by bd.business_date, a.id
   `;
+  const handoversQuery = sql`
+    select h.id, h.from_location_id, h.to_location_id,
+           h.expected_amount::text, h.counted_amount::text, h.variance::text,
+           h.state, h.version, h.dispute_reason, h.resolution_note,
+           h.delivered_by, coalesce(du.name, 'Unknown') as delivered_by_name,
+           coalesce(ru.name, null) as received_by_name,
+           h.submitted_at, h.accepted_at, h.resolved_at
+    from app.cash_handovers h
+    left join app.memberships dm on dm.tenant_id = h.tenant_id and dm.id = h.delivered_by
+    left join app.users du on du.id = dm.identity_id
+    left join app.memberships rm on rm.tenant_id = h.tenant_id and rm.id = coalesce(h.resolved_by, h.received_by)
+    left join app.users ru on ru.id = rm.identity_id
+    where h.tenant_id = ${context.tenantId}
+      and h.station_id = ${context.stationId}
+      and (h.state in ('SUBMITTED', 'DISPUTED') or h.updated_at > now() - interval '14 days')
+    order by h.created_at desc, h.id desc
+    limit 50
+  `;
   const bankAccountsQuery = options.includeDepositDetails
     ? sql`
         select id, name, bank_name, account_reference_masked
@@ -643,6 +685,7 @@ export async function getCashStationSummaryInTransaction(
     depositLinks: DepositLinkRow[];
     shiftLinks: ShiftLinkRow[];
     bankAccounts: BankAccountsRow[];
+    handovers: HandoverSummaryRow[];
   }>(sql`
     with rows_rows as (${rowsQuery}),
 locations_rows as (${locationsQuery}),
@@ -650,14 +693,16 @@ reconciliationSources_rows as (${reconciliationSourcesQuery}),
 depositRows_rows as (${depositRowsQuery}),
 depositLinks_rows as (${depositLinksQuery}),
 shiftLinks_rows as (${shiftLinksQuery}),
-bankAccounts_rows as (${bankAccountsQuery})
+bankAccounts_rows as (${bankAccountsQuery}),
+handovers_rows as (${handoversQuery})
     select coalesce((select json_agg(rows_rows) from rows_rows), '[]'::json) as "rows",
 coalesce((select json_agg(locations_rows) from locations_rows), '[]'::json) as "locations",
 coalesce((select json_agg(reconciliationSources_rows) from reconciliationSources_rows), '[]'::json) as "reconciliationSources",
 coalesce((select json_agg(depositRows_rows) from depositRows_rows), '[]'::json) as "depositRows",
 coalesce((select json_agg(depositLinks_rows) from depositLinks_rows), '[]'::json) as "depositLinks",
 coalesce((select json_agg(shiftLinks_rows) from shiftLinks_rows), '[]'::json) as "shiftLinks",
-coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json) as "bankAccounts"
+coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json) as "bankAccounts",
+coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "handovers"
   `);
   const snapshot = sections[0];
   if (!snapshot) throw new AppError('INVARIANT_VIOLATION', 'Cash summary was not returned');
@@ -669,6 +714,7 @@ coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json
     depositLinks,
     shiftLinks,
     bankAccounts,
+    handovers,
   } = snapshot;
   const iso = (value: string | Date | null) => (value ? new Date(value).toISOString() : null);
 
@@ -787,12 +833,233 @@ coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json
       accountReferenceMasked: row.account_reference_masked,
     })),
     deposits,
+    handovers: handovers.map((row) => ({
+      handoverId: row.id,
+      fromLocationId: row.from_location_id,
+      toLocationId: row.to_location_id,
+      expectedAmount: decimal(row.expected_amount).toString(),
+      countedAmount: row.counted_amount ? decimal(row.counted_amount).toString() : null,
+      variance: row.variance ? decimal(row.variance).toString() : null,
+      state: row.state,
+      version: Number(row.version),
+      reason: row.dispute_reason,
+      resolutionNote: row.resolution_note,
+      deliveredByMembershipId: row.delivered_by,
+      deliveredByName: row.delivered_by_name,
+      receivedByName: row.received_by_name,
+      submittedAt: iso(row.submitted_at),
+      acceptedAt: iso(row.accepted_at),
+      resolvedAt: iso(row.resolved_at),
+    })),
+    currentMembershipId: context.actor.membershipId,
     capabilities: options.capabilities ?? {
       viewDeposits: false,
       recordCollection: false,
       receiveCollection: false,
       recordDeposit: false,
       confirmDeposit: false,
+      submitHandover: false,
+      acceptHandover: false,
+      resolveHandover: false,
     },
   };
+}
+
+type HandoverRow = {
+  id: string;
+  from_location_id: string;
+  to_location_id: string;
+  counted_amount: string | null;
+  state: string;
+  delivered_by: string;
+  version: number | string;
+};
+
+async function loadHandover(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  handoverId: string,
+): Promise<HandoverRow> {
+  const rows = await transaction.execute<HandoverRow>(sql`
+    select id, from_location_id, to_location_id, counted_amount::text as counted_amount,
+           state, delivered_by, version
+    from app.cash_handovers
+    where tenant_id = ${context.tenantId}
+      and station_id = ${context.stationId}
+      and id = ${handoverId}
+    for update
+  `);
+  const handover = rows[0];
+  if (!handover) throw new AppError('NOT_FOUND', 'The cash handover was not found');
+  return handover;
+}
+
+function assertHandoverVersion(handover: HandoverRow, expectedVersion: number): void {
+  if (Number(handover.version) !== expectedVersion) {
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this cash handover. Refresh and try again.',
+      { expectedVersion, actualVersion: Number(handover.version) },
+    );
+  }
+}
+
+async function moveHandoverCash(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  handover: HandoverRow,
+): Promise<void> {
+  if (handover.counted_amount === null || decimal(handover.counted_amount).value.lte(0)) return;
+  const dates = await transaction.execute<{ business_date: string }>(sql`
+    select to_char((now() at time zone s.timezone)::date, 'YYYY-MM-DD') as business_date
+    from app.stations s
+    where s.tenant_id = ${context.tenantId} and s.id = ${context.stationId}
+  `);
+  await transaction.execute(sql`
+    insert into app.cash_movements (
+      id, tenant_id, station_id, movement_type, amount, currency,
+      from_location_id, to_location_id, source_type, source_id,
+      business_date, effective_at, actor_membership_id
+    ) values (
+      ${randomUUID()}, ${context.tenantId}, ${context.stationId}, 'TRANSFER', ${handover.counted_amount}, 'USD',
+      ${handover.from_location_id}, ${handover.to_location_id}, 'CASH_HANDOVER',
+      ${handover.id}, ${dates[0]!.business_date}, now(), ${context.actor.membershipId}
+    )
+  `);
+}
+
+/**
+ * One person hands cash to another (attendant to supervisor, supervisor to the owner's
+ * collector). A count that matches what was expected waits to be accepted; a count that does
+ * not match goes straight to review with the reason the person gave.
+ */
+export async function submitCashHandoverInTransaction(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  input: {
+    fromLocationId: string;
+    toLocationId: string;
+    expectedAmount: string;
+    countedAmount: string;
+    reason?: string;
+  },
+) {
+  if (input.fromLocationId === input.toLocationId) {
+    throw new AppError('VALIDATION_FAILED', 'Choose a different place to hand the cash to');
+  }
+  await assertActiveCashLocation(transaction, context, input.fromLocationId);
+  await assertActiveCashLocation(transaction, context, input.toLocationId);
+  const outcome = submitCashHandover({
+    expectedAmount: input.expectedAmount,
+    countedAmount: input.countedAmount,
+  });
+  const reason = input.reason?.trim() || null;
+  if (outcome.state === 'DISPUTED' && !reason) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The cash counted is different from the cash expected. Say why.',
+    );
+  }
+  const id = randomUUID();
+  await transaction.execute(sql`
+    insert into app.cash_handovers (
+      id, tenant_id, station_id, from_location_id, to_location_id,
+      expected_amount, counted_amount, variance, state, delivered_by,
+      dispute_reason, submitted_at
+    ) values (
+      ${id}, ${context.tenantId}, ${context.stationId}, ${input.fromLocationId}, ${input.toLocationId},
+      ${outcome.expectedAmount}, ${outcome.countedAmount}, ${outcome.variance}, ${outcome.state},
+      ${context.actor.membershipId}, ${reason}, now()
+    )
+  `);
+  return {
+    handoverId: id,
+    state: outcome.state,
+    variance: outcome.variance ?? '0',
+    version: 0,
+  };
+}
+
+/** The receiver confirms the cash arrived. Nobody can accept cash they handed over themselves. */
+export async function acceptCashHandoverInTransaction(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  input: { handoverId: string; expectedVersion: number },
+) {
+  const handover = await loadHandover(transaction, context, input.handoverId);
+  assertHandoverVersion(handover, input.expectedVersion);
+  if (handover.delivered_by === context.actor.membershipId) {
+    throw new AppError('FORBIDDEN', 'You cannot accept cash that you handed over yourself');
+  }
+  const next = transitionCashHandover(handover.state as CashHandoverState, 'AcceptCashHandover');
+  await moveHandoverCash(transaction, context, handover);
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.cash_handovers
+    set state = ${next},
+        received_by = ${context.actor.membershipId},
+        accepted_at = now(),
+        version = version + 1,
+        updated_at = now()
+    where tenant_id = ${context.tenantId}
+      and station_id = ${context.stationId}
+      and id = ${input.handoverId}
+      and version = ${input.expectedVersion}
+    returning version
+  `);
+  return { handoverId: handover.id, state: next, version: Number(updated[0]!.version) };
+}
+
+/** A person with authority settles a handover that did not add up. The cash that was counted moves. */
+export async function resolveCashHandoverInTransaction(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  input: { handoverId: string; expectedVersion: number; resolutionNote: string },
+) {
+  const handover = await loadHandover(transaction, context, input.handoverId);
+  assertHandoverVersion(handover, input.expectedVersion);
+  if (handover.delivered_by === context.actor.membershipId) {
+    throw new AppError('FORBIDDEN', 'You cannot settle a handover that you made yourself');
+  }
+  const next = transitionCashHandover(handover.state as CashHandoverState, 'ResolveCashHandover');
+  await moveHandoverCash(transaction, context, handover);
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.cash_handovers
+    set state = ${next},
+        received_by = ${context.actor.membershipId},
+        resolved_by = ${context.actor.membershipId},
+        resolved_at = now(),
+        resolution_note = ${input.resolutionNote},
+        version = version + 1,
+        updated_at = now()
+    where tenant_id = ${context.tenantId}
+      and station_id = ${context.stationId}
+      and id = ${input.handoverId}
+      and version = ${input.expectedVersion}
+    returning version
+  `);
+  return { handoverId: handover.id, state: next, version: Number(updated[0]!.version) };
+}
+
+/** Only the person who handed the cash over, or someone allowed to accept it, can withdraw it. */
+export async function cancelCashHandoverInTransaction(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  input: { handoverId: string; expectedVersion: number; canActForOthers: boolean },
+) {
+  const handover = await loadHandover(transaction, context, input.handoverId);
+  assertHandoverVersion(handover, input.expectedVersion);
+  if (handover.delivered_by !== context.actor.membershipId && !input.canActForOthers) {
+    throw new AppError('FORBIDDEN', 'Only the person who handed over the cash can withdraw it');
+  }
+  const next = transitionCashHandover(handover.state as CashHandoverState, 'CancelCashHandover');
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.cash_handovers
+    set state = ${next}, version = version + 1, updated_at = now()
+    where tenant_id = ${context.tenantId}
+      and station_id = ${context.stationId}
+      and id = ${input.handoverId}
+      and version = ${input.expectedVersion}
+    returning version
+  `);
+  return { handoverId: handover.id, state: next, version: Number(updated[0]!.version) };
 }

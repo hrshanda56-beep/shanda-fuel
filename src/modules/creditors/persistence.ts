@@ -97,6 +97,37 @@ export async function createSupplierInTransaction(
   return { supplierId: id, code: input.code.trim(), legalName: input.legalName.trim() };
 }
 
+/** Sets or clears the most this business wants to owe one supplier. It never blocks a purchase. */
+export async function setSupplierCreditLimitInTransaction(
+  transaction: SupplierTransaction,
+  context: SupplierCommandContext,
+  input: { supplierId: string; expectedVersion: number; creditLimit: string | null },
+) {
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.suppliers
+    set credit_limit = ${input.creditLimit},
+        version = version + 1,
+        updated_by = ${context.authority.membership.membershipId},
+        updated_at = now()
+    where tenant_id = ${context.tenantId}
+      and id = ${input.supplierId}
+      and version = ${input.expectedVersion}
+    returning version
+  `);
+  if (!updated[0]) {
+    const exists = await transaction.execute<{ id: string }>(sql`
+      select id from app.suppliers where tenant_id = ${context.tenantId} and id = ${input.supplierId}
+    `);
+    if (!exists[0]) throw new AppError('NOT_FOUND', 'That supplier was not found');
+    throw new AppError('CONFLICT', 'Someone else changed this supplier. Refresh and try again.');
+  }
+  return {
+    supplierId: input.supplierId,
+    creditLimit: input.creditLimit,
+    version: Number(updated[0].version),
+  };
+}
+
 export async function submitSupplierDocumentInTransaction(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,

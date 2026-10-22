@@ -35,7 +35,12 @@ export type SettingsView = Readonly<{
   account: SettingsAccount;
   context: SettingsContext;
   staff?: StaffOverview;
-  access?: Readonly<{ canViewReadiness: boolean; canViewPayments: boolean }>;
+  access?: Readonly<{
+    canViewReadiness: boolean;
+    canViewPayments: boolean;
+    canViewAudit?: boolean;
+    canManageAlerts?: boolean;
+  }>;
 }>;
 
 export type SettingsContextResolution = ContextResolution;

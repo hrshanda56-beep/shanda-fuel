@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
+  acceptCashHandoverFromRequest,
   assertCashCommandType,
+  cancelCashHandoverFromRequest,
   confirmBankDepositFromRequest,
   createBankDepositFromRequest,
   receiveCashCollectionFromRequest,
   recordCashCollectionFromRequest,
+  resolveCashHandoverFromRequest,
+  submitCashHandoverFromRequest,
 } from '../../../../modules/cash/commands';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
@@ -35,6 +39,14 @@ export const POST = withRequestObservability(
           return response(await createBankDepositFromRequest(request, body), 201);
         case 'ConfirmBankDeposit':
           return response(await confirmBankDepositFromRequest(request, body));
+        case 'SubmitCashHandover':
+          return response(await submitCashHandoverFromRequest(request, body), 201);
+        case 'AcceptCashHandover':
+          return response(await acceptCashHandoverFromRequest(request, body));
+        case 'ResolveCashHandover':
+          return response(await resolveCashHandoverFromRequest(request, body));
+        case 'CancelCashHandover':
+          return response(await cancelCashHandoverFromRequest(request, body));
       }
     } catch (error) {
       return apiErrorResponse(request, error, {

@@ -29,6 +29,8 @@ import { Icon } from '../../../design-system/icons';
 import { Modal } from '../../../design-system/modal';
 import { TableScrollRegion } from '../../../design-system/table';
 import { formatTileMoney } from '../../reporting/format';
+import { DocumentAttachments } from '../../documents/ui/document-attachments';
+import { CashHandoverPanel, type HandoverSummary } from './cash-handover-panel';
 import { CashDonut, CashWallet, MASK, sumDecimals, type DonutSlice } from './cash-visuals';
 
 type CashCapabilities = {
@@ -37,6 +39,9 @@ type CashCapabilities = {
   receiveCollection: boolean;
   recordDeposit: boolean;
   confirmDeposit: boolean;
+  submitHandover: boolean;
+  acceptHandover: boolean;
+  resolveHandover: boolean;
 };
 
 type CashSheet = 'record' | 'receive' | 'deposit' | 'confirm';
@@ -146,6 +151,8 @@ export type CashSummary = {
     /** The cash this deposit holds. */
     collections?: Array<{ collectionId: string; collectionReference: string; amount: string }>;
   }>;
+  handovers: HandoverSummary[];
+  currentMembershipId: string;
   capabilities: CashCapabilities;
 };
 
@@ -178,6 +185,9 @@ const emptyCapabilities: CashCapabilities = {
   receiveCollection: false,
   recordDeposit: false,
   confirmDeposit: false,
+  submitHandover: false,
+  acceptHandover: false,
+  resolveHandover: false,
 };
 
 function normalizeSummary(value: CashSummary): CashSummary {
@@ -187,6 +197,8 @@ function normalizeSummary(value: CashSummary): CashSummary {
     reconciliationSources: value.reconciliationSources ?? [],
     bankAccounts: value.bankAccounts ?? [],
     deposits: value.deposits ?? [],
+    handovers: value.handovers ?? [],
+    currentMembershipId: value.currentMembershipId ?? '',
     capabilities: value.capabilities ?? emptyCapabilities,
   };
 }
@@ -1134,6 +1146,22 @@ export function CashWorkspace({
         ) : null}
       </Card>
 
+      {summary &&
+      context &&
+      (summary.capabilities.submitHandover || summary.handovers.length > 0) ? (
+        <CashHandoverPanel
+          context={context}
+          handovers={summary.handovers}
+          locations={summary.locations}
+          currentMembershipId={summary.currentMembershipId}
+          canSubmit={summary.capabilities.submitHandover}
+          canAccept={summary.capabilities.acceptHandover}
+          canResolve={summary.capabilities.resolveHandover}
+          hidden={amountsHidden}
+          onChanged={refresh}
+        />
+      ) : null}
+
       <Card as="section" className="panel cash-panel" aria-labelledby="cash-split-title">
         <div className="panel-heading">
           <div>
@@ -1486,6 +1514,16 @@ export function CashWorkspace({
                                   },
                                 ]}
                               />
+                              {context?.stationId ? (
+                                <DocumentAttachments
+                                  tenantId={context.organisationId}
+                                  stationId={context.stationId}
+                                  subjectType="BANK_DEPOSIT"
+                                  subjectId={deposit.depositId}
+                                  defaultKind="DEPOSIT_SLIP"
+                                  title="Deposit slip and bank documents"
+                                />
+                              ) : null}
                             </td>
                           </tr>
                         ) : null}

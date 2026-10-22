@@ -13,6 +13,25 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { MetricCard } from '../../../design-system/layout';
+import {
+  clearDraft as clearLocalDraft,
+  draftStorageKey,
+  loadDraft as loadLocalDraft,
+  saveDraft as saveLocalDraft,
+  type StoredDraft,
+} from '../../../platform/drafts/local-draft';
+import {
+  OfflineError,
+  classifyFailure,
+  discardQueued,
+  enqueueSave,
+  listQueued,
+  outboxStorageKey,
+  syncQueued,
+  type QueuedSave,
+  type StepResult,
+} from '../../../platform/drafts/outbox';
+import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { TableScrollRegion } from '../../../design-system/table';
 import {
   formatBusinessDate,
@@ -55,6 +74,7 @@ type AvailableReading = {
 };
 
 type OperationsContext = {
+  viewerMembershipId?: string;
   station: { id: string; code: string; name: string; timezone: string };
   organisation: { id: string; name: string };
   businessDay: { id: string; date: string; state: string; version: number };
@@ -90,6 +110,14 @@ type Payment = {
   amount: string;
   reference: string;
   note: string;
+  /** Credit and prepaid sales name the customer; approved fuel names who received it. */
+  customerAccountId: string;
+  beneficiaryName: string;
+};
+
+const ACCOUNT_TYPE_FOR_METHOD: Partial<Record<PaymentMethod, 'CREDIT' | 'PREPAID_VALUE'>> = {
+  CUSTOMER_CREDIT: 'CREDIT',
+  PREPAID: 'PREPAID_VALUE',
 };
 
 type Expense = {
@@ -136,6 +164,8 @@ function paymentFromRecord(payment: RecordData['payments'][number]): Payment & {
     amount: payment.amount,
     reference: payment.reference ?? '',
     note: payment.note ?? '',
+    customerAccountId: payment.customerAccountId ?? '',
+    beneficiaryName: payment.beneficiaryName ?? '',
   };
 }
 
@@ -199,6 +229,15 @@ function SectionHeading({
     </div>
   );
 }
+
+type LocalDraftData = {
+  readings: Array<Reading & { rowKey: string }>;
+  payments: Array<Payment & { rowKey: string }>;
+  expenses: Array<Expense & { rowKey: string }>;
+  attendantIds: string[];
+  cashCounted: string;
+  explanations: Record<string, string>;
+};
 
 export function DailyOperationsWorkspace({
   context,
@@ -405,14 +444,19 @@ export function DailyOperationsWorkspace({
     values: Record<string, unknown>,
     idempotencyKey = `ui-${commandType}-${activeReconciliationId ?? 'new'}-${crypto.randomUUID()}`,
   ): Promise<CommandResult> {
-    const response = await fetch('/api/forecourt/commands', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'idempotency-key': idempotencyKey,
-      },
-      body: JSON.stringify({ commandType, ...values }),
-    });
+    let response: Response;
+    try {
+      response = await fetch('/api/forecourt/commands', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify({ commandType, ...values }),
+      });
+    } catch {
+      throw new OfflineError();
+    }
     const body = await response.json();
     if (!response.ok) throw errorFromResponse(response.status, body);
     return body as CommandResult;
@@ -486,6 +530,13 @@ export function DailyOperationsWorkspace({
                   ...payment,
                   reference: payment.reference || undefined,
                   note: payment.note || undefined,
+                  customerAccountId: ACCOUNT_TYPE_FOR_METHOD[payment.method]
+                    ? payment.customerAccountId || undefined
+                    : undefined,
+                  beneficiaryName:
+                    payment.method === 'STAFF_OR_MANAGEMENT_FUEL'
+                      ? payment.beneficiaryName.trim() || undefined
+                      : undefined,
                 })),
               },
             },
@@ -541,9 +592,20 @@ export function DailyOperationsWorkspace({
       }
       saveJournal.current = undefined;
       setDirty(false);
+      clearLocalDraft(draftKey);
       setNotice('Draft saved to the server.');
       await load();
     } catch (cause) {
+      const journal = saveJournal.current;
+      if (cause instanceof OfflineError && journal && keepSaveForLater(journal)) {
+        saveJournal.current = undefined;
+        setDirty(false);
+        clearLocalDraft(draftKey);
+        setNotice(
+          'There is no connection. Your entries are kept on this device and will be sent when you are back online.',
+        );
+        return;
+      }
       const message = cause instanceof Error ? cause.message : 'The draft could not be saved.';
       setError(message);
       if (message.includes('changed elsewhere') || message.includes('locked')) setConflict(true);
@@ -617,6 +679,148 @@ export function DailyOperationsWorkspace({
       setBusy(false);
     }
   }
+
+  // Stage 1 of offline drafts: a copy of the unsent entries is kept on this device, so a dropped
+  // connection or a closed tab does not lose them. It is offered back, never applied silently.
+  const draftKey = draftStorageKey([
+    'daily',
+    operation?.viewerMembershipId,
+    context.tenantId,
+    context.stationId,
+    activeReconciliationId ?? 'new',
+    context.shiftId,
+  ]);
+  const draftBase = String(record?.version ?? 'new');
+  const [restorable, setRestorable] = useState<StoredDraft<LocalDraftData> | null>(null);
+  useEffect(() => {
+    if (loading || dirty) return;
+    void Promise.resolve().then(() =>
+      setRestorable(loadLocalDraft<LocalDraftData>(draftKey, draftBase)),
+    );
+  }, [draftKey, draftBase, loading, dirty]);
+  useEffect(() => {
+    if (!dirty) return;
+    const timer = window.setTimeout(
+      () =>
+        saveLocalDraft<LocalDraftData>(draftKey, draftBase, {
+          readings,
+          payments,
+          expenses,
+          attendantIds,
+          cashCounted,
+          explanations,
+        }),
+      500,
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    dirty,
+    draftKey,
+    draftBase,
+    readings,
+    payments,
+    expenses,
+    attendantIds,
+    cashCounted,
+    explanations,
+  ]);
+  function restoreLocalDraft() {
+    if (!restorable) return;
+    setReadings(restorable.data.readings);
+    setPayments(restorable.data.payments);
+    setExpenses(restorable.data.expenses);
+    setAttendantIds(restorable.data.attendantIds);
+    setCashCounted(restorable.data.cashCounted);
+    setExplanations(restorable.data.explanations);
+    setDirty(true);
+    setRestorable(null);
+    setNotice('Your earlier entries were restored. They are not saved to the server yet.');
+  }
+  function discardLocalDraft() {
+    clearLocalDraft(draftKey);
+    setRestorable(null);
+  }
+
+  // Stage 2: a save that could not reach the server waits on this device and is sent again, with
+  // the same idempotency keys, when the connection returns.
+  const outboxKey = outboxStorageKey([
+    'daily',
+    operation?.viewerMembershipId,
+    context.tenantId,
+    context.stationId,
+  ]);
+  const [queued, setQueued] = useState<QueuedSave[]>([]);
+  const [sending, setSending] = useState(false);
+  const refreshQueued = useCallback(() => setQueued(listQueued(outboxKey)), [outboxKey]);
+  function keepSaveForLater(journal: DraftSaveJournal): boolean {
+    const common = {
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      reconciliationId: activeReconciliationId,
+    };
+    const kept = enqueueSave(outboxKey, {
+      id: journal.saveAttemptId,
+      url: '/api/forecourt/commands',
+      label: `Daily report ${operation?.businessDay.date ?? ''}`.trim(),
+      version: journal.version,
+      nextIndex: journal.nextIndex,
+      steps: journal.commands.map((command, index) => ({
+        commandType: command.commandType,
+        body: { commandType: command.commandType, ...common, ...command.values },
+        idempotencyKey: draftSaveCommandKey({
+          reconciliationId: activeReconciliationId ?? 'new',
+          saveAttemptId: journal.saveAttemptId,
+          commandIndex: index,
+          commandType: command.commandType,
+        }),
+      })),
+    });
+    if (kept) refreshQueued();
+    return kept;
+  }
+  const sendQueued = useCallback(async () => {
+    setSending(true);
+    try {
+      const outcome = await syncQueued(outboxKey, async (step, version, save) => {
+        let response: Response;
+        try {
+          response = await fetch(save.url, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'idempotency-key': step.idempotencyKey,
+            },
+            body: JSON.stringify({ ...step.body, expectedVersion: version }),
+          });
+        } catch {
+          return { kind: 'retry' } satisfies StepResult;
+        }
+        const body: unknown = await response.json().catch(() => ({}));
+        if (response.ok) {
+          const next = (body as CommandResult).version;
+          return { kind: 'ok', version: typeof next === 'number' ? next : null } as StepResult;
+        }
+        return classifyFailure(response.status, errorFromResponse(response.status, body).message);
+      });
+      refreshQueued();
+      if (outcome.sent.length > 0) {
+        setNotice('Entries that were waiting on this device have now been saved to the server.');
+        await load();
+      }
+    } finally {
+      setSending(false);
+    }
+  }, [outboxKey, refreshQueued, load]);
+  useEffect(() => {
+    if (loading || typeof window === 'undefined') return;
+    void Promise.resolve().then(() => {
+      refreshQueued();
+      if (listQueued(outboxKey).some((save) => save.status === 'WAITING')) void sendQueued();
+    });
+    const onOnline = () => void sendQueued();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [loading, outboxKey, refreshQueued, sendQueued]);
 
   const editable = isEditableDailyOperationsState(record?.state);
   const state = record?.state ?? 'NOT_STARTED';
@@ -730,7 +934,7 @@ export function DailyOperationsWorkspace({
             {dailyOperationsStatusLabel(state)}
           </StatusBadge>
           {dirty ? (
-            <span className="dirty-indicator">Unsaved changes</span>
+            <span className="dirty-indicator">Unsaved changes (copy kept on this device)</span>
           ) : (
             <span className="saved-indicator">Server draft current</span>
           )}
@@ -747,6 +951,47 @@ export function DailyOperationsWorkspace({
       {notice ? (
         <div className="state state-success" role="status" aria-live="polite">
           {notice}
+        </div>
+      ) : null}
+      {queued.length > 0 ? (
+        <div className="state" role="status" aria-live="polite">
+          {queued.map((save) => (
+            <div key={save.id}>
+              <p>
+                {save.status === 'WAITING'
+                  ? `${save.label}: saved on this device, waiting to be sent.`
+                  : save.status === 'CONFLICT'
+                    ? `${save.label}: not sent. ${save.message ?? 'The report was changed elsewhere.'} Review the report on screen, then throw these entries away or re-enter them.`
+                    : `${save.label}: not accepted by the server. ${save.message ?? ''}`.trim()}
+              </p>
+              {save.status === 'WAITING' ? (
+                <Button onClick={() => void sendQueued()} loading={sending}>
+                  Send now
+                </Button>
+              ) : null}{' '}
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  discardQueued(outboxKey, save.id);
+                  refreshQueued();
+                }}
+              >
+                Throw them away
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {restorable && editable ? (
+        <div className="state" role="status" aria-live="polite">
+          <p>
+            You have entries from {new Date(restorable.savedAt).toLocaleString()} that were never
+            saved to the server. They are only on this device.
+          </p>
+          <Button onClick={restoreLocalDraft}>Bring them back</Button>{' '}
+          <Button variant="quiet" onClick={discardLocalDraft}>
+            Throw them away
+          </Button>
         </div>
       ) : null}
 
@@ -980,7 +1225,11 @@ export function DailyOperationsWorkspace({
                         setPayments((current) =>
                           current.map((item) =>
                             item.rowKey === payment.rowKey
-                              ? { ...item, method: event.target.value as PaymentMethod }
+                              ? {
+                                  ...item,
+                                  method: event.target.value as PaymentMethod,
+                                  customerAccountId: '',
+                                }
                               : item,
                           ),
                         );
@@ -993,6 +1242,71 @@ export function DailyOperationsWorkspace({
                       ))}
                     </select>
                   </Field>
+                  {ACCOUNT_TYPE_FOR_METHOD[payment.method] ? (
+                    <Field
+                      id={`payment-customer-${payment.rowKey}`}
+                      label="Customer"
+                      hint={
+                        payment.method === 'CUSTOMER_CREDIT'
+                          ? 'Who is buying on credit.'
+                          : 'Whose prepaid balance pays for this.'
+                      }
+                      required
+                    >
+                      <select
+                        id={`payment-customer-${payment.rowKey}`}
+                        value={payment.customerAccountId}
+                        disabled={!editable}
+                        onChange={(event) => {
+                          setDirty(true);
+                          setPayments((current) =>
+                            current.map((item) =>
+                              item.rowKey === payment.rowKey
+                                ? { ...item, customerAccountId: event.target.value }
+                                : item,
+                            ),
+                          );
+                        }}
+                      >
+                        <option value="">Choose the customer</option>
+                        {(record?.customerAccounts ?? [])
+                          .filter(
+                            (account) =>
+                              account.accountType === ACCOUNT_TYPE_FOR_METHOD[payment.method],
+                          )
+                          .map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name} · {formatMoney(account.available)} available
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                  ) : null}
+                  {payment.method === 'STAFF_OR_MANAGEMENT_FUEL' ? (
+                    <Field
+                      id={`payment-beneficiary-${payment.rowKey}`}
+                      label="Who received the fuel"
+                      hint="Name of the staff member or manager."
+                      required
+                    >
+                      <input
+                        id={`payment-beneficiary-${payment.rowKey}`}
+                        value={payment.beneficiaryName}
+                        maxLength={160}
+                        disabled={!editable}
+                        onChange={(event) => {
+                          setDirty(true);
+                          setPayments((current) =>
+                            current.map((item) =>
+                              item.rowKey === payment.rowKey
+                                ? { ...item, beneficiaryName: event.target.value }
+                                : item,
+                            ),
+                          );
+                        }}
+                      />
+                    </Field>
+                  ) : null}
                   <NumericInput
                     id={`payment-amount-${payment.rowKey}`}
                     label="Amount"
@@ -1051,7 +1365,15 @@ export function DailyOperationsWorkspace({
                 setDirty(true);
                 setPayments((current) => [
                   ...current,
-                  { rowKey: newRowKey(), method: 'CASH', amount: '', reference: '', note: '' },
+                  {
+                    rowKey: newRowKey(),
+                    method: 'CASH',
+                    amount: '',
+                    reference: '',
+                    note: '',
+                    customerAccountId: '',
+                    beneficiaryName: '',
+                  },
                 ]);
               }}
             >
@@ -1365,6 +1687,15 @@ export function DailyOperationsWorkspace({
                 );
               })}
             </div>
+            {record && activeReconciliationId ? (
+              <DocumentAttachments
+                tenantId={context.tenantId}
+                stationId={context.stationId}
+                subjectType="RECONCILIATION"
+                subjectId={activeReconciliationId}
+                title="Photos and papers for this day"
+              />
+            ) : null}
             {state === 'APPROVED' ? (
               <p className="state state-success" role="status">
                 <strong>Approved:</strong> Canonical sale evidence has been posted by the production

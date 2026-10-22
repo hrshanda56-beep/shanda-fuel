@@ -65,6 +65,21 @@ export async function getCashStationSummaryFromRequest(
       permissionCode: 'cash.deposit.confirm',
       requestedScope: context.scope,
     }),
+    submitHandover: isAuthorized({
+      actor: context.authority.authorization,
+      permissionCode: 'cash.handover.submit',
+      requestedScope: context.scope,
+    }),
+    acceptHandover: isAuthorized({
+      actor: context.authority.authorization,
+      permissionCode: 'cash.handover.accept',
+      requestedScope: context.scope,
+    }),
+    resolveHandover: isAuthorized({
+      actor: context.authority.authorization,
+      permissionCode: 'cash.handover.resolve',
+      requestedScope: context.scope,
+    }),
   };
   return databaseForecourtTransactionPort.run(context, (transaction) =>
     getCashStationSummaryInTransaction(transaction, context, {

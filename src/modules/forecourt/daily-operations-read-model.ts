@@ -2,6 +2,13 @@ export type RecordData = {
   state: string;
   version: number;
   business_date: string;
+  /** Customer accounts that may be charged at this station, with what they may still spend. */
+  customerAccounts: Array<{
+    id: string;
+    name: string;
+    accountType: 'CREDIT' | 'PREPAID_VALUE';
+    available: string;
+  }>;
   attendants: Array<{ attendantId: string }>;
   readings: Array<{
     id: string;
@@ -21,6 +28,8 @@ export type RecordData = {
     amount: string;
     reference: string | null;
     note: string | null;
+    customerAccountId: string | null;
+    beneficiaryName: string | null;
   }>;
   expenses: Array<{
     id: string;

@@ -13,6 +13,7 @@ import {
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  setTankCalibrationFromRequest,
   requestInventoryCostRevaluationFromRequest,
 } from '../../../../modules/inventory';
 import { AppError } from '../../../../platform/errors';
@@ -23,6 +24,7 @@ const COMMANDS = [
   'CreateTank',
   'DeactivateTank',
   'RecordTankDip',
+  'SetTankCalibration',
   'CreateDelivery',
   'ConfirmDelivery',
   'CorrectDeliverySupplier',
@@ -63,6 +65,9 @@ export const POST = withRequestObservability(
           break;
         case 'RecordTankDip':
           result = await recordTankDipFromRequest(request, body);
+          break;
+        case 'SetTankCalibration':
+          result = await setTankCalibrationFromRequest(request, body);
           break;
         case 'CreateDelivery':
           result = await createDeliveryFromRequest(request, body);

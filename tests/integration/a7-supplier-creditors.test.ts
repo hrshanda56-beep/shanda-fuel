@@ -158,7 +158,15 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         },
       ),
     );
-    expect((await json(summary))[0].total).toBe('40.2500');
+    const summaryRow = (await json(summary))[0];
+    expect(summaryRow.total).toBe('40.2500');
+    // A document without a due date is neither due nor overdue.
+    expect(summaryRow).toMatchObject({
+      dueToday: '0',
+      dueSoon: '0',
+      dueSoonDays: 7,
+      overdueAging: { days1To7: '0', days8To14: '0', days15To30: '0', over30: '0' },
+    });
     const secondSubmittedPayment = await command(
       {
         ...base,
@@ -239,5 +247,75 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         (row: { movementType: string }) => row.movementType === 'PAYMENT_REVERSAL',
       ),
     ).toBe(true);
+  });
+
+  it('sets, reports and clears a supplier credit limit without blocking purchases', async () => {
+    const base = { tenantId: ids.tenant, legalEntityId: ids.legal };
+    const created = await json(
+      await command(
+        {
+          ...base,
+          commandType: 'CreateSupplier',
+          code: 'A7-LIMIT',
+          legalName: 'A7 Limit Supplier',
+        },
+        'a7-limit-create',
+      ),
+    );
+    const readRow = async () => {
+      const response = await supplierSummaryGet(
+        new Request(
+          `http://127.0.0.1:3000/api/suppliers/summary?tenantId=${ids.tenant}&legalEntityId=${ids.legal}&supplierId=${created.supplierId}`,
+          { headers: { ...clerkHeaders(await signedCookie('a7-session-token')) } },
+        ),
+      );
+      return (await json(response))[0];
+    };
+
+    const before = await readRow();
+    expect(before.creditLimit).toMatchObject({ status: 'none', limit: null });
+
+    const set = await command(
+      {
+        ...base,
+        commandType: 'SetSupplierCreditLimit',
+        supplierId: created.supplierId,
+        expectedVersion: before.version,
+        creditLimit: '1000.00',
+      },
+      'a7-limit-set',
+    );
+    expect(set.status).toBe(200);
+    const stale = await command(
+      {
+        ...base,
+        commandType: 'SetSupplierCreditLimit',
+        supplierId: created.supplierId,
+        expectedVersion: before.version,
+        creditLimit: '2000',
+      },
+      'a7-limit-stale',
+    );
+    expect(stale.status).toBe(409);
+
+    const after = await readRow();
+    expect(after.creditLimit).toMatchObject({
+      status: 'ok',
+      limit: '1000.0000',
+      available: '1000',
+    });
+
+    const cleared = await command(
+      {
+        ...base,
+        commandType: 'SetSupplierCreditLimit',
+        supplierId: created.supplierId,
+        expectedVersion: after.version,
+        creditLimit: null,
+      },
+      'a7-limit-clear',
+    );
+    expect(cleared.status).toBe(200);
+    expect((await readRow()).creditLimit.status).toBe('none');
   });
 });

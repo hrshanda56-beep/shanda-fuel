@@ -1,5 +1,11 @@
 import { formatUsd } from '../../design-system/formatters';
 import { ExactDecimal } from '../../platform/domain/primitives';
+import {
+  DEFAULT_ALERT_SETTINGS,
+  buildOperationsAlerts,
+  type AlertSettings,
+  type TankAlertFacts,
+} from './operations-alerts';
 
 /** What one part of the Action Center could tell us. */
 export type Section<T> =
@@ -26,16 +32,41 @@ export type ActionCenterFacts = {
   reconciliations: Section<{ rows: readonly ReconciliationWaiting[]; soleApprover: boolean }>;
   revaluations: Section<{ rows: readonly RevaluationWaiting[]; soleApprover: boolean }>;
   cash: Section<{ collectedButUnbanked: string; pendingBankConfirmation: string }>;
-  settlements: Section<{ toMatch: number; exceptions: number; unmatchedPayments: number }>;
-  suppliers: Section<{ overdueSuppliers: number; overdueTotal: string }>;
+  settlements: Section<{
+    toMatch: number;
+    exceptions: number;
+    unmatchedPayments: number;
+    /** Business dates of card and mobile payments not yet matched to a settlement. */
+    unmatchedDates: readonly string[];
+  }>;
+  suppliers: Section<{
+    overdueSuppliers: number;
+    overdueTotal: string;
+    dueTodayTotal: string;
+    dueSoonTotal: string;
+    dueSoonDays: number;
+    /** Suppliers owed more than their credit limit, and those using 80% or more of it. */
+    overLimit: number;
+    nearLimit: number;
+  }>;
   customers: Section<{ nearLimit: number; overLimit: number }>;
+  /** Station-local today, used to age the dated items below. Null when it could not be read. */
+  today: string | null;
+  reports: Section<{
+    unsubmittedDates: readonly string[];
+    cashShortages: readonly { businessDate: string; amount: string }[];
+  }>;
+  stock: Section<{ tanks: readonly TankAlertFacts[] }>;
+  /** The reminder thresholds in force. Defaults apply until the organisation sets its own. */
+  settings?: AlertSettings;
 };
 
 export type ActionArea = 'Approvals' | 'Banking' | 'Settlements' | 'Payables' | 'Receivables';
 
 export type ActionItem = {
   id: string;
-  area: ActionArea;
+  /** Operations alerts sit beside the finance areas and have no tile of their own. */
+  area: ActionArea | 'Operations';
   title: string;
   detail: string;
   href: string;
@@ -201,6 +232,54 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
     });
   }
 
+  if (facts.suppliers.status === 'ok') {
+    const { dueTodayTotal, dueSoonTotal, dueSoonDays } = facts.suppliers.value;
+    if (isPositive(dueTodayTotal)) {
+      items.push({
+        id: 'suppliers-due-today',
+        area: 'Payables',
+        title: `${formatUsd(dueTodayTotal)} falls due to suppliers today`,
+        detail: 'Supplier invoices with today as their due date.',
+        href: '/suppliers',
+        tone: 'attention',
+      });
+    }
+    if (isPositive(dueSoonTotal)) {
+      items.push({
+        id: 'suppliers-due-soon',
+        area: 'Payables',
+        title: `${formatUsd(dueSoonTotal)} falls due to suppliers in the next ${dueSoonDays} days`,
+        detail: 'Plan the payment so the invoices are not late.',
+        href: '/suppliers',
+        tone: 'info',
+      });
+    }
+  }
+
+  if (facts.suppliers.status === 'ok') {
+    const { overLimit, nearLimit } = facts.suppliers.value;
+    if (overLimit > 0) {
+      items.push({
+        id: 'suppliers-over-limit',
+        area: 'Payables',
+        title: `${overLimit} ${plural(overLimit, 'supplier is', 'suppliers are')} owed more than the credit limit`,
+        detail: 'What we owe is above the limit agreed with the supplier.',
+        href: '/suppliers',
+        tone: 'attention',
+      });
+    }
+    if (nearLimit > 0) {
+      items.push({
+        id: 'suppliers-near-limit',
+        area: 'Payables',
+        title: `${nearLimit} ${plural(nearLimit, 'supplier is', 'suppliers are')} close to the credit limit`,
+        detail: 'Eighty percent or more of the limit is used.',
+        href: '/suppliers',
+        tone: 'info',
+      });
+    }
+  }
+
   if (facts.customers.status === 'unavailable') unavailable.push('Customer credit');
   if (facts.customers.status === 'ok') {
     const { nearLimit, overLimit } = facts.customers.value;
@@ -223,6 +302,27 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
         href: '/customers',
         tone: 'info',
       });
+    }
+  }
+
+  if (facts.reports.status === 'unavailable') unavailable.push('Daily reports');
+  if (facts.stock.status === 'unavailable') unavailable.push('Stock');
+  if (facts.today) {
+    const reports = facts.reports.status === 'ok' ? facts.reports.value : null;
+    const stock = facts.stock.status === 'ok' ? facts.stock.value : null;
+    const settlements = facts.settlements.status === 'ok' ? facts.settlements.value : null;
+    for (const alert of buildOperationsAlerts(
+      {
+        today: facts.today,
+        unsubmittedDates: reports?.unsubmittedDates ?? [],
+        cashShortages: reports?.cashShortages ?? [],
+        tanks: stock?.tanks ?? [],
+        unsettledPaymentDates: settlements?.unmatchedDates ?? [],
+      },
+      facts.settings ?? DEFAULT_ALERT_SETTINGS,
+      { id: facts.stationId },
+    )) {
+      items.push({ ...alert, area: 'Operations' });
     }
   }
 

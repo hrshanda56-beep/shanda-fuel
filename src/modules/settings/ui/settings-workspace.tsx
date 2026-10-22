@@ -9,20 +9,35 @@ import { PageContainer } from '@/design-system/layout';
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
 import { StaffPanel } from './staff-panel';
+import { AuditPanel } from '../../audit/ui/audit-panel';
+import { GuidedSetupPanel } from '../../setup/ui/guided-setup-panel';
+import { AlertSettingsPanel } from '../../setup/ui/alert-settings-panel';
 import { PaymentsPanel } from '../../setup/ui/payments-panel';
 import { ReadinessPanel } from '../../setup/ui/readiness-panel';
 import styles from './settings-workspace.module.css';
 
 type Tab =
-  'organisation' | 'companies' | 'stations' | 'readiness' | 'payments' | 'staff' | 'account';
+  | 'organisation'
+  | 'companies'
+  | 'stations'
+  | 'setup'
+  | 'readiness'
+  | 'payments'
+  | 'staff'
+  | 'alerts'
+  | 'activity'
+  | 'account';
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
   { value: 'companies', label: 'Companies', icon: 'receipt' },
   { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'setup', label: 'Station setup', icon: 'settings' },
   { value: 'readiness', label: 'Readiness', icon: 'check-circle' },
   { value: 'payments', label: 'Payments', icon: 'receipt' },
   { value: 'staff', label: 'Staff', icon: 'users' },
+  { value: 'alerts', label: 'Reminders', icon: 'check-circle' },
+  { value: 'activity', label: 'Activity log', icon: 'receipt' },
   { value: 'account', label: 'Account', icon: 'users' },
 ];
 
@@ -214,11 +229,15 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
   const visibleTabs = TABS.filter((item) =>
     item.value === 'staff'
       ? Boolean(view.staff?.canManage)
-      : item.value === 'readiness'
-        ? Boolean(view.access?.canViewReadiness)
-        : item.value === 'payments'
-          ? Boolean(view.access?.canViewPayments)
-          : true,
+      : item.value === 'alerts'
+        ? Boolean(view.access?.canManageAlerts)
+        : item.value === 'activity'
+          ? Boolean(view.access?.canViewAudit)
+          : item.value === 'readiness' || item.value === 'setup'
+            ? Boolean(view.access?.canViewReadiness)
+            : item.value === 'payments'
+              ? Boolean(view.access?.canViewPayments)
+              : true,
   );
   const active = visibleTabs.find((item) => item.value === tab) ?? visibleTabs[0]!;
   const { selectedStation, legalEntities } = view.context;
@@ -273,6 +292,8 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
 
           {tab === 'stations' ? <SettingsStations context={view.context} /> : null}
 
+          {tab === 'setup' && view.access?.canViewReadiness ? <GuidedSetupPanel /> : null}
+
           {tab === 'readiness' && view.access?.canViewReadiness ? <ReadinessPanel /> : null}
 
           {tab === 'payments' && view.access?.canViewPayments ? <PaymentsPanel /> : null}
@@ -283,6 +304,14 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
               overview={view.staff}
               selectedStationId={selectedStation?.id}
             />
+          ) : null}
+
+          {tab === 'alerts' && view.access?.canManageAlerts ? (
+            <AlertSettingsPanel tenantId={organisation.id} stationId={selectedStation?.id} />
+          ) : null}
+
+          {tab === 'activity' && view.access?.canViewAudit ? (
+            <AuditPanel tenantId={organisation.id} />
           ) : null}
 
           {tab === 'account' ? <AccountPanel view={view} /> : null}

@@ -180,6 +180,7 @@ export type InventoryPosition = Readonly<{
     productName: string;
     capacityLitres: ReportLitres;
     reorderLevelLitres: ReportLitres | null;
+    acceptableVarianceLitres: ReportLitres | null;
     expectedLitres: ReportLitres;
     physicalLitres: ReportLitres | null;
     varianceLitres: ReportLitres | null;

@@ -46,8 +46,26 @@ function categoryLabel(category: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * Fuel given to staff and management is counted as fuel sold (its litres leave stock and its cost
+ * is in cost of sales), so the value at selling price is shown as a cost of the benefit rather
+ * than as income received. DEC-044.
+ */
+export function approvedFuelBenefit(report: ManagementReport): string {
+  return (
+    report.sales.payments?.find((row) => row.method === 'STAFF_OR_MANAGEMENT_FUEL')?.amount ?? '0'
+  );
+}
+
+function hasApprovedFuel(report: ManagementReport): boolean {
+  return exact(approvedFuelBenefit(report)).value.gt(0);
+}
+
 function recognizedOperatingExpenses(report: ManagementReport): string {
-  return addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal);
+  return addExact(
+    addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
+    approvedFuelBenefit(report),
+  );
 }
 
 /** Recorded expenses summed by category, largest first. */
@@ -77,6 +95,11 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
     'Revenue is recognised revenue and cost of sales is restated landed cost, both from approved records.',
     'Operating expenses and fixed costs are recognised separately. Depreciation, tax and financing costs are not included.',
   ];
+  if (hasApprovedFuel(report)) {
+    notes.push(
+      'Fuel approved for staff and management is counted as fuel sold. Its value at the selling price is shown as a benefit cost, not as income received.',
+    );
+  }
   if (report.costing.unvaluedSaleCount > 0) {
     notes.unshift(
       `${report.costing.unvaluedSaleCount} of ${report.costing.saleCount} sales have no cost yet, so cost of sales, gross profit and the result are not shown.`,
@@ -112,9 +135,18 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
         heading: 'Operating expenses',
         lines: [
           ...expensesByCategory(report, 'OPERATING'),
+          ...(hasApprovedFuel(report)
+            ? [
+                {
+                  label: 'Staff and management fuel',
+                  value: approvedFuelBenefit(report),
+                  note: 'Approved fuel at selling price',
+                },
+              ]
+            : []),
           {
             label: 'Total operating expenses',
-            value: report.expenses.operatingTotal,
+            value: addExact(report.expenses.operatingTotal, approvedFuelBenefit(report)),
             kind: 'subtotal',
           },
         ],
@@ -290,6 +322,70 @@ export function buildCommercialStatement(report: ManagementReport): Statement {
   };
 }
 
+/**
+ * Net current position: what the business holds or is owed, less what it owes, as of the end
+ * date. It is a management view of the short-term position, not a balance sheet: stock at cost,
+ * bank balances and unpaid expenses are not in it.
+ */
+export function buildNetPosition(report: ManagementReport): Statement {
+  const { cash, providers, suppliers, customers } = report;
+  const customersKnown =
+    customers.availability === 'AVAILABLE' &&
+    customers.receivableBalance !== null &&
+    customers.prepaidValueBalance !== null;
+  const holds = customersKnown
+    ? sumExact([
+        cash.collectedButNotBanked,
+        providers.unmatchedEvidenceAmount,
+        customers.receivableBalance!,
+      ])
+    : null;
+  const owes = customersKnown
+    ? sumExact([suppliers.outstandingBalance, customers.prepaidValueBalance!])
+    : null;
+  return {
+    groups: [
+      {
+        heading: 'What the business holds or is owed',
+        lines: [
+          { label: 'Cash collected, not yet banked', value: cash.collectedButNotBanked },
+          {
+            label: 'Card and mobile payments not yet received',
+            value: providers.unmatchedEvidenceAmount,
+          },
+          { label: 'Owed by credit customers', value: customers.receivableBalance },
+          { label: 'Total held or owed to us', value: holds, kind: 'subtotal' },
+        ],
+      },
+      {
+        heading: 'What the business owes',
+        lines: [
+          { label: 'Owed to suppliers', value: suppliers.outstandingBalance },
+          { label: 'Prepaid customer balances', value: customers.prepaidValueBalance },
+          { label: 'Total owed by us', value: owes, kind: 'subtotal' },
+        ],
+      },
+      {
+        lines: [
+          {
+            label: 'Net current position',
+            value: holds === null || owes === null ? null : subtractExact(holds, owes),
+            kind: 'total',
+          },
+        ],
+      },
+    ],
+    notes: [
+      'Stock at cost, bank account balances and unpaid expenses are not included.',
+      ...(customersKnown
+        ? []
+        : [
+            'Customer balances are kept for the whole organisation, so the net position is only shown when all stations are included.',
+          ]),
+    ],
+  };
+}
+
 export type QuickFigure = Readonly<{
   id: string;
   label: string;
@@ -302,11 +398,12 @@ export type QuickFigure = Readonly<{
 /** The handful of figures an owner looks at first, each linked to the report behind it. */
 export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
   const gross = report.grossMargin;
-  const net = gross === null ? null : subtractExact(gross, report.expenses.total);
+  const totalExpenses = addExact(report.expenses.total, approvedFuelBenefit(report));
+  const net = gross === null ? null : subtractExact(gross, totalExpenses);
   return [
     { id: 'sales', label: 'Total Sales', value: report.sales.salesValue, slug: 'sales' },
     { id: 'gross', label: 'Gross Profit', value: gross, slug: 'profit-loss' },
-    { id: 'expenses', label: 'Total Expenses', value: report.expenses.total, slug: 'profit-loss' },
+    { id: 'expenses', label: 'Total Expenses', value: totalExpenses, slug: 'profit-loss' },
     { id: 'net', label: 'Net Profit', value: net, slug: 'profit-loss' },
     { id: 'banked', label: 'Banked Cash', value: report.cash.banked, slug: 'cash-movement' },
     {

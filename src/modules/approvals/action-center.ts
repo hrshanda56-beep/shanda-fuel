@@ -1,3 +1,4 @@
+import { loadOperationsFacts } from './operations-facts';
 import { loadSignOffFacts } from './sign-off';
 import { withRequestReadScope } from '../../platform/security/request-read-scope';
 import { requireAuthenticatedActor, type AuthenticatedActorContext } from '../identity';
@@ -12,6 +13,7 @@ import { ExactDecimal } from '../../platform/domain/primitives';
 import { AppError } from '../../platform/errors';
 import { observeError } from '../../platform/observability';
 import { classifyCreditUse, type ActionCenterFacts, type Section } from './action-center-model';
+import { DEFAULT_ALERT_SETTINGS } from './operations-alerts';
 import { getCustomerAccountsFromRequest } from '../customers/queries';
 
 /** A check the person is not allowed to make is "restricted"; anything else is "unavailable". */
@@ -52,6 +54,16 @@ async function loadActionCenterFactsUncached(
     ),
   );
 
+  const operationsPromise = section(request, 'operations', () =>
+    withInventoryReadContext(
+      request,
+      tenantId,
+      stationId,
+      (transaction, context) => loadOperationsFacts(transaction, context),
+      actor,
+    ),
+  );
+
   const [cash, settlements, suppliers, customers] = await Promise.all([
     section(request, 'cash', async () => {
       const summary = await getCashStationSummaryFromRequest(
@@ -77,24 +89,40 @@ async function loadActionCenterFactsUncached(
         exceptions: rows.filter((row) => row.state === 'EXCEPTION').length,
         unmatchedPayments: unmatched.filter((row) => !/^0+(?:\.0+)?$/.test(row.unallocatedAmount))
           .length,
+        unmatchedDates: unmatched
+          .filter((row) => !/^0+(?:\.0+)?$/.test(row.unallocatedAmount))
+          .map((row) => row.businessDate),
       };
     }),
     section(request, 'suppliers', async () => {
       if (!current.legalEntityId) throw new AppError('FORBIDDEN', 'A legal entity is required');
+      const ops = await operationsPromise;
       const rows = await getSupplierSummaryFromRequest(
         request,
         {
           tenantId,
           legalEntityId: current.legalEntityId,
+          ...(ops.status === 'ok' && ops.value.settings
+            ? { dueSoonDays: ops.value.settings.dueSoonDays }
+            : {}),
         },
         actor,
       );
       const overdue = rows.filter((row) => !new ExactDecimal(row.overdue).value.isZero());
+      const total = (pick: (row: (typeof rows)[number]) => string) =>
+        rows
+          .reduce((sum, row) => sum.add(new ExactDecimal(pick(row))), new ExactDecimal('0'))
+          .toString();
       return {
         overdueSuppliers: overdue.length,
         overdueTotal: overdue
           .reduce((sum, row) => sum.add(new ExactDecimal(row.overdue)), new ExactDecimal('0'))
           .toString(),
+        dueTodayTotal: total((row) => row.dueToday),
+        dueSoonTotal: total((row) => row.dueSoon),
+        dueSoonDays: rows[0]?.dueSoonDays ?? DEFAULT_ALERT_SETTINGS.dueSoonDays,
+        overLimit: rows.filter((row) => row.creditLimit.status === 'over').length,
+        nearLimit: rows.filter((row) => row.creditLimit.status === 'near').length,
       };
     }),
     section(request, 'customers', async () => {
@@ -127,6 +155,16 @@ async function loadActionCenterFactsUncached(
     return value ? { status: 'ok', value: value as never } : { status: 'restricted' };
   };
 
+  const operations = await operationsPromise;
+  const fromOperations = <T>(
+    pick: (value: NonNullable<typeof opsValue>) => T | null,
+  ): Section<T> => {
+    if (operations.status !== 'ok') return operations;
+    const value = pick(operations.value);
+    return value ? { status: 'ok', value } : { status: 'restricted' };
+  };
+  const opsValue = operations.status === 'ok' ? operations.value : null;
+
   return {
     tenantId,
     stationId,
@@ -136,6 +174,10 @@ async function loadActionCenterFactsUncached(
     settlements,
     suppliers,
     customers,
+    today: opsValue?.today ?? null,
+    reports: fromOperations((value) => value.reports),
+    stock: fromOperations((value) => (value.tanks ? { tanks: value.tanks } : null)),
+    ...(opsValue?.settings ? { settings: opsValue.settings } : {}),
   };
 }
 

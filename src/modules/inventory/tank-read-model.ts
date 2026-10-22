@@ -7,6 +7,7 @@ export type TankRow = {
   productName: string;
   capacityLitres: string;
   reorderLevelLitres: string | null;
+  acceptableVarianceLitres?: string | null;
   expectedLitres: string;
   physicalLitres: string | null;
   varianceLitres: string | null;

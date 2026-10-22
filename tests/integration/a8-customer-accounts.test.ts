@@ -117,7 +117,7 @@ async function expectForecourtStatus(response: Response, expectedStatus: number)
   return result;
 }
 
-async function createPostedA5Evidence() {
+async function createPostedA5Evidence(customerAccountId: string) {
   await expectForecourtStatus(
     await forecourtCommand(
       {
@@ -210,7 +210,14 @@ async function createPostedA5Evidence() {
         commandType: 'SavePaymentAllocations',
         ...common,
         expectedVersion: 1,
-        payments: [{ id: ids.creditPayment, method: 'CUSTOMER_CREDIT', amount: '50.0000' }],
+        payments: [
+          {
+            id: ids.creditPayment,
+            method: 'CUSTOMER_CREDIT',
+            amount: '50.0000',
+            customerAccountId,
+          },
+        ],
       },
       'a8-a5-payments',
     ),
@@ -383,16 +390,6 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
   afterAll(async () => client?.end());
 
   it('persists exact prepaid value balances and retry-safe station authorizations', async () => {
-    await createPostedA5Evidence();
-    const revisionRows = await client.unsafe<{ id: string }[]>(`
-      select id from app.reconciliation_revisions
-      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and reconciliation_id='${ids.reconciliation}' and state='POSTED'
-      order by revision desc limit 1
-    `);
-    expect(revisionRows).toHaveLength(1);
-    const postedRevisionId = revisionRows[0]!.id;
-
     const customerResponse = await command(
       {
         commandType: 'CreateCustomer',
@@ -513,6 +510,16 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       'a8-create-credit-account',
     );
     const creditAccount = await body(creditAccountResponse);
+    // A credit sale in a reconciliation must name the customer account it is charged to.
+    await createPostedA5Evidence(creditAccount.accountId);
+    const revisionRows = await client.unsafe<{ id: string }[]>(`
+      select id from app.reconciliation_revisions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and reconciliation_id='${ids.reconciliation}' and state='POSTED'
+      order by revision desc limit 1
+    `);
+    expect(revisionRows).toHaveLength(1);
+    const postedRevisionId = revisionRows[0]!.id;
     const authorization = await command(
       {
         commandType: 'RequestCustomerFuelAuthorization',

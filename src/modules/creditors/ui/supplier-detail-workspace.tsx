@@ -35,6 +35,13 @@ type SupplierSummary = {
   overdue: string;
   total: string;
   asOf?: string;
+  version?: number;
+  creditLimit?: {
+    status: 'none' | 'ok' | 'near' | 'over';
+    limit: string | null;
+    available: string | null;
+    percentUsed: number | null;
+  };
 };
 
 type StatementLine = {
@@ -138,6 +145,7 @@ export function SupplierDetailWorkspace({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState<'document' | 'payment' | null>(null);
+  const [limitText, setLimitText] = useState('');
 
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(
@@ -253,7 +261,7 @@ export function SupplierDetailWorkspace({
   }, [current?.organisationId, current?.legalEntityId, current?.stationId, current?.allStations]);
 
   async function submitCommand(
-    commandType: 'SubmitSupplierDocument' | 'SubmitSupplierPayment',
+    commandType: 'SubmitSupplierDocument' | 'SubmitSupplierPayment' | 'SetSupplierCreditLimit',
     body: Record<string, unknown>,
     successMessage: string,
   ): Promise<boolean> {
@@ -288,6 +296,24 @@ export function SupplierDetailWorkspace({
     } finally {
       setAction(null);
     }
+  }
+
+  async function saveCreditLimit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = limitText.trim();
+    if (text !== '' && !/^\d+(?:\.\d{1,4})?$/.test(text.replace(/,/g, ''))) {
+      setActionError('Enter the limit as an amount, for example 5000');
+      return;
+    }
+    const saved = await submitCommand(
+      'SetSupplierCreditLimit',
+      {
+        expectedVersion: supplier?.version ?? 0,
+        creditLimit: text === '' ? null : text.replace(/,/g, ''),
+      },
+      text === '' ? 'Credit limit removed.' : 'Credit limit saved.',
+    );
+    if (saved) setLimitText('');
   }
 
   async function submitDocument(event: FormEvent<HTMLFormElement>) {
@@ -463,6 +489,34 @@ export function SupplierDetailWorkspace({
                 </dd>
               </div>
             </dl>
+          </Card>
+
+          <Card as="section" className="panel content-span" aria-labelledby="supplier-limit-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Agreed with the supplier</p>
+                <h2 id="supplier-limit-title">Credit limit</h2>
+              </div>
+            </div>
+            <p>{creditLimitSentence(supplier.creditLimit)}</p>
+            <form onSubmit={saveCreditLimit} className="stack">
+              <Field
+                id="supplier-credit-limit"
+                label="New credit limit"
+                hint="The most you are willing to owe this supplier. Leave empty to remove the limit. It warns you; it never stops a purchase."
+              >
+                <input
+                  id="supplier-credit-limit"
+                  value={limitText}
+                  onChange={(event) => setLimitText(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="5000.00"
+                />
+              </Field>
+              <Button type="submit" variant="secondary" disabled={action !== null}>
+                Save credit limit
+              </Button>
+            </form>
           </Card>
 
           <Card
@@ -741,4 +795,19 @@ export function SupplierDetailWorkspace({
       ) : null}
     </div>
   );
+}
+
+/** The credit position in one plain sentence. */
+function creditLimitSentence(position: SupplierSummary['creditLimit']): string {
+  if (!position || position.status === 'none' || position.limit === null) {
+    return 'No credit limit is set for this supplier.';
+  }
+  const limit = formatTileMoney(position.limit);
+  if (position.status === 'over') {
+    return `You owe more than the ${limit} limit.`;
+  }
+  const room =
+    position.available === null ? '' : ` ${formatTileMoney(position.available)} left to use.`;
+  if (position.status === 'near') return `Close to the ${limit} limit.${room}`;
+  return `The limit is ${limit}.${room}`;
 }

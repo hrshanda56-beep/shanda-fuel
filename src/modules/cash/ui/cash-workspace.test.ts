@@ -18,6 +18,8 @@ const selection = {
 };
 
 const summary: CashSummary = {
+  handovers: [],
+  currentMembershipId: 'me',
   stationId: 'station',
   currency: 'USD',
   totals: {
@@ -88,6 +90,9 @@ const summary: CashSummary = {
     receiveCollection: true,
     recordDeposit: true,
     confirmDeposit: true,
+    submitHandover: false,
+    acceptHandover: false,
+    resolveHandover: false,
   },
 };
 
@@ -152,6 +157,9 @@ describe('Cash and banking, plain-language guidance', () => {
         receiveCollection: false,
         recordDeposit: false,
         confirmDeposit: false,
+        submitHandover: false,
+        acceptHandover: false,
+        resolveHandover: false,
       },
     });
     expect(html).not.toContain('>Bank it<');

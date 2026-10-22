@@ -114,6 +114,8 @@ it('renders settlement data instead of its loading state', () => {
 });
 it('renders cash data instead of its loading state', () => {
   const summary: CashSummary = {
+    handovers: [],
+    currentMembershipId: 'me',
     stationId: 'station',
     currency: 'USD',
     totals: { availableAtStation: '0', collectedButUnbanked: '0', pendingBankConfirmation: '0' },
@@ -128,6 +130,9 @@ it('renders cash data instead of its loading state', () => {
       receiveCollection: false,
       recordDeposit: false,
       confirmDeposit: false,
+      submitHandover: false,
+      acceptHandover: false,
+      resolveHandover: false,
     },
   };
   const html = renderToStaticMarkup(

@@ -50,6 +50,37 @@ export type ExpenseCapabilities = {
   recordPayment: boolean;
   reversePayment: boolean;
   manageCategories: boolean;
+  managePolicy: boolean;
+  manageRecurring: boolean;
+  recogniseRecurring: boolean;
+};
+
+export type RegularCostTemplate = {
+  templateId: string;
+  stationId: string;
+  categoryId: string;
+  name: string;
+  amount: string;
+  startDate: string;
+  endDate: string | null;
+  status: string;
+};
+
+export type RegularCostPeriod = {
+  periodId: string;
+  stationId: string;
+  templateId: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: string;
+  recognizedAmount: string;
+  outstanding: string;
+};
+
+export type ExpensePolicyView = {
+  version: number;
+  stepUpThreshold: string | null;
+  secondApprovalThreshold: string | null;
 };
 
 export type ExpenseCategory = {
@@ -63,6 +94,9 @@ export type ExpenseCategory = {
 export type ExpenseReference = {
   capabilities: ExpenseCapabilities;
   categories: ExpenseCategory[];
+  policy?: ExpensePolicyView | null;
+  templates?: RegularCostTemplate[];
+  periods?: RegularCostPeriod[];
 };
 
 export type ExpenseSummary = {
@@ -92,6 +126,8 @@ type Payment = {
 type Sheet =
   | { kind: 'new' }
   | { kind: 'categories' }
+  | { kind: 'regular' }
+  | { kind: 'limits' }
   | { kind: 'approve' | 'reject' | 'post' | 'reverse' | 'pay'; expense: ExpenseRow }
   | { kind: 'undoPay'; expense: ExpenseRow; payment: Payment };
 
@@ -182,6 +218,9 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [paySource, setPaySource] = useState<'BANK' | 'REIMBURSEMENT'>('BANK');
   const [payRef, setPayRef] = useState('');
   const [newCategory, setNewCategory] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [approvalLimit, setApprovalLimit] = useState('');
+  const [secondLimit, setSecondLimit] = useState('');
 
   const current = initial?.resolution.current ?? null;
   const caps = reference?.capabilities;
@@ -308,6 +347,24 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       setPayRef('');
     }
     if (next.kind === 'categories') setNewCategory('');
+    if (next.kind === 'regular') {
+      setCategoryId(activeCategories.length === 1 ? (activeCategories[0]?.categoryId ?? '') : '');
+      setAmount('');
+      setDescription('');
+      setDate(month.from);
+      setEndDate('');
+      setStationId(
+        current?.stationId && !current.allStations
+          ? current.stationId
+          : stations.length === 1
+            ? (stations[0]?.id ?? '')
+            : '',
+      );
+    }
+    if (next.kind === 'limits') {
+      setApprovalLimit(reference?.policy?.stepUpThreshold ?? '');
+      setSecondLimit(reference?.policy?.secondApprovalThreshold ?? '');
+    }
     setSheet(next);
   }
 
@@ -403,6 +460,48 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
         `Category “${name}” added.`,
         true,
       ).then(() => setNewCategory(''));
+    }
+
+    if (sheet.kind === 'regular') {
+      const value = parseAmount(amount);
+      if (!description.trim()) return setFormError('Name the cost, for example Rent.');
+      if (!categoryId) return setFormError('Choose what kind of expense this is.');
+      if (!stationId) return setFormError('Choose the station that pays this cost.');
+      if (!value) return setFormError('Enter the monthly amount, for example 450.');
+      if (!date) return setFormError('Choose the date it starts.');
+      return send(
+        {
+          commandType: 'CreateRecurringCostTemplate',
+          ...scope(stationId),
+          categoryId,
+          name: description.trim(),
+          amount: value,
+          startDate: date,
+          ...(endDate ? { endDate } : {}),
+        },
+        'Regular cost added. Add each month from the list below.',
+      );
+    }
+    if (sheet.kind === 'limits') {
+      const first = approvalLimit.trim() === '' ? null : parseAmount(approvalLimit);
+      const second = secondLimit.trim() === '' ? null : parseAmount(secondLimit);
+      if (approvalLimit.trim() !== '' && !first) {
+        return setFormError('Enter the first limit as an amount, or leave it empty for none.');
+      }
+      if (secondLimit.trim() !== '' && !second) {
+        return setFormError('Enter the second limit as an amount, or leave it empty for none.');
+      }
+      return send(
+        {
+          commandType: 'SetExpensePolicy',
+          tenantId,
+          legalEntityId,
+          stepUpThreshold: first,
+          secondApprovalThreshold: second,
+          ...(reference?.policy ? { expectedVersion: reference.policy.version } : {}),
+        },
+        'Approval limits saved.',
+      );
     }
 
     const { expense } = sheet;
@@ -582,6 +681,111 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           )}
         </Card>
       </div>
+
+      {caps?.manageRecurring || (reference.templates ?? []).length > 0 ? (
+        <Card as="section" className="panel" aria-labelledby="regular-costs-title">
+          <div className="panel-heading">
+            <h2 id="regular-costs-title">Regular costs</h2>
+            {caps?.manageRecurring ? (
+              <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'regular' })}>
+                Add a regular cost
+              </Button>
+            ) : null}
+          </div>
+          {(reference.templates ?? []).length === 0 ? (
+            <p className={styles.muted}>
+              Costs that repeat each month, like rent, are listed here once added.
+            </p>
+          ) : (
+            <ul className={styles.categories} aria-label="Regular costs">
+              {(reference.templates ?? []).map((template) => {
+                const thisMonth = (reference.periods ?? []).find(
+                  (row) => row.templateId === template.templateId && row.periodStart === month.from,
+                );
+                const counted = thisMonth ? Number(thisMonth.recognizedAmount) > 0 : false;
+                return (
+                  <li key={template.templateId} className={styles.categoryRow}>
+                    <span className={styles.categoryName}>
+                      {template.name}
+                      <span className={styles.muted}> · {stationName(template.stationId)}</span>
+                    </span>
+                    <span className={styles.amount}>
+                      {formatTileMoney(template.amount)} a month
+                    </span>
+                    <span>
+                      {template.status !== 'ACTIVE' ? (
+                        <StatusBadge tone="neutral">Stopped</StatusBadge>
+                      ) : !thisMonth && caps?.manageRecurring ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void send(
+                              {
+                                commandType: 'GenerateRecurringCostPeriod',
+                                ...scope(template.stationId),
+                                templateId: template.templateId,
+                                periodStart: month.from,
+                              },
+                              `${monthTitle(month.from)} added for ${template.name}.`,
+                            )
+                          }
+                        >
+                          Add {monthTitle(month.from)}
+                        </Button>
+                      ) : thisMonth && counted ? (
+                        <StatusBadge tone="positive">Counted this month</StatusBadge>
+                      ) : thisMonth && caps?.recogniseRecurring ? (
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            void send(
+                              {
+                                commandType: 'RecognizeRecurringCost',
+                                ...scope(template.stationId),
+                                periodId: thisMonth.periodId,
+                                recognitionDate: today,
+                              },
+                              `${template.name} now counts in this month’s spending.`,
+                            )
+                          }
+                        >
+                          Count in spending
+                        </Button>
+                      ) : (
+                        <StatusBadge tone="pending">Waiting to be counted</StatusBadge>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      ) : null}
+
+      {caps?.managePolicy || reference.policy ? (
+        <Card as="section" className="panel" aria-labelledby="expense-limits-title">
+          <div className="panel-heading">
+            <h2 id="expense-limits-title">Approval limits</h2>
+            {caps?.managePolicy ? (
+              <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'limits' })}>
+                Change limits
+              </Button>
+            ) : null}
+          </div>
+          <p className={styles.muted}>
+            {reference.policy?.stepUpThreshold
+              ? `Above ${formatTileMoney(reference.policy.stepUpThreshold)}, the approver confirms their identity again. `
+              : 'No extra identity check by amount. '}
+            {reference.policy?.secondApprovalThreshold
+              ? `Above ${formatTileMoney(reference.policy.secondApprovalThreshold)}, a second person must approve.`
+              : 'No second approval by amount.'}
+          </p>
+        </Card>
+      ) : null}
 
       <Card as="section" className="panel" aria-labelledby="expense-list-title">
         <div className="panel-heading">
@@ -945,6 +1149,97 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             </>
           ) : null}
 
+          {sheet?.kind === 'regular' ? (
+            <>
+              <Field id="regular-name" label="Name" required>
+                <input
+                  value={description}
+                  maxLength={160}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="e.g. Rent"
+                  autoComplete="off"
+                />
+              </Field>
+              <Field id="regular-category" label="Kind of expense" required>
+                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+                  <option value="">Choose…</option>
+                  {activeCategories.map((category) => (
+                    <option key={category.categoryId} value={category.categoryId}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field id="regular-station" label="Station" required>
+                <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
+                  <option value="">Choose…</option>
+                  {stations.map((station) => (
+                    <option key={station.id} value={station.id}>
+                      {station.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className={styles.pair}>
+                <Field id="regular-amount" label="Each month (USD)" required>
+                  <input
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="0.00"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field id="regular-start" label="Starts on" required>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(event) => setDate(event.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field id="regular-end" label="Stops on" optional>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                />
+              </Field>
+            </>
+          ) : null}
+
+          {sheet?.kind === 'limits' ? (
+            <>
+              <Field
+                id="limit-first"
+                label="Needs an extra identity check above (USD)"
+                hint="The person approving must confirm it is really them."
+                optional
+              >
+                <input
+                  inputMode="decimal"
+                  value={approvalLimit}
+                  onChange={(event) => setApprovalLimit(event.target.value)}
+                  placeholder="No limit"
+                  autoComplete="off"
+                />
+              </Field>
+              <Field
+                id="limit-second"
+                label="Needs a second person to approve above (USD)"
+                optional
+              >
+                <input
+                  inputMode="decimal"
+                  value={secondLimit}
+                  onChange={(event) => setSecondLimit(event.target.value)}
+                  placeholder="No limit"
+                  autoComplete="off"
+                />
+              </Field>
+            </>
+          ) : null}
+
           {sheet?.kind === 'categories' ? (
             <>
               {reference.categories.length === 0 ? (
@@ -1103,6 +1398,10 @@ function sheetTitle(sheet: Sheet | null): string {
       return 'Enter an expense';
     case 'categories':
       return 'Kinds of expense';
+    case 'regular':
+      return 'Add a regular cost';
+    case 'limits':
+      return 'Approval limits';
     case 'approve':
       return 'Approve this expense?';
     case 'reject':
@@ -1136,6 +1435,10 @@ function sheetAction(sheet: Sheet | null): string {
       return 'Record payment';
     case 'undoPay':
       return 'Undo payment';
+    case 'regular':
+      return 'Add regular cost';
+    case 'limits':
+      return 'Save limits';
     default:
       return 'Save';
   }
@@ -1148,6 +1451,10 @@ function sheetDescription(sheet: Sheet | null): string {
       return 'It counts as spending once approved and recorded.';
     case 'categories':
       return 'Choices shown when entering an expense.';
+    case 'regular':
+      return 'A cost that repeats every month, such as rent or security. You add each month yourself.';
+    case 'limits':
+      return 'Bigger expenses ask for an extra check. Leave a box empty for no limit.';
     case 'approve':
       return `${formatTileMoney(sheet.expense.amount)} for “${sheet.expense.description}”. It counts as spending once recorded.`;
     case 'reject':

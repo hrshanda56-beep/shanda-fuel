@@ -15,6 +15,7 @@ import {
   postSupplierPaymentInTransaction,
   reverseSupplierDocumentInTransaction,
   reverseSupplierPaymentInTransaction,
+  setSupplierCreditLimitInTransaction,
   submitSupplierDocumentInTransaction,
   submitSupplierPaymentInTransaction,
 } from './persistence';
@@ -32,6 +33,17 @@ const createSupplierSchema = base.extend({
   code: z.string().trim().min(1).max(80),
   legalName: z.string().trim().min(1).max(240),
   registrationReference: z.string().trim().max(120).optional(),
+});
+
+const setCreditLimitSchema = base.extend({
+  commandType: z.literal('SetSupplierCreditLimit'),
+  supplierId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  /** Null removes the limit. */
+  creditLimit: z
+    .string()
+    .regex(/^\d+(?:\.\d{1,4})?$/, 'An amount with at most four decimals is required')
+    .nullable(),
 });
 
 const percent = z.string().regex(/^\d+(?:\.\d+)?$/, 'An exact decimal string is required');
@@ -348,7 +360,30 @@ export async function setPurchasingPolicyFromRequest(request: Request, body: unk
   });
 }
 
+export async function setSupplierCreditLimitFromRequest(request: Request, body: unknown) {
+  const input = setCreditLimitSchema.parse(body);
+  const context = await resolveSupplierCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+  });
+  return executeSupplierCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'supplier.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    audit: {
+      actionCode: 'SUPPLIER.CREDIT_LIMIT_SET',
+      subjectType: 'Supplier',
+      subjectId: input.supplierId,
+    },
+    execute: (transaction) => setSupplierCreditLimitInTransaction(transaction, context, input),
+  });
+}
+
 export type SupplierCommandName =
+  | 'SetSupplierCreditLimit'
   | 'CreateSupplier'
   | 'SubmitSupplierDocument'
   | 'PostSupplierDocument'
@@ -369,7 +404,8 @@ export function assertSupplierCommandType(value: unknown): SupplierCommandName {
     value === 'PostSupplierPayment' ||
     value === 'AllocateSupplierPayment' ||
     value === 'ReverseSupplierPayment' ||
-    value === 'SetPurchasingPolicy'
+    value === 'SetPurchasingPolicy' ||
+    value === 'SetSupplierCreditLimit'
   ) {
     return value;
   }

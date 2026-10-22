@@ -38,6 +38,13 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportable: true,
   },
   {
+    slug: 'net-position',
+    title: 'Net Current Position',
+    description: 'What the business holds or is owed, less what it owes.',
+    category: 'statements',
+    exportable: true,
+  },
+  {
     slug: 'sales',
     title: 'Sales & Payments',
     description: 'Approved sales by payment method and product, with variance.',

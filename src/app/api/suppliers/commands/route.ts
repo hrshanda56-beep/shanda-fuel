@@ -9,6 +9,7 @@ import {
   reverseSupplierDocumentFromRequest,
   reverseSupplierPaymentFromRequest,
   setPurchasingPolicyFromRequest,
+  setSupplierCreditLimitFromRequest,
   submitSupplierDocumentFromRequest,
   submitSupplierPaymentFromRequest,
 } from '../../../../modules/creditors/commands';
@@ -47,6 +48,8 @@ export const POST = withRequestObservability(
           return response(await reverseSupplierPaymentFromRequest(request, body));
         case 'SetPurchasingPolicy':
           return response(await setPurchasingPolicyFromRequest(request, body));
+        case 'SetSupplierCreditLimit':
+          return response(await setSupplierCreditLimitFromRequest(request, body));
       }
     } catch (error) {
       return apiErrorResponse(request, error, {

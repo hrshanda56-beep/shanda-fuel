@@ -22,6 +22,7 @@ export {
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  setTankCalibrationFromRequest,
   requestInventoryCostRevaluationFromRequest,
 } from './commands';
 export { queryDeliverySuppliers, queryInventoryStock } from './queries';

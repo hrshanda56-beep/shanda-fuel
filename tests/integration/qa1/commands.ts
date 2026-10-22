@@ -433,8 +433,17 @@ export async function createApprovedSale(
   keyPrefix: string,
   input: {
     saleLitres: string;
-    payments: Array<{ method: string; amount: string; reference?: string }>;
+    payments: Array<{
+      method: string;
+      amount: string;
+      reference?: string;
+      customerAccountId?: string;
+      beneficiaryName?: string;
+    }>;
     post?: boolean;
+    /** Cash actually counted; defaults to the cash payments (no variance). */
+    countedCash?: string;
+    explanations?: Record<string, string>;
     completeShiftAfter?: boolean;
     existingShiftId?: string;
     openingReading?: string;
@@ -571,7 +580,7 @@ export async function createApprovedSale(
       commandType: 'SaveCashDeclaration',
       ...common,
       expectedVersion: version,
-      countedCash: cashAmount,
+      countedCash: input.countedCash ?? cashAmount,
     },
     `${keyPrefix}-cash`,
     'supervisor',
@@ -584,7 +593,7 @@ export async function createApprovedSale(
       commandType: 'SaveVarianceExplanations',
       ...common,
       expectedVersion: version,
-      explanations: {},
+      explanations: input.explanations ?? {},
     },
     `${keyPrefix}-explanations`,
     'supervisor',

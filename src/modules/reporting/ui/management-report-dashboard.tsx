@@ -29,6 +29,7 @@ import { findReport, type ReportDefinition } from '../catalog';
 import {
   buildCashMovement,
   buildCommercialStatement,
+  buildNetPosition,
   buildIncomeStatement,
   buildProfitAndLoss,
   compareStatement,
@@ -64,6 +65,8 @@ function statementFor(slug: ReportDefinition['slug'], report: ManagementReport):
       return buildCashMovement(report);
     case 'sales':
       return buildSalesByPayment(report, paymentMethodLabel);
+    case 'net-position':
+      return buildNetPosition(report);
     case 'providers':
       return buildProviderStatement(report);
     case 'commercial':

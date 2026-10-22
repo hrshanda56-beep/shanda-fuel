@@ -39,7 +39,8 @@ export type SupplierCommandType =
   | 'PostSupplierPayment'
   | 'AllocateSupplierPayment'
   | 'ReverseSupplierPayment'
-  | 'SetPurchasingPolicy';
+  | 'SetPurchasingPolicy'
+  | 'SetSupplierCreditLimit';
 
 export type SupplierCommandEnvelope = Readonly<{
   commandType: SupplierCommandType;
@@ -107,6 +108,11 @@ export const SUPPLIER_COMMAND_POLICY: Readonly<Record<SupplierCommandType, Suppl
       permissionCode: 'purchasing.policy.manage',
       requiresApproval: true,
       requiresExpectedVersion: false,
+    },
+    SetSupplierCreditLimit: {
+      permissionCode: 'supplier.manage',
+      requiresApproval: false,
+      requiresExpectedVersion: true,
     },
   };
 

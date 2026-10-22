@@ -358,7 +358,127 @@ export const productionReconciliationPaymentSchema = z.object({
   amount: z.string(),
   reference: z.string().optional(),
   note: z.string().optional(),
+  /** Required for CUSTOMER_CREDIT and PREPAID: the customer account the sale is charged to. */
+  customerAccountId: uuid.optional(),
+  /** Required for STAFF_OR_MANAGEMENT_FUEL: who received the fuel. */
+  beneficiaryName: z.string().trim().max(160).optional(),
 });
+
+type PaymentInput = z.infer<typeof productionReconciliationPaymentSchema>;
+
+const ACCOUNT_TYPE_FOR_METHOD = { CUSTOMER_CREDIT: 'CREDIT', PREPAID: 'PREPAID_VALUE' } as const;
+
+type AccountRow = {
+  id: string;
+  account_type: string;
+  status: string;
+  customer_status: string;
+  display_name: string;
+  credit_limit: string | null;
+  station_scope: string;
+  allowed: boolean;
+  balance: string;
+};
+
+/**
+ * A credit or prepaid sale must name its customer, and the amount is checked against that
+ * customer's limit or prepaid balance when it is entered (not only when the day is approved).
+ * Approved fuel must name who received it. Amounts are summed per customer so two rows for the
+ * same customer cannot each slip under the limit.
+ */
+async function assertPaymentReferences(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  payments: readonly PaymentInput[],
+): Promise<void> {
+  const totals = new Map<string, { method: 'CUSTOMER_CREDIT' | 'PREPAID'; amount: ExactDecimal }>();
+  for (const item of payments) {
+    if (item.method === 'STAFF_OR_MANAGEMENT_FUEL' && !item.beneficiaryName?.trim()) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'Say who received the approved fuel (name of the staff member or manager).',
+      );
+    }
+    if (item.method !== 'CUSTOMER_CREDIT' && item.method !== 'PREPAID') continue;
+    if (!item.customerAccountId) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        item.method === 'CUSTOMER_CREDIT'
+          ? 'Choose the customer for this credit sale.'
+          : 'Choose the customer whose prepaid balance paid for this sale.',
+      );
+    }
+    const key = `${item.method}:${item.customerAccountId}`;
+    const current = totals.get(key)?.amount ?? new ExactDecimal('0');
+    totals.set(key, {
+      method: item.method,
+      amount: current.add(money(item.amount).amount),
+    });
+  }
+  for (const [key, { method, amount }] of totals) {
+    const accountId = key.slice(key.indexOf(':') + 1);
+    const rows = await transaction.execute<AccountRow>(sql`
+      select a.id, a.account_type, a.status, c.status as customer_status, c.display_name,
+        a.credit_limit::text as credit_limit, a.station_scope,
+        (a.station_scope = 'ALL' or exists (
+          select 1 from app.customer_account_stations s
+          where s.tenant_id = a.tenant_id and s.account_id = a.id
+            and s.station_id = ${context.stationId} and s.active
+        )) as allowed,
+        coalesce((
+          select sum(case when l.direction = 'INCREASE' then l.amount else -l.amount end)
+          from app.customer_ledger_entries l
+          where l.tenant_id = a.tenant_id and l.account_id = a.id
+        ), 0)::text as balance
+      from app.customer_accounts a
+      join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id
+      where a.tenant_id = ${context.tenantId} and a.id = ${accountId}
+    `);
+    const account = rows[0];
+    if (!account) throw new AppError('NOT_FOUND', 'That customer account was not found.');
+    if (account.account_type !== ACCOUNT_TYPE_FOR_METHOD[method]) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        method === 'CUSTOMER_CREDIT'
+          ? `${account.display_name} does not have a credit account.`
+          : `${account.display_name} does not have a prepaid money account.`,
+      );
+    }
+    if (account.status !== 'ACTIVE' || account.customer_status !== 'ACTIVE') {
+      throw new AppError(
+        'CONFLICT',
+        `${account.display_name} is not active, so cannot be charged.`,
+      );
+    }
+    if (!account.allowed) {
+      throw new AppError(
+        'FORBIDDEN',
+        `${account.display_name} is not allowed to buy on account at this station.`,
+      );
+    }
+    const balance = new ExactDecimal(account.balance);
+    if (method === 'CUSTOMER_CREDIT') {
+      const limit = new ExactDecimal(account.credit_limit ?? '0');
+      if (!limit.value.gt(0)) {
+        throw new AppError(
+          'CONFLICT',
+          `${account.display_name} has no credit limit, so credit sales are not allowed.`,
+        );
+      }
+      if (balance.add(amount).value.gt(limit.value)) {
+        throw new AppError(
+          'CONFLICT',
+          `This would put ${account.display_name} over their credit limit. Lower the amount or record a payment first.`,
+        );
+      }
+    } else if (balance.value.lt(amount.value)) {
+      throw new AppError(
+        'CONFLICT',
+        `${account.display_name} does not have enough prepaid money for this sale. Top up the account or lower the amount.`,
+      );
+    }
+  }
+}
 const paymentsPayload = basePayload.extend({
   payments: z.array(productionReconciliationPaymentSchema).max(100),
 });
@@ -370,14 +490,18 @@ export async function saveReconciliationPaymentsFromRequest(request: Request, in
     'SavePaymentAllocations',
     'reconciliation_payments',
     async (transaction, context) => {
+      for (const item of payload.payments) {
+        if (money(item.amount).amount.value.isNegative())
+          throw new AppError('VALIDATION_FAILED', 'Payment amounts cannot be negative');
+      }
+      await assertPaymentReferences(transaction, context, payload.payments);
       await replaceRows(transaction, 'reconciliation_payments', payload.reconciliationId, context);
       for (const item of payload.payments) {
         const amount = money(item.amount).amount;
-        if (amount.value.isNegative())
-          throw new AppError('VALIDATION_FAILED', 'Payment amounts cannot be negative');
+        const isAccountSale = item.method === 'CUSTOMER_CREDIT' || item.method === 'PREPAID';
         await transaction.execute(sql`
-        insert into app.reconciliation_payments (id, tenant_id, station_id, reconciliation_id, method, amount, reference, note, entered_by)
-        values (${item.id ?? randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${item.method}, ${amount.toString()}, ${item.reference ?? null}, ${item.note ?? null}, ${context.actor.membershipId})
+        insert into app.reconciliation_payments (id, tenant_id, station_id, reconciliation_id, method, amount, reference, note, customer_account_id, beneficiary_name, entered_by)
+        values (${item.id ?? randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${item.method}, ${amount.toString()}, ${item.reference ?? null}, ${item.note ?? null}, ${isAccountSale ? (item.customerAccountId ?? null) : null}, ${item.method === 'STAFF_OR_MANAGEMENT_FUEL' ? (item.beneficiaryName?.trim() ?? null) : null}, ${context.actor.membershipId})
       `);
       }
       return { paymentCount: payload.payments.length };
@@ -1266,7 +1390,7 @@ export async function getProductionReconciliationFromRequest(
           sql`select id, nozzle_id as "nozzleId", product_id as "productId", shift_id as "shiftId", opening_reading as "openingReading", closing_reading as "closingReading", litres_sold as "litresSold", selling_price_id as "sellingPriceId", unit_price as "unitPrice", sales_value as "salesValue" from app.reconciliation_meter_readings where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
         ),
         transaction.execute<RecordData['payments'][number]>(
-          sql`select id, method, amount, reference, note from app.reconciliation_payments where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
+          sql`select id, method, amount, reference, note, customer_account_id as "customerAccountId", beneficiary_name as "beneficiaryName" from app.reconciliation_payments where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
         ),
         transaction.execute<RecordData['expenses'][number]>(
           sql`select id, category, description, amount, payment_method as "paymentMethod", person_paid as "personPaid", reference from app.reconciliation_expenses where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by id`,
@@ -1303,10 +1427,33 @@ export async function getProductionReconciliationFromRequest(
         excludeMembershipId: context.actor.membershipId,
         permission: 'reconciliation.approve',
       }));
+    // Who can be charged at this station, with what they may still spend, so a credit or prepaid
+    // row can be entered by name and the person sees the room left before saving.
+    const customerAccounts = await transaction.execute<RecordData['customerAccounts'][number]>(sql`
+      select a.id, c.display_name as name, a.account_type as "accountType",
+        case when a.account_type = 'CREDIT'
+          then greatest(coalesce(a.credit_limit, 0) - coalesce(b.balance, 0), 0)::text
+          else greatest(coalesce(b.balance, 0), 0)::text end as available
+      from app.customer_accounts a
+      join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id
+      left join lateral (
+        select sum(case when l.direction = 'INCREASE' then l.amount else -l.amount end) as balance
+        from app.customer_ledger_entries l
+        where l.tenant_id = a.tenant_id and l.account_id = a.id
+      ) b on true
+      where a.tenant_id = ${context.tenantId} and a.status = 'ACTIVE' and c.status = 'ACTIVE'
+        and a.account_type in ('CREDIT', 'PREPAID_VALUE')
+        and (a.station_scope = 'ALL' or exists (
+          select 1 from app.customer_account_stations s
+          where s.tenant_id = a.tenant_id and s.account_id = a.id
+            and s.station_id = ${context.stationId} and s.active))
+      order by c.display_name, a.account_type
+    `);
     return {
       ...header,
       version: Number(header.version),
       approvalBlocked,
+      customerAccounts,
       attendants,
       readings,
       payments,

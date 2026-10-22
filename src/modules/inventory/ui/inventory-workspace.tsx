@@ -10,6 +10,8 @@ import {
   Field,
   SuccessState,
 } from '@/design-system/primitives';
+import { DocumentAttachments } from '../../documents/ui/document-attachments';
+import { parseCalibrationText } from '../calibration';
 
 export type InventoryContext = Readonly<{
   tenantId: string;
@@ -136,6 +138,9 @@ export function InventoryOperationalActions({
         <ActionDisclosure title="Record tank dip">
           <TankDipForm context={context} tankId={tankId} onRefresh={onRefresh} />
         </ActionDisclosure>
+        <ActionDisclosure title="Tank chart (dipstick to litres)">
+          <TankCalibrationForm context={context} tankId={tankId} onRefresh={onRefresh} />
+        </ActionDisclosure>
         <ActionDisclosure title="Post stock adjustment">
           <AdjustmentForm context={context} tankId={tankId} onRefresh={onRefresh} />
         </ActionDisclosure>
@@ -171,7 +176,10 @@ function TankDipForm({
   onRefresh,
 }: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
   const key = useRef<string | null>(null);
+  const [mode, setMode] = useState<'litres' | 'dipstick'>('litres');
   const [physicalLitres, setPhysicalLitres] = useState('');
+  const [reading, setReading] = useState('');
+  const [unit, setUnit] = useState('cm');
   const [measuredAt, setMeasuredAt] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<CommandFailure | null>(null);
@@ -191,7 +199,9 @@ function TankDipForm({
           commandType: 'RecordTankDip',
           tankId,
           measuredAt: isoFromLocal(measuredAt),
-          physicalLitres,
+          ...(mode === 'litres'
+            ? { physicalLitres }
+            : { rawMeasurement: reading.trim(), measurementUnit: unit.trim() }),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
         },
         key.current,
@@ -199,6 +209,7 @@ function TankDipForm({
       key.current = null;
       setSuccess('The physical dip was recorded without changing book stock.');
       setPhysicalLitres('');
+      setReading('');
       setMeasuredAt('');
       setNotes('');
       onRefresh();
@@ -214,16 +225,63 @@ function TankDipForm({
       <p className="muted-small">
         A dip is a physical observation. It never silently adjusts book inventory.
       </p>
-      <Field id="dip-litres" label="Physical litres" required>
-        <input
-          id="dip-litres"
-          value={physicalLitres}
-          onChange={(event) => setPhysicalLitres(event.target.value)}
-          inputMode="decimal"
-          required
-          placeholder="0.000"
-        />
-      </Field>
+      <div role="group" aria-label="How did you measure?" className="button-row">
+        <Button
+          type="button"
+          variant={mode === 'litres' ? 'primary' : 'secondary'}
+          aria-pressed={mode === 'litres'}
+          onClick={() => setMode('litres')}
+        >
+          I know the litres
+        </Button>
+        <Button
+          type="button"
+          variant={mode === 'dipstick' ? 'primary' : 'secondary'}
+          aria-pressed={mode === 'dipstick'}
+          onClick={() => setMode('dipstick')}
+        >
+          I read a dipstick
+        </Button>
+      </div>
+      {mode === 'litres' ? (
+        <Field id="dip-litres" label="Physical litres" required>
+          <input
+            id="dip-litres"
+            value={physicalLitres}
+            onChange={(event) => setPhysicalLitres(event.target.value)}
+            inputMode="decimal"
+            required
+            placeholder="0.000"
+          />
+        </Field>
+      ) : (
+        <>
+          <Field
+            id="dip-reading"
+            label="Dipstick reading"
+            hint="The tank’s chart turns this into litres. Add the chart first under “Tank chart”."
+            required
+          >
+            <input
+              id="dip-reading"
+              value={reading}
+              onChange={(event) => setReading(event.target.value)}
+              inputMode="decimal"
+              required
+              placeholder="112.5"
+            />
+          </Field>
+          <Field id="dip-unit" label="Measured in" required>
+            <input
+              id="dip-unit"
+              value={unit}
+              onChange={(event) => setUnit(event.target.value)}
+              required
+              maxLength={32}
+            />
+          </Field>
+        </>
+      )}
       <Field id="dip-measured-at" label="Measured at" required>
         <input
           id="dip-measured-at"
@@ -244,6 +302,85 @@ function TankDipForm({
       <CommandFeedback error={error} success={success} />
       <Button type="submit" loading={saving}>
         Record dip
+      </Button>
+    </form>
+  );
+}
+
+function TankCalibrationForm({
+  context,
+  tankId,
+  onRefresh,
+}: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+  const key = useRef<string | null>(null);
+  const [unit, setUnit] = useState('cm');
+  const [text, setText] = useState('');
+  const [error, setError] = useState<CommandFailure | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    key.current ??= crypto.randomUUID();
+    try {
+      const points = parseCalibrationText(text);
+      await postInventoryCommand(
+        context,
+        { commandType: 'SetTankCalibration', tankId, measurementUnit: unit.trim(), points },
+        key.current,
+      );
+      key.current = null;
+      setSuccess(`Chart saved with ${points.length} rows. New dips will use it.`);
+      setText('');
+      onRefresh();
+    } catch (caught) {
+      key.current = null;
+      setError(
+        caught instanceof Error && !('code' in caught)
+          ? { code: 'VALIDATION_FAILED', message: caught.message }
+          : (caught as CommandFailure),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="dialog-form" onSubmit={submit}>
+      <p className="muted-small">
+        The chart from the tank maker lists a dipstick reading and the litres it means. Saving a new
+        chart replaces the old one for new dips; dips already recorded keep their litres.
+      </p>
+      <Field id="chart-unit" label="Readings are in" required>
+        <input
+          id="chart-unit"
+          value={unit}
+          onChange={(event) => setUnit(event.target.value)}
+          required
+          maxLength={32}
+        />
+      </Field>
+      <Field
+        id="chart-rows"
+        label="Chart rows"
+        hint="One row per line: the reading, then the litres. For example 112.5, 18400. You can paste rows from a spreadsheet."
+        required
+      >
+        <textarea
+          id="chart-rows"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          rows={8}
+          required
+          placeholder={'0, 0\n50, 9200\n100, 18400'}
+        />
+      </Field>
+      <CommandFeedback error={error} success={success} />
+      <Button type="submit" loading={saving}>
+        Save chart
       </Button>
     </form>
   );
@@ -669,6 +806,14 @@ function DeliveryForm({
           <Button type="button" loading={saving === 'confirm'} onClick={() => void confirm()}>
             Confirm delivery
           </Button>
+          <DocumentAttachments
+            tenantId={context.tenantId}
+            stationId={context.stationId}
+            subjectType="FUEL_DELIVERY"
+            subjectId={deliveryId}
+            defaultKind="DELIVERY_NOTE"
+            title="Delivery note and photos"
+          />
         </div>
       ) : null}
       <CommandFeedback error={error} success={success} />
@@ -688,7 +833,12 @@ function ReceiptCostForm({
   onRefresh: () => void;
 }>) {
   const key = useRef<string | null>(null);
+  const [mode, setMode] = useState<'total' | 'buildup'>('total');
   const [amount, setAmount] = useState('');
+  const [fuelCost, setFuelCost] = useState('');
+  const [freight, setFreight] = useState('');
+  const [otherLabel, setOtherLabel] = useState('');
+  const [otherAmount, setOtherAmount] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [error, setError] = useState<CommandFailure | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -701,14 +851,30 @@ function ReceiptCostForm({
     setSuccess(null);
     key.current ??= crypto.randomUUID();
     try {
+      const body =
+        mode === 'total'
+          ? { amount }
+          : {
+              costBuildUp: {
+                fuelCost: fuelCost.trim(),
+                ...(freight.trim() ? { freight: freight.trim() } : {}),
+                ...(otherLabel.trim() && otherAmount.trim()
+                  ? { otherCosts: [{ label: otherLabel.trim(), amount: otherAmount.trim() }] }
+                  : {}),
+              },
+            };
       await postInventoryCommand(
         context,
-        { commandType: 'RecordReceiptCost', allocationId: source.sourceId, amount, currency },
+        { commandType: 'RecordReceiptCost', allocationId: source.sourceId, currency, ...body },
         key.current,
       );
       key.current = null;
       setSuccess('Receipt cost recorded. Refreshing the weighted-average cost.');
       setAmount('');
+      setFuelCost('');
+      setFreight('');
+      setOtherLabel('');
+      setOtherAmount('');
       onRefresh();
     } catch (caught) {
       setError(caught as CommandFailure);
@@ -728,17 +894,85 @@ function ReceiptCostForm({
           Receipt-cost posting is unavailable for this permission scope.
         </p>
       ) : null}
-      <Field id="receipt-cost-amount" label="Authoritative receipt cost" required>
-        <input
-          id="receipt-cost-amount"
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-          inputMode="decimal"
-          required
-          disabled={!enabled}
-          placeholder="0.0000"
-        />
-      </Field>
+      <div role="group" aria-label="How do you want to enter the cost?" className="button-row">
+        <Button
+          type="button"
+          variant={mode === 'total' ? 'primary' : 'secondary'}
+          aria-pressed={mode === 'total'}
+          onClick={() => setMode('total')}
+        >
+          I know the total
+        </Button>
+        <Button
+          type="button"
+          variant={mode === 'buildup' ? 'primary' : 'secondary'}
+          aria-pressed={mode === 'buildup'}
+          onClick={() => setMode('buildup')}
+        >
+          Add up the costs
+        </Button>
+      </div>
+      {mode === 'total' ? (
+        <Field id="receipt-cost-amount" label="Authoritative receipt cost" required>
+          <input
+            id="receipt-cost-amount"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            inputMode="decimal"
+            required
+            disabled={!enabled}
+            placeholder="0.0000"
+          />
+        </Field>
+      ) : (
+        <>
+          <p className="muted-small">
+            Enter what the whole delivery cost. We divide the total by the litres that actually
+            arrived, so a short delivery makes each litre cost more.
+          </p>
+          <Field id="receipt-fuel-cost" label="Cost of the fuel" required>
+            <input
+              id="receipt-fuel-cost"
+              value={fuelCost}
+              onChange={(event) => setFuelCost(event.target.value)}
+              inputMode="decimal"
+              required
+              disabled={!enabled}
+              placeholder="0.00"
+            />
+          </Field>
+          <Field id="receipt-freight" label="Transport (freight)" optional>
+            <input
+              id="receipt-freight"
+              value={freight}
+              onChange={(event) => setFreight(event.target.value)}
+              inputMode="decimal"
+              disabled={!enabled}
+              placeholder="0.00"
+            />
+          </Field>
+          <Field id="receipt-other-label" label="Another cost, if any" optional>
+            <input
+              id="receipt-other-label"
+              value={otherLabel}
+              onChange={(event) => setOtherLabel(event.target.value)}
+              maxLength={80}
+              disabled={!enabled}
+              placeholder="For example offloading"
+            />
+          </Field>
+          <Field id="receipt-other-amount" label="Amount of that cost" optional>
+            <input
+              id="receipt-other-amount"
+              value={otherAmount}
+              onChange={(event) => setOtherAmount(event.target.value)}
+              inputMode="decimal"
+              disabled={!enabled}
+              placeholder="0.00"
+            />
+          </Field>
+        </>
+      )}
       <Field id="receipt-cost-currency" label="Currency" required>
         <input
           id="receipt-cost-currency"
@@ -750,7 +984,11 @@ function ReceiptCostForm({
         />
       </Field>
       <CommandFeedback error={error} success={success} />
-      <Button type="submit" loading={saving} disabled={!enabled || !amount}>
+      <Button
+        type="submit"
+        loading={saving}
+        disabled={!enabled || (mode === 'total' ? !amount : !fuelCost)}
+      >
         Record receipt cost
       </Button>
     </form>

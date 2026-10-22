@@ -4,6 +4,8 @@ import { sql } from 'drizzle-orm';
 import { authorize } from '../../platform/security/permissions';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import type { AuthenticatedActorContext } from '../identity';
+import { creditLimitPosition } from './credit-limit';
+import { DEFAULT_DUE_SOON_DAYS } from './due-status';
 import { resolveSupplierReadContext } from './read-context';
 
 type SummaryRow = {
@@ -13,6 +15,14 @@ type SummaryRow = {
   current: string;
   overdue: string;
   total: string;
+  due_today: string;
+  due_soon: string;
+  overdue_1_7: string;
+  overdue_8_14: string;
+  overdue_15_30: string;
+  overdue_over_30: string;
+  credit_limit: string | null;
+  version: number | string;
 };
 type StatementRow = {
   source_id: string;
@@ -29,9 +39,17 @@ function signedAmountSql() {
 
 export async function getSupplierSummaryFromRequest(
   request: Request,
-  input: { tenantId: string; legalEntityId: string; supplierId?: string; asOf?: string },
+  input: {
+    tenantId: string;
+    legalEntityId: string;
+    supplierId?: string;
+    asOf?: string;
+    /** Invoices due within this many days (after today) count as due soon. */
+    dueSoonDays?: number;
+  },
   authenticatedActor?: AuthenticatedActorContext,
 ) {
+  const dueSoonDays = input.dueSoonDays ?? DEFAULT_DUE_SOON_DAYS;
   const context = await resolveSupplierReadContext({
     request,
     requestedTenantId: input.tenantId,
@@ -66,7 +84,19 @@ export async function getSupplierSummaryFromRequest(
           coalesce(sum(case when due_date is null or due_date >= ${asOf}
             then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as current,
           coalesce(sum(case when due_date < ${asOf}
-            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as overdue
+            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as overdue,
+          coalesce(sum(case when due_date::date = ${asOf}::date
+            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as due_today,
+          coalesce(sum(case when due_date::date > ${asOf}::date and due_date::date <= ${asOf}::date + ${dueSoonDays}::int
+            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as due_soon,
+          coalesce(sum(case when ${asOf}::date - due_date::date between 1 and 7
+            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as overdue_1_7,
+          coalesce(sum(case when ${asOf}::date - due_date::date between 8 and 14
+            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as overdue_8_14,
+          coalesce(sum(case when ${asOf}::date - due_date::date between 15 and 30
+            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as overdue_15_30,
+          coalesce(sum(case when ${asOf}::date - due_date::date > 30
+            then case when document_type = 'INVOICE' then balance else -balance end else 0 end), 0)::text as overdue_over_30
         from document_balances
         group by supplier_id
       ), movement_totals as (
@@ -79,7 +109,15 @@ export async function getSupplierSummaryFromRequest(
       select s.id as supplier_id, s.code, s.legal_name,
         coalesce(d.current, '0') as current,
         coalesce(d.overdue, '0') as overdue,
-        coalesce(m.total, '0') as total
+        coalesce(d.due_today, '0') as due_today,
+        coalesce(d.due_soon, '0') as due_soon,
+        coalesce(d.overdue_1_7, '0') as overdue_1_7,
+        coalesce(d.overdue_8_14, '0') as overdue_8_14,
+        coalesce(d.overdue_15_30, '0') as overdue_15_30,
+        coalesce(d.overdue_over_30, '0') as overdue_over_30,
+        coalesce(m.total, '0') as total,
+        s.credit_limit::text as credit_limit,
+        s.version
       from app.suppliers s
       left join document_totals d on d.supplier_id = s.id
       left join movement_totals m on m.supplier_id = s.id
@@ -95,7 +133,18 @@ export async function getSupplierSummaryFromRequest(
       current: row.current,
       overdue: row.overdue,
       total: row.total,
+      dueToday: row.due_today,
+      dueSoon: row.due_soon,
+      overdueAging: {
+        days1To7: row.overdue_1_7,
+        days8To14: row.overdue_8_14,
+        days15To30: row.overdue_15_30,
+        over30: row.overdue_over_30,
+      },
+      dueSoonDays,
       asOf,
+      version: Number(row.version),
+      creditLimit: creditLimitPosition(row.total, row.credit_limit),
     }));
   });
 }

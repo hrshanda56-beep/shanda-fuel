@@ -762,15 +762,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
 
   it('G5 links credit and prepaid value exactly once without creating duplicate fuel movements', async () => {
     const ctx = await createQa1ScenarioContext(client, 'g5');
-    const sale = await createApprovedSale(client, ctx, 'g5-sale', {
-      saleLitres: '30.000',
-      payments: [
-        { method: 'CUSTOMER_CREDIT', amount: '50.0000' },
-        { method: 'PREPAID', amount: '25.0000' },
-      ],
-      post: true,
-      completeShiftAfter: true,
-    });
+    // Credit and prepaid sales name the customer account, so the accounts exist first.
     const customerResult = await customer(
       ctx,
       {
@@ -829,6 +821,19 @@ describe('QA1 cross-module golden financial scenarios', () => {
       ),
       201,
     );
+    const sale = await createApprovedSale(client, ctx, 'g5-sale', {
+      saleLitres: '30.000',
+      payments: [
+        {
+          method: 'CUSTOMER_CREDIT',
+          amount: '50.0000',
+          customerAccountId: id(credit.body, 'accountId'),
+        },
+        { method: 'PREPAID', amount: '25.0000', customerAccountId: prepaidAccountId },
+      ],
+      post: true,
+      completeShiftAfter: true,
+    });
     const revision = await currentRevision(client, ctx, sale.reconciliationId);
     for (const [suffix, accountId, accountType, litres, amount, method] of [
       ['credit', id(credit.body, 'accountId'), 'CREDIT', '10.000', '50.0000', 'CUSTOMER_CREDIT'],

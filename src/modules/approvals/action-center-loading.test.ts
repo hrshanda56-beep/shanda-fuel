@@ -23,12 +23,16 @@ import { loadActionCenterFacts } from './action-center';
 afterEach(() => vi.clearAllMocks());
 it('starts independent finance sections before waiting for sign-off', async () => {
   let release!: () => void;
-  mocks.sign.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        release = () => resolve({ reconciliations: null, revaluations: null });
-      }),
-  );
+  let readContexts = 0;
+  mocks.sign.mockImplementation(() => {
+    readContexts += 1;
+    // The second read is the operations facts: they never wait for sign-off.
+    if (readContexts === 2)
+      return Promise.resolve({ today: '2026-10-21', reports: null, tanks: null });
+    return new Promise((resolve) => {
+      release = () => resolve({ reconciliations: null, revaluations: null });
+    });
+  });
   mocks.cash.mockResolvedValue({
     totals: { collectedButUnbanked: '0', pendingBankConfirmation: '0' },
   });
@@ -55,7 +59,9 @@ it('starts independent finance sections before waiting for sign-off', async () =
   try {
     expect(mocks.cash).toHaveBeenCalledTimes(1);
     expect(mocks.settlements).toHaveBeenCalledTimes(1);
-    expect(mocks.suppliers).toHaveBeenCalledTimes(1);
+    // Suppliers wait only for the quick operations read (it carries the saved reminder days),
+    // never for sign-off, which is still pending here.
+    await vi.waitFor(() => expect(mocks.suppliers).toHaveBeenCalledTimes(1));
   } finally {
     release();
     await pending;

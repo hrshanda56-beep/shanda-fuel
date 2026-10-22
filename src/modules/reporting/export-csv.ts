@@ -54,7 +54,7 @@ function stationCodes(report: ManagementReport): (stationId: string) => string {
 type SalesRow = ManagementReport['sales']['rows'][number];
 type ProviderRow = ManagementReport['providers']['rows'][number];
 type InventoryRow = ManagementReport['inventory']['rows'][number];
-type MeasureRow = readonly [string, string];
+type MeasureRow = readonly [string, string | null];
 type ProfitLossRow = Readonly<{
   section: string;
   label: string;
@@ -362,6 +362,20 @@ export function buildReportCsv(slug: ReportDefinition['slug'], report: Managemen
         ['provider_not_allocated', report.providers.unallocatedProviderAmount],
         ['payments_not_matched', report.providers.unmatchedEvidenceAmount],
         ['supplier_payments', report.suppliers.payments],
+      ];
+      return table<MeasureRow>(
+        [text('measure', (row) => row[0]), number('amount', (row) => row[1])],
+        rows,
+      );
+    }
+    case 'net-position': {
+      const { cash, providers, suppliers, customers } = report;
+      const rows: readonly MeasureRow[] = [
+        ['cash_collected_not_banked', cash.collectedButNotBanked],
+        ['provider_payments_not_received', providers.unmatchedEvidenceAmount],
+        ['owed_by_credit_customers', customers.receivableBalance],
+        ['owed_to_suppliers', suppliers.outstandingBalance],
+        ['prepaid_customer_balances', customers.prepaidValueBalance],
       ];
       return table<MeasureRow>(
         [text('measure', (row) => row[0]), number('amount', (row) => row[1])],

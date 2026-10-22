@@ -6,6 +6,8 @@ import {
   createProductFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,
+  setAlertSettingsFromRequest,
+  setResponsibleSupervisorFromRequest,
   updateSupplierFromRequest,
 } from '../../../../modules/setup';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
@@ -36,6 +38,12 @@ export const POST = withRequestObservability(
           break;
         case 'UpdateSupplier':
           result = await updateSupplierFromRequest(request, body);
+          break;
+        case 'SetResponsibleSupervisor':
+          result = await setResponsibleSupervisorFromRequest(request, body);
+          break;
+        case 'SetAlertSettings':
+          result = await setAlertSettingsFromRequest(request, body);
           break;
       }
       return NextResponse.json(result, { status: 200, headers: { 'Cache-Control': 'no-store' } });

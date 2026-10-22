@@ -10,9 +10,12 @@ import {
   fuelDeliveries,
   fuelDeliveryAllocations,
   inventoryMovements,
+  tankCalibrationPoints,
   tanks,
   tankDips,
 } from '../../platform/db/schema/a4';
+import { litresForReading, normaliseCalibrationChart } from './calibration';
+import { buildLandedCost } from './landed-cost';
 import {
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
@@ -68,10 +71,25 @@ const deactivateTankPayload = authorityPayload.extend({
 const dipPayload = authorityPayload.extend({
   tankId: uuid,
   measuredAt: instant,
-  physicalLitres: decimalText,
+  /** Optional when a dipstick reading is given and the tank has a calibration chart. */
+  physicalLitres: decimalText.nullish(),
   rawMeasurement: decimalText.nullish(),
   measurementUnit: z.string().trim().min(1).max(32).nullish(),
   notes: z.string().trim().max(1000).nullish(),
+});
+
+const calibrationPayload = authorityPayload.extend({
+  tankId: uuid,
+  measurementUnit: z.string().trim().min(1).max(32),
+  points: z
+    .array(
+      z.object({
+        measurement: z.string().regex(/^\d+(?:\.\d{1,3})?$/, 'A reading is required'),
+        litres: z.string().regex(/^\d+(?:\.\d{1,3})?$/, 'Litres are required'),
+      }),
+    )
+    .min(2)
+    .max(500),
 });
 
 const allocationPayload = z.object({ tankId: uuid, quantityLitres: decimalText });
@@ -133,7 +151,19 @@ const openingInventoryCostPayload = authorityPayload.extend({
 });
 const receiptCostPayload = authorityPayload.extend({
   allocationId: uuid,
-  amount: costAmount,
+  /** The cost of this tank's share, when the person already knows it. */
+  amount: costAmount.optional(),
+  /** Or the pieces of the delivery's cost, to be spread over the litres that arrived. */
+  costBuildUp: z
+    .object({
+      fuelCost: costAmount,
+      freight: costAmount.optional(),
+      otherCosts: z
+        .array(z.object({ label: z.string().trim().min(1).max(80), amount: costAmount }))
+        .max(10)
+        .optional(),
+    })
+    .optional(),
   currency: currencyCode,
 });
 const revaluationSourceType = z.enum(['OPENING_BALANCE', 'FUEL_DELIVERY_ALLOCATION']);
@@ -284,6 +314,108 @@ export async function deactivateTankFromRequest(request: Request, input: unknown
   });
 }
 
+/** The newest calibration chart for a tank in one unit, or null when none was entered. */
+async function currentCalibration(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  tankId: string,
+  unit: string,
+): Promise<{ version: number; points: { measurement: string; litres: string }[] } | null> {
+  const rows = await transaction.execute<{
+    chart_version: number;
+    measurement: string;
+    litres: string;
+  }>(sql`
+    select chart_version, measurement_value::text as measurement, litres::text as litres
+    from app.tank_calibration_points p
+    where p.tenant_id = ${context.tenantId}
+      and p.station_id = ${context.stationId}
+      and p.tank_id = ${tankId}
+      and p.measurement_unit = ${unit}
+      and p.chart_version = (
+        select max(chart_version) from app.tank_calibration_points
+        where tenant_id = p.tenant_id and tank_id = p.tank_id and measurement_unit = p.measurement_unit
+      )
+    order by measurement_value
+  `);
+  if (rows.length === 0) return null;
+  return {
+    version: Number(rows[0]!.chart_version),
+    points: rows.map((row) => ({ measurement: row.measurement, litres: row.litres })),
+  };
+}
+
+/**
+ * The litres a dip records: worked out from the tank's chart when a dipstick reading comes with a
+ * chart, otherwise the litres the person typed. A reading with no chart and no litres is refused.
+ */
+async function dipLitres(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  tankId: string,
+  payload: z.infer<typeof dipPayload>,
+): Promise<string> {
+  if (payload.rawMeasurement && payload.measurementUnit) {
+    const chart = await currentCalibration(transaction, context, tankId, payload.measurementUnit);
+    if (chart) return litresForReading(chart.points, payload.rawMeasurement);
+  }
+  if (!payload.physicalLitres) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      payload.rawMeasurement
+        ? 'This tank has no calibration chart for that unit yet. Add the chart, or enter the litres.'
+        : 'Enter the litres in the tank',
+    );
+  }
+  return litres(payload.physicalLitres).toString();
+}
+
+export async function setTankCalibrationFromRequest(request: Request, input: unknown) {
+  const payload = calibrationPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'SetTankCalibration',
+    permissionCode: 'inventory.tank.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_CALIBRATION_SET',
+      subjectType: 'Tank',
+      subjectId: payload.tankId,
+    },
+    execute: async (transaction) => {
+      const tank = await loadTankForUpdate(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+      });
+      const chart = normaliseCalibrationChart(payload.points, tank.capacityLitres);
+      const previous = await currentCalibration(
+        transaction,
+        context,
+        tank.id,
+        payload.measurementUnit,
+      );
+      const chartVersion = (previous?.version ?? 0) + 1;
+      await transaction.insert(tankCalibrationPoints).values(
+        chart.map((row) => ({
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: tank.id,
+          measurementUnit: payload.measurementUnit,
+          measurementValue: row.measurement,
+          litres: row.litres,
+          chartVersion,
+          recordedBy: context.authority.membership.membershipId,
+        })),
+      );
+      return { tankId: tank.id, chartVersion, rows: chart.length };
+    },
+  });
+}
+
 export async function recordTankDipFromRequest(request: Request, input: unknown) {
   const payload = dipPayload.parse(input);
   if ((payload.rawMeasurement === undefined) !== (payload.measurementUnit === undefined)) {
@@ -313,7 +445,8 @@ export async function recordTankDipFromRequest(request: Request, input: unknown)
       });
       if (tank.status === 'RETIRED')
         throw new AppError('CONFLICT', 'Retired tanks cannot be dipped');
-      assertWithinTankCapacity(payload.physicalLitres, tank.capacityLitres);
+      const physicalLitres = await dipLitres(transaction, context, tank.id, payload);
+      assertWithinTankCapacity(physicalLitres, tank.capacityLitres);
       const dipId = randomUUID();
       await transaction.insert(tankDips).values({
         id: dipId,
@@ -322,13 +455,13 @@ export async function recordTankDipFromRequest(request: Request, input: unknown)
         tankId: tank.id,
         measuredAt: new Date(payload.measuredAt),
         businessDate: deriveBusinessDate(payload.measuredAt, context.stationTimezone),
-        physicalLitres: litres(payload.physicalLitres).toString(),
+        physicalLitres,
         rawMeasurement: payload.rawMeasurement ? litres(payload.rawMeasurement).toString() : null,
         measurementUnit: payload.measurementUnit ?? null,
         recordedBy: context.authority.membership.membershipId,
         notes: payload.notes ?? null,
       });
-      return { dipId, tankId: tank.id, physicalLitres: litres(payload.physicalLitres).toString() };
+      return { dipId, tankId: tank.id, physicalLitres };
     },
   });
 }
@@ -830,6 +963,12 @@ export async function recordOpeningInventoryCostFromRequest(request: Request, in
 
 export async function recordReceiptCostFromRequest(request: Request, input: unknown) {
   const payload = receiptCostPayload.parse(input);
+  if ((payload.amount === undefined) === (payload.costBuildUp === undefined)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Give either the cost of this share or the costs to spread over the litres received, not both',
+    );
+  }
   const context = await contextFor(request, payload);
   const key = requireIdempotency(request);
   return executeInventoryCommand({
@@ -843,15 +982,40 @@ export async function recordReceiptCostFromRequest(request: Request, input: unkn
       subjectType: 'InventoryCostEvent',
       subjectId: (result) => (result as { costEventId: string }).costEventId,
     },
-    execute: (transaction) =>
-      postReceiptCostInTransaction(transaction, {
+    execute: async (transaction) => {
+      let amount = payload.amount;
+      let landed: ReturnType<typeof buildLandedCost> | undefined;
+      if (payload.costBuildUp) {
+        const rows = await transaction.execute<{ allocated: string; received: string }>(sql`
+          select a.quantity_litres::text as allocated, d.actual_quantity_litres::text as received
+          from app.fuel_delivery_allocations a
+          join app.fuel_deliveries d
+            on d.tenant_id = a.tenant_id and d.station_id = a.station_id and d.id = a.delivery_id
+          where a.tenant_id = ${context.tenantId}
+            and a.station_id = ${context.stationId}
+            and a.id = ${payload.allocationId}
+        `);
+        const row = rows[0];
+        if (!row) throw new AppError('NOT_FOUND', 'That delivery was not found');
+        landed = buildLandedCost({
+          ...payload.costBuildUp,
+          deliveryLitres: row.received,
+          allocationLitres: row.allocated,
+        });
+        amount = landed.allocationCost;
+      }
+      const posted = await postReceiptCostInTransaction(transaction, {
         tenantId: context.tenantId,
         stationId: context.stationId,
         allocationId: payload.allocationId,
-        amount: payload.amount,
+        amount: amount!,
         currency: payload.currency,
         actorMembershipId: context.authority.membership.membershipId,
-      }),
+      });
+      return landed
+        ? { ...posted, landedCost: { ...landed, currency: payload.currency.toUpperCase() } }
+        : posted;
+    },
   });
 }
 

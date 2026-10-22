@@ -375,6 +375,9 @@ export async function getExpenseReferenceFromRequest(
         recordPayment: may('expense.payment.record'),
         reversePayment: may('expense.payment.reverse'),
         manageCategories: may('expense.manage'),
+        managePolicy: may('expense.policy.manage'),
+        manageRecurring: may('expense.recurring.manage'),
+        recogniseRecurring: may('expense.recurring.recognize'),
       },
       categories: categories.map((row) => ({
         categoryId: row.id,

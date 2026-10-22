@@ -21,6 +21,7 @@ const ids = {
   legalB: p(12),
   stationA: p(21),
   stationB: p(22),
+  stationOther: p(23),
   ownerUser: p(31),
   attendantUser: p(32),
   ownerBUser: p(33),
@@ -440,5 +441,55 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     const audit =
       await client`select event_code from platform.security_events where details->>'subjectId' = ${s!.id} order by occurred_at`;
     expect(audit.map((r) => r.event_code)).toEqual(['SUPPLIER.UPDATED', 'SUPPLIER.STATUS_CHANGED']);
+  });
+
+  it('SetResponsibleSupervisor: only an active supervisor of this station can be chosen', async () => {
+    const supervisorUser = randomUUID();
+    const supervisorMembership = randomUUID();
+    const otherUser = randomUUID();
+    const otherMembership = randomUUID();
+    await client.unsafe(`
+      insert into app.users (id, name, email) values
+        ('${supervisorUser}', 'Tendai Supervisor', 'setup-sup-${run}@example.test'),
+        ('${otherUser}', 'Other Station Supervisor', 'setup-sup-other-${run}@example.test');
+      insert into app.memberships (id, tenant_id, identity_id, status) values
+        ('${supervisorMembership}', '${ids.tenantA}', '${supervisorUser}', 'ACTIVE'),
+        ('${otherMembership}', '${ids.tenantA}', '${otherUser}', 'ACTIVE');
+      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status)
+        values ('${ids.stationOther}', '${ids.tenantA}', '${ids.legalA}', 'O${run}', 'Setup Other Station', 'ONBOARDING');
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id) values
+        ('${ids.tenantA}', '${supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legalA}', '${ids.stationA}'),
+        ('${ids.tenantA}', '${otherMembership}', 'SUPERVISOR', 'STATION', '${ids.legalA}', '${ids.stationOther}');
+    `);
+    const command = (
+      key: string,
+      membershipId: string | null,
+      who: keyof typeof tokens = 'owner',
+    ) => post(setupPost, who, key, { commandType: 'SetResponsibleSupervisor', ...A, membershipId });
+
+    const attendant = await command('setup-resp-1', ids.attendantMembership);
+    expect(attendant.status).toBe(400);
+    const elsewhere = await command('setup-resp-2', otherMembership);
+    expect(elsewhere.status).toBe(400);
+    const denied = await command('setup-resp-3', supervisorMembership, 'attendant');
+    expect(denied.status).toBe(403);
+
+    const set = await command('setup-resp-4', supervisorMembership);
+    expect(set.status).toBe(200);
+    const replay = await command('setup-resp-4', supervisorMembership);
+    expect(replay.status).toBe(200);
+    const { body: ov } = await overview('owner');
+    expect(ov.data.responsibleSupervisorMembershipId).toBe(supervisorMembership);
+    expect(ov.data.supervisors).toEqual([
+      { membershipId: supervisorMembership, name: 'Tendai Supervisor' },
+    ]);
+
+    const cleared = await command('setup-resp-5', null);
+    expect(cleared.status).toBe(200);
+    const { body: after } = await overview('owner');
+    expect(after.data.responsibleSupervisorMembershipId).toBeNull();
+    const audit =
+      await client`select event_code from platform.security_events where tenant_id = ${ids.tenantA} and event_code = 'SETUP.RESPONSIBLE_SUPERVISOR_SET'`;
+    expect(audit).toHaveLength(2);
   });
 });

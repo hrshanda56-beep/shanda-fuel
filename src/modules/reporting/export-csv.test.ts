@@ -99,6 +99,21 @@ describe('buildReportCsv', () => {
     expect(csv).toContain('supplier_payments,3.0000');
   });
 
+  it('exports the net position inputs, leaving unavailable customer figures blank', () => {
+    const csv = buildReportCsv(
+      'net-position',
+      report({
+        cash: { collectedButNotBanked: '10.0000' },
+        providers: { unmatchedEvidenceAmount: '2.5000' },
+        suppliers: { outstandingBalance: '4.0000' },
+        customers: { receivableBalance: null, prepaidValueBalance: null },
+      }),
+    );
+    expect(csv).toContain('cash_collected_not_banked,10.0000');
+    expect(csv).toContain('owed_to_suppliers,4.0000');
+    expect(csv).toMatch(/owed_by_credit_customers,\r?\n/);
+  });
+
   it('maps station ids to codes for providers and inventory', () => {
     const providers = buildReportCsv(
       'providers',

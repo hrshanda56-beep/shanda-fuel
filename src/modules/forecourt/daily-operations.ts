@@ -27,6 +27,8 @@ export const dailyOperationsQuery = z.object({
 type DailyOperationsInput = z.infer<typeof dailyOperationsQuery>;
 
 type DailyOperationsContext = {
+  /** The signed-in person's membership, so unsent entries kept on a device stay with that person. */
+  viewerMembershipId: string;
   station: { id: string; code: string; name: string; timezone: string };
   organisation: { id: string; name: string };
   businessDay: { id: string; date: string; state: string; version: number };
@@ -190,6 +192,7 @@ async function loadDailyOperationsContext(
   ]);
 
   return {
+    viewerMembershipId: context.authority.membership.membershipId,
     station: {
       id: station.id,
       code: station.code,

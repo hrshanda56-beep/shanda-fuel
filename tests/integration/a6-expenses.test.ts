@@ -791,7 +791,7 @@ describe('A6 expenses PostgreSQL persistence', () => {
     // Reversal changes state and adds compensating evidence; it never rewrites the original
     // recognition fact. The recurring payment follows the same append-oriented correction rule.
     const recognitionRows = await client`
-      select state, amount::text as amount, reversed_by, reversal_reason
+      select id, state, amount::text as amount, reversed_by, reversal_reason
       from app.recurring_cost_recognitions
       where tenant_id = ${ids.tenant} and period_id = ${period.json.periodId}
         and recognition_date = '2026-09-01'`;
@@ -912,7 +912,7 @@ describe('A6 expenses PostgreSQL persistence', () => {
       to: '2026-10-31',
     });
     expect(summary.status).toBe(200);
-    expect(summary.json.fixedCostRecognition).toBe('33.3343');
+    expect(summary.json.fixedCostRecognition).toBe('73.3343');
     expect(typeof summary.json.operatingExpenses).toBe('string');
     expect(summary.json.byCategory.length).toBeGreaterThan(0);
 

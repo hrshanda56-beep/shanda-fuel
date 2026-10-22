@@ -857,45 +857,50 @@ export async function adjustRecurringCostRecognitionInTransaction(
     throw new AppError('VALIDATION_FAILED', 'The recognition date is outside the recurring period');
   }
   const amount = positiveMoney(input.amount).amount.value.toFixed(4);
+  // The latest row for the date is the one being corrected: an active recognition is reversed and
+  // replaced; one that was already reversed (a mistaken reversal) is only replaced.
   const rows = await transaction.execute<{ id: string; amount: string; state: string }>(sql`
     select id, amount::text as amount, state
     from app.recurring_cost_recognitions
     where tenant_id = ${context.tenantId} and period_id = ${period.id}
-      and recognition_date = ${input.recognitionDate} and state = 'RECOGNIZED'
+      and recognition_date = ${input.recognitionDate}
     order by recognized_at desc
     limit 1
     for update
   `);
   const original = rows[0];
-  if (!original) throw new AppError('NOT_FOUND', 'No active recognition exists for this date');
-  const originalMovement = await transaction.execute<{ id: string }>(sql`
-    select id from app.expense_recognition_movements
-    where tenant_id = ${context.tenantId}
-      and source_type = 'RECURRING_COST_RECOGNITION'
-      and source_id = ${original.id}
-      and movement_type = 'RECOGNITION'
-  `);
-  if (!originalMovement[0]) {
-    throw new AppError('INVARIANT_VIOLATION', 'The recognition movement is missing');
+  if (!original) throw new AppError('NOT_FOUND', 'No recognition exists for this date');
+  const alreadyReversed = original.state === 'REVERSED';
+  if (!alreadyReversed) {
+    const originalMovement = await transaction.execute<{ id: string }>(sql`
+      select id from app.expense_recognition_movements
+      where tenant_id = ${context.tenantId}
+        and source_type = 'RECURRING_COST_RECOGNITION'
+        and source_id = ${original.id}
+        and movement_type = 'RECOGNITION'
+    `);
+    if (!originalMovement[0]) {
+      throw new AppError('INVARIANT_VIOLATION', 'The recognition movement is missing');
+    }
+    await transaction.execute(sql`
+      update app.recurring_cost_recognitions
+      set state = 'REVERSED', reversed_by = ${actorId(context)}, reversed_at = now(),
+          reversal_reason = ${input.reason}
+      where tenant_id = ${context.tenantId} and id = ${original.id}
+    `);
+    await transaction.execute(sql`
+      insert into app.expense_recognition_movements (
+        id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
+        source_type, source_id, recognition_date, currency, amount, reversal_of_id,
+        actor_membership_id
+      ) values (
+        ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+        ${period.category_id}, 'FIXED_COST', 'REVERSAL', 'RECURRING_COST_RECOGNITION',
+        ${original.id}, ${input.recognitionDate}, 'USD', ${original.amount},
+        ${originalMovement[0].id}, ${actorId(context)}
+      )
+    `);
   }
-  await transaction.execute(sql`
-    update app.recurring_cost_recognitions
-    set state = 'REVERSED', reversed_by = ${actorId(context)}, reversed_at = now(),
-        reversal_reason = ${input.reason}
-    where tenant_id = ${context.tenantId} and id = ${original.id}
-  `);
-  await transaction.execute(sql`
-    insert into app.expense_recognition_movements (
-      id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
-      source_type, source_id, recognition_date, currency, amount, reversal_of_id,
-      actor_membership_id
-    ) values (
-      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
-      ${period.category_id}, 'FIXED_COST', 'REVERSAL', 'RECURRING_COST_RECOGNITION',
-      ${original.id}, ${input.recognitionDate}, 'USD', ${original.amount},
-      ${originalMovement[0].id}, ${actorId(context)}
-    )
-  `);
   const correctedId = randomUUID();
   await transaction.execute(sql`
     insert into app.recurring_cost_recognitions (

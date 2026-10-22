@@ -21,6 +21,7 @@ const ids = {
   stationB: uid(6),
   otherStation: uid(7),
   product: uid(8),
+  otherProduct: uid(9),
   financeUser: uid(11),
   financeMembership: uid(12),
   financeSession: uid(13),
@@ -55,6 +56,7 @@ type SaleSeed = {
 };
 
 function saleSql(sale: SaleSeed): string {
+  const productId = sale.tenantId === ids.otherTenant ? ids.otherProduct : ids.product;
   const base = 1000 + sale.key * 40;
   const [recon, rev, seg, mov, bridge, revenue, evt, attr, day, shift, tank, nozzle, inst, ob, cb] =
     Array.from({ length: 15 }, (_, i) => uid(base + i));
@@ -79,7 +81,7 @@ function saleSql(sale: SaleSeed): string {
        closing_reading, litres, unit_price, expected_sale_value, currency, boundary_reason,
        segment_start_at, segment_end_at, sealed_at, state, version)
       values ('${seg}', '${sale.tenantId}', '${sale.stationId}', '${nozzle}', '${inst}', '${day}', '${shift}',
-       '${ob}', '${cb}', '${ids.product}', '${membership}', '${membership}', 0.000, 1.000, 1.000,
+       '${ob}', '${cb}', '${productId}', '${membership}', '${membership}', 0.000, 1.000, 1.000,
        10.000000, 10.0000, 'USD', 'PROFIT TEST', '${sale.businessDate}T06:00:00Z', '${at}', '${at}', 'SEALED', 1);
     insert into app.reconciliation_meter_reading_segments
       (id, tenant_id, station_id, reconciliation_id, revision_id, reconciliation_meter_reading_id,
@@ -88,7 +90,7 @@ function saleSql(sale: SaleSeed): string {
     insert into app.inventory_movements
       (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at,
        business_date, source_type, source_id, actor_membership_id, posted_at)
-      values ('${mov}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${ids.product}', 'SALE', -1.000,
+      values ('${mov}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${productId}', 'SALE', -1.000,
        '${at}', '${sale.businessDate}', 'METER_SEGMENT_SALE', '${seg}', '${membership}', '${at}');
     insert into app.sale_recognition_movements
       (id, tenant_id, legal_entity_id, station_id, business_date, product_id, tank_id, nozzle_id, shift_id,
@@ -96,7 +98,7 @@ function saleSql(sale: SaleSeed): string {
        reconciliation_meter_reading_id, quantity_litres, reconciliation_value, recognized_revenue_amount,
        currency, effective_at, source_id, actor_membership_id, request_id, replay_fingerprint)
       values ('${revenue}', '${sale.tenantId}', '${sale.legalId}', '${sale.stationId}', '${sale.businessDate}',
-       '${ids.product}', '${tank}', '${nozzle}', '${shift}', '${seg}', '${mov}', '${recon}', '${rev}',
+       '${productId}', '${tank}', '${nozzle}', '${shift}', '${seg}', '${mov}', '${recon}', '${rev}',
        '${uid(base + 23)}', 1.000, ${sale.revenue}, ${sale.revenue}, 'USD', '${at}', '${seg}',
        '${membership}', '${uid(base + 24)}', 'profit-revenue-${sale.key}');
   `;
@@ -105,13 +107,13 @@ function saleSql(sale: SaleSeed): string {
     insert into app.inventory_cost_events
       (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at,
        business_date, amount, currency, actor_membership_id)
-      values ('${evt}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${ids.product}', 'SALE_COGS',
+      values ('${evt}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${productId}', 'SALE_COGS',
        'METER_SEGMENT_SALE', '${seg}', '${at}', '${sale.businessDate}', -${sale.cogs}, 'USD', '${membership}');
     insert into app.inventory_sale_cost_attributions
       (id, tenant_id, station_id, tank_id, product_id, inventory_movement_id, meter_segment_id,
        sale_quantity_litres, pre_sale_wac, original_cogs, valuation_status, valuation_basis,
        replay_fingerprint, sale_cost_event_id, effective_at, business_date)
-      values ('${attr}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${ids.product}', '${mov}', '${seg}',
+      values ('${attr}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${productId}', '${mov}', '${seg}',
        1.000, ${sale.cogs}, ${sale.cogs}, 'VALUED', 'PRE_SALE_WAC', 'profit-attr-${sale.key}', '${evt}', '${at}',
        '${sale.businessDate}');
     `;
@@ -123,21 +125,21 @@ function saleSql(sale: SaleSeed): string {
       (id, tenant_id, station_id, tank_id, product_id, reason, status, source_type, source_id, amount,
        currency, effective_at, business_date, requested_by, requested_at, approved_by, approved_at,
        posted_by, posted_at, replay_fingerprint)
-      values ('${revalId}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${ids.product}',
+      values ('${revalId}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${productId}',
        'profit test late cost', 'POSTED', 'PROFIT_TEST', '${uid(base + 25)}', ${delta.replace('-', '')}, 'USD',
        '${at}', '${sale.businessDate}', '${membership}', '${at}', '${membership}', '${at}', '${membership}',
        '${at}', 'profit-reval-${sale.key}');
     insert into app.inventory_cost_events
       (id, tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id, effective_at,
        business_date, amount, currency, actor_membership_id)
-      values ('${revalEvt}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${ids.product}',
+      values ('${revalEvt}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${productId}',
        'COGS_REVALUATION', 'INVENTORY_COST_REVALUATION_LINE', '${rline}', '${at}', '${sale.businessDate}',
        ${delta}, 'USD', '${membership}');
     insert into app.inventory_cost_revaluation_lines
       (id, tenant_id, station_id, tank_id, product_id, revaluation_id, sale_movement_id, sale_attribution_id,
        original_pre_sale_wac, recomputed_pre_sale_wac, original_cogs, prior_restated_cogs, recomputed_cogs,
        cogs_delta, currency, sale_effective_at, cogs_revaluation_event_id, replay_fingerprint)
-      values ('${rline}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${ids.product}', '${revalId}',
+      values ('${rline}', '${sale.tenantId}', '${sale.stationId}', '${tank}', '${productId}', '${revalId}',
        '${mov}', '${attr}', ${sale.cogs}, ${sale.cogs}, ${sale.cogs}, ${sale.cogs},
        ${sale.cogs}::numeric + (${delta}), ${delta}, 'USD', '${at}', '${revalEvt}', 'profit-line-${sale.key}');
     `;
@@ -196,7 +198,8 @@ describe('profitability read API (PostgreSQL)', () => {
         ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.stationA}'),
         ('${ids.otherTenant}', '${ids.otherMembership}', 'FINANCE', 'TENANT', null, null);
       insert into app.products (id, tenant_id, code, name, status)
-        values ('${ids.product}', '${ids.tenant}', 'PMS-${run}', 'Profit Petrol', 'ACTIVE');
+        values ('${ids.product}', '${ids.tenant}', 'PMS-${run}', 'Profit Petrol', 'ACTIVE'),
+          ('${ids.otherProduct}', '${ids.otherTenant}', 'PMS-${run}', 'Profit Other Petrol', 'ACTIVE');
     `);
     await seedClerkSession(client, ids.financeSession, tokens.finance, ids.financeUser, true);
     await seedClerkSession(client, ids.stationBSession, tokens.stationB, ids.stationBUser, true);

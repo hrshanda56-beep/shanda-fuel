@@ -13,6 +13,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatTileLitres } from '../../reporting/format';
+import { classifyStockVariance } from '../../approvals/operations-alerts';
 import { TankDrum } from './tank-drum';
 import { fuelKind, tankLabel, tankLevel, tanksForStation } from './tank-overview-model';
 
@@ -160,6 +161,10 @@ export function TankOverview({
                         {tankLabel(tank.tankCode)}: {tank.productName}
                       </span>
                       {level.state === 'low' ? <StatusBadge tone="warning">Low</StatusBadge> : null}
+                      <StockSignalBadge
+                        variance={tank.physicalLitres === null ? null : tank.varianceLitres}
+                        tolerance={tank.acceptableVarianceLitres ?? null}
+                      />
                     </span>
                     <span className="tank-figure">
                       <TankDrum level={level} />
@@ -205,4 +210,18 @@ export function TankOverview({
       ) : null}
     </Card>
   );
+}
+
+/** Green, yellow or red: how far the last dip is from the book stock, against the tank's own limit. */
+function StockSignalBadge({
+  variance,
+  tolerance,
+}: Readonly<{ variance: string | null; tolerance: string | null }>) {
+  const signal = classifyStockVariance(variance, tolerance);
+  if (signal === 'unjudged') {
+    return <StatusBadge tone="neutral">Not checked</StatusBadge>;
+  }
+  if (signal === 'ok') return <StatusBadge tone="positive">Matches books</StatusBadge>;
+  if (signal === 'watch') return <StatusBadge tone="warning">Small difference</StatusBadge>;
+  return <StatusBadge tone="critical">Check this tank</StatusBadge>;
 }
