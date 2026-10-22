@@ -172,6 +172,27 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'status', label: 'Status', kind: 'text' },
     ],
   },
+  {
+    slug: 'daily-reconciliation',
+    title: 'Daily Reconciliation',
+    description:
+      'For each day and shift: who worked, expected sales against what was accounted for.',
+    category: 'sales',
+    scope: 'station',
+    emptyMessage: 'No daily reconciliations were started for these dates and stations.',
+    columns: [
+      { key: 'date', label: 'Date', kind: 'text' },
+      { key: 'station', label: 'Station', kind: 'text' },
+      { key: 'shift', label: 'Shift starts', kind: 'text' },
+      { key: 'attendants', label: 'Attendants', kind: 'text' },
+      { key: 'status', label: 'Status', kind: 'text' },
+      { key: 'expected', label: 'Expected sales (USD)', kind: 'number' },
+      { key: 'accounted', label: 'Accounted for (USD)', kind: 'number' },
+      { key: 'difference', label: 'Short (−) / over (+) (USD)', kind: 'number' },
+      { key: 'explanation', label: 'Explanation', kind: 'text' },
+      { key: 'approvedOn', label: 'Approved on', kind: 'text' },
+    ],
+  },
 ];
 
 export function findTableReport(slug: string): TableReportDefinition | undefined {

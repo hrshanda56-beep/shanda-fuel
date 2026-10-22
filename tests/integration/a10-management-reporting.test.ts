@@ -1429,6 +1429,14 @@ describe('A10 management reporting PostgreSQL read model', () => {
       expect(deposits).toContain('A10 Bank,A10-DEPOSIT,40.0000,40.0000,0.0000,Confirmed');
     });
 
+    it('lists daily reconciliations with expected against accounted sales', async () => {
+      const csv = await (
+        await exportAs(sessionToken, `report=daily-reconciliation&tenantId=${ids.tenant}&${range}`)
+      ).text();
+      expect(csv.trim().split('\r\n').length).toBeGreaterThan(1);
+      expect(csv).toContain('135.0000,130.0000,-5.0000');
+    });
+
     it('applies station authorisation to the table reports too', async () => {
       const response = await exportAs(
         scopedSessionToken,

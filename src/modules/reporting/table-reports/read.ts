@@ -378,6 +378,74 @@ export const readBankDeposits: TableReportReader = async (transaction, filters) 
   }));
 };
 
+export const readDailyReconciliation: TableReportReader = async (transaction, filters) => {
+  const rows = await transaction.execute<{
+    date: string;
+    station: string;
+    shift: string | null;
+    attendants: string | null;
+    state: string;
+    expected: string | null;
+    accounted: string | null;
+    difference: string | null;
+    explanation: string | null;
+    approved_on: string | null;
+  }>(sql`
+    select bd.business_date as date, st.name as station,
+      to_char(sh.planned_start_at at time zone st.timezone, 'HH24:MI') as shift,
+      (select string_agg(u.name, ', ' order by u.name)
+         from app.reconciliation_attendants ra
+         join app.memberships am on am.tenant_id = ra.tenant_id and am.id = ra.attendant_id
+         join app.users u on u.id = am.identity_id
+        where ra.tenant_id = r.tenant_id and ra.station_id = r.station_id
+          and ra.reconciliation_id = r.id) as attendants,
+      r.state, rev.expected_sales::text as expected, rev.accounted_sales::text as accounted,
+      rev.variance::text as difference, rev.variance_explanation as explanation,
+      to_char(r.approved_at at time zone st.timezone, 'YYYY-MM-DD') as approved_on
+    from app.reconciliations r
+    join app.stations st on st.tenant_id = r.tenant_id and st.id = r.station_id
+    join app.station_business_days bd
+      on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
+    left join app.shifts sh
+      on sh.tenant_id = r.tenant_id and sh.station_id = r.station_id and sh.id = r.shift_id
+    left join lateral (
+      select v.expected_sales, v.accounted_sales, v.variance, v.variance_explanation
+      from app.reconciliation_revisions v
+      where v.tenant_id = r.tenant_id and v.station_id = r.station_id and v.reconciliation_id = r.id
+      order by v.revision desc
+      limit 1
+    ) rev on true
+    where r.tenant_id = ${filters.tenantId}
+      and bd.business_date between ${filters.fromDate} and ${filters.toDate}
+      ${stationClause('r', filters.stationIds)}
+    order by bd.business_date desc, st.name, sh.planned_start_at, r.id
+    limit ${limit}
+  `);
+  const statuses: Record<string, string> = {
+    DRAFT: 'Being prepared',
+    READY: 'Ready to send',
+    SUBMITTED: 'Waiting for approval',
+    PENDING_APPROVAL: 'Waiting for approval',
+    RETURNED: 'Sent back for correction',
+    REJECTED: 'Rejected',
+    APPROVED: 'Approved',
+    POSTED: 'Approved and posted',
+    LOCKED: 'Closed',
+  };
+  return rows.map((row) => ({
+    date: row.date,
+    station: row.station,
+    shift: row.shift ?? 'Whole day',
+    attendants: row.attendants,
+    status: statuses[row.state] ?? row.state,
+    expected: row.expected,
+    accounted: row.accounted,
+    difference: row.difference,
+    explanation: row.explanation,
+    approvedOn: row.approved_on,
+  }));
+};
+
 export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> = {
   'tank-dip-history': readTankDipHistory,
   'stock-movements': readStockMovements,
@@ -387,4 +455,5 @@ export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> =
   'customer-statement': readCustomerStatement,
   'cash-custody': readCashCustody,
   'bank-deposits': readBankDeposits,
+  'daily-reconciliation': readDailyReconciliation,
 };
