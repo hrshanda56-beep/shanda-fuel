@@ -263,6 +263,11 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, code, name, classification, status, created_by)
         values ('${ids.factExpenseCategory}', '${ids.tenant}', 'A10_TEST', 'A10 test expense', 'OPERATING', 'ACTIVE', '${ids.membership}')
         on conflict (id) do nothing;
+      insert into app.expenses
+        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount, submitted_by)
+        values ('${ids.factExpense}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${ids.factExpenseCategory}',
+         '2026-09-20', 'A10 test expense', 2.0000, '${ids.membership}')
+        on conflict (id) do nothing;
       insert into app.expense_recognition_movements
         (id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
          source_type, source_id, recognition_date, currency, amount, actor_membership_id)
