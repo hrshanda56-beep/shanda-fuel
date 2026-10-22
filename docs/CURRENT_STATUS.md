@@ -122,6 +122,22 @@ unauthenticated "Demo user" shell that Clerk-only authentication removed. The
 browser suite cannot be called green until those users exist and stale specs are
 updated.
 
+### Reports expansion (2026-10-22, committed on the integration branch)
+
+Ten plain-table reports were added next to the original eight, through one shared layer
+(`src/modules/reporting/table-reports/`): Tank Dip History, Stock Movement History, Delivery
+Variance, Expenses by Category, Supplier Statement, Customer Statement, Cash Custody & Handovers,
+Bank Deposits and Daily Reconciliation. Each uses the same tenant/station authorisation as the
+management report and downloads as CSV, Excel or PDF through the existing step-up and audit path.
+Statements carry exact running balances computed in SQL. Customer balances have no station
+dimension (ADR-017), so a station-filtered customer statement shows an explanation, not figures.
+Cash reports use the station's timezone for dates (the older banked-cash figure in the management
+report still uses the UTC calendar date). Covered by `a10-management-reporting` (22 tests).
+
+Not built, waiting for an owner rule: **sales by attendant** (how a shift's sales are split when
+several attendants share it) and **customer ageing** (how payments are applied to older charges).
+Supplier ageing already exists in the supplier summary.
+
 ## Finance backend completion candidate — 2026-10-19
 
 The requested finance backend work is being implemented on branch
