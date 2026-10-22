@@ -3,6 +3,8 @@
  * This file is the pure part: what each report is called, which category it sits
  * under and which columns it shows. The queries live in `read.ts`.
  */
+import type { ReportCategoryId } from '../catalog';
+
 export type TableReportColumn = Readonly<{
   key: string;
   label: string;
@@ -16,7 +18,12 @@ export type TableReportDefinition = Readonly<{
   slug: string;
   title: string;
   description: string;
-  category: 'inventory';
+  category: ReportCategoryId;
+  /**
+   * `organisation` figures are kept for the whole organisation, not by station (ADR-017), so
+   * choosing stations shows an explanation instead of figures that would not match the choice.
+   */
+  scope: 'station' | 'organisation';
   /** Said on the page when there is nothing to show for the chosen dates. */
   emptyMessage: string;
   columns: readonly TableReportColumn[];
@@ -28,6 +35,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     title: 'Tank Dip History',
     description: 'Every tank dip reading taken, by tank and day.',
     category: 'inventory',
+    scope: 'station',
     emptyMessage: 'No tank dips were recorded for these dates and stations.',
     columns: [
       { key: 'businessDate', label: 'Date', kind: 'text' },
@@ -44,6 +52,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     title: 'Stock Movement History',
     description: 'Every change to fuel stock: deliveries, sales and adjustments.',
     category: 'inventory',
+    scope: 'station',
     emptyMessage: 'No stock movements were recorded for these dates and stations.',
     columns: [
       { key: 'businessDate', label: 'Date', kind: 'text' },
@@ -61,6 +70,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     title: 'Delivery Variance',
     description: 'Litres on the delivery note against litres actually received.',
     category: 'inventory',
+    scope: 'station',
     emptyMessage: 'No confirmed deliveries were received for these dates and stations.',
     columns: [
       { key: 'businessDate', label: 'Date', kind: 'text' },
@@ -71,6 +81,56 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'noteLitres', label: 'On the note (L)', kind: 'number' },
       { key: 'actualLitres', label: 'Received (L)', kind: 'number' },
       { key: 'shortageExcessLitres', label: 'Short (−) / over (+) (L)', kind: 'number' },
+    ],
+  },
+  {
+    slug: 'expenses-detail',
+    title: 'Expenses by Category',
+    description: 'Every expense recognised in the period, with its category and who was paid.',
+    category: 'statements',
+    scope: 'station',
+    emptyMessage: 'No expenses were recognised for these dates and stations.',
+    columns: [
+      { key: 'businessDate', label: 'Date', kind: 'text' },
+      { key: 'station', label: 'Station', kind: 'text' },
+      { key: 'category', label: 'Category', kind: 'text' },
+      { key: 'kind', label: 'Type of cost', kind: 'text' },
+      { key: 'description', label: 'What it was for', kind: 'text' },
+      { key: 'payee', label: 'Paid to', kind: 'text' },
+      { key: 'reference', label: 'Reference', kind: 'text' },
+      { key: 'amount', label: 'Amount (USD)', kind: 'number' },
+    ],
+  },
+  {
+    slug: 'supplier-statement',
+    title: 'Supplier Statement',
+    description: 'Invoices, credit notes and payments for each supplier, with what is still owed.',
+    category: 'credit',
+    scope: 'station',
+    emptyMessage: 'No supplier invoices or payments were recorded for these dates.',
+    columns: [
+      { key: 'date', label: 'Date', kind: 'text' },
+      { key: 'supplier', label: 'Supplier', kind: 'text' },
+      { key: 'what', label: 'What happened', kind: 'text' },
+      { key: 'amount', label: 'Owed (+) / paid (−) (USD)', kind: 'number' },
+      { key: 'balance', label: 'Still owed after this (USD)', kind: 'number' },
+    ],
+  },
+  {
+    slug: 'customer-statement',
+    title: 'Customer Statement',
+    description:
+      'Fuel on account, payments and prepaid top-ups for each customer, with the balance.',
+    category: 'credit',
+    scope: 'organisation',
+    emptyMessage: 'No customer account activity was recorded for these dates.',
+    columns: [
+      { key: 'date', label: 'Date', kind: 'text' },
+      { key: 'customer', label: 'Customer', kind: 'text' },
+      { key: 'account', label: 'Account', kind: 'text' },
+      { key: 'what', label: 'What happened', kind: 'text' },
+      { key: 'amount', label: 'Up (+) / down (−) (USD)', kind: 'number' },
+      { key: 'balance', label: 'Balance after this (USD)', kind: 'number' },
     ],
   },
 ];

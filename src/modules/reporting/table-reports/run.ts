@@ -21,6 +21,8 @@ export type TableReportResult = Readonly<{
   rows: readonly TableReportRow[];
   /** True when more rows exist than the report shows. */
   truncated: boolean;
+  /** Said instead of figures when the choice cannot be answered truthfully. */
+  notice: string | null;
 }>;
 
 /**
@@ -49,7 +51,26 @@ export async function runTableReport(
           stationId: single.id,
         })
       : authority.transaction;
-  const all = await withTenantTransaction(context, (transaction) => reader(transaction, filters));
+  const base = {
+    definition,
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+    stationCount: filters.stationIds.length,
+  };
+  // Whole-organisation figures are never shown for a single station's view.
+  if (definition.scope === 'organisation' && filters.stationIds.length > 0) {
+    return {
+      ...base,
+      rows: [],
+      truncated: false,
+      notice:
+        'These figures are kept for the whole organisation, not by station. Choose all stations to see them.',
+    };
+  }
+  const legalEntityIds = [...new Set(stations.map((station) => station.legalEntityId))].sort();
+  const all = await withTenantTransaction(context, (transaction) =>
+    reader(transaction, filters, { legalEntityIds }),
+  );
   return {
     definition,
     fromDate: filters.fromDate,
@@ -57,5 +78,6 @@ export async function runTableReport(
     stationCount: filters.stationIds.length,
     rows: all.slice(0, TABLE_REPORT_ROW_LIMIT),
     truncated: all.length > TABLE_REPORT_ROW_LIMIT,
+    notice: null,
   };
 }

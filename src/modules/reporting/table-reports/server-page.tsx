@@ -67,7 +67,11 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
                   fromDate={data.range.fromDate}
                   toDate={data.range.toDate}
                 />
-                {data.result ? (
+                {data.result?.notice ? (
+                  <p className="field-hint" role="status">
+                    {data.result.notice}
+                  </p>
+                ) : data.result ? (
                   <TableReportTable
                     definition={definition}
                     rows={data.result.rows}

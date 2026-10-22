@@ -11,6 +11,7 @@ type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 export type TableReportReader = (
   transaction: Transaction,
   filters: ManagementReportQuery,
+  scope: Readonly<{ legalEntityIds: readonly string[] }>,
 ) => Promise<TableReportRow[]>;
 
 function stationClause(alias: string, stationIds: readonly string[]): SQL {
@@ -144,8 +145,151 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
   }));
 };
 
+export const readExpensesDetail: TableReportReader = async (transaction, filters) => {
+  const rows = await transaction.execute<{
+    business_date: string;
+    station: string;
+    category: string;
+    classification: string;
+    description: string;
+    payee: string | null;
+    reference: string | null;
+    amount: string;
+  }>(sql`
+    select m.recognition_date as business_date, s.name as station, c.name as category,
+      m.classification,
+      coalesce(e.description, t.name, 'Recognised expense') as description,
+      e.payee, e.reference,
+      coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount
+    from app.expense_recognition_movements m
+    join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
+    join app.expense_categories c on c.tenant_id = m.tenant_id and c.id = m.category_id
+    left join app.expenses e on e.tenant_id = m.tenant_id
+      and e.id = m.source_id and m.source_type = 'EXPENSE'
+    left join app.recurring_cost_recognitions r on r.tenant_id = m.tenant_id
+      and r.id = m.source_id and m.source_type = 'RECURRING_COST_RECOGNITION'
+    left join app.recurring_cost_periods p on p.tenant_id = r.tenant_id and p.id = r.period_id
+    left join app.recurring_cost_templates t on t.tenant_id = p.tenant_id and t.id = p.template_id
+    where m.tenant_id = ${filters.tenantId}
+      and m.recognition_date between ${filters.fromDate} and ${filters.toDate}
+      ${stationClause('m', filters.stationIds)}
+    group by m.recognition_date, s.name, c.name, m.classification, e.description, t.name,
+      e.payee, e.reference, m.source_type, m.source_id
+    order by m.recognition_date desc, s.name, c.name, m.source_id
+    limit ${limit}
+  `);
+  const kinds: Record<string, string> = {
+    OPERATING: 'Running cost',
+    FIXED_COST: 'Fixed cost',
+    DIRECT_INVENTORY_COST: 'Cost of fuel stock',
+  };
+  return rows.map((row) => ({
+    businessDate: row.business_date,
+    station: row.station,
+    category: row.category,
+    kind: kinds[row.classification] ?? row.classification,
+    description: row.description,
+    payee: row.payee,
+    reference: row.reference,
+    amount: row.amount,
+  }));
+};
+
+export const readSupplierStatement: TableReportReader = async (
+  transaction,
+  filters,
+  { legalEntityIds },
+) => {
+  const entities =
+    legalEntityIds.length > 0
+      ? sql`and m.legal_entity_id in (${sql.join(
+          legalEntityIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql``;
+  const rows = await transaction.execute<{
+    date: string;
+    supplier: string;
+    what: string;
+    amount: string;
+    balance: string;
+  }>(sql`
+    select * from (
+      select m.effective_date as date, s.legal_name as supplier,
+        case m.movement_type when 'INVOICE' then 'Invoice' when 'CREDIT_NOTE' then 'Credit note'
+          when 'PAYMENT' then 'Payment' when 'PAYMENT_REVERSAL' then 'Payment reversed'
+          else m.movement_type end as what,
+        (case when m.movement_type in ('INVOICE', 'PAYMENT_REVERSAL') then m.amount
+              when m.movement_type in ('CREDIT_NOTE', 'PAYMENT') then -m.amount
+              else 0 end)::text as amount,
+        (sum(case when m.movement_type in ('INVOICE', 'PAYMENT_REVERSAL') then m.amount
+                  when m.movement_type in ('CREDIT_NOTE', 'PAYMENT') then -m.amount
+                  else 0 end)
+          over (partition by m.supplier_id order by m.effective_date, m.posted_at, m.id))::text as balance,
+        m.supplier_id, m.posted_at, m.id
+      from app.supplier_account_movements m
+      join app.suppliers s on s.tenant_id = m.tenant_id and s.id = m.supplier_id
+      where m.tenant_id = ${filters.tenantId} and m.effective_date <= ${filters.toDate}
+        ${entities}
+    ) statement
+    where date >= ${filters.fromDate}
+    order by supplier, date, posted_at, id
+    limit ${limit}
+  `);
+  return rows.map((row) => ({
+    date: row.date,
+    supplier: row.supplier,
+    what: row.what,
+    amount: row.amount,
+    balance: row.balance,
+  }));
+};
+
+export const readCustomerStatement: TableReportReader = async (transaction, filters) => {
+  const rows = await transaction.execute<{
+    date: string;
+    customer: string;
+    account: string;
+    what: string;
+    amount: string;
+    balance: string;
+  }>(sql`
+    select * from (
+      select l.business_date as date, c.display_name as customer,
+        case l.account_type when 'CREDIT' then 'Credit account' else 'Prepaid value' end as account,
+        case l.entry_type when 'CREDIT_FUEL_CHARGE' then 'Fuel on account'
+          when 'CUSTOMER_PAYMENT' then 'Payment received' when 'PREPAID_TOPUP' then 'Prepaid top-up'
+          when 'PREPAID_FUEL_USAGE' then 'Prepaid fuel used' when 'ADJUSTMENT' then 'Adjustment'
+          when 'REVERSAL' then 'Reversal' else l.entry_type end as what,
+        (case when l.direction = 'INCREASE' then l.amount else -l.amount end)::text as amount,
+        (sum(case when l.direction = 'INCREASE' then l.amount else -l.amount end)
+          over (partition by l.customer_id, l.account_type
+                order by l.business_date, l.occurred_at, l.id))::text as balance,
+        l.occurred_at, l.id
+      from app.customer_ledger_entries l
+      join app.customers c on c.tenant_id = l.tenant_id and c.id = l.customer_id
+      where l.tenant_id = ${filters.tenantId} and l.business_date <= ${filters.toDate}
+        and l.account_type in ('CREDIT', 'PREPAID_VALUE')
+    ) statement
+    where date >= ${filters.fromDate}
+    order by customer, account, date, occurred_at, id
+    limit ${limit}
+  `);
+  return rows.map((row) => ({
+    date: row.date,
+    customer: row.customer,
+    account: row.account,
+    what: row.what,
+    amount: row.amount,
+    balance: row.balance,
+  }));
+};
+
 export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> = {
   'tank-dip-history': readTankDipHistory,
   'stock-movements': readStockMovements,
   'delivery-variance': readDeliveryVariance,
+  'expenses-detail': readExpensesDetail,
+  'supplier-statement': readSupplierStatement,
+  'customer-statement': readCustomerStatement,
 };

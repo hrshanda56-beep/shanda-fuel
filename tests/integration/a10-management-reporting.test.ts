@@ -1380,6 +1380,40 @@ describe('A10 management reporting PostgreSQL read model', () => {
       ).toBe('%PDF-');
     });
 
+    it('shows running balances on the supplier and customer statements', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const supplier = await (
+        await exportAs(sessionToken, `report=supplier-statement&${base}`)
+      ).text();
+      const supplierLines = supplier.trim().split('\r\n');
+      // 100 invoice, 5 credit note, 25 payment: 100 → 95 → 70 still owed.
+      expect(supplierLines.at(-3)).toContain(',Invoice,100.0000,100.0000');
+      expect(supplierLines.at(-2)).toContain(',Credit note,-5.0000,95.0000');
+      expect(supplierLines.at(-1)).toContain(',Payment,-25.0000,70.0000');
+
+      const customer = await (
+        await exportAs(sessionToken, `report=customer-statement&${base}`)
+      ).text();
+      expect(customer).toContain('Credit account,Fuel on account,40.0000,40.0000');
+      expect(customer).toContain('Credit account,Payment received,-10.0000,30.0000');
+      expect(customer).toContain('Prepaid value,Prepaid top-up,12.0000,12.0000');
+
+      // Customer balances have no station dimension, so a station view must not show them.
+      const stationView = await (
+        await exportAs(sessionToken, `report=customer-statement&stationIds=${ids.station}&${base}`)
+      ).text();
+      expect(stationView.trim().split('\r\n')).toHaveLength(1);
+    });
+
+    it('lists recognised expenses with their category', async () => {
+      const expenses = await (
+        await exportAs(sessionToken, `report=expenses-detail&tenantId=${ids.tenant}&${range}`)
+      ).text();
+      expect(expenses).toContain('2026-09-20');
+      expect(expenses).toContain('A10 test expense');
+      expect(expenses).toContain(',2.0000');
+    });
+
     it('applies station authorisation to the table reports too', async () => {
       const response = await exportAs(
         scopedSessionToken,
