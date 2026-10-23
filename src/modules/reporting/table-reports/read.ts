@@ -118,11 +118,18 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
     note_litres: string;
     actual_litres: string;
     shortage_excess: string;
+    short_compartments: number;
+    broken_seals: number;
   }>(sql`
     select f.business_date, s.name as station, p.name as product,
       f.delivery_note_number as delivery_note, sup.legal_name as supplier,
       f.note_quantity_litres::text as note_litres, f.actual_quantity_litres::text as actual_litres,
-      f.shortage_excess_litres::text as shortage_excess
+      f.shortage_excess_litres::text as shortage_excess,
+      (select count(*)::int from app.fuel_delivery_compartments c
+        where c.tenant_id = f.tenant_id and c.delivery_id = f.id
+          and c.received_litres < c.note_litres) as short_compartments,
+      (select count(*)::int from app.fuel_delivery_compartment_seals sl
+        where sl.tenant_id = f.tenant_id and sl.delivery_id = f.id and not sl.intact) as broken_seals
     from app.fuel_deliveries f
     join app.stations s on s.tenant_id = f.tenant_id and s.id = f.station_id
     join app.products p on p.tenant_id = f.tenant_id and p.id = f.product_id
@@ -142,6 +149,8 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
     noteLitres: row.note_litres,
     actualLitres: row.actual_litres,
     shortageExcessLitres: row.shortage_excess,
+    shortCompartments: String(row.short_compartments),
+    brokenSeals: String(row.broken_seals),
   }));
 };
 

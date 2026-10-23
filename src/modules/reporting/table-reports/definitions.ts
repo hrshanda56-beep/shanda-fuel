@@ -81,6 +81,8 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'noteLitres', label: 'On the note (L)', kind: 'number' },
       { key: 'actualLitres', label: 'Received (L)', kind: 'number' },
       { key: 'shortageExcessLitres', label: 'Short (−) / over (+) (L)', kind: 'number' },
+      { key: 'shortCompartments', label: 'Compartments short', kind: 'number' },
+      { key: 'brokenSeals', label: 'Broken seals', kind: 'number' },
     ],
   },
   {

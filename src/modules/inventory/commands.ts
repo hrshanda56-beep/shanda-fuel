@@ -16,6 +16,7 @@ import {
 } from '../../platform/db/schema/a4';
 import { litresForReading, normaliseCalibrationChart } from './calibration';
 import { buildLandedCost } from './landed-cost';
+import { assertWaterTestAllowsConfirmation } from '../deliveries/persistence';
 import {
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
@@ -624,6 +625,12 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
       await assertActiveSupplier(transaction, context.tenantId, delivery.supplierId);
       if (delivery.status !== 'DRAFT')
         throw new AppError('CONFLICT', 'Only draft deliveries can be confirmed');
+      // Only enforced when the owner turned the water-test rule on; otherwise recorded, not blocking.
+      await assertWaterTestAllowsConfirmation(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        deliveryId: delivery.id,
+      });
       const allocations = await transaction
         .select()
         .from(fuelDeliveryAllocations)
