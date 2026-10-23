@@ -1,5 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
+
+test.beforeEach(async ({ page }) => {
+  await mockEmptyWorkContext(page);
+});
 
 /**
  * A3 introduced the presentation-only ForecourtWorkspace surface

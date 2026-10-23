@@ -5,7 +5,7 @@ const WIDTHS = [320, 390, 430, 768, 1440];
 const STATES = [
   { state: 'login', heading: 'Welcome back' },
   { state: 'invite-new', heading: "You're joining Shanda Fuel" },
-  { state: 'invite-existing', heading: "You've been invited to another workspace" },
+  { state: 'invite-existing', heading: 'Sign in to join your workspace' },
   { state: 'invite-unavailable', heading: 'This invitation is no longer available' },
   { state: 'picker', heading: 'Where are you working today?' },
   { state: 'no-workplace', heading: "You don't have a workplace yet" },
@@ -87,14 +87,21 @@ test.describe('sign-in behaviour', () => {
     expect(brand!.width / 1440).toBeGreaterThan(0.33);
     expect(brand!.width / 1440).toBeLessThan(0.37);
     await expect(page.getByText('Forgot password?')).toHaveCount(0);
-    await expect(page.getByLabel('Work email')).toHaveAttribute('autocomplete', 'username');
+    await expect(page.getByLabel('Email or Staff Number')).toHaveAttribute(
+      'autocomplete',
+      'username',
+    );
     await expect(page.getByRole('textbox', { name: 'Password' })).toHaveAttribute(
       'autocomplete',
       'current-password',
     );
   });
 
-  test('toggles password visibility without submitting, and Enter submits', async ({ page }) => {
+  // Legacy Better Auth flow: it mocked /api/auth/sign-in/email, which no longer
+  // exists (Clerk-only, DEC-043). Clerk sign-in needs a real Clerk test instance.
+  test.fixme('toggles password visibility without submitting, and Enter submits', async ({
+    page,
+  }) => {
     let submitted = 0;
     await page.route('**/api/auth/sign-in/email', async (route) => {
       submitted += 1;
@@ -121,7 +128,8 @@ test.describe('sign-in behaviour', () => {
     await expect(password).toBeFocused();
   });
 
-  test('rate limiting shows calm copy', async ({ page }) => {
+  // Legacy Better Auth flow, see above.
+  test.fixme('rate limiting shows calm copy', async ({ page }) => {
     await page.route('**/api/auth/sign-in/email', (route) =>
       route.fulfill({ status: 429, contentType: 'application/json', body: '{}' }),
     );

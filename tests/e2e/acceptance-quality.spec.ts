@@ -302,7 +302,7 @@ test('the drawer search entry stays out of the tablet menu, where the header has
   await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'tablet');
   await page.locator('.shell-sidebar').getByRole('button', { name: 'Finance' }).click();
-  const drawer = page.getByRole('dialog', { name: 'More' });
+  const drawer = page.getByRole('dialog', { name: /^(More|Navigation)$/ });
   await expect(drawer).toBeVisible();
   await expect(drawer.locator('.shell-more-search')).toBeHidden();
 });

@@ -1,6 +1,7 @@
 import { seedClerkIdentity, authenticateClerk } from './clerk-fixtures';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
 import postgres, { type Sql } from 'postgres';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -17,6 +18,7 @@ const sessionToken = 'a10-e2e-management-session-token';
 
 test.describe('management reporting surface', () => {
   test('unauthenticated shell explains the required organisation context', async ({ page }) => {
+    await mockEmptyWorkContext(page, '/reports');
     await page.goto('/reports');
     const pageHeader = page.getByRole('region', { name: 'Page header and work context' });
     await expect(pageHeader.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible();

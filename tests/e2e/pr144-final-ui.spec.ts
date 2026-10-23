@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+import { mockEmptyWorkContext } from './fixtures/context-route';
 import { mockContext, mockOverview, STATION, TENANT } from './fixtures/data-filled';
 import { mockReconciliationDetails } from './fixtures/reconciliation-detail';
 
@@ -62,6 +63,7 @@ test.describe('console hygiene', () => {
       if (message.type() === 'error' || message.type() === 'warning') messages.push(message.text());
     });
     page.on('pageerror', (error) => messages.push(error.message));
+    await mockEmptyWorkContext(page);
     await page.goto('/foundation');
     const note = page.getByLabel('Draft note');
     await expect(note).toHaveAttribute('aria-required', 'true');
