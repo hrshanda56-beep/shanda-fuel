@@ -56,6 +56,8 @@ export const CUSTOMER_COMMAND_TYPES = [
   'ExpireCustomerFuelAuthorization',
   'RecordCustomerPayment',
   'RecordPrepaidTopUp',
+  'RecordCustomerEntryDetails',
+  'OverrideCustomerCreditLimit',
 ] as const;
 
 export type CustomerCommandType = (typeof CUSTOMER_COMMAND_TYPES)[number];

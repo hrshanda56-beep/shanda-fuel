@@ -17,6 +17,10 @@ import {
   setCustomerLegalEntityFromRequest,
   updateCustomerFromRequest,
 } from '../../../../modules/customers/commands';
+import {
+  overrideCustomerCreditLimitFromRequest,
+  recordCustomerEntryDetailsFromRequest,
+} from '../../../../modules/customers/account-controls';
 import { AppError } from '../../../../platform/errors';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
@@ -71,6 +75,10 @@ export const POST = withRequestObservability(
           return response(await cancelCustomerFuelAuthorizationFromRequest(request, body));
         case 'ExpireCustomerFuelAuthorization':
           return response(await expireCustomerFuelAuthorizationFromRequest(request, body));
+        case 'RecordCustomerEntryDetails':
+          return response(await recordCustomerEntryDetailsFromRequest(request, body), 201);
+        case 'OverrideCustomerCreditLimit':
+          return response(await overrideCustomerCreditLimitFromRequest(request, body));
       }
     } catch (error) {
       return apiErrorResponse(request, error, {

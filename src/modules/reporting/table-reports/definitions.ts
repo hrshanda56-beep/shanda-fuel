@@ -4,6 +4,7 @@
  * under and which columns it shows. The queries live in `read.ts`.
  */
 import type { ReportCategoryId } from '../catalog';
+import { CUSTOMER_AGEING_REPORT } from './customer-ageing';
 
 export type TableReportColumn = Readonly<{
   key: string;
@@ -193,6 +194,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'approvedOn', label: 'Approved on', kind: 'text' },
     ],
   },
+  CUSTOMER_AGEING_REPORT,
 ];
 
 export function findTableReport(slug: string): TableReportDefinition | undefined {

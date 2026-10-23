@@ -113,7 +113,9 @@ export type CustomerAccountAuditActionCode =
   | 'CUSTOMER.LEDGER_REVERSAL_POSTED'
   | 'CUSTOMER.UPDATED'
   | 'CUSTOMER.ACTIVATED'
-  | 'CUSTOMER.DEACTIVATED';
+  | 'CUSTOMER.DEACTIVATED'
+  | 'CUSTOMER.ENTRY_DETAILS_RECORDED'
+  | 'CUSTOMER.CREDIT_LIMIT_OVERRIDDEN';
 
 export type CustomerAccountAuditEvent = Readonly<{
   eventId: string;

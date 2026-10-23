@@ -18,6 +18,50 @@ const statementPeriod = z
   .trim()
   .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'A statement period must use YYYY-MM');
 
+const requiredText = (max: number) => z.string().trim().min(1).max(max);
+
+/**
+ * S13: what is written down about one account transaction. Every field is optional on its own (the
+ * owner has not said which are mandatory); at least one must be given. Voucher numbers are NOT
+ * required to be unique (open owner decision).
+ */
+export const customerEntryDetailsSchema = z
+  .object({
+    /** Stored in capitals so "abc 1234" and "ABC 1234" are the same vehicle. */
+    vehicleRegistration: requiredText(20)
+      .transform((value) => value.toUpperCase())
+      .optional(),
+    driverName: requiredText(120).optional(),
+    voucherNumber: requiredText(60).optional(),
+    /** The person (membership) who approved the transaction. */
+    approvedByMembershipId: uuid.optional(),
+    /** An already-uploaded supporting document (see the documents module). */
+    documentId: uuid.optional(),
+  })
+  .strict()
+  .refine((details) => Object.values(details).some((value) => value !== undefined), {
+    message: 'Add at least one of vehicle, driver, voucher number, approver or document.',
+  });
+
+export const recordCustomerEntryDetailsSchema = z.object({
+  commandType: z.literal('RecordCustomerEntryDetails'),
+  tenantId: uuid,
+  /** The station where the transaction happened or the cash was received. */
+  stationId: uuid,
+  ledgerEntryId: uuid,
+  details: customerEntryDetailsSchema,
+});
+
+export const overrideCustomerCreditLimitSchema = z.object({
+  commandType: z.literal('OverrideCustomerCreditLimit'),
+  tenantId: uuid,
+  accountId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  newLimit: decimalText.refine((value) => /[1-9]/.test(value), 'A credit limit must be above zero'),
+  approvedByMembershipId: uuid,
+  reason: z.string().trim().min(1, 'Say why the limit is being changed').max(500),
+});
+
 export const customerAccountTypeSchema = z.enum(['CREDIT', 'PREPAID_VALUE', 'PREPAID_LITRES']);
 export const customerSourceSchema = z.object({
   sourceType: z.enum([
@@ -188,6 +232,7 @@ export const completeCustomerFuelTransactionSchema = z.object({
   }),
   occurredAt: instant,
   businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  entryDetails: customerEntryDetailsSchema.optional(),
 });
 
 export const authorizeCustomerFuelSchema = z.object({
@@ -226,6 +271,7 @@ export const recordCustomerPaymentSchema = z.object({
   occurredAt: instant,
   businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   note: z.string().trim().max(500).optional(),
+  entryDetails: customerEntryDetailsSchema.optional(),
 });
 
 export const recordPrepaidTopUpSchema = z
@@ -242,6 +288,7 @@ export const recordPrepaidTopUpSchema = z
     source: customerSourceSchema,
     occurredAt: instant,
     businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    entryDetails: customerEntryDetailsSchema.optional(),
   })
   .superRefine((input, refinement) => {
     if (
@@ -296,6 +343,9 @@ export type SetCustomerAccountStationsInput = z.infer<typeof setCustomerAccountS
 export type CompleteCustomerFuelTransactionInput = z.infer<
   typeof completeCustomerFuelTransactionSchema
 >;
+export type CustomerEntryDetailsInput = z.infer<typeof customerEntryDetailsSchema>;
+export type RecordCustomerEntryDetailsInput = z.infer<typeof recordCustomerEntryDetailsSchema>;
+export type OverrideCustomerCreditLimitInput = z.infer<typeof overrideCustomerCreditLimitSchema>;
 export type RecordCustomerPaymentInput = z.infer<typeof recordCustomerPaymentSchema>;
 export type RecordPrepaidTopUpInput = z.infer<typeof recordPrepaidTopUpSchema>;
 export type RequestCustomerFuelAuthorizationInput = z.infer<

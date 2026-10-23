@@ -34,6 +34,7 @@ import {
   updateCustomerMasterData,
 } from './domain';
 import type { CustomerCommandContext, CustomerTransaction } from './application';
+import { insertCustomerEntryDetails } from './entry-details-store';
 import type {
   CompleteCustomerFuelTransactionInput,
   CreateCustomerAccountInput,
@@ -650,7 +651,7 @@ export async function setCustomerAccountStationsInTransaction(
   };
 }
 
-async function loadAccountStationPolicy(
+export async function loadAccountStationPolicy(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
   accountId: string,
@@ -728,6 +729,13 @@ export async function recordCustomerPaymentInTransaction(
     context.authority.membership.membershipId,
     input.receivingStationId,
   );
+  if (input.entryDetails) {
+    await insertCustomerEntryDetails(transaction, context, {
+      ledgerEntryId: entry.id,
+      accountId: input.accountId,
+      details: input.entryDetails,
+    });
+  }
   return {
     entryId: entry.id,
     receivingStationId: input.receivingStationId,
@@ -798,6 +806,13 @@ export async function recordPrepaidTopUpInTransaction(
     businessDate: input.businessDate,
   });
   await insertLedgerEntry(transaction, entry, context.authority.membership.membershipId);
+  if (input.entryDetails) {
+    await insertCustomerEntryDetails(transaction, context, {
+      ledgerEntryId: entry.id,
+      accountId: input.accountId,
+      details: input.entryDetails,
+    });
+  }
   return {
     entryId: entry.id,
     balance: deriveAccountBalance(loaded.account, [...loaded.entries, entry]),
@@ -1046,6 +1061,13 @@ export async function completeCustomerFuelTransactionInTransaction(
     result.ledgerEntry,
     context.authority.membership.membershipId,
   );
+  if (input.entryDetails) {
+    await insertCustomerEntryDetails(transaction, context, {
+      ledgerEntryId: result.ledgerEntry.id,
+      accountId: input.accountId,
+      details: input.entryDetails,
+    });
+  }
   await transaction.execute(sql`
     update app.customer_fuel_authorizations
     set used_amount=${result.authorization.used.amount.amount.toString()}, used_litres=${result.authorization.used.litres.toString()}, remaining_amount=${result.authorization.remaining.amount.amount.toString()}, remaining_litres=${result.authorization.remaining.litres.toString()}, state=${result.authorization.state}, completed_at=${result.authorization.state === 'COMPLETED' ? sql`now()` : sql`null`}, version=version+1, updated_at=now()
