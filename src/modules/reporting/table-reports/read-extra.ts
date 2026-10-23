@@ -5,6 +5,7 @@ import type { ManagementReportQuery } from '../contracts';
 import { creditSalesToAttendants, type AttendantShiftSale } from '../sales-by-attendant';
 import { TABLE_REPORT_ROW_LIMIT } from './definitions';
 import type { TableReportReader } from './read';
+import { PAYMENT_METHOD_OPTIONS } from './narrowing';
 
 /** `and <column> = <value>` when the person chose a value, otherwise nothing. */
 export function equalsClause(column: string, value: string | undefined): SQL {
@@ -228,5 +229,48 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
     litres: row.litres,
     sales: row.sales,
     accounted: row.accounted,
+  }));
+};
+
+/** Approved sales by how they were paid, for each station. */
+export const readPaymentMethodBreakdown: TableReportReader = async (transaction, filters) => {
+  const stationClause = filters.stationIds.length
+    ? sql`and r.station_id in (${sql.join(
+        filters.stationIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})`
+    : sql``;
+  const rows = await transaction.execute<{
+    station: string;
+    method: string;
+    entries: string;
+    amount: string;
+  }>(sql`
+    select st.name as station, p.method, count(*)::text as entries, sum(p.amount)::text as amount
+    from app.reconciliation_payments p
+    join app.reconciliations r
+      on r.tenant_id = p.tenant_id and r.station_id = p.station_id and r.id = p.reconciliation_id
+    join app.stations st on st.tenant_id = r.tenant_id and st.id = r.station_id
+    join app.station_business_days bd
+      on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
+    left join app.shifts sh
+      on sh.tenant_id = r.tenant_id and sh.station_id = r.station_id and sh.id = r.shift_id
+    where r.tenant_id = ${filters.tenantId} and r.state in ('APPROVED', 'POSTED', 'LOCKED')
+      and bd.business_date between ${filters.fromDate} and ${filters.toDate}
+      and p.amount > 0
+      ${stationClause}
+      ${equalsClause('sh.shift_template_id', filters.shiftTemplateId)}
+      ${equalsClause('p.method', filters.paymentMethod)}
+      ${reconciliationNarrowing('r', { ...filters, paymentMethod: undefined })}
+    group by st.name, p.method
+    order by st.name, sum(p.amount) desc
+    limit ${limit}
+  `);
+  const labels = new Map(PAYMENT_METHOD_OPTIONS.map((option) => [option.id, option.label]));
+  return rows.map((row) => ({
+    station: row.station,
+    method: labels.get(row.method) ?? row.method,
+    entries: row.entries,
+    amount: row.amount,
   }));
 };

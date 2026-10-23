@@ -16,6 +16,7 @@ import {
 } from '../../cash/status';
 import {
   equalsClause,
+  readPaymentMethodBreakdown,
   readPurchases,
   readSalesByAttendant,
   readSupplierPayments,
@@ -532,4 +533,5 @@ export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> =
   purchases: readPurchases,
   'supplier-payments': readSupplierPayments,
   'sales-by-attendant': readSalesByAttendant,
+  'payment-method-breakdown': readPaymentMethodBreakdown,
 };

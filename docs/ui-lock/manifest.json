@@ -56,6 +56,7 @@
     "src/app/reports/expenses-detail/page.tsx": "975167011041185153000c56f6a9aee632046aebd1a495312c0b5de90450621c",
     "src/app/reports/loading.tsx": "76105b91f9dbc2ecde0df07233a7b5adb5eccd6570e9986b052cd16c7ee4add9",
     "src/app/reports/page.tsx": "5c433b903e946f0f9b2c59565ae7f1c24ab8cf78afd5365fe4088c3dc18ccd10",
+    "src/app/reports/payment-method-breakdown/page.tsx": "0838a9cf385f8fca5defb410b910d221919a4bcd33879562d7ad6a4f2c597cb1",
     "src/app/reports/purchases/page.tsx": "b0ab8548fdd7f22e662b68a494a45e6e97a54d18ccf679665c3d670234a8969a",
     "src/app/reports/sales-by-attendant/page.tsx": "75283ac1ba18036615c719ee6793f128616dc434f0fd7b23b783ff68858497a0",
     "src/app/reports/stock-movements/page.tsx": "e4d362377397c7885b8923f37550cbfd32c4b4c9e109ad5914dfe0316714f6f2",

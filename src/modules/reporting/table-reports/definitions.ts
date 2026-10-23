@@ -280,6 +280,22 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'accounted', label: 'Accounted for (USD)', kind: 'number' },
     ],
   },
+  {
+    slug: 'payment-method-breakdown',
+    title: 'Payment Method Breakdown',
+    description:
+      'How approved sales were paid: cash, card, EcoCash, bank transfer, customer credit, prepaid and fuel given to staff, for each station.',
+    category: 'sales',
+    scope: 'station',
+    emptyMessage: 'No approved shift reports were found for these dates and stations.',
+    filters: ['shift', 'employee', 'paymentMethod'],
+    columns: [
+      { key: 'station', label: 'Station', kind: 'text' },
+      { key: 'method', label: 'Paid by', kind: 'text' },
+      { key: 'entries', label: 'Entries', kind: 'number' },
+      { key: 'amount', label: 'Amount (USD)', kind: 'number' },
+    ],
+  },
 ];
 
 export function findTableReport(slug: string): TableReportDefinition | undefined {
