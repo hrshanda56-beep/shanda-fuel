@@ -912,3 +912,11 @@ Cross-station presentation reuses existing server read services and streaming. F
 ### Unified expense integration — 2026-10-19
 
 Jordan approved using incoming PR #146 expenses as the base and adding operational fact versions and shift links. Keep finance lifecycle and postings. No second editable shift-expense authority. Applied migration streams require explicit conversion, not checksum rewriting or blind renumbering. Existing posted corrections retain reversals.
+
+## PROPOSED — Staff fuel benefit accounts (S13, TEI Oils brief) — 2026-10-23
+
+Status: PROPOSED. Not approved. Awaiting owner sign-off (docs/v1-owner-decisions-proposed.md, item 8). Nothing here is a recorded decision until the owner agrees.
+
+Proposed default: a staff fuel benefit is a normal credit account (same ledger, statement and ageing) marked as a staff member's benefit in `app.customer_staff_benefit_terms` (migration 0070). The limit is monthly and in USD, set when the account is opened. The calendar month follows the station business date (station timezone). Payments do not give the month's allowance back; a reversed charge does. The limit is the account's credit limit, so it changes only through the existing credit-limit override approval (owner or administrator, not self-approved). Requests that would take the staff member past the month's limit are refused at fuel approval.
+
+Not built, and not decided: a litre-based limit; posting the cost to expenses rather than sales (item 8 says "the cost goes to expenses"); any payroll deduction. Customer overdue alerts use a working default of 30 days since the oldest unpaid charge (`customerOverdueDays`), awaiting owner confirmation; customers have no per-customer credit period.

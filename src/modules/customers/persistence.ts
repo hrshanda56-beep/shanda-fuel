@@ -509,6 +509,8 @@ export async function createCustomerAccountInTransaction(
   if (!customer[0]) throw new AppError('NOT_FOUND', 'The customer was not found');
   if (customer[0].status !== 'ACTIVE')
     throw new AppError('CONFLICT', 'Accounts may only be opened for active customers');
+  if (input.staffBenefit && input.accountType !== 'CREDIT')
+    throw new AppError('VALIDATION_FAILED', 'A staff fuel benefit uses a credit account.');
   const accountId = randomUUID();
   const limit = input.creditLimit ?? null;
   const parsedLimit = limit ? new ExactDecimal(limit).value : null;
@@ -544,6 +546,14 @@ export async function createCustomerAccountInTransaction(
       legalEntityId,
       input.stationIds ?? [],
     );
+  }
+  if (input.staffBenefit) {
+    await transaction.execute(sql`
+      insert into app.customer_staff_benefit_terms
+        (tenant_id, account_id, staff_name, staff_membership_id, created_by)
+      values (${context.tenantId}, ${accountId}, ${input.staffBenefit.staffName.trim()},
+              ${input.staffBenefit.staffMembershipId ?? null}, ${context.authority.membership.membershipId})
+    `);
   }
   return { accountId, accountType: input.accountType, stationScope, stationScopeConfigured };
 }
@@ -919,6 +929,32 @@ async function activeReservations(
   });
 }
 
+async function isStaffBenefitAccount(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  accountId: string,
+): Promise<boolean> {
+  const rows = await transaction.execute<{ id: string }>(sql`
+    select id from app.customer_staff_benefit_terms
+    where tenant_id = ${context.tenantId} and account_id = ${accountId}
+  `);
+  return rows.length > 0;
+}
+
+/** Today's date at the station, from the station's own timezone (never the browser's). */
+async function stationBusinessDate(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+): Promise<string> {
+  const rows = await transaction.execute<{ today: string }>(sql`
+    select to_char(now() at time zone s.timezone, 'YYYY-MM-DD') as today
+    from app.stations s
+    where s.tenant_id = ${context.tenantId} and s.id = ${context.stationId}
+  `);
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'The station was not found.');
+  return rows[0].today;
+}
+
 export async function authorizeCustomerFuelInTransaction(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
@@ -939,6 +975,9 @@ export async function authorizeCustomerFuelInTransaction(
     account: loaded.account,
     entries: loaded.entries,
     activeReservations: await activeReservations(transaction, context, authorization.accountId),
+    ...((await isStaffBenefitAccount(transaction, context, authorization.accountId))
+      ? { staffBenefit: { asAt: await stationBusinessDate(transaction, context) } }
+      : {}),
   });
   if (next.version !== input.expectedVersion + 1 || authorization.version !== input.expectedVersion)
     throw new AppError(

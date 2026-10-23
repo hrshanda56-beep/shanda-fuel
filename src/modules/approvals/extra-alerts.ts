@@ -1,6 +1,7 @@
 import { formatLitres, formatUsd } from '../../design-system/formatters';
 import { ExactDecimal } from '../../platform/domain/primitives';
 import { paymentNeedsProofFlag } from '../creditors/payment-proof';
+import type { CustomerOverLimitFact, CustomerOverdueFact } from '../customers/alert-facts';
 import { daysBetween, type OperationsAlert } from './operations-alerts';
 
 /**
@@ -9,9 +10,11 @@ import { daysBetween, type OperationsAlert } from './operations-alerts';
  * information. Pure and exact; the server code that reads the facts is in
  * `extra-alert-facts.ts`.
  *
- * Customer "overdue" is not here on purpose: customer accounts have no due date or credit
- * period yet, so there is nothing true to measure. `ExtraAlertFacts.customerOverdue` is the
- * hook for when that data exists. Customers over their limit is already an Action Center alert.
+ * Customer alerts (S18): "overdue" has no per-customer credit period to measure against yet, so
+ * it uses one working default for everyone (`customerOverdueDays`, awaiting owner confirmation)
+ * applied to the oldest unpaid charge (the ageing rule: payments clear the oldest charge first).
+ * Over-limit names the account; the Action Center also shows a count of customers over their limit.
+ * Customer credit is organisation-wide (ADR-017), so these appear at every station.
  */
 
 /**
@@ -28,6 +31,8 @@ export type ExtraAlertSettings = Readonly<{
   deliveryShortageMinimumLitres: string;
   /** How far back dated items are looked for. */
   lookbackDays: number;
+  /** A customer whose oldest unpaid charge is at least this many days old is flagged overdue. */
+  customerOverdueDays: number;
 }>;
 
 export const DEFAULT_EXTRA_ALERT_SETTINGS: ExtraAlertSettings = {
@@ -35,6 +40,7 @@ export const DEFAULT_EXTRA_ALERT_SETTINGS: ExtraAlertSettings = {
   highExpenseAmount: '500.00',
   deliveryShortageMinimumLitres: '20',
   lookbackDays: 14,
+  customerOverdueDays: 30,
 };
 
 export type ExtraAlertFacts = Readonly<{
@@ -78,8 +84,10 @@ export type ExtraAlertFacts = Readonly<{
         amount: string;
       }[]
     | null;
-  /** Hook only. Stays null until customer accounts carry a due date or credit period. */
-  customerOverdue?: null;
+  /** Credit accounts with an unpaid charge. Null when the person may not see customer accounts. */
+  customerOverdue?: readonly CustomerOverdueFact[] | null;
+  /** Accounts over their limit (staff benefit: over the monthly limit). Null when not permitted. */
+  customerOverLimit?: readonly CustomerOverLimitFact[] | null;
 }>;
 
 /**
@@ -198,6 +206,54 @@ export function buildExtraAlerts(
       title: `${unproven.length - 3} more supplier ${plural(unproven.length - 3, 'payment has', 'payments have')} no proof of payment`,
       detail: 'Open the supplier payments to attach the proof.',
       href: '/suppliers',
+      tone: 'info',
+    });
+  }
+
+  const overdue = (facts.customerOverdue ?? []).filter(
+    (row) => daysBetween(row.oldestUnpaidDate, facts.today) >= settings.customerOverdueDays,
+  );
+  for (const row of overdue.slice(0, 3)) {
+    out.push({
+      id: `customer-overdue-${row.accountId}`,
+      title: `${row.customerName} owes ${formatUsd(row.owed)}, unpaid since ${row.oldestUnpaidDate}`,
+      detail: `The oldest unpaid charge is ${daysBetween(row.oldestUnpaidDate, facts.today)} days old. Payments clear the oldest charge first.`,
+      href: `/customers/${encodeURIComponent(row.customerId)}`,
+      tone: 'attention',
+    });
+  }
+  if (overdue.length > 3) {
+    out.push({
+      id: 'customer-overdue-more',
+      title: `${overdue.length - 3} more ${plural(overdue.length - 3, 'customer has', 'customers have')} overdue balances`,
+      detail: 'See the customer ageing report for the others.',
+      href: '/customers',
+      tone: 'info',
+    });
+  }
+
+  const overLimit = facts.customerOverLimit ?? [];
+  for (const row of overLimit.slice(0, 3)) {
+    out.push({
+      id: `customer-over-limit-${row.accountId}`,
+      title:
+        row.kind === 'STAFF_BENEFIT_MONTH'
+          ? `${row.customerName} is over the monthly staff fuel limit`
+          : `${row.customerName} is over their credit limit`,
+      detail:
+        row.kind === 'STAFF_BENEFIT_MONTH'
+          ? `${formatUsd(row.amount)} taken this month against a limit of ${formatUsd(row.limit)}.`
+          : `They owe ${formatUsd(row.amount)} against a limit of ${formatUsd(row.limit)}.`,
+      href: `/customers/${encodeURIComponent(row.customerId)}`,
+      tone: 'attention',
+    });
+  }
+  if (overLimit.length > 3) {
+    out.push({
+      id: 'customer-over-limit-more',
+      title: `${overLimit.length - 3} more ${plural(overLimit.length - 3, 'account is', 'accounts are')} over their limit`,
+      detail: 'See the customers list for the others.',
+      href: '/customers',
       tone: 'info',
     });
   }
