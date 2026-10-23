@@ -28,6 +28,7 @@ export type DeliveryListItem = Readonly<{
 
 export type DeliveryList = Readonly<{
   stationTimezone: string;
+  waterTestRequired: boolean;
   deliveries: readonly DeliveryListItem[];
 }>;
 
@@ -79,8 +80,13 @@ export async function queryDeliveryList(input: {
         order by d.delivered_at desc, d.id
         limit ${limit}
       `);
+      const settings = await transaction.execute<{ water_test_required: boolean }>(sql`
+        select water_test_required from app.delivery_settings
+        where tenant_id = ${context.tenantId}
+      `);
       return {
         stationTimezone: context.stationTimezone,
+        waterTestRequired: settings[0]?.water_test_required ?? false,
         deliveries: rows.map((row) => ({
           id: row.id,
           deliveryNoteNumber: row.delivery_note_number,

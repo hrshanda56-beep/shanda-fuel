@@ -138,8 +138,26 @@ describe('delivery detail PostgreSQL persistence', () => {
     process.env.AUDIT_SIGNING_KEY ??= 'integration-delivery-detail-secret';
     client = postgres(databaseUrl, { max: 1, prepare: false });
     for (const [side, t, actor, membership, legal, station, product, delivery] of [
-      ['A', ids.tenantA, ids.actorA, ids.membershipA, ids.legalA, ids.stationA, ids.dieselA, ids.deliveryA],
-      ['B', ids.tenantB, ids.actorB, ids.membershipB, ids.legalB, ids.stationB, ids.dieselB, ids.deliveryB],
+      [
+        'A',
+        ids.tenantA,
+        ids.actorA,
+        ids.membershipA,
+        ids.legalA,
+        ids.stationA,
+        ids.dieselA,
+        ids.deliveryA,
+      ],
+      [
+        'B',
+        ids.tenantB,
+        ids.actorB,
+        ids.membershipB,
+        ids.legalB,
+        ids.stationB,
+        ids.dieselB,
+        ids.deliveryB,
+      ],
     ] as const) {
       await client.unsafe(`
         select set_config('app.tenant_id', '${t}', false);
@@ -248,7 +266,8 @@ describe('delivery detail PostgreSQL persistence', () => {
       },
       `dd-water-2-${run}`,
     );
-    const water = await client`select result from app.fuel_delivery_water_tests where delivery_id = ${ids.deliveryA}`;
+    const water =
+      await client`select result from app.fuel_delivery_water_tests where delivery_id = ${ids.deliveryA}`;
     expect(water.map((r) => r.result)).toEqual(['PASS']);
 
     await recordDeliveryDriverConfirmationCommand(
@@ -262,7 +281,8 @@ describe('delivery detail PostgreSQL persistence', () => {
       },
       `dd-driver-confirmed-delivery-${run}`,
     );
-    const driver = await client`select driver_name, confirmed, confirmed_at from app.fuel_delivery_driver_confirmations where delivery_id = ${ids.confirmedA}`;
+    const driver =
+      await client`select driver_name, confirmed, confirmed_at from app.fuel_delivery_driver_confirmations where delivery_id = ${ids.confirmedA}`;
     expect(driver[0]).toMatchObject({ driver_name: 'T. Moyo', confirmed: true });
     expect(driver[0]!.confirmed_at).not.toBeNull();
   });
@@ -330,7 +350,9 @@ describe('delivery detail PostgreSQL persistence', () => {
         'fuel_delivery_driver_confirmations',
         'delivery_settings',
       ]) {
-        const rows = await runtime.unsafe(`select 1 from app.${table} where tenant_id = '${ids.tenantA}'`);
+        const rows = await runtime.unsafe(
+          `select 1 from app.${table} where tenant_id = '${ids.tenantA}'`,
+        );
         expect(rows.length, table).toBe(0);
       }
       // Tenant B cannot attach a water test to tenant A's delivery, even naming tenant A.
@@ -349,7 +371,9 @@ describe('delivery detail PostgreSQL persistence', () => {
         select set_config('app.actor_id', '${ids.actorA}', false);
         select set_config('app.membership_id', '${ids.membershipA}', false);
         select set_config('app.station_id', '${ids.stationA}', false);`);
-      const own = await runtime.unsafe(`select 1 from app.fuel_delivery_compartments where delivery_id = '${ids.deliveryA}'`);
+      const own = await runtime.unsafe(
+        `select 1 from app.fuel_delivery_compartments where delivery_id = '${ids.deliveryA}'`,
+      );
       expect(own.length).toBe(2);
     } finally {
       await runtime.end();
