@@ -98,6 +98,15 @@ format, `db:check`, typecheck green):
 - Alert email, prepared but not enabled: digest wording and send rules plus the per-person run are
   built and unit-tested without any database change; the cross-organisation recipient list and
   scheduled trigger are written up in ADR-020 for security review.
+- Staff fuel benefit month-end expense (proposed design, DECISIONS.md "Staff fuel benefit accounts"):
+  `/customers/staff-benefit/expense` shows, per staff benefit account and station, the fuel taken in a
+  closed month valued at restated cost, and an owner or administrator can enter it as one SUBMITTED
+  expense (command `SubmitStaffBenefitExpense`, no migration). Double entry is refused; approval,
+  posting, correction and reversal use the ordinary expense workflow. Tested against the real
+  database (permissions, tenant isolation, station-timezone month boundary, double entry, reversal and
+  re-entry); not yet run in a signed-in browser. No link to it from the locked staff benefit page;
+  it is reached by its address until the owner approves a link there. Clearing the staff member's
+  credit balance is an open owner question.
 - Browser checks (Playwright, sample API answers, no Clerk user needed) for the cash handover card,
   activity log, document attachments and reminder settings, including accessibility and overflow
   checks at 320, 390, 768 and 1280 px. These caught one real mistake (a function passed from a
