@@ -35,6 +35,7 @@ import {
 } from './domain';
 import type { CustomerCommandContext, CustomerTransaction } from './application';
 import { insertCustomerEntryDetails } from './entry-details-store';
+import { assertCreditFuelDetails } from './entry-rules';
 import type {
   CompleteCustomerFuelTransactionInput,
   CreateCustomerAccountInput,
@@ -1061,6 +1062,7 @@ export async function completeCustomerFuelTransactionInTransaction(
     result.ledgerEntry,
     context.authority.membership.membershipId,
   );
+  if (loaded.account.accountType === 'CREDIT') assertCreditFuelDetails(input.entryDetails);
   if (input.entryDetails) {
     await insertCustomerEntryDetails(transaction, context, {
       ledgerEntryId: result.ledgerEntry.id,

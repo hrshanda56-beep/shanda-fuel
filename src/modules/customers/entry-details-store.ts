@@ -3,6 +3,8 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import type { CustomerCommandContext, CustomerTransaction } from './application';
+import { assertApproverAllowed } from './approver';
+import { normaliseVoucher } from './entry-rules';
 import type { CustomerEntryDetailsInput } from './validation';
 
 /**
@@ -16,17 +18,7 @@ export async function insertCustomerEntryDetails(
 ): Promise<{ detailsId: string }> {
   const { details } = input;
   if (details.approvedByMembershipId) {
-    const approver = await transaction.execute<{ id: string }>(sql`
-      select id from app.memberships
-      where tenant_id = ${context.tenantId} and id = ${details.approvedByMembershipId}
-        and status = 'ACTIVE'
-    `);
-    if (!approver[0]) {
-      throw new AppError(
-        'VALIDATION_FAILED',
-        'The person who approved this is not an active member of your organisation.',
-      );
-    }
+    await assertApproverAllowed(transaction, context, details.approvedByMembershipId);
   }
   if (details.documentId) {
     const document = await transaction.execute<{ id: string }>(sql`
@@ -35,6 +27,26 @@ export async function insertCustomerEntryDetails(
     `);
     if (!document[0]) {
       throw new AppError('NOT_FOUND', 'The supporting document was not found.');
+    }
+  }
+  if (details.voucherNumber) {
+    // Owner default: a voucher can be used once per customer account. The lock keeps two
+    // simultaneous entries with the same voucher from both passing the check.
+    const voucher = normaliseVoucher(details.voucherNumber);
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`voucher:${context.tenantId}:${input.accountId}:${voucher}`}, 0))`,
+    );
+    const used = await transaction.execute<{ id: string }>(sql`
+      select id from app.customer_ledger_entry_details
+      where tenant_id = ${context.tenantId} and account_id = ${input.accountId}
+        and upper(regexp_replace(btrim(voucher_number), '\s+', ' ', 'g')) = ${voucher}
+      limit 1
+    `);
+    if (used[0]) {
+      throw new AppError(
+        'CONFLICT',
+        `Voucher ${details.voucherNumber} has already been used on this account.`,
+      );
     }
   }
   const existing = await transaction.execute<{ id: string }>(sql`

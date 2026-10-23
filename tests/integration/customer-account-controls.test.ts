@@ -28,6 +28,8 @@ const ids = {
   outsiderActor: 'c1300000-0000-4000-8000-000000000033',
   outsiderMembership: 'c1300000-0000-4000-8000-000000000043',
   outsiderSession: 'c1300000-0000-4000-8000-000000000053',
+  approverActor: 'c1300000-0000-4000-8000-000000000034',
+  approverMembership: 'c1300000-0000-4000-8000-000000000044',
   document: 'c1300000-0000-4000-8000-000000000081',
 };
 const ADMIN = 'c13-admin-token';
@@ -83,11 +85,13 @@ describe('customer account controls (S13)', () => {
       insert into app.users (id, name, email) values
         ('${ids.adminActor}', 'S13 Admin', 'c13-admin@example.test'),
         ('${ids.supActor}', 'S13 Supervisor', 'c13-sup@example.test'),
+        ('${ids.approverActor}', 'S13 Approver', 'c13-approver@example.test'),
         ('${ids.outsiderActor}', 'S13 Outsider', 'c13-outsider@example.test')
         on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.adminMembership}', '${ids.tenant}', '${ids.adminActor}', 'ACTIVE'),
         ('${ids.supMembership}', '${ids.tenant}', '${ids.supActor}', 'ACTIVE'),
+        ('${ids.approverMembership}', '${ids.tenant}', '${ids.approverActor}', 'ACTIVE'),
         ('${ids.outsiderMembership}', '${ids.otherTenant}', '${ids.outsiderActor}', 'ACTIVE')
         on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
@@ -102,6 +106,7 @@ describe('customer account controls (S13)', () => {
         ('${ids.tenant}', '${ids.adminMembership}', 'ADMINISTRATOR', 'TENANT', null, null),
         ('${ids.tenant}', '${ids.adminMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.tenant}', '${ids.supMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
+        ('${ids.tenant}', '${ids.approverMembership}', 'ADMINISTRATOR', 'TENANT', null, null),
         ('${ids.otherTenant}', '${ids.outsiderMembership}', 'ADMINISTRATOR', 'TENANT', null, null)
         on conflict do nothing;
       insert into app.documents (id, tenant_id, legal_entity_id, station_id, subject_type, subject_id, kind,
@@ -149,7 +154,7 @@ describe('customer account controls (S13)', () => {
           vehicleRegistration: 'abc 1234',
           driverName: 'T. Moyo',
           voucherNumber: 'V-100',
-          approvedByMembershipId: ids.supMembership,
+          approvedByMembershipId: ids.approverMembership,
           documentId: ids.document,
         },
       }),
@@ -165,15 +170,24 @@ describe('customer account controls (S13)', () => {
       vehicle_registration: 'ABC 1234',
       driver_name: 'T. Moyo',
       voucher_number: 'V-100',
-      approved_by_membership_id: ids.supMembership,
+      approved_by_membership_id: ids.approverMembership,
       document_id: ids.document,
       recorded_by: ids.adminMembership,
     });
   });
 
-  it('allows the same voucher number twice (uniqueness is an open owner decision)', async () => {
-    const result = await command(paymentBody({ entryDetails: { voucherNumber: 'V-100' } }));
-    expect(result.status, JSON.stringify(result.body)).toBe(201);
+  it('does not let an administrator approve their own entry', async () => {
+    const result = await command(
+      paymentBody({ entryDetails: { approvedByMembershipId: ids.adminMembership } }),
+    );
+    expect(result.status).toBe(400);
+  });
+
+  it('refuses a voucher number already used on the same account, ignoring case and spaces', async () => {
+    const first = await command(paymentBody({ entryDetails: { voucherNumber: 'V-DUP-1' } }));
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const again = await command(paymentBody({ entryDetails: { voucherNumber: ' v-dup-1 ' } }));
+    expect(again.status).toBe(409);
   });
 
   it('adds details to an existing transaction once, and never changes them', async () => {
@@ -238,7 +252,7 @@ describe('customer account controls (S13)', () => {
       accountId,
       expectedVersion: Number(before.version),
       newLimit: '2500.5000',
-      approvedByMembershipId: ids.supMembership,
+      approvedByMembershipId: ids.approverMembership,
       reason: 'Owner agreed by phone for the harvest season',
     });
     expect(result.status, JSON.stringify(result.body)).toBe(200);
@@ -252,7 +266,7 @@ describe('customer account controls (S13)', () => {
     expect(history[0]).toMatchObject({
       previous_limit: '100.0000',
       new_limit: '2500.5000',
-      approved_by_membership_id: ids.supMembership,
+      approved_by_membership_id: ids.approverMembership,
       recorded_by: ids.adminMembership,
     });
     const audit = await client.unsafe(
@@ -274,7 +288,7 @@ describe('customer account controls (S13)', () => {
       accountId,
       expectedVersion: 0,
       newLimit: '9999.0000',
-      approvedByMembershipId: ids.supMembership,
+      approvedByMembershipId: ids.approverMembership,
       reason: 'stale',
     });
     expect(stale.status).toBe(409);
@@ -284,7 +298,7 @@ describe('customer account controls (S13)', () => {
       accountId,
       expectedVersion: 1,
       newLimit: '9999.0000',
-      approvedByMembershipId: ids.supMembership,
+      approvedByMembershipId: ids.approverMembership,
       reason: '   ',
     });
     expect(noReason.status).toBe(400);
@@ -295,7 +309,7 @@ describe('customer account controls (S13)', () => {
         accountId,
         expectedVersion: 1,
         newLimit: '9999.0000',
-        approvedByMembershipId: ids.supMembership,
+        approvedByMembershipId: ids.approverMembership,
         reason: 'I would like more',
       },
       SUPERVISOR,

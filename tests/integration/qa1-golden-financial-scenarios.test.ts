@@ -900,6 +900,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
             },
             occurredAt: QA1_TIMES.futureSegmentClose,
             businessDate: ctx.businessDate,
+            entryDetails: { vehicleRegistration: 'QA1 001', voucherNumber: `QA1-V-${suffix}` },
           },
           `g5-${suffix}-complete`,
         ),

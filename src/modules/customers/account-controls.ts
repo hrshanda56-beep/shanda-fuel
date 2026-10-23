@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { assertApproverAllowed } from './approver';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -125,17 +126,7 @@ export async function overrideCustomerCreditLimitInTransaction(
   if (next.equals(new ExactDecimal(previous))) {
     throw new AppError('VALIDATION_FAILED', 'The new limit is the same as the current limit.');
   }
-  const approver = await transaction.execute<{ id: string }>(sql`
-    select id from app.memberships
-    where tenant_id = ${context.tenantId} and id = ${input.approvedByMembershipId}
-      and status = 'ACTIVE'
-  `);
-  if (!approver[0]) {
-    throw new AppError(
-      'VALIDATION_FAILED',
-      'The person who approved this is not an active member of your organisation.',
-    );
-  }
+  await assertApproverAllowed(transaction, context, input.approvedByMembershipId);
   const overrideId = randomUUID();
   await transaction.execute(sql`
     insert into app.customer_credit_limit_overrides

@@ -576,6 +576,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         },
         occurredAt: '2026-09-24T08:20:00+02:00',
         businessDate: '2026-09-24',
+        entryDetails: { vehicleRegistration: 'abc 1234', voucherNumber: 'A8-V-001' },
       },
       'a8-complete-credit-from-a5-evidence',
     );
