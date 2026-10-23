@@ -95,9 +95,16 @@ format, `db:check`, typecheck green):
   banked + card/mobile payments not yet received + owed by credit customers, less owed to suppliers
   and prepaid customer balances. Shown as unavailable (never zero) for a single station, because
   customer balances are organisation-wide. Stock at cost and unpaid expenses are not included.
-- Alert email, prepared but not enabled: digest wording and send rules plus the per-person run are
-  built and unit-tested without any database change; the cross-organisation recipient list and
-  scheduled trigger are written up in ADR-020 for security review.
+- Alert email, built but OFF (migration 0071, ADR-020 still PROPOSED): the recipient-list function
+  (`app.alert_digest_recipients`, SECURITY DEFINER, fixed columns), the sent-log table, the
+  organisation switch (starts off) and each person's own switch, the secret-protected daily route
+  `/api/cron/alert-digests` (07:00 Harare = 05:00 UTC in `vercel.json`) and a new page
+  `/settings/alert-email` (the Settings screen is locked, so the page is not linked from it; every
+  email links to it). The email names the kind of problem and links to it: no amounts, no names.
+  Tested locally only (15 integration tests, unit tests). Nothing is applied to production. Still
+  needed before go-live: the ADR-020 security review (especially the digest actor in
+  `src/modules/identity/digest-actor.ts`), CRON_SECRET and Resend settings in production, and the
+  `alerts@fuel.shandahr.com` sending domain (DNS).
 - Browser checks (Playwright, sample API answers, no Clerk user needed) for the cash handover card,
   activity log, document attachments and reminder settings, including accessibility and overflow
   checks at 320, 390, 768 and 1280 px. These caught one real mistake (a function passed from a
@@ -106,7 +113,7 @@ format, `db:check`, typecheck green):
 Found already built while checking (not new work): CSV, PDF and XLSX report downloads with step-up,
 and the report activity log. They have not been re-verified in a browser in this pass.
 
-Not yet built: enabling alert email (needs ADR-020 approved), dashboard tiles (left alone: the
+Not yet enabled: alert email (built, off; needs the ADR-020 review, DNS and the owner's switch). Not yet built: dashboard tiles (left alone: the
 owner-approved dashboard already has a needs-attention area), offline queue for screens other than the
 daily report, employee profiles polish, documents on supplier payments (they have no station, so
 need a design choice) and handovers, a Clerk-backed run of the signed-in browser suite.
