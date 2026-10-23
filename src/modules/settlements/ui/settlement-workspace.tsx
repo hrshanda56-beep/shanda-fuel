@@ -30,6 +30,7 @@ import { Modal } from '../../../design-system/modal';
 import { Select } from '../../../design-system/forms';
 import { Icon } from '../../../design-system/icons';
 import { CashDonut, type DonutSlice } from '@/modules/cash/ui/cash-visuals';
+import { PAYMENT_SETTLEMENT_LABELS } from '../status';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 import { ProviderDonut } from './provider-donut';
 import {
@@ -944,7 +945,7 @@ export function SettlementWorkspace({
                           <dt>Variance</dt>
                           <dd>
                             {notMatchedYet
-                              ? 'Not matched yet'
+                              ? PAYMENT_SETTLEMENT_LABELS.AWAITING
                               : money(row.varianceAmount, row.currency)}
                           </dd>
                         </div>

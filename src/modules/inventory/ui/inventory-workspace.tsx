@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import {
@@ -148,6 +149,20 @@ export function InventoryOperationalActions({
           <OpeningInventoryForm context={context} tankId={tankId} onRefresh={onRefresh} />
         </ActionDisclosure>
         <ActionDisclosure title="Record delivery receipt">
+          <p className="muted-small">
+            After the delivery is recorded, add its truck compartments, seals, water test and driver
+            confirmation on the{' '}
+            <Link
+              href={`/inventory/deliveries?${new URLSearchParams({
+                tenantId: context.tenantId,
+                legalEntityId: context.legalEntityId,
+                stationId: context.stationId,
+              }).toString()}`}
+            >
+              delivery details pages
+            </Link>
+            .
+          </p>
           <DeliveryForm
             context={context}
             tankId={tankId}

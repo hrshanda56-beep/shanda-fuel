@@ -25,6 +25,7 @@ import {
 import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { calculateDueDate } from '../credit-terms';
 import { initials, isOverdue, movementLabel, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
@@ -61,6 +62,8 @@ type DocumentForm = {
   referenceNumber: string;
   documentDate: string;
   dueDate: string;
+  paymentTerms: '' | 'CASH' | 'CREDIT';
+  creditPeriodDays: string;
   amount: string;
   lines: LineForm[];
 };
@@ -78,6 +81,8 @@ const EMPTY_DOCUMENT_FORM: DocumentForm = {
   referenceNumber: '',
   documentDate: '',
   dueDate: '',
+  paymentTerms: '',
+  creditPeriodDays: '',
   amount: '',
   lines: [EMPTY_LINE],
 };
@@ -86,6 +91,15 @@ const EMPTY_PAYMENT_FORM: PaymentForm = {
   amount: '',
   reference: '',
 };
+
+/** Whole days from the credit-period box: a number, null when empty, or 'invalid'. */
+function periodDays(text: string): number | null | 'invalid' {
+  const value = text.trim();
+  if (!value) return null;
+  if (!/^\d{1,3}$/.test(value)) return 'invalid';
+  const days = Number(value);
+  return days > 365 ? 'invalid' : days;
+}
 
 function getErrorMessage(result: unknown, fallback: string): string {
   if (typeof result === 'object' && result !== null && 'message' in result) {
@@ -140,6 +154,20 @@ export function SupplierDetailWorkspace({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentForm, setDocumentForm] = useState<DocumentForm>(EMPTY_DOCUMENT_FORM);
+  const calculatedDueDate = useMemo(() => {
+    if (documentForm.documentType !== 'INVOICE' || documentForm.paymentTerms !== 'CREDIT') {
+      return '';
+    }
+    const days = periodDays(documentForm.creditPeriodDays);
+    if (typeof days !== 'number' || !documentForm.documentDate) return '';
+    try {
+      return calculateDueDate(documentForm.documentDate, days);
+    } catch {
+      return '';
+    }
+  }, [documentForm]);
+  const dueDateFromPeriod = calculatedDueDate !== '';
+  const shownDueDate = dueDateFromPeriod ? calculatedDueDate : documentForm.dueDate;
   const [paymentForm, setPaymentForm] = useState<PaymentForm>(EMPTY_PAYMENT_FORM);
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -323,6 +351,18 @@ export function SupplierDetailWorkspace({
       setActionError('Document reference, date, and an exact decimal amount are required.');
       return;
     }
+    const isInvoice = form.documentType === 'INVOICE';
+    const creditDays = periodDays(form.creditPeriodDays);
+    if (isInvoice && form.paymentTerms === 'CREDIT') {
+      if (creditDays === 'invalid') {
+        setActionError('Credit period must be a whole number of days, from 0 to 365.');
+        return;
+      }
+      if (creditDays === null && !form.dueDate) {
+        setActionError('For a credit purchase, enter the credit period in days or a due date.');
+        return;
+      }
+    }
     if (form.dueDate && form.dueDate < form.documentDate) {
       setActionError('Due date cannot be before the document date.');
       return;
@@ -350,7 +390,17 @@ export function SupplierDetailWorkspace({
         documentType: form.documentType,
         referenceNumber: form.referenceNumber.trim(),
         documentDate: form.documentDate,
-        ...(form.dueDate ? { dueDate: form.dueDate } : {}),
+        ...(isInvoice && form.paymentTerms === 'CASH' ? { paymentTerms: 'CASH' as const } : {}),
+        ...(isInvoice && form.paymentTerms === 'CREDIT'
+          ? {
+              paymentTerms: 'CREDIT' as const,
+              ...(typeof creditDays === 'number'
+                ? { creditPeriodDays: creditDays }
+                : { dueDate: form.dueDate }),
+            }
+          : {}),
+        ...(isInvoice && form.paymentTerms === '' && form.dueDate ? { dueDate: form.dueDate } : {}),
+        ...(!isInvoice && form.dueDate ? { dueDate: form.dueDate } : {}),
         amount: form.amount,
       },
       'Supplier document submitted for posting review.',
@@ -641,13 +691,53 @@ export function SupplierDetailWorkspace({
                   <input
                     id="document-due-date"
                     type="date"
-                    value={documentForm.dueDate}
+                    value={shownDueDate}
+                    readOnly={dueDateFromPeriod}
                     onChange={(event) =>
                       setDocumentForm((form) => ({ ...form, dueDate: event.target.value }))
                     }
                   />
                 </Field>
               </div>
+              {documentForm.documentType === 'INVOICE' ? (
+                <div className="form-grid">
+                  <Field id="document-payment-terms" label="How is this invoice paid?" optional>
+                    <select
+                      id="document-payment-terms"
+                      value={documentForm.paymentTerms}
+                      onChange={(event) =>
+                        setDocumentForm((form) => ({
+                          ...form,
+                          paymentTerms: event.target.value as DocumentForm['paymentTerms'],
+                          ...(event.target.value === 'CREDIT'
+                            ? {}
+                            : { creditPeriodDays: '', dueDate: '' }),
+                        }))
+                      }
+                    >
+                      <option value="">Not stated</option>
+                      <option value="CASH">Cash (paid now)</option>
+                      <option value="CREDIT">Credit (pay later)</option>
+                    </select>
+                  </Field>
+                  {documentForm.paymentTerms === 'CREDIT' ? (
+                    <Field id="document-credit-period" label="Credit period (days)" optional>
+                      <input
+                        id="document-credit-period"
+                        inputMode="numeric"
+                        value={documentForm.creditPeriodDays}
+                        maxLength={3}
+                        onChange={(event) =>
+                          setDocumentForm((form) => ({
+                            ...form,
+                            creditPeriodDays: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                  ) : null}
+                </div>
+              ) : null}
               <fieldset className="stack">
                 <legend>Invoice lines</legend>
                 {documentForm.lines.map((line, index) => (

@@ -545,9 +545,19 @@ export function CustomerDetailWorkspace({
   const showProduct = customer?.recentTransactions.some((t) => t.productId !== null) ?? false;
 
   const backLink = (
-    <Link className="button button-quiet" href={backHref}>
-      Back to customers
-    </Link>
+    <>
+      {current ? (
+        <Link
+          className="button button-quiet"
+          href={buildContextHref('/customers/account-controls', search, current)}
+        >
+          Credit limits and details
+        </Link>
+      ) : null}
+      <Link className="button button-quiet" href={backHref}>
+        Back to customers
+      </Link>
+    </>
   );
 
   return (

@@ -23,6 +23,7 @@ import {
   moneyOrUnavailable,
   type ProfitView,
 } from './profit-model';
+import { profitStatementHref } from './profit-links';
 
 export type ProfitInitial = Readonly<{
   tenantId: string;
@@ -264,10 +265,7 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
 
   const link = (path: string) =>
     initial.current ? buildContextHref(path, '', initial.current) : path;
-  const statementHref = `/reports/profit-loss?${applyReportFilters(
-    new URLSearchParams({ tenantId: initial.tenantId }),
-    filters,
-  ).toString()}`;
+  const statementHref = profitStatementHref(initial.tenantId, initial.current, filters);
 
   const report = initial.report;
   const period = report

@@ -41,7 +41,7 @@ describe('settlementCounts and labels', () => {
         settlement('CBZ', '1', 'PARTIALLY_MATCHED'),
       ]),
     ).toEqual({ open: 2, exceptions: 1 });
-    expect(settlementStateLabel('PARTIALLY_MATCHED')).toBe('Partly matched');
+    expect(settlementStateLabel('PARTIALLY_MATCHED')).toBe('Partly settled');
   });
 });
 
@@ -98,5 +98,13 @@ describe('matching suggestions', () => {
     const rows = [payment('POS', '1'), payment('ECOCASH', '2')];
     expect(orderPaymentsFor(eco, rows).map((row) => row.method)).toEqual(['ECOCASH', 'POS']);
     expect(orderPaymentsFor(undefined, rows)).toEqual(rows);
+  });
+});
+
+describe('settlement wording', () => {
+  it('uses the shared plain status names', () => {
+    expect(settlementStateLabel('RECORDED')).toBe('Awaiting settlement');
+    expect(settlementStateLabel('RECONCILED')).toBe('Settled');
+    expect(settlementStateLabel('EXCEPTION')).toBe('Settled with a difference');
   });
 });

@@ -30,6 +30,7 @@ import { Modal } from '../../../design-system/modal';
 import { TableScrollRegion } from '../../../design-system/table';
 import { formatTileMoney } from '../../reporting/format';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
+import { bankingStatusForDeposit, cashStatusLabelForCustody } from '../status';
 import { CashHandoverPanel, type HandoverSummary } from './cash-handover-panel';
 import { CashDonut, CashWallet, MASK, sumDecimals, type DonutSlice } from './cash-visuals';
 
@@ -60,23 +61,28 @@ const COMMAND_DONE: Readonly<Record<string, string>> = {
   ConfirmBankDeposit: 'Deposit confirmed.',
 };
 
-/** Where a collection is, in plain words. */
-const CUSTODY_LABELS: Readonly<Record<string, string>> = {
-  AT_STATION: 'At the station',
-  RECEIVED: 'At the station',
-  PARTIALLY_DEPOSITED: 'Part sent to bank',
-  IN_TRANSIT: 'Sent to bank',
-  BANKED: 'Banked',
-};
+/** Where a collection is, in plain words (the shared names in ../status). */
+function custodyLabel(custodyState: string): string {
+  const label = cashStatusLabelForCustody(custodyState);
+  return label === custodyState ? displayState(custodyState) : label;
+}
 
-/** A bank deposit's status, in plain words. */
-const DEPOSIT_LABELS: Readonly<Record<string, string>> = {
-  RECORDED: 'Waiting for bank',
-  SUBMITTED: 'Waiting for bank',
-  CONFIRMED: 'Confirmed',
-  REJECTED: 'Rejected',
-  REVERSED: 'Reversed',
-};
+/** A bank deposit's status, in the same plain words as collections. */
+function depositLabel(deposit: {
+  state: string;
+  amount: string;
+  confirmedAmount?: string | null;
+}): string {
+  // A collection's own deposit list does not carry the confirmed amount; a confirmed deposit
+  // there counts as banked in full.
+  const confirmedAmount =
+    deposit.confirmedAmount === undefined
+      ? deposit.state === 'CONFIRMED'
+        ? deposit.amount
+        : null
+      : deposit.confirmedAmount;
+  return bankingStatusForDeposit({ ...deposit, confirmedAmount }) ?? displayState(deposit.state);
+}
 
 export type CashSummary = {
   stationId: string;
@@ -1192,8 +1198,7 @@ export function CashWorkspace({
                 <div>
                   <strong>{collection.collectionReference}</strong>
                   <StatusBadge tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}>
-                    {CUSTODY_LABELS[collection.custodyState] ??
-                      displayState(collection.custodyState)}
+                    {custodyLabel(collection.custodyState)}
                   </StatusBadge>
                 </div>
                 <span>{plain(collection.amount)}</span>
@@ -1264,8 +1269,7 @@ export function CashWorkspace({
                               <StatusBadge
                                 tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
                               >
-                                {CUSTODY_LABELS[collection.custodyState] ??
-                                  displayState(collection.custodyState)}
+                                {custodyLabel(collection.custodyState)}
                               </StatusBadge>
                             </td>
                             <td className="cash-row-actions">
@@ -1352,9 +1356,8 @@ export function CashWorkspace({
                                         ? collection.deposits.map((deposit) => (
                                             <div key={deposit.depositId}>
                                               {deposit.depositReference} · {plain(deposit.amount)} ·{' '}
-                                              {DEPOSIT_LABELS[deposit.state] ??
-                                                displayState(deposit.state)}{' '}
-                                              · {formatWhen(deposit.depositedAt)}
+                                              {depositLabel(deposit)} ·{' '}
+                                              {formatWhen(deposit.depositedAt)}
                                             </div>
                                           ))
                                         : 'Not sent to the bank yet',
@@ -1434,7 +1437,7 @@ export function CashWorkspace({
                             <StatusBadge
                               tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}
                             >
-                              {DEPOSIT_LABELS[deposit.state] ?? displayState(deposit.state)}
+                              {depositLabel(deposit)}
                             </StatusBadge>
                           </td>
                           <td data-label="Bank difference">{difference}</td>
