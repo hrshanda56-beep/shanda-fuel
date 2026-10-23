@@ -29,6 +29,8 @@ it('starts independent finance sections before waiting for sign-off', async () =
     // The second read is the operations facts: they never wait for sign-off.
     if (readContexts === 2)
       return Promise.resolve({ today: '2026-10-21', reports: null, tanks: null });
+    // The third read is the extra alert facts, which also never wait for sign-off.
+    if (readContexts === 3) return Promise.resolve({ today: '2026-10-21' });
     return new Promise((resolve) => {
       release = () => resolve({ reconciliations: null, revaluations: null });
     });

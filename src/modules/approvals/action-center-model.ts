@@ -6,6 +6,12 @@ import {
   type AlertSettings,
   type TankAlertFacts,
 } from './operations-alerts';
+import {
+  DEFAULT_EXTRA_ALERT_SETTINGS,
+  buildExtraAlerts,
+  type ExtraAlertFacts,
+  type ExtraAlertSettings,
+} from './extra-alerts';
 
 /** What one part of the Action Center could tell us. */
 export type Section<T> =
@@ -59,6 +65,9 @@ export type ActionCenterFacts = {
   stock: Section<{ tanks: readonly TankAlertFacts[] }>;
   /** The reminder thresholds in force. Defaults apply until the organisation sets its own. */
   settings?: AlertSettings;
+  /** Unbanked cash, high expense, below-price sale, short delivery, approved-information change. */
+  extra?: Section<ExtraAlertFacts>;
+  extraSettings?: ExtraAlertSettings;
 };
 
 export type ActionArea = 'Approvals' | 'Banking' | 'Settlements' | 'Payables' | 'Receivables';
@@ -320,6 +329,17 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
         unsettledPaymentDates: settlements?.unmatchedDates ?? [],
       },
       facts.settings ?? DEFAULT_ALERT_SETTINGS,
+      { id: facts.stationId },
+    )) {
+      items.push({ ...alert, area: 'Operations' });
+    }
+  }
+
+  if (facts.extra?.status === 'unavailable') unavailable.push('Cash, expense and delivery checks');
+  if (facts.extra?.status === 'ok') {
+    for (const alert of buildExtraAlerts(
+      facts.extra.value,
+      facts.extraSettings ?? DEFAULT_EXTRA_ALERT_SETTINGS,
       { id: facts.stationId },
     )) {
       items.push({ ...alert, area: 'Operations' });

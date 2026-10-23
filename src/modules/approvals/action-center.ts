@@ -1,4 +1,5 @@
 import { loadOperationsFacts } from './operations-facts';
+import { loadExtraAlertFacts } from './extra-alert-facts';
 import { loadSignOffFacts } from './sign-off';
 import { withRequestReadScope } from '../../platform/security/request-read-scope';
 import { requireAuthenticatedActor, type AuthenticatedActorContext } from '../identity';
@@ -63,6 +64,19 @@ async function loadActionCenterFactsUncached(
       actor,
     ),
   );
+
+  const extraPromise = section(request, 'extra-alerts', async () => {
+    const ops = await operationsPromise;
+    // Dates are the station's own; without them nothing dated can be judged.
+    if (ops.status !== 'ok') throw new AppError('INVARIANT_VIOLATION', 'Station date unavailable');
+    return withInventoryReadContext(
+      request,
+      tenantId,
+      stationId,
+      (transaction, context) => loadExtraAlertFacts(transaction, context, ops.value.today),
+      actor,
+    );
+  });
 
   const [cash, settlements, suppliers, customers] = await Promise.all([
     section(request, 'cash', async () => {
@@ -174,6 +188,7 @@ async function loadActionCenterFactsUncached(
     settlements,
     suppliers,
     customers,
+    extra: await extraPromise,
     today: opsValue?.today ?? null,
     reports: fromOperations((value) => value.reports),
     stock: fromOperations((value) => (value.tanks ? { tanks: value.tanks } : null)),
