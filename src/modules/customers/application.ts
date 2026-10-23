@@ -55,6 +55,8 @@ export const CUSTOMER_COMMAND_TYPES = [
   'RecordCustomerPayment',
   'RecordPrepaidTopUp',
   'ReverseCustomerLedgerEntry',
+  'RecordCustomerEntryDetails',
+  'OverrideCustomerCreditLimit',
 ] as const;
 export type CustomerCommandType = (typeof CUSTOMER_COMMAND_TYPES)[number];
 
@@ -156,6 +158,18 @@ export const CUSTOMER_COMMAND_POLICY: Readonly<
   },
   ReverseCustomerLedgerEntry: {
     permissionCode: 'customer.account.adjust',
+    scopeType: 'TENANT',
+    requiresStepUp: true,
+    requiresExpectedVersion: true,
+  },
+  RecordCustomerEntryDetails: {
+    permissionCode: 'customer.credit.authorize',
+    scopeType: 'STATION',
+    requiresStepUp: false,
+    requiresExpectedVersion: false,
+  },
+  OverrideCustomerCreditLimit: {
+    permissionCode: 'customer.limit.override',
     scopeType: 'TENANT',
     requiresStepUp: true,
     requiresExpectedVersion: true,

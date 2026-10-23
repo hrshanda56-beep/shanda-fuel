@@ -5,6 +5,7 @@ import type { Database } from '../../../platform/db';
 import type { ManagementReportQuery } from '../contracts';
 import type { TableReportRow } from './definitions';
 import { TABLE_REPORT_ROW_LIMIT } from './definitions';
+import { readCustomerAgeing } from './customer-ageing-read';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -456,4 +457,5 @@ export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> =
   'cash-custody': readCashCustody,
   'bank-deposits': readBankDeposits,
   'daily-reconciliation': readDailyReconciliation,
+  'customer-ageing': readCustomerAgeing,
 };

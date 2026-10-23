@@ -353,10 +353,24 @@
       "breakpoints": true
     },
     {
-      "idx": 55,
+      "idx": 50,
       "version": "7",
       "when": 1792600020000,
       "tag": "0055_supplier_invoice_credit_terms",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792600060000,
+      "tag": "0060_customer_entry_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1792600061000,
+      "tag": "0061_customer_credit_limit_overrides",
       "breakpoints": true
     }
   ]

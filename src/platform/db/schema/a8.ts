@@ -16,6 +16,7 @@ import {
 import { appSchema } from './namespaces';
 import { legalEntities, memberships, stations, tenants } from './a1';
 import { products } from './a3';
+import { documents } from './documents';
 
 const id = () =>
   uuid('id')
@@ -382,6 +383,93 @@ export const customerFuelAuthorizations = appSchema.table(
       columns: [table.tenantId, table.productId],
       foreignColumns: [products.tenantId, products.id],
       name: 'customer_fuel_authorizations_product_fk',
+    }),
+  ],
+);
+
+/** S13 (0060): vehicle, driver, voucher, approver and document for one ledger entry. Append-only. */
+export const customerLedgerEntryDetails = appSchema.table(
+  'customer_ledger_entry_details',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    ledgerEntryId: uuid('ledger_entry_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    vehicleRegistration: text('vehicle_registration'),
+    driverName: text('driver_name'),
+    voucherNumber: text('voucher_number'),
+    approvedByMembershipId: uuid('approved_by_membership_id'),
+    documentId: uuid('document_id'),
+    recordedBy: uuid('recorded_by').notNull(),
+    recordedAt: utcTimestamp('recorded_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('customer_ledger_entry_details_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('customer_ledger_entry_details_entry_uidx').on(table.tenantId, table.ledgerEntryId),
+    index('customer_ledger_entry_details_account_idx').on(table.tenantId, table.accountId),
+    foreignKey({
+      columns: [table.tenantId, table.ledgerEntryId],
+      foreignColumns: [customerLedgerEntries.tenantId, customerLedgerEntries.id],
+      name: 'customer_ledger_entry_details_entry_fk',
+    }),
+    accountScope(table, 'customer_ledger_entry_details_account_fk'),
+    foreignKey({
+      columns: [table.tenantId, table.approvedByMembershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_ledger_entry_details_approver_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.recordedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_ledger_entry_details_recorded_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.documentId],
+      foreignColumns: [documents.tenantId, documents.id],
+      name: 'customer_ledger_entry_details_document_fk',
+    }),
+  ],
+);
+
+/** S13 (0061): append-only history of management credit-limit overrides. */
+export const customerCreditLimitOverrides = appSchema.table(
+  'customer_credit_limit_overrides',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    accountId: uuid('account_id').notNull(),
+    previousLimit: money('previous_limit').notNull(),
+    newLimit: money('new_limit').notNull(),
+    approvedByMembershipId: uuid('approved_by_membership_id').notNull(),
+    reason: text('reason').notNull(),
+    recordedBy: uuid('recorded_by').notNull(),
+    recordedAt: utcTimestamp('recorded_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('customer_credit_limit_overrides_tenant_id_id_uidx').on(table.tenantId, table.id),
+    index('customer_credit_limit_overrides_account_idx').on(
+      table.tenantId,
+      table.accountId,
+      table.recordedAt,
+    ),
+    check(
+      'customer_credit_limit_overrides_limits_ck',
+      sql`${table.previousLimit} >= 0 and ${table.newLimit} > 0 and ${table.newLimit} <> ${table.previousLimit}`,
+    ),
+    check(
+      'customer_credit_limit_overrides_reason_ck',
+      sql`btrim(${table.reason}) <> '' and char_length(${table.reason}) <= 500`,
+    ),
+    accountScope(table, 'customer_credit_limit_overrides_account_fk'),
+    foreignKey({
+      columns: [table.tenantId, table.approvedByMembershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_credit_limit_overrides_approver_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.recordedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_credit_limit_overrides_recorded_by_fk',
     }),
   ],
 );
