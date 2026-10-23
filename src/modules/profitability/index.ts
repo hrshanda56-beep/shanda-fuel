@@ -22,3 +22,11 @@ export type {
   RestatedSaleCogs,
   SaleValuationStatus,
 } from './contracts';
+export { buildDailyProfit, profitSign } from './daily-profit';
+export type {
+  CombinedProfitLine,
+  DailyProfitDay,
+  DailyProfitInput,
+  DailyProfitSummary,
+  FuelProfitLine,
+} from './daily-profit';

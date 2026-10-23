@@ -191,6 +191,21 @@ export type InventoryPosition = Readonly<{
   }[];
 }>;
 
+/**
+ * Position figures the owner needs that the other report sections do not carry. Read as they stand
+ * now (stock and unpaid expenses are running balances, not period movements).
+ */
+export type OwnerPosition = Readonly<{
+  /** Stock on hand at weighted-average cost; null when some stock has no cost yet. */
+  stockValue: ReportMoney | null;
+  /** Number of tank streams holding stock with no cost yet. */
+  unvaluedStockStreams: number;
+  /** Posted expenses and recognised recurring costs not yet paid. */
+  unpaidExpenses: ReportMoney;
+  /** Submitted expenses waiting for approval. */
+  expensesAwaitingApproval: Readonly<{ count: number; amount: ReportMoney }>;
+}>;
+
 export type ManagementReport = Readonly<{
   report: 'MANAGEMENT_OVERVIEW';
   state: 'POSTED';
@@ -242,6 +257,8 @@ export type ManagementReport = Readonly<{
     }[];
   }>;
   fuelProfit: readonly import('../profitability/contracts').FuelProfitRow[];
+  /** Absent on reports built before the owner layer; shown as not available. */
+  ownerPosition?: OwnerPosition;
   revenue: CanonicalRevenueReport;
   costing: RestatedCogsReport;
   grossMargin: ReportMoney | null;

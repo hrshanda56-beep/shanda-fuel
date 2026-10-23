@@ -386,6 +386,115 @@ export function buildNetPosition(report: ManagementReport): Statement {
   };
 }
 
+export type PositionFlag = 'POSITIVE' | 'NEGATIVE' | 'EVEN' | 'UNAVAILABLE';
+
+export type FinancialPosition = Readonly<{
+  statement: Statement;
+  /** Total of what we hold or are owed; null when any included figure is unknown. */
+  totalHeld: string | null;
+  /** Total of what we owe; null when any included figure is unknown. */
+  totalOwed: string | null;
+  net: string | null;
+  flag: PositionFlag;
+  /** Names of the figures that are not known, so a screen can say why there is no net. */
+  missing: readonly string[];
+}>;
+
+/**
+ * The owner's financial position: what the business holds or is owed (cash at stations, banked
+ * cash, card and mobile payments awaiting settlement, debtors, stock at cost) less what it owes
+ * (suppliers, unpaid expenses, prepaid customer balances). The net is shown only when every
+ * included figure is known, with a clear positive or negative flag. Liabilities the system does
+ * not record (transporters and other creditors) are listed as not recorded and left out of the
+ * total. Unlike buildNetPosition, which the existing report screens use, this one includes stock
+ * value, banked cash and unpaid expenses.
+ */
+export function buildFinancialPosition(report: ManagementReport): FinancialPosition {
+  const { cash, providers, suppliers, customers } = report;
+  const extra = report.ownerPosition ?? null;
+  const customersKnown =
+    customers.availability === 'AVAILABLE' &&
+    customers.receivableBalance !== null &&
+    customers.prepaidValueBalance !== null;
+  const held: StatementLine[] = [
+    { label: 'Cash at stations, not yet banked', value: cash.collectedButNotBanked },
+    { label: 'Cash banked', value: cash.banked },
+    {
+      label: 'Card and mobile payments awaiting settlement',
+      value: providers.unmatchedEvidenceAmount,
+    },
+    { label: 'Owed by credit customers', value: customers.receivableBalance },
+    {
+      label: 'Fuel stock at cost',
+      value: extra?.stockValue ?? null,
+      note:
+        extra && extra.stockValue === null
+          ? `${extra.unvaluedStockStreams} tank(s) hold fuel with no cost yet.`
+          : extra
+            ? undefined
+            : 'Not available.',
+    },
+  ];
+  const owed: StatementLine[] = [
+    { label: 'Owed to suppliers', value: suppliers.outstandingBalance },
+    { label: 'Expenses not yet paid', value: extra?.unpaidExpenses ?? null },
+    { label: 'Prepaid customer balances', value: customers.prepaidValueBalance },
+    {
+      label: 'Transporters and other creditors',
+      value: null,
+      note: 'Not recorded in the system, so not in the total.',
+    },
+  ];
+  const countable = (line: StatementLine) => line.label !== 'Transporters and other creditors';
+  const missing = [...held, ...owed.filter(countable)]
+    .filter((line) => line.value === null)
+    .map((line) => line.label);
+  const totalHeld = held.some((l) => l.value === null)
+    ? null
+    : sumExact(held.map((l) => l.value));
+  const totalOwed = owed.filter(countable).some((l) => l.value === null)
+    ? null
+    : sumExact(owed.filter(countable).map((l) => l.value));
+  const net = totalHeld === null || totalOwed === null ? null : subtractExact(totalHeld, totalOwed);
+  const flag: PositionFlag =
+    net === null
+      ? 'UNAVAILABLE'
+      : exact(net).value.isZero()
+        ? 'EVEN'
+        : exact(net).value.isNegative()
+          ? 'NEGATIVE'
+          : 'POSITIVE';
+  return {
+    statement: {
+      groups: [
+        {
+          heading: 'What the business holds or is owed',
+          lines: [...held, { label: 'Total held or owed to us', value: totalHeld, kind: 'subtotal' }],
+        },
+        {
+          heading: 'What the business owes',
+          lines: [...owed, { label: 'Total owed by us', value: totalOwed, kind: 'subtotal' }],
+        },
+        { lines: [{ label: 'Net position', value: net, kind: 'total' }] },
+      ],
+      notes: [
+        'Cash banked is the deposits recorded in the chosen dates; it is not a bank statement balance.',
+        'Stock and unpaid expenses are shown as they stand now.',
+        ...(customersKnown
+          ? []
+          : [
+              'Customer balances are kept for the whole organisation, so the net position is only shown when all stations are included.',
+            ]),
+      ],
+    },
+    totalHeld,
+    totalOwed,
+    net,
+    flag,
+    missing,
+  };
+}
+
 export type QuickFigure = Readonly<{
   id: string;
   label: string;

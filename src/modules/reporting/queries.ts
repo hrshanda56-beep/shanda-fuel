@@ -9,6 +9,7 @@ import { authorize } from '../../platform/security/permissions';
 import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
+import { readOwnerPosition } from './owner-position';
 import { buildProfitabilityReport, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
@@ -1067,6 +1068,7 @@ export async function getManagementReportFromRequest(
       expenses,
       costing,
       revenue,
+      ownerPosition,
     ] = await Promise.all([
       listStations(transaction, filters),
       readSales(transaction, filters),
@@ -1078,6 +1080,7 @@ export async function getManagementReportFromRequest(
       readExpenses(transaction, filters),
       readRestatedCogs(transaction, filters),
       readCanonicalRevenue(transaction, filters),
+      readOwnerPosition(transaction, filters),
     ]);
     const profitability = buildProfitabilityReport({
       tenantId: filters.tenantId,
@@ -1109,6 +1112,7 @@ export async function getManagementReportFromRequest(
       revenue,
       costing,
       fuelProfit: profitability.fuelProfit,
+      ownerPosition,
       grossMargin: profitability.grossMargin,
     };
   });
