@@ -2,6 +2,8 @@
   "files": {
     "src/app/cash/page.tsx": "5a4d445b44923313162b65ecd5b2042f41744423a00fa8ead02ee6f1e4aa2ce1",
     "src/app/customers/[customerId]/page.tsx": "8e443d8f5eb952ff7a6a3f73467c5ce9cb177f01d79e8cd25276e3ae355b67f3",
+    "src/app/customers/account-controls/loading.tsx": "76105b91f9dbc2ecde0df07233a7b5adb5eccd6570e9986b052cd16c7ee4add9",
+    "src/app/customers/account-controls/page.tsx": "025b7ca2bd7a2b0db8a9d0c2ae490628ecbf6c400525350bbdcd97eb17aab1a4",
     "src/app/customers/loading.tsx": "76105b91f9dbc2ecde0df07233a7b5adb5eccd6570e9986b052cd16c7ee4add9",
     "src/app/customers/page.tsx": "dc81afacc437faef9663f201dd92509e13cfd76d9a9f2ad484fc9e4f5d40b523",
     "src/app/design-system/entry/page.tsx": "ca59037032f270e95282427a2eb4f4dec9f27a90ee527b9d6214a34ac558b639",
@@ -129,6 +131,7 @@
     "src/modules/creditors/ui/supplier-detail-workspace.tsx": "f150b52a9d3c726bd7d2683bcaf971a72fcf711fbbfb1c5633efdb90da6e4fb1",
     "src/modules/creditors/ui/supplier-format.ts": "2ef4ad2850d6a0c9bec8ffe7edbccc6260466aeeae044ad77520b5ee80cda6ac",
     "src/modules/creditors/ui/supplier-workspace.tsx": "f6a52a0a00f81cb2397d9c4c8902aedb9af16329af80b7c7f90d2f7dc2392f2e",
+    "src/modules/customers/ui/account-controls-workspace.tsx": "5eaa72832c18ac95c670ce9abf29400de4ebce77e3d5bb14ccad5e16dba61c5c",
     "src/modules/customers/ui/customer-actions.tsx": "2e84a4f06d1fb61e1c348be1801bc12a493a91efcb35def64cb05f891379ff66",
     "src/modules/customers/ui/customer-detail-workspace.tsx": "3898ddb6019b7e76f01cc4efea17efe63ad3f49e720fd02c2412c8b77a32b4ba",
     "src/modules/customers/ui/customer-workspace.tsx": "695cb197c70a771dca79bf893fed31290ebe0b6470b53613928fb4aed6a87d73",

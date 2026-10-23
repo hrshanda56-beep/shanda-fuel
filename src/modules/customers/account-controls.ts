@@ -14,6 +14,7 @@ import {
   type CustomerCommandContext,
   type CustomerTransaction,
 } from './application';
+import { isPermissionGranted } from '../../platform/security/permissions';
 import { assertStationAllowedForAccount } from './domain';
 import { insertCustomerEntryDetails } from './entry-details-store';
 import { loadAccount, loadAccountStationPolicy } from './persistence';
@@ -279,4 +280,60 @@ export async function getCustomerCreditLimitOverridesFromRequest(
       recordedAt: new Date(row.recorded_at).toISOString(),
     }));
   });
+}
+
+export type AccountControlsApprover = Readonly<{ membershipId: string; name: string }>;
+
+export type AccountControlsPageData = Readonly<{
+  canOverrideLimit: boolean;
+  canRecordDetails: boolean;
+  approvers: readonly AccountControlsApprover[];
+}>;
+
+/** What the account controls page needs besides the customer list: permissions and approvers. */
+export async function getAccountControlsPageDataFromRequest(
+  request: Request,
+  input: unknown,
+): Promise<AccountControlsPageData> {
+  const query = z.object({ tenantId: z.string().uuid() }).parse(input);
+  const context = await resolveCustomerReadContext({
+    request,
+    requestedTenantId: query.tenantId,
+  });
+  authorizeCustomerCommand(context, 'customer.view');
+  const actor = context.authority.authorization;
+  const granted = (permissionCode: 'customer.limit.override' | 'customer.credit.authorize') =>
+    isPermissionGranted({
+      actor,
+      permissionCode,
+      requestedScope: { tenantId: context.tenantId, scopeType: 'TENANT' },
+    }) ||
+    actor.roleAssignments.some(
+      (assignment) =>
+        assignment.scopeType === 'STATION' &&
+        isPermissionGranted({
+          actor,
+          permissionCode,
+          requestedScope: {
+            tenantId: context.tenantId,
+            scopeType: 'STATION',
+            legalEntityId: assignment.legalEntityId ?? undefined,
+            stationId: assignment.stationId ?? undefined,
+          },
+        }),
+    );
+  const approvers = await withTenantTransaction(context.authority.transaction, (transaction) =>
+    transaction.execute<{ membership_id: string; name: string }>(sql`
+      select m.id as membership_id, coalesce(nullif(u.name, ''), u.email) as name
+      from app.memberships m
+      join app.users u on u.id = m.identity_id
+      where m.tenant_id = ${context.tenantId} and m.status = 'ACTIVE'
+      order by 2, 1
+    `),
+  );
+  return {
+    canOverrideLimit: granted('customer.limit.override'),
+    canRecordDetails: granted('customer.credit.authorize'),
+    approvers: approvers.map((row) => ({ membershipId: row.membership_id, name: row.name })),
+  };
 }
