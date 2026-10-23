@@ -22,6 +22,25 @@ export const managementReportQuerySchema = z
     ),
     fromDate: dateOnly.optional(),
     toDate: dateOnly.optional(),
+    /** Optional narrowing for table reports; each report applies only the ones that fit it. */
+    productId: z.string().uuid().optional(),
+    supplierId: z.string().uuid().optional(),
+    customerId: z.string().uuid().optional(),
+    /** A staff member (membership): the attendant on a shift or a person in a cash handover. */
+    employeeId: z.string().uuid().optional(),
+    shiftTemplateId: z.string().uuid().optional(),
+    paymentMethod: z
+      .enum([
+        'CASH',
+        'POS',
+        'ECOCASH',
+        'BANK_TRANSFER',
+        'CUSTOMER_CREDIT',
+        'PREPAID',
+        'STAFF_OR_MANAGEMENT_FUEL',
+        'OTHER_APPROVED',
+      ])
+      .optional(),
   })
   .superRefine((value, context) => {
     if (value.fromDate && value.toDate && value.fromDate > value.toDate) {

@@ -12,6 +12,17 @@ export type TableReportColumn = Readonly<{
   kind: 'text' | 'number';
 }>;
 
+/** Extra ways a person can narrow a report, besides stations and dates. */
+export const TABLE_REPORT_FILTER_KEYS = [
+  'product',
+  'supplier',
+  'customer',
+  'employee',
+  'shift',
+  'paymentMethod',
+] as const;
+export type TableReportFilterKey = (typeof TABLE_REPORT_FILTER_KEYS)[number];
+
 export type TableReportRow = Readonly<Record<string, string | null>>;
 
 export type TableReportDefinition = Readonly<{
@@ -27,6 +38,8 @@ export type TableReportDefinition = Readonly<{
   /** Said on the page when there is nothing to show for the chosen dates. */
   emptyMessage: string;
   columns: readonly TableReportColumn[];
+  /** Extra filters this report understands (the page shows only these). */
+  filters?: readonly TableReportFilterKey[];
 }>;
 
 export const TABLE_REPORTS: readonly TableReportDefinition[] = [
@@ -37,6 +50,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     category: 'inventory',
     scope: 'station',
     emptyMessage: 'No tank dips were recorded for these dates and stations.',
+    filters: ['product'],
     columns: [
       { key: 'businessDate', label: 'Date', kind: 'text' },
       { key: 'measuredAt', label: 'Time measured (UTC)', kind: 'text' },
@@ -54,6 +68,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     category: 'inventory',
     scope: 'station',
     emptyMessage: 'No stock movements were recorded for these dates and stations.',
+    filters: ['product'],
     columns: [
       { key: 'businessDate', label: 'Date', kind: 'text' },
       { key: 'effectiveAt', label: 'Time (UTC)', kind: 'text' },
@@ -72,6 +87,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     category: 'inventory',
     scope: 'station',
     emptyMessage: 'No confirmed deliveries were received for these dates and stations.',
+    filters: ['product', 'supplier'],
     columns: [
       { key: 'businessDate', label: 'Date', kind: 'text' },
       { key: 'station', label: 'Station', kind: 'text' },
@@ -108,6 +124,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     category: 'credit',
     scope: 'station',
     emptyMessage: 'No supplier invoices or payments were recorded for these dates.',
+    filters: ['supplier'],
     columns: [
       { key: 'date', label: 'Date', kind: 'text' },
       { key: 'supplier', label: 'Supplier', kind: 'text' },
@@ -124,6 +141,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     category: 'credit',
     scope: 'organisation',
     emptyMessage: 'No customer account activity was recorded for these dates.',
+    filters: ['customer'],
     columns: [
       { key: 'date', label: 'Date', kind: 'text' },
       { key: 'customer', label: 'Customer', kind: 'text' },
@@ -140,6 +158,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     category: 'cash',
     scope: 'station',
     emptyMessage: 'No cash handovers were recorded for these dates and stations.',
+    filters: ['employee'],
     columns: [
       { key: 'date', label: 'Date', kind: 'text' },
       { key: 'station', label: 'Station', kind: 'text' },
@@ -180,6 +199,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     category: 'sales',
     scope: 'station',
     emptyMessage: 'No daily reconciliations were started for these dates and stations.',
+    filters: ['shift', 'employee', 'paymentMethod'],
     columns: [
       { key: 'date', label: 'Date', kind: 'text' },
       { key: 'station', label: 'Station', kind: 'text' },
@@ -191,6 +211,64 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'difference', label: 'Short (−) / over (+) (USD)', kind: 'number' },
       { key: 'explanation', label: 'Explanation', kind: 'text' },
       { key: 'approvedOn', label: 'Approved on', kind: 'text' },
+    ],
+  },
+  {
+    slug: 'purchases',
+    title: 'Purchases',
+    description: 'Supplier invoices and credit notes, what has been paid and what is still owed.',
+    category: 'credit',
+    scope: 'station',
+    emptyMessage: 'No supplier invoices were recorded for these dates.',
+    filters: ['supplier', 'product'],
+    columns: [
+      { key: 'date', label: 'Invoice date', kind: 'text' },
+      { key: 'supplier', label: 'Supplier', kind: 'text' },
+      { key: 'type', label: 'Type', kind: 'text' },
+      { key: 'reference', label: 'Reference', kind: 'text' },
+      { key: 'dueDate', label: 'Due date', kind: 'text' },
+      { key: 'status', label: 'Status', kind: 'text' },
+      { key: 'amount', label: 'Amount (USD)', kind: 'number' },
+      { key: 'paid', label: 'Paid so far (USD)', kind: 'number' },
+      { key: 'owed', label: 'Still owed (USD)', kind: 'number' },
+    ],
+  },
+  {
+    slug: 'supplier-payments',
+    title: 'Supplier Payments',
+    description: 'Every payment made to suppliers and how much of it has been matched to invoices.',
+    category: 'credit',
+    scope: 'station',
+    emptyMessage: 'No supplier payments were recorded for these dates.',
+    filters: ['supplier'],
+    columns: [
+      { key: 'date', label: 'Payment date', kind: 'text' },
+      { key: 'supplier', label: 'Supplier', kind: 'text' },
+      { key: 'reference', label: 'Our reference', kind: 'text' },
+      { key: 'method', label: 'How it was paid', kind: 'text' },
+      { key: 'proof', label: 'Bank or proof reference', kind: 'text' },
+      { key: 'status', label: 'Status', kind: 'text' },
+      { key: 'amount', label: 'Amount (USD)', kind: 'number' },
+      { key: 'matched', label: 'Matched to invoices (USD)', kind: 'number' },
+      { key: 'unmatched', label: 'Not yet matched (USD)', kind: 'number' },
+    ],
+  },
+  {
+    slug: 'sales-by-attendant',
+    title: 'Sales by Attendant',
+    description:
+      'Approved sales for each attendant. A shift worked by one attendant is credited to them; a shift worked by several is shown as a shared shift. The crediting rule is waiting for the owner to confirm.',
+    category: 'sales',
+    scope: 'station',
+    emptyMessage: 'No approved shift reports were found for these dates and stations.',
+    filters: ['shift', 'employee'],
+    columns: [
+      { key: 'station', label: 'Station', kind: 'text' },
+      { key: 'attendant', label: 'Attendant', kind: 'text' },
+      { key: 'shifts', label: 'Shifts', kind: 'number' },
+      { key: 'litres', label: 'Litres sold', kind: 'number' },
+      { key: 'sales', label: 'Sales (USD)', kind: 'number' },
+      { key: 'accounted', label: 'Accounted for (USD)', kind: 'number' },
     ],
   },
 ];
