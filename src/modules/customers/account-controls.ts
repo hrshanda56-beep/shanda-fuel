@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { withTenantTransaction } from '../../platform/db/transaction';
-import { ExactDecimal } from '../../platform/domain/primitives';
+import { DECIMAL_POLICIES, ExactDecimal } from '../../platform/domain/primitives';
 import {
   authorizeCustomerCommand,
   customerRequestHash,
@@ -94,6 +94,11 @@ export async function recordCustomerEntryDetailsFromRequest(request: Request, bo
   });
 }
 
+const fixed = (value: string) =>
+  new ExactDecimal(value)
+    .quantize(DECIMAL_POLICIES.money)
+    .value.toFixed(DECIMAL_POLICIES.money.scale);
+
 export async function overrideCustomerCreditLimitInTransaction(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
@@ -148,8 +153,8 @@ export async function overrideCustomerCreditLimitInTransaction(
   return {
     overrideId,
     accountId: input.accountId,
-    previousLimit: previous,
-    newLimit: next.toString(),
+    previousLimit: fixed(previous),
+    newLimit: fixed(next.toString()),
     approvedByMembershipId: input.approvedByMembershipId,
     version: input.expectedVersion + 1,
   };
