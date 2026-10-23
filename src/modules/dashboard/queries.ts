@@ -1,6 +1,11 @@
 import { resolveTenantReadAuthority } from '../context/read-authority';
 import 'server-only';
-import { getDailyOperationsFromRequest, getDashboardSalesFromRequest } from '../reporting/queries';
+import {
+  getDailyOperationsFromRequest,
+  getDashboardSalesFromRequest,
+  getManagementReportFromRequest,
+} from '../reporting/queries';
+import { buildFinanceTiles } from '../reporting/finance-tiles';
 import { getCustomerAccountsFromRequest } from '../customers/queries';
 import { getOperationsOverviewFromRequest } from '../forecourt/operations-overview';
 import { withRequestAuthority } from '../tenancy/request-authority';
@@ -31,7 +36,7 @@ export async function getDashboardFromRequest(request: Request, input: Dashboard
       tenantId: input.tenantId,
       ...(input.stationId ? { stationIds: input.stationId } : {}),
     };
-    const [daily, customers, operations, chart] = await Promise.all([
+    const [daily, customers, operations, chart, finance] = await Promise.all([
       section(() => getDailyOperationsFromRequest(request, reportScope)),
       section(() => getCustomerAccountsFromRequest(request, { tenantId: input.tenantId })),
       input.stationId
@@ -49,7 +54,16 @@ export async function getDashboardFromRequest(request: Request, input: Dashboard
           toDate: input.toDate,
         }),
       ),
+      section(async () =>
+        buildFinanceTiles(
+          await getManagementReportFromRequest(request, {
+            ...reportScope,
+            fromDate: input.fromDate,
+            toDate: input.toDate,
+          }),
+        ),
+      ),
     ]);
-    return { daily, customers, operations, chart };
+    return { daily, customers, operations, chart, finance };
   });
 }

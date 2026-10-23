@@ -741,6 +741,13 @@ describe('A10 management reporting PostgreSQL read model', () => {
       }),
     ]);
     expect(body.sales.reconciliationIds).toContain(ids.factRecon);
+    // Stock at weighted-average cost and the submitted expense waiting for approval.
+    expect(body.ownerPosition).toEqual({
+      stockValue: '169.0000',
+      unvaluedStockStreams: 0,
+      unpaidExpenses: '0.0000',
+      expensesAwaitingApproval: { count: 1, amount: '2.0000' },
+    });
 
     const priorBusinessDateResponse = await managementReportGet(
       new Request(
@@ -948,6 +955,30 @@ describe('A10 management reporting PostgreSQL read model', () => {
       [ids.station, ids.scopedStation].sort(),
     );
     expect(body.customers.availability).toBe('UNAVAILABLE_STATION_DIMENSION');
+  });
+
+  it('narrows the owner position to the selected station and never mixes in others', async () => {
+    const get = async (stationId: string) => {
+      const response = await managementReportGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${stationId}`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      expect(response.status).toBe(200);
+      return ((await response.json()) as Record<string, any>).ownerPosition;
+    };
+    expect(await get(ids.station)).toMatchObject({
+      stockValue: '169.0000',
+      expensesAwaitingApproval: { count: 1, amount: '2.0000' },
+    });
+    // The second station of the same tenant holds no stock and has no expenses.
+    expect(await get(ids.scopedStation)).toEqual({
+      stockValue: '0.0000',
+      unvaluedStockStreams: 0,
+      unpaidExpenses: '0.0000',
+      expensesAwaitingApproval: { count: 0, amount: '0.0000' },
+    });
   });
 
   it('rejects the whole request when any selected station is not permitted', async () => {
@@ -1444,5 +1475,40 @@ describe('A10 management reporting PostgreSQL read model', () => {
       );
       expect(response.status).toBe(403);
     });
+  });
+
+  // Runs last: expense versions are immutable, so this posted expense stays in the fixtures.
+  it('counts the unpaid part of posted expenses and leaves paid ones out', async () => {
+    const expenseId = 'a10b0000-0000-4000-8000-0000000000f8';
+    const paymentId = 'a10b0000-0000-4000-8000-0000000000f9';
+    await client.unsafe(`
+      insert into app.expenses
+        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount,
+         submitted_by)
+        values ('${expenseId}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${ids.factExpenseCategory}',
+         '2026-09-20', 'A10 unpaid test', 4.0000, '${ids.membership}');
+      insert into app.expense_approvals (tenant_id, expense_id, decision, actor_membership_id)
+        values ('${ids.tenant}', '${expenseId}', 'APPROVED', '${ids.membership}');
+      update app.expenses set state = 'APPROVED', version = version + 1 where id = '${expenseId}';
+      update app.expenses set state = 'POSTED', version = version + 1,
+        posted_by = '${ids.membership}', posted_at = now() where id = '${expenseId}';
+      insert into app.expense_payments
+        (id, tenant_id, legal_entity_id, station_id, expense_id, payment_date, amount, settlement_source,
+         external_reference, recorded_by)
+        values ('${paymentId}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${expenseId}',
+         '2026-09-21', 1.5000, 'BANK', 'A10-PAY-1', '${ids.membership}');
+    `);
+    {
+      const response = await managementReportGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      const body = (await response.json()) as Record<string, any>;
+      expect(body.ownerPosition.unpaidExpenses).toBe('2.5000');
+      // Only the submitted expense is waiting for approval; the posted one is not.
+      expect(body.ownerPosition.expensesAwaitingApproval).toEqual({ count: 1, amount: '2.0000' });
+    }
   });
 });

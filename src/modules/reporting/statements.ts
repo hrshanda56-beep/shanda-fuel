@@ -449,9 +449,7 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
   const missing = [...held, ...owed.filter(countable)]
     .filter((line) => line.value === null)
     .map((line) => line.label);
-  const totalHeld = held.some((l) => l.value === null)
-    ? null
-    : sumExact(held.map((l) => l.value));
+  const totalHeld = held.some((l) => l.value === null) ? null : sumExact(held.map((l) => l.value));
   const totalOwed = owed.filter(countable).some((l) => l.value === null)
     ? null
     : sumExact(owed.filter(countable).map((l) => l.value));
@@ -469,7 +467,10 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
       groups: [
         {
           heading: 'What the business holds or is owed',
-          lines: [...held, { label: 'Total held or owed to us', value: totalHeld, kind: 'subtotal' }],
+          lines: [
+            ...held,
+            { label: 'Total held or owed to us', value: totalHeld, kind: 'subtotal' },
+          ],
         },
         {
           heading: 'What the business owes',

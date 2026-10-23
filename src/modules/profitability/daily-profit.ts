@@ -102,9 +102,7 @@ function fuelLine(
   ).length;
   // A fuel with sales but no cost record at all is also unvalued: cost is never invented.
   const costMissing = unvalued > 0 || (sales.length > 0 && costs.length === 0);
-  const cost = costMissing
-    ? null
-    : formatMoney(sumExact(costs.map((entry) => entry.restatedCogs)));
+  const cost = costMissing ? null : formatMoney(sumExact(costs.map((entry) => entry.restatedCogs)));
   const profit = cost === null ? null : formatMoney(subtractExact(revenue, cost));
   return {
     ...fuel,
@@ -141,9 +139,7 @@ function combine(
     expenses: operating,
     fixedCosts: fixed,
     operatingProfit:
-      gross === null
-        ? null
-        : formatMoney(subtractExact(subtractExact(gross, operating), fixed)),
+      gross === null ? null : formatMoney(subtractExact(subtractExact(gross, operating), fixed)),
   };
 }
 
@@ -169,7 +165,9 @@ function groupFuels(
     }
   }
   return [...fuels.values()]
-    .sort((a, b) => `${a.productName}\u0000${a.productId}`.localeCompare(`${b.productName}\u0000${b.productId}`))
+    .sort((a, b) =>
+      `${a.productName}\u0000${a.productId}`.localeCompare(`${b.productName}\u0000${b.productId}`),
+    )
     .map((fuel) =>
       fuelLine(
         fuel,
