@@ -82,6 +82,11 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     purchasing: ['purchase_order.view'],
     expenses: ['expense.view'],
     profitability: ['report.view'],
+    'daily-profit': ['report.view'],
+    'financial-position': ['report.view'],
+    'fuel-deliveries': ['inventory.view'],
+    'customer-controls': ['customer.view'],
+    'payments-due': ['supplier.view'],
     reports: ['report.view'],
     settings: ['tenant.view'],
   };

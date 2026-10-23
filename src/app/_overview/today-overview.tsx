@@ -30,6 +30,9 @@ import {
   type LitresPoint,
   type SalesRow,
 } from './dashboard-figures';
+import { FinanceTiles } from '@/modules/owner/ui/finance-tiles';
+import type { FinanceTile } from '@/modules/reporting/finance-tiles';
+
 import { PerformanceChart } from './performance-chart';
 import {
   approvalLabel,
@@ -117,6 +120,9 @@ export function TodayOverview({
   const [daily, setDaily] = useState<Section<DailyReport>>(
     initialData?.daily ?? { status: 'loading' },
   );
+  const [finance, setFinance] = useState<Section<readonly FinanceTile[]>>(
+    initialData?.finance ?? { status: 'loading' },
+  );
   const [attempt, setAttempt] = useState(0);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
@@ -140,6 +146,7 @@ export function TodayOverview({
       setDaily({ status: 'loading' });
       setCustomers({ status: 'loading' });
       setOperations({ status: 'loading' });
+      setFinance({ status: 'loading' });
     }, 0);
     const initialWindow = chartBuckets('30D', businessToday());
     const params = new URLSearchParams({
@@ -153,17 +160,20 @@ export function TodayOverview({
       customers: Section<{ customers: readonly { status: string }[] }>;
       operations: Section<TodayOperations> | null;
       chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
+      finance?: Section<readonly FinanceTile[]>;
     }>(`/api/dashboard?${params}`, controller.signal, 'Sales could not be loaded.').then(
       (section) => {
         if (section.status === 'ready') {
           setDaily(section.data.daily);
           setCustomers(section.data.customers);
           if (section.data.operations) setOperations(section.data.operations);
+          setFinance(section.data.finance ?? { status: 'forbidden' });
           setChart({ ...section.data.chart, key: `${tenantId}|${stationId ?? ''}|30D` });
         } else {
           setDaily(section);
           setCustomers(section);
           setOperations(section);
+          setFinance(section);
           setChart({ ...section, key: `${tenantId}|${stationId ?? ''}|30D` });
         }
       },
@@ -340,6 +350,12 @@ export function TodayOverview({
             sub={totals ? 'Credit and prepaid accounts' : null}
           />
         </dl>
+        {/* Money at a glance: only for people allowed to see the management figures. */}
+        {finance.status === 'ready' ? (
+          <div style={{ marginBlockStart: 'var(--space-6)' }}>
+            <FinanceTiles tiles={finance.data} />
+          </div>
+        ) : null}
       </section>
 
       <div className="today-side">
@@ -636,4 +652,5 @@ export type DashboardInitialData = {
   customers: Section<{ customers: readonly { status: string }[] }>;
   operations: Section<TodayOperations> | null;
   chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
+  finance?: Section<readonly FinanceTile[]>;
 };

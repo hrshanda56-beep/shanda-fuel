@@ -96,6 +96,9 @@ describe('PostgreSQL integration harness', () => {
               'reconciliation_delivery_refs',
               'reconciliation_dip_refs',
               'reconciliation_variance_explanations',
+              // Rewritten as a set while the delivery is a draft; the status guard blocks it after.
+              'fuel_delivery_compartments',
+              'fuel_delivery_compartment_seals',
             ]).has(row.table_name) &&
           !row.can_truncate &&
           !row.can_trigger,

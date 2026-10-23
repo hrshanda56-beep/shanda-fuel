@@ -935,7 +935,6 @@ function BrandLink({ href }: { href: string }) {
       <BrandMark />
       <span className="shell-brand-text">
         <span className="brand-name">Shanda Fuel</span>
-        <span className="brand-byline">by ShandaHR</span>
       </span>
       <span className="visually-hidden">, go to Today</span>
     </Link>

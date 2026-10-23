@@ -25,6 +25,11 @@ export type NavigationKey =
   | 'purchasing'
   | 'expenses'
   | 'profitability'
+  | 'daily-profit'
+  | 'financial-position'
+  | 'fuel-deliveries'
+  | 'customer-controls'
+  | 'payments-due'
   | 'reports'
   | 'settings';
 
@@ -133,7 +138,16 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'inbox',
         destination: { kind: 'route', path: '/inventory/valuation' },
         availability: 'active',
-        match: [/^\/inventory(\/|$)/],
+        match: [/^\/inventory(?!\/deliveries)(\/|$)/],
+      },
+      {
+        key: 'fuel-deliveries',
+        label: 'Fuel deliveries',
+        searchLabel: 'Fuel deliveries',
+        icon: 'truck',
+        destination: { kind: 'route', path: '/inventory/deliveries' },
+        availability: 'active',
+        match: [/^\/inventory\/deliveries(\/|$)/],
       },
     ],
   },
@@ -188,13 +202,40 @@ export const navigationSections: readonly NavigationSection[] = [
         match: [/^\/profitability(\/|$)/],
       },
       {
+        key: 'daily-profit',
+        label: 'Daily profit',
+        searchLabel: 'Daily profit',
+        icon: 'chart',
+        destination: { kind: 'route', path: '/daily-profit' },
+        availability: 'active',
+        match: [/^\/daily-profit(\/|$)/],
+      },
+      {
+        key: 'financial-position',
+        label: 'Financial position',
+        searchLabel: 'Financial position',
+        icon: 'wallet',
+        destination: { kind: 'route', path: '/financial-position' },
+        availability: 'active',
+        match: [/^\/financial-position(\/|$)/],
+      },
+      {
         key: 'customers',
         label: 'Customers',
         searchLabel: 'Customers',
         icon: 'users',
         destination: { kind: 'route', path: '/customers' },
         availability: 'active',
-        match: [/^\/customers(\/|$)/],
+        match: [/^\/customers(?!\/account-controls)(\/|$)/],
+      },
+      {
+        key: 'customer-controls',
+        label: 'Customer controls',
+        searchLabel: 'Customer controls',
+        icon: 'users',
+        destination: { kind: 'route', path: '/customers/account-controls' },
+        availability: 'active',
+        match: [/^\/customers\/account-controls(\/|$)/],
       },
     ],
   },
@@ -210,7 +251,16 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'truck',
         destination: { kind: 'route', path: '/suppliers' },
         availability: 'active',
-        match: [/^\/suppliers(\/|$)/],
+        match: [/^\/suppliers(?!\/due)(\/|$)/],
+      },
+      {
+        key: 'payments-due',
+        label: 'Payments due',
+        searchLabel: 'Payments due',
+        icon: 'wallet',
+        destination: { kind: 'route', path: '/suppliers/due' },
+        availability: 'active',
+        match: [/^\/suppliers\/due(\/|$)/],
       },
       {
         key: 'purchasing',

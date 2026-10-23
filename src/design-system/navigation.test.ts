@@ -49,7 +49,10 @@ describe('navigation projection', () => {
       entry.key === 'settlements' ||
       entry.key === 'expenses' ||
       entry.key === 'profitability' ||
-      entry.key === 'customers'
+      entry.key === 'daily-profit' ||
+      entry.key === 'financial-position' ||
+      entry.key === 'customers' ||
+      entry.key === 'customer-controls'
         ? { ...entry, visible: false }
         : entry,
     );
@@ -116,13 +119,18 @@ describe('navigation destinations', () => {
       'Daily operations',
       'Reconciliations',
       'Inventory',
+      'Fuel deliveries',
       'Finance overview',
       'Cash & Banking',
       'Provider payouts',
       'Expenses',
       'Profit',
+      'Daily profit',
+      'Financial position',
       'Customers',
+      'Customer controls',
       'Suppliers',
+      'Payments due',
       'Purchase orders',
       'Reports',
       'Settings',
