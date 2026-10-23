@@ -278,6 +278,21 @@ describe('A6 cash collection and banking persistence', () => {
     expectDecimal(afterConfirmation.totals.collectedButUnbanked, '100');
     expectDecimal(afterConfirmation.totals.pendingBankConfirmation, '0');
 
+    // Plain-language statuses are added next to the stored ones; missing proof is a warning only.
+    const plainStatuses = afterConfirmation.collections.map(
+      (collection: { statusLabel: string }) => collection.statusLabel,
+    );
+    expect(plainStatuses).toContain('Fully banked');
+    expect(plainStatuses.every((label: string) => label.length > 0)).toBe(true);
+    const confirmedDeposit = afterConfirmation.deposits?.find(
+      (deposit: { depositId: string }) => deposit.depositId === depositBody.depositId,
+    );
+    expect(confirmedDeposit).toMatchObject({
+      missingProof: true,
+      missingBankReference: false,
+      bankingStatus: 'Fully banked',
+    });
+
     const overAllocation = await postCashCommand(
       {
         commandType: 'CreateBankDeposit',
