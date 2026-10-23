@@ -212,6 +212,7 @@ test.describe('authenticated Staff lifecycle', () => {
     }
     async function invite(name: string, email: string, role: string) {
       await form.locator('input[name="name"]').fill(name);
+      await form.getByLabel('Invite using').selectOption('EMAIL');
       await form.locator('input[name="email"]').fill(email);
       await setSelect('Role', role);
       if (role === 'FINANCE') {
@@ -231,6 +232,8 @@ test.describe('authenticated Staff lifecycle', () => {
       await submitStaffCommandAndWaitForReload(page, () =>
         form.getByRole('button', { name: 'Send invitation' }).click(),
       );
+      // Phone width swaps the section tabs for a dropdown, so go back to desktop first.
+      await page.setViewportSize({ width: 1280, height: 900 });
       await openSettings(page, sessions.owner);
       await page.getByRole('button', { name: 'Staff', exact: true }).click();
       await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();

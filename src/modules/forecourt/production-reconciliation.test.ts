@@ -9,4 +9,15 @@ describe('A5 customer payment evidence boundary', () => {
       ).toMatchObject({ method, amount: '50.0000' });
     }
   });
+
+  it('treats the empty customer and beneficiary of a saved draft as none', () => {
+    const parsed = productionReconciliationPaymentSchema.parse({
+      method: 'CASH',
+      amount: '10.0000',
+      customerAccountId: null,
+      beneficiaryName: null,
+    });
+    expect(parsed.customerAccountId).toBeUndefined();
+    expect(parsed.beneficiaryName).toBeUndefined();
+  });
 });

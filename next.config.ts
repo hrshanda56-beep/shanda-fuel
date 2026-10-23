@@ -7,8 +7,9 @@ const scriptSource = `'self' 'unsafe-inline'${
 const nextConfig: NextConfig = {
   // Keep browser validation separate from an already-running developer server.
   distDir: process.env.PLAYWRIGHT_PORT ? '.next-playwright' : '.next',
-  // Keep the development badge clear of the sidebar's bottom-left controls.
-  devIndicators: { position: 'bottom-right' },
+  // Keep the development badge clear of the sidebar's bottom-left controls. The browser tests turn
+  // it off: at 320px it sits on top of the phone dock's More button and swallows their clicks.
+  devIndicators: process.env.APP_ENV === 'test' ? false : { position: 'bottom-right' },
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {

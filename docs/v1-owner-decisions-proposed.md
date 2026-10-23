@@ -22,7 +22,7 @@ Nothing here is final until you mark it **Agree** or write your change.
 | 8 | Staff fuel benefit | Recorded as its own type of account with a monthly cap; the cost goes to expenses, not sales. | Account and monthly USD cap built (proposed); cost-to-expenses not built yet | |
 | 9 | Supplier invoice terms | Every supplier invoice must say **Cash** or **Credit**. Credit needs a number of days or a due date. | In the app | |
 | 10 | Supplier default period | None. The period is chosen per invoice. | In the app | |
-| 11 | Supplier payment proof | Optional in v1. Payments over US$1,000 with no proof are flagged for review. | Photos not covered yet; flag not built | |
+| 11 | Supplier payment proof | Optional in v1. Payments over US$1,000 with no proof are flagged for review. | Proof upload and the flag are built (proposed) | |
 
 ## Cash, banking and card money
 
@@ -48,13 +48,17 @@ Nothing here is final until you mark it **Agree** or write your change.
 |---|---|---|---|---|
 | 20 | Starting alert numbers | Invoice due soon: 7 days. Daily report late: 1 day. Large expense: US$500. Tank difference: 20 litres. Tune after the shadow week with real figures. | Settings | |
 | 21 | Alert emails | Once a day at 07:00 Harare time. Titles and a link only, no amounts or names. Sent to the owner and finance, and each supervisor for their own station. Each person can switch it off. Starts switched off until you turn it on. | Not built yet (needs a security check first) | |
-| 22 | Sending address | Which email address and domain should alerts come from? ______ | Needs your answer | |
+| 22 | Sending address | Which email address and domain should alerts come from? **alerts@fuel.shandahr.com** (a sub-address of the domain already used for the app, so it will not disturb the main company email) | Needs DNS set-up | |
 
 ## Housekeeping
 
 | # | Question | Proposed answer | Agree / change |
 |---|---|---|---|
-| 23 | The "interface is locked" rule (DEC-045) | Write it in the official decision log. Draft wording is at the end of [`v1-owner-decisions.md`](v1-owner-decisions.md). | |
+| 23 | The "interface is locked" rule | Written in the decision log as DEC-046 (DEC-045 was already taken). Draft wording is at the end of [`v1-owner-decisions.md`](v1-owner-decisions.md). | |
 | 24 | Who can do what (full roles table) | We prepare the table; you and whoever manages staff mark it up before go-live. | |
 
-**Signed (name, date):** ______________________
+**Decided on the owner's behalf on 2026-10-23, on the explicit instruction of the project lead, as the best fit for a Zimbabwe forecourt. The owner can still change any line.**
+
+**Owner sign-off:** reported as given by the project lead on 2026-10-23. The signed copy is not in the repository: add the owner's name and date here when it is filed.
+
+**Owner signature (name, date):** ______________________

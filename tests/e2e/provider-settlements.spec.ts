@@ -218,7 +218,8 @@ test.describe('provider settlement workspace', () => {
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect(page.getByText('Reconciled', { exact: true })).toBeVisible();
+    // Plain words: a reconciled payout reads "Settled" and its action cell reads "Done".
+    await expect(page.getByText('Done', { exact: true })).toBeVisible();
     expect(commands.map(({ body }) => body.commandType)).toEqual([
       'AllocateProviderSettlement',
       'ReconcileProviderSettlement',
@@ -268,8 +269,8 @@ test.describe('provider settlement workspace', () => {
     await page
       .getByLabel('Variance reason')
       .fill('Provider statement differs from approved POS evidence.');
-    await page.getByRole('button', { name: 'Confirm reconciliation' }).click();
-    await expect(page.getByText('Exception', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Confirm now' }).click();
+    await expect(page.getByText('Settled with a difference', { exact: true })).toBeVisible();
     expect(commandBody).toBeTruthy();
     expect((commandBody as unknown as { reason?: unknown } | null)?.reason).toBe(
       'Provider statement differs from approved POS evidence.',

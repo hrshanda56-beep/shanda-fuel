@@ -500,6 +500,12 @@ export function SupplierDetailWorkspace({
                   Submit payment
                 </Button>
                 <Button onClick={() => openSubmitForm('document')}>Submit document</Button>
+                <Link
+                  className="button button-secondary"
+                  href={buildContextHref(`/suppliers/${supplierId}/payments`, search, current)}
+                >
+                  Payment proofs
+                </Link>
               </div>
             </div>
             <div className="supplier-hero-id">

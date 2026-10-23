@@ -358,10 +358,18 @@ export const productionReconciliationPaymentSchema = z.object({
   amount: z.string(),
   reference: z.string().optional(),
   note: z.string().optional(),
-  /** Required for CUSTOMER_CREDIT and PREPAID: the customer account the sale is charged to. */
-  customerAccountId: uuid.optional(),
-  /** Required for STAFF_OR_MANAGEMENT_FUEL: who received the fuel. */
-  beneficiaryName: z.string().trim().max(160).optional(),
+  /**
+   * Required for CUSTOMER_CREDIT and PREPAID: the customer account the sale is charged to.
+   * A saved draft is read back with null here, so null means "none", the same as leaving it out.
+   */
+  customerAccountId: uuid.nullish().transform((value) => value ?? undefined),
+  /** Required for STAFF_OR_MANAGEMENT_FUEL: who received the fuel. Null means "none". */
+  beneficiaryName: z
+    .string()
+    .trim()
+    .max(160)
+    .nullish()
+    .transform((value) => value ?? undefined),
 });
 
 type PaymentInput = z.infer<typeof productionReconciliationPaymentSchema>;

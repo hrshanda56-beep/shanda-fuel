@@ -52,7 +52,8 @@ describe('navigation projection', () => {
       entry.key === 'daily-profit' ||
       entry.key === 'financial-position' ||
       entry.key === 'customers' ||
-      entry.key === 'customer-controls'
+      entry.key === 'customer-controls' ||
+      entry.key === 'staff-benefit'
         ? { ...entry, visible: false }
         : entry,
     );
@@ -129,6 +130,7 @@ describe('navigation destinations', () => {
       'Financial position',
       'Customers',
       'Customer controls',
+      'Staff fuel benefit',
       'Suppliers',
       'Payments due',
       'Purchase orders',

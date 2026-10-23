@@ -21,6 +21,7 @@ export type NavigationKey =
   | 'cash'
   | 'settlements'
   | 'customers'
+  | 'staff-benefit'
   | 'suppliers'
   | 'purchasing'
   | 'expenses'
@@ -226,7 +227,7 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'users',
         destination: { kind: 'route', path: '/customers' },
         availability: 'active',
-        match: [/^\/customers(?!\/account-controls)(\/|$)/],
+        match: [/^\/customers(?!\/account-controls|\/staff-benefit)(\/|$)/],
       },
       {
         key: 'customer-controls',
@@ -236,6 +237,15 @@ export const navigationSections: readonly NavigationSection[] = [
         destination: { kind: 'route', path: '/customers/account-controls' },
         availability: 'active',
         match: [/^\/customers\/account-controls(\/|$)/],
+      },
+      {
+        key: 'staff-benefit',
+        label: 'Staff fuel benefit',
+        searchLabel: 'Staff fuel benefit',
+        icon: 'users',
+        destination: { kind: 'route', path: '/customers/staff-benefit' },
+        availability: 'active',
+        match: [/^\/customers\/staff-benefit(\/|$)/],
       },
     ],
   },

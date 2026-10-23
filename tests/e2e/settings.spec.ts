@@ -23,7 +23,9 @@ test.describe('Settings', () => {
     );
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole('heading', { name: 'Welcome back', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome back', level: 1 })).toBeVisible({
+      timeout: 20_000,
+    });
   });
 
   test.describe('authorised read-only settings', () => {
@@ -150,8 +152,13 @@ test.describe('Settings', () => {
         content(page).getByText('Settings E2E Legal Entity', { exact: true }),
       ).toBeVisible();
 
-      await page.keyboard.press('Tab');
-      await page.keyboard.press('Tab');
+      // Which sections sit between Companies and Account depends on the person's access, so tab
+      // forward through them in order until Account has focus.
+      for (let step = 0; step < sections.length + 12; step += 1) {
+        await page.keyboard.press('Tab');
+        if (await sectionButton(page, 'Account').evaluate((el) => el === document.activeElement))
+          break;
+      }
       await expect(sectionButton(page, 'Account')).toBeFocused();
       await page.keyboard.press('Space');
       await expectOnlyPressed(page, 'Account');
@@ -172,10 +179,13 @@ test.describe('Settings', () => {
     }) => {
       await page.setViewportSize({ width: 320, height: 800 });
       for (const name of sections) {
-        const button = sectionButton(page, name);
-        await expect(button).toBeVisible();
-        await button.click();
-        await expect(button).toHaveAttribute('aria-pressed', 'true');
+        // On a phone the section tabs collapse into a "Settings section" menu.
+        await page.locator('summary[aria-label^="Settings section:"]').click();
+        await page
+          .getByRole('navigation', { name: 'Choose Settings section' })
+          .getByRole('button', { name, exact: true })
+          .click();
+        await expect(page.locator(`summary[aria-label="Settings section: ${name}"]`)).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           await page.evaluate(() => window.innerWidth),
         );
@@ -189,7 +199,9 @@ test.describe('Settings', () => {
       await page.getByRole('button', { name: 'Sign out' }).click();
       // Navigation wait, not the 5s assertion window: the first sign-out call compiles its route.
       await page.waitForURL(/\/login$/);
-      await expect(page.getByRole('heading', { name: 'Welcome back', level: 1 })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Welcome back', level: 1 })).toBeVisible({
+        timeout: 20_000,
+      });
     });
   });
 });

@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
 
 /** Overlays fade and rise in; axe must sample their settled colours, not a frame mid-fade. */
 async function animationsSettled(page: Page) {
@@ -350,6 +351,7 @@ test('today surfaces blocked operations and suspended customers', async ({ page 
 });
 
 test('today explains missing access and failures in plain words', async ({ page }) => {
+  await mockEmptyWorkContext(page);
   await mockToday(page, { operations: { status: 403, body: { error: 'FORBIDDEN' } } });
   await page.goto(TODAY);
   await expect(
@@ -357,6 +359,8 @@ test('today explains missing access and failures in plain words', async ({ page 
   ).toBeVisible();
 
   await page.unrouteAll({ behavior: 'ignoreErrors' });
+  // unrouteAll also drops the context answer, and without it the shell redirects to /login.
+  await mockEmptyWorkContext(page);
   await mockToday(page, {
     operations: { status: 500, body: { message: 'Daily operations could not be loaded.' } },
   });
