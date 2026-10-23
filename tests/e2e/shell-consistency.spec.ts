@@ -92,7 +92,7 @@ test.describe('shared shell consistency', () => {
       'opacity',
       '0',
     );
-    await expect(sidebar.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Expand menu' })).toBeVisible();
 
     const account = page.locator('.shell-account-trigger:visible');
     await expect(account).toHaveAttribute('aria-label', 'Account');

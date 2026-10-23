@@ -64,7 +64,7 @@ test.describe('desktop sidebar', () => {
       'false',
     );
     await expect(nav.getByRole('button', { name: 'Finance' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Suppliers' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Suppliers' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Reports' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
       'aria-current',
