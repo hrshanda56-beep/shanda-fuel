@@ -5,6 +5,14 @@ import type { Database } from '../../../platform/db';
 import type { ManagementReportQuery } from '../contracts';
 import type { TableReportRow } from './definitions';
 import { TABLE_REPORT_ROW_LIMIT } from './definitions';
+import {
+  bankingStatusForDeposit,
+  cashStatusForLocationType,
+  cashStatusLabel,
+  depositProofFlags,
+  depositProofSummary,
+  shortageReasonMissing,
+} from '../../cash/status';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -285,6 +293,13 @@ export const readCustomerStatement: TableReportReader = async (transaction, filt
   }));
 };
 
+/** Where the handed-over cash is: only once the receiver has it (or the dispute is settled). */
+function cashLocationStatus(handoverState: string, toLocationType: string): string | null {
+  if (handoverState !== 'ACCEPTED' && handoverState !== 'RESOLVED') return null;
+  const status = cashStatusForLocationType(toLocationType);
+  return status ? cashStatusLabel(status) : null;
+}
+
 export const readCashCustody: TableReportReader = async (transaction, filters) => {
   const rows = await transaction.execute<{
     date: string;
@@ -298,13 +313,16 @@ export const readCashCustody: TableReportReader = async (transaction, filters) =
     difference: string | null;
     state: string;
     note: string | null;
+    dispute_reason: string | null;
+    to_type: string;
   }>(sql`
     select to_char((coalesce(h.submitted_at, h.created_at) at time zone st.timezone)::date, 'YYYY-MM-DD') as date,
       st.name as station, fl.name as from_name, tl.name as to_name,
       du.name as handed_by, ru.name as received_by,
       h.expected_amount::text as expected, h.counted_amount::text as counted,
       h.variance::text as difference, h.state,
-      coalesce(h.resolution_note, h.dispute_reason) as note
+      coalesce(h.resolution_note, h.dispute_reason) as note,
+      h.dispute_reason, tl.location_type as to_type
     from app.cash_handovers h
     join app.stations st on st.tenant_id = h.tenant_id and st.id = h.station_id
     join app.cash_locations fl on fl.tenant_id = h.tenant_id and fl.id = h.from_location_id
@@ -339,6 +357,10 @@ export const readCashCustody: TableReportReader = async (transaction, filters) =
     difference: row.difference,
     status: statuses[row.state] ?? row.state,
     note: row.note,
+    cashStatus: cashLocationStatus(row.state, row.to_type),
+    reasonCheck: shortageReasonMissing({ variance: row.difference, reason: row.dispute_reason })
+      ? 'Reason missing'
+      : null,
   }));
 };
 
@@ -352,11 +374,16 @@ export const readBankDeposits: TableReportReader = async (transaction, filters) 
     confirmed: string | null;
     difference: string | null;
     state: string;
+    bank_reference: string | null;
+    slip_count: number | string;
   }>(sql`
     select to_char((d.deposited_at at time zone st.timezone)::date, 'YYYY-MM-DD') as date,
       st.name as station, b.name as bank_account, d.deposit_reference,
       d.amount::text as amount, d.confirmed_amount::text as confirmed,
-      d.confirmation_variance::text as difference, d.state
+      d.confirmation_variance::text as difference, d.state, d.bank_reference,
+      (select count(*) from app.documents doc
+        where doc.tenant_id = d.tenant_id and doc.subject_type = 'BANK_DEPOSIT'
+          and doc.subject_id = d.id and doc.kind = 'DEPOSIT_SLIP') as slip_count
     from app.bank_deposits d
     join app.stations st on st.tenant_id = d.tenant_id and st.id = d.station_id
     join app.bank_accounts b on b.tenant_id = d.tenant_id and b.id = d.bank_account_id
@@ -375,6 +402,21 @@ export const readBankDeposits: TableReportReader = async (transaction, filters) 
     confirmed: row.confirmed,
     difference: row.difference,
     status: row.state.charAt(0) + row.state.slice(1).toLowerCase().replaceAll('_', ' '),
+    bankReference: row.bank_reference,
+    bankingStatus: bankingStatusForDeposit({
+      state: row.state,
+      amount: row.amount,
+      confirmedAmount: row.confirmed,
+    }),
+    missingProof:
+      row.state === 'REVERSED'
+        ? null
+        : depositProofSummary(
+            depositProofFlags({
+              slipCount: Number(row.slip_count),
+              bankReference: row.bank_reference,
+            }),
+          ) || null,
   }));
 };
 

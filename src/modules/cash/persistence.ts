@@ -15,6 +15,7 @@ import {
   type CashCollectionSource,
 } from './domain';
 import type { CashCommandContext } from './application';
+import { bankingStatusForDeposit, cashStatusLabelForCustody, depositProofFlags } from './status';
 import type { ForecourtTransaction } from '../forecourt/application';
 
 type SourceRow = {
@@ -499,6 +500,7 @@ export async function getCashStationSummaryInTransaction(
     deposited_at: string | Date;
     expected_confirmation_at: string | Date | null;
     confirmed_at: string | Date | null;
+    slip_count: number | string | null;
   };
   type DepositLinkRow = {
     collection_id: string;
@@ -605,7 +607,12 @@ export async function getCashStationSummaryInTransaction(
                d.bank_reference,
                d.deposited_at,
                d.expected_confirmation_at,
-               d.confirmed_at
+               d.confirmed_at,
+               (select count(*) from app.documents doc
+                 where doc.tenant_id = d.tenant_id
+                   and doc.subject_type = 'BANK_DEPOSIT'
+                   and doc.subject_id = d.id
+                   and doc.kind = 'DEPOSIT_SLIP') as slip_count
         from app.bank_deposits d
         join app.bank_accounts ba
           on ba.tenant_id = d.tenant_id
@@ -751,6 +758,7 @@ coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "
       pendingBankConfirmation: pending.toString(),
       state: row.state,
       custodyState,
+      statusLabel: cashStatusLabelForCustody(custodyState),
       sourceLocationId: row.source_location_id,
       currentLocationId: row.current_location_id,
       version: Number(row.version),
@@ -798,6 +806,21 @@ coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "
       ? decimal(row.confirmation_variance).toString()
       : null,
     bankReference: row.bank_reference,
+    ...(() => {
+      const flags = depositProofFlags({
+        slipCount: Number(row.slip_count ?? 0),
+        bankReference: row.bank_reference,
+      });
+      return {
+        missingProof: flags.missingProof,
+        missingBankReference: flags.missingBankReference,
+        bankingStatus: bankingStatusForDeposit({
+          state: row.state,
+          amount: decimal(row.amount).toString(),
+          confirmedAmount: row.confirmed_amount,
+        }),
+      };
+    })(),
     depositedAt: new Date(row.deposited_at).toISOString(),
     expectedConfirmationAt: iso(row.expected_confirmation_at),
     confirmedAt: iso(row.confirmed_at),

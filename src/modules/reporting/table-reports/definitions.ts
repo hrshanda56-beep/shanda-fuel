@@ -152,6 +152,8 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'difference', label: 'Short (−) / over (+) (USD)', kind: 'number' },
       { key: 'status', label: 'Status', kind: 'text' },
       { key: 'note', label: 'Note', kind: 'text' },
+      { key: 'cashStatus', label: 'Where the cash is now', kind: 'text' },
+      { key: 'reasonCheck', label: 'Shortage reason', kind: 'text' },
     ],
   },
   {
@@ -170,6 +172,9 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'confirmed', label: 'Bank confirmed (USD)', kind: 'number' },
       { key: 'difference', label: 'Difference (USD)', kind: 'number' },
       { key: 'status', label: 'Status', kind: 'text' },
+      { key: 'bankReference', label: 'Bank reference', kind: 'text' },
+      { key: 'bankingStatus', label: 'Banking status', kind: 'text' },
+      { key: 'missingProof', label: 'Missing proof', kind: 'text' },
     ],
   },
   {

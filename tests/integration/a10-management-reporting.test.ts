@@ -1429,6 +1429,27 @@ describe('A10 management reporting PostgreSQL read model', () => {
       expect(deposits).toContain('A10 Bank,A10-DEPOSIT,40.0000,40.0000,0.0000,Confirmed');
     });
 
+    it('adds plain cash statuses and missing-proof warnings without removing columns', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const custody = (await (await exportAs(sessionToken, `report=cash-custody&${base}`)).text())
+        .trim()
+        .split('\r\n');
+      expect(custody[0]).toContain('Status,Note,Where the cash is now,Shortage reason');
+      // A disputed handover has not been received yet, and its shortage has a written reason.
+      expect(custody.find((line) => line.includes('A10 short count'))).toMatch(
+        /A10 short count,,$/,
+      );
+
+      const deposits = (await (await exportAs(sessionToken, `report=bank-deposits&${base}`)).text())
+        .trim()
+        .split('\r\n');
+      expect(deposits[0]).toContain('Status,Bank reference,Banking status,Missing proof');
+      // Confirmed in full, has a bank reference, but no deposit slip is attached: warned, not blocked.
+      expect(deposits.find((line) => line.includes('A10-DEPOSIT'))).toContain(
+        'Confirmed,A10-BANK-REF,Fully banked,No deposit slip attached',
+      );
+    });
+
     it('lists daily reconciliations with expected against accounted sales', async () => {
       const csv = await (
         await exportAs(sessionToken, `report=daily-reconciliation&tenantId=${ids.tenant}&${range}`)
