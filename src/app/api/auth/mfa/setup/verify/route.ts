@@ -1,7 +1,7 @@
 // Authentication and MFA enrollment are managed by Clerk.
 export const runtime = 'nodejs';
 
-function retiredEndpoint(_request?: Request): Response {
+function retiredEndpoint(): Response {
   return new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
 }
 
