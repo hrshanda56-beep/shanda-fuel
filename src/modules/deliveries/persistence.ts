@@ -51,7 +51,7 @@ export async function assertWaterTestAllowsConfirmation(
   const required = await readWaterTestRequired(transaction, scope.tenantId);
   if (!required) return;
   const tests = await transaction
-    .select({ id: fuelDeliveryWaterTests.id })
+    .select({ id: fuelDeliveryWaterTests.id, result: fuelDeliveryWaterTests.result })
     .from(fuelDeliveryWaterTests)
     .where(
       and(
@@ -61,5 +61,9 @@ export async function assertWaterTestAllowsConfirmation(
       ),
     )
     .orderBy(asc(fuelDeliveryWaterTests.id));
-  assertWaterTestOnRecord({ required, hasWaterTest: tests.length > 0 });
+  assertWaterTestOnRecord({
+    required,
+    hasWaterTest: tests.length > 0,
+    result: tests[0]?.result ?? null,
+  });
 }

@@ -230,14 +230,24 @@ export function checkWaterTest(input: {
 
 /**
  * The owner switch. When it is on, a delivery cannot be received until a water test is on
- * record. When it is off (the default) the test is recorded but never blocks anything.
- * A failed test is recorded and shown; whether to reject the fuel stays a human decision.
+ * record. When the owner's switch is off (the starting position) the test is recorded but never
+ * blocks anything. With it on, a failed test blocks acceptance of the delivery.
  */
-export function assertWaterTestOnRecord(input: { required: boolean; hasWaterTest: boolean }): void {
+export function assertWaterTestOnRecord(input: {
+  required: boolean;
+  hasWaterTest: boolean;
+  result?: string | null;
+}): void {
   if (input.required && !input.hasWaterTest) {
     throw new AppError(
       'CONFLICT',
       'Record the water test for this delivery before confirming it. Your owner has asked for a water test on every delivery.',
+    );
+  }
+  if (input.required && input.result === 'FAIL') {
+    throw new AppError(
+      'CONFLICT',
+      'The water test for this delivery failed, so the fuel cannot be accepted. Contact your supplier and your owner.',
     );
   }
 }

@@ -173,6 +173,12 @@ describe('water test', () => {
   it('only blocks when the owner switch is on', () => {
     expect(() => assertWaterTestOnRecord({ required: false, hasWaterTest: false })).not.toThrow();
     expect(() => assertWaterTestOnRecord({ required: true, hasWaterTest: true })).not.toThrow();
+    expect(() =>
+      assertWaterTestOnRecord({ required: true, hasWaterTest: true, result: 'FAIL' }),
+    ).toThrow(/failed/);
+    expect(() =>
+      assertWaterTestOnRecord({ required: false, hasWaterTest: true, result: 'FAIL' }),
+    ).not.toThrow();
     expect(() => assertWaterTestOnRecord({ required: true, hasWaterTest: false })).toThrow(
       /water test/,
     );
