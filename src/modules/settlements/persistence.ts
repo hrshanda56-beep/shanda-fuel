@@ -14,6 +14,7 @@ import {
   formatSettlementMoney,
 } from './domain';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from './contracts';
+import { derivePaymentSettlementStatus } from './status';
 
 type ProviderAccountRow = {
   id: string;
@@ -634,10 +635,14 @@ function unmatchedPaymentQuery(context: SettlementCommandContext) {
                     and ar.state = 'REVERSED'
                )
            ), 0)::text as "allocatedAmount",
-           p.reference
+           p.reference,
+           to_char(now() at time zone st.timezone, 'YYYY-MM-DD') as "stationToday",
+           (select s.pos_settlement_lag_days from app.alert_settings s
+             where s.tenant_id = p.tenant_id) as "overdueAfterDays"
       from app.reconciliation_payments p
       join app.reconciliations r
         on r.tenant_id = p.tenant_id and r.station_id = p.station_id and r.id = p.reconciliation_id
+      join app.stations st on st.tenant_id = r.tenant_id and st.id = r.station_id
       join app.station_business_days bd
         on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
       left join app.provider_settlement_allocations a
@@ -647,7 +652,7 @@ function unmatchedPaymentQuery(context: SettlementCommandContext) {
        and p.method in ('POS','ECOCASH')
        and r.state in ('APPROVED','POSTED','LOCKED')
      group by p.id, p.station_id, p.reconciliation_id, r.state, bd.business_date,
-              p.method, p.amount, p.reference
+              p.method, p.amount, p.reference, st.timezone
      having coalesce(sum(a.amount) filter (
        where a.state = 'POSTED'
          and not exists (
@@ -661,9 +666,24 @@ function unmatchedPaymentQuery(context: SettlementCommandContext) {
 `;
 }
 
-function mapUnmatchedRows(rows: UnmatchedProviderPaymentRow[]) {
-  return rows.map((row) => ({
+type UnmatchedQueryRow = Omit<UnmatchedProviderPaymentRow, 'overdue'> & {
+  stationToday: string;
+  overdueAfterDays: number | null;
+};
+
+function mapUnmatchedRows(rows: UnmatchedQueryRow[]): UnmatchedProviderPaymentRow[] {
+  return rows.map(({ stationToday, overdueAfterDays, ...row }) => ({
     ...row,
+    // Station time, not the browser's; mobile money is given a little longer than card.
+    overdue:
+      derivePaymentSettlementStatus({
+        amount: row.amount,
+        allocatedAmount: row.allocatedAmount,
+        businessDate: row.businessDate,
+        today: stationToday,
+        overdueAfterDays,
+        method: row.method === 'ECOCASH' ? 'MOBILE_MONEY' : 'CARD',
+      }) === 'OVERDUE',
     amount: formatSettlementMoney(row.amount),
     allocatedAmount: formatSettlementMoney(row.allocatedAmount),
     unallocatedAmount: formatSettlementMoney(
@@ -677,7 +697,7 @@ export async function listUnmatchedProviderPaymentsInTransaction(
   context: SettlementCommandContext,
 ): Promise<UnmatchedProviderPaymentRow[]> {
   return mapUnmatchedRows(
-    await transaction.execute<UnmatchedProviderPaymentRow>(unmatchedPaymentQuery(context)),
+    await transaction.execute<UnmatchedQueryRow>(unmatchedPaymentQuery(context)),
   );
 }
 
@@ -687,7 +707,7 @@ export async function getSettlementOverviewInTransaction(
 ) {
   const result = await transaction.execute<{
     settlements: ProviderSettlementSummaryRow[];
-    unmatched: UnmatchedProviderPaymentRow[];
+    unmatched: UnmatchedQueryRow[];
   }>(sql`
   with settlements as (${settlementSummaryQuery(context)}), unmatched as (${unmatchedPaymentQuery(context)})
   select coalesce((select json_agg(settlements) from settlements), '[]'::json) as settlements,

@@ -10,8 +10,8 @@ import {
   settlementStateLabel,
 } from './settlement-summary';
 
-const payment = (method: 'POS' | 'ECOCASH', unallocatedAmount: string) =>
-  ({ method, unallocatedAmount }) as UnmatchedProviderPaymentRow;
+const payment = (method: 'POS' | 'ECOCASH', unallocatedAmount: string, overdue = false) =>
+  ({ method, unallocatedAmount, overdue }) as UnmatchedProviderPaymentRow;
 
 const settlement = (
   providerName: string,
@@ -25,8 +25,8 @@ describe('methodTotals', () => {
     expect(
       methodTotals([payment('POS', '0.1'), payment('ECOCASH', '10'), payment('POS', '0.2')]),
     ).toEqual([
-      { method: 'ECOCASH', label: 'EcoCash', count: 1, remaining: '10' },
-      { method: 'POS', label: 'POS (card)', count: 2, remaining: '0.3' },
+      { method: 'ECOCASH', label: 'EcoCash', count: 1, overdueCount: 0, remaining: '10' },
+      { method: 'POS', label: 'POS (card)', count: 2, overdueCount: 0, remaining: '0.3' },
     ]);
     expect(methodTotals([])).toEqual([]);
   });
@@ -106,5 +106,17 @@ describe('settlement wording', () => {
     expect(settlementStateLabel('RECORDED')).toBe('Awaiting settlement');
     expect(settlementStateLabel('RECONCILED')).toBe('Settled');
     expect(settlementStateLabel('EXCEPTION')).toBe('Settled with a difference');
+  });
+});
+
+describe('overdue count', () => {
+  it('counts the overdue payments for each method', () => {
+    const totals = methodTotals([
+      payment('POS', '1', true),
+      payment('POS', '2'),
+      payment('ECOCASH', '3'),
+    ]);
+    expect(totals.find((row) => row.method === 'POS')?.overdueCount).toBe(1);
+    expect(totals.find((row) => row.method === 'ECOCASH')?.overdueCount).toBe(0);
   });
 });

@@ -584,7 +584,9 @@ export function SettlementWorkspace({
                     <p className="channel-amount">{total ? money(total.remaining) : money('0')}</p>
                     <span className="channel-pill">
                       {total
-                        ? `${total.count} ${total.count === 1 ? 'payment' : 'payments'}`
+                        ? `${total.count} ${total.count === 1 ? 'payment' : 'payments'}${
+                            total.overdueCount > 0 ? `, ${total.overdueCount} overdue` : ''
+                          }`
                         : 'Cleared'}
                     </span>
                   </>

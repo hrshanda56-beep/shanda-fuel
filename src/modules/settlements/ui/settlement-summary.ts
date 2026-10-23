@@ -21,7 +21,13 @@ export function settlementStateLabel(state: ProviderSettlementSummaryRow['state'
   return settlementRecordLabel(state);
 }
 
-export type MethodTotal = { method: string; label: string; count: number; remaining: string };
+export type MethodTotal = {
+  method: string;
+  label: string;
+  count: number;
+  overdueCount: number;
+  remaining: string;
+};
 
 /** Payment evidence still waiting to be matched, per method (EcoCash, POS). */
 export function methodTotals(rows: readonly UnmatchedProviderPaymentRow[]): MethodTotal[] {
@@ -34,6 +40,7 @@ export function methodTotals(rows: readonly UnmatchedProviderPaymentRow[]): Meth
       method,
       label: methodLabel(method),
       count: matching.length,
+      overdueCount: matching.filter((row) => row.overdue).length,
       remaining: sumExact(matching.map((row) => row.unallocatedAmount)),
     };
   });

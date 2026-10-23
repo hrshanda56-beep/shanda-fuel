@@ -19,7 +19,14 @@ it('returns the same exact-money results as the separate reads in one exchange',
     reportedNetAmount: '97.25',
     state: 'RECORDED',
   };
-  const payment = { amount: '90.20', allocatedAmount: '40.10' };
+  const payment = {
+    amount: '90.20',
+    allocatedAmount: '40.10',
+    method: 'POS',
+    businessDate: '2026-10-20',
+    stationToday: '2026-10-21',
+    overdueAfterDays: 3,
+  };
   const execute = vi.fn().mockResolvedValueOnce([settlement]).mockResolvedValueOnce([payment]);
   const tx = { execute } as unknown as ForecourtTransaction;
   const settlements = await listProviderSettlementSummariesInTransaction(tx, context);
