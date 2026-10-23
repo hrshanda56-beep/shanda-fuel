@@ -379,6 +379,13 @@
       "when": 1792600062000,
       "tag": "0065_delivery_compartment_detail",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792600063000,
+      "tag": "0066_supplier_payment_proof_documents",
+      "breakpoints": true
     }
   ]
 }

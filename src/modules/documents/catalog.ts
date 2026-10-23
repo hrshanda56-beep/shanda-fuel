@@ -20,7 +20,14 @@ export const DOCUMENT_SUBJECTS = {
   CASH_HANDOVER: { table: 'cash_handovers', label: 'Cash handover' },
   RECONCILIATION: { table: 'reconciliations', label: 'Daily report' },
   EXPENSE: { table: 'expenses', label: 'Expense' },
-} as const;
+  // A supplier payment belongs to a legal entity, not a station: the file is stored under the
+  // station the person is working at, but is listed for the payment wherever it was added.
+  SUPPLIER_PAYMENT: {
+    table: 'supplier_payments',
+    label: 'Supplier payment',
+    entityScoped: true,
+  },
+} as const satisfies Record<string, { table: string; label: string; entityScoped?: boolean }>;
 
 export type DocumentSubjectType = keyof typeof DOCUMENT_SUBJECTS;
 
@@ -29,6 +36,11 @@ export const DOCUMENT_SIGNED_URL_SECONDS = 300;
 
 export function isDocumentKind(value: unknown): value is DocumentKind {
   return DOCUMENT_KINDS.some((kind) => kind.value === value);
+}
+
+export function isEntityScopedSubject(subjectType: DocumentSubjectType): boolean {
+  const entry: object = DOCUMENT_SUBJECTS[subjectType];
+  return 'entityScoped' in entry && entry.entityScoped === true;
 }
 
 export function isDocumentSubjectType(value: unknown): value is DocumentSubjectType {

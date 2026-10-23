@@ -128,4 +128,34 @@ describe('extra alerts', () => {
     const failed = buildActionCenter({ ...facts, extra: { status: 'unavailable' } });
     expect(failed.unavailable).toContain('Cash, expense and delivery checks');
   });
+
+  it('flags supplier payments of 1000 or more with no proof, linking to the payments page', () => {
+    const alerts = run({
+      unprovenSupplierPayments: [
+        {
+          id: 'p1',
+          supplierId: 'sup1',
+          supplierName: 'TEI Oils',
+          paymentDate: '2026-10-19',
+          reference: 'EFT-1',
+          amount: '1000.0000',
+        },
+        {
+          id: 'p2',
+          supplierId: 'sup1',
+          supplierName: 'TEI Oils',
+          paymentDate: '2026-10-19',
+          reference: 'EFT-2',
+          amount: '999.9999',
+        },
+      ],
+    });
+    expect(alerts.map((a) => a.id)).toEqual(['supplier-payment-no-proof-p1']);
+    expect(alerts[0]!.href).toBe('/suppliers/sup1/payments');
+    expect(alerts[0]!.tone).toBe('attention');
+  });
+
+  it('says nothing about supplier payments when they could not be checked', () => {
+    expect(run({ unprovenSupplierPayments: null })).toEqual([]);
+  });
 });

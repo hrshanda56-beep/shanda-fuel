@@ -26,6 +26,7 @@ import {
   DOCUMENT_SUBJECTS,
   isDocumentKind,
   isDocumentSubjectType,
+  isEntityScopedSubject,
   type DocumentKind,
   type DocumentSubjectType,
 } from './catalog';
@@ -149,7 +150,11 @@ async function assertSubjectExists(
     transaction.execute<{ id: string }>(sql`
       select id from ${table}
       where tenant_id = ${context.tenantId}
-        and station_id = ${context.stationId}
+        ${
+          isEntityScopedSubject(subjectType)
+            ? sql`and legal_entity_id = ${context.legalEntityId}`
+            : sql`and station_id = ${context.stationId}`
+        }
         and id = ${subjectId}
       limit 1
     `),
@@ -276,7 +281,11 @@ export async function listDocumentsFromRequest(request: Request, rawInput: unkno
       left join app.memberships m on m.tenant_id = d.tenant_id and m.id = d.uploaded_by
       left join app.users u on u.id = m.identity_id
       where d.tenant_id = ${context.tenantId}
-        and d.station_id = ${context.stationId}
+        ${
+          isEntityScopedSubject(input.subjectType as DocumentSubjectType)
+            ? sql`and d.legal_entity_id = ${context.legalEntityId}`
+            : sql`and d.station_id = ${context.stationId}`
+        }
         and d.subject_type = ${input.subjectType}
         and d.subject_id = ${input.subjectId}
       order by d.uploaded_at, d.id

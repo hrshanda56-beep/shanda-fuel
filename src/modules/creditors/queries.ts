@@ -6,6 +6,7 @@ import { withTenantTransaction } from '../../platform/db/transaction';
 import type { AuthenticatedActorContext } from '../identity';
 import { creditLimitPosition } from './credit-limit';
 import { DEFAULT_DUE_SOON_DAYS } from './due-status';
+import { paymentNeedsProofFlag } from './payment-proof';
 import { resolveSupplierReadContext } from './read-context';
 
 type SummaryRow = {
@@ -31,6 +32,8 @@ type StatementRow = {
   posted_at: string;
   amount: string;
   running_balance: string;
+  proof_count: string | number;
+  source_type: string;
 };
 
 function signedAmountSql() {
@@ -167,25 +170,36 @@ export async function getSupplierStatementFromRequest(
   });
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const rows = await transaction.execute<StatementRow>(sql`
-      select source_id, movement_type, effective_date, posted_at::text,
-        amount::text, sum(${signedAmountSql()}) over (
-          order by effective_date, posted_at, id
+      select m.source_id, m.movement_type, m.effective_date, m.posted_at::text,
+        m.amount::text, sum(${signedAmountSql()}) over (
+          order by m.effective_date, m.posted_at, m.id
           rows between unbounded preceding and current row
-        )::text as running_balance
-      from app.supplier_account_movements
-      where tenant_id = ${context.tenantId}
-        and legal_entity_id = ${context.legalEntityId}
-        and supplier_id = ${input.supplierId}
-      order by effective_date, posted_at, id
+        )::text as running_balance,
+        m.source_type,
+        (select count(*) from app.documents d
+          where d.tenant_id = m.tenant_id and d.subject_type = 'SUPPLIER_PAYMENT'
+            and d.subject_id = m.source_id and m.source_type = 'SUPPLIER_PAYMENT') as proof_count
+      from app.supplier_account_movements m
+      where m.tenant_id = ${context.tenantId}
+        and m.legal_entity_id = ${context.legalEntityId}
+        and m.supplier_id = ${input.supplierId}
+      order by m.effective_date, m.posted_at, m.id
     `);
-    return rows.map((row) => ({
-      sourceId: row.source_id,
-      movementType: row.movement_type,
-      effectiveDate: row.effective_date,
-      postedAt: row.posted_at,
-      amount: row.amount,
-      runningBalance: row.running_balance,
-      currency: 'USD' as const,
-    }));
+    return rows.map((row) => {
+      // Proof only applies to money paid out; invoices, credit notes and reversals carry none.
+      const isPayment = row.source_type === 'SUPPLIER_PAYMENT' && row.movement_type === 'PAYMENT';
+      const proofCount = isPayment ? Number(row.proof_count) : null;
+      return {
+        sourceId: row.source_id,
+        movementType: row.movement_type,
+        effectiveDate: row.effective_date,
+        postedAt: row.posted_at,
+        amount: row.amount,
+        runningBalance: row.running_balance,
+        currency: 'USD' as const,
+        proofCount,
+        needsProof: proofCount === null ? false : paymentNeedsProofFlag(row.amount, proofCount),
+      };
+    });
   });
 }

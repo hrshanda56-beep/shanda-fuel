@@ -2,6 +2,7 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import type { InventoryCommandContext, InventoryTransaction } from '../inventory/application';
 import { isPermissionGranted } from '../../platform/security/permissions';
+import { SUPPLIER_PAYMENT_PROOF_THRESHOLD_USD } from '../creditors/payment-proof';
 import {
   APPROVED_INFORMATION_EVENT_CODES,
   DEFAULT_EXTRA_ALERT_SETTINGS,
@@ -25,7 +26,8 @@ export async function loadExtraAlertFacts(
       | 'expense.view'
       | 'reconciliation.view'
       | 'inventory.view'
-      | 'audit.view',
+      | 'audit.view'
+      | 'supplier.view',
   ) =>
     isPermissionGranted({
       actor: context.authority.authorization,
@@ -143,6 +145,38 @@ export async function loadExtraAlertFacts(
       }))
     : null;
 
+  const unprovenSupplierPayments = can('supplier.view')
+    ? (
+        await transaction.execute<{
+          id: string;
+          supplier_id: string;
+          supplier_name: string;
+          payment_date: string;
+          reference: string;
+          amount: string;
+        }>(sql`
+      select p.id, p.supplier_id, s.legal_name as supplier_name, p.payment_date,
+        p.payment_reference as reference, p.amount::text as amount
+      from app.supplier_payments p
+      join app.suppliers s on s.tenant_id = p.tenant_id and s.id = p.supplier_id
+      where p.tenant_id = ${tenantId} and p.legal_entity_id = ${context.legalEntityId}
+        and p.state in ('SUBMITTED', 'POSTED')
+        and p.amount >= ${SUPPLIER_PAYMENT_PROOF_THRESHOLD_USD}::numeric
+        and not exists (select 1 from app.documents d
+          where d.tenant_id = p.tenant_id and d.subject_type = 'SUPPLIER_PAYMENT'
+            and d.subject_id = p.id)
+      order by p.payment_date desc, p.id
+      limit 20`)
+      ).map((row) => ({
+        id: row.id,
+        supplierId: row.supplier_id,
+        supplierName: row.supplier_name,
+        paymentDate: row.payment_date,
+        reference: row.reference,
+        amount: row.amount,
+      }))
+    : null;
+
   let approvedInformationChanges: number | null = null;
   if (can('audit.view')) {
     const codes = sql.join(
@@ -163,5 +197,6 @@ export async function loadExtraAlertFacts(
     belowPriceSales,
     shortDeliveries,
     approvedInformationChanges,
+    unprovenSupplierPayments,
   };
 }

@@ -47,7 +47,7 @@ export const documents = appSchema.table(
     ),
     check(
       'documents_subject_type_ck',
-      sql`${table.subjectType} in ('FUEL_DELIVERY','BANK_DEPOSIT','CASH_HANDOVER','RECONCILIATION','EXPENSE')`,
+      sql`${table.subjectType} in ('FUEL_DELIVERY','BANK_DEPOSIT','CASH_HANDOVER','RECONCILIATION','EXPENSE','SUPPLIER_PAYMENT')`,
     ),
     check(
       'documents_kind_ck',

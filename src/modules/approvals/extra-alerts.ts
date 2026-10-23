@@ -1,5 +1,6 @@
 import { formatLitres, formatUsd } from '../../design-system/formatters';
 import { ExactDecimal } from '../../platform/domain/primitives';
+import { paymentNeedsProofFlag } from '../creditors/payment-proof';
 import { daysBetween, type OperationsAlert } from './operations-alerts';
 
 /**
@@ -62,6 +63,21 @@ export type ExtraAlertFacts = Readonly<{
     | null;
   /** Count of changes to approved records in the look-back window. Null when not permitted. */
   approvedInformationChanges: number | null;
+  /**
+   * Submitted or posted supplier payments with no proof file, newest first. The rule (USD 1000 or
+   * more) is applied again here, so a caller that passes smaller payments is still safe. Null
+   * when the person may not see supplier payments; absent when the caller does not load it.
+   */
+  unprovenSupplierPayments?:
+    | readonly {
+        id: string;
+        supplierId: string;
+        supplierName: string;
+        paymentDate: string;
+        reference: string;
+        amount: string;
+      }[]
+    | null;
   /** Hook only. Stays null until customer accounts carry a due date or credit period. */
   customerOverdue?: null;
 }>;
@@ -161,6 +177,28 @@ export function buildExtraAlerts(
       detail: `Received on ${row.businessDate}. Less fuel arrived than the delivery note says.`,
       href: '/inventory',
       tone: 'attention',
+    });
+  }
+
+  const unproven = (facts.unprovenSupplierPayments ?? []).filter((row) =>
+    paymentNeedsProofFlag(row.amount, 0),
+  );
+  for (const row of unproven.slice(0, 3)) {
+    out.push({
+      id: `supplier-payment-no-proof-${row.id}`,
+      title: `${formatUsd(row.amount)} paid to ${row.supplierName} has no proof of payment`,
+      detail: `Payment ${row.reference} on ${row.paymentDate}. Payments of US$1,000 or more should have proof attached.`,
+      href: `/suppliers/${encodeURIComponent(row.supplierId)}/payments`,
+      tone: 'attention',
+    });
+  }
+  if (unproven.length > 3) {
+    out.push({
+      id: 'supplier-payment-no-proof-more',
+      title: `${unproven.length - 3} more supplier ${plural(unproven.length - 3, 'payment has', 'payments have')} no proof of payment`,
+      detail: 'Open the supplier payments to attach the proof.',
+      href: '/suppliers',
+      tone: 'info',
     });
   }
 
