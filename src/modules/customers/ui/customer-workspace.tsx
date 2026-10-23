@@ -352,6 +352,17 @@ export function CustomerWorkspace({
         />
       ) : null}
 
+      {hasRequiredContext && current ? (
+        <div className="content-span">
+          <Link
+            className="button button-secondary"
+            href={buildContextHref('/customers/account-controls', search, current)}
+          >
+            Credit limits and transaction details
+          </Link>
+        </div>
+      ) : null}
+
       {hasRequiredContext ? (
         <Card as="section" className="panel content-span" aria-labelledby="customer-list-title">
           <h2 id="customer-list-title" className="visually-hidden">

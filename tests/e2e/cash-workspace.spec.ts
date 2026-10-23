@@ -147,7 +147,7 @@ test.describe('Cash workspace', () => {
     await expect(collection.locator('[data-label="Still to bank"]')).toHaveText('800.00 USD');
     const deposit = page.getByRole('row', { name: /DEP-001/ });
     await expect(deposit).toContainText('100.00 USD');
-    await expect(deposit).toContainText('Waiting for bank');
+    await expect(deposit).toContainText('On its way to the bank');
 
     // Forms live in a side sheet opened from the action bar.
     await actionBar(page).getByRole('button', { name: 'Receive cash' }).click();

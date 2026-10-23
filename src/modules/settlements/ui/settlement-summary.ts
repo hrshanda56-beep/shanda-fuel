@@ -1,5 +1,6 @@
 import { exact, sumExact } from '@/modules/reporting/domain';
 
+import { settlementRecordLabel } from '../status';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 
 /**
@@ -16,15 +17,8 @@ export function methodLabel(method: UnmatchedProviderPaymentRow['method']): stri
   return METHOD_LABELS[method] ?? method;
 }
 
-const STATE_LABELS: Record<ProviderSettlementSummaryRow['state'], string> = {
-  RECORDED: 'Not matched yet',
-  PARTIALLY_MATCHED: 'Partly matched',
-  RECONCILED: 'Confirmed',
-  EXCEPTION: 'Confirmed with a difference',
-};
-
 export function settlementStateLabel(state: ProviderSettlementSummaryRow['state']): string {
-  return STATE_LABELS[state] ?? state;
+  return settlementRecordLabel(state);
 }
 
 export type MethodTotal = { method: string; label: string; count: number; remaining: string };

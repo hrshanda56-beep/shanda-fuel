@@ -38,7 +38,13 @@ import { resolveCurrentContext } from '@/modules/context/server';
 export const metadata = { title: 'Finance' };
 export const dynamic = 'force-dynamic';
 
-function ActionTable({ items }: { items: readonly ActionItem[] }) {
+function ActionTable({
+  items,
+  current,
+}: {
+  items: readonly ActionItem[];
+  current: CurrentContext;
+}) {
   return (
     <Card
       as="section"
@@ -66,7 +72,14 @@ function ActionTable({ items }: { items: readonly ActionItem[] }) {
             {items.map((item) => (
               <tr key={item.id}>
                 <th scope="row">
-                  <Link className="finance-table-link" href={item.href}>
+                  <Link
+                    className="finance-table-link"
+                    href={
+                      item.href.startsWith('/') && !item.href.includes('?')
+                        ? buildContextHref(item.href, '', current)
+                        : item.href
+                    }
+                  >
                     {item.title}
                   </Link>
                   <span className="finance-table-detail">{item.detail}</span>
@@ -144,7 +157,7 @@ function ActionList({
         })}
       </dl>
       {center.items.length > 0 ? (
-        <ActionTable items={center.items} />
+        <ActionTable items={center.items} current={current} />
       ) : center.unavailable.length === 0 ? (
         <Card as="section" className="panel content-span">
           <EmptyState

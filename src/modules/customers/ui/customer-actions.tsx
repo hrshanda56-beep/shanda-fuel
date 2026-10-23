@@ -76,6 +76,9 @@ export function CustomerActions({
   const [litres, setLitres] = useState('');
   const [date, setDate] = useState(todayInStationTime);
   const [note, setNote] = useState('');
+  const [vehicle, setVehicle] = useState('');
+  const [driver, setDriver] = useState('');
+  const [voucher, setVoucher] = useState('');
   const [stationId, setStationId] = useState('');
   const [accountId, setAccountId] = useState('');
   const [productId, setProductId] = useState('');
@@ -114,6 +117,9 @@ export function CustomerActions({
     setAmount('');
     setLitres('');
     setNote('');
+    setVehicle('');
+    setDriver('');
+    setVoucher('');
     setCreditLimit('');
     setDate(todayInStationTime());
     setStationId(
@@ -163,6 +169,17 @@ export function CustomerActions({
     }
   }
 
+  // Optional details about the transaction. The person who approved it and a supporting document
+  // are added afterwards on the Account controls page.
+  function entryDetailsFromForm(): { entryDetails?: Record<string, string> } {
+    const details: Record<string, string> = {
+      ...(vehicle.trim() ? { vehicleRegistration: vehicle.trim() } : {}),
+      ...(driver.trim() ? { driverName: driver.trim() } : {}),
+      ...(voucher.trim() ? { voucherNumber: voucher.trim() } : {}),
+    };
+    return Object.keys(details).length > 0 ? { entryDetails: details } : {};
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setFieldError(null);
@@ -182,6 +199,7 @@ export function CustomerActions({
           occurredAt: whenOccurred(date),
           businessDate: date,
           ...(note.trim() ? { note: note.trim() } : {}),
+          ...entryDetailsFromForm(),
         },
         `Payment of ${formatTileMoney(value, creditAccount.currency)} from ${who} recorded.`,
         'CUSTOMER_PAYMENT',
@@ -201,6 +219,7 @@ export function CustomerActions({
             amount: { amount: value, currency: topUpTarget.currency },
             occurredAt: whenOccurred(date),
             businessDate: date,
+            ...entryDetailsFromForm(),
           },
           `${formatTileMoney(value, topUpTarget.currency)} added to ${who}’s prepaid money.`,
           'PREPAID_TOPUP',
@@ -220,6 +239,7 @@ export function CustomerActions({
             litres: value,
             occurredAt: whenOccurred(date),
             businessDate: date,
+            ...entryDetailsFromForm(),
           },
           `${value} litres of ${fuel?.name ?? 'fuel'} added for ${who}.`,
           'PREPAID_TOPUP',
@@ -375,6 +395,38 @@ export function CustomerActions({
                   onChange={(event) => setNote(event.target.value)}
                 />
               </Field>
+              <Field id="action-vehicle" label="Vehicle registration" optional>
+                <input
+                  id="action-vehicle"
+                  maxLength={20}
+                  autoComplete="off"
+                  value={vehicle}
+                  onChange={(event) => setVehicle(event.target.value)}
+                />
+              </Field>
+              <Field id="action-driver" label="Driver's name" optional>
+                <input
+                  id="action-driver"
+                  maxLength={120}
+                  autoComplete="off"
+                  value={driver}
+                  onChange={(event) => setDriver(event.target.value)}
+                />
+              </Field>
+              <Field
+                id="action-voucher"
+                label="Voucher or slip number"
+                optional
+                hint="Who approved it, and a photo of the slip, can be added afterwards under Credit limits and transaction details."
+              >
+                <input
+                  id="action-voucher"
+                  maxLength={60}
+                  autoComplete="off"
+                  value={voucher}
+                  onChange={(event) => setVoucher(event.target.value)}
+                />
+              </Field>
             </>
           ) : null}
 
@@ -440,6 +492,38 @@ export function CustomerActions({
                   max={todayInStationTime()}
                   value={date}
                   onChange={(event) => setDate(event.target.value || todayInStationTime())}
+                />
+              </Field>
+              <Field id="action-vehicle" label="Vehicle registration" optional>
+                <input
+                  id="action-vehicle"
+                  maxLength={20}
+                  autoComplete="off"
+                  value={vehicle}
+                  onChange={(event) => setVehicle(event.target.value)}
+                />
+              </Field>
+              <Field id="action-driver" label="Driver's name" optional>
+                <input
+                  id="action-driver"
+                  maxLength={120}
+                  autoComplete="off"
+                  value={driver}
+                  onChange={(event) => setDriver(event.target.value)}
+                />
+              </Field>
+              <Field
+                id="action-voucher"
+                label="Voucher or slip number"
+                optional
+                hint="Who approved it, and a photo of the slip, can be added afterwards under Credit limits and transaction details."
+              >
+                <input
+                  id="action-voucher"
+                  maxLength={60}
+                  autoComplete="off"
+                  value={voucher}
+                  onChange={(event) => setVoucher(event.target.value)}
                 />
               </Field>
             </>

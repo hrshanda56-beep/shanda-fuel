@@ -135,8 +135,8 @@ describe('Cash and banking, plain-language guidance', () => {
 
   it('uses plain words for where cash is and for deposit status', () => {
     const html = render(summary);
-    expect(html).toContain('Sent to bank');
-    expect(html).toContain('Waiting for bank');
+    expect(html).toContain('On its way to the bank');
+    expect(html).toContain('On its way to the bank');
     expect(html).not.toContain('IN_TRANSIT');
     expect(html).not.toContain('Confirmation variance');
   });
