@@ -1,5 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
+
+test.beforeEach(async ({ page }) => {
+  await mockEmptyWorkContext(page);
+});
 
 async function openFoundation(page: import('@playwright/test').Page) {
   const response = await page.goto('/foundation');
