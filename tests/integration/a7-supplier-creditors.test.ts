@@ -84,6 +84,7 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         commandType: 'SubmitSupplierDocument',
         supplierId: supplier.supplierId,
         documentType: 'INVOICE',
+        paymentTerms: 'CASH',
         referenceNumber: 'INV-A7-001',
         documentDate: '2026-09-24',
         amount: '100.2500',

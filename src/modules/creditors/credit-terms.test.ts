@@ -21,14 +21,21 @@ describe('calculateDueDate', () => {
 });
 
 describe('resolveCreditTerms', () => {
-  it('keeps the older behaviour when no terms are sent', () => {
-    expect(resolveCreditTerms(base)).toEqual({
-      paymentTerms: null,
-      creditPeriodDays: null,
-      dueDate: undefined,
-    });
-    expect(resolveCreditTerms({ ...base, dueDate: '2026-11-01' }).dueDate).toBe('2026-11-01');
+  it('refuses an invoice that does not say cash or credit', () => {
+    expect(() => resolveCreditTerms(base)).toThrow(/Choose Cash or Credit/);
+    expect(() => resolveCreditTerms({ ...base, dueDate: '2026-11-01' })).toThrow(
+      /Choose Cash or Credit/,
+    );
     expect(() => resolveCreditTerms({ ...base, creditPeriodDays: 30 })).toThrow(/Choose "Credit"/);
+  });
+  it('lets a credit note carry no terms', () => {
+    expect(resolveCreditTerms({ documentType: 'CREDIT_NOTE', documentDate: '2026-10-23' })).toEqual(
+      {
+        paymentTerms: null,
+        creditPeriodDays: null,
+        dueDate: undefined,
+      },
+    );
   });
   it('calculates the due date for a credit purchase from its period', () => {
     expect(resolveCreditTerms({ ...base, paymentTerms: 'CREDIT', creditPeriodDays: 30 })).toEqual({

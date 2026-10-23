@@ -26,6 +26,15 @@ export function overdueAfterDays(setting?: number | null): number {
     : DEFAULT_ALERT_SETTINGS.posSettlementLagDays;
 }
 
+/** Owner default: mobile-money (EcoCash and similar) settles slower than card, so it gets 2 more days. */
+export const MOBILE_MONEY_EXTRA_DAYS = 2;
+
+/** The overdue limit for one kind of payment. */
+export function overdueLimitFor(method: 'CARD' | 'MOBILE_MONEY', setting?: number | null): number {
+  const base = overdueAfterDays(setting);
+  return method === 'MOBILE_MONEY' ? base + MOBILE_MONEY_EXTRA_DAYS : base;
+}
+
 /**
  * Status of card or mobile sales for one payment (or one day of them).
  * - everything matched to a provider settlement: Settled;
@@ -41,11 +50,13 @@ export function derivePaymentSettlementStatus(input: {
   /** Today at the station (YYYY-MM-DD). */
   today: string;
   overdueAfterDays?: number | null;
+  /** Card by default; mobile money is given a little longer before it counts as overdue. */
+  method?: 'CARD' | 'MOBILE_MONEY';
 }): PaymentSettlementStatus {
   const amount = new ExactDecimal(input.amount);
   const allocated = new ExactDecimal(input.allocatedAmount);
   if (amount.value.gt(0) && allocated.value.gte(amount.value)) return 'SETTLED';
-  const limit = overdueAfterDays(input.overdueAfterDays);
+  const limit = overdueLimitFor(input.method ?? 'CARD', input.overdueAfterDays);
   if (daysBetween(input.businessDate, input.today) > limit) return 'OVERDUE';
   return allocated.value.gt(0) ? 'PARTLY_SETTLED' : 'AWAITING';
 }

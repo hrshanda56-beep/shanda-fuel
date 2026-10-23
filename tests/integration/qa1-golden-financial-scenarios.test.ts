@@ -473,6 +473,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         legalEntityId: ctx.legalEntityId,
         supplierId,
         documentType: 'INVOICE',
+        paymentTerms: 'CASH',
         referenceNumber: `QA1-INV-${ctx.runId.slice(0, 8)}`,
         documentDate: ctx.businessDate,
         amount: '600.0000',
@@ -722,6 +723,13 @@ describe('QA1 cross-module golden financial scenarios', () => {
     );
     expectStatus(deposit, 201);
     const depositId = id(deposit.body, 'depositId');
+    await client.unsafe(`
+      insert into app.documents (tenant_id, legal_entity_id, station_id, subject_type, subject_id,
+        kind, object_key, file_name, content_type, byte_size, sha256, uploaded_by)
+      values ('${ctx.tenantId}', '${ctx.legalEntityId}', '${ctx.stationId}', 'BANK_DEPOSIT',
+        '${depositId}', 'DEPOSIT_SLIP', 'qa1/slip-${depositId}.pdf', 'slip.pdf',
+        'application/pdf', 1000, '${'b'.repeat(64)}', '${ctx.actors.admin.membershipId}')
+    `);
     expectStatus(
       await cash(
         ctx,

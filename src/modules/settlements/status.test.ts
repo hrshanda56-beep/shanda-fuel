@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   derivePaymentSettlementStatus,
   overdueAfterDays,
+  overdueLimitFor,
   paymentSettlementLabel,
   providerBatchLabel,
   providerCharges,
@@ -67,5 +68,13 @@ describe('provider charges and old vocabularies', () => {
     expect(providerBatchLabel('SETTLED')).toBe('Settled');
     expect(providerBatchLabel('DISPUTED')).toBe('Needs review');
     expect(providerBatchLabel('WEIRD')).toBe('WEIRD');
+  });
+});
+
+describe('mobile money overdue limit', () => {
+  it('gives mobile money two more days than card', () => {
+    expect(overdueLimitFor('CARD')).toBe(3);
+    expect(overdueLimitFor('MOBILE_MONEY')).toBe(5);
+    expect(overdueLimitFor('MOBILE_MONEY', 7)).toBe(9);
   });
 });

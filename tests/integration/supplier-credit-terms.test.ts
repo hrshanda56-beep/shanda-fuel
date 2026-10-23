@@ -123,12 +123,10 @@ describe('supplier credit terms and the due schedule (PostgreSQL)', () => {
     expect(cash.dueDate).toBeNull();
     await post(cash.documentId, 'cc7-post-cash');
 
-    // Older callers that send no terms keep working: no due date means "No due date set".
-    const legacy = await json(
-      await invoice({ referenceNumber: 'CC7-LEGACY' }, 'cc7-legacy', '20.0000'),
-    );
-    expect(legacy.paymentTerms).toBeNull();
-    await post(legacy.documentId, 'cc7-post-legacy');
+    // Rule: an invoice that does not say cash or credit is refused.
+    const noTerms = await invoice({ referenceNumber: 'CC7-NOTERMS' }, 'cc7-noterms', '20.0000');
+    expect(noTerms.status).toBeGreaterThanOrEqual(400);
+    expect(noTerms.status).toBeLessThan(500);
 
     // Rule: a credit purchase needs a period or a due date.
     const missing = await invoice(
@@ -209,9 +207,9 @@ describe('supplier credit terms and the due schedule (PostgreSQL)', () => {
     expect(group('DAYS_8_TO_14').rows.map((r: any) => [r.referenceNumber, r.balance])).toEqual([
       ['CC7-C30', '60.0000'],
     ]);
-    expect(group('NO_DUE_DATE').rows.map((r: any) => r.referenceNumber)).toEqual(['CC7-LEGACY']);
+    expect(group('NO_DUE_DATE').count).toBe(0);
     expect(group('WITHIN_7').count).toBe(0);
-    expect(due.total).toBe('130.5000');
+    expect(due.total).toBe('110.5000');
 
     // The database refuses bad terms even if the app were bypassed: a submitted (not yet posted)
     // credit invoice cannot lose its due date, and a posted one cannot change its terms.

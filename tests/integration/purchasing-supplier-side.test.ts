@@ -166,6 +166,7 @@ function invoice(supplierId: string, overrides: Json = {}) {
     referenceNumber: `90B0-INV-${refCounter}`,
     documentDate: '2026-10-05',
     ...overrides,
+    ...((overrides.documentType ?? 'INVOICE') === 'INVOICE' ? { paymentTerms: 'CASH' } : {}),
   };
 }
 

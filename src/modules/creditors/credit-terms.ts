@@ -7,8 +7,8 @@ import { AppError } from '../../platform/errors';
  * are plain calendar days (YYYY-MM-DD) and the arithmetic is done in UTC on the date alone, so
  * no clock or time zone can move the result by a day.
  *
- * Invoices that carry no terms at all are the ones entered before this rule existed (and by
- * callers that do not send terms); they keep the older behaviour: an optional typed due date.
+ * A supplier invoice must say Cash or Credit. Credit notes carry no terms and keep an optional
+ * typed due date.
  */
 
 export const PAYMENT_TERMS = ['CASH', 'CREDIT'] as const;
@@ -84,6 +84,8 @@ export function resolveCreditTerms(input: CreditTermsInput): ResolvedCreditTerms
 
   if (terms === null) {
     if (period !== null) bad('Choose "Credit" to set a credit period.');
+    // Owner default: an invoice must say cash or credit, so a credit purchase can never lose its due date.
+    if (input.documentType === 'INVOICE') bad('Choose Cash or Credit for this supplier invoice.');
     return { paymentTerms: null, creditPeriodDays: null, dueDate: typedDue };
   }
   if (!isPaymentTerms(terms)) bad('Payment terms must be Cash or Credit.');

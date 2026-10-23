@@ -245,6 +245,27 @@ describe('A6 cash collection and banking persistence', () => {
     expectDecimal(beforeConfirmation.totals.collectedButUnbanked, '800');
     expectDecimal(beforeConfirmation.totals.pendingBankConfirmation, '700');
 
+    const withoutSlip = await postCashCommand(
+      {
+        commandType: 'ConfirmBankDeposit',
+        context: stationContext,
+        depositId: depositBody.depositId,
+        expectedVersion: 0,
+        confirmedAmount: '700.00',
+        bankReference: 'BANK-A6-001',
+      },
+      'a6-confirm-no-slip',
+      'a6-manager-session-token',
+    );
+    expect(withoutSlip.status).toBe(400);
+    await client.unsafe(`
+      insert into app.documents (tenant_id, legal_entity_id, station_id, subject_type, subject_id,
+        kind, object_key, file_name, content_type, byte_size, sha256, uploaded_by)
+      values ('${ids.tenant}', '${ids.legal}', '${ids.station}', 'BANK_DEPOSIT',
+        '${depositBody.depositId}', 'DEPOSIT_SLIP', 'a6/slip-${depositBody.depositId}.pdf',
+        'slip.pdf', 'application/pdf', 1000, '${'a'.repeat(64)}', '${ids.managerMembership}')
+    `);
+
     const confirmed = await postCashCommand(
       {
         commandType: 'ConfirmBankDeposit',
@@ -288,7 +309,7 @@ describe('A6 cash collection and banking persistence', () => {
       (deposit: { depositId: string }) => deposit.depositId === depositBody.depositId,
     );
     expect(confirmedDeposit).toMatchObject({
-      missingProof: true,
+      missingProof: false,
       missingBankReference: false,
       bankingStatus: 'Fully banked',
     });

@@ -411,6 +411,21 @@ export async function confirmBankDepositInTransaction(
   if (confirmed.value.lt(0)) {
     throw new AppError('VALIDATION_FAILED', 'Confirmed deposit amount cannot be negative');
   }
+  // Owner default: cash is only "Fully banked" with a bank reference and a deposit slip on file.
+  const slips = await transaction.execute<{ slip_count: number | string }>(sql`
+    select count(*) as slip_count
+    from app.documents
+    where tenant_id = ${context.tenantId}
+      and subject_type = 'BANK_DEPOSIT'
+      and subject_id = ${input.depositId}
+      and kind = 'DEPOSIT_SLIP'
+  `);
+  if (Number(slips[0]?.slip_count ?? 0) <= 0) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Attach the deposit slip before confirming this deposit with the bank.',
+    );
+  }
   const variance = confirmed.subtract(decimal(deposit.amount)).toString();
   const updated = await transaction.execute<{ version: number | string }>(sql`
     update app.bank_deposits
