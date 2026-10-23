@@ -8,7 +8,8 @@ import { businessToday } from '../period';
 import { findTableReport } from './definitions';
 import { runTableReport } from './run';
 import { TableReportTable } from './ui/table-report-table';
-import { TableReportToolbar } from './ui/table-report-toolbar';
+import { TableReportFilteredToolbar } from './ui/table-report-filtered-toolbar';
+import { parseNarrowing } from './narrowing';
 
 const required = (
   <ContextRequiredState
@@ -42,11 +43,17 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
         const filters = parseReportFilters(params);
         const range = resolveReportFilters(filters, businessToday());
         if (!range) return { tenantId, filters, range: null, result: null };
-        const result = await runTableReport(request, slug, {
-          tenantId,
-          stationIds: filters.stationIds.join(','),
-          ...range,
-        });
+        const result = await runTableReport(
+          request,
+          slug,
+          {
+            tenantId,
+            stationIds: filters.stationIds.join(','),
+            ...range,
+            ...parseNarrowing(params, definition.filters ?? []),
+          },
+          { withFilterOptions: true },
+        );
         return { tenantId, filters, range, result };
       }}
       render={(data) =>
@@ -60,12 +67,14 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
             <p className="field-hint">{definition.description}</p>
             {data.range ? (
               <>
-                <TableReportToolbar
+                <TableReportFilteredToolbar
                   tenantId={data.tenantId}
                   slug={slug}
                   period={data.filters.period}
                   fromDate={data.range.fromDate}
                   toDate={data.range.toDate}
+                  filterKeys={definition.filters ?? []}
+                  filterOptions={data.result?.filterOptions ?? {}}
                 />
                 {data.result?.notice ? (
                   <p className="field-hint" role="status">

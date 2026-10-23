@@ -12,6 +12,7 @@ import {
   type TableReportRow,
 } from './definitions';
 import { TABLE_REPORT_READERS } from './read';
+import { loadFilterOptions, type FilterOptions } from './read-options';
 
 export type TableReportResult = Readonly<{
   definition: TableReportDefinition;
@@ -23,6 +24,8 @@ export type TableReportResult = Readonly<{
   truncated: boolean;
   /** Said instead of figures when the choice cannot be answered truthfully. */
   notice: string | null;
+  /** Choices for the extra filters this report understands. Empty when exports skip them. */
+  filterOptions: FilterOptions;
 }>;
 
 /**
@@ -33,7 +36,7 @@ export async function runTableReport(
   request: Request,
   slug: string,
   input: unknown,
-  options: { requireStepUp?: boolean } = {},
+  options: { requireStepUp?: boolean; withFilterOptions?: boolean } = {},
 ): Promise<TableReportResult> {
   const definition = findTableReport(slug);
   const reader = TABLE_REPORT_READERS[slug];
@@ -63,14 +66,19 @@ export async function runTableReport(
       ...base,
       rows: [],
       truncated: false,
+      filterOptions: {},
       notice:
         'These figures are kept for the whole organisation, not by station. Choose all stations to see them.',
     };
   }
   const legalEntityIds = [...new Set(stations.map((station) => station.legalEntityId))].sort();
-  const all = await withTenantTransaction(context, (transaction) =>
-    reader(transaction, filters, { legalEntityIds }),
-  );
+  const { all, filterOptions } = await withTenantTransaction(context, async (transaction) => ({
+    all: await reader(transaction, filters, { legalEntityIds }),
+    filterOptions:
+      options.withFilterOptions && definition.filters?.length
+        ? await loadFilterOptions(transaction, filters.tenantId, definition.filters)
+        : {},
+  }));
   return {
     definition,
     fromDate: filters.fromDate,
@@ -79,5 +87,6 @@ export async function runTableReport(
     rows: all.slice(0, TABLE_REPORT_ROW_LIMIT),
     truncated: all.length > TABLE_REPORT_ROW_LIMIT,
     notice: null,
+    filterOptions,
   };
 }

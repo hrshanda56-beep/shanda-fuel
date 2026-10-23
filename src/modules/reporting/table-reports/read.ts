@@ -14,6 +14,13 @@ import {
   depositProofSummary,
   shortageReasonMissing,
 } from '../../cash/status';
+import {
+  equalsClause,
+  readPurchases,
+  readSalesByAttendant,
+  readSupplierPayments,
+  reconciliationNarrowing,
+} from './read-extra';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -56,6 +63,7 @@ export const readTankDipHistory: TableReportReader = async (transaction, filters
     where d.tenant_id = ${filters.tenantId}
       and d.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('d', filters.stationIds)}
+      ${equalsClause('t.product_id', filters.productId)}
     order by d.business_date desc, d.measured_at desc, s.name, t.code
     limit ${limit}
   `);
@@ -102,6 +110,7 @@ export const readStockMovements: TableReportReader = async (transaction, filters
     where m.tenant_id = ${filters.tenantId}
       and m.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('m', filters.stationIds)}
+      ${equalsClause('m.product_id', filters.productId)}
     order by m.business_date desc, m.effective_at desc, s.name, t.code, m.id
     limit ${limit}
   `);
@@ -146,6 +155,8 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
     where f.tenant_id = ${filters.tenantId} and f.status = 'CONFIRMED'
       and f.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('f', filters.stationIds)}
+      ${equalsClause('f.product_id', filters.productId)}
+      ${equalsClause('f.supplier_id', filters.supplierId)}
     order by f.business_date desc, s.name, f.delivery_note_number
     limit ${limit}
   `);
@@ -249,6 +260,7 @@ export const readSupplierStatement: TableReportReader = async (
       join app.suppliers s on s.tenant_id = m.tenant_id and s.id = m.supplier_id
       where m.tenant_id = ${filters.tenantId} and m.effective_date <= ${filters.toDate}
         ${entities}
+        ${equalsClause('m.supplier_id', filters.supplierId)}
     ) statement
     where date >= ${filters.fromDate}
     order by supplier, date, posted_at, id
@@ -288,6 +300,7 @@ export const readCustomerStatement: TableReportReader = async (transaction, filt
       join app.customers c on c.tenant_id = l.tenant_id and c.id = l.customer_id
       where l.tenant_id = ${filters.tenantId} and l.business_date <= ${filters.toDate}
         and l.account_type in ('CREDIT', 'PREPAID_VALUE')
+        ${equalsClause('l.customer_id', filters.customerId)}
     ) statement
     where date >= ${filters.fromDate}
     order by customer, account, date, occurred_at, id
@@ -345,6 +358,11 @@ export const readCashCustody: TableReportReader = async (transaction, filters) =
     where h.tenant_id = ${filters.tenantId} and h.state <> 'DRAFT'
       and (coalesce(h.submitted_at, h.created_at) at time zone st.timezone)::date between ${filters.fromDate}::date and ${filters.toDate}::date
       ${stationClause('h', filters.stationIds)}
+      ${
+        filters.employeeId
+          ? sql`and ${filters.employeeId} in (h.delivered_by, h.received_by, h.resolved_by)`
+          : sql``
+      }
     order by coalesce(h.submitted_at, h.created_at) desc, h.id desc
     limit ${limit}
   `);
@@ -470,6 +488,8 @@ export const readDailyReconciliation: TableReportReader = async (transaction, fi
     where r.tenant_id = ${filters.tenantId}
       and bd.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('r', filters.stationIds)}
+      ${equalsClause('sh.shift_template_id', filters.shiftTemplateId)}
+      ${reconciliationNarrowing('r', filters)}
     order by bd.business_date desc, st.name, sh.planned_start_at, r.id
     limit ${limit}
   `);
@@ -509,4 +529,7 @@ export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> =
   'bank-deposits': readBankDeposits,
   'daily-reconciliation': readDailyReconciliation,
   'customer-ageing': readCustomerAgeing,
+  purchases: readPurchases,
+  'supplier-payments': readSupplierPayments,
+  'sales-by-attendant': readSalesByAttendant,
 };
