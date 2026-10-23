@@ -152,7 +152,7 @@ test.describe('Cash workspace', () => {
     // Forms live in a side sheet opened from the action bar.
     await actionBar(page).getByRole('button', { name: 'Receive cash' }).click();
     const sheet = page.getByRole('dialog', { name: 'Receive cash' });
-    await expect(sheet.getByRole('button', { name: 'Receive cash' })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Receive cash', exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
     await actionBar(page)
@@ -236,7 +236,7 @@ test.describe('Cash workspace', () => {
     await receiveSheet
       .getByRole('combobox', { name: 'Receiving location' })
       .selectOption('location-2');
-    await receiveSheet.getByRole('button', { name: 'Receive cash' }).click();
+    await receiveSheet.getByRole('button', { name: 'Receive cash', exact: true }).click();
 
     await expect
       .poll(() => commandPayload)
@@ -279,11 +279,10 @@ test.describe('Cash workspace', () => {
     await expect(collectSheet.getByLabel('Amount')).toHaveValue('1000.00');
     await collectSheet.getByLabel('Reference').fill('COL-002');
     await collectSheet.getByLabel('Amount').fill('25.00');
-    await collectSheet.getByRole('button', { name: 'Collect cash' }).click();
+    await collectSheet.getByRole('button', { name: 'Collect cash', exact: true }).click();
 
-    await expect(
-      page.getByText(/The cash collection is stale.*Refresh the station position/),
-    ).toBeVisible();
+    await expect(page.getByText('The cash collection is stale.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Update and keep my details' })).toBeVisible();
   });
 
   test('a view-only role sees the cash position but no cash actions', async ({ page }) => {
@@ -334,7 +333,7 @@ test.describe('Cash workspace', () => {
       .getByRole('button', { name: 'Bank it' })
       .click();
     const sheet = page.getByRole('dialog', { name: 'Bank cash' });
-    await expect(sheet.getByRole('combobox', { name: 'Cash' })).toHaveValue('collection-1');
+    await expect(sheet.getByRole('combobox', { name: /^Cash\b/ })).toHaveValue('collection-1');
     await expect(sheet.getByLabel('Amount')).toHaveValue('700.00');
   });
 
