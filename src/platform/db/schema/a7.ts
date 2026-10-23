@@ -97,6 +97,9 @@ export const supplierDocuments = appSchema.table(
     netAmount: moneyColumn('net_amount'),
     vatAmount: moneyColumn('vat_amount'),
     vatMode: text('vat_mode'),
+    /** CASH or CREDIT on invoices; NULL = not recorded (migration 0055). */
+    paymentTerms: text('payment_terms'),
+    creditPeriodDays: integer('credit_period_days'),
     varianceStatus: text('variance_status').notNull().default('NOT_EVALUATED'),
     varianceSnapshot: jsonb('variance_snapshot'),
     varianceApprovalReason: text('variance_approval_reason'),
@@ -128,6 +131,21 @@ export const supplierDocuments = appSchema.table(
     check(
       'supplier_documents_due_date_order_ck',
       sql`${table.dueDate} is null or ${table.dueDate} >= ${table.documentDate}`,
+    ),
+    check(
+      'supplier_documents_payment_terms_ck',
+      sql`${table.paymentTerms} is null or ${table.paymentTerms} in ('CASH','CREDIT')`,
+    ),
+    check(
+      'supplier_documents_credit_period_ck',
+      sql`${table.creditPeriodDays} is null or (${table.creditPeriodDays} >= 0 and ${table.creditPeriodDays} <= 365)`,
+    ),
+    check(
+      'supplier_documents_terms_shape_ck',
+      sql`(${table.paymentTerms} is null and ${table.creditPeriodDays} is null)
+        or (${table.documentType} = 'INVOICE' and ${table.paymentTerms} = 'CASH' and ${table.creditPeriodDays} is null and ${table.dueDate} is null)
+        or (${table.documentType} = 'INVOICE' and ${table.paymentTerms} = 'CREDIT' and ${table.dueDate} is not null
+          and (${table.creditPeriodDays} is null or ${table.dueDate} = to_char((${table.documentDate})::date + ${table.creditPeriodDays}, 'YYYY-MM-DD')))`,
     ),
     check(
       'supplier_documents_post_provenance_ck',

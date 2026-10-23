@@ -351,6 +351,13 @@
       "when": 1792600012000,
       "tag": "0049_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792600020000,
+      "tag": "0055_supplier_invoice_credit_terms",
+      "breakpoints": true
     }
   ]
 }

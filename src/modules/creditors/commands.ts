@@ -68,6 +68,10 @@ const submitDocumentSchema = base.extend({
   referenceNumber: z.string().trim().min(1).max(120),
   documentDate: z.string(),
   dueDate: z.string().optional(),
+  /** Cash or credit. Omitted = not recorded (older callers); see credit-terms.ts. */
+  paymentTerms: z.enum(['CASH', 'CREDIT']).optional(),
+  /** Days after the invoice date that payment falls due; the due date is worked out from it. */
+  creditPeriodDays: z.number().int().min(0).max(365).optional(),
   /** Payable total (net plus VAT). Must equal the sum of the lines exactly. */
   amount: decimal,
   netAmount: decimal.optional(),

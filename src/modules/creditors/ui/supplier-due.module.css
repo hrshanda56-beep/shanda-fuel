@@ -1,0 +1,101 @@
+/* What is due to suppliers. A module so it cannot collide with other pages' styles. */
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.intro {
+  margin: 0;
+  max-width: 46rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.summaryCard {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.summaryCard[data-tone='warning'] {
+  border-color: var(--tone-warning-text, var(--border-strong));
+}
+
+.summaryLabel,
+.summaryNote {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.summaryValue {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xl, 1.5rem);
+  font-weight: var(--font-weight-semibold, 600);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.groupHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--font-size-md, 1rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary);
+}
+
+.groupTotal {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
+}
+
+.dueTable :global(.list-head),
+.dueTable :global(.list-row) {
+  grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1.2fr) minmax(9rem, 1.4fr) minmax(
+      7rem,
+      1fr
+    );
+}
+
+.dueTable :global(.list-row)::after {
+  display: none;
+}
+
+.dueTable :global(.list-head) span:last-child {
+  text-align: right;
+}
+
+@media (max-width: 64rem) {
+  .summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 48rem) {
+  .dueTable :global(.list-row) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 30rem) {
+  .summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

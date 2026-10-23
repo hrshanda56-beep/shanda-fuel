@@ -13,6 +13,7 @@ import {
   type SupplierDocumentType,
 } from './domain';
 import type { SupplierCommandContext, SupplierTransaction } from './application';
+import { resolveCreditTerms } from './credit-terms';
 import { assertHeaderMatchesLines, type InvoiceLineInput } from './purchasing-policy';
 import {
   assertDeliveryUsable,
@@ -137,6 +138,8 @@ export async function submitSupplierDocumentInTransaction(
     referenceNumber: string;
     documentDate: string;
     dueDate?: string | undefined;
+    paymentTerms?: 'CASH' | 'CREDIT' | undefined;
+    creditPeriodDays?: number | undefined;
     amount: string;
     netAmount?: string | undefined;
     vatAmount?: string | undefined;
@@ -145,6 +148,13 @@ export async function submitSupplierDocumentInTransaction(
   },
 ) {
   await assertSupplierAndEntity(transaction, context, input.supplierId);
+  const terms = resolveCreditTerms({
+    documentType: input.documentType,
+    documentDate: input.documentDate,
+    paymentTerms: input.paymentTerms,
+    creditPeriodDays: input.creditPeriodDays,
+    dueDate: input.dueDate,
+  });
   const validated = validateSupplierDocument({
     tenantId: context.tenantId,
     legalEntityId: context.legalEntityId,
@@ -152,7 +162,7 @@ export async function submitSupplierDocumentInTransaction(
     documentType: input.documentType,
     referenceNumber: input.referenceNumber,
     documentDate: input.documentDate,
-    ...(input.dueDate === undefined ? {} : { dueDate: input.dueDate }),
+    ...(terms.dueDate === undefined ? {} : { dueDate: terms.dueDate }),
     currency: 'USD',
     amount: input.amount,
     deliveryReferences: (input.deliveryReferences ?? []).map((reference) => ({
@@ -194,7 +204,7 @@ export async function submitSupplierDocumentInTransaction(
     insert into app.supplier_documents (
       id, tenant_id, legal_entity_id, supplier_id, document_type,
       reference_number, document_date, due_date, currency, amount,
-      net_amount, vat_amount, vat_mode,
+      net_amount, vat_amount, vat_mode, payment_terms, credit_period_days,
       state, version, created_by, submitted_by, submitted_at
     ) values (
       ${id}, ${context.tenantId}, ${context.legalEntityId}, ${input.supplierId},
@@ -202,6 +212,7 @@ export async function submitSupplierDocumentInTransaction(
       ${validated.dueDate ?? null}, 'USD', ${validated.amount.amount.toString()},
       ${prepared.totals?.net ?? null}, ${prepared.totals?.vat ?? null},
       ${prepared.totals ? prepared.policy.vatMode : null},
+      ${terms.paymentTerms}, ${terms.creditPeriodDays},
       'SUBMITTED', 0, ${actor}, ${actor}, now()
     )
   `);
@@ -238,6 +249,9 @@ export async function submitSupplierDocumentInTransaction(
     netAmount: prepared.totals?.net ?? null,
     vatAmount: prepared.totals?.vat ?? null,
     vatMode: prepared.totals ? prepared.policy.vatMode : null,
+    paymentTerms: terms.paymentTerms,
+    creditPeriodDays: terms.creditPeriodDays,
+    dueDate: validated.dueDate ?? null,
     lineCount: prepared.lines.length,
   };
 }
