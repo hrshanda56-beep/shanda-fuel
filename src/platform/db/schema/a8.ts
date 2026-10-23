@@ -473,3 +473,40 @@ export const customerCreditLimitOverrides = appSchema.table(
     }),
   ],
 );
+
+/** S13 (0070): marks a CREDIT account as a staff fuel benefit. The period limit is `credit_limit`. */
+export const customerStaffBenefitTerms = appSchema.table(
+  'customer_staff_benefit_terms',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    accountId: uuid('account_id').notNull(),
+    staffName: text('staff_name').notNull(),
+    staffMembershipId: uuid('staff_membership_id'),
+    periodKind: text('period_kind').notNull().default('MONTHLY'),
+    limitBasis: text('limit_basis').notNull().default('USD'),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('customer_staff_benefit_terms_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('customer_staff_benefit_terms_account_uidx').on(table.tenantId, table.accountId),
+    check(
+      'customer_staff_benefit_terms_name_ck',
+      sql`btrim(${table.staffName}) <> '' and char_length(${table.staffName}) <= 200`,
+    ),
+    check('customer_staff_benefit_terms_period_ck', sql`${table.periodKind} in ('MONTHLY')`),
+    check('customer_staff_benefit_terms_basis_ck', sql`${table.limitBasis} in ('USD')`),
+    accountScope(table, 'customer_staff_benefit_terms_account_fk'),
+    foreignKey({
+      columns: [table.tenantId, table.staffMembershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_staff_benefit_terms_staff_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.createdBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'customer_staff_benefit_terms_created_by_fk',
+    }),
+  ],
+);

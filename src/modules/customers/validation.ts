@@ -174,6 +174,17 @@ export const createCustomerAccountSchema = z
     accountType: customerAccountTypeSchema,
     currency,
     creditLimit: decimalText.optional(),
+    /**
+     * Marks the credit account as a staff fuel benefit. The credit limit is then the monthly USD
+     * limit (PROPOSED default, awaiting owner sign-off). Changing it later needs the credit-limit
+     * override approval.
+     */
+    staffBenefit: z
+      .object({
+        staffName: z.string().trim().min(1, 'Enter the staff member’s name.').max(200),
+        staffMembershipId: uuid.optional(),
+      })
+      .optional(),
     /** Optional during onboarding; omitted scope remains unconfigured. */
     stationScope: customerAccountStationScopeSchema.optional(),
     stationIds: z.array(uuid).max(100).optional(),
@@ -195,6 +206,20 @@ export const createCustomerAccountSchema = z
         code: 'custom',
         path: ['creditLimit'],
         message: 'Only credit accounts have a credit limit.',
+      });
+    }
+    if (input.staffBenefit && input.accountType !== 'CREDIT') {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['staffBenefit'],
+        message: 'A staff fuel benefit uses a credit account.',
+      });
+    }
+    if (input.staffBenefit && input.currency !== 'USD') {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['currency'],
+        message: 'A staff fuel benefit limit is in US dollars.',
       });
     }
   });

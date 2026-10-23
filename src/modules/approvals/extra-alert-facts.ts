@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import type { InventoryCommandContext, InventoryTransaction } from '../inventory/application';
+import { buildCustomerAlertFacts } from '../customers/alert-facts';
 import { isPermissionGranted } from '../../platform/security/permissions';
 import {
   APPROVED_INFORMATION_EVENT_CODES,
@@ -25,7 +26,8 @@ export async function loadExtraAlertFacts(
       | 'expense.view'
       | 'reconciliation.view'
       | 'inventory.view'
-      | 'audit.view',
+      | 'audit.view'
+      | 'customer.statement.view',
   ) =>
     isPermissionGranted({
       actor: context.authority.authorization,
@@ -156,8 +158,73 @@ export async function loadExtraAlertFacts(
     approvedInformationChanges = Number(row?.total ?? 0);
   }
 
+  let customerOverdue: ExtraAlertFacts['customerOverdue'] = null;
+  let customerOverLimit: ExtraAlertFacts['customerOverLimit'] = null;
+  if (can('customer.statement.view')) {
+    const accounts = await transaction.execute<{
+      account_id: string;
+      customer_id: string;
+      display_name: string;
+      credit_limit: string | null;
+      staff_name: string | null;
+    }>(sql`
+      select a.id as account_id, c.id as customer_id, c.display_name,
+             a.credit_limit::text as credit_limit, t.staff_name
+      from app.customer_accounts a
+      join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id
+      left join app.customer_staff_benefit_terms t
+        on t.tenant_id = a.tenant_id and t.account_id = a.id
+      where a.tenant_id = ${tenantId} and a.account_type = 'CREDIT' and a.status = 'ACTIVE'`);
+    const ledger = await transaction.execute<{
+      account_id: string;
+      id: string;
+      direction: 'INCREASE' | 'DECREASE';
+      entry_type: string;
+      business_date: string;
+      amount: string;
+      reversal_of_entry_id: string | null;
+    }>(sql`
+      select l.account_id, l.id, l.direction, l.entry_type, l.business_date,
+             l.amount::text as amount, l.reversal_of_entry_id
+      from app.customer_ledger_entries l
+      join app.customer_accounts a on a.tenant_id = l.tenant_id and a.id = l.account_id
+      where l.tenant_id = ${tenantId} and l.account_type = 'CREDIT' and a.status = 'ACTIVE'
+        and l.business_date::date <= ${today}::date
+      order by l.account_id, l.business_date, l.occurred_at, l.id`);
+    type Line = Parameters<typeof buildCustomerAlertFacts>[0][number]['lines'][number];
+    const byAccount = new Map<string, Line[]>();
+    for (const row of ledger) {
+      const list = byAccount.get(row.account_id) ?? [];
+      list.push({
+        id: row.id,
+        direction: row.direction,
+        entryType: row.entry_type,
+        businessDate: row.business_date,
+        amount: row.amount,
+        reversalOfEntryId: row.reversal_of_entry_id,
+      });
+      byAccount.set(row.account_id, list);
+    }
+    const built = buildCustomerAlertFacts(
+      accounts.map((row) => ({
+        accountId: row.account_id,
+        customerId: row.customer_id,
+        customerName: row.display_name,
+        limit: row.credit_limit,
+        isStaffBenefit: row.staff_name !== null,
+        staffName: row.staff_name,
+        lines: byAccount.get(row.account_id) ?? [],
+      })),
+      today,
+    );
+    customerOverdue = built.overdue;
+    customerOverLimit = built.overLimit;
+  }
+
   return {
     today,
+    customerOverdue,
+    customerOverLimit,
     unbankedCash,
     expenses,
     belowPriceSales,

@@ -19,7 +19,7 @@ Nothing here is final until you mark it **Agree** or write your change.
 | 5 | Voucher numbers | A voucher number can be used once per customer account. Capital letters and extra spaces are ignored. | In the app | |
 | 6 | Credit limit exceptions | An exception names who approved it and why. A change to the limit itself is a separate recorded action. | In the app | |
 | 7 | Who may approve | Only an owner or an administrator. Nobody except an owner approves their own entry. | In the app | |
-| 8 | Staff fuel benefit | Recorded as its own type of account with a monthly cap; the cost goes to expenses, not sales. | Not built yet | |
+| 8 | Staff fuel benefit | Recorded as its own type of account with a monthly cap; the cost goes to expenses, not sales. | Account and monthly USD cap built (proposed); cost-to-expenses not built yet | |
 | 9 | Supplier invoice terms | Every supplier invoice must say **Cash** or **Credit**. Credit needs a number of days or a due date. | In the app | |
 | 10 | Supplier default period | None. The period is chosen per invoice. | In the app | |
 | 11 | Supplier payment proof | Optional in v1. Payments over US$1,000 with no proof are flagged for review. | Photos not covered yet; flag not built | |

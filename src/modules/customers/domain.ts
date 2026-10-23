@@ -9,6 +9,7 @@ import {
   type Litres,
   type Money,
 } from '../../platform/domain/primitives';
+import { assertWithinStaffBenefitLimit } from './staff-benefit';
 
 export const CUSTOMER_ACCOUNT_TYPES = ['CREDIT', 'PREPAID_VALUE', 'PREPAID_LITRES'] as const;
 export type CustomerAccountType = (typeof CUSTOMER_ACCOUNT_TYPES)[number];
@@ -563,6 +564,8 @@ export function reserveCustomerFuelAuthorization(input: {
   account: CustomerAccount;
   entries: readonly CustomerLedgerEntry[];
   activeReservations: readonly ActiveReservation[];
+  /** Set for a staff fuel benefit account: the station business date that picks the month. */
+  staffBenefit?: Readonly<{ asAt: string }>;
 }): CustomerFuelAuthorization {
   const { authorization, account } = input;
   if (authorization.state !== 'REQUESTED') {
@@ -591,6 +594,24 @@ export function reserveCustomerFuelAuthorization(input: {
         'CONFLICT',
         'This would put the customer over their credit limit. Lower the amount or record a payment first.',
       );
+    }
+    if (input.staffBenefit) {
+      assertWithinStaffBenefitLimit({
+        limit: limit.toString(),
+        lines: input.entries
+          .filter((entry): entry is CreditLedgerEntry => entry.accountType === 'CREDIT')
+          .map((entry) => ({
+            id: entry.id,
+            direction: entry.direction,
+            entryType: entry.entryType,
+            businessDate: entry.businessDate,
+            amount: entry.amount.amount.toString(),
+            reversalOfEntryId: entry.reversalOfEntryId ?? null,
+          })),
+        asAt: input.staffBenefit.asAt,
+        alreadyReserved: reserved.amount,
+        requested: authorization.requested.amount.amount,
+      });
     }
   } else if (account.accountType === 'PREPAID_VALUE') {
     if (balance.accountType !== 'PREPAID_VALUE')

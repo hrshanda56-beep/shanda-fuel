@@ -128,4 +128,43 @@ describe('extra alerts', () => {
     const failed = buildActionCenter({ ...facts, extra: { status: 'unavailable' } });
     expect(failed.unavailable).toContain('Cash, expense and delivery checks');
   });
+
+  it('flags overdue customers by the oldest unpaid charge, and names accounts over their limit', () => {
+    const alerts = run({
+      customerOverdue: [
+        {
+          accountId: 'a1',
+          customerId: 'c1',
+          customerName: 'Acme',
+          oldestUnpaidDate: '2026-09-20',
+          owed: '50.0000',
+        },
+        {
+          accountId: 'a2',
+          customerId: 'c2',
+          customerName: 'Young',
+          oldestUnpaidDate: '2026-10-10',
+          owed: '9.0000',
+        },
+      ],
+      customerOverLimit: [
+        {
+          accountId: 'a3',
+          customerId: 'c3',
+          customerName: 'Tendai Moyo',
+          kind: 'STAFF_BENEFIT_MONTH',
+          amount: '55.0000',
+          limit: '50.0000',
+        },
+      ],
+    });
+    expect(alerts.map((a) => a.id)).toEqual(['customer-overdue-a1', 'customer-over-limit-a3']);
+    expect(alerts[0]!.title).toContain('Acme');
+    expect(alerts[1]!.title).toContain('monthly staff fuel limit');
+    expect(alerts.every((a) => a.tone === 'attention')).toBe(true);
+  });
+
+  it('says nothing about customers it could not check', () => {
+    expect(run({ customerOverdue: null, customerOverLimit: null })).toEqual([]);
+  });
 });
