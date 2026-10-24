@@ -24,15 +24,15 @@ DEC-040. The tool is `scripts/first-user-provisioning.ts`. If this file disagree
 2. [ ] `REQUIRE_LOGIN_MFA` has been set as decided (section 3a of the release runbook).
 3. [ ] The person's work email, display name and role are agreed in writing by T.E.I Oils.
 4. [ ] The production Clerk instance is the live one and allows `https://fuel.shandahr.com`.
-5. [ ] The assignment of the temporary `first_user_provisioner` password is possible at the
-   provider/admin boundary named in `deployment.md`. **Known open point:** `deployment.md` says the
-   older Stage 1 helper still tries this through `migration_owner` and must not be rerun until a
-   reviewed replacement or hand-off exists. If that is still true, this runbook is blocked here.
+5. [ ] The operator has the provider/deployment-admin connection and can run the reviewed helper
+   `scripts/production/first-user-provisioner-credential.ts` (see `deployment.md`). The helper has
+   been run once against a disposable PostgreSQL 18 before use, and is not run by an assistant.
 
 ## Sequence
 
 1. **Preflight (read only).** Run the reviewed Stage 1 migration-owner preflight. Expected: the
    `first_user_provisioner` role has no password and every security check passes. Record the result.
+   Then run the helper with `assign` to set the temporary password (hidden prompts only).
 2. **Find the scope ids.** Using the read-only inspect mode, find the tenant, legal entity and station
    that should be granted. Check them against what T.E.I Oils expects. Record the ids (ids are not secrets).
 3. **Dry run.**
@@ -40,9 +40,10 @@ DEC-040. The tool is `scripts/first-user-provisioning.ts`. If this file disagree
    with the database URL supplied through the hidden prompt, not as an argument.
 4. **Check the proof.** The dry run must show exactly 12 read-only permissions, zero rows written and
    unchanged sentinel values. Any other number, or any write, means stop.
-5. **Clean up the temporary credential.** Run the approved
-   `ALTER ROLE first_user_provisioner PASSWORD NULL;` at the same admin boundary, then confirm the
-   password is unusable and the role attributes, membership, ownership and ACLs are unchanged.
+5. **Clean up the temporary credential.** Run the helper with `clear`
+   (`ALTER ROLE first_user_provisioner PASSWORD NULL;` at the same admin boundary), then confirm a
+   login with the old password is refused and the role attributes, membership, ownership and ACLs
+   are unchanged.
 6. **Approval.** Show the dry-run output and cleanup result to the project lead. The project lead says
    in plain words "go ahead with the real provision for <email>". Record who, when, and the exact
    commit.
