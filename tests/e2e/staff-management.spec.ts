@@ -191,7 +191,9 @@ test.describe('authenticated Staff lifecycle', () => {
     await client?.end();
   });
 
-  test('Owner can manage invitations and Staff remains accessible', async ({ page }) => {
+  // Needs a real Clerk second factor for the owner (step-up). Skipped, not passed, until the test
+  // Clerk instance has one a test can answer repeatedly (after v1: a Clerk test phone number).
+  test.fixme('Owner can manage invitations and Staff remains accessible', async ({ page }) => {
     await openSettings(page, sessions.owner);
     await page.getByRole('button', { name: 'Staff', exact: true }).click();
     await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
