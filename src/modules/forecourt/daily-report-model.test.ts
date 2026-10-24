@@ -80,7 +80,7 @@ describe('buildDailyReport', () => {
   });
 
   it('orders pumps and pairs the earliest and latest dip as opening and closing', () => {
-    expect(report.products[1]!.pumps.map((p) => p.label)).toEqual(['Pump 1 · A', 'Pump 1 · B']);
+    expect(report.products[1]!.pumps.map((p) => p.label)).toEqual(['A1', 'B1']);
     expect(report.dips[0]).toMatchObject({
       tankCode: 'P1',
       opening: { measurement: '1186', litres: '7394.000' },

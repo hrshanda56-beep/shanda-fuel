@@ -121,11 +121,11 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
     .map((rows) => {
       const pumps = rows
         .map((row) => ({
-          label: `Pump ${row.pumpNumber} · ${row.nozzleNumber}`,
+          label: `${row.nozzleNumber}${row.pumpNumber}`,
           opening: row.openingReading,
           closing: row.closingReading,
           litres: row.litresSold,
-          sortKey: `${row.pumpNumber}\u0000${row.nozzleNumber}`,
+          sortKey: `${row.nozzleNumber}\u0000${row.pumpNumber}`,
         }))
         .sort((a, b) => compareLabels(a.sortKey, b.sortKey))
         .map(({ sortKey: _sortKey, ...pump }) => pump);
