@@ -1853,6 +1853,12 @@ export function DailyOperationsWorkspace({
               >
                 Open review route
               </a>
+              <a
+                className="text-link"
+                href={`/operations/reconciliations/${activeReconciliationId}/report?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+              >
+                Daily report
+              </a>
             </div>
           </Card>
         </aside>

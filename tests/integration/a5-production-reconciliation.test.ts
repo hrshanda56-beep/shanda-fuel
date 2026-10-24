@@ -5,6 +5,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
+import { getDailyReportFromRequest } from '../../src/modules/forecourt/daily-report';
 import { loadActionCenterFacts } from '../../src/modules/approvals/action-center';
 import { DECIMAL_POLICIES, ExactDecimal } from '../../src/platform/domain/primitives';
 
@@ -2033,6 +2034,37 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       await readReconciliation(reconciliationId, 'a5-approver-session-token')
     ).json()) as { approvalBlocked?: boolean };
     expect(asOther.approvalBlocked).toBe(false);
+  });
+
+  it('builds the one-page daily report from the saved reconciliation', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId, '500');
+    const report = await getDailyReportFromRequest(
+      new Request('http://127.0.0.1:3000/operations/report', {
+        headers: { ...clerkHeaders('a5-supervisor-session-token') },
+      }),
+      { tenantId: ids.tenant, stationId: ids.station, reconciliationId },
+    );
+    expect(report.businessDate).toBe('2026-09-22');
+    expect(report.products).toHaveLength(1);
+    expect(report.products[0]).toMatchObject({ totalLitres: '500.00', prices: ['1.500000'] });
+    expect(report.products[0]!.pumps).toHaveLength(1);
+    expect(report.cash).toMatchObject({ countedCash: '750.0000' });
+    expect(report.expenses.total).toBeNull();
+    // The draft counts toward its own month-to-date block, which also holds the day's other approved shifts; decimals stay exact strings.
+    expect(report.monthToDate.fromDate).toBe('2026-09-01');
+    expect(report.monthToDate.products[0]!.litres).toMatch(/^\d+\.\d{3}$/);
+    expect(Number(report.monthToDate.products[0]!.litres)).toBeGreaterThanOrEqual(500);
+    expect(common.reconciliationId).toBe(reconciliationId);
+
+    await expect(
+      getDailyReportFromRequest(
+        new Request('http://127.0.0.1:3000/operations/report', {
+          headers: { ...clerkHeaders('a5-supervisor-session-token') },
+        }),
+        { tenantId: ids.tenant, stationId: ids.station, reconciliationId: randomUUID() },
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('lists a waiting reconciliation in the finance action center, flagged for its submitter', async () => {
