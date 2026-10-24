@@ -1062,8 +1062,10 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
       reason: 'Invoice issued in error',
     });
     expect(reversed.status).toBe(200);
-    const today = new Date().toISOString().slice(0, 10);
-    const reopened = await exposure({ supplierId: supplier, asOf: today });
+    // The reversal is dated in station time (Harare, UTC+2), which is already "tomorrow" in UTC
+    // between 22:00 and midnight UTC, so ask as of the day after the UTC date to cover both.
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const reopened = await exposure({ supplierId: supplier, asOf: tomorrow });
     expect(
       reopened.json.suppliers[0].deliveries.find(
         (row: Json) => row.deliveryId === priced.deliveryId,
