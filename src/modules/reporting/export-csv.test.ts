@@ -168,6 +168,60 @@ describe('buildReportCsv', () => {
   it('rejects an unknown report', () => {
     expect(() => buildReportCsv('nope', report())).toThrow();
   });
+
+  it('exports profit/loss summary, fuel profit and expense lineage', () => {
+    const csv = buildReportCsv(
+      'profit-loss',
+      report({
+        revenue: {
+          recognizedRevenue: '10.0000',
+          revenueStatus: 'POSTED',
+          sales: [{ revenueMovementId: 'rev-1' }],
+        },
+        costing: {
+          restatedCogs: '6.0000',
+          costingStatus: 'COMPLETE',
+          sales: [{ saleMovementId: 'cogs-1' }],
+        },
+        grossMargin: '4.0000',
+        expenses: {
+          total: '1.0000',
+          rows: [
+            {
+              businessDate: '2026-10-01',
+              stationId: STATION,
+              category: 'RENT',
+              amount: '1.0000',
+              expenseIds: ['expense-1'],
+              sourceIds: ['expense-1'],
+              recognitionMovementIds: ['movement-1'],
+            },
+          ],
+        },
+        fuelProfit: [
+          {
+            productId: 'p',
+            productCode: 'PMS',
+            productName: 'Petrol',
+            litres: '1.000',
+            revenue: '10.0000',
+            cost: '6.0000',
+            profit: '4.0000',
+            status: 'COMPLETE',
+            saleCount: 1,
+            valuedSaleCount: 1,
+            unvaluedSaleCount: 0,
+            revenueMovementIds: ['rev-1'],
+            costMovementIds: ['cogs-1'],
+          },
+        ],
+      }),
+    );
+    expect(csv).toContain('SUMMARY,Gross profit');
+    expect(csv).toContain('FUEL,Fuel profit');
+    expect(csv).toContain('EXPENSE,Recognized expense,2026-10-01,BIN,RENT');
+    expect(csv).toContain('rev-1;cogs-1');
+  });
 });
 
 describe('reportCsvFilename', () => {

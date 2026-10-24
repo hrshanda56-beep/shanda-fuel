@@ -9,7 +9,7 @@ import { authorize } from '../../platform/security/permissions';
 import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
-import { calculateGrossMargin, readCanonicalRevenue, readRestatedCogs } from '../profitability';
+import { buildProfitabilityReport, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
   customerScopeAvailability,
@@ -677,23 +677,29 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
     station_id: string;
     category: string;
     amount: string;
-    ids: string[] | null;
+    source_ids: string[] | null;
+    movement_ids: string[] | null;
   }>(sql`
-    with approved as (${approvedReconciliations(filters)})
-    select a.business_date, a.station_id, e.category, coalesce(sum(e.amount), 0)::text as amount,
-      coalesce(array_agg(e.id order by e.id), ARRAY[]::uuid[]) as ids
-    from approved a
-    join app.reconciliation_expenses e on e.tenant_id = ${filters.tenantId}
-      and e.station_id = a.station_id and e.reconciliation_id = a.reconciliation_id
-    group by a.business_date, a.station_id, e.category
-    order by a.business_date, a.station_id, e.category
+    select m.recognition_date as business_date, m.station_id, c.code as category,
+      coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount,
+      coalesce(array_agg(distinct m.source_id order by m.source_id), ARRAY[]::uuid[]) as source_ids,
+      coalesce(array_agg(m.id order by m.id), ARRAY[]::uuid[]) as movement_ids
+    from app.expense_recognition_movements m
+    join app.expense_categories c on c.tenant_id = m.tenant_id and c.id = m.category_id
+    where m.tenant_id = ${filters.tenantId}
+      and m.recognition_date between ${filters.fromDate} and ${filters.toDate}
+      ${stationClause('m', filters.stationIds)}
+    group by m.recognition_date, m.station_id, c.code
+    order by m.recognition_date, m.station_id, c.code
   `);
   const mapped = rows.map((row) => ({
     businessDate: row.business_date,
     stationId: row.station_id,
     category: row.category,
     amount: formatMoney(row.amount),
-    expenseIds: uniqueIds(row.ids ?? []),
+    expenseIds: uniqueIds(row.source_ids ?? []),
+    sourceIds: uniqueIds(row.source_ids ?? []),
+    recognitionMovementIds: uniqueIds(row.movement_ids ?? []),
   }));
   return { total: formatMoney(sumExact(mapped.map((row) => row.amount))), rows: mapped };
 }
@@ -791,10 +797,13 @@ async function readDaily(
       ${stationClause('s', filters.stationIds)}
       group by s.settlement_date, s.station_id
     ), expenses as (
-      select a.business_date as report_date, a.station_id, sum(e.amount)::text as expenses
-      from approved a join app.reconciliation_expenses e on e.tenant_id = ${filters.tenantId}
-        and e.station_id = a.station_id and e.reconciliation_id = a.reconciliation_id
-      group by a.business_date, a.station_id
+      select m.recognition_date as report_date, m.station_id,
+        sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end)::text as expenses
+      from app.expense_recognition_movements m
+      where m.tenant_id = ${filters.tenantId}
+        and m.recognition_date between ${filters.fromDate} and ${filters.toDate}
+        ${stationClause('m', filters.stationIds)}
+      group by m.recognition_date, m.station_id
     ), deliveries as (
       select d.station_id, d.business_date as report_date, sum(d.actual_quantity_litres)::text as deliveries, array_agg(d.id) as delivery_ids
       from app.fuel_deliveries d where d.tenant_id = ${filters.tenantId} and d.status = 'CONFIRMED'
@@ -917,7 +926,7 @@ const dateBasis: ReportDateBasis = {
   suppliers: 'A7 effective_date <= toDate; balance as of toDate',
   customers: 'A8 balance as of toDate using ledger business_date and authorization requested_at',
   inventory: 'A4 movement business date and latest dip measured_at as of toDate',
-  expenses: 'A5 business date',
+  expenses: 'expense_recognition_movements.recognition_date',
 };
 
 /**
@@ -1020,6 +1029,14 @@ export async function getManagementReportFromRequest(
       readRestatedCogs(transaction, filters),
       readCanonicalRevenue(transaction, filters),
     ]);
+    const profitability = buildProfitabilityReport({
+      tenantId: filters.tenantId,
+      stationIds: filters.stationIds,
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+      revenue,
+      costing,
+    });
     return {
       report: 'MANAGEMENT_OVERVIEW',
       state: 'POSTED',
@@ -1041,7 +1058,8 @@ export async function getManagementReportFromRequest(
       expenses,
       revenue,
       costing,
-      grossMargin: calculateGrossMargin(revenue, costing),
+      fuelProfit: profitability.fuelProfit,
+      grossMargin: profitability.grossMargin,
     };
   });
 }

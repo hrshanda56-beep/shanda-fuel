@@ -54,6 +54,21 @@ type SalesRow = ManagementReport['sales']['rows'][number];
 type ProviderRow = ManagementReport['providers']['rows'][number];
 type InventoryRow = ManagementReport['inventory']['rows'][number];
 type MeasureRow = readonly [string, string];
+type ProfitLossRow = Readonly<{
+  section: string;
+  label: string;
+  businessDate: string | null;
+  stationCode: string;
+  category: string | null;
+  productCode: string | null;
+  productName: string | null;
+  litres: string | null;
+  revenue: string | null;
+  cost: string | null;
+  profit: string | null;
+  status: string | null;
+  sourceIds: string | null;
+}>;
 
 type CommercialRow = {
   section: 'SUPPLIER' | 'CUSTOMER_BALANCE' | 'CUSTOMER_CREDIT_DRAWN';
@@ -117,9 +132,128 @@ function commercialRows(report: ManagementReport, code: (id: string) => string):
   ];
 }
 
+function profitLossRows(report: ManagementReport, code: (id: string) => string): ProfitLossRow[] {
+  const rows: ProfitLossRow[] = [
+    {
+      section: 'SUMMARY',
+      label: 'Revenue',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: report.revenue.recognizedRevenue,
+      cost: null,
+      profit: null,
+      status: report.revenue.revenueStatus,
+      sourceIds: report.revenue.sales.map((sale) => sale.revenueMovementId).join(';'),
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Cost of sales',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: report.costing.restatedCogs,
+      profit: null,
+      status: report.costing.costingStatus,
+      sourceIds: report.costing.sales.map((sale) => sale.saleMovementId).join(';'),
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Gross profit',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: null,
+      profit: report.grossMargin,
+      status: report.grossMargin === null ? 'UNAVAILABLE' : 'COMPLETE',
+      sourceIds: null,
+    },
+    {
+      section: 'SUMMARY',
+      label: 'Operating expenses',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: report.expenses.total,
+      profit: null,
+      status: 'POSTED',
+      sourceIds: null,
+    },
+  ];
+  rows.push(
+    ...report.fuelProfit.map((fuel) => ({
+      section: 'FUEL',
+      label: 'Fuel profit',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: fuel.productCode,
+      productName: fuel.productName,
+      litres: fuel.litres,
+      revenue: fuel.revenue,
+      cost: fuel.cost,
+      profit: fuel.profit,
+      status: fuel.status,
+      sourceIds: [...fuel.revenueMovementIds, ...fuel.costMovementIds].join(';'),
+    })),
+  );
+  rows.push(
+    ...report.expenses.rows.map((expense) => ({
+      section: 'EXPENSE',
+      label: 'Recognized expense',
+      businessDate: expense.businessDate,
+      stationCode: code(expense.stationId),
+      category: expense.category,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: expense.amount,
+      profit: null,
+      status: 'POSTED',
+      sourceIds: [...expense.sourceIds, ...expense.recognitionMovementIds].join(';'),
+    })),
+  );
+  return rows;
+}
+
 export function buildReportCsv(slug: ReportDefinition['slug'], report: ManagementReport): string {
   const code = stationCodes(report);
   switch (slug) {
+    case 'profit-loss':
+      return table<ProfitLossRow>(
+        [
+          text('section', (row) => row.section),
+          text('label', (row) => row.label),
+          text('business_date', (row) => row.businessDate),
+          text('station_code', (row) => row.stationCode),
+          text('category', (row) => row.category),
+          text('product_code', (row) => row.productCode),
+          text('product_name', (row) => row.productName),
+          number('litres', (row) => row.litres),
+          number('revenue', (row) => row.revenue),
+          number('cost', (row) => row.cost),
+          number('profit', (row) => row.profit),
+          text('status', (row) => row.status),
+          text('source_ids', (row) => row.sourceIds),
+        ],
+        profitLossRows(report, code),
+      );
     case 'sales':
       return table<SalesRow>(
         [

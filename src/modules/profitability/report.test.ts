@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { classifyGrossMargin, summarizeCanonicalRevenue, summarizeRestatedCogs } from './domain';
-import { buildProfitabilityReport } from './report';
+import { buildFuelProfitRows, buildProfitabilityReport } from './report';
 import type { CanonicalSaleRevenue, RestatedSaleCogs } from './contracts';
 
 const T = '00000000-0000-4000-8000-0000000000aa';
@@ -9,6 +9,9 @@ const S = '00000000-0000-4000-8000-0000000000bb';
 function rev(amount: string, n = 1): CanonicalSaleRevenue {
   return {
     stationId: S,
+    productId: T,
+    productCode: 'PMS',
+    productName: 'Petrol',
     reconciliationId: S,
     revisionId: S,
     meterSegmentId: `00000000-0000-4000-8000-00000000010${n}`,
@@ -24,6 +27,9 @@ function rev(amount: string, n = 1): CanonicalSaleRevenue {
 function cogs(over: Partial<RestatedSaleCogs> = {}): RestatedSaleCogs {
   return {
     stationId: S,
+    productId: T,
+    productCode: 'PMS',
+    productName: 'Petrol',
     reconciliationId: S,
     revisionId: S,
     meterSegmentId: S,
@@ -122,5 +128,62 @@ describe('buildProfitabilityReport', () => {
     const revenue = summarizeCanonicalRevenue([rev('1.0000')]);
     const costing = summarizeRestatedCogs([cogs()]);
     expect(classifyGrossMargin(revenue, costing)).toBe('COMPLETE');
+  });
+
+  it('groups exact fuel revenue and cost into fuel profit rows', () => {
+    const rows = buildFuelProfitRows(
+      [
+        rev('0.1000', 1),
+        {
+          ...rev('0.2000', 2),
+          productId: '00000000-0000-4000-8000-0000000000cc',
+          productCode: 'DSL',
+          productName: 'Diesel',
+        },
+      ],
+      [
+        cogs({ originalCogs: '0.0500', restatedCogs: '0.0500' }),
+        {
+          ...cogs({ originalCogs: '0.1000', restatedCogs: '0.1000' }),
+          productId: '00000000-0000-4000-8000-0000000000cc',
+          productCode: 'DSL',
+          productName: 'Diesel',
+        },
+      ],
+    );
+    expect(rows[0]).toMatchObject({
+      productCode: 'DSL',
+      revenue: '0.2000',
+      cost: '0.1000',
+      profit: '0.1000',
+      status: 'COMPLETE',
+    });
+    expect(rows[1]).toMatchObject({
+      productCode: 'PMS',
+      revenue: '0.1000',
+      cost: '0.0500',
+      profit: '0.0500',
+      status: 'COMPLETE',
+    });
+  });
+
+  it('keeps fuel profit unavailable when a sale lacks authoritative cost', () => {
+    const rows = buildFuelProfitRows(
+      [rev('10.0000')],
+      [
+        cogs({
+          valuationStatus: 'UNVALUED',
+          originalCogs: null,
+          restatedCogs: null,
+          currency: null,
+        }),
+      ],
+    );
+    expect(rows[0]).toMatchObject({
+      status: 'COSTING_UNVALUED',
+      cost: null,
+      profit: null,
+      revenue: '10.0000',
+    });
   });
 });

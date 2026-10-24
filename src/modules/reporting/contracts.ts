@@ -52,7 +52,7 @@ export type ReportDateBasis = {
   suppliers: 'A7 effective_date <= toDate; balance as of toDate';
   customers: 'A8 balance as of toDate using ledger business_date and authorization requested_at';
   inventory: 'A4 movement business date and latest dip measured_at as of toDate';
-  expenses: 'A5 business date';
+  expenses: 'expense_recognition_movements.recognition_date';
 };
 
 export type ReportMoney = string;
@@ -223,8 +223,11 @@ export type ManagementReport = Readonly<{
       category: string;
       amount: ReportMoney;
       expenseIds: readonly string[];
+      sourceIds: readonly string[];
+      recognitionMovementIds: readonly string[];
     }[];
   }>;
+  fuelProfit: readonly import('../profitability/contracts').FuelProfitRow[];
   revenue: CanonicalRevenueReport;
   costing: RestatedCogsReport;
   grossMargin: ReportMoney | null;

@@ -46,6 +46,8 @@ const ids = {
   factCreditPayment: 'a10b0000-0000-4000-8000-0000000000a5',
   factPrepaidPayment: 'a10b0000-0000-4000-8000-0000000000a6',
   factExpense: 'a10b0000-0000-4000-8000-0000000000a7',
+  factExpenseCategory: 'a10b0000-0000-4000-8000-0000000000f2',
+  factExpenseRecognition: 'a10b0000-0000-4000-8000-0000000000f3',
   factCashDeclaration: 'a10b0000-0000-4000-8000-0000000000a8',
   factTill: 'a10b0000-0000-4000-8000-0000000000a9',
   factSafe: 'a10b0000-0000-4000-8000-0000000000aa',
@@ -256,6 +258,17 @@ describe('A10 management reporting PostgreSQL read model', () => {
       insert into app.reconciliation_expenses
         (id, tenant_id, station_id, reconciliation_id, category, description, amount, payment_method, entered_by)
         values ('${ids.factExpense}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'A10_TEST', 'A10 test expense', 2.0000, 'CASH', '${ids.membership}')
+        on conflict (id) do nothing;
+      insert into app.expense_categories
+        (id, tenant_id, code, name, classification, status, created_by)
+        values ('${ids.factExpenseCategory}', '${ids.tenant}', 'A10_TEST', 'A10 test expense', 'OPERATING', 'ACTIVE', '${ids.membership}')
+        on conflict (id) do nothing;
+      insert into app.expense_recognition_movements
+        (id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
+         source_type, source_id, recognition_date, currency, amount, actor_membership_id)
+        values ('${ids.factExpenseRecognition}', '${ids.tenant}', '${ids.legal}', '${ids.station}',
+         '${ids.factExpenseCategory}', 'OPERATING', 'RECOGNITION', 'EXPENSE', '${ids.factExpense}',
+         '2026-09-20', 'USD', 2.0000, '${ids.membership}')
         on conflict (id) do nothing;
       insert into app.reconciliation_cash_declarations
         (id, tenant_id, station_id, reconciliation_id, counted_cash, expected_physical_cash, cash_paid_expenses, net_expected_cash, cash_variance, entered_by)
@@ -708,6 +721,16 @@ describe('A10 management reporting PostgreSQL read model', () => {
       currency: 'USD',
     });
     expect(body.grossMargin).toBe('79.7500');
+    expect(body.fuelProfit).toEqual([
+      expect.objectContaining({
+        productId: ids.factProduct,
+        productCode: 'A10-PMS',
+        revenue: '105.0000',
+        cost: '25.2500',
+        profit: '79.7500',
+        status: 'COMPLETE',
+      }),
+    ]);
     expect(body.sales.reconciliationIds).toContain(ids.factRecon);
 
     const priorBusinessDateResponse = await managementReportGet(
@@ -801,6 +824,13 @@ describe('A10 management reporting PostgreSQL read model', () => {
       deliveryValue: '40.0000',
     });
     expect(body.expenses.total).toBe('2.0000');
+    expect(body.expenses.rows[0]).toMatchObject({
+      category: 'A10_TEST',
+      amount: '2.0000',
+      sourceIds: [ids.factExpense],
+      recognitionMovementIds: [ids.factExpenseRecognition],
+    });
+    expect(body.dateBasis.expenses).toBe('expense_recognition_movements.recognition_date');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
 
     await client.unsafe(`
