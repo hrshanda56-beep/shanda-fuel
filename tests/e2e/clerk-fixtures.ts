@@ -96,6 +96,15 @@ export async function authenticateClerk(context: BrowserContext, internalUserId:
   } else {
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto('/login');
+    // Switching users in one browser: end any session Clerk still holds, or sign-in answers
+    // "You're already signed in".
+    await clerk.loaded({ page });
+    await page.evaluate(async () => {
+      const current = (
+        window as unknown as { Clerk: { session: unknown; signOut: () => Promise<void> } }
+      ).Clerk;
+      if (current.session) await current.signOut();
+    });
     const setupKey = totpSetupKeyFor(user.email);
     if (setupKey) await signInWithAuthenticator(page, user);
     else await clerk.signIn({ page, emailAddress: user.email });

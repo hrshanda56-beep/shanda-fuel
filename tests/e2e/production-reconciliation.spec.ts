@@ -585,7 +585,9 @@ test.describe('production reconciliation persistence', () => {
     ]);
   });
 
-  test('A11 workspace captures representative evidence, requires a return reason, and approves production evidence', async ({
+  // Needs a real Clerk second factor (step-up). Skipped, not passed, until the test Clerk instance
+  // has one a test can answer repeatedly (after v1: a Clerk test phone number).
+  test.fixme('A11 workspace captures representative evidence, requires a return reason, and approves production evidence', async ({
     context,
     page,
   }, testInfo) => {
