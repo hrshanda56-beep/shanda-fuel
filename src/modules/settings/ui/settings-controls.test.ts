@@ -6,6 +6,8 @@ vi.mock('@clerk/nextjs', () => ({
   useClerk: () => ({ signOut: vi.fn() }),
 }));
 import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SettingsSectionMenu, SettingsWorkspace, SettingsStations } from './settings-workspace';
 import { StaffPanel } from './staff-panel';
 import type { StaffOverview } from '@/modules/staff/contracts';
@@ -108,7 +110,7 @@ it('renders the styled section disclosure without a native select', () => {
   expect(html).not.toContain('<select');
   if (process.env.SETTINGS_MENU_FIXTURE) {
     const normalized = html.replace(/_([A-Za-z]+)_[a-f0-9]+/g, '$1');
-    writeFileSync('/private/tmp/shanda-settings-menu.html', normalized);
+    writeFileSync(join(tmpdir(), 'shanda-settings-menu.html'), normalized);
   }
 });
 

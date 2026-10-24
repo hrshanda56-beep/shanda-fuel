@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 test.beforeAll(() => {
   execFileSync(
@@ -40,7 +42,7 @@ for (const width of [390, 824, 1024, 1440]) {
       (element, html) => {
         element.outerHTML = html;
       },
-      readFileSync('/private/tmp/shanda-settings-menu.html', 'utf8'),
+      readFileSync(join(tmpdir(), 'shanda-settings-menu.html'), 'utf8'),
     );
     if (width <= 768) {
       await expect(page.locator('.sectionTrigger')).toBeVisible();
@@ -81,7 +83,7 @@ for (const width of [390, 824, 1024, 1440]) {
       width,
     );
     await page.screenshot({
-      path: `/private/tmp/shanda-responsive-records-${width}.png`,
+      path: join(tmpdir(), `shanda-responsive-records-${width}.png`),
       fullPage: true,
     });
   });
