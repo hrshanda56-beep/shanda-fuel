@@ -447,7 +447,7 @@ test.describe('authenticated Staff lifecycle', () => {
     await deactivationDialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(deactivationDialog).toHaveCount(0);
 
-    await establishClerkStepUp(page.context(), ids.tenant, 'DEACTIVATE_STAFF_MEMBER');
+    await establishClerkStepUp(page.context(), ids.tenant, 'DEACTIVATE_STAFF_MEMBER', ids.owner);
     const deactivation = await page.request.post('/api/staff/commands', {
       data: {
         tenantId: ids.tenant,

@@ -2,6 +2,7 @@ import { clerk, clerkSetup } from '@clerk/testing/playwright';
 import type { BrowserContext } from '@playwright/test';
 import type { Sql } from 'postgres';
 import { readFile } from 'node:fs/promises';
+import { totpCode, totpSetupKeyFor } from './totp';
 
 type ClerkUserFixture = { userId: string; email: string; storageState?: string };
 let setup: Promise<void> | undefined;
@@ -65,10 +66,37 @@ export async function authenticateClerk(context: BrowserContext, internalUserId:
     throw new Error(`Clerk E2E state does not match app user ${internalUserId}`);
 }
 
+type StepUpSession = {
+  startVerification: (input: { level: 'second_factor' }) => Promise<unknown>;
+  attemptSecondFactorVerification: (input: { strategy: 'totp'; code: string }) => Promise<unknown>;
+  getToken: (input: { skipCache: boolean }) => Promise<string | null>;
+};
+
+/**
+ * Completes a real Clerk second-factor reverification in the browser with an authenticator code
+ * worked out from the user's setup key (E2E_TOTP_SECRETS), then refreshes the session token so the
+ * server sees the fresh second factor. Without a key the caller's saved MFA state must be fresh.
+ */
+async function reverifyWithAuthenticator(context: BrowserContext, internalUserId: string) {
+  const setupKey = totpSetupKeyFor(fixture(internalUserId).email);
+  if (!setupKey) return;
+  const page = context.pages()[0] ?? (await context.newPage());
+  const code = totpCode(setupKey);
+  await page.evaluate(async (authenticatorCode) => {
+    const session = (window as unknown as { Clerk: { session: StepUpSession | null } }).Clerk
+      .session;
+    if (!session) throw new Error('No Clerk session to reverify.');
+    await session.startVerification({ level: 'second_factor' });
+    await session.attemptSecondFactorVerification({ strategy: 'totp', code: authenticatorCode });
+    await session.getToken({ skipCache: true });
+  }, code);
+}
+
 export async function establishClerkStepUp(
   context: BrowserContext,
   tenantId: string,
   action: 'LOCK_BUSINESS_DAY' | 'DEACTIVATE_STAFF_MEMBER' = 'LOCK_BUSINESS_DAY',
+  internalUserId?: string,
 ) {
   const input = { data: { tenantId, action } };
   const challenge = await context.request.post('/api/auth/step-up', input);
@@ -78,6 +106,7 @@ export async function establishClerkStepUp(
   ) {
     throw new Error(`Expected a real Clerk step-up challenge, received ${challenge.status()}`);
   }
+  if (internalUserId) await reverifyWithAuthenticator(context, internalUserId);
   const verified = await context.request.post('/api/auth/step-up', input);
   if (verified.status() !== 200) {
     throw new Error(

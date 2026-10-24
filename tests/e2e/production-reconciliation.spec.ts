@@ -163,7 +163,8 @@ test.describe('production reconciliation persistence', () => {
   async function authenticate(context: BrowserContext, token: string) {
     const actorId = token === managerToken ? ids.managerActor : ids.supervisorActor;
     await authenticateClerk(context, actorId);
-    if (token === managerToken) await establishClerkStepUp(context, ids.tenant);
+    if (token === managerToken)
+      await establishClerkStepUp(context, ids.tenant, 'LOCK_BUSINESS_DAY', actorId);
   }
 
   async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {
