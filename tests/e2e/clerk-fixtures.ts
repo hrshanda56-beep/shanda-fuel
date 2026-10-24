@@ -1,5 +1,5 @@
 import { clerk, clerkSetup } from '@clerk/testing/playwright';
-import type { BrowserContext } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import type { Sql } from 'postgres';
 import { readFile } from 'node:fs/promises';
 import { totpCode, totpSetupKeyFor } from './totp';
@@ -35,6 +35,48 @@ export async function seedClerkIdentity(client: Sql, internalUserId: string) {
   `;
 }
 
+type SignInAttempt = {
+  status: string | null;
+  createdSessionId: string | null;
+  attemptSecondFactor: (input: { strategy: 'totp'; code: string }) => Promise<SignInAttempt>;
+};
+
+/**
+ * A user with an authenticator stops at "needs second factor" when signed in with a ticket, which
+ * is what Clerk's own test helper does. This signs in with a one-time ticket and then completes the
+ * second factor with the authenticator code, as a person would. Test users only.
+ */
+async function signInWithAuthenticator(page: Page, user: ClerkUserFixture) {
+  const secretKey = process.env.CLERK_TEST_SECRET_KEY ?? process.env.CLERK_SECRET_KEY;
+  const response = await fetch('https://api.clerk.com/v1/sign_in_tokens', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: user.userId, expires_in_seconds: 120 }),
+  });
+  if (!response.ok) throw new Error(`Clerk sign-in ticket failed (${response.status})`);
+  const { token } = (await response.json()) as { token: string };
+  await clerk.loaded({ page });
+  const code = totpCode(totpSetupKeyFor(user.email)!);
+  await page.evaluate(
+    async ({ ticket, authenticatorCode }) => {
+      const client = (
+        window as unknown as {
+          Clerk: {
+            client: { signIn: { create: (input: object) => Promise<SignInAttempt> } };
+            setActive: (input: { session: string | null }) => Promise<void>;
+          };
+        }
+      ).Clerk;
+      let attempt = await client.client.signIn.create({ strategy: 'ticket', ticket });
+      if (attempt.status === 'needs_second_factor')
+        attempt = await attempt.attemptSecondFactor({ strategy: 'totp', code: authenticatorCode });
+      if (attempt.status !== 'complete') throw new Error(`Sign-in ended as ${attempt.status}`);
+      await client.setActive({ session: attempt.createdSessionId });
+    },
+    { ticket: token, authenticatorCode: code },
+  );
+}
+
 /** Use Clerk's supported helper or a real, previously authenticated MFA state. */
 export async function authenticateClerk(context: BrowserContext, internalUserId: string) {
   const user = fixture(internalUserId);
@@ -54,7 +96,9 @@ export async function authenticateClerk(context: BrowserContext, internalUserId:
   } else {
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto('/login');
-    await clerk.signIn({ page, emailAddress: user.email });
+    const setupKey = totpSetupKeyFor(user.email);
+    if (setupKey) await signInWithAuthenticator(page, user);
+    else await clerk.signIn({ page, emailAddress: user.email });
   }
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto('/');
