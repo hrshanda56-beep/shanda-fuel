@@ -51,10 +51,14 @@ Triumph Energy, trading as T.E.I Oils, is the first customer of the platform, no
 Runbooks prepared (not run): `docs/runbooks/v1-migration-and-release.md` (updated to 0071) and
 `docs/runbooks/v1-first-user-provisioning.md`.
 
-Still open and owned by the human: staff credit balance decision, "by ShandaHR" byline, owner
-sign-off name and date, rates for the estimate, ADR-020 and alert-email go-live (off until then),
-backup credential location, MFA (decision: off for now, no paid Clerk plan, no second provider; see DEC-047 and the release runbook section 3a), production migrations, first-user
-provisioning, deploy, training, trial week and go-live.
+Decided in chat on 2026-10-24 (DEC-048): keep the "by ShandaHR" byline; owner sign-off name and date
+not needed for v1; alert emails stay off at go-live; backup credential in a dedicated R2 bucket with
+a write-only key and an offline restore key; staff benefit rule as recorded; unused secrets may be
+deleted after review.
+
+Still open and owned by the human: rates for the estimate, MFA (decision: off for now, no paid
+Clerk plan, no second provider; see DEC-047 and the release runbook section 3a), production
+migrations, first-user provisioning, deploy, training, trial week and go-live.
 
 ## v1 delivery baseline — 2026-10-21
 
