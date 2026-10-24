@@ -1,4 +1,4 @@
-import { sumDecimals } from '../cash/ui/cash-visuals';
+import { sumDecimals } from './decimal-sum';
 
 /** Raw rows the daily report is built from; every figure stays an exact decimal string. */
 export type DailyReportInput = Readonly<{
@@ -98,6 +98,14 @@ export type DailyReport = Readonly<{
   monthToDate: DailyReportInput['monthToDate'];
 }>;
 
+/** Drops trailing zeros beyond cents (1560.0000 -> 1560.00) without rounding any value. */
+export function plainAmount(value: string): string {
+  const text = value.trim();
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return text;
+  const [whole = '0', fraction = ''] = text.split('.');
+  return `${whole}.${fraction.replace(/0+$/, '').padEnd(2, '0')}`;
+}
+
 function compareLabels(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
@@ -185,8 +193,8 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
 
 function dipText(dip: DailyReportDipReading): string {
   return dip.measurement !== null
-    ? `${dip.measurement}${dip.unit ?? ''}-${dip.litres}Ltr`
-    : `${dip.litres}Ltr`;
+    ? `${dip.measurement}${dip.unit ?? ''}-${plainAmount(dip.litres)}Ltr`
+    : `${plainAmount(dip.litres)}Ltr`;
 }
 
 /** The same layout the attendants send on WhatsApp, so it can be pasted straight into the chat. */
@@ -194,28 +202,33 @@ export function formatDailyReportText(report: DailyReport): string {
   const lines: string[] = [report.businessDate, ''];
   for (const product of report.products) {
     lines.push(`${product.productName.toUpperCase()} SALES`);
-    lines.push(`Price: $${product.prices.join(' / $')}`);
+    lines.push(`Price: $${product.prices.map(plainAmount).join(' / $')}`);
     for (const pump of product.pumps) {
       lines.push(
         `${pump.label}`,
-        `Closing: ${pump.closing}`,
-        `Opening: ${pump.opening}`,
-        `Ltrs: ${pump.litres}`,
+        `Closing: ${plainAmount(pump.closing)}`,
+        `Opening: ${plainAmount(pump.opening)}`,
+        `Ltrs: ${plainAmount(pump.litres)}`,
         '',
       );
     }
-    lines.push(`Total litres sold: ${product.totalLitres}`, '');
+    lines.push(`Total litres sold: ${plainAmount(product.totalLitres)}`, '');
   }
   lines.push('Expenses');
   if (report.expenses.lines.length === 0) lines.push('None recorded');
-  for (const line of report.expenses.lines) lines.push(`${line.description} ${line.amount}`);
-  if (report.expenses.total !== null) lines.push(`Total ${report.expenses.total}`);
+  for (const line of report.expenses.lines)
+    lines.push(`${line.description} ${plainAmount(line.amount)}`);
+  if (report.expenses.total !== null) lines.push(`Total ${plainAmount(report.expenses.total)}`);
   lines.push('');
-  lines.push(report.drops.total === null ? 'Drop: none recorded' : `Drop: ${report.drops.total}`);
+  lines.push(
+    report.drops.total === null
+      ? 'Drop: none recorded'
+      : `Drop: ${plainAmount(report.drops.total)}`,
+  );
   if (report.cash) {
     lines.push(
-      `Available cash (USD): ${report.cash.countedCash}`,
-      `Excess/Shortfall: ${report.cash.cashVariance}`,
+      `Available cash (USD): ${plainAmount(report.cash.countedCash)}`,
+      `Excess/Shortfall: ${plainAmount(report.cash.cashVariance)}`,
     );
   } else {
     lines.push('Available cash: not counted');

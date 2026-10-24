@@ -2,29 +2,28 @@
 
 import { useState } from 'react';
 import { EmptyState } from '@/design-system/primitives';
-import { formatLitres, formatMoney } from '@/design-system/formatters';
+import { formatDecimal } from '@/design-system/formatters';
 import {
   formatDailyReportText,
+  plainAmount,
   type DailyReport,
   type DailyReportDipReading,
 } from '../daily-report-model';
 
-// Layout only; the page-level look comes from the shared statement classes, which also carry print.
-const block = { display: 'grid', gap: 'var(--space-2)', padding: 'var(--space-4) 0' } as const;
-const list = {
+// Layout only; the look comes from the shared statement classes, which also carry print.
+const block = {
   display: 'grid',
-  gap: 'var(--space-2)',
-  margin: 0,
-  padding: 0,
-  listStyle: 'none',
+  gap: 'var(--space-3)',
+  padding: 'var(--space-4) 0 0',
+  borderTop: 'var(--border-width) solid var(--border-subtle)',
 } as const;
-const rowStyle = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  justifyContent: 'space-between',
-  gap: 'var(--space-1) var(--space-4)',
-} as const;
-const total = { ...rowStyle, margin: 0 } as const;
+const heading = { margin: 0 } as const;
+const note = { margin: 0, color: 'var(--text-secondary)' } as const;
+
+const amount = (value: string): string => formatDecimal(plainAmount(value));
+
+const money = (value: string) => `USD ${amount(value)}`;
+const litres = (value: string) => `${amount(value)} L`;
 
 function timeOf(value: string | null, timezone: string): string | null {
   if (!value) return null;
@@ -36,8 +35,16 @@ function timeOf(value: string | null, timezone: string): string | null {
 
 function dipLabel(dip: DailyReportDipReading): string {
   return dip.measurement !== null
-    ? `${dip.measurement} ${dip.unit ?? ''} · ${formatLitres(dip.litres)}`
-    : formatLitres(dip.litres);
+    ? `${dip.measurement} ${dip.unit ?? ''} · ${litres(dip.litres)}`
+    : litres(dip.litres);
+}
+
+const isShort = (value: string) => value.trim().startsWith('-');
+
+/** Plain words for the cash difference: "USD 5.00 short", "USD 5.00 over" or balanced. */
+function difference(value: string): string {
+  if (isShort(value)) return `${money(value.trim().slice(1))} short`;
+  return amount(value) === '0.00' ? 'Balanced, no difference' : `${money(value)} over`;
 }
 
 export function DailyReportView({ report }: { report: DailyReport }) {
@@ -72,7 +79,7 @@ export function DailyReportView({ report }: { report: DailyReport }) {
         </div>
         <div className="recon-statement-actions">
           <button type="button" className="button button-secondary" onClick={copy}>
-            Copy as WhatsApp text
+            Copy for WhatsApp
           </button>
           <button type="button" className="button button-primary" onClick={() => window.print()}>
             Print or save as PDF
@@ -80,152 +87,230 @@ export function DailyReportView({ report }: { report: DailyReport }) {
         </div>
       </div>
       <p role="status" style={{ margin: 0 }}>
-        {copied === 'done' ? 'Copied. Paste it into WhatsApp.' : null}
+        {copied === 'done' ? 'Copied. Open WhatsApp and paste it into the chat.' : null}
         {copied === 'failed' ? 'Could not copy. Use Print or save as PDF instead.' : null}
       </p>
+
+      {report.products.length > 0 || report.cash ? (
+        <dl className="recon-statement-meta">
+          {report.products.map((product) => (
+            <div key={product.productName}>
+              <dt>{product.productName} sold</dt>
+              <dd>{litres(product.totalLitres)}</dd>
+            </div>
+          ))}
+          {report.cash ? (
+            <>
+              <div>
+                <dt>Cash counted</dt>
+                <dd>{money(report.cash.countedCash)}</dd>
+              </div>
+              <div>
+                <dt>Cash difference</dt>
+                <dd>{difference(report.cash.cashVariance)}</dd>
+              </div>
+            </>
+          ) : null}
+        </dl>
+      ) : null}
 
       {report.products.length === 0 ? (
         <EmptyState title="No pump readings" message="This shift has no pump readings saved yet." />
       ) : (
         report.products.map((product) => (
           <section key={product.productName} style={block}>
-            <h3 style={{ margin: 0 }}>{product.productName} sales</h3>
-            <p>Price {product.prices.map((price) => formatMoney(price)).join(' / ')} per litre</p>
-            <ul style={list}>
-              {product.pumps.map((pump) => (
-                <li style={rowStyle} key={pump.label}>
-                  <strong>{pump.label}</strong>
-                  <span>
-                    Opening {pump.opening} → Closing {pump.closing}
-                  </span>
-                  <span>{formatLitres(pump.litres)}</span>
-                </li>
-              ))}
-            </ul>
-            <p style={total}>
-              <span>Total litres sold</span>
-              <strong>{formatLitres(product.totalLitres)}</strong>
+            <h3 style={heading}>{product.productName} sales</h3>
+            <p style={note}>
+              Price {product.prices.map((price) => money(price)).join(' / ')} per litre
             </p>
-            <p style={total}>
-              <span>Sales value</span>
-              <strong>{formatMoney(product.salesValue)}</strong>
-            </p>
+            <table className="recon-summary" aria-label={`${product.productName} pumps`}>
+              <thead>
+                <tr>
+                  <th scope="col">Pump</th>
+                  <th scope="col">Opening</th>
+                  <th scope="col">Closing</th>
+                  <th scope="col">Litres sold</th>
+                </tr>
+              </thead>
+              <tbody>
+                {product.pumps.map((pump) => (
+                  <tr key={pump.label}>
+                    <th scope="row">{pump.label}</th>
+                    <td data-label="Opening">{amount(pump.opening)}</td>
+                    <td data-label="Closing">{amount(pump.closing)}</td>
+                    <td data-label="Litres sold">{litres(pump.litres)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">Total {product.productName.toLowerCase()}</th>
+                  <td colSpan={2} data-label="Sales value">
+                    {money(product.salesValue)}
+                  </td>
+                  <td data-label="Litres sold">{litres(product.totalLitres)}</td>
+                </tr>
+              </tfoot>
+            </table>
           </section>
         ))
       )}
 
       <section style={block}>
-        <h3 style={{ margin: 0 }}>Expenses</h3>
+        <h3 style={heading}>Expenses</h3>
         {report.expenses.lines.length === 0 ? (
-          <p>No expenses recorded.</p>
+          <p style={note}>No expenses recorded for this shift.</p>
         ) : (
-          <ul style={list}>
-            {report.expenses.lines.map((line, index) => (
-              <li style={rowStyle} key={`${line.description}-${index}`}>
-                <span>{line.description}</span>
-                <span>{formatMoney(line.amount)}</span>
-              </li>
-            ))}
-          </ul>
+          <table className="recon-summary" aria-label="Expenses">
+            <thead>
+              <tr>
+                <th scope="col">What it was for</th>
+                <th scope="col">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.expenses.lines.map((line, index) => (
+                <tr key={`${line.description}-${index}`}>
+                  <th scope="row">{line.description}</th>
+                  <td data-label="Amount">{money(line.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">Total expenses</th>
+                <td data-label="Amount">{money(report.expenses.total ?? '0')}</td>
+              </tr>
+            </tfoot>
+          </table>
         )}
-        {report.expenses.total !== null ? (
-          <p style={total}>
-            <span>Total expenses</span>
-            <strong>{formatMoney(report.expenses.total)}</strong>
-          </p>
-        ) : null}
       </section>
 
       <section style={block}>
-        <h3 style={{ margin: 0 }}>Cash</h3>
-        {report.cash ? (
-          <>
-            <p style={total}>
-              <span>Available cash (counted)</span>
-              <strong>{formatMoney(report.cash.countedCash)}</strong>
-            </p>
-            <p style={total}>
-              <span>Excess / shortfall</span>
-              <strong>{formatMoney(report.cash.cashVariance)}</strong>
-            </p>
-          </>
-        ) : (
-          <p>Cash has not been counted for this shift.</p>
-        )}
-        <p style={total}>
-          <span>Drop (handed over today)</span>
-          <strong>
-            {report.drops.total === null ? 'None recorded' : formatMoney(report.drops.total)}
-          </strong>
-        </p>
-        {report.drops.lines.length > 1 ? (
-          <ul style={list}>
-            {report.drops.lines.map((line, index) => (
-              <li style={rowStyle} key={`${line.toLocation}-${index}`}>
-                <span>To {line.toLocation}</span>
-                <span>{formatMoney(line.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <h3 style={heading}>Cash</h3>
+        <table className="recon-summary" aria-label="Cash">
+          <tbody>
+            {report.cash ? (
+              <>
+                <tr>
+                  <th scope="row">Cash counted</th>
+                  <td data-label="Amount">{money(report.cash.countedCash)}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Cash difference (excess / shortfall)</th>
+                  <td
+                    data-label="Amount"
+                    data-tone={isShort(report.cash.cashVariance) ? 'critical' : undefined}
+                  >
+                    {difference(report.cash.cashVariance)}
+                  </td>
+                </tr>
+              </>
+            ) : (
+              <tr>
+                <th scope="row">Cash counted</th>
+                <td data-label="Amount">Not counted yet</td>
+              </tr>
+            )}
+            <tr>
+              <th scope="row">Drop (cash handed over today)</th>
+              <td data-label="Amount">
+                {report.drops.total === null ? 'None recorded' : money(report.drops.total)}
+              </td>
+            </tr>
+            {report.drops.lines.length > 1
+              ? report.drops.lines.map((line, index) => (
+                  <tr key={`${line.toLocation}-${index}`}>
+                    <th scope="row">· To {line.toLocation}</th>
+                    <td data-label="Amount">{money(line.amount)}</td>
+                  </tr>
+                ))
+              : null}
+          </tbody>
+        </table>
       </section>
 
       <section style={block}>
-        <h3 style={{ margin: 0 }}>Site dips</h3>
+        <h3 style={heading}>Tank dips</h3>
         {report.dips.length === 0 ? (
-          <p>No dips recorded for this shift.</p>
+          <p style={note}>No dips recorded for this shift.</p>
         ) : (
-          <ul style={list}>
-            {report.dips.map((dip) => (
-              <li style={rowStyle} key={dip.tankCode}>
-                <strong>
-                  {dip.productName} · {dip.tankCode}
-                </strong>
-                {dip.opening ? <span>Opening {dipLabel(dip.opening)}</span> : null}
-                <span>
-                  {dip.opening ? 'Closing' : 'Dip'} {dipLabel(dip.closing)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <table className="recon-summary" aria-label="Tank dips">
+            <thead>
+              <tr>
+                <th scope="col">Tank</th>
+                <th scope="col">Opening</th>
+                <th scope="col">Closing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.dips.map((dip) => (
+                <tr key={dip.tankCode}>
+                  <th scope="row">
+                    {dip.productName} · {dip.tankCode}
+                  </th>
+                  <td data-label="Opening">
+                    {dip.opening ? dipLabel(dip.opening) : 'No opening dip'}
+                  </td>
+                  <td data-label="Closing">{dipLabel(dip.closing)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
 
-      <dl className="recon-statement-meta">
-        <div>
-          <dt>Attendants</dt>
-          <dd>
-            {report.attendantNames.length ? report.attendantNames.join(', ') : 'None recorded'}
-          </dd>
-        </div>
-        <div>
-          <dt>Supervisor</dt>
-          <dd>{report.supervisorName ?? 'None recorded'}</dd>
-        </div>
-      </dl>
+      <section style={block}>
+        <h3 style={heading}>Who was on shift</h3>
+        <dl className="recon-statement-meta">
+          <div>
+            <dt>Attendants</dt>
+            <dd>
+              {report.attendantNames.length ? report.attendantNames.join(', ') : 'None recorded'}
+            </dd>
+          </div>
+          <div>
+            <dt>Supervisor</dt>
+            <dd>{report.supervisorName ?? 'None recorded'}</dd>
+          </div>
+        </dl>
+      </section>
 
       <section style={block}>
-        <h3 style={{ margin: 0 }}>Month to date</h3>
-        <p>
-          From {month.fromDate} to {report.businessDate}, counting approved shifts and this one.
+        <h3 style={heading}>This month so far</h3>
+        <p style={note}>
+          {month.fromDate} to {report.businessDate}: approved shifts plus this one.
         </p>
         {month.products.length === 0 ? (
-          <p>No figures yet this month.</p>
+          <p style={note}>No figures yet this month.</p>
         ) : (
-          <ul style={list}>
-            {month.products.map((row) => (
-              <li style={rowStyle} key={row.productName}>
-                <strong>{row.productName}</strong>
-                <span>{formatLitres(row.litres)}</span>
-                <span>{formatMoney(row.sales)}</span>
-              </li>
-            ))}
-          </ul>
+          <table className="recon-summary" aria-label="Month to date">
+            <thead>
+              <tr>
+                <th scope="col">Fuel</th>
+                <th scope="col">Litres sold</th>
+                <th scope="col">Sales</th>
+              </tr>
+            </thead>
+            <tbody>
+              {month.products.map((row) => (
+                <tr key={row.productName}>
+                  <th scope="row">{row.productName}</th>
+                  <td data-label="Litres sold">{litres(row.litres)}</td>
+                  <td data-label="Sales">{money(row.sales)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">Expenses this month</th>
+                <td colSpan={2} data-label="Amount">
+                  {money(month.expenses)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
         )}
-        <p style={total}>
-          <span>Expenses this month</span>
-          <strong>{formatMoney(month.expenses)}</strong>
-        </p>
       </section>
     </section>
   );

@@ -166,7 +166,7 @@
     "src/modules/forecourt/ui/daily-operations-save.ts": "168d2ec7870e60eae1a69b62402483c5b101797b3eb4ed2482991a01aa2a9a3b",
     "src/modules/forecourt/ui/daily-operations-state.ts": "49f79030fd3fea44105c3bea4967f777d861857b705f437c9c5e90038402d45d",
     "src/modules/forecourt/ui/daily-operations-workspace.tsx": "bac9803f6337893846d629fafd35a4a8fa993afb92758947055399628fe3ad90",
-    "src/modules/forecourt/ui/daily-report.tsx": "0a2d62524d21f769d31cbe3dc00e52d3c575adb9583c1d3fd8490db5f4830064",
+    "src/modules/forecourt/ui/daily-report.tsx": "dc998d2da78797e60b596f86502fcd66409aa47d95b4600cbf420f786f697adb",
     "src/modules/forecourt/ui/forecourt-workspace.tsx": "a7216106f89c690a60927f7f6b7c2e736f67aa703d4302afac840f6586ce88f3",
     "src/modules/forecourt/ui/my-shift-workspace.tsx": "25c3ff1ccd6c3d269aef780be3604f2ebe9dd9195500b82ded59c2678ed86c27",
     "src/modules/forecourt/ui/operations-control-room.tsx": "fc5f3cd70d551d4ee697f4c829de0269af3254f2b728c1b32dca8c16872f9890",

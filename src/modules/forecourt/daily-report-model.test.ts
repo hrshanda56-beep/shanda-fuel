@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDailyReport,
   formatDailyReportText,
+  plainAmount,
   type DailyReportInput,
 } from './daily-report-model';
 
@@ -119,8 +120,8 @@ describe('formatDailyReportText', () => {
     expect(text).toContain('Total litres sold: 1579.68');
     expect(text).toContain('Total litres sold: 2541.57');
     expect(text).toContain('Drop: 2673.00');
-    expect(text).toContain('Excess/Shortfall: -4.0000');
-    expect(text).toContain('Opening: 1186mm-7394.000Ltr');
+    expect(text).toContain('Excess/Shortfall: -4.00');
+    expect(text).toContain('Opening: 1186mm-7394.00Ltr');
     expect(text).toContain('Attendants: Judie, Mugabe');
     expect(text).toContain('Supervisor: Leon');
   });
@@ -131,5 +132,16 @@ describe('formatDailyReportText', () => {
     );
     expect(text).toContain('Available cash: not counted');
     expect(text).toContain('Drop: none recorded');
+  });
+});
+
+describe('plainAmount', () => {
+  it('keeps cents, drops extra zeros and never rounds', () => {
+    expect(plainAmount('1560.0000')).toBe('1560.00');
+    expect(plainAmount('1.600000')).toBe('1.60');
+    expect(plainAmount('-5.0000')).toBe('-5.00');
+    expect(plainAmount('12')).toBe('12.00');
+    expect(plainAmount('0.12345')).toBe('0.12345');
+    expect(plainAmount('n/a')).toBe('n/a');
   });
 });
