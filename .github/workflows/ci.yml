@@ -37,6 +37,7 @@ jobs:
       APP_URL: http://127.0.0.1:3100
       CLERK_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_TEST_PUBLISHABLE_KEY }}
+      E2E_CLERK_USERS: ${{ secrets.E2E_CLERK_USERS }}
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
