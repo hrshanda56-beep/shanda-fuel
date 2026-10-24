@@ -1,5 +1,29 @@
 # Shanda Fuel — Current Status
 
+## After the combined finish — 2026-10-24 (later)
+
+Merged into `main` after PR #149: PR #150 as `6f59fd3` (export fix and the v1 runbooks), PR #152 as
+`b0f62ec` (next 16.4.2, eslint-config-next 16.4.0; CI green on a maintainer branch with the Clerk
+test secret) and PR #151 as `a28b24b` (one-page daily report per shift; it edits two UI-locked
+files, `daily-operations-workspace.tsx` and `operations-control-room.tsx`, approved by the project
+lead, with the UI-lock manifest re-baselined). CI was green on each PR head. CI was not re-run on
+the merge commits. CodeQL is skipped on every PR. Production was not contacted. Nothing was
+deployed or migrated in production. Whether Vercel auto-deployed `main` to production has not been
+checked.
+
+The fuel-by-fuel profit split (diesel and petrol, with the Income Statement CSV) is already on
+`main`; the separate branch `codex/finance-reporting-export-20261019` carries nothing extra.
+
+Held on purpose (Dependabot): @types/node 26 (runtime is Node 24), dotenv 18, setup-python 7,
+codeql-action 4.39.0 (CodeQL is skipped, so it cannot be verified) and setup-node 7.1.0 (pinned SHA
+not verified). @clerk/backend 3.26.0 needs a regenerated lockfile. Dependabot PRs cannot read
+`CLERK_TEST_SECRET_KEY`, so their quality and runtime-role checks fail until it is added as a
+Dependabot secret in GitHub settings.
+
+First-user provisioning is still blocked at the temporary-password step: the replacement for the
+Stage 1 helper (see `docs/runbooks/deployment.md`) needs a reviewed design and the human's approval
+before any code is written.
+
 ## v1 combined finish merged — 2026-10-24
 
 PR #149 (`codex/v1-combined-2`) merged into `main` as `b11f9f0` at 2026-10-24T14:12Z. CI on
