@@ -33,29 +33,43 @@ managed-PostgreSQL role operations. This is a one-time, operator-controlled
 assignment and matching cleanup only; it is not a new application connection
 class or a persistent elevated credential.
 
-The human-only sequence, once the operator helper has received a separate
-reviewed implementation, is:
+The human-only sequence uses the reviewed operator helper
+`scripts/production/first-user-provisioner-credential.ts` (see
+[`v1-first-user-provisioning.md`](v1-first-user-provisioning.md)):
 
 1. Run the reviewed Stage 1 migration-owner preflight and stop before any
    provisioner session. Confirm the role is still `PASSWORD NULL` and all
    security checks pass.
-2. Through the existing provider/deployment-admin secret-handling workflow,
-   enter the temporary password without putting its URL/password in argv,
-   files, chat, or logs, and execute only the approved role-password
-   assignment for `first_user_provisioner`.
+2. Run `node --import tsx scripts/production/first-user-provisioner-credential.ts assign`
+   in an interactive terminal. It asks, at hidden prompts, for the
+   provider/deployment-admin connection URI and the temporary password (twice),
+   then for a typed confirmation. It sends one transaction to the approved
+   production host: guard checks, `ALTER ROLE first_user_provisioner PASSWORD
+   '<SCRAM-SHA-256 verifier>'`, then a comparison that rolls everything back if
+   any attribute, setting or membership of the role changed. The plaintext
+   password is hashed in the helper, so it is never sent to the server or its
+   statement log.
 3. Run the reviewed direct `first_user_provisioner` read-only scope checks.
    Do not run Stage 2 or provisioning from this sequence.
-4. Through the same approved authority boundary, execute only
-   `ALTER ROLE first_user_provisioner PASSWORD NULL;`, then verify the
-   password is unusable and the role attributes, membership, ownership, and
-   ACL invariants remain exact.
+4. Run `... first-user-provisioner-credential.ts clear` through the same
+   admin boundary. It executes only
+   `ALTER ROLE first_user_provisioner PASSWORD NULL;` with the same checks. Then
+   confirm a login with the old password is refused.
+
+The helper refuses to run unless: the host is the approved production host with
+TLS; the connection user is not `migration_owner`, `first_user_provisioner`,
+`app_runtime`, `job_runtime`, `diagnostics_readonly` or `cloud_admin`; that user
+has `CREATEROLE` and is not a superuser; the server is PostgreSQL 18.6; and it is
+attached to an interactive terminal. It takes no secret through argv, the
+environment, a file or output, and scrubs the secrets from anything psql prints.
+It does not grant `CREATEROLE` to `migration_owner`, create any role or
+function, or touch any other role.
 
 Do not grant `CREATEROLE` to `migration_owner`, use `cloud_admin` or
 `neon_superuser` as an application/bootstrap shortcut, add a persistent
 privileged credential, or create a new SECURITY DEFINER password function.
-The current external Stage 1 helper still attempts assignment through
-`migration_owner`; it must not be rerun until its replacement or narrowly
-reviewed authority handoff is complete.
+The old external Stage 1 helper, which attempted assignment through
+`migration_owner`, is retired and must not be rerun.
 
 ## Deploy and verify
 
