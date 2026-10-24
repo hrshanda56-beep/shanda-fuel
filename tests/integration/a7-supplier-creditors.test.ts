@@ -1,10 +1,9 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as supplierCommandPost } from '../../src/app/api/suppliers/commands/route';
 import { GET as supplierSummaryGet } from '../../src/app/api/suppliers/summary/route';
 import { GET as supplierStatementGet } from '../../src/app/api/suppliers/statement/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -22,7 +21,7 @@ const ids = {
 let client: Sql;
 
 async function signedCookie(token: string): Promise<string> {
-  return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return token;
 }
 
 async function command(input: Record<string, unknown>, key: string) {
@@ -30,7 +29,7 @@ async function command(input: Record<string, unknown>, key: string) {
     new Request('http://127.0.0.1:3000/api/suppliers/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie('a7-session-token')}`,
+        ...clerkHeaders(await signedCookie('a7-session-token')),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -47,21 +46,19 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-a7-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-a7-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values ('${ids.tenant}', 'A7 Supplier Tenant', 'a7-supplier-tenant') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values ('${ids.actor}', 'A7 Finance', 'a7-finance@example.test') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${ids.actor}', 'A7 Finance', 'a7-finance@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'A7 Supplier Legal') on conflict (id) do nothing;
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id)
         values ('${ids.tenant}', '${ids.membership}', 'FINANCE', 'LEGAL_ENTITY', '${ids.legal}') on conflict do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values ('${ids.session}', '2030-01-01T00:00:00Z', 'a7-session-token', '${ids.actor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(client, ids.session, 'a7-session-token', ids.actor, true);
     await seedActiveStepUp(client, ids.session, ids.tenant);
   });
 
@@ -87,9 +84,11 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         commandType: 'SubmitSupplierDocument',
         supplierId: supplier.supplierId,
         documentType: 'INVOICE',
+        paymentTerms: 'CASH',
         referenceNumber: 'INV-A7-001',
         documentDate: '2026-09-24',
         amount: '100.2500',
+        lines: [{ description: 'A7 fuel supply', quantity: '1', unitPrice: '100.25' }],
       },
       'a7-submit-document',
     );
@@ -155,12 +154,20 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         `http://127.0.0.1:3000/api/suppliers/summary?tenantId=${ids.tenant}&legalEntityId=${ids.legal}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie('a7-session-token')}`,
+            ...clerkHeaders(await signedCookie('a7-session-token')),
           },
         },
       ),
     );
-    expect((await json(summary))[0].total).toBe('40.2500');
+    const summaryRow = (await json(summary))[0];
+    expect(summaryRow.total).toBe('40.2500');
+    // A document without a due date is neither due nor overdue.
+    expect(summaryRow).toMatchObject({
+      dueToday: '0',
+      dueSoon: '0',
+      dueSoonDays: 7,
+      overdueAging: { days1To7: '0', days8To14: '0', days15To30: '0', over30: '0' },
+    });
     const secondSubmittedPayment = await command(
       {
         ...base,
@@ -205,7 +212,7 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         `http://127.0.0.1:3000/api/suppliers/summary?tenantId=${ids.tenant}&legalEntityId=${ids.legal}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie('a7-session-token')}`,
+            ...clerkHeaders(await signedCookie('a7-session-token')),
           },
         },
       ),
@@ -231,7 +238,7 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         `http://127.0.0.1:3000/api/suppliers/statement?tenantId=${ids.tenant}&legalEntityId=${ids.legal}&supplierId=${supplier.supplierId}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie('a7-session-token')}`,
+            ...clerkHeaders(await signedCookie('a7-session-token')),
           },
         },
       ),
@@ -241,5 +248,75 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         (row: { movementType: string }) => row.movementType === 'PAYMENT_REVERSAL',
       ),
     ).toBe(true);
+  });
+
+  it('sets, reports and clears a supplier credit limit without blocking purchases', async () => {
+    const base = { tenantId: ids.tenant, legalEntityId: ids.legal };
+    const created = await json(
+      await command(
+        {
+          ...base,
+          commandType: 'CreateSupplier',
+          code: 'A7-LIMIT',
+          legalName: 'A7 Limit Supplier',
+        },
+        'a7-limit-create',
+      ),
+    );
+    const readRow = async () => {
+      const response = await supplierSummaryGet(
+        new Request(
+          `http://127.0.0.1:3000/api/suppliers/summary?tenantId=${ids.tenant}&legalEntityId=${ids.legal}&supplierId=${created.supplierId}`,
+          { headers: { ...clerkHeaders(await signedCookie('a7-session-token')) } },
+        ),
+      );
+      return (await json(response))[0];
+    };
+
+    const before = await readRow();
+    expect(before.creditLimit).toMatchObject({ status: 'none', limit: null });
+
+    const set = await command(
+      {
+        ...base,
+        commandType: 'SetSupplierCreditLimit',
+        supplierId: created.supplierId,
+        expectedVersion: before.version,
+        creditLimit: '1000.00',
+      },
+      'a7-limit-set',
+    );
+    expect(set.status).toBe(200);
+    const stale = await command(
+      {
+        ...base,
+        commandType: 'SetSupplierCreditLimit',
+        supplierId: created.supplierId,
+        expectedVersion: before.version,
+        creditLimit: '2000',
+      },
+      'a7-limit-stale',
+    );
+    expect(stale.status).toBe(409);
+
+    const after = await readRow();
+    expect(after.creditLimit).toMatchObject({
+      status: 'ok',
+      limit: '1000.0000',
+      available: '1000',
+    });
+
+    const cleared = await command(
+      {
+        ...base,
+        commandType: 'SetSupplierCreditLimit',
+        supplierId: created.supplierId,
+        expectedVersion: after.version,
+        creditLimit: null,
+      },
+      'a7-limit-clear',
+    );
+    expect(cleared.status).toBe(200);
+    expect((await readRow()).creditLimit.status).toBe('none');
   });
 });

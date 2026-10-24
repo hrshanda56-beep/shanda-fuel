@@ -1,5 +1,5 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { GET as dailyReportGet } from '../../src/app/api/reports/daily/route';
@@ -7,7 +7,6 @@ import { GET as managementReportGet } from '../../src/app/api/reports/management
 import { GET as reportActivityGet } from '../../src/app/api/reports/activity/route';
 import { GET as reportExportGet } from '../../src/app/api/reports/export/route';
 import { POST as reportSharePost } from '../../src/app/api/reports/share/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -47,6 +46,8 @@ const ids = {
   factCreditPayment: 'a10b0000-0000-4000-8000-0000000000a5',
   factPrepaidPayment: 'a10b0000-0000-4000-8000-0000000000a6',
   factExpense: 'a10b0000-0000-4000-8000-0000000000a7',
+  factExpenseCategory: 'a10b0000-0000-4000-8000-0000000000f2',
+  factExpenseRecognition: 'a10b0000-0000-4000-8000-0000000000f3',
   factCashDeclaration: 'a10b0000-0000-4000-8000-0000000000a8',
   factTill: 'a10b0000-0000-4000-8000-0000000000a9',
   factSafe: 'a10b0000-0000-4000-8000-0000000000aa',
@@ -123,7 +124,7 @@ const sessionToken = 'a10-management-session-token';
 const scopedSessionToken = 'a10-management-scoped-session-token';
 
 async function signedCookie(token = sessionToken): Promise<string> {
-  return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return token;
 }
 
 async function forecourtCommand(input: Record<string, unknown>, key: string) {
@@ -131,7 +132,7 @@ async function forecourtCommand(input: Record<string, unknown>, key: string) {
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie()}`,
+        ...clerkHeaders(await signedCookie()),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -146,14 +147,14 @@ describe('A10 management reporting PostgreSQL read model', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     client = postgres(databaseUrl!, { max: 2, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A10 Reporting Tenant', 'a10-reporting-tenant'),
         ('${ids.otherTenant}', 'A10 Other Tenant', 'a10-other-tenant')
       on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.actor}', 'A10 Finance', 'a10-finance@example.test'),
         ('${ids.scopedActor}', 'A10 Station Finance', 'a10-station-finance@example.test')
       on conflict (id) do nothing;
@@ -185,16 +186,6 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
       values ('${ids.tenant}', '${ids.scopedMembership}', 'FINANCE', 'STATION', '${ids.legal}', '${ids.scopedStation}')
       on conflict do nothing;
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values ('${ids.session}', '2030-01-01T00:00:00Z', '${sessionToken}', '${ids.actor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at,
-        strong_authentication_verified = true;
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values ('${ids.scopedSession}', '2030-01-01T00:00:00Z', '${scopedSessionToken}', '${ids.scopedActor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at,
-        strong_authentication_verified = true;
       insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
         values ('${ids.factDay}', '${ids.tenant}', '${ids.station}', '2026-09-20', 'NOT_STARTED')
         on conflict (id) do nothing;
@@ -268,6 +259,22 @@ describe('A10 management reporting PostgreSQL read model', () => {
         (id, tenant_id, station_id, reconciliation_id, category, description, amount, payment_method, entered_by)
         values ('${ids.factExpense}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'A10_TEST', 'A10 test expense', 2.0000, 'CASH', '${ids.membership}')
         on conflict (id) do nothing;
+      insert into app.expense_categories
+        (id, tenant_id, code, name, classification, status, created_by)
+        values ('${ids.factExpenseCategory}', '${ids.tenant}', 'A10_TEST', 'A10 test expense', 'OPERATING', 'ACTIVE', '${ids.membership}')
+        on conflict (id) do nothing;
+      insert into app.expenses
+        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount, submitted_by)
+        values ('${ids.factExpense}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${ids.factExpenseCategory}',
+         '2026-09-20', 'A10 test expense', 2.0000, '${ids.membership}')
+        on conflict (id) do nothing;
+      insert into app.expense_recognition_movements
+        (id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
+         source_type, source_id, recognition_date, currency, amount, actor_membership_id)
+        values ('${ids.factExpenseRecognition}', '${ids.tenant}', '${ids.legal}', '${ids.station}',
+         '${ids.factExpenseCategory}', 'OPERATING', 'RECOGNITION', 'EXPENSE', '${ids.factExpense}',
+         '2026-09-20', 'USD', 2.0000, '${ids.membership}')
+        on conflict (id) do nothing;
       insert into app.reconciliation_cash_declarations
         (id, tenant_id, station_id, reconciliation_id, counted_cash, expected_physical_cash, cash_paid_expenses, net_expected_cash, cash_variance, entered_by)
         values ('${ids.factCashDeclaration}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 69.0000, 70.0000, 2.0000, 68.0000, 1.0000, '${ids.membership}')
@@ -282,8 +289,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
         on conflict (id) do nothing;
       update app.shifts set state = 'OPEN', opened_at = '2026-09-20T06:00:00Z' where id = '${ids.factShift}' and state = 'PLANNED';
       update app.reconciliations set state = 'READY' where id = '${ids.factRecon}' and state = 'DRAFT';
-      update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
-      update app.reconciliation_revisions set state = 'SUBMITTED', submitted_by = '${ids.membership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRevision}' and state = 'READY';
+      update app.reconciliations set state = 'SUBMITTED', submitted_by = '${ids.scopedMembership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRecon}' and state = 'READY';
+      update app.reconciliation_revisions set state = 'SUBMITTED', submitted_by = '${ids.scopedMembership}', submitted_at = '2026-09-20T22:00:00Z' where id = '${ids.factRevision}' and state = 'READY';
       update app.reconciliation_revisions set state = 'PENDING_APPROVAL' where id = '${ids.factRevision}' and state = 'SUBMITTED';
       insert into app.cash_locations
         (id, tenant_id, station_id, code, name, location_type)
@@ -306,6 +313,10 @@ describe('A10 management reporting PostgreSQL read model', () => {
       insert into app.bank_deposit_allocations
         (id, tenant_id, station_id, deposit_id, collection_id, amount, allocated_by)
         values ('${ids.factDepositAllocation}', '${ids.tenant}', '${ids.station}', '${ids.factDeposit}', '${ids.factCollection}', 40.0000, '${ids.membership}')
+        on conflict (id) do nothing;
+      insert into app.cash_handovers
+        (id, tenant_id, station_id, from_location_id, to_location_id, expected_amount, counted_amount, variance, state, dispute_reason, delivered_by, submitted_at)
+        values ('a10b0000-0000-4000-8000-0000000000f9', '${ids.tenant}', '${ids.station}', '${ids.factTill}', '${ids.factSafe}', 60.0000, 58.0000, -2.0000, 'DISPUTED', 'A10 short count', '${ids.membership}', '2026-09-20T22:00:00Z')
         on conflict (id) do nothing;
       insert into app.payment_providers
         (id, tenant_id, code, name, provider_type, created_by)
@@ -367,6 +378,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
         values ('${ids.factDelivery}', '${ids.tenant}', '${ids.station}', '${ids.factProduct}', 'A10-DELIVERY', '2026-09-20T10:00:00Z', '2026-09-20', 20.000, 20.000, 0.000, 'CONFIRMED', 2.00000000, 40.0000, 'USD', '${ids.membership}', '${ids.membership}', '2026-09-20T11:00:00Z')
         on conflict (id) do nothing;
     `);
+    await seedClerkSession(client, ids.session, sessionToken, ids.actor, true);
+    await seedClerkSession(client, ids.scopedSession, scopedSessionToken, ids.scopedActor, true);
     await seedActiveStepUp(client, ids.session, ids.tenant);
 
     const seal = await forecourtCommand(
@@ -645,7 +658,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-18&toDate=2026-09-18`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -690,7 +703,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -717,12 +730,29 @@ describe('A10 management reporting PostgreSQL read model', () => {
       currency: 'USD',
     });
     expect(body.grossMargin).toBe('79.7500');
+    expect(body.fuelProfit).toEqual([
+      expect.objectContaining({
+        productId: ids.factProduct,
+        productCode: 'A10-PMS',
+        revenue: '105.0000',
+        cost: '25.2500',
+        profit: '79.7500',
+        status: 'COMPLETE',
+      }),
+    ]);
     expect(body.sales.reconciliationIds).toContain(ids.factRecon);
+    // Stock at weighted-average cost and the submitted expense waiting for approval.
+    expect(body.ownerPosition).toEqual({
+      stockValue: '169.0000',
+      unvaluedStockStreams: 0,
+      unpaidExpenses: '0.0000',
+      expensesAwaitingApproval: { count: 1, amount: '2.0000' },
+    });
 
     const priorBusinessDateResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-19&toDate=2026-09-19`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     const priorBusinessDateBody = (await priorBusinessDateResponse.json()) as Record<string, any>;
@@ -810,6 +840,13 @@ describe('A10 management reporting PostgreSQL read model', () => {
       deliveryValue: '40.0000',
     });
     expect(body.expenses.total).toBe('2.0000');
+    expect(body.expenses.rows[0]).toMatchObject({
+      category: 'A10_TEST',
+      amount: '2.0000',
+      sourceIds: [ids.factExpense],
+      recognitionMovementIds: [ids.factExpenseRecognition],
+    });
+    expect(body.dateBasis.expenses).toBe('expense_recognition_movements.recognition_date');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
 
     await client.unsafe(`
@@ -822,7 +859,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const reversedResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(reversedResponse.status).toBe(200);
@@ -838,7 +875,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const collectionDateOnly = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-20`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     const collectionDateBody = (await collectionDateOnly.json()) as Record<string, any>;
@@ -848,7 +885,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const depositDateOnly = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-22&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     const depositDateBody = (await depositDateOnly.json()) as Record<string, any>;
@@ -858,7 +895,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const dailyResponse = await dailyReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(dailyResponse.status).toBe(200);
@@ -884,7 +921,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.station}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -908,7 +945,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const response = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.scopedStation}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(response.status).toBe(200);
@@ -920,12 +957,36 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(body.customers.availability).toBe('UNAVAILABLE_STATION_DIMENSION');
   });
 
+  it('narrows the owner position to the selected station and never mixes in others', async () => {
+    const get = async (stationId: string) => {
+      const response = await managementReportGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${stationId}`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      expect(response.status).toBe(200);
+      return ((await response.json()) as Record<string, any>).ownerPosition;
+    };
+    expect(await get(ids.station)).toMatchObject({
+      stockValue: '169.0000',
+      expensesAwaitingApproval: { count: 1, amount: '2.0000' },
+    });
+    // The second station of the same tenant holds no stock and has no expenses.
+    expect(await get(ids.scopedStation)).toEqual({
+      stockValue: '0.0000',
+      unvaluedStockStreams: 0,
+      unpaidExpenses: '0.0000',
+      expensesAwaitingApproval: { count: 0, amount: '0.0000' },
+    });
+  });
+
   it('rejects the whole request when any selected station is not permitted', async () => {
-    const scopedActorCookie = `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`;
+    const scopedActorHeaders = clerkHeaders(scopedSessionToken);
     const mixed = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.scopedStation}`,
-        { headers: { cookie: scopedActorCookie } },
+        { headers: scopedActorHeaders },
       ),
     );
     expect(mixed.status).toBe(403);
@@ -933,7 +994,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const foreign = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station},${ids.otherStation}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(foreign.status).toBe(404);
@@ -945,7 +1006,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.scopedStation}&fromDate=2026-10-10&toDate=2026-10-10`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         },
       ),
@@ -1016,7 +1077,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.scopedStation}&fromDate=2026-10-11&toDate=2026-10-11`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         },
       ),
@@ -1036,7 +1097,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const otherStationResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.station}&fromDate=2026-10-10&toDate=2026-10-10`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(otherStationResponse.status).toBe(200);
@@ -1053,7 +1114,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
   it('rejects cross-tenant report selection and unauthorized station scope', async () => {
     const otherTenantResponse = await managementReportGet(
       new Request(`http://127.0.0.1:3000/api/reports/management?tenantId=${ids.otherTenant}`, {
-        headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` },
+        headers: { ...clerkHeaders(await signedCookie()) },
       }),
     );
     expect(otherTenantResponse.status).toBe(403);
@@ -1061,7 +1122,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const wrongStationResponse = await managementReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.otherStation}`,
-        { headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` } },
+        { headers: { ...clerkHeaders(await signedCookie()) } },
       ),
     );
     expect(wrongStationResponse.status).toBe(404);
@@ -1071,7 +1132,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationId=${ids.station}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         },
       ),
@@ -1094,9 +1155,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     async function exportAs(token: string | null, query: string) {
       return reportExportGet(
         new Request(`http://127.0.0.1:3000/api/reports/export?${query}`, {
-          headers: token
-            ? { cookie: `shanda-fuel.session_token=${await signedCookie(token)}` }
-            : {},
+          headers: token ? { ...clerkHeaders(await signedCookie(token)) } : {},
         }),
       );
     }
@@ -1107,7 +1166,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            ...(token ? { cookie: `shanda-fuel.session_token=${await signedCookie(token)}` } : {}),
+            ...(token ? { ...clerkHeaders(await signedCookie(token)) } : {}),
           },
           body: JSON.stringify(body),
         }),
@@ -1196,6 +1255,18 @@ describe('A10 management reporting PostgreSQL read model', () => {
       expect(await eventCount()).toBe(before);
     });
 
+    it('needs a fresh step-up to export, and records nothing without one', async () => {
+      const before = await eventCount();
+      // The scoped user is allowed to report on its own station but has not stepped up.
+      const response = await exportAs(
+        scopedSessionToken,
+        `report=sales&tenantId=${ids.tenant}&stationIds=${ids.scopedStation}&${range}`,
+      );
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as { message: string }).message).toMatch(/step-up/i);
+      expect(await eventCount()).toBe(before);
+    });
+
     it('rejects an unknown report', async () => {
       expect(
         (await exportAs(sessionToken, `report=payroll&tenantId=${ids.tenant}&${range}`)).status,
@@ -1222,13 +1293,14 @@ describe('A10 management reporting PostgreSQL read model', () => {
     });
 
     it('lists only the signed-in user’s own real actions, without raw ids', async () => {
+      await seedActiveStepUp(client, ids.scopedSession, ids.tenant);
       await exportAs(
         scopedSessionToken,
         `report=sales&period=this-month&tenantId=${ids.tenant}&stationIds=${ids.scopedStation}&${range}`,
       );
       const owner = await reportActivityGet(
         new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
-          headers: { cookie: `shanda-fuel.session_token=${await signedCookie()}` },
+          headers: { ...clerkHeaders(await signedCookie()) },
         }),
       );
       expect(owner.status).toBe(200);
@@ -1245,7 +1317,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       const scoped = await reportActivityGet(
         new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie(scopedSessionToken)}`,
+            ...clerkHeaders(await signedCookie(scopedSessionToken)),
           },
         }),
       );
@@ -1270,7 +1342,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         managementReportGet(
           new Request(viewUrl, {
             headers: {
-              cookie: `shanda-fuel.session_token=${scopedSessionCookieSync}`,
+              ...clerkHeaders(scopedSessionCookieSync),
             },
           }),
         );
@@ -1303,5 +1375,161 @@ describe('A10 management reporting PostgreSQL read model', () => {
         );
       }
     });
+
+    it('exports the table reports from the same fixtures, as CSV, Excel and PDF', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const delivery = await exportAs(sessionToken, `report=delivery-variance&${base}`);
+      expect(delivery.status).toBe(200);
+      expect(delivery.headers.get('content-disposition')).toBe(
+        'attachment; filename="delivery-variance_2026-09-01_to_2026-09-30.csv"',
+      );
+      const deliveryCsv = (await delivery.text()).split('\r\n');
+      expect(deliveryCsv[0]).toContain('Short (−) / over (+) (L)');
+      expect(
+        deliveryCsv.some((line) => line.includes('A10-DELIVERY') && line.includes('20.000')),
+      ).toBe(true);
+
+      const movements = await exportAs(sessionToken, `report=stock-movements&${base}`);
+      expect(movements.status).toBe(200);
+      const movementCsv = await movements.text();
+      expect(movementCsv).toContain('Opening stock');
+      expect(movementCsv).toContain('A10-TANK');
+      expect(movementCsv).toContain('95.000');
+
+      const dips = await exportAs(sessionToken, `report=tank-dip-history&${base}`);
+      expect(dips.status).toBe(200);
+      expect((await dips.text()).trim().split('\r\n')).toHaveLength(1);
+
+      const xlsx = await exportAs(sessionToken, `report=stock-movements&format=xlsx&${base}`);
+      expect(xlsx.headers.get('content-disposition')).toContain('.xlsx"');
+      expect(
+        Buffer.from(await xlsx.arrayBuffer())
+          .subarray(0, 2)
+          .toString(),
+      ).toBe('PK');
+      const pdf = await exportAs(sessionToken, `report=stock-movements&format=pdf&${base}`);
+      expect(
+        Buffer.from(await pdf.arrayBuffer())
+          .subarray(0, 5)
+          .toString(),
+      ).toBe('%PDF-');
+    });
+
+    it('shows running balances on the supplier and customer statements', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const supplier = await (
+        await exportAs(sessionToken, `report=supplier-statement&${base}`)
+      ).text();
+      const supplierLines = supplier.trim().split('\r\n');
+      // 100 invoice, 5 credit note, 25 payment: 100 → 95 → 70 still owed.
+      expect(supplierLines.at(-3)).toContain(',Invoice,100.0000,100.0000');
+      expect(supplierLines.at(-2)).toContain(',Credit note,-5.0000,95.0000');
+      expect(supplierLines.at(-1)).toContain(',Payment,-25.0000,70.0000');
+
+      const customer = await (
+        await exportAs(sessionToken, `report=customer-statement&${base}`)
+      ).text();
+      expect(customer).toContain('Credit account,Fuel on account,40.0000,40.0000');
+      expect(customer).toContain('Credit account,Payment received,-10.0000,30.0000');
+      expect(customer).toContain('Prepaid value,Prepaid top-up,12.0000,12.0000');
+
+      // Customer balances have no station dimension, so a station view must not show them.
+      const stationView = await (
+        await exportAs(sessionToken, `report=customer-statement&stationIds=${ids.station}&${base}`)
+      ).text();
+      expect(stationView.trim().split('\r\n')).toHaveLength(1);
+    });
+
+    it('lists recognised expenses with their category', async () => {
+      const expenses = await (
+        await exportAs(sessionToken, `report=expenses-detail&tenantId=${ids.tenant}&${range}`)
+      ).text();
+      expect(expenses).toContain('2026-09-20');
+      expect(expenses).toContain('A10 test expense');
+      expect(expenses).toContain(',2.0000');
+    });
+
+    it('reports cash handovers and bank deposits with plain-language status', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const custody = await (await exportAs(sessionToken, `report=cash-custody&${base}`)).text();
+      expect(custody).toContain('A10 Till,A10 Safe');
+      expect(custody).toContain('60.0000,58.0000,-2.0000,Does not add up,A10 short count');
+
+      const deposits = await (await exportAs(sessionToken, `report=bank-deposits&${base}`)).text();
+      expect(deposits).toContain('2026-09-22');
+      expect(deposits).toContain('A10 Bank,A10-DEPOSIT,40.0000,40.0000,0.0000,Confirmed');
+    });
+
+    it('adds plain cash statuses and missing-proof warnings without removing columns', async () => {
+      const base = `tenantId=${ids.tenant}&${range}`;
+      const custody = (await (await exportAs(sessionToken, `report=cash-custody&${base}`)).text())
+        .trim()
+        .split('\r\n');
+      expect(custody[0]).toContain('Status,Note,Where the cash is now,Shortage reason');
+      // A disputed handover has not been received yet, and its shortage has a written reason.
+      expect(custody.find((line) => line.includes('A10 short count'))).toMatch(
+        /A10 short count,,$/,
+      );
+
+      const deposits = (await (await exportAs(sessionToken, `report=bank-deposits&${base}`)).text())
+        .trim()
+        .split('\r\n');
+      expect(deposits[0]).toContain('Status,Bank reference,Banking status,Missing proof');
+      // Confirmed in full, has a bank reference, but no deposit slip is attached: warned, not blocked.
+      expect(deposits.find((line) => line.includes('A10-DEPOSIT'))).toContain(
+        'Confirmed,A10-BANK-REF,Fully banked,No deposit slip attached',
+      );
+    });
+
+    it('lists daily reconciliations with expected against accounted sales', async () => {
+      const csv = await (
+        await exportAs(sessionToken, `report=daily-reconciliation&tenantId=${ids.tenant}&${range}`)
+      ).text();
+      expect(csv.trim().split('\r\n').length).toBeGreaterThan(1);
+      expect(csv).toContain('135.0000,130.0000,-5.0000');
+    });
+
+    it('applies station authorisation to the table reports too', async () => {
+      const response = await exportAs(
+        scopedSessionToken,
+        `report=stock-movements&tenantId=${ids.tenant}&stationIds=${ids.station}&${range}`,
+      );
+      expect(response.status).toBe(403);
+    });
+  });
+
+  // Runs last: expense versions are immutable, so this posted expense stays in the fixtures.
+  it('counts the unpaid part of posted expenses and leaves paid ones out', async () => {
+    const expenseId = 'a10b0000-0000-4000-8000-0000000000f8';
+    const paymentId = 'a10b0000-0000-4000-8000-0000000000f9';
+    await client.unsafe(`
+      insert into app.expenses
+        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount,
+         submitted_by)
+        values ('${expenseId}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${ids.factExpenseCategory}',
+         '2026-09-20', 'A10 unpaid test', 4.0000, '${ids.membership}');
+      insert into app.expense_approvals (tenant_id, expense_id, decision, actor_membership_id)
+        values ('${ids.tenant}', '${expenseId}', 'APPROVED', '${ids.membership}');
+      update app.expenses set state = 'APPROVED', version = version + 1 where id = '${expenseId}';
+      update app.expenses set state = 'POSTED', version = version + 1,
+        posted_by = '${ids.membership}', posted_at = now() where id = '${expenseId}';
+      insert into app.expense_payments
+        (id, tenant_id, legal_entity_id, station_id, expense_id, payment_date, amount, settlement_source,
+         external_reference, recorded_by)
+        values ('${paymentId}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${expenseId}',
+         '2026-09-21', 1.5000, 'BANK', 'A10-PAY-1', '${ids.membership}');
+    `);
+    {
+      const response = await managementReportGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      const body = (await response.json()) as Record<string, any>;
+      expect(body.ownerPosition.unpaidExpenses).toBe('2.5000');
+      // Only the submitted expense is waiting for approval; the posted one is not.
+      expect(body.ownerPosition.expensesAwaitingApproval).toEqual({ count: 1, amount: '2.0000' });
+    }
   });
 });

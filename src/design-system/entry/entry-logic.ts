@@ -78,6 +78,11 @@ export type WorkplaceOption = Readonly<{
   detail?: string;
 }>;
 
+export type AllStationsOption = Readonly<{
+  organisationId: string;
+  organisationName: string;
+}>;
+
 type AvailableTree = Readonly<{
   organisations: readonly Readonly<{
     id: string;
@@ -91,17 +96,24 @@ type AvailableTree = Readonly<{
 }>;
 
 export type WorkplacePlan =
-  { kind: 'none' } | { kind: 'continue' } | { kind: 'choose'; options: readonly WorkplaceOption[] };
+  | { kind: 'none' }
+  | { kind: 'continue' }
+  | {
+      kind: 'choose';
+      options: readonly WorkplaceOption[];
+      allStationsOptions: readonly AllStationsOption[];
+      defaultAllStationsOrganisationId: string;
+    };
 
 /**
  * Decide the post-sign-in step from the already-authorised context tree.
  * - no organisation at all: a human access state, never an empty dashboard
- * - at most one station, or a still-valid remembered choice: continue
+ * - at most one station: continue
  * - several stations: ask where they are working
  */
 export function planWorkplaceEntry(
   available: AvailableTree,
-  rememberedChoiceIsValid: boolean,
+  rememberedOrganisationId?: string,
 ): WorkplacePlan {
   if (available.organisations.length === 0) return { kind: 'none' };
 
@@ -110,7 +122,7 @@ export function planWorkplaceEntry(
       legalEntity.stations.map((station) => ({ organisation, legalEntity, station })),
     ),
   );
-  if (flat.length <= 1 || rememberedChoiceIsValid) return { kind: 'continue' };
+  if (flat.length <= 1) return { kind: 'continue' };
 
   const nameCounts = new Map<string, number>();
   for (const { station } of flat) {
@@ -133,5 +145,20 @@ export function planWorkplaceEntry(
       ...(detail ? { detail } : {}),
     };
   });
-  return { kind: 'choose', options };
+  const allStationsOptions = available.organisations.map((organisation) => ({
+    organisationId: organisation.id,
+    organisationName: organisation.name,
+  }));
+  const defaultAllStationsOrganisationId = allStationsOptions.some(
+    (option) => option.organisationId === rememberedOrganisationId,
+  )
+    ? rememberedOrganisationId!
+    : allStationsOptions[0]!.organisationId;
+
+  return {
+    kind: 'choose',
+    options,
+    allStationsOptions,
+    defaultAllStationsOrganisationId,
+  };
 }

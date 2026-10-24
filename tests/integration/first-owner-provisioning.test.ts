@@ -1,16 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
-import { hashPassword } from 'better-auth/crypto';
 
 import { signSecurityEvent } from '../../src/platform/security/audit-signing';
-import {
-  OWNER_BOOTSTRAP_DISPLAY_NAME,
-  OWNER_BOOTSTRAP_EMAIL,
-  OWNER_BOOTSTRAP_LEGAL_ENTITY_ID,
-  OWNER_BOOTSTRAP_STATION_IDS,
-  OWNER_BOOTSTRAP_TENANT_ID,
-} from '../../scripts/first-owner-provisioning';
+// Historical SQL capability fixtures; no production bootstrap CLI remains.
+const OWNER_BOOTSTRAP_DISPLAY_NAME = 'Shanda Admin';
+const OWNER_BOOTSTRAP_EMAIL = 'hrshanda56@gmail.com';
+const OWNER_BOOTSTRAP_TENANT_ID = 'a8852b9f-c490-4a72-a3f3-8662aeb14a8a';
+const OWNER_BOOTSTRAP_LEGAL_ENTITY_ID = 'cb5789ea-0979-450e-83d1-9834135cbedf';
+const OWNER_BOOTSTRAP_STATION_IDS = [
+  'd8913b4d-7bb8-48cb-bb46-a741cea1f6c5',
+  'c4954604-2bcb-4e59-96e9-12e35449545c',
+  'ae3bf2a5-7ff0-42a3-832c-ae8f49a14b9f',
+  '68ef219f-6baa-442a-8465-6d52e505d1f3',
+] as const;
 
 const databaseUrl = process.env.DATABASE_URL;
 const adminDatabaseUrl = process.env.FIRST_USER_PROVISIONING_TEST_ADMIN_DATABASE_URL;
@@ -55,7 +58,7 @@ function event(
       details: {
         actorType: 'SUPPORT',
         initiatedBy: 'first-production-owner-provisioning',
-        subjectType: 'auth.user',
+        subjectType: 'app.users',
         subjectId: target.userId,
         metadata: {
           operationId: target.operationId,
@@ -96,7 +99,7 @@ async function plan(
 
 async function provision(roleCode = 'OWNER'): Promise<Provisioned> {
   const target = { userId: randomUUID(), membershipId: randomUUID(), operationId: randomUUID() };
-  const passwordHash = await hashPassword('integration-owner-password');
+  const clerkUserId = `user_owner${target.userId.replaceAll('-', '')}`;
   const rows = await client!.begin(async (transaction) => {
     return transaction<{ value: Record<string, unknown> }[]>`
       select platform.first_owner_provisioning_provision(
@@ -108,7 +111,7 @@ async function provision(roleCode = 'OWNER'): Promise<Provisioned> {
         ${client!.array([...OWNER_BOOTSTRAP_STATION_IDS])}::uuid[],
         ${OWNER_BOOTSTRAP_EMAIL},
         ${OWNER_BOOTSTRAP_DISPLAY_NAME},
-        ${passwordHash},
+        ${clerkUserId},
         ${transaction.json(JSON.parse(JSON.stringify(event('ACCESS.PROVISIONING_INITIATED', target, roleCode))))}::jsonb,
         ${transaction.json(JSON.parse(JSON.stringify(event('ACCESS.PROVISIONING_COMPLETED', target, roleCode))))}::jsonb
       ) as value

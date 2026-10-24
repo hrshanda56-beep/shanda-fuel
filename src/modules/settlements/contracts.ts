@@ -39,4 +39,6 @@ export type UnmatchedProviderPaymentRow = {
   reference: string | null;
   allocatedAmount: string;
   unallocatedAmount: string;
+  /** Still waiting past the allowed days, by station time. */
+  overdue: boolean;
 };

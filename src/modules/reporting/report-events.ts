@@ -24,7 +24,13 @@ import { authorizeManagementReportRequest } from './queries';
  */
 export async function recordReportEvent(
   request: Request,
-  input: { kind: ReportEventKind; slug: string; period?: string; query: unknown },
+  input: {
+    kind: ReportEventKind;
+    slug: string;
+    period?: string;
+    query: unknown;
+    exportFormat?: 'csv' | 'pdf' | 'xlsx';
+  },
 ): Promise<void> {
   if (!findReport(input.slug)) return;
   const { filters, authority } = await authorizeManagementReportRequest(request, input.query);
@@ -60,6 +66,7 @@ export async function recordReportEvent(
           fromDate: filters.fromDate ?? '',
           toDate: filters.toDate ?? '',
           stationNames: names,
+          exportFormat: input.exportFormat,
         }),
       },
       getAuditSigningKey(),

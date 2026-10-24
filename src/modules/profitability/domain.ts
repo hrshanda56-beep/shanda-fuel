@@ -1,6 +1,7 @@
 import { DECIMAL_POLICIES, ExactDecimal } from '../../platform/domain/primitives';
 import type {
   CanonicalRevenueReport,
+  GrossMarginStatus,
   CanonicalSaleRevenue,
   RestatedCogsReport,
   RestatedSaleCogs,
@@ -118,4 +119,17 @@ export function normalizeValuedSaleCogs(input: {
     .quantize(DECIMAL_POLICIES.money)
     .value.toFixed(DECIMAL_POLICIES.money.scale);
   return { originalCogs, revaluationDelta, restatedCogs };
+}
+
+export function classifyGrossMargin(
+  revenue: CanonicalRevenueReport,
+  costing: Omit<RestatedCogsReport, 'sales'>,
+): GrossMarginStatus {
+  if (revenue.saleCount === 0 && costing.saleCount === 0) return 'NOT_APPLICABLE';
+  if (revenue.saleCount === 0) return 'REVENUE_MISSING';
+  if (costing.costingStatus !== 'COMPLETE' || costing.restatedCogs === null) {
+    return costing.costingStatus === 'NO_SALES' ? 'SALE_COUNT_MISMATCH' : 'COSTING_UNVALUED';
+  }
+  if (costing.saleCount !== revenue.saleCount) return 'SALE_COUNT_MISMATCH';
+  return 'COMPLETE';
 }

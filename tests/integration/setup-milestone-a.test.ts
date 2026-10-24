@@ -1,13 +1,12 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { POST as setupPost } from '../../src/app/api/setup/commands/route';
 import { GET as overviewGet } from '../../src/app/api/setup/overview/route';
 import { POST as inventoryPost } from '../../src/app/api/inventory/commands/route';
 import { POST as forecourtPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as settlementPost } from '../../src/app/api/settlements/commands/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for setup integration tests.');
@@ -22,6 +21,7 @@ const ids = {
   legalB: p(12),
   stationA: p(21),
   stationB: p(22),
+  stationOther: p(23),
   ownerUser: p(31),
   attendantUser: p(32),
   ownerBUser: p(33),
@@ -40,7 +40,7 @@ const tokens = {
 };
 
 let client: Sql;
-const signed: Record<string, string> = {};
+const signed = tokens;
 
 async function post(
   handler: (r: Request) => Promise<Response>,
@@ -52,7 +52,7 @@ async function post(
     new Request('http://127.0.0.1:3000/api/x', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signed[who]}`,
+        ...clerkHeaders(signed[who]),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -71,7 +71,7 @@ async function overview(
   const res = await overviewGet(
     new Request(
       `http://127.0.0.1:3000/api/setup/overview?tenantId=${tenantId}&stationId=${stationId}`,
-      { headers: { cookie: `shanda-fuel.session_token=${signed[who]}` } },
+      { headers: { ...clerkHeaders(signed[who]) } },
     ),
   );
   return { status: res.status, body: (await res.json()) as Record<string, any> };
@@ -81,18 +81,15 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-setup-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-setup-secret';
-    for (const [k, v] of Object.entries(tokens)) {
-      signed[k] = `${v}.${await makeSignature(v, process.env.BETTER_AUTH_SECRET!)}`;
-    }
     client = postgres(databaseUrl, { max: 1, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
         ('${ids.tenantA}', 'Setup Tenant A', 'setup-a-tenant-${run}'),
         ('${ids.tenantB}', 'Setup Tenant B', 'setup-a-tenant-b-${run}') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.ownerUser}', 'Setup Owner', 'setup-a-owner-${run}@example.test'),
         ('${ids.attendantUser}', 'Setup Attendant', 'setup-a-attendant-${run}@example.test'),
         ('${ids.ownerBUser}', 'Setup Owner B', 'setup-a-ownerb-${run}@example.test') on conflict (id) do nothing;
@@ -111,12 +108,10 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
         ('${ids.tenantA}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legalA}', '${ids.stationA}'),
         ('${ids.tenantB}', '${ids.ownerBMembership}', 'OWNER', 'TENANT', null, null)
         on conflict do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at) values
-        ('${ids.ownerSession}', '2030-01-01T00:00:00Z', '${tokens.owner}', '${ids.ownerUser}', true, now()),
-        ('${ids.attendantSession}', '2030-01-01T00:00:00Z', '${tokens.attendant}', '${ids.attendantUser}', true, now()),
-        ('${ids.ownerBSession}', '2030-01-01T00:00:00Z', '${tokens.ownerB}', '${ids.ownerBUser}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(client, ids.ownerSession, tokens.owner, ids.ownerUser, true);
+    await seedClerkSession(client, ids.attendantSession, tokens.attendant, ids.attendantUser, true);
+    await seedClerkSession(client, ids.ownerBSession, tokens.ownerB, ids.ownerBUser, true);
     await seedActiveStepUp(client, ids.ownerSession, ids.tenantA);
     await seedActiveStepUp(client, ids.attendantSession, ids.tenantA);
     await seedActiveStepUp(client, ids.ownerBSession, ids.tenantB);
@@ -446,5 +441,55 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     const audit =
       await client`select event_code from platform.security_events where details->>'subjectId' = ${s!.id} order by occurred_at`;
     expect(audit.map((r) => r.event_code)).toEqual(['SUPPLIER.UPDATED', 'SUPPLIER.STATUS_CHANGED']);
+  });
+
+  it('SetResponsibleSupervisor: only an active supervisor of this station can be chosen', async () => {
+    const supervisorUser = randomUUID();
+    const supervisorMembership = randomUUID();
+    const otherUser = randomUUID();
+    const otherMembership = randomUUID();
+    await client.unsafe(`
+      insert into app.users (id, name, email) values
+        ('${supervisorUser}', 'Tendai Supervisor', 'setup-sup-${run}@example.test'),
+        ('${otherUser}', 'Other Station Supervisor', 'setup-sup-other-${run}@example.test');
+      insert into app.memberships (id, tenant_id, identity_id, status) values
+        ('${supervisorMembership}', '${ids.tenantA}', '${supervisorUser}', 'ACTIVE'),
+        ('${otherMembership}', '${ids.tenantA}', '${otherUser}', 'ACTIVE');
+      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status)
+        values ('${ids.stationOther}', '${ids.tenantA}', '${ids.legalA}', 'O${run}', 'Setup Other Station', 'ONBOARDING');
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id) values
+        ('${ids.tenantA}', '${supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legalA}', '${ids.stationA}'),
+        ('${ids.tenantA}', '${otherMembership}', 'SUPERVISOR', 'STATION', '${ids.legalA}', '${ids.stationOther}');
+    `);
+    const command = (
+      key: string,
+      membershipId: string | null,
+      who: keyof typeof tokens = 'owner',
+    ) => post(setupPost, who, key, { commandType: 'SetResponsibleSupervisor', ...A, membershipId });
+
+    const attendant = await command('setup-resp-1', ids.attendantMembership);
+    expect(attendant.status).toBe(400);
+    const elsewhere = await command('setup-resp-2', otherMembership);
+    expect(elsewhere.status).toBe(400);
+    const denied = await command('setup-resp-3', supervisorMembership, 'attendant');
+    expect(denied.status).toBe(403);
+
+    const set = await command('setup-resp-4', supervisorMembership);
+    expect(set.status).toBe(200);
+    const replay = await command('setup-resp-4', supervisorMembership);
+    expect(replay.status).toBe(200);
+    const { body: ov } = await overview('owner');
+    expect(ov.data.responsibleSupervisorMembershipId).toBe(supervisorMembership);
+    expect(ov.data.supervisors).toEqual([
+      { membershipId: supervisorMembership, name: 'Tendai Supervisor' },
+    ]);
+
+    const cleared = await command('setup-resp-5', null);
+    expect(cleared.status).toBe(200);
+    const { body: after } = await overview('owner');
+    expect(after.data.responsibleSupervisorMembershipId).toBeNull();
+    const audit =
+      await client`select event_code from platform.security_events where tenant_id = ${ids.tenantA} and event_code = 'SETUP.RESPONSIBLE_SUPERVISOR_SET'`;
+    expect(audit).toHaveLength(2);
   });
 });

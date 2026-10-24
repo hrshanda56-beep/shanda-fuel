@@ -34,7 +34,9 @@ describe('Next security headers', () => {
     const csp = headers.get('Content-Security-Policy');
 
     expectRequiredHeaders(headers);
-    expect(csp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(csp).toContain(
+      "script-src 'self' 'unsafe-inline' https://*.protect.clerk.com 'unsafe-eval'",
+    );
   });
 
   it('keeps eval out of production CSP while preserving the required headers', async () => {
@@ -42,7 +44,14 @@ describe('Next security headers', () => {
     const csp = headers.get('Content-Security-Policy');
 
     expectRequiredHeaders(headers);
-    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://*.protect.clerk.com;");
+    expect(csp).toContain("worker-src 'self' blob:;");
+    expect(csp).toContain("connect-src 'self' https://*.protect.clerk.com:*;");
     expect(csp).not.toContain("'unsafe-eval'");
+    // The only outside hosts allowed anywhere in the policy are Clerk's bot-protection domain.
+    const outside = (csp ?? '').match(/https:\/\/[^\s;]+/g) ?? [];
+    expect(new Set(outside)).toEqual(
+      new Set(['https://*.protect.clerk.com', 'https://*.protect.clerk.com:*']),
+    );
   });
 });

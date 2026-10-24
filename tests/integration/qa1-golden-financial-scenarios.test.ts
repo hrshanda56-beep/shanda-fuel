@@ -66,7 +66,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
   beforeAll(() => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-qa1-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-qa1-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
@@ -237,9 +237,11 @@ describe('QA1 cross-module golden financial scenarios', () => {
       `select * from app.inventory_sale_cost_attributions where meter_segment_id in ('${historical.segmentIds.join("','")}')`,
     );
     const beforeLateCost = await snapshotQa1(client, ctx);
+    const g2SupplierId = await createSupplier(ctx, 'g2-create-supplier');
     const delivery = await createDelivery(ctx, 'g2-late', {
       quantityLitres: '100.000',
       deliveredAt: '2026-09-23T23:30:00.000Z',
+      supplierId: g2SupplierId,
     });
     await confirmDelivery(ctx, delivery.deliveryId, 'g2-late-confirm');
     const unvalued = await rows<{
@@ -318,6 +320,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
         revaluationId,
       },
       'g2-revaluation-approve',
+      'finance',
     );
     expectStatus(approved, 200);
     const posted = await inventory(
@@ -351,8 +354,13 @@ describe('QA1 cross-module golden financial scenarios', () => {
       row.event_code.startsWith('INVENTORY.COST_REVALUATION_'),
     );
     expect(revaluationAudit).toHaveLength(3);
+    // Request and post are done by admin; approval is a separate actor (separation of duties).
     expect(
-      revaluationAudit.every((row) => row.membership_id === ctx.actors.admin.membershipId),
+      revaluationAudit.every((row) =>
+        row.event_code === 'INVENTORY.COST_REVALUATION_APPROVED'
+          ? row.membership_id === ctx.actors.finance.membershipId
+          : row.membership_id === ctx.actors.admin.membershipId,
+      ),
     ).toBe(true);
     const revaluationLines = revaluationSnapshot.revaluationLines.filter(
       (line) => line.revaluation_id === revaluationId,
@@ -449,13 +457,14 @@ describe('QA1 cross-module golden financial scenarios', () => {
   it('G3 proves supplier liability, payment allocation, reversal, and A4 independence', async () => {
     const ctx = await createQa1ScenarioContext(client, 'g3');
     await postOpeningPosition(client, ctx, 'g3-opening');
+    const supplierId = await createSupplier(ctx, 'g3-create-supplier');
     const delivery = await createDelivery(ctx, 'g3-delivery', {
       quantityLitres: '500.000',
       deliveredAt: QA1_TIMES.opening,
+      supplierId,
     });
     await confirmDelivery(ctx, delivery.deliveryId, 'g3-delivery-confirm');
     await recordReceiptCost(ctx, delivery.allocationId, '600.0000', 'g3-receipt-cost');
-    const supplierId = await createSupplier(ctx, 'g3-create-supplier');
     const document = await supplier(
       ctx,
       {
@@ -464,9 +473,19 @@ describe('QA1 cross-module golden financial scenarios', () => {
         legalEntityId: ctx.legalEntityId,
         supplierId,
         documentType: 'INVOICE',
+        paymentTerms: 'CASH',
         referenceNumber: `QA1-INV-${ctx.runId.slice(0, 8)}`,
         documentDate: ctx.businessDate,
         amount: '600.0000',
+        lines: [
+          {
+            productId: ctx.productId,
+            description: 'QA1 fuel delivery',
+            quantity: '500.000',
+            unitPrice: '1.2',
+            deliveryId: delivery.deliveryId,
+          },
+        ],
         deliveryReferences: [{ stationId: ctx.stationId, deliveryId: delivery.deliveryId }],
       },
       'g3-submit-invoice',
@@ -704,6 +723,13 @@ describe('QA1 cross-module golden financial scenarios', () => {
     );
     expectStatus(deposit, 201);
     const depositId = id(deposit.body, 'depositId');
+    await client.unsafe(`
+      insert into app.documents (tenant_id, legal_entity_id, station_id, subject_type, subject_id,
+        kind, object_key, file_name, content_type, byte_size, sha256, uploaded_by)
+      values ('${ctx.tenantId}', '${ctx.legalEntityId}', '${ctx.stationId}', 'BANK_DEPOSIT',
+        '${depositId}', 'DEPOSIT_SLIP', 'qa1/slip-${depositId}.pdf', 'slip.pdf',
+        'application/pdf', 1000, '${'b'.repeat(64)}', '${ctx.actors.admin.membershipId}')
+    `);
     expectStatus(
       await cash(
         ctx,
@@ -744,15 +770,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
 
   it('G5 links credit and prepaid value exactly once without creating duplicate fuel movements', async () => {
     const ctx = await createQa1ScenarioContext(client, 'g5');
-    const sale = await createApprovedSale(client, ctx, 'g5-sale', {
-      saleLitres: '30.000',
-      payments: [
-        { method: 'CUSTOMER_CREDIT', amount: '50.0000' },
-        { method: 'PREPAID', amount: '25.0000' },
-      ],
-      post: true,
-      completeShiftAfter: true,
-    });
+    // Credit and prepaid sales name the customer account, so the accounts exist first.
     const customerResult = await customer(
       ctx,
       {
@@ -811,6 +829,19 @@ describe('QA1 cross-module golden financial scenarios', () => {
       ),
       201,
     );
+    const sale = await createApprovedSale(client, ctx, 'g5-sale', {
+      saleLitres: '30.000',
+      payments: [
+        {
+          method: 'CUSTOMER_CREDIT',
+          amount: '50.0000',
+          customerAccountId: id(credit.body, 'accountId'),
+        },
+        { method: 'PREPAID', amount: '25.0000', customerAccountId: prepaidAccountId },
+      ],
+      post: true,
+      completeShiftAfter: true,
+    });
     const revision = await currentRevision(client, ctx, sale.reconciliationId);
     for (const [suffix, accountId, accountType, litres, amount, method] of [
       ['credit', id(credit.body, 'accountId'), 'CREDIT', '10.000', '50.0000', 'CUSTOMER_CREDIT'],
@@ -869,6 +900,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
             },
             occurredAt: QA1_TIMES.futureSegmentClose,
             businessDate: ctx.businessDate,
+            entryDetails: { vehicleRegistration: 'QA1 001', voucherNumber: `QA1-V-${suffix}` },
           },
           `g5-${suffix}-complete`,
         ),

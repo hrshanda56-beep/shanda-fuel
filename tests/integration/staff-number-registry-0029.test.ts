@@ -69,7 +69,7 @@ describe('0029 Staff Number registry RLS capability boundary', () => {
             values ('${ids.legalEntity}', '${ids.tenant}', '0029 Legal Entity', 'ACTIVE');
           insert into app.stations (id, tenant_id, legal_entity_id, code, name, timezone, status)
             values ('${ids.station}', '${ids.tenant}', '${ids.legalEntity}', '0029', '0029 Station', 'Africa/Harare', 'ACTIVE');
-          insert into auth."user" (id, name, email, email_verified) values
+          insert into app.users (id, name, email, email_verified) values
             ('${ids.owner}', '0029 Owner', '0029-owner@example.test', true),
             ('${ids.otherOwner}', '0029 Other Owner', '0029-other-owner@example.test', true),
             ('${ids.newUser}', '0029 New User', '0029-new-user@example.test', false);
@@ -119,8 +119,8 @@ describe('0029 Staff Number registry RLS capability boundary', () => {
             transaction.unsafe(
               `select app.reserve_staff_number('${ids.invitation}', 'SF-02900001')`,
             ),
-          'P0001',
-          'staff number reservation unavailable',
+          '23505',
+          'That staff number is already in use',
         );
 
         await transaction.unsafe('reset role');

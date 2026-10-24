@@ -21,6 +21,7 @@ import {
   sellingPrices,
   shifts,
 } from './a3';
+import { customerAccounts } from './a8';
 import { fuelDeliveries, tankDips, tanks } from './a4';
 
 const id = () =>
@@ -246,12 +247,21 @@ export const reconciliationPayments = appSchema.table(
     amount: numeric('amount', { precision: 20, scale: 4 }).notNull(),
     reference: text('reference'),
     note: text('note'),
+    /** The customer account a credit or prepaid sale is charged to (DEC-044). */
+    customerAccountId: uuid('customer_account_id'),
+    /** Who received approved (staff or management) fuel (DEC-044). */
+    beneficiaryName: text('beneficiary_name'),
     enteredBy: uuid('entered_by').notNull(),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },
   (table) => [
     unique('reconciliation_payments_tenant_id_id_uidx').on(table.tenantId, table.id),
+    foreignKey({
+      columns: [table.tenantId, table.customerAccountId],
+      foreignColumns: [customerAccounts.tenantId, customerAccounts.id],
+      name: 'reconciliation_payments_customer_account_fk',
+    }),
     check('reconciliation_payments_amount_ck', sql`${table.amount} >= 0`),
     check(
       'reconciliation_payments_method_ck',

@@ -1,5 +1,7 @@
 'use client';
+import { useContextFetch } from '@/modules/context/client-context';
 
+import Decimal from 'decimal.js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -23,6 +25,7 @@ import {
 import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { calculateDueDate } from '../credit-terms';
 import { initials, isOverdue, movementLabel, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
@@ -33,6 +36,13 @@ type SupplierSummary = {
   overdue: string;
   total: string;
   asOf?: string;
+  version?: number;
+  creditLimit?: {
+    status: 'none' | 'ok' | 'near' | 'over';
+    limit: string | null;
+    available: string | null;
+    percentUsed: number | null;
+  };
 };
 
 type StatementLine = {
@@ -45,12 +55,17 @@ type StatementLine = {
   currency: string;
 };
 
+type LineForm = { description: string; quantity: string; unitPrice: string };
+
 type DocumentForm = {
   documentType: 'INVOICE' | 'CREDIT_NOTE';
   referenceNumber: string;
   documentDate: string;
   dueDate: string;
+  paymentTerms: '' | 'CASH' | 'CREDIT';
+  creditPeriodDays: string;
   amount: string;
+  lines: LineForm[];
 };
 
 type PaymentForm = {
@@ -60,18 +75,31 @@ type PaymentForm = {
 };
 
 const SUPPLIER_ROUTE_POLICY = contextRoutePolicy('/suppliers/:supplierId');
+const EMPTY_LINE: LineForm = { description: '', quantity: '', unitPrice: '' };
 const EMPTY_DOCUMENT_FORM: DocumentForm = {
   documentType: 'INVOICE',
   referenceNumber: '',
   documentDate: '',
   dueDate: '',
+  paymentTerms: '',
+  creditPeriodDays: '',
   amount: '',
+  lines: [EMPTY_LINE],
 };
 const EMPTY_PAYMENT_FORM: PaymentForm = {
   paymentDate: '',
   amount: '',
   reference: '',
 };
+
+/** Whole days from the credit-period box: a number, null when empty, or 'invalid'. */
+function periodDays(text: string): number | null | 'invalid' {
+  const value = text.trim();
+  if (!value) return null;
+  if (!/^\d{1,3}$/.test(value)) return 'invalid';
+  const days = Number(value);
+  return days > 365 ? 'invalid' : days;
+}
 
 function getErrorMessage(result: unknown, fallback: string): string {
   if (typeof result === 'object' && result !== null && 'message' in result) {
@@ -95,22 +123,57 @@ function isExactDecimal(value: string): boolean {
   return /^\d+(?:\.\d+)?$/.test(value);
 }
 
-export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) {
+function lineTotal(line: LineForm): Decimal | null {
+  if (!isExactDecimal(line.quantity.trim()) || !isExactDecimal(line.unitPrice.trim())) return null;
+  return new Decimal(line.quantity.trim()).mul(line.unitPrice.trim());
+}
+
+function linesSubtotal(lines: LineForm[]): string {
+  return lines.reduce((sum, line) => sum.add(lineTotal(line) ?? 0), new Decimal(0)).toFixed(4);
+}
+
+export function SupplierDetailWorkspace({
+  supplierId,
+  initial,
+}: {
+  supplierId: string;
+  initial?: {
+    resolution: ContextResolution;
+    supplier: SupplierSummary | null;
+    statement: StatementLine[];
+  };
+}) {
+  const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const [context, setContext] = useState<ContextResolution | null>(null);
-  const [contextLoading, setContextLoading] = useState(true);
+  const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
+  const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [supplier, setSupplier] = useState<SupplierSummary | null>(null);
-  const [statement, setStatement] = useState<StatementLine[]>([]);
+  const [supplier, setSupplier] = useState<SupplierSummary | null>(initial?.supplier ?? null);
+  const [statement, setStatement] = useState<StatementLine[]>(initial?.statement ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentForm, setDocumentForm] = useState<DocumentForm>(EMPTY_DOCUMENT_FORM);
+  const calculatedDueDate = useMemo(() => {
+    if (documentForm.documentType !== 'INVOICE' || documentForm.paymentTerms !== 'CREDIT') {
+      return '';
+    }
+    const days = periodDays(documentForm.creditPeriodDays);
+    if (typeof days !== 'number' || !documentForm.documentDate) return '';
+    try {
+      return calculateDueDate(documentForm.documentDate, days);
+    } catch {
+      return '';
+    }
+  }, [documentForm]);
+  const dueDateFromPeriod = calculatedDueDate !== '';
+  const shownDueDate = dueDateFromPeriod ? calculatedDueDate : documentForm.dueDate;
   const [paymentForm, setPaymentForm] = useState<PaymentForm>(EMPTY_PAYMENT_FORM);
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState<'document' | 'payment' | null>(null);
+  const [limitText, setLimitText] = useState('');
 
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(
@@ -135,7 +198,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
     setContextLoading(true);
     setContextError(null);
     try {
-      const response = await fetch(contextRequestUrl(`/suppliers/${supplierId}`, search), {
+      const response = await contextFetch(contextRequestUrl(`/suppliers/${supplierId}`, search), {
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
@@ -209,15 +272,16 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
   }
 
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadContext(controller.signal));
     return () => controller.abort();
     // URL changes trigger a fresh server-validated context resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, supplierId]);
+  }, [search, supplierId, contextFetch]);
 
   useEffect(() => {
-    if (!hasRequiredContext || !current) return;
+    if (initial || !hasRequiredContext || !current) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => loadDetails(current, controller.signal));
     return () => controller.abort();
@@ -225,7 +289,7 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
   }, [current?.organisationId, current?.legalEntityId, current?.stationId, current?.allStations]);
 
   async function submitCommand(
-    commandType: 'SubmitSupplierDocument' | 'SubmitSupplierPayment',
+    commandType: 'SubmitSupplierDocument' | 'SubmitSupplierPayment' | 'SetSupplierCreditLimit',
     body: Record<string, unknown>,
     successMessage: string,
   ): Promise<boolean> {
@@ -262,6 +326,24 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
     }
   }
 
+  async function saveCreditLimit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = limitText.trim();
+    if (text !== '' && !/^\d+(?:\.\d{1,4})?$/.test(text.replace(/,/g, ''))) {
+      setActionError('Enter the limit as an amount, for example 5000');
+      return;
+    }
+    const saved = await submitCommand(
+      'SetSupplierCreditLimit',
+      {
+        expectedVersion: supplier?.version ?? 0,
+        creditLimit: text === '' ? null : text.replace(/,/g, ''),
+      },
+      text === '' ? 'Credit limit removed.' : 'Credit limit saved.',
+    );
+    if (saved) setLimitText('');
+  }
+
   async function submitDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = documentForm;
@@ -269,17 +351,56 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       setActionError('Document reference, date, and an exact decimal amount are required.');
       return;
     }
+    const isInvoice = form.documentType === 'INVOICE';
+    const creditDays = periodDays(form.creditPeriodDays);
+    if (isInvoice && form.paymentTerms === 'CREDIT') {
+      if (creditDays === 'invalid') {
+        setActionError('Credit period must be a whole number of days, from 0 to 365.');
+        return;
+      }
+      if (creditDays === null && !form.dueDate) {
+        setActionError('For a credit purchase, enter the credit period in days or a due date.');
+        return;
+      }
+    }
     if (form.dueDate && form.dueDate < form.documentDate) {
       setActionError('Due date cannot be before the document date.');
+      return;
+    }
+    const filledLines = form.lines.filter(
+      (line) => line.description.trim() || line.quantity.trim() || line.unitPrice.trim(),
+    );
+    if (
+      filledLines.length === 0 ||
+      filledLines.some((line) => !line.description.trim() || lineTotal(line) === null)
+    ) {
+      setActionError(
+        'Add at least one invoice line. Each line needs a description, a quantity and a unit price.',
+      );
       return;
     }
     const submitted = await submitCommand(
       'SubmitSupplierDocument',
       {
+        lines: filledLines.map((line) => ({
+          description: line.description.trim(),
+          quantity: line.quantity.trim(),
+          unitPrice: line.unitPrice.trim(),
+        })),
         documentType: form.documentType,
         referenceNumber: form.referenceNumber.trim(),
         documentDate: form.documentDate,
-        ...(form.dueDate ? { dueDate: form.dueDate } : {}),
+        ...(isInvoice && form.paymentTerms === 'CASH' ? { paymentTerms: 'CASH' as const } : {}),
+        ...(isInvoice && form.paymentTerms === 'CREDIT'
+          ? {
+              paymentTerms: 'CREDIT' as const,
+              ...(typeof creditDays === 'number'
+                ? { creditPeriodDays: creditDays }
+                : { dueDate: form.dueDate }),
+            }
+          : {}),
+        ...(isInvoice && form.paymentTerms === '' && form.dueDate ? { dueDate: form.dueDate } : {}),
+        ...(!isInvoice && form.dueDate ? { dueDate: form.dueDate } : {}),
         amount: form.amount,
       },
       'Supplier document submitted for posting review.',
@@ -310,6 +431,13 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       setPaymentForm(EMPTY_PAYMENT_FORM);
       setOpenForm(null);
     }
+  }
+
+  function setDocumentLine(index: number, patch: Partial<LineForm>) {
+    setDocumentForm((form) => ({
+      ...form,
+      lines: form.lines.map((line, at) => (at === index ? { ...line, ...patch } : line)),
+    }));
   }
 
   function openSubmitForm(form: 'document' | 'payment') {
@@ -372,6 +500,12 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
                   Submit payment
                 </Button>
                 <Button onClick={() => openSubmitForm('document')}>Submit document</Button>
+                <Link
+                  className="button button-secondary"
+                  href={buildContextHref(`/suppliers/${supplierId}/payments`, search, current)}
+                >
+                  Payment proofs
+                </Link>
               </div>
             </div>
             <div className="supplier-hero-id">
@@ -411,6 +545,34 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
                 </dd>
               </div>
             </dl>
+          </Card>
+
+          <Card as="section" className="panel content-span" aria-labelledby="supplier-limit-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Agreed with the supplier</p>
+                <h2 id="supplier-limit-title">Credit limit</h2>
+              </div>
+            </div>
+            <p>{creditLimitSentence(supplier.creditLimit)}</p>
+            <form onSubmit={saveCreditLimit} className="stack">
+              <Field
+                id="supplier-credit-limit"
+                label="New credit limit"
+                hint="The most you are willing to owe this supplier. Leave empty to remove the limit. It warns you; it never stops a purchase."
+              >
+                <input
+                  id="supplier-credit-limit"
+                  value={limitText}
+                  onChange={(event) => setLimitText(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="5000.00"
+                />
+              </Field>
+              <Button type="submit" variant="secondary" disabled={action !== null}>
+                Save credit limit
+              </Button>
+            </form>
           </Card>
 
           <Card
@@ -535,17 +697,118 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
                   <input
                     id="document-due-date"
                     type="date"
-                    value={documentForm.dueDate}
+                    value={shownDueDate}
+                    readOnly={dueDateFromPeriod}
                     onChange={(event) =>
                       setDocumentForm((form) => ({ ...form, dueDate: event.target.value }))
                     }
                   />
                 </Field>
               </div>
+              {documentForm.documentType === 'INVOICE' ? (
+                <div className="form-grid">
+                  <Field id="document-payment-terms" label="How is this invoice paid?" optional>
+                    <select
+                      id="document-payment-terms"
+                      value={documentForm.paymentTerms}
+                      onChange={(event) =>
+                        setDocumentForm((form) => ({
+                          ...form,
+                          paymentTerms: event.target.value as DocumentForm['paymentTerms'],
+                          ...(event.target.value === 'CREDIT'
+                            ? {}
+                            : { creditPeriodDays: '', dueDate: '' }),
+                        }))
+                      }
+                    >
+                      <option value="">Not stated</option>
+                      <option value="CASH">Cash (paid now)</option>
+                      <option value="CREDIT">Credit (pay later)</option>
+                    </select>
+                  </Field>
+                  {documentForm.paymentTerms === 'CREDIT' ? (
+                    <Field id="document-credit-period" label="Credit period (days)" optional>
+                      <input
+                        id="document-credit-period"
+                        inputMode="numeric"
+                        value={documentForm.creditPeriodDays}
+                        maxLength={3}
+                        onChange={(event) =>
+                          setDocumentForm((form) => ({
+                            ...form,
+                            creditPeriodDays: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                  ) : null}
+                </div>
+              ) : null}
+              <fieldset className="stack">
+                <legend>Invoice lines</legend>
+                {documentForm.lines.map((line, index) => (
+                  <div className="form-grid" key={index}>
+                    <Field id={`document-line-${index}-description`} label="Description" required>
+                      <input
+                        id={`document-line-${index}-description`}
+                        value={line.description}
+                        maxLength={300}
+                        onChange={(event) =>
+                          setDocumentLine(index, { description: event.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field id={`document-line-${index}-quantity`} label="Quantity" required>
+                      <input
+                        id={`document-line-${index}-quantity`}
+                        inputMode="decimal"
+                        value={line.quantity}
+                        onChange={(event) =>
+                          setDocumentLine(index, { quantity: event.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field id={`document-line-${index}-price`} label="Unit price" required>
+                      <input
+                        id={`document-line-${index}-price`}
+                        inputMode="decimal"
+                        value={line.unitPrice}
+                        onChange={(event) =>
+                          setDocumentLine(index, { unitPrice: event.target.value })
+                        }
+                      />
+                    </Field>
+                    {documentForm.lines.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() =>
+                          setDocumentForm((form) => ({
+                            ...form,
+                            lines: form.lines.filter((_, at) => at !== index),
+                          }))
+                        }
+                      >
+                        Remove line
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    setDocumentForm((form) => ({ ...form, lines: [...form.lines, EMPTY_LINE] }))
+                  }
+                >
+                  Add line
+                </Button>
+                <p className="muted-small">Lines add up to {linesSubtotal(documentForm.lines)}.</p>
+              </fieldset>
               <Field
                 id="document-amount"
-                label="Amount"
-                hint="Enter an exact decimal amount; binary floating point is not used."
+                label="Total payable"
+                hint="The total printed on the invoice. It must equal the lines, plus VAT if your company adds VAT."
                 required
               >
                 <input
@@ -628,4 +891,19 @@ export function SupplierDetailWorkspace({ supplierId }: { supplierId: string }) 
       ) : null}
     </div>
   );
+}
+
+/** The credit position in one plain sentence. */
+function creditLimitSentence(position: SupplierSummary['creditLimit']): string {
+  if (!position || position.status === 'none' || position.limit === null) {
+    return 'No credit limit is set for this supplier.';
+  }
+  const limit = formatTileMoney(position.limit);
+  if (position.status === 'over') {
+    return `You owe more than the ${limit} limit.`;
+  }
+  const room =
+    position.available === null ? '' : ` ${formatTileMoney(position.available)} left to use.`;
+  if (position.status === 'near') return `Close to the ${limit} limit.${room}`;
+  return `The limit is ${limit}.${room}`;
 }

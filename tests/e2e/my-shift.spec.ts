@@ -1,5 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
+
+test.beforeEach(async ({ page }) => {
+  await mockEmptyWorkContext(page);
+});
 
 /**
  * The attendant workspace, against mocked data routes. Authorization, tenant and

@@ -156,6 +156,18 @@
   color: var(--text-link);
 }
 
+button.entry-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font: inherit;
+  cursor: pointer;
+}
+
 .entry-alert {
   margin: 0;
   padding: var(--space-3) var(--space-4);

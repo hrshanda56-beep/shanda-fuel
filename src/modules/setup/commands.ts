@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { unitPrice } from '../../platform/domain/primitives';
+import { authorize } from '../../platform/security/permissions';
 import {
   executeInventoryCommand,
   requestHash,
@@ -33,6 +34,8 @@ export const SETUP_COMMAND_TYPES = [
   'CreateNozzle',
   'DraftPriceChange',
   'UpdateSupplier',
+  'SetResponsibleSupervisor',
+  'SetAlertSettings',
 ] as const;
 export type SetupCommandType = (typeof SETUP_COMMAND_TYPES)[number];
 
@@ -83,6 +86,20 @@ const updateSupplierPayload = authority
       v.legalName !== undefined || v.registrationReference !== undefined || v.status !== undefined,
     { message: 'At least one supplier field must change' },
   );
+
+const setResponsibleSupervisorPayload = authority.extend({
+  /** `null` clears the assignment. */
+  membershipId: uuid.nullable(),
+});
+
+const setAlertSettingsPayload = authority.extend({
+  /** Omit when no settings have been saved yet; required to change saved ones. */
+  expectedVersion: z.number().int().nonnegative().optional(),
+  dueSoonDays: z.number().int().min(1).max(60),
+  posSettlementLagDays: z.number().int().min(0).max(30),
+  reportGraceDays: z.number().int().min(0).max(14),
+  cashShortageMinimum: z.string().regex(/^\d+(?:\.\d{1,4})?$/),
+});
 
 function isUniqueViolation(error: unknown): boolean {
   const code = (error as { code?: string })?.code;
@@ -378,4 +395,141 @@ export function updateSupplierCommand(
 export async function updateSupplierFromRequest(request: Request, input: unknown) {
   const payload = updateSupplierPayload.parse(input);
   return updateSupplierCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+/**
+ * Names the supervisor responsible for a station. Only an active member who holds
+ * the Supervisor role at this very station can be chosen, so the assignment can
+ * never grant access; it records accountability for sign-off and cash handover.
+ */
+export function setResponsibleSupervisorCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setResponsibleSupervisorPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetResponsibleSupervisor',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.RESPONSIBLE_SUPERVISOR_SET',
+      subjectType: 'Station',
+      subjectId: () => context.stationId,
+    },
+    execute: async (transaction) => {
+      if (payload.membershipId) {
+        const eligible = await transaction.execute<{ id: string }>(sql`
+          select membership.id from app.memberships membership
+          join app.membership_role_assignments assignment
+            on assignment.tenant_id = membership.tenant_id and assignment.membership_id = membership.id
+          where membership.tenant_id = ${context.tenantId} and membership.id = ${payload.membershipId}
+            and membership.status = 'ACTIVE'
+            and assignment.role_code = 'SUPERVISOR' and assignment.scope_type = 'STATION'
+            and assignment.station_id = ${context.stationId}
+            and (assignment.expires_at is null or assignment.expires_at > now())
+          limit 1
+        `);
+        if (!eligible[0]) {
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'Choose an active supervisor who works at this station',
+          );
+        }
+      }
+      await transaction.execute(sql`
+        update app.stations
+        set responsible_supervisor_membership_id = ${payload.membershipId}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${context.stationId}
+      `);
+      return { stationId: context.stationId, membershipId: payload.membershipId };
+    },
+  });
+}
+
+export async function setResponsibleSupervisorFromRequest(request: Request, input: unknown) {
+  const payload = setResponsibleSupervisorPayload.parse(input);
+  return setResponsibleSupervisorCommand(
+    await contextFor(request, payload),
+    payload,
+    keyOf(request),
+  );
+}
+
+/**
+ * Saves when reminders start (supplier invoices due soon, late card payments, late daily reports,
+ * the smallest cash shortage worth flagging). They are organisation-wide, so the person needs to
+ * manage the organisation, not only the station they happen to have selected.
+ */
+export function setAlertSettingsCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setAlertSettingsPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetAlertSettings',
+    permissionCode: 'tenant.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.ALERT_SETTINGS_SET',
+      subjectType: 'AlertSettings',
+      subjectId: () => context.tenantId,
+    },
+    execute: async (transaction) => {
+      authorize({
+        actor: context.authority.authorization,
+        permissionCode: 'tenant.manage',
+        requestedScope: { tenantId: context.tenantId, scopeType: 'TENANT' },
+      });
+      const membershipId = context.authority.membership.membershipId;
+      const existing = await transaction.execute<{ version: number | string }>(sql`
+        select version from app.alert_settings where tenant_id = ${context.tenantId} for update
+      `);
+      if (!existing[0]) {
+        if (payload.expectedVersion !== undefined && payload.expectedVersion !== 0) {
+          throw new AppError('CONFLICT', 'The settings changed. Refresh and try again.');
+        }
+        await transaction.execute(sql`
+          insert into app.alert_settings (
+            tenant_id, due_soon_days, pos_settlement_lag_days, report_grace_days,
+            cash_shortage_minimum, version, updated_by
+          ) values (
+            ${context.tenantId}, ${payload.dueSoonDays}, ${payload.posSettlementLagDays},
+            ${payload.reportGraceDays}, ${payload.cashShortageMinimum}, 0, ${membershipId}
+          )
+        `);
+        return { version: 0 };
+      }
+      if (
+        payload.expectedVersion === undefined ||
+        payload.expectedVersion !== Number(existing[0].version)
+      ) {
+        throw new AppError(
+          'CONFLICT',
+          'Someone else changed these settings. Refresh and try again.',
+        );
+      }
+      const updated = await transaction.execute<{ version: number | string }>(sql`
+        update app.alert_settings
+        set due_soon_days = ${payload.dueSoonDays},
+            pos_settlement_lag_days = ${payload.posSettlementLagDays},
+            report_grace_days = ${payload.reportGraceDays},
+            cash_shortage_minimum = ${payload.cashShortageMinimum},
+            version = version + 1,
+            updated_by = ${membershipId},
+            updated_at = now()
+        where tenant_id = ${context.tenantId}
+        returning version
+      `);
+      return { version: Number(updated[0]!.version) };
+    },
+  });
+}
+
+export async function setAlertSettingsFromRequest(request: Request, input: unknown) {
+  const payload = setAlertSettingsPayload.parse(input);
+  return setAlertSettingsCommand(await contextFor(request, payload), payload, keyOf(request));
 }

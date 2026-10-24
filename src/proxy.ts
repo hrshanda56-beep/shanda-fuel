@@ -2,8 +2,6 @@ import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import type { NextFetchEvent, NextRequest } from 'next/server';
 
-import { getAuthProviderName } from './platform/auth/provider';
-
 // Clerk's Frontend API is accessed directly by the browser in development.
 // Keep this proxy limited to session integration; resource authorization belongs
 // to the route or service that consumes the authenticated request.
@@ -15,8 +13,15 @@ const clerkProxy = clerkMiddleware({
 });
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
-  const provider = getAuthProviderName();
-  if (provider === 'BETTER_AUTH') return NextResponse.next();
+  // The owner-demo route is a dedicated browser-local artifact with no Clerk
+  // session. Keep the bypass limited to that exact route and explicit env;
+  // every other request continues through Clerk middleware.
+  if (
+    process.env.APP_ENV === 'demo' &&
+    (request.nextUrl.pathname === '/owner-demo' || request.nextUrl.pathname === '/owner-demo/')
+  ) {
+    return NextResponse.next();
+  }
   const response = await clerkProxy(request, event);
   if (!response) return NextResponse.next();
 

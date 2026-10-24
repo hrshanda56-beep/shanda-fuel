@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   confirmDeliveryFromRequest,
+  correctDeliverySupplierFromRequest,
   createDeliveryFromRequest,
   createTankFromRequest,
   deactivateTankFromRequest,
@@ -12,6 +13,7 @@ import {
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  setTankCalibrationFromRequest,
   requestInventoryCostRevaluationFromRequest,
 } from '../../../../modules/inventory';
 import { AppError } from '../../../../platform/errors';
@@ -22,8 +24,10 @@ const COMMANDS = [
   'CreateTank',
   'DeactivateTank',
   'RecordTankDip',
+  'SetTankCalibration',
   'CreateDelivery',
   'ConfirmDelivery',
+  'CorrectDeliverySupplier',
   'PostInventoryAdjustment',
   'RecordOpeningBalance',
   'RecordOpeningInventoryCost',
@@ -62,11 +66,17 @@ export const POST = withRequestObservability(
         case 'RecordTankDip':
           result = await recordTankDipFromRequest(request, body);
           break;
+        case 'SetTankCalibration':
+          result = await setTankCalibrationFromRequest(request, body);
+          break;
         case 'CreateDelivery':
           result = await createDeliveryFromRequest(request, body);
           break;
         case 'ConfirmDelivery':
           result = await confirmDeliveryFromRequest(request, body);
+          break;
+        case 'CorrectDeliverySupplier':
+          result = await correctDeliverySupplierFromRequest(request, body);
           break;
         case 'PostInventoryAdjustment':
           result = await postInventoryAdjustmentFromRequest(request, body);

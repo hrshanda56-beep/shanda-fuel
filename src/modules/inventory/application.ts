@@ -1,3 +1,5 @@
+import type { AuthenticatedActorContext } from '../identity';
+import { markReadTiming } from '../../platform/observability/read-timing';
 import 'server-only';
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -11,6 +13,7 @@ import { AppError } from '../../platform/errors';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authorize, type PermissionCode } from '../../platform/security/permissions';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/authority';
+import { resolveStationReadAuthority } from '../context/read-authority';
 import { forecourtIdempotencyRecords } from '../../platform/db/schema/a3';
 
 export type InventoryTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -39,19 +42,27 @@ export async function resolveInventoryCommandContext(input: {
     request: input.request,
     requestedTenantId: input.requestedTenantId,
   });
-  const stationRows = await withTenantTransaction(authority.transaction, async (transaction) =>
-    transaction.execute<{
-      id: string;
-      tenant_id: string;
-      legal_entity_id: string;
-      timezone: string;
-    }>(sql`
+  return withTenantTransaction(authority.transaction, (transaction) =>
+    inventoryContextInTransaction(authority, input.stationId, transaction),
+  );
+}
+
+async function inventoryContextInTransaction(
+  authority: TenantExecutionContext,
+  stationId: string,
+  databaseTransaction: InventoryTransaction,
+): Promise<InventoryCommandContext> {
+  const stationRows = await databaseTransaction.execute<{
+    id: string;
+    tenant_id: string;
+    legal_entity_id: string;
+    timezone: string;
+  }>(sql`
       select id, tenant_id, legal_entity_id, timezone
       from app.stations
-      where tenant_id = ${input.requestedTenantId} and id = ${input.stationId}
+      where tenant_id = ${authority.membership.tenantId} and id = ${stationId}
       limit 1
-    `),
-  );
+    `);
   const station = stationRows[0];
   if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
   if (station.tenant_id !== authority.membership.tenantId) {
@@ -76,6 +87,60 @@ export async function resolveInventoryCommandContext(input: {
       stationId: station.id,
     },
   };
+}
+
+/** Authorize the station and read its data without opening a second transaction. */
+export async function withInventoryReadContext<T>(
+  request: Request,
+  tenantId: string,
+  stationId: string,
+  work: (transaction: InventoryTransaction, context: InventoryCommandContext) => Promise<T>,
+  authenticatedActor?: AuthenticatedActorContext,
+): Promise<T> {
+  const { authority, station } = await resolveStationReadAuthority({
+    request,
+    tenantId,
+    stationId,
+    ...(authenticatedActor ? { authenticatedActor } : {}),
+  });
+  markReadTiming('inventory.authority.ready');
+  const transactionContext = station?.timezone
+    ? createTrustedTenantTransactionContext({
+        ...authority.transaction,
+        legalEntityId: station.legalEntityId,
+        stationId: station.id,
+      })
+    : authority.transaction;
+  return withTenantTransaction(transactionContext, async (transaction) => {
+    markReadTiming('inventory.transaction.context.ready');
+    const context: InventoryCommandContext = station?.timezone
+      ? {
+          authority: { ...authority, transaction: transactionContext },
+          tenantId,
+          legalEntityId: station.legalEntityId,
+          stationId: station.id,
+          stationTimezone: station.timezone,
+          requestId: transactionContext.requestId ?? randomUUID(),
+          scope: {
+            tenantId,
+            scopeType: 'STATION',
+            legalEntityId: station.legalEntityId,
+            stationId: station.id,
+          },
+        }
+      : await inventoryContextInTransaction(authority, stationId, transaction);
+    markReadTiming('inventory.station.loaded');
+    authorizeInventoryCommand(context, 'inventory.view');
+    if (!station?.timezone)
+      await transaction.execute(sql`
+      select set_config('app.legal_entity_id', ${context.legalEntityId}, true),
+             set_config('app.station_id', ${context.stationId}, true)
+    `);
+    markReadTiming('inventory.station.context.ready');
+    const result = await work(transaction, context);
+    markReadTiming('inventory.data.loaded');
+    return result;
+  });
 }
 
 export function authorizeInventoryCommand(

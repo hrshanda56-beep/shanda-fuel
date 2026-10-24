@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+import { mockEmptyWorkContext } from './fixtures/context-route';
 import { mockContext, mockOverview, STATION, TENANT } from './fixtures/data-filled';
 import { mockReconciliationDetails } from './fixtures/reconciliation-detail';
 
@@ -53,8 +54,18 @@ test.describe('cash donut', () => {
 });
 
 test.describe('console hygiene', () => {
+  // Clerk's own scripts print a few notices on a development (test) instance and while its bot
+  // protection loads. They come from Clerk, not from the app, so only these exact ones are ignored.
+  const clerkNotices = [
+    /^Clerk: Clerk has been loaded with development keys/,
+    /^No available adapters\.$/,
+    /^The resource https:\/\/[^ ]+\.client\.protect\.clerk\.com\//,
+  ];
   const reactProblems = (messages: string[]) =>
-    messages.filter((text) => !/Failed to load resource/.test(text));
+    messages.filter(
+      (text) =>
+        !/Failed to load resource/.test(text) && !clerkNotices.some((notice) => notice.test(text)),
+    );
 
   test('/foundation hydrates without mismatches and keeps field semantics', async ({ page }) => {
     const messages: string[] = [];
@@ -62,6 +73,7 @@ test.describe('console hygiene', () => {
       if (message.type() === 'error' || message.type() === 'warning') messages.push(message.text());
     });
     page.on('pageerror', (error) => messages.push(error.message));
+    await mockEmptyWorkContext(page);
     await page.goto('/foundation');
     const note = page.getByLabel('Draft note');
     await expect(note).toHaveAttribute('aria-required', 'true');

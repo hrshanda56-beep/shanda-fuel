@@ -6,7 +6,6 @@ import {
 } from '../../platform/auth/clerk-step-up';
 
 const mocks = vi.hoisted(() => ({
-  getAuthProviderName: vi.fn(() => 'CLERK'),
   resolveClerkSession: vi.fn(),
   clerkUserHasMfa: vi.fn(),
   hasRecentClerkReverification: vi.fn(),
@@ -17,7 +16,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../platform/auth/provider', () => ({
-  getAuthProviderName: mocks.getAuthProviderName,
   resolveClerkSession: mocks.resolveClerkSession,
   clerkUserHasMfa: mocks.clerkUserHasMfa,
   hasRecentClerkReverification: mocks.hasRecentClerkReverification,
@@ -110,8 +108,6 @@ async function establish(cookie?: string) {
     request: request(cookie),
     context: context(),
     action: CLERK_STEP_UP_ACTION,
-    password: '',
-    totpCode: '',
     now,
   });
 }
@@ -119,8 +115,8 @@ async function establish(cookie?: string) {
 describe('Clerk privileged step-up policy', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv('AUTH_PROVIDER', 'CLERK');
     vi.stubEnv('APP_ENV', 'test');
+    vi.stubEnv('REQUIRE_LOGIN_MFA', 'false');
     vi.stubEnv('APP_URL', 'http://localhost:3000');
     vi.stubEnv('CLERK_SECRET_KEY', 'sk_fake_clerk_fixture');
     vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_fake_clerk_fixture');
@@ -188,11 +184,14 @@ describe('Clerk privileged step-up policy', () => {
         request: request(),
         context: context(),
         action: CLERK_DEACTIVATE_STAFF_ACTION,
-        password: '',
-        totpCode: '',
         now,
       }),
     ).rejects.toMatchObject({ level: 'strict' });
+  });
+
+  it('requires MFA for an Owner when login MFA policy is enabled', async () => {
+    vi.stubEnv('REQUIRE_LOGIN_MFA', 'true');
+    await expect(establish()).rejects.toMatchObject({ level: 'strict_mfa' });
   });
 
   it('requires strict MFA for a Clerk user with MFA enrolled', async () => {
@@ -233,8 +232,6 @@ describe('Clerk privileged step-up policy', () => {
         request: request(cookieFromChallenge(challenge!)),
         context: context(),
         action: CLERK_STEP_UP_ACTION,
-        password: '',
-        totpCode: '',
         now: new Date(now.getTime() + 6 * 60_000),
       }),
     ).rejects.toBeInstanceOf(ClerkReverificationRequiredError);
@@ -254,8 +251,6 @@ describe('Clerk privileged step-up policy', () => {
         request: request(),
         context: context({ identityId: '99999999-9999-4999-8999-999999999999' }),
         action: CLERK_STEP_UP_ACTION,
-        password: '',
-        totpCode: '',
         now,
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -265,8 +260,6 @@ describe('Clerk privileged step-up policy', () => {
         request: request(),
         context: context({ transactionTenantId: '99999999-9999-4999-8999-999999999999' }),
         action: CLERK_STEP_UP_ACTION,
-        password: '',
-        totpCode: '',
         now,
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -276,39 +269,8 @@ describe('Clerk privileged step-up policy', () => {
         request: request(),
         context: context({ owner: false }),
         action: CLERK_STEP_UP_ACTION,
-        password: '',
-        totpCode: '',
         now,
       }),
     ).rejects.toBeInstanceOf(ClerkReverificationRequiredError);
-  });
-
-  it('does not alter Better Auth TOTP establishment', async () => {
-    mocks.getAuthProviderName.mockReturnValue('BETTER_AUTH');
-    const auth = {
-      api: {
-        getSession: vi.fn().mockResolvedValue({ user: { twoFactorEnabled: true } }),
-        verifyPassword: vi.fn().mockResolvedValue({ status: true }),
-        verifyTOTP: vi.fn().mockResolvedValue({ status: true }),
-      },
-    };
-    const persistence = {
-      recordFailure: vi.fn(),
-      establish: vi.fn(),
-    };
-
-    await expect(
-      establishStepUp({
-        request: request(),
-        context: context(),
-        password: 'correct',
-        totpCode: '123456',
-        now,
-        dependencies: { auth, persistence },
-      }),
-    ).resolves.toMatchObject({ level: 1, tenantId: ids.tenant });
-    expect(auth.api.verifyPassword).toHaveBeenCalledOnce();
-    expect(auth.api.verifyTOTP).toHaveBeenCalledOnce();
-    expect(persistence.establish).toHaveBeenCalledOnce();
   });
 });

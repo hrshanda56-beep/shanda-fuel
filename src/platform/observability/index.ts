@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { AppError, type AppErrorCode } from '../errors';
 import { createLogger } from '../logging';
+import { withRequestReadScope } from '../security/request-read-scope';
 
 const logger = createLogger({ component: 'http' });
 
@@ -283,7 +284,12 @@ export function withRequestObservability<TContext = unknown>(
     let response: Response;
 
     try {
-      response = await handler(request, context);
+      // Read reuse ends with this GET. Mutating commands must always see fresh
+      // authority, including changes made earlier in the command itself.
+      response =
+        request.method === 'GET'
+          ? await withRequestReadScope(() => Promise.resolve(handler(request, context)))
+          : await handler(request, context);
     } catch (error) {
       observeError(request, error, 'http.request.unhandled_error');
       response = responseWithHeaders({ error: 'INTERNAL_ERROR' }, 500, {

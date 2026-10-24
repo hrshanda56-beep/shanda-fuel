@@ -30,6 +30,12 @@ export type StaffMemberSummary = Readonly<{
   status: 'ACTIVE' | 'DISABLED' | 'SUSPENDED' | 'LOCKED' | 'INVITED';
   roles: readonly RoleCode[];
   scopeLabels: readonly string[];
+  assignments?: readonly {
+    role: RoleCode;
+    scopeType: ScopeType;
+    legalEntityId?: string;
+    stationId?: string;
+  }[];
 }>;
 
 export type StaffOverview = Readonly<{

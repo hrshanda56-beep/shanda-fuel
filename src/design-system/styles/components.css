@@ -1667,6 +1667,22 @@ tr:has(.row-link):active {
   outline: none;
 }
 
+/* Receipt-style torn bottom edge on centred dialogs and bottom sheets.
+   Drawers and side sheets run edge to edge, so they keep a straight edge. */
+.dialog-panel:not(.drawer):not(.side-sheet) {
+  --tear-size: 0.5rem;
+  padding-bottom: calc(var(--space-6) + var(--tear-size) + env(safe-area-inset-bottom));
+  box-shadow: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--tear-size)) no-repeat,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom /
+      calc(var(--tear-size) * 2) var(--tear-size) repeat-x;
+  mask:
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--tear-size)) no-repeat,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom /
+      calc(var(--tear-size) * 2) var(--tear-size) repeat-x;
+}
+
 .dialog-sm {
   width: min(100%, 24rem);
 }
@@ -1746,7 +1762,7 @@ tr:has(.row-link):active {
   width: 100%;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   border-bottom: 0;
-  padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--space-6) + 0.5rem + env(safe-area-inset-bottom));
   animation: ds-sheet-in var(--duration-slow) var(--ease-out);
 }
 

@@ -9,7 +9,8 @@ import { getAuditSigningKey } from '../../platform/config/env';
 import { AppError } from '../../platform/errors';
 import { assertStepUp } from '../../platform/security';
 import {
-  authorize,
+  isAuthorized,
+  isPermissionGranted,
   type AccessScope,
   type PermissionCode,
 } from '../../platform/security/permissions';
@@ -54,6 +55,8 @@ export const CUSTOMER_COMMAND_TYPES = [
   'RecordCustomerPayment',
   'RecordPrepaidTopUp',
   'ReverseCustomerLedgerEntry',
+  'RecordCustomerEntryDetails',
+  'OverrideCustomerCreditLimit',
 ] as const;
 export type CustomerCommandType = (typeof CUSTOMER_COMMAND_TYPES)[number];
 
@@ -159,6 +162,18 @@ export const CUSTOMER_COMMAND_POLICY: Readonly<
     requiresStepUp: true,
     requiresExpectedVersion: true,
   },
+  RecordCustomerEntryDetails: {
+    permissionCode: 'customer.credit.authorize',
+    scopeType: 'STATION',
+    requiresStepUp: false,
+    requiresExpectedVersion: false,
+  },
+  OverrideCustomerCreditLimit: {
+    permissionCode: 'customer.limit.override',
+    scopeType: 'TENANT',
+    requiresStepUp: true,
+    requiresExpectedVersion: true,
+  },
   CancelCustomerFuelAuthorization: {
     permissionCode: 'customer.credit.authorize',
     scopeType: 'STATION',
@@ -218,15 +233,32 @@ export type CustomerCommandContext = Readonly<{
   stationId?: string;
 }>;
 
+export const CUSTOMER_NO_ACCESS_MESSAGE =
+  'You do not have access to this organisation or station. Check you are signed in to the right one.';
+
+/** Tenancy failures name internal concepts (actor, membership, tenant); say it plainly instead. */
+export async function withPlainAccessErrors<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'FORBIDDEN') {
+      throw new AppError('FORBIDDEN', CUSTOMER_NO_ACCESS_MESSAGE);
+    }
+    throw error;
+  }
+}
+
 export async function resolveCustomerCommandContext(input: {
   request: Request;
   requestedTenantId: string;
   stationId?: string;
 }): Promise<CustomerCommandContext> {
-  const authority = await resolveTenantExecutionContext({
-    request: input.request,
-    requestedTenantId: input.requestedTenantId,
-  });
+  const authority = await withPlainAccessErrors(() =>
+    resolveTenantExecutionContext({
+      request: input.request,
+      requestedTenantId: input.requestedTenantId,
+    }),
+  );
   if (!input.stationId) {
     return {
       authority,
@@ -264,15 +296,32 @@ export async function resolveCustomerCommandContext(input: {
   };
 }
 
+/**
+ * The customer screens open their identity-check dialog when an error message
+ * matches /not authorized|step-up/. A missing permission must therefore never
+ * say "not authorized" (a re-check cannot help), while a missing fresh check
+ * must always say "step-up".
+ */
+export const CUSTOMER_PERMISSION_DENIED_MESSAGE =
+  'You do not have permission to do this. Ask an owner or administrator if you need access.';
+export const CUSTOMER_STEP_UP_REQUIRED_MESSAGE =
+  'For your security, confirm your identity again (a step-up check) before doing this.';
+
 export function authorizeCustomerCommand(
   context: CustomerCommandContext,
   permissionCode: CustomerPermissionCode,
 ): void {
-  authorize({
+  const request = {
     actor: context.authority.authorization,
     permissionCode: permissionCode as PermissionCode,
     requestedScope: context.scope,
-  });
+  };
+  if (!isPermissionGranted(request)) {
+    throw new AppError('FORBIDDEN', CUSTOMER_PERMISSION_DENIED_MESSAGE);
+  }
+  if (!isAuthorized(request)) {
+    throw new AppError('FORBIDDEN', CUSTOMER_STEP_UP_REQUIRED_MESSAGE);
+  }
 }
 
 export function assertCustomerCommandAuthorization(input: {
@@ -323,7 +372,10 @@ export async function executeCustomerCommand<T>(input: {
   execute: (transaction: CustomerTransaction) => Promise<T>;
 }): Promise<T> {
   if (!input.idempotencyKey.trim())
-    throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'This request could not be sent safely. Reload the page and try again.',
+    );
   assertCustomerCommandAuthorization(input);
   return withTenantTransaction(input.context.authority.transaction, async (transaction) => {
     const commandType = `Customer.${input.commandType}`;
@@ -362,11 +414,21 @@ export async function executeCustomerCommand<T>(input: {
         )
         .for('update');
       const row = existing[0];
-      if (!row) throw new AppError('CONFLICT', 'The customer idempotency record disappeared');
+      if (!row)
+        throw new AppError(
+          'CONFLICT',
+          'This request could not be completed. Reload the page and try again.',
+        );
       if (row.requestHash !== input.requestHash)
-        throw new AppError('IDEMPOTENCY_CONFLICT', 'The idempotency key was reused with new data');
+        throw new AppError(
+          'IDEMPOTENCY_CONFLICT',
+          'This request was already sent with different details. Reload the page and try again.',
+        );
       if (row.status !== 'COMPLETED')
-        throw new AppError('CONFLICT', 'The customer command is already in progress');
+        throw new AppError(
+          'CONFLICT',
+          'This request is already being processed. Wait a moment and check the customer again.',
+        );
       return (row.resultPayload as { value: T }).value;
     }
     const result = await input.execute(transaction);

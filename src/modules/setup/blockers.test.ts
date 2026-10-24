@@ -23,6 +23,8 @@ const empty: Omit<ConfigurationSetupOverview, 'blockers'> = {
   shiftTemplates: [],
   prices: [],
   suppliers: [],
+  supervisors: [],
+  responsibleSupervisorMembershipId: null,
 };
 
 describe('computeSetupBlockers', () => {

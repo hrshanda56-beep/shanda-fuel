@@ -1,5 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
+
+test.beforeEach(async ({ page }) => {
+  await mockEmptyWorkContext(page);
+});
 
 test.describe('A12 inventory valuation operator surface', () => {
   test('is discoverable through the inventory entry route and explains missing context', async ({

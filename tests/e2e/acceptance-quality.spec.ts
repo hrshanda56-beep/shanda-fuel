@@ -166,11 +166,9 @@ test.describe('shared quality (F4-07)', () => {
     await mockContext(page, `/stations/${STATION}/settlements`);
     await mockSettlements(page);
     await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
-    await page.getByRole('button', { name: 'Match a payment' }).click();
-    await expect(
-      page.getByRole('dialog', { name: 'Match a payment to a settlement' }),
-    ).toBeVisible();
-    await expect(page.getByLabel('Allocation amount')).toBeVisible();
+    await page.getByRole('button', { name: 'Match', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Match a payment' })).toBeVisible();
+    await expect(page.getByLabel('Amount to match')).toBeVisible();
     const form = await fontSizes();
     expect(form.length).toBeGreaterThanOrEqual(3);
     for (const control of form) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
@@ -304,7 +302,7 @@ test('the drawer search entry stays out of the tablet menu, where the header has
   await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-shell-mode', 'tablet');
   await page.locator('.shell-sidebar').getByRole('button', { name: 'Finance' }).click();
-  const drawer = page.getByRole('dialog', { name: 'More' });
+  const drawer = page.getByRole('dialog', { name: /^(More|Navigation)$/ });
   await expect(drawer).toBeVisible();
   await expect(drawer.locator('.shell-more-search')).toBeHidden();
 });

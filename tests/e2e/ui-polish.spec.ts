@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { mockEmptyWorkContext } from './fixtures/context-route';
+
 /**
  * Product polish guarantees that span every screen:
  * - phones never scroll sideways, including screens full of data;
@@ -391,8 +393,19 @@ async function mockApis(page: Page) {
     );
   });
   await page.route('**/api/reports/management**', (route) => route.fulfill(json(report)));
-  await page.route('**/api/settlements/summary**', (route) => route.fulfill(json(settlements)));
-  await page.route('**/api/settlements/unmatched**', (route) => route.fulfill(json(unmatched)));
+  await page.route('**/api/settlements/overview**', (route) => {
+    const summaryFixture = json(settlements);
+    const unmatchedFixture = json(unmatched);
+    if (summaryFixture.status >= 400) return route.fulfill(summaryFixture);
+    if (unmatchedFixture.status >= 400) return route.fulfill(unmatchedFixture);
+    return route.fulfill(
+      json({
+        settlements: JSON.parse(summaryFixture.body),
+        unmatched: JSON.parse(unmatchedFixture.body),
+      }),
+    );
+  });
+
   await page.route(/\/api\/context(?:\?|$)/, async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
     await route.fulfill(json(stationContext));
@@ -505,7 +518,7 @@ test.describe('phones never scroll sideways', () => {
       await page.goto('/stations/station-1/settlements?tenantId=tenant-1');
       await expect(
         page
-          .getByRole('list', { name: 'Provider settlement reconciliation' })
+          .getByRole('list', { name: 'Provider payouts' })
           .getByText('ZSW-2026-09-20-000123456789'),
       ).toBeVisible();
       await expectFitsWidth(page);
@@ -574,12 +587,14 @@ test.describe('KPIs', () => {
 
 test.describe('click targets', () => {
   test('a whole attention item opens its work', async ({ page }) => {
+    await mockEmptyWorkContext(page);
     await page.goto('/foundation');
     await page.getByRole('link', { name: 'Open guided workflow' }).click();
     await expect(page).toHaveURL(/\/stations\/demo-station\/reconciliations\/new$/);
   });
 
   test('clickable things show the pointer cursor on desktop', async ({ page }) => {
+    await mockEmptyWorkContext(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/foundation');
 

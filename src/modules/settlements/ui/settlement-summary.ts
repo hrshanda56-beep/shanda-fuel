@@ -1,5 +1,6 @@
 import { exact, sumExact } from '@/modules/reporting/domain';
 
+import { settlementRecordLabel } from '../status';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 
 /**
@@ -16,18 +17,17 @@ export function methodLabel(method: UnmatchedProviderPaymentRow['method']): stri
   return METHOD_LABELS[method] ?? method;
 }
 
-const STATE_LABELS: Record<ProviderSettlementSummaryRow['state'], string> = {
-  RECORDED: 'Recorded',
-  PARTIALLY_MATCHED: 'Partly matched',
-  RECONCILED: 'Reconciled',
-  EXCEPTION: 'Exception',
-};
-
 export function settlementStateLabel(state: ProviderSettlementSummaryRow['state']): string {
-  return STATE_LABELS[state] ?? state;
+  return settlementRecordLabel(state);
 }
 
-export type MethodTotal = { method: string; label: string; count: number; remaining: string };
+export type MethodTotal = {
+  method: string;
+  label: string;
+  count: number;
+  overdueCount: number;
+  remaining: string;
+};
 
 /** Payment evidence still waiting to be matched, per method (EcoCash, POS). */
 export function methodTotals(rows: readonly UnmatchedProviderPaymentRow[]): MethodTotal[] {
@@ -40,6 +40,7 @@ export function methodTotals(rows: readonly UnmatchedProviderPaymentRow[]): Meth
       method,
       label: methodLabel(method),
       count: matching.length,
+      overdueCount: matching.filter((row) => row.overdue).length,
       remaining: sumExact(matching.map((row) => row.unallocatedAmount)),
     };
   });
@@ -100,4 +101,38 @@ export function initials(name: string): string {
   return (
     (parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '')
   ).toUpperCase();
+}
+
+/** Whether a provider (by its name or code) is the one that pays out this kind of payment. */
+export function providerMatchesMethod(
+  row: Pick<ProviderSettlementSummaryRow, 'providerName' | 'providerCode'>,
+  method: UnmatchedProviderPaymentRow['method'],
+): boolean {
+  const isEco = /eco\s*-?\s*cash/i.test(`${row.providerName} ${row.providerCode}`);
+  return method === 'ECOCASH' ? isEco : !isEco;
+}
+
+function stillOpen(row: ProviderSettlementSummaryRow): boolean {
+  return row.state !== 'RECONCILED' && /[1-9]/.test(row.unallocatedProviderAmount);
+}
+
+/** The payout to suggest for a payment: still open, same provider kind first. */
+export function pickSettlementFor(
+  payment: Pick<UnmatchedProviderPaymentRow, 'method'> | undefined,
+  rows: readonly ProviderSettlementSummaryRow[],
+): ProviderSettlementSummaryRow | undefined {
+  const open = rows.filter(stillOpen);
+  if (open.length === 1) return open[0];
+  const preferred = payment ? open.filter((row) => providerMatchesMethod(row, payment.method)) : [];
+  return (preferred.length > 0 ? preferred : open)[0];
+}
+
+/** Payments that belong with the chosen payout first, otherwise the order given. */
+export function orderPaymentsFor<T extends Pick<UnmatchedProviderPaymentRow, 'method'>>(
+  settlement: Pick<ProviderSettlementSummaryRow, 'providerName' | 'providerCode'> | undefined,
+  payments: readonly T[],
+): T[] {
+  if (!settlement) return [...payments];
+  const same = payments.filter((row) => providerMatchesMethod(settlement, row.method));
+  return [...same, ...payments.filter((row) => !same.includes(row))];
 }

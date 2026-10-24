@@ -211,6 +211,195 @@
       "when": 1791816395000,
       "tag": "0029_staff_number_registry_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0030_clerk_only_application_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0031_manual_activation_attempt_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792281601000,
+      "tag": "0032_custom_staff_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792281602000,
+      "tag": "0033_finance_reconciliation_return",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792310400000,
+      "tag": "0034_navigation_context_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792314000000,
+      "tag": "0035_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792400000000,
+      "tag": "0036_purchase_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792500000000,
+      "tag": "0037_supplier_invoice_lines_and_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792600000000,
+      "tag": "0038_supplier_document_reference_reuse",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792600001000,
+      "tag": "0039_expense_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792600002000,
+      "tag": "0040_recurring_cost_adjustments",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792600003000,
+      "tag": "0041_responsible_supervisor",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792600004000,
+      "tag": "0042_payment_customer_and_beneficiary",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792600005000,
+      "tag": "0043_cash_handover_resolution",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792600006000,
+      "tag": "0044_tank_calibration_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792600007000,
+      "tag": "0045_supplier_credit_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792600008000,
+      "tag": "0046_alert_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792600010000,
+      "tag": "0047_unified_expense_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792600011000,
+      "tag": "0048_unified_expense_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792600012000,
+      "tag": "0049_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792600020000,
+      "tag": "0055_supplier_invoice_credit_terms",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792600060000,
+      "tag": "0060_customer_entry_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1792600061000,
+      "tag": "0061_customer_credit_limit_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1792600062000,
+      "tag": "0065_delivery_compartment_detail",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792600063000,
+      "tag": "0066_supplier_payment_proof_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792600070000,
+      "tag": "0070_staff_benefit_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792600071000,
+      "tag": "0071_alert_email",
+      "breakpoints": true
     }
   ]
 }

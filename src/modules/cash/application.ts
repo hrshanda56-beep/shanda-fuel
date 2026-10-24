@@ -41,7 +41,7 @@ export async function resolveCashCommandContext(input: {
   if (!selection.stationId || selection.allStations) {
     throw new AppError(
       'FORBIDDEN',
-      'Cash commands and station summaries require one authorised station context',
+      'Choose one station you have access to in order to work with its cash',
     );
   }
   const pathname = `/stations/${encodeURIComponent(selection.stationId)}/cash`;
@@ -54,7 +54,7 @@ export async function resolveCashCommandContext(input: {
     policy,
   });
   if (!validatedSelection.stationId || validatedSelection.allStations) {
-    throw new AppError('FORBIDDEN', 'The requested cash station context is not authorised');
+    throw new AppError('FORBIDDEN', 'You do not have access to cash at this station');
   }
   return resolveForecourtCommandContext({
     request: input.request,

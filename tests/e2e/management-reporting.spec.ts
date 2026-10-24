@@ -1,10 +1,10 @@
+import { seedClerkIdentity, authenticateClerk } from './clerk-fixtures';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { makeSignature } from 'better-auth/crypto';
+import { mockEmptyWorkContext } from './fixtures/context-route';
 import postgres, { type Sql } from 'postgres';
 
 const databaseUrl = process.env.DATABASE_URL;
-const authSecret = process.env.BETTER_AUTH_SECRET;
 
 const ids = {
   tenant: 'a10e0000-0000-4000-8000-000000000001',
@@ -18,6 +18,7 @@ const sessionToken = 'a10-e2e-management-session-token';
 
 test.describe('management reporting surface', () => {
   test('unauthenticated shell explains the required organisation context', async ({ page }) => {
+    await mockEmptyWorkContext(page, '/reports');
     await page.goto('/reports');
     const pageHeader = page.getByRole('region', { name: 'Page header and work context' });
     await expect(pageHeader.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible();
@@ -31,8 +32,8 @@ test.describe('management reporting surface', () => {
 
   test.describe('authorized posted-facts report', () => {
     test.skip(
-      !databaseUrl || !authSecret,
-      'A10 authorized E2E requires CI PostgreSQL and auth secret',
+      !databaseUrl,
+      'A10 authorized E2E requires CI PostgreSQL and Clerk development instance',
     );
     test.describe.configure({ mode: 'serial' });
 
@@ -48,7 +49,7 @@ test.describe('management reporting surface', () => {
         insert into app.tenants (id, name, slug) values
           ('${ids.tenant}', 'A10 E2E Reporting Tenant', 'a10-e2e-reporting-tenant')
           on conflict (id) do nothing;
-        insert into auth."user" (id, name, email) values
+        insert into app.users (id, name, email) values
           ('${ids.actor}', 'A10 E2E Finance', 'a10-e2e-finance@example.test')
           on conflict (id) do nothing;
         insert into app.memberships (id, tenant_id, identity_id, status) values
@@ -64,12 +65,8 @@ test.describe('management reporting surface', () => {
           (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
         values ('${ids.tenant}', '${ids.membership}', 'FINANCE', 'TENANT', null, null)
         on conflict do nothing;
-        insert into auth.session
-          (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values ('${ids.session}', '2030-01-01T00:00:00Z', '${sessionToken}', '${ids.actor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at,
-          strong_authentication_verified = true;
       `);
+      await seedClerkIdentity(client, ids.actor);
     });
 
     test.afterAll(async () => {
@@ -77,10 +74,7 @@ test.describe('management reporting surface', () => {
     });
 
     async function signIn(context: import('@playwright/test').BrowserContext) {
-      const signedCookie = `${sessionToken}.${await makeSignature(sessionToken, authSecret!)}`;
-      await context.addCookies([
-        { name: 'shanda-fuel.session_token', value: signedCookie, domain: '127.0.0.1', path: '/' },
-      ]);
+      await authenticateClerk(context, ids.actor);
     }
 
     async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {

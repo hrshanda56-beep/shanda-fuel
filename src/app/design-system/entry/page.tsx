@@ -48,7 +48,11 @@ export default async function EntryStatesPage({
       ) : state === 'invite-unavailable' ? (
         <InviteUnavailable />
       ) : state === 'picker' ? (
-        <WorkplacePicker options={stations(isLong)} />
+        <WorkplacePicker
+          options={stations(isLong)}
+          allStationsOptions={[{ organisationId: 'o', organisationName: 'T.E.I Oils' }]}
+          defaultAllStationsOrganisationId="o"
+        />
       ) : state === 'no-workplace' ? (
         <NoWorkplace />
       ) : (

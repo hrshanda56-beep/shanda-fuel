@@ -10,7 +10,7 @@ export const STAFF_INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 const emailSchema = z.string().trim().email().max(320);
 const roleSchema = z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']);
 const scopeSchema = z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']);
-const staffNumberSchema = z.string().regex(/^SF-[0-9]{8}$/);
+const staffNumberSchema = z.string().regex(/^[A-Z0-9][A-Z0-9_-]{3,31}$/);
 
 export function normalizeEmail(value: string): string {
   const email = emailSchema.parse(value).toLowerCase();
@@ -37,8 +37,21 @@ export function createStaffNumber(): string {
 }
 
 export function createActivationCode(): { code: string; codeHash: string } {
-  const code = randomBytes(20).toString('hex').toUpperCase();
-  return { code, codeHash: hashInvitationToken(code.toLowerCase()) };
+  const alphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+  const characters = Array.from({ length: 8 }, () => alphabet[randomInt(alphabet.length)]).join('');
+  const code = `${characters.slice(0, 4)}-${characters.slice(4)}`;
+  return { code, codeHash: hashInvitationToken(normalizeActivationCode(code)) };
+}
+
+export function normalizeActivationCode(value: string): string {
+  const trimmed = value.trim();
+  // Keep existing 40-character invitations usable until their normal expiry.
+  if (/^[a-f0-9]{40}$/i.test(trimmed)) return trimmed.toLowerCase();
+  const compact = trimmed.replace(/[\s-]/g, '').toUpperCase();
+  if (!/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/.test(compact)) {
+    throw new AppError('FORBIDDEN', 'This activation is no longer available');
+  }
+  return `${compact.slice(0, 4)}-${compact.slice(4)}`.toLowerCase();
 }
 
 export function invitationExpiry(now = new Date()): Date {

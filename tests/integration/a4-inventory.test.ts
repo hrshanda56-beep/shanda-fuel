@@ -126,7 +126,7 @@ describe('A4 PostgreSQL inventory persistence', () => {
       select set_config('app.membership_id', '${ids.membership}', false);
       select set_config('app.station_id', '${ids.station}', false);
       insert into app.tenants (id, name, slug) values ('${ids.tenant}', 'TEI Oils', 'a4-tei-oils') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values ('${ids.actor}', 'A4 Operator', 'a4-operator@example.test') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${ids.actor}', 'A4 Operator', 'a4-operator@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'TEI Oils Legal') on conflict (id) do nothing;
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'ARCTURUS', 'Arcturus', 'ACTIVE') on conflict (id) do nothing;

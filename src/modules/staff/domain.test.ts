@@ -8,6 +8,7 @@ import {
   invitationExpiry,
   normalizeEmail,
   normalizeStaffNumber,
+  normalizeActivationCode,
   validateInvitationScope,
 } from './domain';
 
@@ -31,10 +32,21 @@ describe('staff invitation domain', () => {
     expect(normalizeStaffNumber(staffNumber.toLowerCase())).toBe(staffNumber);
 
     const activation = createActivationCode();
-    expect(activation.code).toHaveLength(40);
+    expect(activation.code).toMatch(
+      /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/,
+    );
     expect(activation.codeHash).not.toBe(activation.code);
     expect(activation.codeHash).toBe(hashInvitationToken(activation.code.toLowerCase()));
-    expect(() => normalizeStaffNumber('SF-ATTEND01')).toThrow();
+    expect(normalizeStaffNumber(' e12345 ')).toBe('E12345');
+    expect(() => normalizeStaffNumber('a b')).toThrow();
+  });
+
+  it('normalizes friendly codes and preserves legacy codes without accepting ambiguous symbols', () => {
+    expect(normalizeActivationCode(' 7k3m 9r2x ')).toBe('7k3m-9r2x');
+    expect(normalizeActivationCode('7K3M-9R2X')).toBe('7k3m-9r2x');
+    expect(normalizeActivationCode('A'.repeat(40))).toBe('a'.repeat(40));
+    expect(() => normalizeActivationCode('OOOO-1111')).toThrow();
+    expect(() => normalizeActivationCode('7K3M')).toThrow();
   });
 
   it('requires explicit tenant and station scope by role', () => {

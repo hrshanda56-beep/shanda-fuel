@@ -29,8 +29,13 @@ describe('report activity', () => {
       fromDate: '2026-10-01',
       toDate: '2026-10-08',
       stationNames: ['Bindura'],
+      exportFormat: 'xlsx',
     });
-    expect(metadata).toMatchObject({ reportTitle: 'Cash Evidence to Bank', stationCount: 1 });
+    expect(metadata).toMatchObject({
+      reportTitle: 'Cash Evidence to Bank',
+      stationCount: 1,
+      exportFormat: 'xlsx',
+    });
     expect(
       toActivityItem({
         id: 'e1',

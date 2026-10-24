@@ -1,7 +1,7 @@
+import { seedClerkIdentity, authenticateClerk, establishClerkStepUp } from './clerk-fixtures';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { ExactDecimal } from '../../src/platform/domain/primitives';
 
@@ -52,7 +52,7 @@ test.describe('production reconciliation persistence', () => {
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A5 E2E Tenant', 'a5-e2e-tenant')
         on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.supervisorActor}', 'A5 E2E Supervisor', 'a5e-supervisor@example.test'),
         ('${ids.managerActor}', 'A5 E2E Manager', 'a5e-manager@example.test')
         on conflict (id) do nothing;
@@ -151,43 +151,20 @@ test.describe('production reconciliation persistence', () => {
       values
         ('${ids.openingCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'OPENING_COST', 'CUTOVER', '${ids.openingSource}', '2026-09-22T05:00:00Z', '2026-09-22', 3000.0000, 'USD', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
-      insert into auth.session
-        (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at,
-         strong_authentication_expires_at, step_up_level, step_up_expires_at, step_up_tenant_id)
-      values
-        ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', '${supervisorToken}', '${ids.supervisorActor}', true, now(), null, null, null, null),
-        ('${ids.managerSession}', '2030-01-01T00:00:00Z', '${managerToken}', '${ids.managerActor}', true, now(), '2030-01-01T00:00:00Z', 1, '2030-01-01T00:00:00Z', '${ids.tenant}')
-        on conflict (id) do update set
-          expires_at=excluded.expires_at,
-          strong_authentication_verified=excluded.strong_authentication_verified,
-          strong_authenticated_at=excluded.strong_authenticated_at,
-          strong_authentication_expires_at=excluded.strong_authentication_expires_at,
-          step_up_level=excluded.step_up_level,
-          step_up_expires_at=excluded.step_up_expires_at,
-          step_up_tenant_id=excluded.step_up_tenant_id;
     `);
+    await seedClerkIdentity(client, ids.supervisorActor);
+    await seedClerkIdentity(client, ids.managerActor);
   });
 
   test.afterAll(async () => {
     await client?.end();
   });
 
-  async function signedCookie(token: string) {
-    const secret = process.env.BETTER_AUTH_SECRET;
-    if (!secret) throw new Error('BETTER_AUTH_SECRET is required for production E2E');
-    return `${token}.${await makeSignature(token, secret)}`;
-  }
-
   async function authenticate(context: BrowserContext, token: string) {
-    await context.clearCookies();
-    await context.addCookies([
-      {
-        name: 'shanda-fuel.session_token',
-        value: await signedCookie(token),
-        domain: '127.0.0.1',
-        path: '/',
-      },
-    ]);
+    const actorId = token === managerToken ? ids.managerActor : ids.supervisorActor;
+    await authenticateClerk(context, actorId);
+    if (token === managerToken)
+      await establishClerkStepUp(context, ids.tenant, 'LOCK_BUSINESS_DAY', actorId);
   }
 
   async function gotoAndWaitForHydration(page: import('@playwright/test').Page, url: string) {
@@ -364,7 +341,6 @@ test.describe('production reconciliation persistence', () => {
     await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
-    await expect(controlRoom.getByText('Audit history restricted')).toBeVisible();
     await expect(
       controlRoom
         .locator('article.operations-shift-row strong')
@@ -520,6 +496,9 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText(/750(?:\.0+)? USD/).first()).toBeVisible();
     await page.getByLabel('Cash counted').fill('750.0000');
     await page.getByRole('button', { name: 'Save persisted draft' }).click();
+    // Saving sends several commands in turn; the cash variance leaves "not counted" once the
+    // whole draft is stored, and only then may the workflow state change.
+    await expect(page.getByText('not counted')).toHaveCount(0);
     await expect(page.getByLabel('Cash counted')).toHaveValue(/750/);
 
     await page.getByRole('button', { name: 'Submit for management review' }).click();

@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from 'react';
 
+import { stepUpIsNeeded } from './step-up-needed';
+
 /** Where a share or export is aimed: one report, its stations and a resolved period. */
 export type ReportActionTarget = Readonly<{
   tenantId: string;
@@ -41,6 +43,7 @@ function exportQuery(target: ReportActionTarget): string {
 export function useReportActions() {
   const [status, setStatus] = useState<ActionStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [stepUpFor, setStepUpFor] = useState<ReportActionTarget | null>(null);
 
   const dismiss = useCallback(() => setStatus(null), []);
 
@@ -90,7 +93,7 @@ export function useReportActions() {
     }
   }, []);
 
-  const exportCsv = useCallback(async (target: ReportActionTarget) => {
+  const exportCsv = useCallback(async (target: ReportActionTarget, afterStepUp = false) => {
     setBusy(true);
     setStatus(null);
     try {
@@ -99,10 +102,13 @@ export function useReportActions() {
         cache: 'no-store',
       });
       if (!response.ok) {
-        setStatus({
-          tone: 'critical',
-          message: await errorMessage(response, 'The export could not be created.'),
-        });
+        const message = await errorMessage(response, 'The export could not be created.');
+        // A missing step-up is recoverable: confirm identity once, then retry the same export.
+        if (!afterStepUp && stepUpIsNeeded(response.status, message)) {
+          setStepUpFor(target);
+          return;
+        }
+        setStatus({ tone: 'critical', message });
         return;
       }
       const disposition = response.headers.get('content-disposition') ?? '';
@@ -124,5 +130,16 @@ export function useReportActions() {
     }
   }, []);
 
-  return { status, busy, dismiss, share, exportCsv };
+  const stepUp = stepUpFor
+    ? {
+        tenantId: stepUpFor.tenantId,
+        onVerified: () => {
+          setStepUpFor(null);
+          void exportCsv(stepUpFor, true);
+        },
+        onCancel: () => setStepUpFor(null),
+      }
+    : null;
+
+  return { status, busy, dismiss, share, exportCsv, stepUp };
 }

@@ -9,3 +9,4 @@ overrides:
   '@smithy/types': 4.19.0
   source-map-js: 1.2.2
   sharp: 0.35.5
+  vite: 7.3.7

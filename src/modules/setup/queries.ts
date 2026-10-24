@@ -149,8 +149,27 @@ export async function getSetupOverview(args: {
           select id, code, legal_name, registration_reference, status, version
           from app.suppliers where tenant_id = ${tenantId} order by code`)
       : null;
-    const station = await tx.execute<{ status: string }>(sql`
-      select status from app.stations where tenant_id = ${tenantId} and id = ${stationId}`);
+    const supervisors = view.stationView
+      ? await tx.execute<{ membership_id: string; name: string }>(sql`
+          select membership.id as membership_id,
+            coalesce(nullif(identity.name, ''), identity.email) as name
+          from app.membership_role_assignments assignment
+          join app.memberships membership
+            on membership.tenant_id = assignment.tenant_id and membership.id = assignment.membership_id
+          join app.users identity on identity.id = membership.identity_id
+          where assignment.tenant_id = ${tenantId} and assignment.role_code = 'SUPERVISOR'
+            and assignment.scope_type = 'STATION' and assignment.station_id = ${stationId}
+            and membership.status = 'ACTIVE'
+            and (assignment.expires_at is null or assignment.expires_at > now())
+          group by membership.id, identity.name, identity.email
+          order by 2`)
+      : null;
+    const station = await tx.execute<{
+      status: string;
+      responsible_supervisor_membership_id: string | null;
+    }>(sql`
+      select status, responsible_supervisor_membership_id from app.stations
+      where tenant_id = ${tenantId} and id = ${stationId}`);
 
     const overview: Omit<ConfigurationSetupOverview, 'blockers'> = {
       tenantId,
@@ -212,6 +231,9 @@ export async function getSetupOverview(args: {
           status: r.status,
           version: Number(r.version),
         })) ?? null,
+      supervisors:
+        supervisors?.map((r) => ({ membershipId: r.membership_id, name: r.name })) ?? null,
+      responsibleSupervisorMembershipId: station[0]?.responsible_supervisor_membership_id ?? null,
     };
     return { ...overview, blockers: computeSetupBlockers(overview) };
   });

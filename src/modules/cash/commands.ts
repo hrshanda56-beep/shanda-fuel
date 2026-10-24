@@ -4,11 +4,16 @@ import { z } from 'zod';
 import type { ContextSelection } from '../context';
 import { AppError } from '../../platform/errors';
 import { executeCashCommand, requestHash, resolveCashCommandContext } from './application';
+import { isAuthorized } from '../../platform/security/permissions';
 import {
+  acceptCashHandoverInTransaction,
+  cancelCashHandoverInTransaction,
   confirmBankDepositInTransaction,
   createBankDepositInTransaction,
   receiveCashCollectionInTransaction,
   recordCashCollectionInTransaction,
+  resolveCashHandoverInTransaction,
+  submitCashHandoverInTransaction,
 } from './persistence';
 
 const uuid = z.string().uuid();
@@ -76,6 +81,30 @@ const confirmDepositSchema = commandContext.extend({
   expectedVersion: z.number().int().nonnegative(),
   confirmedAmount: decimalString,
   bankReference: z.string().trim().min(1).max(120),
+});
+
+const submitHandoverSchema = commandContext.extend({
+  commandType: z.literal('SubmitCashHandover'),
+  fromLocationId: uuid,
+  toLocationId: uuid,
+  expectedAmount: decimalString,
+  countedAmount: decimalString,
+  reason: z.string().trim().max(500).optional(),
+});
+
+const handoverActionSchema = commandContext.extend({
+  handoverId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+});
+const acceptHandoverSchema = handoverActionSchema.extend({
+  commandType: z.literal('AcceptCashHandover'),
+});
+const resolveHandoverSchema = handoverActionSchema.extend({
+  commandType: z.literal('ResolveCashHandover'),
+  resolutionNote: z.string().trim().min(3).max(500),
+});
+const cancelHandoverSchema = handoverActionSchema.extend({
+  commandType: z.literal('CancelCashHandover'),
 });
 
 function idempotencyKey(request: Request): string {
@@ -191,16 +220,103 @@ export async function confirmBankDepositFromRequest(request: Request, body: unkn
   });
 }
 
-export function assertCashCommandType(
-  value: unknown,
-): 'RecordCashCollection' | 'ReceiveCashCollection' | 'CreateBankDeposit' | 'ConfirmBankDeposit' {
-  if (
-    value === 'RecordCashCollection' ||
-    value === 'ReceiveCashCollection' ||
-    value === 'CreateBankDeposit' ||
-    value === 'ConfirmBankDeposit'
-  ) {
-    return value;
-  }
+export async function submitCashHandoverFromRequest(request: Request, body: unknown) {
+  const input = submitHandoverSchema.parse(body);
+  const selection = selectionFromInput(input);
+  const context = await resolveCashCommandContext({ request, selection });
+  return executeCashCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'cash.handover.submit',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: canonicalRequestHash(input, selection),
+    subjectType: 'CashHandover',
+    subjectId: `${input.fromLocationId}:${input.toLocationId}`,
+    execute: async (transaction) => ({
+      result: await submitCashHandoverInTransaction(transaction, context, input),
+      after: { expectedAmount: input.expectedAmount, countedAmount: input.countedAmount },
+    }),
+  });
+}
+
+export async function acceptCashHandoverFromRequest(request: Request, body: unknown) {
+  const input = acceptHandoverSchema.parse(body);
+  const selection = selectionFromInput(input);
+  const context = await resolveCashCommandContext({ request, selection });
+  return executeCashCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'cash.handover.accept',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: canonicalRequestHash(input, selection),
+    subjectType: 'CashHandover',
+    subjectId: input.handoverId,
+    execute: async (transaction) => ({
+      result: await acceptCashHandoverInTransaction(transaction, context, input),
+      after: { handoverId: input.handoverId, expectedVersion: input.expectedVersion },
+    }),
+  });
+}
+
+export async function resolveCashHandoverFromRequest(request: Request, body: unknown) {
+  const input = resolveHandoverSchema.parse(body);
+  const selection = selectionFromInput(input);
+  const context = await resolveCashCommandContext({ request, selection });
+  return executeCashCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'cash.handover.resolve',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: canonicalRequestHash(input, selection),
+    subjectType: 'CashHandover',
+    subjectId: input.handoverId,
+    execute: async (transaction) => ({
+      result: await resolveCashHandoverInTransaction(transaction, context, input),
+      after: { handoverId: input.handoverId, resolutionNote: input.resolutionNote },
+    }),
+  });
+}
+
+export async function cancelCashHandoverFromRequest(request: Request, body: unknown) {
+  const input = cancelHandoverSchema.parse(body);
+  const selection = selectionFromInput(input);
+  const context = await resolveCashCommandContext({ request, selection });
+  const canActForOthers = isAuthorized({
+    actor: context.authority.authorization,
+    permissionCode: 'cash.handover.accept',
+    requestedScope: context.scope,
+  });
+  return executeCashCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'cash.handover.submit',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: canonicalRequestHash(input, selection),
+    subjectType: 'CashHandover',
+    subjectId: input.handoverId,
+    execute: async (transaction) => ({
+      result: await cancelCashHandoverInTransaction(transaction, context, {
+        ...input,
+        canActForOthers,
+      }),
+      after: { handoverId: input.handoverId },
+    }),
+  });
+}
+
+const CASH_COMMAND_TYPES = [
+  'RecordCashCollection',
+  'ReceiveCashCollection',
+  'CreateBankDeposit',
+  'ConfirmBankDeposit',
+  'SubmitCashHandover',
+  'AcceptCashHandover',
+  'ResolveCashHandover',
+  'CancelCashHandover',
+] as const;
+
+export function assertCashCommandType(value: unknown): (typeof CASH_COMMAND_TYPES)[number] {
+  const match = CASH_COMMAND_TYPES.find((type) => type === value);
+  if (match) return match;
   throw new AppError('VALIDATION_FAILED', 'Unsupported cash command type');
 }

@@ -146,7 +146,7 @@ function positiveMoney(amount: string, currency: CurrencyCode, field: string): M
       cause: error instanceof Error ? error.message : 'invalid amount',
     });
   }
-  if (!value.amount.value.isPositive()) {
+  if (!value.amount.value.gt(0)) {
     throw new AppError('VALIDATION_FAILED', `${field} must be greater than zero`);
   }
   return value;
@@ -368,7 +368,7 @@ export function validatePaymentAllocations(input: {
       item.requestedAmount,
       'Payment and requested allocation currencies must match',
     );
-    if (!item.requestedAmount.amount.value.isPositive()) {
+    if (!item.requestedAmount.amount.value.gt(0)) {
       throw new AppError(
         'VALIDATION_FAILED',
         'Requested allocation amount must be greater than zero',
@@ -441,7 +441,7 @@ export function calculateSupplierPayableBalance(
         'Supplier ledger balance cannot combine tenants or suppliers',
       );
     }
-    if (!entry.amount.amount.value.isPositive())
+    if (!entry.amount.amount.value.gt(0))
       throw new AppError(
         'INVARIANT_VIOLATION',
         'Supplier ledger movement amounts must be positive',
