@@ -1,5 +1,24 @@
 # Shanda Fuel — Decision Log
 
+## DEC-048 — Go-live housekeeping answers (ACCEPTED by the project lead in chat, 2026-10-24)
+
+**Date:** 2026-10-24. **Status:** accepted. Recorded from the project lead's chat answers (24 Oct, 14:23 and later).
+
+- **Byline:** keep "by ShandaHR".
+- **Owner sign-off name and date:** not important for v1. The signature line in
+  `docs/v1-owner-decisions-proposed.md` stays blank. The one fact to record is that the company is
+  Triumph Energy, trading as T.E.I Oils (a customer of the platform, not its owner).
+- **Alert emails:** leave for now. They stay switched off at go-live (ADR-020 still proposed).
+- **Backup credential location:** a dedicated Cloudflare R2 bucket, separate from the app's file
+  bucket. The backup job gets a write-only API key. The restore key is kept offline by the owner of
+  the credential, not in Vercel. A stolen app key must not be able to read or delete backups.
+- **Staff credit balance:** keep the rule already recorded under "Staff fuel benefit accounts": a
+  monthly USD cap per staff member, no carry-over, and the month's cost entered as one expense.
+- **Unused secrets:** may be deleted. Each one is listed and confirmed with the project lead before
+  it is removed.
+
+**Not decided:** the rates for the estimate.
+
 ## DEC-047 — Run v1 without paid multi-factor sign-in (ACCEPTED by the project lead in chat, 2026-10-24)
 
 **Date:** 2026-10-24. **Status:** accepted, including the export fix below (approved in chat 2026-10-24). The fix is built on its own branch and is not merged.
