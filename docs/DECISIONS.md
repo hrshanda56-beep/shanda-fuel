@@ -1,5 +1,26 @@
 # Shanda Fuel — Decision Log
 
+## DEC-047 — Run v1 without paid multi-factor sign-in (ACCEPTED by the project lead in chat, 2026-10-24)
+
+**Date:** 2026-10-24. **Status:** accepted, including the export fix below (approved in chat 2026-10-24). The fix is built on its own branch and is not merged.
+
+**Decision (project lead, in chat):** Clerk charges for multi-factor sign-in. Do not pay for it for
+now, and do not add a second sign-in provider. Switch MFA off (`REQUIRE_LOGIN_MFA=false`).
+
+**What this changes:** DEC-043 and the earlier security plan assumed MFA for privileged actions. With
+the switch off, sign-in is password only. The Owner's password re-check covers closing a business day
+and deactivating staff (existing behaviour). Report exports and report-table runs still require a
+second factor today, so they would be refused for everyone; the proposed fix is a small tested code
+change letting the Owner's password re-check satisfy that check while the switch is off.
+
+**Risk accepted:** a stolen password is enough to sign in. Mitigations: strong unique passwords,
+Clerk password-breach check and rate limits, short sessions, the signed audit trail, few Owner and
+Administrator accounts. Turning MFA on later needs only `REQUIRE_LOGIN_MFA=true` and a paid Clerk plan.
+
+**Affected:** `docs/runbooks/v1-migration-and-release.md` section 3a, the skipped step-up browser
+tests (they stay skipped until MFA or a test phone number exists), `src/modules/identity/step-up.ts`
+(only if the export fix is approved).
+
 ## DEC-046 — The approved screens are locked (proposed as DEC-045 wording)
 
 Date: 2026-10-23. **Status:** ACCEPTED on the owner's behalf, on the explicit instruction of the

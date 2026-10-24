@@ -1,5 +1,37 @@
 # Shanda Fuel — Current Status
 
+## v1 combined finish merged — 2026-10-24
+
+PR #149 (`codex/v1-combined-2`) merged into `main` as `b11f9f0` at 2026-10-24T14:12Z. CI on
+`43633fa` (the last commit before the merge) was green: quality (unit 215 files / 1,502 tests;
+integration 323 passed, 45 intentional opt-in skips; browser 365 passed, 16 skipped), secret scan,
+SAST, dependency audit and runtime-role proof. CodeQL was skipped. CI was not re-run on the merge
+commit itself. Production was not contacted. Nothing was deployed or migrated in production.
+
+Browser tests skipped on purpose (needs a Clerk step-up, and the Clerk test users have no second
+factor). These are skips, not passes. Fix: give the test users a Clerk test phone number as the
+second factor.
+
+After v1:
+
+- login-mfa (both tests)
+- staff "Owner can manage invitations"
+- staff invite-link test (also needs a Clerk-account cleanup step; it lost its invalid, revoked and
+  expired link checks while skipped)
+- production-reconciliation ("persists through refresh" and the A11 workspace test)
+- setup-readiness "adds a provider and a station account"
+- management-reporting CSV export
+- offline cash entry (out of v1 by decision) and SMS (not wanted)
+
+Triumph Energy, trading as T.E.I Oils, is the first customer of the platform, not its owner.
+Runbooks prepared (not run): `docs/runbooks/v1-migration-and-release.md` (updated to 0071) and
+`docs/runbooks/v1-first-user-provisioning.md`.
+
+Still open and owned by the human: staff credit balance decision, "by ShandaHR" byline, owner
+sign-off name and date, rates for the estimate, ADR-020 and alert-email go-live (off until then),
+backup credential location, MFA (decision: off for now, no paid Clerk plan, no second provider; see DEC-047 and the release runbook section 3a), production migrations, first-user
+provisioning, deploy, training, trial week and go-live.
+
 ## v1 delivery baseline — 2026-10-21
 
 Integration branch: `codex/clerk-only-auth-20261017` (contains all of `origin/main`,

@@ -35,8 +35,11 @@ export type StepUpResult = {
   setCookie?: string;
 };
 
+// DEC-047: while REQUIRE_LOGIN_MFA is false (no paid Clerk plan), the tenant Owner's password
+// re-check is the strongest check available, so it also covers exports. With MFA required, or for
+// anyone who is not the Owner, the privileged action still needs strict MFA.
 export const CLERK_STEP_UP_POLICY = {
-  [CLERK_PRIVILEGED_ACTION]: { allowNoMfaOwner: false },
+  [CLERK_PRIVILEGED_ACTION]: { allowNoMfaOwner: true },
   [CLERK_STEP_UP_ACTION]: {
     allowNoMfaOwner: true,
   },

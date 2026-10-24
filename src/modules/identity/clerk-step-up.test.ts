@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLERK_DEACTIVATE_STAFF_ACTION,
+  CLERK_PRIVILEGED_ACTION,
   CLERK_STEP_UP_ACTION,
   type ClerkReverificationLevel,
 } from '../../platform/auth/clerk-step-up';
@@ -187,6 +188,33 @@ describe('Clerk privileged step-up policy', () => {
         now,
       }),
     ).rejects.toMatchObject({ level: 'strict' });
+  });
+
+  it('lets a no-MFA Owner use a password re-check for the privileged action while MFA is off (DEC-047)', async () => {
+    await expect(
+      establishStepUp({
+        request: request(),
+        context: context(),
+        action: CLERK_PRIVILEGED_ACTION,
+        now,
+      }),
+    ).rejects.toMatchObject({ level: 'strict' });
+  });
+
+  it('still requires strict MFA for the privileged action when MFA is on, enrolled, or the person is not the Owner', async () => {
+    const privileged = (owner = true) =>
+      establishStepUp({
+        request: request(),
+        context: context({ owner }),
+        action: CLERK_PRIVILEGED_ACTION,
+        now,
+      });
+    await expect(privileged(false)).rejects.toMatchObject({ level: 'strict_mfa' });
+    mocks.clerkUserHasMfa.mockResolvedValue(true);
+    await expect(privileged()).rejects.toMatchObject({ level: 'strict_mfa' });
+    mocks.clerkUserHasMfa.mockResolvedValue(false);
+    vi.stubEnv('REQUIRE_LOGIN_MFA', 'true');
+    await expect(privileged()).rejects.toMatchObject({ level: 'strict_mfa' });
   });
 
   it('requires MFA for an Owner when login MFA policy is enabled', async () => {
