@@ -11,8 +11,10 @@ WAF, or secret-manager configuration exists.
 - `DATABASE_URL` is present for the deployed app runtime.
 - `DATABASE_DIRECT_URL` is absent from the deployed app runtime. It is
   migration/deployment automation input only.
-- `BETTER_AUTH_SECRET`, `AUDIT_SIGNING_KEY_ID`, and a 32-character-or-longer
+- `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `AUDIT_SIGNING_KEY_ID`, and a 32-character-or-longer
   `AUDIT_SIGNING_KEY` are present in both deployed environments.
+- Clerk is the only authentication provider. Follow [Clerk-only cutover](clerk-only-cutover.md)
+  when upgrading an existing environment; preserve internal user IDs and verify identity mappings.
 - Staging and production use distinct secret-manager entries, database
   projects, storage credentials, and auth origins. The application can validate
   each environment's completeness, but it cannot compare two provider projects

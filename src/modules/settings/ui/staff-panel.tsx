@@ -10,6 +10,8 @@ import { Modal } from '@/design-system/modal';
 import type { RoleCode } from '@/modules/authorization';
 import type { SettingsView } from '../contracts';
 import styles from './settings-workspace.module.css';
+import { matchesStaffScope } from './staff-filter';
+import { formatStaffInvitationMessage } from './staff-invitation-message';
 import {
   ApplicationStepUpError,
   NetworkStepUpError,
@@ -19,7 +21,6 @@ import {
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
-type AuthProviderName = 'BETTER_AUTH' | 'CLERK';
 type StaffMember = StaffOverview['activeStaff'][number];
 
 type DeactivationOutcome =
@@ -75,12 +76,13 @@ function initials(name: string) {
 export function StaffPanel({
   tenantId,
   overview,
-  provider,
+  selectedStationId,
 }: {
   tenantId: string;
   overview: StaffOverview;
-  provider: AuthProviderName;
+  selectedStationId?: string;
 }) {
+  const [roleFilter, setRoleFilter] = useState<Role | ''>('');
   const [filter, setFilter] = useState<StaffFilter>('all');
   const [query, setQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -91,7 +93,7 @@ export function StaffPanel({
   );
   const [legalEntityId, setLegalEntityId] = useState('');
   const [stationIds, setStationIds] = useState<string[]>([]);
-  const [deliveryMethod, setDeliveryMethod] = useState<'EMAIL' | 'MANUAL'>('EMAIL');
+  const [deliveryMethod, setDeliveryMethod] = useState<'EMAIL' | 'MANUAL'>('MANUAL');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [manualActivation, setManualActivation] = useState<{
@@ -153,7 +155,7 @@ export function StaffPanel({
         invitedName: String(form.get('name') ?? ''),
         ...(deliveryMethod === 'EMAIL'
           ? { invitedEmail: String(form.get('email') ?? ''), deliveryMethod }
-          : { deliveryMethod }),
+          : { deliveryMethod, staffNumber: String(form.get('staffNumber') ?? '').trim() }),
         assignedRole: role,
         scopeType,
         ...(legalEntityId ? { legalEntityId } : {}),
@@ -180,6 +182,17 @@ export function StaffPanel({
   }
 
   async function generateManual(invitationId: string) {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      await verifyStaffManagement();
+    } catch {
+      setMessage(
+        'Security verification was not completed. No new code was generated. This action requires recent MFA verification.',
+      );
+      setBusy(false);
+      return;
+    }
     const result = await command(
       { commandType: 'GenerateManualStaffActivation', invitationId },
       false,
@@ -188,10 +201,22 @@ export function StaffPanel({
       setManualActivation(
         result as unknown as { staffNumber: string; activationCode: string; expiresAt: string },
       );
+      setSelectedId(undefined);
     } else if (result) {
       window.location.reload();
     }
   }
+
+  const verifyStaffManagement = useReverification(async () => {
+    const response = await fetch('/api/auth/step-up', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenantId, action: 'PRIVILEGED_OPERATION' }),
+    });
+    const body = (await response.json()) as { clerk_error?: unknown; message?: string };
+    if (!response.ok && !body.clerk_error) throw new Error('Security verification required');
+    return body;
+  });
 
   function toggleStation(stationId: string) {
     setStationIds((current) =>
@@ -238,10 +263,7 @@ export function StaffPanel({
       if (response.ok && body?.sessionsRevoked === true) {
         setDeactivationOutcome({
           kind: 'success',
-          message:
-            provider === 'CLERK'
-              ? 'Staff member deactivated and Clerk sessions revoked.'
-              : 'Staff member deactivated and sessions revoked.',
+          message: 'Staff member deactivated and Clerk sessions revoked.',
         });
         return;
       }
@@ -336,13 +358,8 @@ export function StaffPanel({
       ...(invitation.staffNumber ? { staffNumber: invitation.staffNumber } : {}),
       role: ROLE_LABELS[invitation.role],
       scope: invitationScope(invitation),
-      statusLabel:
-        invitation.status === 'EXPIRED'
-          ? 'Expired'
-          : invitation.deliveryMethod === 'MANUAL'
-            ? 'Manual Activation'
-            : 'Invited',
-      tone: invitation.status === 'EXPIRED' ? 'warning' : 'informational',
+      statusLabel: invitation.status === 'EXPIRED' ? 'Expired' : 'Pending',
+      tone: invitation.status === 'EXPIRED' ? 'warning' : 'pending',
       actions:
         invitation.status === 'PENDING' ? (
           <>
@@ -353,18 +370,23 @@ export function StaffPanel({
                 size="sm"
                 onClick={() => generateManual(invitation.id)}
               >
-                Generate manual activation
+                Switch to staff-number activation
               </Button>
             ) : null}
             <Button
               type="button"
               variant="quiet"
               size="sm"
+              disabled={busy}
               onClick={() =>
-                command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
+                invitation.deliveryMethod === 'MANUAL'
+                  ? generateManual(invitation.id)
+                  : command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
               }
             >
-              Resend
+              {invitation.deliveryMethod === 'MANUAL'
+                ? 'Generate new activation code'
+                : 'Resend email invitation'}
             </Button>
             <Button
               type="button"
@@ -383,11 +405,16 @@ export function StaffPanel({
             type="button"
             variant="quiet"
             size="sm"
+            disabled={busy}
             onClick={() =>
-              command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
+              invitation.deliveryMethod === 'MANUAL'
+                ? generateManual(invitation.id)
+                : command({ commandType: 'ResendStaffInvitation', invitationId: invitation.id })
             }
           >
-            Resend
+            {invitation.deliveryMethod === 'MANUAL'
+              ? 'Generate new activation code'
+              : 'Resend email invitation'}
           </Button>
         ),
     })),
@@ -405,10 +432,23 @@ export function StaffPanel({
     })),
   ];
 
-  const selectedRow = rows.find((row) => row.id === selectedId);
+  const matchingIds = new Set(
+    [...overview.activeStaff, ...overview.deactivatedStaff, ...overview.pendingInvitations]
+      .filter((person) =>
+        matchesStaffScope(
+          person,
+          selectedStationId,
+          roleFilter || undefined,
+          overview.scopeOptions,
+        ),
+      )
+      .map((person) => ('membershipId' in person ? person.membershipId : person.id)),
+  );
+  const scopedRows = rows.filter((row) => matchingIds.has(row.id));
+  const selectedRow = scopedRows.find((row) => row.id === selectedId);
 
   const needle = query.trim().toLowerCase();
-  const visibleRows = rows.filter(
+  const visibleRows = scopedRows.filter(
     (row) =>
       (filter === 'all' || row.group === filter) &&
       (needle === '' ||
@@ -417,7 +457,7 @@ export function StaffPanel({
         )),
   );
   const countFor = (value: StaffFilter) =>
-    value === 'all' ? rows.length : rows.filter((row) => row.group === value).length;
+    value === 'all' ? scopedRows.length : scopedRows.filter((row) => row.group === value).length;
 
   return (
     <div className={styles.staffPanel}>
@@ -431,6 +471,20 @@ export function StaffPanel({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
+        </label>
+        <label className={styles.staffRoleFilter}>
+          Role
+          <select
+            value={roleFilter}
+            onChange={(event) => setRoleFilter(event.target.value as Role | '')}
+          >
+            <option value="">All roles</option>
+            {Object.entries(ROLE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <div className={styles.staffFilters} role="group" aria-label="Filter staff">
           {FILTERS.map((item) => (
@@ -457,6 +511,24 @@ export function StaffPanel({
         </Button>
       </div>
 
+      <div className={styles.staffResults}>
+        <span>
+          {visibleRows.length} staff matching {selectedStationId ? 'this station' : 'all stations'}
+        </span>
+        {filter !== 'all' || roleFilter || query ? (
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={() => {
+              setFilter('all');
+              setRoleFilter('');
+              setQuery('');
+            }}
+          >
+            Clear filters
+          </Button>
+        ) : null}
+      </div>
       {message ? (
         <p className={styles.staffMessage} role="status">
           {message}
@@ -529,7 +601,14 @@ export function StaffPanel({
                   <span>{row.scope}</span>
                 </div>
                 <div className={styles.staffCell} data-label="Status">
-                  <StatusBadge tone={row.tone}>{row.statusLabel}</StatusBadge>
+                  <StatusBadge
+                    tone={row.tone}
+                    {...(row.tone === 'pending'
+                      ? { className: `status status-pending ${styles.staffPending}` }
+                      : {})}
+                  >
+                    {row.statusLabel}
+                  </StatusBadge>
                 </div>
               </li>
             ))}
@@ -546,11 +625,32 @@ export function StaffPanel({
       >
         {selectedRow ? (
           <div className={styles.staffDetail}>
-            <StatusBadge tone={selectedRow.tone}>{selectedRow.statusLabel}</StatusBadge>
+            <div className={styles.staffIdentity}>
+              <span className={styles.avatar} aria-hidden="true">
+                {initials(selectedRow.name)}
+              </span>
+              <div>
+                <strong>{selectedRow.name}</strong>
+                <p className={styles.note}>{selectedRow.staffNumber ?? 'Staff member'}</p>
+              </div>
+            </div>
+            {message ? (
+              <p role="status" className={styles.staffMessage}>
+                {message}
+              </p>
+            ) : null}
+            <StatusBadge
+              tone={selectedRow.tone}
+              {...(selectedRow.tone === 'pending'
+                ? { className: `status status-pending ${styles.staffPending}` }
+                : {})}
+            >
+              {selectedRow.statusLabel}
+            </StatusBadge>
             <dl className={styles.staffFacts}>
               <div>
                 <dt>Email</dt>
-                <dd>{selectedRow.email ?? '—'}</dd>
+                <dd>{selectedRow.email ?? 'No email provided'}</dd>
               </div>
               <div>
                 <dt>Role</dt>
@@ -562,14 +662,10 @@ export function StaffPanel({
               </div>
             </dl>
             {selectedRow.actions ? (
-              <div
-                className={styles.staffActions}
-                onClick={(event) => {
-                  if ((event.target as HTMLElement).closest('button')) setSelectedId(undefined);
-                }}
-              >
-                {selectedRow.actions}
-              </div>
+              <section className={styles.staffAccountActions}>
+                <h3>Account actions</h3>
+                <div className={styles.staffActions}>{selectedRow.actions}</div>
+              </section>
             ) : (
               <p className={styles.note}>No actions available for this staff member.</p>
             )}
@@ -590,13 +686,13 @@ export function StaffPanel({
             <input name="name" required maxLength={160} />
           </label>
           <label>
-            <span>Delivery</span>
+            <span>Invite using</span>
             <select
               value={deliveryMethod}
               onChange={(event) => setDeliveryMethod(event.target.value as 'EMAIL' | 'MANUAL')}
             >
-              <option value="EMAIL">Email invitation</option>
-              <option value="MANUAL">Manual activation</option>
+              <option value="MANUAL">Staff number</option>
+              <option value="EMAIL">Email</option>
             </select>
           </label>
           {deliveryMethod === 'EMAIL' ? (
@@ -605,9 +701,20 @@ export function StaffPanel({
               <input name="email" type="email" required maxLength={320} />
             </label>
           ) : (
-            <p className={styles.note}>
-              The Staff Number and activation code will be shown once after creation.
-            </p>
+            <label>
+              <span>Staff number (optional)</span>
+              <input
+                name="staffNumber"
+                maxLength={32}
+                minLength={4}
+                autoCapitalize="characters"
+                aria-describedby="staff-number-help"
+              />
+              <small id="staff-number-help">
+                Leave blank to generate a staff number automatically. Use 4–32 letters, numbers,
+                hyphens or underscores. This is their login username.
+              </small>
+            </label>
           )}
           <label>
             <span>Role</span>
@@ -694,12 +801,20 @@ export function StaffPanel({
             <Button
               type="button"
               variant="quiet"
-              onClick={() =>
-                manualActivation &&
-                navigator.clipboard?.writeText(
-                  `${manualActivation.staffNumber}\n${manualActivation.activationCode}`,
-                )
-              }
+              onClick={async () => {
+                if (!manualActivation) return;
+                try {
+                  if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+                  await navigator.clipboard.writeText(
+                    formatStaffInvitationMessage(manualActivation, window.location.origin),
+                  );
+                  setMessage('Invitation copied. Share it privately with the employee.');
+                } catch {
+                  setMessage(
+                    'Could not copy the invitation. Copy the staff number, code and expiry shown here manually.',
+                  );
+                }
+              }}
             >
               Copy invitation
             </Button>
@@ -780,14 +895,8 @@ export function StaffPanel({
               >
                 {deactivationOutcome.message}
               </p>
-            ) : provider === 'CLERK' ? (
-              <ClerkStaffDeactivationStepUp
-                tenantId={tenantId}
-                busy={deactivationBusy}
-                onVerified={submitDeactivation}
-              />
             ) : (
-              <BetterAuthStaffDeactivationStepUp
+              <ClerkStaffDeactivationStepUp
                 tenantId={tenantId}
                 busy={deactivationBusy}
                 onVerified={submitDeactivation}
@@ -869,94 +978,5 @@ function ClerkStaffDeactivationStepUp({
         </p>
       ) : null}
     </div>
-  );
-}
-
-function BetterAuthStaffDeactivationStepUp({
-  tenantId,
-  busy,
-  onVerified,
-}: {
-  tenantId: string;
-  busy: boolean;
-  onVerified: () => Promise<void>;
-}) {
-  const [password, setPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
-  const [stepUpBusy, setStepUpBusy] = useState(false);
-  const [stepUpError, setStepUpError] = useState<string>();
-
-  async function verify(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStepUpBusy(true);
-    setStepUpError(undefined);
-    try {
-      const response = await fetch('/api/auth/step-up', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          tenantId,
-          action: 'DEACTIVATE_STAFF_MEMBER',
-          password,
-          totpCode,
-        }),
-      });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) throw new Error(body.message ?? 'Step-up verification failed.');
-      setPassword('');
-      setTotpCode('');
-      await onVerified();
-    } catch (error) {
-      setStepUpError(error instanceof Error ? error.message : 'Step-up verification failed.');
-    } finally {
-      setStepUpBusy(false);
-    }
-  }
-
-  return (
-    <form
-      className="step-up-form"
-      onSubmit={(event) => void verify(event)}
-      aria-describedby="staff-deactivation-step-up-help"
-    >
-      <p className="semantic-note" id="staff-deactivation-step-up-help">
-        Confirm your Better Auth password and current authenticator code before the deactivation
-        command is submitted.
-      </p>
-      <label htmlFor="staff-deactivation-password">Current password</label>
-      <input
-        id="staff-deactivation-password"
-        type="password"
-        autoComplete="current-password"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        required
-        disabled={busy || stepUpBusy}
-      />
-      <label htmlFor="staff-deactivation-totp">Authenticator code</label>
-      <input
-        id="staff-deactivation-totp"
-        inputMode="numeric"
-        pattern="[0-9]{6}"
-        autoComplete="one-time-code"
-        value={totpCode}
-        onChange={(event) => setTotpCode(event.target.value)}
-        required
-        disabled={busy || stepUpBusy}
-      />
-      <Button
-        type="submit"
-        variant="danger"
-        disabled={busy || stepUpBusy || password.length === 0 || totpCode.length !== 6}
-        loading={stepUpBusy}
-      >
-        Verify and deactivate
-      </Button>
-      {stepUpError ? (
-        <p className="state state-error" role="alert">
-          {stepUpError}
-        </p>
-      ) : null}
-    </form>
   );
 }

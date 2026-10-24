@@ -17,10 +17,20 @@ export type NavigationKey =
   | 'daily-operations'
   | 'reconciliations'
   | 'inventory'
+  | 'finance-home'
   | 'cash'
   | 'settlements'
   | 'customers'
+  | 'staff-benefit'
   | 'suppliers'
+  | 'purchasing'
+  | 'expenses'
+  | 'profitability'
+  | 'daily-profit'
+  | 'financial-position'
+  | 'fuel-deliveries'
+  | 'customer-controls'
+  | 'payments-due'
   | 'reports'
   | 'settings';
 
@@ -31,6 +41,8 @@ export type NavigationProjection = {
   key: NavigationKey;
   visible: boolean;
   enabled: boolean;
+  /** Set on the one entry that is this person's own landing page (decided from permissions). */
+  home?: boolean;
 };
 
 type NavigationDestination =
@@ -127,7 +139,16 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'inbox',
         destination: { kind: 'route', path: '/inventory/valuation' },
         availability: 'active',
-        match: [/^\/inventory(\/|$)/],
+        match: [/^\/inventory(?!\/deliveries)(\/|$)/],
+      },
+      {
+        key: 'fuel-deliveries',
+        label: 'Fuel deliveries',
+        searchLabel: 'Fuel deliveries',
+        icon: 'truck',
+        destination: { kind: 'route', path: '/inventory/deliveries' },
+        availability: 'active',
+        match: [/^\/inventory\/deliveries(\/|$)/],
       },
     ],
   },
@@ -137,22 +158,67 @@ export const navigationSections: readonly NavigationSection[] = [
     icon: 'wallet',
     items: [
       {
+        key: 'finance-home',
+        label: 'Finance overview',
+        searchLabel: 'Finance overview',
+        icon: 'wallet',
+        destination: { kind: 'route', path: '/finance' },
+        availability: 'active',
+        match: [/^\/finance(\/|$)/],
+      },
+      {
         key: 'cash',
         label: 'Cash & Banking',
         searchLabel: 'Cash & Banking',
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'cash' },
         availability: 'station-context',
-        match: [/^\/stations\/[^/]+\/cash(\/|$)/],
+        match: [/^\/cash(\/|$)/, /^\/stations\/[^/]+\/cash(\/|$)/],
       },
       {
         key: 'settlements',
-        label: 'Provider settlements',
-        searchLabel: 'Provider settlements',
+        label: 'Provider payouts',
+        searchLabel: 'Provider payouts',
         icon: 'wallet',
         destination: { kind: 'station-route', segment: 'settlements' },
         availability: 'station-context',
-        match: [/^\/stations\/[^/]+\/settlements(\/|$)/],
+        match: [/^\/settlements(\/|$)/, /^\/stations\/[^/]+\/settlements(\/|$)/],
+      },
+      {
+        key: 'expenses',
+        label: 'Expenses',
+        searchLabel: 'Expenses',
+        icon: 'receipt',
+        destination: { kind: 'route', path: '/expenses' },
+        availability: 'active',
+        match: [/^\/expenses(\/|$)/],
+      },
+      {
+        key: 'profitability',
+        label: 'Profit',
+        searchLabel: 'Profit',
+        icon: 'chart',
+        destination: { kind: 'route', path: '/profitability' },
+        availability: 'active',
+        match: [/^\/profitability(\/|$)/],
+      },
+      {
+        key: 'daily-profit',
+        label: 'Daily profit',
+        searchLabel: 'Daily profit',
+        icon: 'chart',
+        destination: { kind: 'route', path: '/daily-profit' },
+        availability: 'active',
+        match: [/^\/daily-profit(\/|$)/],
+      },
+      {
+        key: 'financial-position',
+        label: 'Financial position',
+        searchLabel: 'Financial position',
+        icon: 'wallet',
+        destination: { kind: 'route', path: '/financial-position' },
+        availability: 'active',
+        match: [/^\/financial-position(\/|$)/],
       },
       {
         key: 'customers',
@@ -161,7 +227,25 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'users',
         destination: { kind: 'route', path: '/customers' },
         availability: 'active',
-        match: [/^\/customers(\/|$)/],
+        match: [/^\/customers(?!\/account-controls|\/staff-benefit)(\/|$)/],
+      },
+      {
+        key: 'customer-controls',
+        label: 'Customer controls',
+        searchLabel: 'Customer controls',
+        icon: 'users',
+        destination: { kind: 'route', path: '/customers/account-controls' },
+        availability: 'active',
+        match: [/^\/customers\/account-controls(\/|$)/],
+      },
+      {
+        key: 'staff-benefit',
+        label: 'Staff fuel benefit',
+        searchLabel: 'Staff fuel benefit',
+        icon: 'users',
+        destination: { kind: 'route', path: '/customers/staff-benefit' },
+        availability: 'active',
+        match: [/^\/customers\/staff-benefit(\/|$)/],
       },
     ],
   },
@@ -177,7 +261,25 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'truck',
         destination: { kind: 'route', path: '/suppliers' },
         availability: 'active',
-        match: [/^\/suppliers(\/|$)/],
+        match: [/^\/suppliers(?!\/due)(\/|$)/],
+      },
+      {
+        key: 'payments-due',
+        label: 'Payments due',
+        searchLabel: 'Payments due',
+        icon: 'wallet',
+        destination: { kind: 'route', path: '/suppliers/due' },
+        availability: 'active',
+        match: [/^\/suppliers\/due(\/|$)/],
+      },
+      {
+        key: 'purchasing',
+        label: 'Purchase orders',
+        searchLabel: 'Purchase orders',
+        icon: 'inbox',
+        destination: { kind: 'route', path: '/purchasing' },
+        availability: 'active',
+        match: [/^\/purchasing(\/|$)/],
       },
     ],
   },
@@ -237,6 +339,7 @@ export type WorkContext = {
   tenantId?: string;
   legalEntityId?: string;
   stationId?: string;
+  allStations?: boolean;
 };
 
 const FORWARDED_PARAMS = ['tenantId', 'legalEntityId'] as const;
@@ -252,8 +355,36 @@ export function readWorkContext(
   }
   const stationInPath = pathname?.match(/^\/stations\/([^/]+)/)?.[1];
   const stationId = stationInPath ? safeDecode(stationInPath) : searchParams?.get('stationId');
-  if (stationId) context.stationId = stationId;
+  const all = searchParams?.get('allStations');
+  if (all === 'true' || all === '1') context.allStations = true;
+  else if (stationId) context.stationId = stationId;
   return context;
+}
+
+/** Retain the server-validated scope when a same-organisation link supplies only part of it. */
+export function navigationWorkContext(
+  pathname: string | null,
+  params: URLSearchParams,
+  validated?: WorkContext,
+): WorkContext {
+  const explicit = readWorkContext(pathname, params);
+  if (!Object.keys(explicit).length && !params.has('allStations')) return validated ?? explicit;
+  if (
+    validated &&
+    explicit.tenantId === validated.tenantId &&
+    !explicit.stationId &&
+    !params.has('allStations') &&
+    (!explicit.legalEntityId || explicit.legalEntityId === validated.legalEntityId)
+  )
+    return { ...validated, ...explicit };
+  if (
+    validated &&
+    !explicit.tenantId &&
+    explicit.stationId &&
+    explicit.stationId === validated.stationId
+  )
+    return { ...validated, ...explicit };
+  return explicit;
 }
 
 function safeDecode(value: string) {
@@ -307,6 +438,13 @@ export function resolveNavigationItem(
         message: destination.message,
       };
     case 'station-route': {
+      if (context.allStations) {
+        const path =
+          destination.segment === 'reconciliations'
+            ? '/operations/reconciliations'
+            : `/${destination.segment}`;
+        return { ...rest, state: 'link', href: withQuery(path, context, false) };
+      }
       if (!context.stationId) {
         return {
           ...rest,
@@ -330,7 +468,9 @@ function withQuery(path: string, context: WorkContext, includeStation: boolean) 
     const value = context[name];
     if (value) query.set(name, value);
   }
-  if (includeStation && context.stationId) query.set('stationId', context.stationId);
+  if (context.allStations) query.set('allStations', 'true');
+  if (!context.allStations && includeStation && context.stationId)
+    query.set('stationId', context.stationId);
   const search = query.toString();
   return search ? `${path}?${search}` : path;
 }

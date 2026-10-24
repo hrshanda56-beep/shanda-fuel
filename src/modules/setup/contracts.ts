@@ -49,6 +49,8 @@ export type SetupSupplier = Readonly<{
   version: number;
 }>;
 
+export type SetupSupervisor = Readonly<{ membershipId: string; name: string }>;
+
 export type SetupBlocker = Readonly<{ code: string; message: string }>;
 
 export type ReadinessAreaCode = 'PRICES' | 'TANKS' | 'PUMPS' | 'SHIFTS' | 'PAYMENTS' | 'STAFF';
@@ -144,6 +146,9 @@ export type ConfigurationSetupOverview = Readonly<{
   shiftTemplates: readonly SetupShiftTemplate[] | null;
   prices: readonly SetupPrice[] | null;
   suppliers: readonly SetupSupplier[] | null;
+  /** Active supervisors assigned to this station; the responsible one is chosen from them. */
+  supervisors: readonly SetupSupervisor[] | null;
+  responsibleSupervisorMembershipId: string | null;
   blockers: readonly SetupBlocker[];
 }>;
 

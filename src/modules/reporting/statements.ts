@@ -46,10 +46,37 @@ function categoryLabel(category: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * Fuel given to staff and management is counted as fuel sold (its litres leave stock and its cost
+ * is in cost of sales), so the value at selling price is shown as a cost of the benefit rather
+ * than as income received. DEC-044.
+ */
+export function approvedFuelBenefit(report: ManagementReport): string {
+  return (
+    report.sales.payments?.find((row) => row.method === 'STAFF_OR_MANAGEMENT_FUEL')?.amount ?? '0'
+  );
+}
+
+function hasApprovedFuel(report: ManagementReport): boolean {
+  return exact(approvedFuelBenefit(report)).value.gt(0);
+}
+
+function recognizedOperatingExpenses(report: ManagementReport): string {
+  return addExact(
+    addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
+    approvedFuelBenefit(report),
+  );
+}
+
 /** Recorded expenses summed by category, largest first. */
-export function expensesByCategory(report: ManagementReport): StatementLine[] {
+export function expensesByCategory(
+  report: ManagementReport,
+  classification?: 'OPERATING' | 'FIXED_COST',
+): StatementLine[] {
   const totals = new Map<string, string>();
-  for (const row of report.expenses.rows) {
+  for (const row of report.expenses.rows.filter(
+    (expense) => !classification || expense.classification === classification,
+  )) {
     totals.set(row.category, addExact(totals.get(row.category) ?? '0', row.amount));
   }
   return [...totals.entries()]
@@ -61,13 +88,18 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
   const revenue = report.revenue.recognizedRevenue;
   const cogs = report.costing.restatedCogs;
   const gross = report.grossMargin;
-  const expenses = report.expenses.total;
-  const net = gross === null ? null : subtractExact(gross, expenses);
+  const operatingExpenses = recognizedOperatingExpenses(report);
+  const net = gross === null ? null : subtractExact(gross, operatingExpenses);
   const margin = gross === null ? null : ratioPercentage(gross, revenue);
   const notes = [
     'Revenue is recognised revenue and cost of sales is restated landed cost, both from approved records.',
-    'Expenses are those recorded for the period. Depreciation, tax and financing costs are not included.',
+    'Operating expenses and fixed costs are recognised separately. Depreciation, tax and financing costs are not included.',
   ];
+  if (hasApprovedFuel(report)) {
+    notes.push(
+      'Fuel approved for staff and management is counted as fuel sold. Its value at the selling price is shown as a benefit cost, not as income received.',
+    );
+  }
   if (report.costing.unvaluedSaleCount > 0) {
     notes.unshift(
       `${report.costing.unvaluedSaleCount} of ${report.costing.saleCount} sales have no cost yet, so cost of sales, gross profit and the result are not shown.`,
@@ -102,8 +134,28 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
       {
         heading: 'Operating expenses',
         lines: [
-          ...expensesByCategory(report),
-          { label: 'Total operating expenses', value: expenses, kind: 'subtotal' },
+          ...expensesByCategory(report, 'OPERATING'),
+          ...(hasApprovedFuel(report)
+            ? [
+                {
+                  label: 'Staff and management fuel',
+                  value: approvedFuelBenefit(report),
+                  note: 'Approved fuel at selling price',
+                },
+              ]
+            : []),
+          {
+            label: 'Total operating expenses',
+            value: addExact(report.expenses.operatingTotal, approvedFuelBenefit(report)),
+            kind: 'subtotal',
+          },
+        ],
+      },
+      {
+        heading: 'Fixed costs',
+        lines: [
+          ...expensesByCategory(report, 'FIXED_COST'),
+          { label: 'Total fixed costs', value: report.expenses.fixedCostTotal, kind: 'subtotal' },
         ],
       },
       { lines: [{ label: 'Net operating result', value: net, kind: 'total' }] },
@@ -270,6 +322,180 @@ export function buildCommercialStatement(report: ManagementReport): Statement {
   };
 }
 
+/**
+ * Net current position: what the business holds or is owed, less what it owes, as of the end
+ * date. It is a management view of the short-term position, not a balance sheet: stock at cost,
+ * bank balances and unpaid expenses are not in it.
+ */
+export function buildNetPosition(report: ManagementReport): Statement {
+  const { cash, providers, suppliers, customers } = report;
+  const customersKnown =
+    customers.availability === 'AVAILABLE' &&
+    customers.receivableBalance !== null &&
+    customers.prepaidValueBalance !== null;
+  const holds = customersKnown
+    ? sumExact([
+        cash.collectedButNotBanked,
+        providers.unmatchedEvidenceAmount,
+        customers.receivableBalance!,
+      ])
+    : null;
+  const owes = customersKnown
+    ? sumExact([suppliers.outstandingBalance, customers.prepaidValueBalance!])
+    : null;
+  return {
+    groups: [
+      {
+        heading: 'What the business holds or is owed',
+        lines: [
+          { label: 'Cash collected, not yet banked', value: cash.collectedButNotBanked },
+          {
+            label: 'Card and mobile payments not yet received',
+            value: providers.unmatchedEvidenceAmount,
+          },
+          { label: 'Owed by credit customers', value: customers.receivableBalance },
+          { label: 'Total held or owed to us', value: holds, kind: 'subtotal' },
+        ],
+      },
+      {
+        heading: 'What the business owes',
+        lines: [
+          { label: 'Owed to suppliers', value: suppliers.outstandingBalance },
+          { label: 'Prepaid customer balances', value: customers.prepaidValueBalance },
+          { label: 'Total owed by us', value: owes, kind: 'subtotal' },
+        ],
+      },
+      {
+        lines: [
+          {
+            label: 'Net current position',
+            value: holds === null || owes === null ? null : subtractExact(holds, owes),
+            kind: 'total',
+          },
+        ],
+      },
+    ],
+    notes: [
+      'Stock at cost, bank account balances and unpaid expenses are not included.',
+      ...(customersKnown
+        ? []
+        : [
+            'Customer balances are kept for the whole organisation, so the net position is only shown when all stations are included.',
+          ]),
+    ],
+  };
+}
+
+export type PositionFlag = 'POSITIVE' | 'NEGATIVE' | 'EVEN' | 'UNAVAILABLE';
+
+export type FinancialPosition = Readonly<{
+  statement: Statement;
+  /** Total of what we hold or are owed; null when any included figure is unknown. */
+  totalHeld: string | null;
+  /** Total of what we owe; null when any included figure is unknown. */
+  totalOwed: string | null;
+  net: string | null;
+  flag: PositionFlag;
+  /** Names of the figures that are not known, so a screen can say why there is no net. */
+  missing: readonly string[];
+}>;
+
+/**
+ * The owner's financial position: what the business holds or is owed (cash at stations, banked
+ * cash, card and mobile payments awaiting settlement, debtors, stock at cost) less what it owes
+ * (suppliers, unpaid expenses, prepaid customer balances). The net is shown only when every
+ * included figure is known, with a clear positive or negative flag. Liabilities the system does
+ * not record (transporters and other creditors) are listed as not recorded and left out of the
+ * total. Unlike buildNetPosition, which the existing report screens use, this one includes stock
+ * value, banked cash and unpaid expenses.
+ */
+export function buildFinancialPosition(report: ManagementReport): FinancialPosition {
+  const { cash, providers, suppliers, customers } = report;
+  const extra = report.ownerPosition ?? null;
+  const customersKnown =
+    customers.availability === 'AVAILABLE' &&
+    customers.receivableBalance !== null &&
+    customers.prepaidValueBalance !== null;
+  const held: StatementLine[] = [
+    { label: 'Cash at stations, not yet banked', value: cash.collectedButNotBanked },
+    { label: 'Cash banked', value: cash.banked },
+    {
+      label: 'Card and mobile payments awaiting settlement',
+      value: providers.unmatchedEvidenceAmount,
+    },
+    { label: 'Owed by credit customers', value: customers.receivableBalance },
+    {
+      label: 'Fuel stock at cost',
+      value: extra?.stockValue ?? null,
+      note:
+        extra && extra.stockValue === null
+          ? `${extra.unvaluedStockStreams} tank(s) hold fuel with no cost yet.`
+          : extra
+            ? undefined
+            : 'Not available.',
+    },
+  ];
+  const owed: StatementLine[] = [
+    { label: 'Owed to suppliers', value: suppliers.outstandingBalance },
+    { label: 'Expenses not yet paid', value: extra?.unpaidExpenses ?? null },
+    { label: 'Prepaid customer balances', value: customers.prepaidValueBalance },
+    {
+      label: 'Transporters and other creditors',
+      value: null,
+      note: 'Not recorded in the system, so not in the total.',
+    },
+  ];
+  const countable = (line: StatementLine) => line.label !== 'Transporters and other creditors';
+  const missing = [...held, ...owed.filter(countable)]
+    .filter((line) => line.value === null)
+    .map((line) => line.label);
+  const totalHeld = held.some((l) => l.value === null) ? null : sumExact(held.map((l) => l.value));
+  const totalOwed = owed.filter(countable).some((l) => l.value === null)
+    ? null
+    : sumExact(owed.filter(countable).map((l) => l.value));
+  const net = totalHeld === null || totalOwed === null ? null : subtractExact(totalHeld, totalOwed);
+  const flag: PositionFlag =
+    net === null
+      ? 'UNAVAILABLE'
+      : exact(net).value.isZero()
+        ? 'EVEN'
+        : exact(net).value.isNegative()
+          ? 'NEGATIVE'
+          : 'POSITIVE';
+  return {
+    statement: {
+      groups: [
+        {
+          heading: 'What the business holds or is owed',
+          lines: [
+            ...held,
+            { label: 'Total held or owed to us', value: totalHeld, kind: 'subtotal' },
+          ],
+        },
+        {
+          heading: 'What the business owes',
+          lines: [...owed, { label: 'Total owed by us', value: totalOwed, kind: 'subtotal' }],
+        },
+        { lines: [{ label: 'Net position', value: net, kind: 'total' }] },
+      ],
+      notes: [
+        'Cash banked is the deposits recorded in the chosen dates; it is not a bank statement balance.',
+        'Stock and unpaid expenses are shown as they stand now.',
+        ...(customersKnown
+          ? []
+          : [
+              'Customer balances are kept for the whole organisation, so the net position is only shown when all stations are included.',
+            ]),
+      ],
+    },
+    totalHeld,
+    totalOwed,
+    net,
+    flag,
+    missing,
+  };
+}
+
 export type QuickFigure = Readonly<{
   id: string;
   label: string;
@@ -282,11 +508,12 @@ export type QuickFigure = Readonly<{
 /** The handful of figures an owner looks at first, each linked to the report behind it. */
 export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
   const gross = report.grossMargin;
-  const net = gross === null ? null : subtractExact(gross, report.expenses.total);
+  const totalExpenses = addExact(report.expenses.total, approvedFuelBenefit(report));
+  const net = gross === null ? null : subtractExact(gross, totalExpenses);
   return [
     { id: 'sales', label: 'Total Sales', value: report.sales.salesValue, slug: 'sales' },
     { id: 'gross', label: 'Gross Profit', value: gross, slug: 'profit-loss' },
-    { id: 'expenses', label: 'Total Expenses', value: report.expenses.total, slug: 'profit-loss' },
+    { id: 'expenses', label: 'Total Expenses', value: totalExpenses, slug: 'profit-loss' },
     { id: 'net', label: 'Net Profit', value: net, slug: 'profit-loss' },
     { id: 'banked', label: 'Banked Cash', value: report.cash.banked, slug: 'cash-movement' },
     {
@@ -353,7 +580,7 @@ export function buildIncomeStatement(
   const net = (report: ManagementReport | null) =>
     report === null || report.grossMargin === null
       ? null
-      : subtractExact(report.grossMargin, report.expenses.total);
+      : subtractExact(report.grossMargin, recognizedOperatingExpenses(report));
   const margin =
     current.grossMargin === null
       ? null
@@ -397,8 +624,8 @@ export function buildIncomeStatement(
       id: 'expenses',
       label: 'Operating expenses',
       kind: 'section',
-      current: current.expenses.total,
-      previous: previous?.expenses.total ?? null,
+      current: recognizedOperatingExpenses(current),
+      previous: previous ? recognizedOperatingExpenses(previous) : null,
     },
     ...labels.map((label): IncomeRow => ({
       id: `expense-${label}`,

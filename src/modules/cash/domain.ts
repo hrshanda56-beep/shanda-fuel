@@ -88,7 +88,7 @@ function decimal(value: string): ExactDecimal {
   try {
     return new ExactDecimal(value);
   } catch {
-    throw new AppError('VALIDATION_FAILED', 'Amount must be a finite decimal string');
+    throw new AppError('VALIDATION_FAILED', 'Enter the amount as a number, for example 125.50');
   }
 }
 

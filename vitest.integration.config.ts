@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: { alias: { 'server-only': serverOnlyShim } },
   test: {
     environment: 'node',
-    setupFiles: ['./tests/vitest/environment.ts'],
+    setupFiles: ['./tests/vitest/environment.ts', './tests/vitest/clerk-integration.ts'],
     include: ['tests/integration/**/*.test.ts'],
     passWithNoTests: false,
     // Integration files share one live PostgreSQL database. Some tests install

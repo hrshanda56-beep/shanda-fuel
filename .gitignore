@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 .next/
+.next-playwright/
 out/
 dist/
 coverage/

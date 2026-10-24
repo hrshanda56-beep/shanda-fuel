@@ -1,13 +1,16 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { appSchema } from './namespaces';
@@ -31,6 +34,7 @@ export const suppliers = appSchema.table(
     legalName: text('legal_name').notNull(),
     registrationReference: text('registration_reference'),
     status: text('status').notNull().default('ACTIVE'),
+    creditLimit: numeric('credit_limit', { precision: 20, scale: 4 }),
     version: integer('version').notNull().default(0),
     createdBy: uuid('created_by').notNull(),
     updatedBy: uuid('updated_by').notNull(),
@@ -44,6 +48,10 @@ export const suppliers = appSchema.table(
     check('suppliers_code_nonempty_ck', sql`btrim(${table.code}) <> ''`),
     check('suppliers_legal_name_nonempty_ck', sql`btrim(${table.legalName}) <> ''`),
     check('suppliers_status_ck', sql`${table.status} in ('ACTIVE','INACTIVE')`),
+    check(
+      'suppliers_credit_limit_ck',
+      sql`${table.creditLimit} is null or ${table.creditLimit} >= 0`,
+    ),
     foreignKey({
       columns: [table.tenantId],
       foreignColumns: [tenants.id],
@@ -85,16 +93,27 @@ export const supplierDocuments = appSchema.table(
     reversedBy: uuid('reversed_by'),
     reversedAt: utcTimestamp('reversed_at'),
     reversalReason: text('reversal_reason'),
+    /** NULL net/vat/mode marks a legacy header-only document (migration 0037). */
+    netAmount: moneyColumn('net_amount'),
+    vatAmount: moneyColumn('vat_amount'),
+    vatMode: text('vat_mode'),
+    /** CASH or CREDIT on invoices; NULL = not recorded (migration 0055). */
+    paymentTerms: text('payment_terms'),
+    creditPeriodDays: integer('credit_period_days'),
+    varianceStatus: text('variance_status').notNull().default('NOT_EVALUATED'),
+    varianceSnapshot: jsonb('variance_snapshot'),
+    varianceApprovalReason: text('variance_approval_reason'),
+    varianceApprovedBy: uuid('variance_approved_by'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },
   (table) => [
     unique('supplier_documents_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('supplier_documents_tenant_supplier_reference_uidx').on(
-      table.tenantId,
-      table.supplierId,
-      table.referenceNumber,
-    ),
+    // Duplicate control for non-reversed documents only (migration 0038): a corrected invoice
+    // may reuse the reference of one that was reversed.
+    uniqueIndex('supplier_documents_tenant_supplier_reference_uidx')
+      .on(table.tenantId, table.supplierId, table.referenceNumber)
+      .where(sql`${table.state} <> 'REVERSED'`),
     index('supplier_documents_tenant_supplier_state_idx').on(
       table.tenantId,
       table.supplierId,
@@ -112,6 +131,21 @@ export const supplierDocuments = appSchema.table(
     check(
       'supplier_documents_due_date_order_ck',
       sql`${table.dueDate} is null or ${table.dueDate} >= ${table.documentDate}`,
+    ),
+    check(
+      'supplier_documents_payment_terms_ck',
+      sql`${table.paymentTerms} is null or ${table.paymentTerms} in ('CASH','CREDIT')`,
+    ),
+    check(
+      'supplier_documents_credit_period_ck',
+      sql`${table.creditPeriodDays} is null or (${table.creditPeriodDays} >= 0 and ${table.creditPeriodDays} <= 365)`,
+    ),
+    check(
+      'supplier_documents_terms_shape_ck',
+      sql`(${table.paymentTerms} is null and ${table.creditPeriodDays} is null)
+        or (${table.documentType} = 'INVOICE' and ${table.paymentTerms} = 'CASH' and ${table.creditPeriodDays} is null and ${table.dueDate} is null)
+        or (${table.documentType} = 'INVOICE' and ${table.paymentTerms} = 'CREDIT' and ${table.dueDate} is not null
+          and (${table.creditPeriodDays} is null or ${table.dueDate} = to_char((${table.documentDate})::date + ${table.creditPeriodDays}, 'YYYY-MM-DD')))`,
     ),
     check(
       'supplier_documents_post_provenance_ck',
@@ -166,6 +200,13 @@ export const supplierDocumentDeliveryRefs = appSchema.table(
     allocationId: uuid('allocation_id'),
     linkedBy: uuid('linked_by').notNull(),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
+    /** Coverage facts (migration 0037): see ADR-018 D2. Only active/released_at ever change. */
+    documentType: text('document_type').notNull(),
+    invoicedQuantityLitres: numeric('invoiced_quantity_litres', { precision: 18, scale: 3 }),
+    invoicedAmount: moneyColumn('invoiced_amount'),
+    active: boolean('active').notNull().default(false),
+    releasedAt: utcTimestamp('released_at'),
+    needsFinanceReview: boolean('needs_finance_review').notNull().default(false),
   },
   (table) => [
     unique('supplier_document_delivery_refs_tenant_id_id_uidx').on(table.tenantId, table.id),

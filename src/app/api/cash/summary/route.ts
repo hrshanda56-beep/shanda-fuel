@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { contextRoutePolicy, readContextRoute } from '../../../../modules/context';
-import { resolveCurrentContext } from '../../../../modules/context/server';
 import { getCashStationSummaryFromRequest } from '../../../../modules/cash/queries';
-import { AppError } from '../../../../platform/errors';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 
 const querySchema = z
@@ -41,19 +38,12 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
       stationId: url.searchParams.get('stationId'),
       allStations: url.searchParams.get('allStations') ?? undefined,
     });
-    const pathname = `/stations/${encodeURIComponent(input.stationId)}/cash`;
-    const policy = contextRoutePolicy(pathname);
-    const resolution = await resolveCurrentContext(request, {
-      route: readContextRoute(pathname, url.searchParams),
-      policy,
-    });
-    const selection = resolution.current;
-    if (!selection?.stationId || selection.allStations) {
-      throw new AppError(
-        'FORBIDDEN',
-        'An authorised station context is required for cash summaries',
-      );
-    }
+    const selection = {
+      organisationId: input.organisationId ?? input.tenantId!,
+      ...(input.legalEntityId ? { legalEntityId: input.legalEntityId } : {}),
+      stationId: input.stationId,
+      allStations: false,
+    };
     return NextResponse.json(
       await getCashStationSummaryFromRequest(request, {
         selection,

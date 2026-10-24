@@ -17,6 +17,11 @@ import {
   setCustomerLegalEntityFromRequest,
   updateCustomerFromRequest,
 } from '../../../../modules/customers/commands';
+import {
+  overrideCustomerCreditLimitFromRequest,
+  recordCustomerEntryDetailsFromRequest,
+} from '../../../../modules/customers/account-controls';
+import { AppError } from '../../../../platform/errors';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
 
@@ -28,7 +33,15 @@ export const POST = withRequestObservability(
   withPersistentRateLimit(async (request: Request): Promise<Response> => {
     try {
       await requireAuthenticatedActor(request);
-      const body: unknown = await request.json();
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'The request could not be read. Reload the page and try again.',
+        );
+      }
       const commandType =
         typeof body === 'object' && body !== null && 'commandType' in body
           ? (body as { commandType: unknown }).commandType
@@ -62,6 +75,10 @@ export const POST = withRequestObservability(
           return response(await cancelCustomerFuelAuthorizationFromRequest(request, body));
         case 'ExpireCustomerFuelAuthorization':
           return response(await expireCustomerFuelAuthorizationFromRequest(request, body));
+        case 'RecordCustomerEntryDetails':
+          return response(await recordCustomerEntryDetailsFromRequest(request, body), 201);
+        case 'OverrideCustomerCreditLimit':
+          return response(await overrideCustomerCreditLimitFromRequest(request, body));
       }
     } catch (error) {
       return apiErrorResponse(request, error, {

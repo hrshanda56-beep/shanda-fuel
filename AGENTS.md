@@ -49,8 +49,9 @@ Important established constraints include:
 - Production migrations are explicit operations and are not assumed to run automatically on deploy.
 - First-user production bootstrap is a one-time, tightly constrained security path with a dry run, zero-write proof, explicit human approval, and mandatory credential cleanup.
 - Production secrets must not appear in chat, committed files, generated credential files, logs, or process argv.
-- Phase 0 Customers is read-oriented and tenant-authorised; do not add write/schema/RLS/auth behavior unless explicitly assigned.
-- Phase 0 Daily Operations work is primarily composition/alignment and correctness; do not invent new accounting/ledger/approval semantics.
+- Delivery scope is the client's full v1 (DEC-044, 2026-10-21), built on `codex/clerk-only-auth-20261017`; the ShandaHR link is deferred. Customer, cash, approved-fuel, alert and offline-draft work is in scope. Phase 0 release gates still apply to every release.
+- Clerk is the only authentication provider (DEC-043). Do not reintroduce Better Auth or provider switching.
+- New schema, RLS, write workflows and accounting rules are allowed when they implement the recorded v1 scope. Follow existing migration, RLS and audit patterns; do not invent semantics that DEC-044, PRODUCT_SPEC or the human have not settled.
 - Dashboard/management UI must not display synthetic production figures.
 - Station operational time must use station timezone metadata, not browser-local guesses.
 - Exact monetary precision must be preserved where the schema/API contract requires it.
@@ -103,13 +104,12 @@ Examples:
 
 Major ambiguities must be surfaced, not hidden behind assumptions.
 
+Resolved by DEC-044: Supervisor meaning (the person responsible for a station), account-sale reference (the customer), approved-fuel accounting (like fuel sold), and cash handover roles (no minimum amounts; bank deposits still need a reference).
+
 Examples of currently unresolved product semantics include:
 
-- exact Daily Operations “supervisor” meaning,
-- account-sale reference requirements,
-- approved-fuel authorization/terminology,
-- minimum cash handover/deposit/bank-reference rules,
-- full customer lifecycle priorities,
+- default tank-variance tolerances and reminder windows,
+- full customer lifecycle priorities beyond DEC-041,
 - full end-state human role/permission matrix.
 
 Do not turn these into code-level requirements without a recorded human decision.
@@ -261,7 +261,7 @@ Preserve established shared-shell patterns:
 - preserve light/dark compatibility,
 - use truthful loading/empty/error/context-required states.
 
-For Phase 0, do not expand Daily Operations or Customers into unapproved write workflows merely because the UI could accommodate them.
+Do not add write workflows beyond the recorded v1 scope (DEC-044) merely because the UI could accommodate them. Setup and access screens must suit non-technical users: guided, plain language, no identifiers shown, phone friendly.
 
 ## 12. Dependencies
 
@@ -309,44 +309,6 @@ A task is Done only when all applicable items are true:
 
 A task is not Done if the only evidence is “code compiles” or “implementation agent says ready.”
 
-## 15. Multi-agent rules
-
-### 15.1 Divide work along clear boundaries
-
-Prefer parallel work by domain/file boundary, for example:
-
-- access/security operator tooling,
-- Customers query behavior,
-- Daily Operations UI correctness,
-- owner/readiness documentation.
-
-Avoid assigning multiple implementation agents to the same files.
-
-### 15.2 Declare dependencies
-
-Every agent should know whether its work depends on another branch/task and whether it is allowed to proceed before that dependency lands.
-
-### 15.3 Review agents are independent
-
-An independent reviewer must inspect actual code/diff/files and relevant tests. Do not simply restate the implementation agent’s report.
-
-### 15.4 Revalidate after integration
-
-Parallel branches that pass independently can still fail when combined.
-
-After integration, rerun the relevant combined:
-
-- unit,
-- DB/integration,
-- browser,
-- accessibility,
-- type/lint/build,
-- security/release checks.
-
-### 15.5 Do not create filler concurrency
-
-Use only useful parallel lanes. More agents are not automatically faster if they create overlapping diffs and review overhead.
-
 ## 16. Production rules
 
 Do not contact production unless the human explicitly authorizes the production operation and the required review gate is green.
@@ -393,15 +355,8 @@ Keep the report factual. Do not call a blocked or skipped gate PASS.
 
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may
-all differ from prior versions. Read the relevant guide in
-`node_modules/next/dist/docs/` (resolved from this file's directory; in
-monorepos the `next` package may not be visible from the repo root) before
-writing any code. Heed deprecation notices.
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
-This block is written and re-added by `next dev` — verify at
-`node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from
-a diff only re-creates the uncommitted change; committing it with your work
-keeps the tree clean.
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->

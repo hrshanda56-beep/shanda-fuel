@@ -4,16 +4,63 @@ const uuid = z.string().uuid();
 const decimalText = z
   .string()
   .trim()
-  .regex(/^\d+(?:\.\d+)?$/, 'A non-negative decimal string is required');
+  .regex(
+    /^\d+(?:\.\d+)?$/,
+    'Enter a number using digits and an optional decimal point, for example 250.00',
+  );
 const currency = z
   .string()
   .trim()
-  .regex(/^[A-Z]{3}$/, 'An uppercase ISO-style currency code is required');
+  .regex(/^[A-Z]{3}$/, 'Use a three-letter currency code in capitals, for example USD');
 const instant = z.string().datetime({ offset: true });
 const statementPeriod = z
   .string()
   .trim()
   .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'A statement period must use YYYY-MM');
+
+const requiredText = (max: number) => z.string().trim().min(1).max(max);
+
+/**
+ * S13: what is written down about one account transaction. Every field is optional on its own (the
+ * owner has not said which are mandatory); at least one must be given. Voucher numbers are NOT
+ * required to be unique (open owner decision).
+ */
+export const customerEntryDetailsSchema = z
+  .object({
+    /** Stored in capitals so "abc 1234" and "ABC 1234" are the same vehicle. */
+    vehicleRegistration: requiredText(20)
+      .transform((value) => value.toUpperCase())
+      .optional(),
+    driverName: requiredText(120).optional(),
+    voucherNumber: requiredText(60).optional(),
+    /** The person (membership) who approved the transaction. */
+    approvedByMembershipId: uuid.optional(),
+    /** An already-uploaded supporting document (see the documents module). */
+    documentId: uuid.optional(),
+  })
+  .strict()
+  .refine((details) => Object.values(details).some((value) => value !== undefined), {
+    message: 'Add at least one of vehicle, driver, voucher number, approver or document.',
+  });
+
+export const recordCustomerEntryDetailsSchema = z.object({
+  commandType: z.literal('RecordCustomerEntryDetails'),
+  tenantId: uuid,
+  /** The station where the transaction happened or the cash was received. */
+  stationId: uuid,
+  ledgerEntryId: uuid,
+  details: customerEntryDetailsSchema,
+});
+
+export const overrideCustomerCreditLimitSchema = z.object({
+  commandType: z.literal('OverrideCustomerCreditLimit'),
+  tenantId: uuid,
+  accountId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  newLimit: decimalText.refine((value) => /[1-9]/.test(value), 'A credit limit must be above zero'),
+  approvedByMembershipId: uuid,
+  reason: z.string().trim().min(1, 'Say why the limit is being changed').max(500),
+});
 
 export const customerAccountTypeSchema = z.enum(['CREDIT', 'PREPAID_VALUE', 'PREPAID_LITRES']);
 export const customerSourceSchema = z.object({
@@ -60,7 +107,7 @@ export const updateCustomerSchema = customerLifecycleCommandBase
       refinement.addIssue({
         code: 'custom',
         path: ['accountReference'],
-        message: 'At least one customer field must be provided',
+        message: 'Change at least one detail before saving.',
       });
     }
   });
@@ -89,21 +136,21 @@ function refineStationScope(
     refinement.addIssue({
       code: 'custom',
       path: ['stationIds'],
-      message: 'Choose at least one station, or use all stations',
+      message: 'Choose at least one station, or use all stations.',
     });
   }
   if (input.stationScope !== 'SELECTED' && count > 0) {
     refinement.addIssue({
       code: 'custom',
       path: ['stationIds'],
-      message: 'Stations can only be listed when the scope is SELECTED',
+      message: 'Stations can only be listed when you choose specific stations.',
     });
   }
   if (new Set(input.stationIds).size !== count) {
     refinement.addIssue({
       code: 'custom',
       path: ['stationIds'],
-      message: 'Each station may be listed once',
+      message: 'Each station can only be listed once.',
     });
   }
 }
@@ -127,6 +174,17 @@ export const createCustomerAccountSchema = z
     accountType: customerAccountTypeSchema,
     currency,
     creditLimit: decimalText.optional(),
+    /**
+     * Marks the credit account as a staff fuel benefit. The credit limit is then the monthly USD
+     * limit (PROPOSED default, awaiting owner sign-off). Changing it later needs the credit-limit
+     * override approval.
+     */
+    staffBenefit: z
+      .object({
+        staffName: z.string().trim().min(1, 'Enter the staff member’s name.').max(200),
+        staffMembershipId: uuid.optional(),
+      })
+      .optional(),
     /** Optional during onboarding; omitted scope remains unconfigured. */
     stationScope: customerAccountStationScopeSchema.optional(),
     stationIds: z.array(uuid).max(100).optional(),
@@ -147,7 +205,21 @@ export const createCustomerAccountSchema = z
       refinement.addIssue({
         code: 'custom',
         path: ['creditLimit'],
-        message: 'Credit limits apply only to credit accounts',
+        message: 'Only credit accounts have a credit limit.',
+      });
+    }
+    if (input.staffBenefit && input.accountType !== 'CREDIT') {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['staffBenefit'],
+        message: 'A staff fuel benefit uses a credit account.',
+      });
+    }
+    if (input.staffBenefit && input.currency !== 'USD') {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['currency'],
+        message: 'A staff fuel benefit limit is in US dollars.',
       });
     }
   });
@@ -185,6 +257,7 @@ export const completeCustomerFuelTransactionSchema = z.object({
   }),
   occurredAt: instant,
   businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  entryDetails: customerEntryDetailsSchema.optional(),
 });
 
 export const authorizeCustomerFuelSchema = z.object({
@@ -223,6 +296,7 @@ export const recordCustomerPaymentSchema = z.object({
   occurredAt: instant,
   businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   note: z.string().trim().max(500).optional(),
+  entryDetails: customerEntryDetailsSchema.optional(),
 });
 
 export const recordPrepaidTopUpSchema = z
@@ -239,6 +313,7 @@ export const recordPrepaidTopUpSchema = z
     source: customerSourceSchema,
     occurredAt: instant,
     businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    entryDetails: customerEntryDetailsSchema.optional(),
   })
   .superRefine((input, refinement) => {
     if (
@@ -258,7 +333,7 @@ export const recordPrepaidTopUpSchema = z
       refinement.addIssue({
         code: 'custom',
         path: ['litres'],
-        message: 'Prepaid litre top-ups require a product and litres',
+        message: 'Prepaid fuel top-ups need a fuel and a number of litres.',
       });
     }
   });
@@ -293,6 +368,9 @@ export type SetCustomerAccountStationsInput = z.infer<typeof setCustomerAccountS
 export type CompleteCustomerFuelTransactionInput = z.infer<
   typeof completeCustomerFuelTransactionSchema
 >;
+export type CustomerEntryDetailsInput = z.infer<typeof customerEntryDetailsSchema>;
+export type RecordCustomerEntryDetailsInput = z.infer<typeof recordCustomerEntryDetailsSchema>;
+export type OverrideCustomerCreditLimitInput = z.infer<typeof overrideCustomerCreditLimitSchema>;
 export type RecordCustomerPaymentInput = z.infer<typeof recordCustomerPaymentSchema>;
 export type RecordPrepaidTopUpInput = z.infer<typeof recordPrepaidTopUpSchema>;
 export type RequestCustomerFuelAuthorizationInput = z.infer<

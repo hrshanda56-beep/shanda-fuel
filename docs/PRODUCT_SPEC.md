@@ -462,6 +462,15 @@ The conversation has explicitly deferred substantial work such as:
 
 These are not to be pulled into Phase 0 unless a specific human instruction promotes them.
 
+### 16.3 v1 delivery scope (2026-10-21, DEC-044)
+
+By explicit human instruction the finish line is now the client's full v1 list.
+The items in 16.2 are promoted into scope, except the ShandaHR link, which is
+deferred. Offline drafts are staged (local autosave first, queued sync second).
+Alerts are email only for now. Supervisor, account-sale reference, approved-fuel
+accounting and cash handover roles are as recorded in DEC-044. Phase 0 release
+gates in section 17 still apply to every release.
+
 ## 17. Overall acceptance criteria
 
 A release is acceptable only when, where applicable:
@@ -495,3 +504,8 @@ assumptions:
 The owner decisions for Supervisor accountability, account-sale references,
 approved-fuel auditability, cash custody minimums, customer-account sequencing,
 and close-summary content are recorded above and are no longer unresolved.
+
+
+### Unified expense integration — 2026-10-19
+
+Approved unified expense direction: one independent expense identity combines incoming finance approvals/settlements/attachments/recognition with immutable fact versions and optional shift association. Payment remains separate from expense recognition. Reconciliation must use exact immutable source versions.

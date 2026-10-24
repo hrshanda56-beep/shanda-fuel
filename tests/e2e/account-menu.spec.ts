@@ -4,10 +4,9 @@ import { expect, test, type Page } from '@playwright/test';
 /*
  * Account menu (approved frozen AccountMenu look + PR #120 provider-aware sign-out). The panel is a
  * non-modal dialog (not an ARIA menu: it holds a theme radio group), so items are plain links/buttons.
- * Database-free: runs on the synthetic navigation fixture with Better Auth selected
- * (AUTH_PROVIDER=BETTER_AUTH). Network calls are routed in the test; nothing real
- * is contacted. Clerk-mode sign-out has no automated path (needs a Clerk test
- * instance); this suite proves Clerk is never touched in Better Auth mode.
+ * Database-free: runs on the explicit development navigation fixture. Sign-out
+ * tests substitute only Clerk's browser method to exercise UI success/errors;
+ * authenticated provider revocation is verified separately.
  */
 
 const DESKTOP = { width: 1280, height: 800 };
@@ -48,9 +47,25 @@ test.beforeEach(async ({ page }) => {
   }
 });
 
-async function openMenu(page: Page) {
+async function openMenu(page: Page, signOutBehavior?: 'success' | 'failure') {
   await page.goto(`/reports${CONTEXT_QUERY}`);
   await waitForHydration(page);
+  if (signOutBehavior) {
+    await page.waitForFunction(() =>
+      Boolean((window as unknown as { Clerk?: { loaded: boolean } }).Clerk?.loaded),
+    );
+    await page.evaluate((behavior) => {
+      const scope = window as unknown as {
+        Clerk: { signOut: () => Promise<void> };
+        testSignOutCalls: number;
+      };
+      scope.testSignOutCalls = 0;
+      scope.Clerk.signOut = async () => {
+        scope.testSignOutCalls++;
+        if (behavior === 'failure') throw new Error('simulated provider failure');
+      };
+    }, signOutBehavior);
+  }
   const trigger = page.locator('.shell-account-trigger:visible');
   await trigger.click();
   const menu = page.getByRole('dialog', { name: 'Account menu' });
@@ -141,51 +156,28 @@ test.describe('account menu items', () => {
   });
 });
 
-test.describe('sign out (Better Auth selected on the server)', () => {
+test.describe('Clerk sign out', () => {
   test.use({ viewport: DESKTOP });
 
-  test('signs out through Better Auth, never Clerk, and lands on /login', async ({ page }) => {
-    const clerkRequests: string[] = [];
-    page.on('request', (request) => {
-      // Network calls to Clerk (its API, its proxy route). Chunk names are checked
-      // against a production build instead (dev servers preload split chunks).
-      if (/\/api\/clerk|clerk\.(com|dev|accounts)/i.test(request.url())) {
-        clerkRequests.push(request.url());
-      }
-    });
-    let signOutCalls = 0;
-    await page.route('**/api/auth/sign-out', async (route) => {
-      signOutCalls += 1;
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true }),
-      });
-    });
-    const { menu } = await openMenu(page);
+  test('delegates sign-out to Clerk and lands on /login', async ({ page }) => {
+    const { menu } = await openMenu(page, 'success');
     await menu.getByRole('button', { name: 'Sign out' }).click();
-    await page.waitForURL(/\/login$/);
-    expect(signOutCalls).toBe(1);
-    // Better Auth mode must not call Clerk at all.
-    expect(clerkRequests).toEqual([]);
+    await page.waitForURL('**/login');
   });
 
-  test('a failed sign out says so, keeps the menu and the page, and can be retried', async ({
-    page,
-  }) => {
-    let calls = 0;
-    await page.route('**/api/auth/sign-out', (route) => {
-      calls += 1;
-      return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
-    });
-    const { menu } = await openMenu(page);
+  test('a failed Clerk sign out keeps the menu and supports retry', async ({ page }) => {
+    const { menu } = await openMenu(page, 'failure');
     const signOut = menu.getByRole('button', { name: 'Sign out' });
     await signOut.click();
     await expect(menu.getByRole('alert')).toHaveText('Sign out failed. Please try again.');
     await expect(signOut).toBeEnabled();
     expect(page.url()).toContain('/reports');
     await signOut.click();
-    await expect.poll(() => calls).toBe(2);
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { testSignOutCalls: number }).testSignOutCalls),
+      )
+      .toBe(2);
   });
 });
 

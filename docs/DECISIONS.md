@@ -1,5 +1,111 @@
 # Shanda Fuel — Decision Log
 
+## DEC-046 — The approved screens are locked (proposed as DEC-045 wording)
+
+Date: 2026-10-23. **Status:** ACCEPTED on the owner's behalf, on the explicit instruction of the
+project lead; owner sign-off reported by the project lead on 2026-10-23 (signed copy not yet filed; see `docs/v1-owner-decisions-proposed.md`). The screens
+owner-approved on 2026-10-22 are locked. A file listed in `docs/ui-lock/manifest.json` may change
+only with the owner's approval, recorded in the same change by regenerating the manifest. New
+screens must be written for non-technical users. Guard: `src/platform/ui-lock/ui-lock.test.ts`.
+
+## DEC-045 — Implementation choices made while building the v1 scope (for review)
+
+Date: 2026-10-21. Made by the implementing agent inside DEC-044, without a separate human
+answer. **Status:** PROPOSED. Each is small, reversible, and easy to change; confirm or correct.
+
+- **Cash handover rules.** The person receiving cash must be a different person from the one who
+  handed it over (nobody accepts their own handover). A count that differs from the expected
+  amount needs a written reason and goes to review; only a person who can resolve handovers
+  (administrator or owner) settles it, with a note. Accepting or settling moves the *counted*
+  amount between the two cash locations. Anyone who can accept a handover may also withdraw one
+  that is still open; otherwise only the sender may.
+- **Tank charts.** A dipstick chart is versioned and insert-only. A new chart applies to new dips;
+  old dips keep the litres they were recorded with. A reading outside the chart is refused, never
+  extrapolated. Litres between two chart rows are worked out in a straight line.
+- **Landed cost.** Fuel cost plus freight plus other direct costs, divided by the litres that
+  actually arrived (not the delivery-note litres). Each tank receives its share of the litres.
+- **Supplier credit limit.** A supplier may have a limit. 80% or more used is "near", above it is
+  "over". It warns (supplier page and Action Center); it never blocks a purchase.
+- **Reminder thresholds.** Stored per organisation, changeable by the owner or an administrator
+  (Settings > Reminders). Starting values until the client chooses: invoices due soon 7 days,
+  card/mobile payments late after 3 days, daily report late after 1 day, ignore cash shortages
+  under 0.01. Supplier ageing buckets are 1-7, 8-14, 15-30 and over 30 days.
+- **Stock signal.** A tank dip within its acceptable difference is green ("matches books"), up to
+  twice that is yellow, beyond is red; a tank without a dip or a tolerance shows "not checked",
+  never green.
+- **Offline queue.** Only a daily-report save that fails for lack of connection is queued, per
+  person, on the device (7 days). It is replayed with the same idempotency keys; if the record has
+  changed meanwhile it is shown as a conflict and never overwrites anything. Cash counts and
+  handovers are not queued until the client says they need it.
+- **Activity log.** Readable only with the audit permission held at organisation level.
+  Secret-looking fields are never displayed.
+- **Documents.** Files (photo, PDF, DOCX; 10 MB) attach to a delivery, bank deposit, cash
+  handover, daily report or expense at one station; stored privately under a random key; append
+  only. Uploading needs the document-upload permission (supervisor, finance, administrator,
+  owner); attendants cannot upload.
+- **Offline drafts, stage 1.** Unsent entries on the daily operations screen are copied to the
+  device (24 hours, tied to the saved record version, cleared after a successful save) and offered
+  back, never applied silently. They are per station and shift, not per person, so on a shared
+  device the next person could be offered them.
+
+## DEC-044 — Deliver the client's full v1 on the Clerk-only integration branch
+
+Date: 2026-10-21. Explicit human instruction. **Status:** ACCEPTED.
+
+- **Scope.** The finish line is the client's full v1 list, not Phase 0 alone. This
+  promotes the items listed in PRODUCT_SPEC §16.2 (cash custody and banking
+  workflow, approved-fuel accounting, alerts, offline drafts, editable settings,
+  richer exports and reports) into scope. **Deferred:** the ShandaHR link.
+- **Branch.** All work lands on `codex/clerk-only-auth-20261017` (Clerk is the
+  only authentication provider, DEC-043). Other branches are mined for finished
+  work only. Nothing merges to `main` or deploys without a separate instruction.
+- **Offline drafts.** In scope, staged: (1) local autosave and restore of unsent
+  form input; (2) queued entry and sync with conflict handling, scoped after
+  stage 1 is proven.
+- **Alerts.** Email only for now (Resend). In-app feed and dashboard tiles are
+  also in scope; SMS/WhatsApp/push are not.
+- **Supervisor.** The person responsible for a station. A station has a
+  responsible-supervisor assignment used for sign-off and cash handover. This
+  extends, and does not replace, the approver meaning in PRODUCT_SPEC §8.1.
+- **Account sale reference.** The customer. An account sale must carry a
+  customer account and is checked against that account's limit at entry.
+- **Approved fuel.** Accounted exactly like fuel sold: litres leave stock, cost
+  of fuel sold is recognised, a named beneficiary is recorded, and it is
+  included in expected-versus-accounted totals and in profit reporting as a
+  benefit cost.
+- **Cash handover.** No minimum amounts. The attendant surrenders cash to the
+  supervisor; an administrator or owner collects it from the supervisor. Every
+  hand-off records who held the cash, and the held, in-transit and banked states
+  are visible. A bank deposit still requires a bank/deposit reference
+  (PRODUCT_SPEC §8.4).
+- **Setup screens.** Designed for non-technical users: guided, plain language,
+  one task per screen, no identifiers shown, phone-friendly.
+
+Still open: default tank-variance tolerances and reminder windows (the client
+brief suggests 7, 14 and 30 days). Until decided they are configurable settings
+with no hard-coded production default beyond the brief.
+
+## Activation security clarification — 2026-10-18
+
+Explicit human instruction: after five incorrect activation codes the code is
+permanently invalid, not temporarily locked. A manager must generate a new code.
+The database persists failure counts, serializes concurrent attempts and burns
+the old hash. Replacement resets the budget; time alone does not. Keep one-time
+acceptance, 72-hour expiry and independent client throttling.
+
+## DEC-043 — Use Clerk alone; simplify the development authentication cutover
+
+Date: 2026-10-18. Explicit human instruction supersedes historical provider choices.
+Clerk owns credentials, recovery, MFA and authentication sessions. Shanda Fuel
+owns internal UUIDs, tenant memberships, scoped permissions and audit. Remove
+provider switching and Better Auth runtime/dependencies. The target development
+authentication data is disposable: drop obsolete credential/session tables and
+legacy mappings rather than archive them. Preserve business foreign keys and do
+not reset financial/operational data. Remove the hard-coded production Owner CLI;
+provide a configurable development seed with preview and explicit apply. Review
+the exact migration and test evidence before applying to the confirmed Neon dev
+database. This is not production migration or deployment authorization.
+
 This file records meaningful product, architecture, security, and delivery decisions that have already been made. It exists so future agents do not casually reverse established choices without understanding the context.
 
 Status values:
@@ -802,3 +908,25 @@ deployed application runtime.
 the existing scoped high-advisory exception remains unchanged. This exception
 must not be generalized to runtime dependencies or unrelated advisories, and
 must be revisited before production promotion if the dependency path changes.
+
+
+## 2026-10-18 — Separate cross-station viewing from station actions
+
+At Jordan's request, an explicit All stations selection survives management navigation and remains reachable after selecting an individual station. Management overview routes may show authorized stations side by side. Individual station records and commands keep their existing station authorization and assurance requirements. Switching from a station record to All returns to that area's overview and drops record-specific URL filters. Opening a record supplies its station in the URL without changing the persisted viewing preference.
+
+Cross-station presentation reuses existing server read services and streaming. Financial values retain exact decimal strings and currency; no new cross-currency totals or averaging rules are introduced. Supplier balances are presented once per legal entity. Route support is explicitly allowed, rather than changing the default policy for unknown routes.
+
+
+### Unified expense integration — 2026-10-19
+
+Jordan approved using incoming PR #146 expenses as the base and adding operational fact versions and shift links. Keep finance lifecycle and postings. No second editable shift-expense authority. Applied migration streams require explicit conversion, not checksum rewriting or blind renumbering. Existing posted corrections retain reversals.
+
+## Staff fuel benefit accounts (S13, TEI Oils brief) — 2026-10-23
+
+Status: ACCEPTED. The project lead reported on 2026-10-23 that the owner has signed off the v1 answers (docs/v1-owner-decisions-proposed.md, item 8). The signed copy is not in the repository; attach it or record the signer's name and date there.
+
+Proposed default: a staff fuel benefit is a normal credit account (same ledger, statement and ageing) marked as a staff member's benefit in `app.customer_staff_benefit_terms` (migration 0070). The limit is monthly and in USD, set when the account is opened. The calendar month follows the station business date (station timezone). Payments do not give the month's allowance back; a reversed charge does. The limit is the account's credit limit, so it changes only through the existing credit-limit override approval (owner or administrator, not self-approved). Requests that would take the staff member past the month's limit are refused at fuel approval.
+
+Month-end expense entry (PROPOSED, 2026-10-23, pending owner sign-off; chosen by the project lead from three options, item 8 "the cost goes to expenses"): after a calendar month has ended at the station, an owner or administrator enters ONE expense per staff benefit account and station for the fuel taken that month, on `/customers/staff-benefit/expense`. The figure is the litres taken (fuel approvals dated in the station's own month) valued at the restated weighted-average cost per litre of that station's costed sales for the same month, not at the pump price. It is shown for confirmation, recomputed on the server when posted, and refused if it changed. The expense is dated on the month's last day, uses the operating category `STAFF_FUEL_BENEFIT` ("Staff fuel benefit", created on first use) and goes through the ordinary expense workflow (approval, posting, correction, reversal, audit `EXPENSE.STAFF_BENEFIT_SUBMITTED`). Nothing posts automatically. The same account, station and month cannot be entered twice while an earlier entry is active (the expense reference `STAFF-BENEFIT:<account>:<month>` is unique among active expenses at a station); reversing or rejecting it frees the month. No migration. Open points for the owner: (1) the benefit sale itself is still recorded as a credit sale at the pump price, so the account keeps showing what the staff member "owes"; how that balance is cleared (written off against this expense, deducted from pay, or left) is not decided and nothing here clears it; (2) a staff member who fuels at two stations gets one entry per station.
+
+Not built, and not decided: a litre-based limit; automatic posting of the expense at each sale; any payroll deduction. Customer overdue alerts use a working default of 30 days since the oldest unpaid charge (`customerOverdueDays`); the owner's sign-off did not name a different figure as far as the project lead reported; customers have no per-customer credit period.

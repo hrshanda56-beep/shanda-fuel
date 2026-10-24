@@ -189,7 +189,12 @@ Agents must therefore reproduce expected ownership/role prerequisites before cla
 
 ### 6.1 Application authentication
 
-**CONFIRMED:** The application uses Better Auth (evidenced by test/runtime configuration discussed in the project). Protected routes require authentication.
+**CURRENT IMPLEMENTATION DECISION (2026-10-18, DEC-043):** Clerk is the only
+authentication provider in the development candidate. Clerk verifies identity
+and sessions; PostgreSQL retains internal user UUIDs, identity mappings, company
+memberships and scoped role assignments. Protected routes require authentication.
+This supersedes the historical Better Auth implementation, without asserting a
+production cutover has occurred.
 
 **UNRESOLVED:** The complete end-state human role matrix is not fully documented in the conversation. Existing application permission definitions must be inspected before adding or changing human roles.
 
@@ -486,3 +491,8 @@ Before a future architecture rewrite or major feature expansion, verify in the r
 - exact CI workflow commands and release automation;
 - current observability implementation and exception expiry;
 - current dependency advisory status.
+
+
+### Unified expense integration — 2026-10-19
+
+The isolated integration candidate adds domain-specific expense versions, guarded current projection updates and typed recognition/reconciliation version links on incoming expense IDs. Applied 0047/0048 exist only in the separately approved local unified test database. See architecture/unified-expense-integration.md.

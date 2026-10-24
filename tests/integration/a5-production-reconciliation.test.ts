@@ -1,12 +1,12 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
+import { loadActionCenterFacts } from '../../src/modules/approvals/action-center';
 import { DECIMAL_POLICIES, ExactDecimal } from '../../src/platform/domain/primitives';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -25,6 +25,9 @@ const ids = {
   managerActor: 'a5b00000-0000-4000-8000-000000000032',
   managerMembership: 'a5b00000-0000-4000-8000-000000000042',
   managerSession: 'a5b00000-0000-4000-8000-000000000052',
+  approverActor: 'a5b00000-0000-4000-8000-000000000034',
+  approverMembership: 'a5b00000-0000-4000-8000-000000000044',
+  approverSession: 'a5b00000-0000-4000-8000-000000000053',
   attendantActor: 'a5b00000-0000-4000-8000-000000000033',
   attendantMembership: 'a5b00000-0000-4000-8000-000000000043',
   product: 'a5b00000-0000-4000-8000-000000000061',
@@ -55,12 +58,12 @@ async function postCommand(
   key: string,
   token = 'a5-supervisor-session-token',
 ) {
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        ...clerkHeaders(signedToken),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -74,12 +77,12 @@ async function postInventoryCommand(
   key: string,
   token = 'a5-supervisor-session-token',
 ) {
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return inventoryCommandPost(
     new Request('http://127.0.0.1:3000/api/inventory/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        ...clerkHeaders(signedToken),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -88,12 +91,14 @@ async function postInventoryCommand(
   );
 }
 
-async function readReconciliation(reconciliationId: string) {
-  const signedToken = `${'a5-supervisor-session-token'}.${await makeSignature('a5-supervisor-session-token', process.env.BETTER_AUTH_SECRET!)}`;
+async function readReconciliation(
+  reconciliationId: string,
+  signedToken = 'a5-supervisor-session-token',
+) {
   return reconciliationGet(
     new Request(
       `http://127.0.0.1:3000/api/forecourt/reconciliations/${reconciliationId}?tenantId=${ids.tenant}&stationId=${ids.station}`,
-      { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      { headers: { ...clerkHeaders(signedToken) } },
     ),
     { params: Promise.resolve({ id: reconciliationId }) },
   );
@@ -366,7 +371,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-a5-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-a5-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
@@ -374,14 +379,16 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       insert into app.tenants (id, name, slug) values
         ('${ids.tenant}', 'A5 Reconciliation Tenant', 'a5-reconciliation-tenant')
         on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values
+      insert into app.users (id, name, email) values
         ('${ids.supervisorActor}', 'A5 Supervisor', 'a5-supervisor@example.test'),
         ('${ids.managerActor}', 'A5 Manager', 'a5-manager@example.test'),
+        ('${ids.approverActor}', 'A5 Approver', 'a5-approver@example.test'),
         ('${ids.attendantActor}', 'A5 Attendant', 'a5-attendant@example.test')
         on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.supervisorMembership}', '${ids.tenant}', '${ids.supervisorActor}', 'ACTIVE'),
         ('${ids.managerMembership}', '${ids.tenant}', '${ids.managerActor}', 'ACTIVE'),
+        ('${ids.approverMembership}', '${ids.tenant}', '${ids.approverActor}', 'ACTIVE'),
         ('${ids.attendantMembership}', '${ids.tenant}', '${ids.attendantActor}', 'ACTIVE')
         on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values
@@ -394,6 +401,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       values
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.tenant}', '${ids.managerMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
+        ('${ids.tenant}', '${ids.approverMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
         on conflict (id) do nothing;
       insert into app.products (id, tenant_id, code, name)
@@ -475,18 +483,40 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
         values ('${ids.unvaluedAllocation}', '${ids.tenant}', '${ids.station}', '${ids.unvaluedDelivery}', '${ids.unvaluedTank}', '${ids.product}', 100)
         on conflict (id) do nothing;
+      insert into app.suppliers (id, tenant_id, code, legal_name, status, created_by, updated_by)
+        values ('a5b00000-0000-4000-8000-0000000001a2', '${ids.tenant}', 'A5-SUP-SEED', 'A5 Seeded Supplier', 'ACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      update app.fuel_deliveries set supplier_id = 'a5b00000-0000-4000-8000-0000000001a2'
+        where id in ('${ids.delivery}', '${ids.transitionDelivery}', '${ids.unvaluedDelivery}') and status = 'DRAFT';
       insert into app.tank_dips
         (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
         values ('${ids.dip}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '2026-09-22T23:00:00Z', '2026-09-22', 1100, '${ids.supervisorMembership}')
         on conflict (id) do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values
-          ('${ids.supervisorSession}', '2030-01-01T00:00:00Z', 'a5-supervisor-session-token', '${ids.supervisorActor}', true, now()),
-          ('${ids.managerSession}', '2030-01-01T00:00:00Z', 'a5-manager-session-token', '${ids.managerActor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(
+      client,
+      ids.supervisorSession,
+      'a5-supervisor-session-token',
+      ids.supervisorActor,
+      true,
+    );
+    await seedClerkSession(
+      client,
+      ids.managerSession,
+      'a5-manager-session-token',
+      ids.managerActor,
+      true,
+    );
     await seedActiveStepUp(client, ids.supervisorSession, ids.tenant);
     await seedActiveStepUp(client, ids.managerSession, ids.tenant);
+    await seedClerkSession(
+      client,
+      ids.approverSession,
+      'a5-approver-session-token',
+      ids.approverActor,
+      true,
+    );
+    await seedActiveStepUp(client, ids.approverSession, ids.tenant);
   });
 
   afterAll(async () => {
@@ -1364,6 +1394,12 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       const historicalSaleBeforeRevaluation = { ...historicalSale[0]! };
       const lateEffectiveAt = new Date(historicalSale[0]!.effective_at.getTime() - 1);
 
+      const a5SupplierId = 'a5b00000-0000-4000-8000-0000000001a1';
+      await client`
+        insert into app.suppliers (id, tenant_id, code, legal_name, status, created_by, updated_by)
+        values (${a5SupplierId}, ${ids.tenant}, 'A5-SUP-1', 'A5 Fuel Supplier', 'ACTIVE',
+                ${ids.supervisorMembership}, ${ids.supervisorMembership})
+        on conflict (id) do nothing`;
       const createdDelivery = await expectOk(
         await postInventoryCommand(
           {
@@ -1371,6 +1407,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             tenantId: ids.tenant,
             stationId: ids.station,
             productId: ids.product,
+            supplierId: a5SupplierId,
             deliveryNoteNumber: `A5-P3-LATE-${phase3TankId.slice(0, 8)}`,
             deliveredAt: lateEffectiveAt.toISOString(),
             noteQuantityLitres: '100.000',
@@ -1538,7 +1575,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             revaluationId,
           },
           `a5-phase3-approve-revaluation-${phase3TankId}`,
-          'a5-manager-session-token',
+          'a5-approver-session-token',
         ),
       );
       await expectOk(
@@ -1964,6 +2001,108 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${ids.tank}';
       `);
     }
+  });
+
+  it('forbids the submitter from approving their own reconciliation', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-self-submit-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    const own = await postCommand(
+      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+      `a5-self-approve-${reconciliationId}`,
+      'a5-manager-session-token',
+    );
+    expect(own.status).toBe(403);
+    const rows = await client.unsafe<{ state: string }[]>(`
+      select state from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(rows).toEqual([{ state: 'SUBMITTED' }]);
+    // The review page hides Approve from the submitter, but not from another approver.
+    const asSubmitter = (await (
+      await readReconciliation(reconciliationId, 'a5-manager-session-token')
+    ).json()) as { approvalBlocked?: boolean };
+    expect(asSubmitter.approvalBlocked).toBe(true);
+    const asOther = (await (
+      await readReconciliation(reconciliationId, 'a5-approver-session-token')
+    ).json()) as { approvalBlocked?: boolean };
+    expect(asOther.approvalBlocked).toBe(false);
+  });
+
+  it('lists a waiting reconciliation in the finance action center, flagged for its submitter', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-center-submit-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    const factsFor = (token: string) =>
+      loadActionCenterFacts(
+        new Request('http://127.0.0.1:3000/finance', { headers: clerkHeaders(token) }),
+        {
+          organisationId: ids.tenant,
+          legalEntityId: ids.legal,
+          stationId: ids.station,
+          allStations: false,
+        },
+      );
+    const waiting = async (token: string) => {
+      const facts = await factsFor(token);
+      if (facts.reconciliations.status !== 'ok') throw new Error('reconciliations not loaded');
+      return {
+        row: facts.reconciliations.value.rows.find((entry) => entry.id === reconciliationId),
+        soleApprover: facts.reconciliations.value.soleApprover,
+      };
+    };
+    const own = await waiting('a5-manager-session-token');
+    expect(own.row?.submittedByMe).toBe(true);
+    expect(own.soleApprover).toBe(false);
+    const other = await waiting('a5-approver-session-token');
+    expect(other.row?.submittedByMe).toBe(false);
+  });
+
+  it('lets a solo approver approve their own reconciliation when nobody else could', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        `a5-solo-submit-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    await client.unsafe(`
+      update app.memberships set status='SUSPENDED'
+      where tenant_id='${ids.tenant}' and id <> '${ids.managerMembership}'
+    `);
+    try {
+      await expectOk(
+        await postCommand(
+          { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+          `a5-solo-approve-${reconciliationId}`,
+          'a5-manager-session-token',
+        ),
+      );
+    } finally {
+      await client.unsafe(`
+        update app.memberships set status='ACTIVE'
+        where tenant_id='${ids.tenant}' and id <> '${ids.managerMembership}'
+      `);
+    }
+    const rows = await client.unsafe<{ state: string }[]>(`
+      select state from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(rows).toEqual([{ state: 'APPROVED' }]);
   });
 
   it('rejects insufficient-stock approval atomically', async () => {

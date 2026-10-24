@@ -34,6 +34,8 @@ import {
   updateCustomerMasterData,
 } from './domain';
 import type { CustomerCommandContext, CustomerTransaction } from './application';
+import { insertCustomerEntryDetails } from './entry-details-store';
+import { assertCreditFuelDetails } from './entry-rules';
 import type {
   CompleteCustomerFuelTransactionInput,
   CreateCustomerAccountInput,
@@ -323,7 +325,10 @@ export async function setCustomerLegalEntityInTransaction(
   const row = rows[0];
   if (!row) throw new AppError('NOT_FOUND', 'The customer was not found');
   if (Number(row.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The customer became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This customer was changed by someone else. Refresh the page and try again.',
+    );
   if (row.legal_entity_id && row.legal_entity_id !== input.legalEntityId) {
     throw new AppError(
       'CONFLICT',
@@ -338,7 +343,11 @@ export async function setCustomerLegalEntityInTransaction(
     where tenant_id = ${context.tenantId} and id = ${input.customerId} and version = ${input.expectedVersion}
     returning version
   `);
-  if (!updated[0]) throw new AppError('CONFLICT', 'The customer became stale');
+  if (!updated[0])
+    throw new AppError(
+      'CONFLICT',
+      'This customer was changed by someone else. Refresh the page and try again.',
+    );
   // Existing accounts adopt the customer's legal entity.
   await transaction.execute(sql`
     update app.customer_accounts
@@ -410,7 +419,11 @@ async function persistCustomer(
     where tenant_id=${context.tenantId} and id=${row.id} and version=${expectedVersion}
     returning id, version
   `);
-  if (!updated[0]) throw new AppError('CONFLICT', 'The customer became stale');
+  if (!updated[0])
+    throw new AppError(
+      'CONFLICT',
+      'This customer was changed by someone else. Refresh the page and try again.',
+    );
   return {
     customerId: next.id,
     accountReference: next.accountReference,
@@ -428,7 +441,10 @@ export async function updateCustomerInTransaction(
 ) {
   const row = await loadCustomerForUpdate(transaction, context, input.customerId);
   if (Number(row.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The customer became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This customer was changed by someone else. Refresh the page and try again.',
+    );
   return persistCustomer(
     transaction,
     context,
@@ -445,7 +461,10 @@ export async function activateCustomerInTransaction(
 ) {
   const row = await loadCustomerForUpdate(transaction, context, input.customerId);
   if (Number(row.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The customer became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This customer was changed by someone else. Refresh the page and try again.',
+    );
   return persistCustomer(
     transaction,
     context,
@@ -462,7 +481,10 @@ export async function deactivateCustomerInTransaction(
 ) {
   const row = await loadCustomerForUpdate(transaction, context, input.customerId);
   if (Number(row.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The customer became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This customer was changed by someone else. Refresh the page and try again.',
+    );
   return persistCustomer(
     transaction,
     context,
@@ -487,6 +509,8 @@ export async function createCustomerAccountInTransaction(
   if (!customer[0]) throw new AppError('NOT_FOUND', 'The customer was not found');
   if (customer[0].status !== 'ACTIVE')
     throw new AppError('CONFLICT', 'Accounts may only be opened for active customers');
+  if (input.staffBenefit && input.accountType !== 'CREDIT')
+    throw new AppError('VALIDATION_FAILED', 'A staff fuel benefit uses a credit account.');
   const accountId = randomUUID();
   const limit = input.creditLimit ?? null;
   const parsedLimit = limit ? new ExactDecimal(limit).value : null;
@@ -522,6 +546,14 @@ export async function createCustomerAccountInTransaction(
       legalEntityId,
       input.stationIds ?? [],
     );
+  }
+  if (input.staffBenefit) {
+    await transaction.execute(sql`
+      insert into app.customer_staff_benefit_terms
+        (tenant_id, account_id, staff_name, staff_membership_id, created_by)
+      values (${context.tenantId}, ${accountId}, ${input.staffBenefit.staffName.trim()},
+              ${input.staffBenefit.staffMembershipId ?? null}, ${context.authority.membership.membershipId})
+    `);
   }
   return { accountId, accountType: input.accountType, stationScope, stationScopeConfigured };
 }
@@ -592,7 +624,10 @@ export async function setCustomerAccountStationsInTransaction(
   const account = rows[0];
   if (!account) throw new AppError('NOT_FOUND', 'The customer account was not found');
   if (Number(account.version) !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The customer account became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This account was changed by someone else. Refresh the page and try again.',
+    );
   if (!account.legal_entity_id) {
     throw new AppError(
       'CONFLICT',
@@ -613,7 +648,11 @@ export async function setCustomerAccountStationsInTransaction(
     where tenant_id = ${context.tenantId} and id = ${input.accountId} and version = ${input.expectedVersion}
     returning version
   `);
-  if (!updated[0]) throw new AppError('CONFLICT', 'The customer account became stale');
+  if (!updated[0])
+    throw new AppError(
+      'CONFLICT',
+      'This account was changed by someone else. Refresh the page and try again.',
+    );
   return {
     accountId: input.accountId,
     stationScope: input.stationScope,
@@ -623,7 +662,7 @@ export async function setCustomerAccountStationsInTransaction(
   };
 }
 
-async function loadAccountStationPolicy(
+export async function loadAccountStationPolicy(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
   accountId: string,
@@ -671,7 +710,7 @@ function assertAuthorizationStation(
   if (!context.stationId || context.stationId !== authorization.stationId) {
     throw new AppError(
       'FORBIDDEN',
-      'The authorization can only be operated from its authoritative station',
+      'This fuel approval can only be handled at the station it was requested for.',
     );
   }
 }
@@ -701,6 +740,13 @@ export async function recordCustomerPaymentInTransaction(
     context.authority.membership.membershipId,
     input.receivingStationId,
   );
+  if (input.entryDetails) {
+    await insertCustomerEntryDetails(transaction, context, {
+      ledgerEntryId: entry.id,
+      accountId: input.accountId,
+      details: input.entryDetails,
+    });
+  }
   return {
     entryId: entry.id,
     receivingStationId: input.receivingStationId,
@@ -746,7 +792,7 @@ export async function recordPrepaidTopUpInTransaction(
   if (context.stationId) {
     const stationLegalEntityId = context.scope.legalEntityId;
     if (!stationLegalEntityId)
-      throw new AppError('INVARIANT_VIOLATION', 'The station has no legal entity in this context');
+      throw new AppError('INVARIANT_VIOLATION', 'This station is not linked to a company yet.');
     assertStationAllowedForAccount(
       await loadAccountStationPolicy(transaction, context, input.accountId),
       { stationId: context.stationId, legalEntityId: stationLegalEntityId },
@@ -756,7 +802,7 @@ export async function recordPrepaidTopUpInTransaction(
   if (loaded.account.accountType !== input.accountType)
     throw new AppError(
       'INVARIANT_VIOLATION',
-      'The top-up account type does not match the stored account',
+      'This top-up does not match the type of the chosen account.',
     );
   const entry = createPrepaidTopUpEntry({
     id: randomUUID(),
@@ -771,6 +817,13 @@ export async function recordPrepaidTopUpInTransaction(
     businessDate: input.businessDate,
   });
   await insertLedgerEntry(transaction, entry, context.authority.membership.membershipId);
+  if (input.entryDetails) {
+    await insertCustomerEntryDetails(transaction, context, {
+      ledgerEntryId: entry.id,
+      accountId: input.accountId,
+      details: input.entryDetails,
+    });
+  }
   return {
     entryId: entry.id,
     balance: deriveAccountBalance(loaded.account, [...loaded.entries, entry]),
@@ -783,13 +836,13 @@ export async function requestCustomerFuelAuthorizationInTransaction(
   input: RequestCustomerFuelAuthorizationInput,
 ) {
   if (!context.stationId)
-    throw new AppError('FORBIDDEN', 'A station context is required for fuel authorization');
+    throw new AppError('FORBIDDEN', 'Choose a station before approving fuel for a customer.');
   const loaded = await loadAccount(transaction, context, input.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   assertAccountReadiness(loaded);
   const stationLegalEntityId = context.scope.legalEntityId;
   if (!stationLegalEntityId)
-    throw new AppError('INVARIANT_VIOLATION', 'The station has no legal entity in this context');
+    throw new AppError('INVARIANT_VIOLATION', 'This station is not linked to a company yet.');
   assertStationAllowedForAccount(
     await loadAccountStationPolicy(transaction, context, input.accountId),
     { stationId: context.stationId, legalEntityId: stationLegalEntityId },
@@ -816,7 +869,7 @@ export async function requestCustomerFuelAuthorizationInTransaction(
   if (existing[0])
     throw new AppError(
       'IDEMPOTENCY_CONFLICT',
-      'The customer authorization source has already been requested',
+      'This fuel approval has already been requested, so it was not requested a second time.',
     );
   await transaction.execute(sql`
     insert into app.customer_fuel_authorizations
@@ -848,7 +901,7 @@ async function loadAuthorization(
     where tenant_id = ${context.tenantId} and id = ${authorizationId}
     ${lock}
   `);
-  if (!rows[0]) throw new AppError('NOT_FOUND', 'The customer fuel authorization was not found');
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'That fuel approval was not found.');
   return authorizationFromRow(rows[0]);
 }
 
@@ -876,6 +929,32 @@ async function activeReservations(
   });
 }
 
+async function isStaffBenefitAccount(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+  accountId: string,
+): Promise<boolean> {
+  const rows = await transaction.execute<{ id: string }>(sql`
+    select id from app.customer_staff_benefit_terms
+    where tenant_id = ${context.tenantId} and account_id = ${accountId}
+  `);
+  return rows.length > 0;
+}
+
+/** Today's date at the station, from the station's own timezone (never the browser's). */
+async function stationBusinessDate(
+  transaction: CustomerTransaction,
+  context: CustomerCommandContext,
+): Promise<string> {
+  const rows = await transaction.execute<{ today: string }>(sql`
+    select to_char(now() at time zone s.timezone, 'YYYY-MM-DD') as today
+    from app.stations s
+    where s.tenant_id = ${context.tenantId} and s.id = ${context.stationId}
+  `);
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'The station was not found.');
+  return rows[0].today;
+}
+
 export async function authorizeCustomerFuelInTransaction(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
@@ -896,9 +975,15 @@ export async function authorizeCustomerFuelInTransaction(
     account: loaded.account,
     entries: loaded.entries,
     activeReservations: await activeReservations(transaction, context, authorization.accountId),
+    ...((await isStaffBenefitAccount(transaction, context, authorization.accountId))
+      ? { staffBenefit: { asAt: await stationBusinessDate(transaction, context) } }
+      : {}),
   });
   if (next.version !== input.expectedVersion + 1 || authorization.version !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The authorization became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This fuel approval was changed by someone else. Refresh the page and try again.',
+    );
   await transaction.execute(sql`
     update app.customer_fuel_authorizations set state='AUTHORIZED', authorized_at=now(), version=version+1, updated_at=now()
     where tenant_id=${context.tenantId} and id=${authorization.id} and version=${input.expectedVersion} and state='REQUESTED'
@@ -913,7 +998,10 @@ async function assertPostedA5Evidence(
   account: CustomerAccount,
 ): Promise<void> {
   if (evidence.tenantId !== context.tenantId || evidence.stationId !== context.stationId)
-    throw new AppError('FORBIDDEN', 'A5 evidence is outside the trusted tenant or station context');
+    throw new AppError(
+      'FORBIDDEN',
+      'The payment record for this fuel sale does not belong to this organisation or station.',
+    );
   assertA5EvidenceCompatibleWithAccount(evidence, account.accountType);
   const category = evidence.category === 'CUSTOMER_CREDIT' ? 'CUSTOMER_CREDIT' : 'PREPAID';
   const rows = await transaction.execute<{ amount: string; method: string }>(sql`
@@ -927,13 +1015,16 @@ async function assertPostedA5Evidence(
     limit 1
   `);
   if (!rows[0])
-    throw new AppError('CONFLICT', 'A5 evidence must reference a posted customer fuel payment');
+    throw new AppError(
+      'CONFLICT',
+      'The fuel sale must be posted as a customer fuel payment before it can be charged to the account.',
+    );
   if (
     new ExactDecimal(rows[0].amount).value.equals(evidence.allocation.amount.amount.value) === false
   )
     throw new AppError(
       'INVARIANT_VIOLATION',
-      'A5 payment evidence amount does not match the customer allocation',
+      'The amount on the fuel sale record does not match the amount charged to the customer.',
     );
 }
 
@@ -943,11 +1034,11 @@ export async function completeCustomerFuelTransactionInTransaction(
   input: CompleteCustomerFuelTransactionInput,
 ) {
   if (!context.stationId)
-    throw new AppError('FORBIDDEN', 'A station context is required for fuel usage');
+    throw new AppError('FORBIDDEN', 'Choose a station before recording fuel used by a customer.');
   const initial = await loadAuthorization(transaction, context, input.authorizationId, false);
   assertAuthorizationStation(context, initial);
   if (initial.accountId !== input.accountId)
-    throw new AppError('FORBIDDEN', 'The authorization does not belong to the requested account');
+    throw new AppError('FORBIDDEN', 'This fuel approval does not belong to the chosen account.');
   const loaded = await loadAccount(transaction, context, input.accountId);
   assertCustomerAccountTransactionAllowed(loaded.customer.status, loaded.account.status);
   assertAccountReadiness(loaded);
@@ -1010,6 +1101,14 @@ export async function completeCustomerFuelTransactionInTransaction(
     result.ledgerEntry,
     context.authority.membership.membershipId,
   );
+  if (loaded.account.accountType === 'CREDIT') assertCreditFuelDetails(input.entryDetails);
+  if (input.entryDetails) {
+    await insertCustomerEntryDetails(transaction, context, {
+      ledgerEntryId: result.ledgerEntry.id,
+      accountId: input.accountId,
+      details: input.entryDetails,
+    });
+  }
   await transaction.execute(sql`
     update app.customer_fuel_authorizations
     set used_amount=${result.authorization.used.amount.amount.toString()}, used_litres=${result.authorization.used.litres.toString()}, remaining_amount=${result.authorization.remaining.amount.amount.toString()}, remaining_litres=${result.authorization.remaining.litres.toString()}, state=${result.authorization.state}, completed_at=${result.authorization.state === 'COMPLETED' ? sql`now()` : sql`null`}, version=version+1, updated_at=now()
@@ -1033,7 +1132,10 @@ export async function cancelCustomerFuelAuthorizationInTransaction(
   const loaded = await loadAccount(transaction, context, initial.accountId);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   if (authorization.version !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The authorization became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This fuel approval was changed by someone else. Refresh the page and try again.',
+    );
   const next = cancelCustomerFuelAuthorization(authorization, input.reason);
   await transaction.execute(
     sql`update app.customer_fuel_authorizations set state='CANCELLED', remaining_amount=0, remaining_litres=0, closed_reason=${input.reason}, version=version+1, updated_at=now() where tenant_id=${context.tenantId} and id=${authorization.id} and version=${input.expectedVersion}`,
@@ -1051,7 +1153,10 @@ export async function expireCustomerFuelAuthorizationInTransaction(
   const loaded = await loadAccount(transaction, context, initial.accountId);
   const authorization = await loadAuthorization(transaction, context, input.authorizationId);
   if (authorization.version !== input.expectedVersion)
-    throw new AppError('CONFLICT', 'The authorization became stale');
+    throw new AppError(
+      'CONFLICT',
+      'This fuel approval was changed by someone else. Refresh the page and try again.',
+    );
   const next = expireCustomerFuelAuthorization(authorization, new Date().toISOString());
   await transaction.execute(
     sql`update app.customer_fuel_authorizations set state='EXPIRED', remaining_amount=0, remaining_litres=0, closed_reason='expired', version=version+1, updated_at=now() where tenant_id=${context.tenantId} and id=${authorization.id} and version=${input.expectedVersion}`,

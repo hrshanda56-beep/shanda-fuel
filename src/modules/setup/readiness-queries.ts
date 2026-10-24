@@ -225,6 +225,8 @@ export function resolveSetupAccess(authority: TenantExecutionContext, now?: Date
     canManagePayments,
     canViewReadiness: grant('station.manage') || canManagePayments,
     canViewPayments: canManagePayments || grant('provider.view'),
+    canViewAudit: grant('audit.view'),
+    canManageAlerts: grant('tenant.manage'),
   };
 }
 

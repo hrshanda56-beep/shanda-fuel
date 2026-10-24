@@ -41,7 +41,11 @@ export function ReportList({ tenantId }: { tenantId: string }) {
           <ReportCategoryFilter />
         </div>
       </div>
-      <ReportActionStatus status={actions.status} onDismiss={actions.dismiss} />
+      <ReportActionStatus
+        status={actions.status}
+        onDismiss={actions.dismiss}
+        stepUp={actions.stepUp}
+      />
       <ul className="report-rows">
         {reports.map((report) => {
           const rowPeriod: RowPeriod = overrides[report.slug] ?? {
@@ -54,6 +58,7 @@ export function ReportList({ tenantId }: { tenantId: string }) {
               key={report.slug}
               report={report}
               tenantId={tenantId}
+              contextSearch={searchParams.toString()}
               stationIds={pageFilters.stationIds}
               rowPeriod={rowPeriod}
               busy={actions.busy}
@@ -71,6 +76,7 @@ export function ReportList({ tenantId }: { tenantId: string }) {
 function ReportRow({
   report,
   tenantId,
+  contextSearch,
   stationIds,
   rowPeriod,
   busy,
@@ -80,6 +86,7 @@ function ReportRow({
 }: {
   report: ReportDefinition;
   tenantId: string;
+  contextSearch: string;
   stationIds: readonly string[];
   rowPeriod: RowPeriod;
   busy: boolean;
@@ -101,7 +108,14 @@ function ReportRow({
       }
     : null;
   const href = `/reports/${report.slug}?${applyReportFilters(
-    new URLSearchParams({ tenantId }),
+    new URLSearchParams({
+      tenantId,
+      ...Object.fromEntries(
+        [...new URLSearchParams(contextSearch)].filter(([key]) =>
+          ['legalEntityId', 'stationId', 'allStations'].includes(key),
+        ),
+      ),
+    }),
     filters,
   ).toString()}`;
   const id = `report-${report.slug}`;

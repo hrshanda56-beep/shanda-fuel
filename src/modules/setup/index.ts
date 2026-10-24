@@ -5,6 +5,8 @@ export {
   createProductFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,
+  setAlertSettingsFromRequest,
+  setResponsibleSupervisorFromRequest,
   updateSupplierFromRequest,
 } from './commands';
 export { getSetupOverview } from './queries';

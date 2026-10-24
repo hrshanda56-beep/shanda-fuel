@@ -14,12 +14,12 @@ import {
   withRequestObservability,
 } from '../../../../platform/observability';
 import { AUTH_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
-import { getAuthProviderName } from '../../../../platform/auth/provider';
 import { AppError } from '../../../../platform/errors';
 import { createLogger } from '../../../../platform/logging';
 import { reverificationErrorResponse } from '@clerk/nextjs/server';
 import {
   CLERK_DEACTIVATE_STAFF_ACTION,
+  CLERK_PRIVILEGED_ACTION,
   CLERK_STEP_UP_ACTION,
   clerkStepUpCookieClearHeaders,
 } from '../../../../platform/auth/clerk-step-up';
@@ -48,12 +48,7 @@ function logDeactivationStepUp(
 
 const requestSchema = z.object({
   tenantId: z.string().uuid(),
-  password: z.string().min(1).max(256).optional(),
-  totpCode: z
-    .string()
-    .regex(/^\d{6}$/)
-    .optional(),
-  action: z.enum([CLERK_STEP_UP_ACTION, CLERK_DEACTIVATE_STAFF_ACTION]).optional(),
+  action: z.enum([CLERK_STEP_UP_ACTION, CLERK_DEACTIVATE_STAFF_ACTION, CLERK_PRIVILEGED_ACTION]),
 });
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -71,13 +66,6 @@ export const POST = withRequestObservability(
       const body = requestSchema.parse(await request.json());
       deactivationAction = body.action === DEACTIVATE_ACTION;
       if (deactivationAction) logDeactivationStepUp(request, 'received', null);
-      if (getAuthProviderName() === 'BETTER_AUTH' && (!body.password || !body.totpCode)) {
-        return apiErrorResponse(
-          request,
-          new AppError('VALIDATION_FAILED', 'Password and authenticator code are required'),
-          { includeDetails: true, headers: { 'Cache-Control': 'no-store' } },
-        );
-      }
       const context = await resolveTenantExecutionContext({
         request,
         requestedTenantId: body.tenantId,
@@ -85,8 +73,6 @@ export const POST = withRequestObservability(
       const result = await establishStepUp({
         request,
         context,
-        password: body.password ?? '',
-        totpCode: body.totpCode ?? '',
         action: body.action,
       });
       if (deactivationAction) logDeactivationStepUp(request, 'reverified', 200);

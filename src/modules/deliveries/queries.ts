@@ -1,0 +1,301 @@
+import 'server-only';
+
+import { sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { AppError } from '../../platform/errors';
+import { authorizeInventoryCommand, withInventoryReadContext } from '../inventory/application';
+import { classifyCompartmentVariance, classifyDeliveryReceipt } from './domain';
+import type { CompartmentVarianceKind, DeliveryReceiptKind } from './domain';
+
+const scopeInput = z.object({ tenantId: z.string().uuid(), stationId: z.string().uuid() });
+
+export type DeliveryListItem = Readonly<{
+  id: string;
+  deliveryNoteNumber: string;
+  deliveredAt: string;
+  businessDate: string;
+  productName: string;
+  supplierName: string | null;
+  status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+  noteLitres: string;
+  receivedLitres: string;
+  shortageExcessLitres: string;
+  receipt: DeliveryReceiptKind;
+  compartmentCount: number;
+  hasWaterTest: boolean;
+  driverConfirmed: boolean | null;
+}>;
+
+export type DeliveryList = Readonly<{
+  stationTimezone: string;
+  waterTestRequired: boolean;
+  deliveries: readonly DeliveryListItem[];
+}>;
+
+/** Recent deliveries at the station, newest first, with how complete their detail is. */
+export async function queryDeliveryList(input: {
+  request: Request;
+  tenantId: string;
+  stationId: string;
+  limit?: number;
+}): Promise<DeliveryList> {
+  const parsed = scopeInput.parse({ tenantId: input.tenantId, stationId: input.stationId });
+  const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 200);
+  return withInventoryReadContext(
+    input.request,
+    parsed.tenantId,
+    parsed.stationId,
+    async (transaction, context) => {
+      authorizeInventoryCommand(context, 'inventory.view');
+      const rows = await transaction.execute<{
+        id: string;
+        delivery_note_number: string;
+        delivered_at: Date | string;
+        business_date: string;
+        product_name: string;
+        supplier_name: string | null;
+        status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+        note_litres: string;
+        received_litres: string;
+        shortage_excess_litres: string;
+        compartment_count: number;
+        has_water_test: boolean;
+        driver_confirmed: boolean | null;
+      }>(sql`
+        select d.id, d.delivery_note_number, d.delivered_at, d.business_date,
+          p.name as product_name, s.legal_name as supplier_name, d.status,
+          d.note_quantity_litres::text as note_litres,
+          d.actual_quantity_litres::text as received_litres,
+          d.shortage_excess_litres::text as shortage_excess_litres,
+          (select count(*)::int from app.fuel_delivery_compartments c
+            where c.tenant_id = d.tenant_id and c.delivery_id = d.id) as compartment_count,
+          exists (select 1 from app.fuel_delivery_water_tests w
+            where w.tenant_id = d.tenant_id and w.delivery_id = d.id) as has_water_test,
+          (select dc.confirmed from app.fuel_delivery_driver_confirmations dc
+            where dc.tenant_id = d.tenant_id and dc.delivery_id = d.id) as driver_confirmed
+        from app.fuel_deliveries d
+        join app.products p on p.tenant_id = d.tenant_id and p.id = d.product_id
+        left join app.suppliers s on s.tenant_id = d.tenant_id and s.id = d.supplier_id
+        where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
+        order by d.delivered_at desc, d.id
+        limit ${limit}
+      `);
+      const settings = await transaction.execute<{ water_test_required: boolean }>(sql`
+        select water_test_required from app.delivery_settings
+        where tenant_id = ${context.tenantId}
+      `);
+      return {
+        stationTimezone: context.stationTimezone,
+        waterTestRequired: settings[0]?.water_test_required ?? false,
+        deliveries: rows.map((row) => ({
+          id: row.id,
+          deliveryNoteNumber: row.delivery_note_number,
+          deliveredAt: new Date(row.delivered_at).toISOString(),
+          businessDate: row.business_date,
+          productName: row.product_name,
+          supplierName: row.supplier_name,
+          status: row.status,
+          noteLitres: row.note_litres,
+          receivedLitres: row.received_litres,
+          shortageExcessLitres: row.shortage_excess_litres,
+          receipt: classifyDeliveryReceipt(row.note_litres, row.received_litres),
+          compartmentCount: row.compartment_count,
+          hasWaterTest: row.has_water_test,
+          driverConfirmed: row.driver_confirmed,
+        })),
+      };
+    },
+  );
+}
+
+export type DeliveryDetail = Readonly<{
+  stationTimezone: string;
+  waterTestRequired: boolean;
+  delivery: Readonly<{
+    id: string;
+    deliveryNoteNumber: string;
+    deliveredAt: string;
+    businessDate: string;
+    productId: string;
+    productName: string;
+    supplierName: string | null;
+    transporter: string | null;
+    driver: string | null;
+    truckRegistration: string | null;
+    status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+    noteLitres: string;
+    receivedLitres: string;
+    shortageExcessLitres: string;
+    receipt: DeliveryReceiptKind;
+  }>;
+  compartments: readonly Readonly<{
+    compartmentNumber: number;
+    noteLitres: string;
+    receivedLitres: string;
+    varianceLitres: string;
+    variance: CompartmentVarianceKind;
+    seals: readonly Readonly<{ sealNumber: string; intact: boolean }>[];
+  }>[];
+  waterTest: Readonly<{
+    result: 'PASS' | 'FAIL';
+    waterReadingMm: string | null;
+    notes: string | null;
+    testedAt: string;
+  }> | null;
+  driverConfirmation: Readonly<{
+    driverName: string;
+    confirmed: boolean;
+    confirmedAt: string | null;
+    notes: string | null;
+  }> | null;
+}>;
+
+export async function queryDeliveryDetail(input: {
+  request: Request;
+  tenantId: string;
+  stationId: string;
+  deliveryId: string;
+}): Promise<DeliveryDetail> {
+  const parsed = scopeInput
+    .extend({ deliveryId: z.string().uuid() })
+    .parse({ tenantId: input.tenantId, stationId: input.stationId, deliveryId: input.deliveryId });
+  return withInventoryReadContext(
+    input.request,
+    parsed.tenantId,
+    parsed.stationId,
+    async (transaction, context) => {
+      authorizeInventoryCommand(context, 'inventory.view');
+      const deliveries = await transaction.execute<{
+        id: string;
+        delivery_note_number: string;
+        delivered_at: Date | string;
+        business_date: string;
+        product_id: string;
+        product_name: string;
+        supplier_name: string | null;
+        transporter: string | null;
+        driver: string | null;
+        truck_registration: string | null;
+        status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+        note_litres: string;
+        received_litres: string;
+        shortage_excess_litres: string;
+      }>(sql`
+        select d.id, d.delivery_note_number, d.delivered_at, d.business_date, d.product_id,
+          p.name as product_name, s.legal_name as supplier_name, d.transporter, d.driver,
+          d.truck_registration, d.status,
+          d.note_quantity_litres::text as note_litres,
+          d.actual_quantity_litres::text as received_litres,
+          d.shortage_excess_litres::text as shortage_excess_litres
+        from app.fuel_deliveries d
+        join app.products p on p.tenant_id = d.tenant_id and p.id = d.product_id
+        left join app.suppliers s on s.tenant_id = d.tenant_id and s.id = d.supplier_id
+        where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
+          and d.id = ${parsed.deliveryId}
+      `);
+      const delivery = deliveries[0];
+      if (!delivery) throw new AppError('NOT_FOUND', 'The requested delivery was not found');
+      const compartments = await transaction.execute<{
+        id: string;
+        compartment_number: number;
+        note_litres: string;
+        received_litres: string;
+        variance_litres: string;
+      }>(sql`
+        select c.id, c.compartment_number, c.note_litres::text as note_litres,
+          c.received_litres::text as received_litres,
+          (c.received_litres - c.note_litres)::text as variance_litres
+        from app.fuel_delivery_compartments c
+        where c.tenant_id = ${context.tenantId} and c.station_id = ${context.stationId}
+          and c.delivery_id = ${parsed.deliveryId}
+        order by c.compartment_number
+      `);
+      const seals = await transaction.execute<{
+        compartment_id: string;
+        seal_number: string;
+        intact: boolean;
+      }>(sql`
+        select s.compartment_id, s.seal_number, s.intact
+        from app.fuel_delivery_compartment_seals s
+        where s.tenant_id = ${context.tenantId} and s.station_id = ${context.stationId}
+          and s.delivery_id = ${parsed.deliveryId}
+        order by s.seal_number
+      `);
+      const waterTests = await transaction.execute<{
+        result: 'PASS' | 'FAIL';
+        water_reading_mm: string | null;
+        notes: string | null;
+        tested_at: Date | string;
+      }>(sql`
+        select result, water_reading_mm::text as water_reading_mm, notes, tested_at
+        from app.fuel_delivery_water_tests
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and delivery_id = ${parsed.deliveryId}
+      `);
+      const confirmations = await transaction.execute<{
+        driver_name: string;
+        confirmed: boolean;
+        confirmed_at: Date | string | null;
+        notes: string | null;
+      }>(sql`
+        select driver_name, confirmed, confirmed_at, notes
+        from app.fuel_delivery_driver_confirmations
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and delivery_id = ${parsed.deliveryId}
+      `);
+      const settings = await transaction.execute<{ water_test_required: boolean }>(sql`
+        select water_test_required from app.delivery_settings
+        where tenant_id = ${context.tenantId}
+      `);
+      const water = waterTests[0];
+      const driver = confirmations[0];
+      return {
+        stationTimezone: context.stationTimezone,
+        waterTestRequired: settings[0]?.water_test_required ?? false,
+        delivery: {
+          id: delivery.id,
+          deliveryNoteNumber: delivery.delivery_note_number,
+          deliveredAt: new Date(delivery.delivered_at).toISOString(),
+          businessDate: delivery.business_date,
+          productId: delivery.product_id,
+          productName: delivery.product_name,
+          supplierName: delivery.supplier_name,
+          transporter: delivery.transporter,
+          driver: delivery.driver,
+          truckRegistration: delivery.truck_registration,
+          status: delivery.status,
+          noteLitres: delivery.note_litres,
+          receivedLitres: delivery.received_litres,
+          shortageExcessLitres: delivery.shortage_excess_litres,
+          receipt: classifyDeliveryReceipt(delivery.note_litres, delivery.received_litres),
+        },
+        compartments: compartments.map((row) => ({
+          compartmentNumber: row.compartment_number,
+          noteLitres: row.note_litres,
+          receivedLitres: row.received_litres,
+          varianceLitres: row.variance_litres,
+          variance: classifyCompartmentVariance(row.note_litres, row.received_litres),
+          seals: seals
+            .filter((seal) => seal.compartment_id === row.id)
+            .map((seal) => ({ sealNumber: seal.seal_number, intact: seal.intact })),
+        })),
+        waterTest: water
+          ? {
+              result: water.result,
+              waterReadingMm: water.water_reading_mm,
+              notes: water.notes,
+              testedAt: new Date(water.tested_at).toISOString(),
+            }
+          : null,
+        driverConfirmation: driver
+          ? {
+              driverName: driver.driver_name,
+              confirmed: driver.confirmed,
+              confirmedAt: driver.confirmed_at ? new Date(driver.confirmed_at).toISOString() : null,
+              notes: driver.notes,
+            }
+          : null,
+      };
+    },
+  );
+}

@@ -123,7 +123,7 @@ describe('customer account domain', () => {
         currency: 'USD',
         creditLimit: money('0.0000'),
       }),
-    ).toThrow('Credit limit must be positive');
+    ).toThrow('Credit limit must be more than zero');
   });
 
   it('fails closed when a legacy credit account has no positive limit', () => {
@@ -168,16 +168,14 @@ describe('customer account domain', () => {
         entries: [],
         activeReservations: [],
       }),
-    ).toThrow('Credit authorization exceeds the configured credit limit');
+    ).toThrow('over their credit limit');
   });
 
   it('allows account transactions only for active customers and accounts', () => {
     expect(() => assertCustomerAccountTransactionAllowed('SUSPENDED', 'ACTIVE')).toThrow(
-      'require an active customer and customer account',
+      'not active',
     );
-    expect(() => assertCustomerAccountTransactionAllowed('ACTIVE', 'CLOSED')).toThrow(
-      'require an active customer and customer account',
-    );
+    expect(() => assertCustomerAccountTransactionAllowed('ACTIVE', 'CLOSED')).toThrow('not active');
     expect(() => assertCustomerAccountTransactionAllowed('ACTIVE', 'ACTIVE')).not.toThrow();
   });
 
@@ -243,7 +241,7 @@ describe('customer account domain', () => {
         entries,
         activeReservations: [active],
       }),
-    ).toThrow('Prepaid value is insufficient');
+    ).toThrow('not have enough prepaid money');
   });
 
   it('keeps prepaid litres isolated by product', () => {
@@ -268,7 +266,7 @@ describe('customer account domain', () => {
         entries,
         activeReservations: [],
       }),
-    ).toThrow('Prepaid litres are insufficient');
+    ).toThrow('not have enough prepaid litres');
   });
 
   it('records partial usage and leaves the exact reservation remainder', () => {

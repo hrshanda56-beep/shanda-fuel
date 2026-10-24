@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { makeSignature } from 'better-auth/crypto';
+import { seedClerkSession, clerkHeaders, fixtureSession } from './auth-session-fixtures';
 import { resolveAuthenticatedActor } from '../../src/modules/identity/authenticated-actor';
 import {
   loadTenantMembershipWithDatabase,
   resolveTenantExecutionContext,
 } from '../../src/modules/tenancy/authority';
-import { getAuth } from '../../src/platform/auth/server';
 import * as schema from '../../src/platform/db/schema';
 import type { Database } from '../../src/platform/db';
 
@@ -81,7 +80,7 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
         ('${tenantB}', 'Tenant B', 'b-isolation-test'),
         ('${tenantInactive}', 'Tenant Inactive', 'inactive-membership-test')
       on conflict (id) do nothing;
-      insert into auth."user" (id, name, email)
+      insert into app.users (id, name, email)
         values
           ('${actorA}', 'Actor A', 'a-isolation@example.test'),
           ('${actorB}', 'Actor B', 'b-isolation@example.test'),
@@ -203,16 +202,16 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
     });
   });
 
-  it('verifies Better Auth UUID identity compatibility and the membership foreign key', async () => {
+  it('verifies preserved application UUID identity and the membership foreign key', async () => {
     const columns = await client<
       { table_schema: string; table_name: string; column_name: string; data_type: string }[]
     >`
       select table_schema, table_name, column_name, data_type
       from information_schema.columns
       where (table_schema, table_name, column_name) in (
-        ('auth', 'user', 'id'), ('app', 'memberships', 'identity_id')
+        ('app', 'users', 'id'), ('app', 'memberships', 'identity_id')
       )
-      order by table_schema
+      order by table_schema, table_name
     `;
     expect(columns.map((row) => row.data_type)).toEqual(['uuid', 'uuid']);
     expect(columns.map((row) => row.column_name)).toEqual(['identity_id', 'id']);
@@ -222,9 +221,9 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
       select table_schema, table_name, column_name, udt_name
       from information_schema.columns
       where (table_schema, table_name, column_name) in (
-        ('auth', 'user', 'id'), ('app', 'memberships', 'identity_id')
+        ('app', 'users', 'id'), ('app', 'memberships', 'identity_id')
       )
-      order by table_schema
+      order by table_schema, table_name
     `;
     expect(types.map((row) => row.udt_name)).toEqual(['uuid', 'uuid']);
 
@@ -238,8 +237,8 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
       where c.contype = 'f'
         and child_ns.nspname = 'app'
         and child.relname = 'memberships'
-        and parent_ns.nspname = 'auth'
-        and parent.relname = 'user'
+        and parent_ns.nspname = 'app'
+        and parent.relname = 'users'
     `;
     expect(foreignKey[0]?.count).toBe('1');
   });
@@ -499,105 +498,55 @@ describe('A1 PostgreSQL tenant isolation and canonical security', () => {
     }
   });
 
-  it('persists Better Auth user/session/account/verification rows and loads a session through the adapter', async () => {
-    process.env.APP_ENV ??= 'test';
-    process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
-    const authSecret = process.env.BETTER_AUTH_SECRET;
-    if (!authSecret) throw new Error('BETTER_AUTH_SECRET is required for this integration test');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    const expiredAt = new Date('2020-01-01T00:00:00.000Z');
-    await client`
-      insert into auth.session (id, expires_at, token, user_id, ip_address, user_agent)
-      values (${authSessionId}, ${expiresAt}, ${authSessionToken}, ${actorA}, '127.0.0.1', 'vitest')
-      on conflict (id) do update set
-        expires_at = excluded.expires_at,
-        token = excluded.token,
-        user_id = excluded.user_id,
-        revoked_at = null
-    `;
-    await client`
-      insert into auth.session (id, expires_at, token, user_id)
-      values (${expiredSessionId}, ${expiredAt}, ${expiredSessionToken}, ${actorA})
-      on conflict (id) do update set
-        expires_at = excluded.expires_at,
-        token = excluded.token,
-        user_id = excluded.user_id,
-        revoked_at = null
-    `;
-    await client`
-      insert into auth.session (id, expires_at, token, user_id)
-      values (${noMembershipSessionId}, ${expiresAt}, ${noMembershipSessionToken}, ${actorWithoutMembership})
-      on conflict (id) do update set
-        expires_at = excluded.expires_at,
-        token = excluded.token,
-        user_id = excluded.user_id,
-        revoked_at = null
-    `;
-    await client`
-      insert into auth.account (id, account_id, provider_id, user_id, password)
-      values ('14141414-1414-4141-8141-141414141414', ${actorA}, 'credential', ${actorA}, 'integration-hash')
-      on conflict (id) do nothing
-    `;
-    await client`
-      insert into auth.verification (id, identifier, value, expires_at)
-      values ('15151515-1515-4151-8151-151515151515', 'integration@example.test', 'verification-value', ${expiresAt})
-      on conflict (id) do nothing
-    `;
-
-    const counts = await client<
-      {
-        user_count: string;
-        session_count: string;
-        account_count: string;
-        verification_count: string;
-      }[]
-    >`
-      select
-        (select count(*) from auth."user")::text as user_count,
-        (select count(*) from auth.session where token in (${authSessionToken}, ${expiredSessionToken}, ${noMembershipSessionToken}))::text as session_count,
-        (select count(*) from auth.account where id = '14141414-1414-4141-8141-141414141414')::text as account_count,
-        (select count(*) from auth.verification where id = '15151515-1515-4151-8151-151515151515')::text as verification_count
-    `;
-    expect(counts[0]).toMatchObject({
-      session_count: '3',
-      account_count: '1',
-      verification_count: '1',
+  it('maps Clerk identity to the preserved app UUID and enforces live membership', async () => {
+    await seedClerkSession(client, authSessionId, authSessionToken, actorA);
+    await seedClerkSession(
+      client,
+      expiredSessionId,
+      expiredSessionToken,
+      actorA,
+      false,
+      new Date(Date.now() - 60_000),
+    );
+    await seedClerkSession(
+      client,
+      noMembershipSessionId,
+      noMembershipSessionToken,
+      actorWithoutMembership,
+    );
+    const request = new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+      headers: clerkHeaders(authSessionToken),
     });
-    expect(Number(counts[0]?.user_count)).toBeGreaterThanOrEqual(3);
-
-    const auth = await getAuth();
-    const signedSessionToken = `${authSessionToken}.${await makeSignature(authSessionToken, authSecret)}`;
-    const signedExpiredSessionToken = `${expiredSessionToken}.${await makeSignature(expiredSessionToken, authSecret)}`;
-    const request = new Request('http://127.0.0.1:3000/api/auth/get-session', {
-      headers: { cookie: `shanda-fuel.session_token=${signedSessionToken}` },
-    });
-    const loaded = await auth.api.getSession({ headers: request.headers });
-    expect(loaded?.user.id).toBe(actorA);
-    expect(loaded?.session.userId).toBe(actorA);
-    const expired = await auth.api.getSession({
-      headers: new Headers({ cookie: `shanda-fuel.session_token=${signedExpiredSessionToken}` }),
-    });
-    expect(expired).toBeNull();
-
-    const actor = await resolveAuthenticatedActor(request, auth);
+    const actor = await resolveAuthenticatedActor(request);
     expect(actor?.identityId).toBe(actorA);
-    const activeContext = await resolveTenantExecutionContext({
-      request,
-      requestedTenantId: tenantA,
-      resolveActor: (currentRequest) => resolveAuthenticatedActor(currentRequest, auth),
-    });
-    expect(activeContext.membership.membershipId).toBe(membershipA);
-
-    const noMembershipRequest = new Request('http://127.0.0.1:3000/api/auth/get-session', {
-      headers: { cookie: `shanda-fuel.session_token=${noMembershipSessionToken}` },
-    });
+    expect(actor?.session.sessionId).toBe(authSessionId);
+    const active = await resolveTenantExecutionContext({ request, requestedTenantId: tenantA });
+    expect(active.membership.membershipId).toBe(membershipA);
+    await expect(
+      resolveTenantExecutionContext({ request, requestedTenantId: tenantB }),
+    ).rejects.toThrow();
+    expect(
+      await resolveAuthenticatedActor(
+        new Request(request.url, {
+          headers: clerkHeaders(expiredSessionToken),
+        }),
+      ),
+    ).toBeNull();
+    expect(await resolveAuthenticatedActor(new Request(request.url))).toBeNull();
+    expect(
+      await resolveAuthenticatedActor(
+        new Request(request.url, {
+          headers: clerkHeaders('unregistered-session'),
+        }),
+      ),
+    ).toBeNull();
     await expect(
       resolveTenantExecutionContext({
-        request: noMembershipRequest,
+        request: new Request(request.url, { headers: clerkHeaders(noMembershipSessionToken) }),
         requestedTenantId: tenantA,
-        resolveActor: (currentRequest) => resolveAuthenticatedActor(currentRequest, auth),
       }),
     ).rejects.toThrow();
+    fixtureSession(authSessionId).revoked = true;
+    expect(await resolveAuthenticatedActor(request)).toBeNull();
   });
 });

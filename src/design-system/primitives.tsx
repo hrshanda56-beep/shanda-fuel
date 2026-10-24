@@ -3,6 +3,7 @@
 import {
   cloneElement,
   isValidElement,
+  useEffect,
   useRef,
   useState,
   type HTMLAttributes,
@@ -419,7 +420,19 @@ export function ErrorState({
   );
 }
 
+const SUCCESS_VISIBLE_MS = 6000;
+
 export function SuccessState({ title = 'Saved', message }: { title?: string; message: string }) {
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+  const key = `${title}\n${message}`;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDismissedFor(key), SUCCESS_VISIBLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [key]);
+
+  if (dismissedFor === key) return null;
+
   return (
     <div className="state state-success" role="status" aria-live="polite">
       <div>

@@ -2,7 +2,12 @@ import 'server-only';
 
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
-import { executeSupplierCommand, requestHash, resolveSupplierCommandContext } from './application';
+import {
+  authorizeSupplierCommand,
+  executeSupplierCommand,
+  requestHash,
+  resolveSupplierCommandContext,
+} from './application';
 import {
   allocateSupplierPaymentInTransaction,
   createSupplierInTransaction,
@@ -10,9 +15,11 @@ import {
   postSupplierPaymentInTransaction,
   reverseSupplierDocumentInTransaction,
   reverseSupplierPaymentInTransaction,
+  setSupplierCreditLimitInTransaction,
   submitSupplierDocumentInTransaction,
   submitSupplierPaymentInTransaction,
 } from './persistence';
+import { setPurchasingPolicyInTransaction } from './purchasing-persistence';
 
 const uuid = z.string().uuid();
 const decimal = z
@@ -28,6 +35,32 @@ const createSupplierSchema = base.extend({
   registrationReference: z.string().trim().max(120).optional(),
 });
 
+const setCreditLimitSchema = base.extend({
+  commandType: z.literal('SetSupplierCreditLimit'),
+  supplierId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  /** Null removes the limit. */
+  creditLimit: z
+    .string()
+    .regex(/^\d+(?:\.\d{1,4})?$/, 'An amount with at most four decimals is required')
+    .nullable(),
+});
+
+const percent = z.string().regex(/^\d+(?:\.\d+)?$/, 'An exact decimal string is required');
+
+const invoiceLineSchema = z.object({
+  productId: uuid.optional(),
+  description: z.string().trim().min(1).max(300),
+  quantity: decimal,
+  unitPrice: decimal,
+  amount: decimal.optional(),
+  vatRate: percent.optional(),
+  vatAmount: decimal.optional(),
+  /** Attaches the line to one of the document's delivery links (same delivery/allocation). */
+  deliveryId: uuid.optional(),
+  allocationId: uuid.optional(),
+});
+
 const submitDocumentSchema = base.extend({
   commandType: z.literal('SubmitSupplierDocument'),
   supplierId: uuid,
@@ -35,9 +68,25 @@ const submitDocumentSchema = base.extend({
   referenceNumber: z.string().trim().min(1).max(120),
   documentDate: z.string(),
   dueDate: z.string().optional(),
+  /** Cash or credit. Omitted = not recorded (older callers); see credit-terms.ts. */
+  paymentTerms: z.enum(['CASH', 'CREDIT']).optional(),
+  /** Days after the invoice date that payment falls due; the due date is worked out from it. */
+  creditPeriodDays: z.number().int().min(0).max(365).optional(),
+  /** Payable total (net plus VAT). Must equal the sum of the lines exactly. */
   amount: decimal,
+  netAmount: decimal.optional(),
+  vatAmount: decimal.optional(),
+  lines: z.array(invoiceLineSchema).max(200).optional(),
   deliveryReferences: z
-    .array(z.object({ stationId: uuid, deliveryId: uuid, allocationId: uuid.optional() }))
+    .array(
+      z.object({
+        stationId: uuid,
+        deliveryId: uuid,
+        allocationId: uuid.optional(),
+        invoicedQuantityLitres: decimal.optional(),
+        invoicedAmount: decimal.optional(),
+      }),
+    )
     .max(100)
     .optional(),
 });
@@ -46,6 +95,8 @@ const postDocumentSchema = base.extend({
   commandType: z.literal('PostSupplierDocument'),
   documentId: uuid,
   expectedVersion: z.number().int().nonnegative(),
+  /** Needed only when the purchasing policy requires approval for out-of-tolerance invoices. */
+  varianceApprovalReason: z.string().trim().min(1).max(500).optional(),
 });
 
 const reverseDocumentSchema = base.extend({
@@ -86,6 +137,27 @@ const reversePaymentSchema = base.extend({
   reason: z.string().trim().min(1).max(500),
 });
 
+const nullableDecimal = decimal.nullish();
+const setPurchasingPolicySchema = base.extend({
+  commandType: z.literal('SetPurchasingPolicy'),
+  /** Omit (or null) for the tenant policy; set for a per-supplier override. */
+  supplierId: uuid.nullish(),
+  /** Omit when creating the policy; required when changing an existing one. */
+  expectedVersion: z.number().int().nonnegative().optional(),
+  reason: z.string().trim().min(1).max(500),
+  quantityToleranceLitres: nullableDecimal,
+  quantityTolerancePercent: nullableDecimal,
+  priceTolerancePercent: nullableDecimal,
+  amountTolerance: nullableDecimal,
+  overReceiptToleranceLitres: nullableDecimal,
+  overReceiptTolerancePercent: nullableDecimal,
+  toleranceAction: z.enum(['FLAG', 'REQUIRE_APPROVAL']).nullish(),
+  vatMode: z.enum(['NONE', 'EXCLUSIVE', 'INCLUSIVE']).nullish(),
+  defaultVatRate: nullableDecimal,
+  productVatRates: z.record(uuid, percent).optional(),
+  requireInvoiceLines: z.boolean().nullish(),
+});
+
 function idempotencyKey(request: Request): string {
   return request.headers.get('idempotency-key') ?? '';
 }
@@ -115,6 +187,10 @@ export async function submitSupplierDocumentFromRequest(request: Request, body: 
     requestedTenantId: input.tenantId,
     legalEntityId: input.legalEntityId,
   });
+  // Tying a physical delivery to a payable is a separate permission from capturing the invoice.
+  if ((input.deliveryReferences ?? []).length > 0) {
+    authorizeSupplierCommand(context, 'supplier.delivery.link');
+  }
   return executeSupplierCommand({
     context,
     commandType: input.commandType,
@@ -264,7 +340,54 @@ export async function reverseSupplierPaymentFromRequest(request: Request, body: 
   });
 }
 
+export async function setPurchasingPolicyFromRequest(request: Request, body: unknown) {
+  const input = setPurchasingPolicySchema.parse(body);
+  const context = await resolveSupplierCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+  });
+  return executeSupplierCommand({
+    context,
+    commandType: input.commandType,
+    // High-risk permission: authorize() requires a current strong-authentication step-up.
+    permissionCode: 'purchasing.policy.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    audit: {
+      actionCode: 'PURCHASING.POLICY_SET',
+      subjectType: 'PurchasingPolicy',
+      subjectId: (result) => (result as { policyId: string }).policyId,
+      reason: input.reason,
+    },
+    execute: (transaction) => setPurchasingPolicyInTransaction(transaction, context, input),
+  });
+}
+
+export async function setSupplierCreditLimitFromRequest(request: Request, body: unknown) {
+  const input = setCreditLimitSchema.parse(body);
+  const context = await resolveSupplierCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+  });
+  return executeSupplierCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'supplier.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    audit: {
+      actionCode: 'SUPPLIER.CREDIT_LIMIT_SET',
+      subjectType: 'Supplier',
+      subjectId: input.supplierId,
+    },
+    execute: (transaction) => setSupplierCreditLimitInTransaction(transaction, context, input),
+  });
+}
+
 export type SupplierCommandName =
+  | 'SetSupplierCreditLimit'
   | 'CreateSupplier'
   | 'SubmitSupplierDocument'
   | 'PostSupplierDocument'
@@ -272,7 +395,8 @@ export type SupplierCommandName =
   | 'SubmitSupplierPayment'
   | 'PostSupplierPayment'
   | 'AllocateSupplierPayment'
-  | 'ReverseSupplierPayment';
+  | 'ReverseSupplierPayment'
+  | 'SetPurchasingPolicy';
 
 export function assertSupplierCommandType(value: unknown): SupplierCommandName {
   if (
@@ -283,7 +407,9 @@ export function assertSupplierCommandType(value: unknown): SupplierCommandName {
     value === 'SubmitSupplierPayment' ||
     value === 'PostSupplierPayment' ||
     value === 'AllocateSupplierPayment' ||
-    value === 'ReverseSupplierPayment'
+    value === 'ReverseSupplierPayment' ||
+    value === 'SetPurchasingPolicy' ||
+    value === 'SetSupplierCreditLimit'
   ) {
     return value;
   }

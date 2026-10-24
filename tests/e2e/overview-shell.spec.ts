@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
 
 /** Overlays fade and rise in; axe must sample their settled colours, not a frame mid-fade. */
 async function animationsSettled(page: Page) {
@@ -57,44 +58,50 @@ function operationsOverview(close: string, approval = 'NO_REVISION') {
   };
 }
 
-async function mockToday(
-  page: Page,
-  options: {
-    operations?: { status: number; body: unknown };
-    customers?: unknown[];
-    daily?: unknown[];
-    sales?: unknown[];
-  } = {},
-) {
-  await page.route('**/api/reports/daily**', async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
+type TodayOptions = {
+  operations?: { status: number; body: unknown };
+  customers?: unknown[];
+  customerStatus?: number;
+  daily?: unknown[];
+  sales?: unknown[];
+};
+function dashboardBody(options: TodayOptions = {}) {
+  const operation = options.operations ?? { status: 200, body: operationsOverview('IN_PROGRESS') };
+  return {
+    daily: {
+      status: 'ready',
+      data: {
         report: 'DAILY_OPERATIONS',
         filters: { fromDate: '2026-10-08' },
         rows: options.daily ?? [],
-      }),
-    });
-  });
-  await page.route('**/api/reports/management**', async (route) => {
-    await route.fulfill({
+      },
+    },
+    customers:
+      options.customerStatus === 403
+        ? { status: 'forbidden' }
+        : { status: 'ready', data: { customers: options.customers ?? [] } },
+    operations:
+      operation.status === 403
+        ? { status: 'forbidden' }
+        : operation.status >= 400
+          ? { status: 'error', message: 'Operations could not be loaded.' }
+          : { status: 'ready', data: operation.body },
+    chart: { status: 'ready', data: { sales: { rows: options.sales ?? [] } } },
+  };
+}
+async function mockToday(page: Page, options: TodayOptions = {}) {
+  await page.route('**/api/dashboard?**', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(dashboardBody(options)),
+    }),
+  );
+  await page.route('**/api/dashboard/sales?**', (route) =>
+    route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({ sales: { rows: options.sales ?? [] } }),
-    });
-  });
-  await page.route('**/api/forecourt/operations/overview**', async (route) => {
-    const { status, body } = options.operations ?? {
-      status: 200,
-      body: operationsOverview('IN_PROGRESS'),
-    };
-    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-  });
-  await page.route('**/api/customers/summary**', async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ customers: options.customers ?? [] }),
-    });
-  });
+    }),
+  );
 }
 
 const TODAY = `/?tenantId=${TENANT}&stationId=${STATION}`;
@@ -159,18 +166,18 @@ test('key figures show approved totals with signed variances', async ({ page }) 
   );
 });
 
-test('daily figures are requested for the selected station and the server business date', async ({
+test('dashboard loads the selected station and chart range in one initial request', async ({
   page,
 }) => {
   await mockToday(page, { daily: [dailyRow()] });
-  const request = page.waitForRequest('**/api/reports/daily**');
+  const request = page.waitForRequest('**/api/dashboard?**');
   await page.goto(TODAY);
   const url = new URL((await request).url());
   expect(url.searchParams.get('tenantId')).toBe(TENANT);
-  expect(url.searchParams.get('stationIds')).toBe(STATION);
-  // The server resolves "today" in the station's business timezone.
-  expect(url.searchParams.has('fromDate')).toBe(false);
-  expect(url.searchParams.has('toDate')).toBe(false);
+  expect(url.searchParams.get('stationId')).toBe(STATION);
+  // These dates bound the chart; the shared loader keeps daily totals on the server business date.
+  expect(url.searchParams.has('fromDate')).toBe(true);
+  expect(url.searchParams.has('toDate')).toBe(true);
 });
 
 test('an approved zero is shown as zero, unlike a day with no approved report', async ({
@@ -344,6 +351,7 @@ test('today surfaces blocked operations and suspended customers', async ({ page 
 });
 
 test('today explains missing access and failures in plain words', async ({ page }) => {
+  await mockEmptyWorkContext(page);
   await mockToday(page, { operations: { status: 403, body: { error: 'FORBIDDEN' } } });
   await page.goto(TODAY);
   await expect(
@@ -351,6 +359,8 @@ test('today explains missing access and failures in plain words', async ({ page 
   ).toBeVisible();
 
   await page.unrouteAll({ behavior: 'ignoreErrors' });
+  // unrouteAll also drops the context answer, and without it the shell redirects to /login.
+  await mockEmptyWorkContext(page);
   await mockToday(page, {
     operations: { status: 500, body: { message: 'Daily operations could not be loaded.' } },
   });
@@ -399,14 +409,20 @@ test.describe('today hardening', () => {
   test('recovers when Try again succeeds after a failure', async ({ page }) => {
     let failing = true;
     await mockToday(page);
-    await page.route('**/api/forecourt/operations/overview**', async (route) => {
+    await page.route('**/api/dashboard?**', async (route) => {
       if (failing) {
-        await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(dashboardBody({ operations: { status: 500, body: {} } })),
+        });
         return;
       }
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify(operationsOverview('OPEN')),
+        body: JSON.stringify(
+          dashboardBody({ operations: { status: 200, body: operationsOverview('OPEN') } }),
+        ),
       });
     });
     await page.goto(TODAY);
@@ -422,12 +438,12 @@ test.describe('today hardening', () => {
     page,
   }) => {
     await mockToday(page);
-    await page.route('**/api/forecourt/operations/overview**', (route) => route.abort('failed'));
+    await page.route('**/api/dashboard?**', (route) => route.abort('failed'));
     await page.route('**/api/customers/summary**', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: '<html>oops' }),
     );
     await page.goto(TODAY);
-    await expect(page.locator('.state-error')).toBeVisible();
+    await expect(page.locator('.state-error').first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
     await expect(page.getByText('NaN', { exact: true })).toHaveCount(0);
     await expect(page.getByText('undefined', { exact: true })).toHaveCount(0);
@@ -435,11 +451,13 @@ test.describe('today hardening', () => {
 
   test('never shows a zero or an empty message while still loading', async ({ page }) => {
     await mockToday(page);
-    await page.route('**/api/forecourt/operations/overview**', async (route) => {
+    await page.route('**/api/dashboard?**', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify(operationsOverview('OPEN')),
+        body: JSON.stringify(
+          dashboardBody({ operations: { status: 200, body: operationsOverview('OPEN') } }),
+        ),
       });
     });
     await page.goto(TODAY);
@@ -450,8 +468,11 @@ test.describe('today hardening', () => {
 
   test('customer access denied does not hide the station day', async ({ page }) => {
     await mockToday(page);
-    await page.route('**/api/customers/summary**', (route) =>
-      route.fulfill({ status: 403, contentType: 'application/json', body: '{}' }),
+    await page.route('**/api/dashboard?**', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify(dashboardBody({ customerStatus: 403 })),
+      }),
     );
     await page.goto(TODAY);
     await expect(page.getByRole('link', { name: /Bindura/ })).toBeVisible();
@@ -507,7 +528,7 @@ test.describe('today hardening', () => {
     const rail = page.locator('.shell-sidebar');
     await expect(rail.getByRole('link').first()).toBeVisible();
     await rail.getByRole('button', { name: 'Finance' }).click();
-    const drawer = page.getByRole('dialog', { name: 'More' });
+    const drawer = page.getByRole('dialog', { name: 'Navigation' });
     await expect(drawer.getByRole('link', { name: 'Customers', exact: true })).toBeVisible();
     await animationsSettled(page);
     const results = await new AxeBuilder({ page }).analyze();

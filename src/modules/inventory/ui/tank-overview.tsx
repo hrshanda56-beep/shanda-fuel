@@ -13,27 +13,12 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatTileLitres } from '../../reporting/format';
+import { classifyStockVariance } from '../../approvals/operations-alerts';
 import { TankDrum } from './tank-drum';
 import { fuelKind, tankLabel, tankLevel, tanksForStation } from './tank-overview-model';
 
-type TankRow = {
-  stationId: string;
-  tankId: string;
-  tankCode: string;
-  productId: string;
-  productCode: string;
-  productName: string;
-  capacityLitres: string;
-  reorderLevelLitres: string | null;
-  expectedLitres: string;
-  physicalLitres: string | null;
-  varianceLitres: string | null;
-};
-
-type InventoryReport = {
-  filters: { toDate: string };
-  inventory: { rows: readonly TankRow[] };
-};
+import type { InventoryReport } from '../tank-read-model';
+export type { InventoryReport } from '../tank-read-model';
 
 type Load =
   | { status: 'loading' }
@@ -83,29 +68,33 @@ export function TankOverview({
   tenantId,
   stationId,
   contextHref = '',
+  report,
 }: {
   tenantId: string;
   stationId: string;
   contextHref?: string;
+  report?: InventoryReport;
 }) {
   const contextQuery = contextHref.split('?')[1];
   const key = `${tenantId}|${stationId}`;
   const [loaded, setLoaded] = useState<Keyed>({ status: 'loading' });
   // A result for another station is never shown while the new one loads.
   const state: Load = useMemo(
-    () => (loaded.key === key ? loaded : { status: 'loading' }),
-    [loaded, key],
+    () =>
+      report ? { status: 'ready', report } : loaded.key === key ? loaded : { status: 'loading' },
+    [loaded, key, report],
   );
 
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    if (report) return;
     const controller = new AbortController();
     void fetchTanks(tenantId, stationId, controller.signal).then((next) => {
       if (next) setLoaded({ ...next, key: `${tenantId}|${stationId}` });
     });
     return () => controller.abort();
-  }, [tenantId, stationId, attempt]);
+  }, [tenantId, stationId, attempt, report]);
 
   const tanks = useMemo(
     () => (state.status === 'ready' ? tanksForStation(state.report.inventory.rows, stationId) : []),
@@ -172,6 +161,10 @@ export function TankOverview({
                         {tankLabel(tank.tankCode)}: {tank.productName}
                       </span>
                       {level.state === 'low' ? <StatusBadge tone="warning">Low</StatusBadge> : null}
+                      <StockSignalBadge
+                        variance={tank.physicalLitres === null ? null : tank.varianceLitres}
+                        tolerance={tank.acceptableVarianceLitres ?? null}
+                      />
                     </span>
                     <span className="tank-figure">
                       <TankDrum level={level} />
@@ -217,4 +210,18 @@ export function TankOverview({
       ) : null}
     </Card>
   );
+}
+
+/** Green, yellow or red: how far the last dip is from the book stock, against the tank's own limit. */
+function StockSignalBadge({
+  variance,
+  tolerance,
+}: Readonly<{ variance: string | null; tolerance: string | null }>) {
+  const signal = classifyStockVariance(variance, tolerance);
+  if (signal === 'unjudged') {
+    return <StatusBadge tone="neutral">Not checked</StatusBadge>;
+  }
+  if (signal === 'ok') return <StatusBadge tone="positive">Matches books</StatusBadge>;
+  if (signal === 'watch') return <StatusBadge tone="warning">Small difference</StatusBadge>;
+  return <StatusBadge tone="critical">Check this tank</StatusBadge>;
 }

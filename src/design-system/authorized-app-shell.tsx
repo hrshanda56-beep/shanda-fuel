@@ -1,4 +1,5 @@
 import 'server-only';
+import { WorkContextProvider } from '../modules/context/client-context';
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -7,7 +8,6 @@ import type { ReactNode } from 'react';
 import { AppShell, type AppShellProps } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
 import { getServerShellAccess, type ServerShellAccess } from './navigation-server';
-import { getAuthProviderName } from '@/platform/auth/provider';
 
 import { EntryShell } from './entry/entry-shell';
 import { NoWorkplace } from './entry/workplace-views';
@@ -52,10 +52,22 @@ export async function AuthorizedAppShell({
     redirect('/my-shift');
   }
   return (
-    <AppShell
-      {...props}
-      authProvider={getAuthProviderName()}
-      navigationProjection={access.projection ?? emptyNavigationProjection}
-    />
+    <WorkContextProvider resolution={access.resolution}>
+      <AppShell
+        {...props}
+        authProvider={'CLERK'}
+        navigationContext={
+          access.current
+            ? {
+                tenantId: access.current.organisationId,
+                legalEntityId: access.current.legalEntityId,
+                stationId: access.current.stationId,
+                allStations: access.current.allStations,
+              }
+            : undefined
+        }
+        navigationProjection={access.projection ?? emptyNavigationProjection}
+      />
+    </WorkContextProvider>
   );
 }

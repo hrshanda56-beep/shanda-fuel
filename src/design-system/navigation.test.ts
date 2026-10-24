@@ -5,7 +5,9 @@ import {
   isSingleDestinationSection,
   navigationSections,
   readWorkContext,
+  navigationWorkContext,
   resolveNavigation,
+  resolveNavigationItem,
   selectMobileNavigationItems,
   syntheticNavigationProjection,
   type NavigationProjection,
@@ -30,7 +32,7 @@ describe('grouped navigation model', () => {
   it('renders single-destination sections as links and multi-item sections as groups', () => {
     expect(
       navigationSections.filter((s) => !isSingleDestinationSection(s)).map((s) => s.key),
-    ).toEqual(['operations', 'finance']);
+    ).toEqual(['operations', 'finance', 'suppliers']);
   });
 
   it('uses unique keys so projections are unambiguous', () => {
@@ -42,7 +44,16 @@ describe('grouped navigation model', () => {
 describe('navigation projection', () => {
   it('hides items that are not visible and drops empty sections', () => {
     const projection: NavigationProjection[] = syntheticNavigationProjection.map((entry) =>
-      entry.key === 'cash' || entry.key === 'settlements' || entry.key === 'customers'
+      entry.key === 'finance-home' ||
+      entry.key === 'cash' ||
+      entry.key === 'settlements' ||
+      entry.key === 'expenses' ||
+      entry.key === 'profitability' ||
+      entry.key === 'daily-profit' ||
+      entry.key === 'financial-position' ||
+      entry.key === 'customers' ||
+      entry.key === 'customer-controls' ||
+      entry.key === 'staff-benefit'
         ? { ...entry, visible: false }
         : entry,
     );
@@ -109,10 +120,20 @@ describe('navigation destinations', () => {
       'Daily operations',
       'Reconciliations',
       'Inventory',
+      'Fuel deliveries',
+      'Finance overview',
       'Cash & Banking',
-      'Provider settlements',
+      'Provider payouts',
+      'Expenses',
+      'Profit',
+      'Daily profit',
+      'Financial position',
       'Customers',
+      'Customer controls',
+      'Staff fuel benefit',
       'Suppliers',
+      'Payments due',
+      'Purchase orders',
       'Reports',
       'Settings',
     ]);
@@ -179,4 +200,54 @@ describe('current-route indication', () => {
     expect(isNavigationItemActive(item('today'), '/reports')).toBe(false);
     expect(isNavigationItemActive(item('today'), null)).toBe(false);
   });
+});
+
+it('preserves explicit all-stations navigation and never carries a stale station', () => {
+  const context = readWorkContext(
+    '/reports',
+    new URLSearchParams('tenantId=t&allStations=true&stationId=old'),
+  );
+  expect(context).toEqual({ tenantId: 't', allStations: true });
+  const items = navigationSections.flatMap((section) => section.items);
+  for (const key of [
+    'cash',
+    'settlements',
+    'reconciliations',
+    'daily-operations',
+    'finance-home',
+    'customers',
+  ]) {
+    const item = items.find((row) => row.key === key)!;
+    const result = resolveNavigationItem(item, context);
+    expect(result.state).toBe('link');
+    if (result.state === 'link') {
+      expect(result.href).toContain('allStations=true');
+      expect(result.href).not.toContain('stationId=');
+      expect(result.href).not.toContain('/stations/');
+    }
+  }
+});
+
+it('keeps validated navigation scope for partial links without mixing explicit scope changes', () => {
+  const selected = { tenantId: 'owner', legalEntityId: 'entity', stationId: 'station' };
+  expect(
+    navigationWorkContext('/customers', new URLSearchParams('tenantId=owner'), selected),
+  ).toEqual(selected);
+  expect(
+    navigationWorkContext(
+      '/reports',
+      new URLSearchParams('tenantId=owner&allStations=true'),
+      selected,
+    ),
+  ).toEqual({ tenantId: 'owner', allStations: true });
+  expect(
+    navigationWorkContext('/reports', new URLSearchParams('tenantId=other'), selected),
+  ).toEqual({ tenantId: 'other' });
+  expect(
+    navigationWorkContext(
+      '/reports',
+      new URLSearchParams('tenantId=owner&stationId=new'),
+      selected,
+    ),
+  ).toEqual({ tenantId: 'owner', stationId: 'new' });
 });

@@ -27,6 +27,8 @@ export const dailyOperationsQuery = z.object({
 type DailyOperationsInput = z.infer<typeof dailyOperationsQuery>;
 
 type DailyOperationsContext = {
+  /** The signed-in person's membership, so unsent entries kept on a device stay with that person. */
+  viewerMembershipId: string;
   station: { id: string; code: string; name: string; timezone: string };
   organisation: { id: string; name: string };
   businessDay: { id: string; date: string; state: string; version: number };
@@ -132,7 +134,7 @@ async function loadDailyOperationsContext(
     transaction.execute<{ id: string; name: string; email: string }>(sql`
       select m.id, u.name, u.email
       from app.memberships m
-      join auth."user" u on u.id = m.identity_id
+      join app.users u on u.id = m.identity_id
       join app.membership_role_assignments a
         on a.tenant_id = m.tenant_id and a.membership_id = m.id
       where m.tenant_id = ${context.tenantId}
@@ -190,6 +192,7 @@ async function loadDailyOperationsContext(
   ]);
 
   return {
+    viewerMembershipId: context.authority.membership.membershipId,
     station: {
       id: station.id,
       code: station.code,

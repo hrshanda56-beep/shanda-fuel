@@ -35,8 +35,9 @@ jobs:
     env:
       APP_ENV: test
       APP_URL: http://127.0.0.1:3100
-      AUTH_PROVIDER: BETTER_AUTH
-      BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_TEST_PUBLISHABLE_KEY }}
+      E2E_CLERK_USERS: ${{ secrets.E2E_CLERK_USERS }}
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
@@ -51,6 +52,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Require dedicated Clerk test configuration
+        run: bash scripts/ci/require-clerk-test-config.sh
       - name: Wait for PostgreSQL
         run: pg_isready --host 127.0.0.1 --port 5432 --username postgres --dbname shanda_fuel_test
       - name: Bootstrap database roles
@@ -71,7 +74,7 @@ jobs:
       - run: pnpm test:e2e --workers=1
       - name: Upload browser failure artifacts
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-failure-${{ github.run_id }}
           path: |
@@ -106,7 +109,7 @@ jobs:
           node scripts/dependency-audit-exception.mjs 2>&1 | tee pnpm-audit.txt
       - name: Upload dependency audit output
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dependency-audit-${{ github.run_id }}
           path: pnpm-audit.txt
@@ -151,7 +154,7 @@ jobs:
           --error --sarif-output=semgrep.sarif
       - name: Upload SAST result
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: semgrep-sast-${{ github.run_id }}
           path: semgrep.sarif
@@ -207,8 +210,8 @@ jobs:
     env:
       APP_ENV: test
       APP_URL: http://127.0.0.1:3100
-      AUTH_PROVIDER: BETTER_AUTH
-      BETTER_AUTH_SECRET: integration-only-better-auth-secret-32-bytes
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_TEST_PUBLISHABLE_KEY }}
       AUDIT_SIGNING_KEY_ID: integration-ci-audit-key
       AUDIT_SIGNING_KEY: integration-ci-audit-secret
       DATABASE_DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/shanda_fuel_test
@@ -223,6 +226,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Require dedicated Clerk test configuration
+        run: bash scripts/ci/require-clerk-test-config.sh
       - name: Wait for PostgreSQL
         run: pg_isready --host 127.0.0.1 --port 5432 --username postgres --dbname shanda_fuel_test
       - name: Bootstrap disposable database roles
@@ -268,7 +273,7 @@ jobs:
           fi
       - name: Upload runtime-role proof artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runtime-role-proof-${{ github.run_id }}
           path: |

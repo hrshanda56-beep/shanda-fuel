@@ -1,0 +1,292 @@
+/* Purchasing screens. A module so it cannot collide with other pages' styles. */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.intro {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  max-width: 46rem;
+}
+
+.headline {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.headlineValue {
+  margin: 0;
+  font-size: var(--font-size-xl, 1.5rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.toolbarEnd {
+  margin-left: auto;
+}
+
+.table .head,
+.table .row {
+  display: grid;
+  grid-template-columns:
+    minmax(11rem, 1.6fr) minmax(9rem, 1.2fr) minmax(8rem, 1.4fr) minmax(6rem, 0.8fr)
+    minmax(6rem, 0.8fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.table .row {
+  width: 100%;
+  border: 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.table .row::after {
+  display: none;
+}
+
+.table li:last-child .row {
+  border-bottom: 0;
+}
+
+.table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowTitle {
+  display: grid;
+  min-width: 0;
+}
+
+.rowTitle strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.rowTitle small {
+  color: var(--text-secondary);
+}
+
+/* Exposure and check rows: three columns, then the detail panel. */
+.table.three .head,
+.table.three .row {
+  grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(7rem, 1fr) 2rem;
+}
+
+.chevron {
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.row[aria-expanded='true'] .chevron {
+  transform: rotate(90deg);
+}
+
+.detailPanel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--bg-subtle);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.facts div {
+  display: grid;
+  gap: 2px;
+}
+
+.facts dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.reasons {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.subRows {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subRow {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.4fr) repeat(4, minmax(5rem, 1fr));
+  gap: var(--space-3);
+  align-items: center;
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.subRow:last-child {
+  border-bottom: 0;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-4);
+}
+
+.settingBlock {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.settingBlock h4,
+.sectionTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.settingBlock p {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.formGrid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.lineCard {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.fieldset legend {
+  padding: 0;
+  font-weight: var(--font-weight-medium);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.confirmBox {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@media (max-width: 48rem) {
+  .table .head {
+    display: none;
+  }
+
+  .table .row,
+  .table.three .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .table .numeric {
+    text-align: left;
+  }
+
+  .table .cell::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+  }
+
+  .subRow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .subRow > :first-child {
+    grid-column: 1 / -1;
+    font-weight: var(--font-weight-medium);
+  }
+
+  .lineCard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .toolbarEnd {
+    margin-left: 0;
+  }
+}

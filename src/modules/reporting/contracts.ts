@@ -22,6 +22,25 @@ export const managementReportQuerySchema = z
     ),
     fromDate: dateOnly.optional(),
     toDate: dateOnly.optional(),
+    /** Optional narrowing for table reports; each report applies only the ones that fit it. */
+    productId: z.string().uuid().optional(),
+    supplierId: z.string().uuid().optional(),
+    customerId: z.string().uuid().optional(),
+    /** A staff member (membership): the attendant on a shift or a person in a cash handover. */
+    employeeId: z.string().uuid().optional(),
+    shiftTemplateId: z.string().uuid().optional(),
+    paymentMethod: z
+      .enum([
+        'CASH',
+        'POS',
+        'ECOCASH',
+        'BANK_TRANSFER',
+        'CUSTOMER_CREDIT',
+        'PREPAID',
+        'STAFF_OR_MANAGEMENT_FUEL',
+        'OTHER_APPROVED',
+      ])
+      .optional(),
   })
   .superRefine((value, context) => {
     if (value.fromDate && value.toDate && value.fromDate > value.toDate) {
@@ -52,11 +71,13 @@ export type ReportDateBasis = {
   suppliers: 'A7 effective_date <= toDate; balance as of toDate';
   customers: 'A8 balance as of toDate using ledger business_date and authorization requested_at';
   inventory: 'A4 movement business date and latest dip measured_at as of toDate';
-  expenses: 'A5 business date';
+  expenses: 'expense_recognition_movements.recognition_date';
+  dailyRecordedExpenses: 'A5 business date';
 };
 
 export type ReportMoney = string;
 export type ReportLitres = string;
+export type ReportExpenseClassification = 'OPERATING' | 'FIXED_COST' | 'DIRECT_INVENTORY_COST';
 
 export type ReportStation = Readonly<{
   stationId: string;
@@ -178,6 +199,7 @@ export type InventoryPosition = Readonly<{
     productName: string;
     capacityLitres: ReportLitres;
     reorderLevelLitres: ReportLitres | null;
+    acceptableVarianceLitres: ReportLitres | null;
     expectedLitres: ReportLitres;
     physicalLitres: ReportLitres | null;
     varianceLitres: ReportLitres | null;
@@ -186,6 +208,21 @@ export type InventoryPosition = Readonly<{
     movementIds: readonly string[];
     deliveryIds: readonly string[];
   }[];
+}>;
+
+/**
+ * Position figures the owner needs that the other report sections do not carry. Read as they stand
+ * now (stock and unpaid expenses are running balances, not period movements).
+ */
+export type OwnerPosition = Readonly<{
+  /** Stock on hand at weighted-average cost; null when some stock has no cost yet. */
+  stockValue: ReportMoney | null;
+  /** Number of tank streams holding stock with no cost yet. */
+  unvaluedStockStreams: number;
+  /** Posted expenses and recognised recurring costs not yet paid. */
+  unpaidExpenses: ReportMoney;
+  /** Submitted expenses waiting for approval. */
+  expensesAwaitingApproval: Readonly<{ count: number; amount: ReportMoney }>;
 }>;
 
 export type ManagementReport = Readonly<{
@@ -217,14 +254,30 @@ export type ManagementReport = Readonly<{
   inventory: InventoryPosition;
   expenses: Readonly<{
     total: ReportMoney;
+    operatingTotal: ReportMoney;
+    fixedCostTotal: ReportMoney;
+    directInventoryCostTotal: ReportMoney;
     rows: readonly {
       businessDate: string;
       stationId: string;
       category: string;
+      classification: ReportExpenseClassification;
+      description: string;
+      payee: string | null;
+      reference: string | null;
+      state: string | null;
+      sourceType: 'EXPENSE' | 'RECURRING_COST_RECOGNITION';
       amount: ReportMoney;
       expenseIds: readonly string[];
+      recurringRecognitionIds: readonly string[];
+      sourceIds: readonly string[];
+      recognitionMovementIds: readonly string[];
+      attachmentIds: readonly string[];
     }[];
   }>;
+  fuelProfit: readonly import('../profitability/contracts').FuelProfitRow[];
+  /** Absent on reports built before the owner layer; shown as not available. */
+  ownerPosition?: OwnerPosition;
   revenue: CanonicalRevenueReport;
   costing: RestatedCogsReport;
   grossMargin: ReportMoney | null;

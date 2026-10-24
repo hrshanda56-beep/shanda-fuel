@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildContextHref, contextRoutePolicy, readContextRoute } from './routes';
+import {
+  buildContextHref,
+  contextRoutePolicy,
+  isCurrentSelection,
+  readContextRoute,
+} from './routes';
 
 const selection = {
   organisationId: '11111111-1111-4111-8111-111111111111',
@@ -10,6 +15,16 @@ const selection = {
 } as const;
 
 describe('context route policy', () => {
+  it('supports both overall and individual station dashboard views', () => {
+    expect(contextRoutePolicy('/').allStationsAllowed).toBe(true);
+    expect(
+      buildContextHref('/', '?stationId=old', {
+        organisationId: selection.organisationId,
+        allStations: true,
+      }),
+    ).toBe(`/?tenantId=${selection.organisationId}&allStations=true`);
+    expect(buildContextHref('/', '', selection)).toContain(`stationId=${selection.stationId}`);
+  });
   it('marks station command routes as station-required', () => {
     expect(contextRoutePolicy('/stations/station-a/cash')).toEqual({
       legalEntity: 'required',
@@ -58,5 +73,69 @@ describe('context route policy', () => {
         new URLSearchParams('stationId=query-station'),
       ),
     ).toMatchObject({ stationId: 'path-station', hasExplicitStation: true });
+  });
+});
+
+describe('overview and record routes', () => {
+  it('allows all stations on management overviews but keeps individual records station-scoped', () => {
+    for (const path of [
+      '/finance',
+      '/operations/daily',
+      '/operations/reconciliations',
+      '/inventory/valuation',
+      '/cash',
+      '/settlements',
+      '/customers',
+      '/suppliers',
+    ])
+      expect(contextRoutePolicy(path).allStationsAllowed).toBe(true);
+    for (const path of [
+      '/stations/s/cash',
+      '/stations/s/reconciliations',
+      '/inventory/valuation/revaluations/r',
+      '/my-shift',
+    ])
+      expect(contextRoutePolicy(path).station).toBe('required');
+  });
+  it('switches station records back to their overview and discards stale record scope', () => {
+    const all = { organisationId: selection.organisationId, allStations: true };
+    expect(buildContextHref('/stations/old/cash', 'stationId=old&collectionId=old', all)).toBe(
+      `/cash?tenantId=${selection.organisationId}&allStations=true`,
+    );
+    expect(
+      buildContextHref(
+        '/operations/daily',
+        'stationId=old&businessDayId=day&shiftId=shift&reconciliationId=record',
+        all,
+      ),
+    ).toBe(`/operations/daily?tenantId=${selection.organisationId}&allStations=true`);
+    expect(buildContextHref('/cash', '', selection)).toBe(
+      `/stations/${selection.stationId}/cash?tenantId=${selection.organisationId}&legalEntityId=${selection.legalEntityId}`,
+    );
+  });
+});
+
+describe('isCurrentSelection', () => {
+  const current = { ...selection };
+
+  it('treats the station you are already on as current, so the picker closes instead of posting', () => {
+    expect(isCurrentSelection(current, selection)).toBe(true);
+    expect(isCurrentSelection(current, { ...selection, legalEntityId: undefined })).toBe(true);
+  });
+  it('treats a different station, entity or organisation as a real switch', () => {
+    expect(isCurrentSelection(current, { ...selection, stationId: 'other' })).toBe(false);
+    expect(isCurrentSelection(current, { ...selection, legalEntityId: 'other' })).toBe(false);
+    expect(isCurrentSelection(current, { ...selection, organisationId: 'other' })).toBe(false);
+  });
+  it('distinguishes all stations from a single station', () => {
+    const all = { organisationId: selection.organisationId, allStations: true } as const;
+    expect(isCurrentSelection(current, all)).toBe(false);
+    expect(isCurrentSelection({ ...current, stationId: undefined, allStations: true }, all)).toBe(
+      true,
+    );
+  });
+  it('is never current before the context has resolved', () => {
+    expect(isCurrentSelection(null, selection)).toBe(false);
+    expect(isCurrentSelection(undefined, selection)).toBe(false);
   });
 });

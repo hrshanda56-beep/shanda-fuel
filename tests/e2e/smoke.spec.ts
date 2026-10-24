@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { mockEmptyWorkContext } from './fixtures/context-route';
+
+test.beforeEach(async ({ page }) => {
+  await mockEmptyWorkContext(page);
+});
 
 test('application foundation renders and exposes liveness health', async ({ page }) => {
   await page.goto('/foundation');

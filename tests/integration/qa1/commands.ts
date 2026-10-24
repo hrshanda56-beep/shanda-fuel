@@ -1,4 +1,4 @@
-import { makeSignature } from 'better-auth/crypto';
+import { clerkHeaders } from '../auth-session-fixtures';
 import { randomUUID } from 'node:crypto';
 import type { Sql } from 'postgres';
 import { POST as cashCommandPost } from '../../../src/app/api/cash/commands/route';
@@ -20,9 +20,7 @@ export type Qa1CommandResult = {
 type RoutePost = (request: Request) => Promise<Response>;
 
 async function signedCookie(token: string): Promise<string> {
-  const secret = process.env.BETTER_AUTH_SECRET;
-  if (!secret) throw new Error('BETTER_AUTH_SECRET is required for QA1 integration tests');
-  return `${token}.${await makeSignature(token, secret)}`;
+  return token;
 }
 
 async function post(
@@ -35,7 +33,7 @@ async function post(
     new Request('http://127.0.0.1:3000/api/qa1-command', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie(token)}`,
+        ...clerkHeaders(await signedCookie(token)),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -348,7 +346,13 @@ export async function completeShift(
 export async function createDelivery(
   ctx: Qa1ScenarioContext,
   keyPrefix: string,
-  input: { quantityLitres: string; deliveredAt: string; noteQuantityLitres?: string },
+  input: {
+    quantityLitres: string;
+    deliveredAt: string;
+    noteQuantityLitres?: string;
+    /** Every delivery names its supplier (ADR-018 D1). */
+    supplierId: string;
+  },
 ): Promise<{ deliveryId: string; allocationId: string }> {
   const result = await inventory(
     ctx,
@@ -357,6 +361,7 @@ export async function createDelivery(
       tenantId: ctx.tenantId,
       stationId: ctx.stationId,
       productId: ctx.productId,
+      supplierId: input.supplierId,
       deliveryNoteNumber: `QA1-DN-${keyPrefix}`,
       deliveredAt: input.deliveredAt,
       noteQuantityLitres: input.noteQuantityLitres ?? input.quantityLitres,
@@ -428,8 +433,17 @@ export async function createApprovedSale(
   keyPrefix: string,
   input: {
     saleLitres: string;
-    payments: Array<{ method: string; amount: string; reference?: string }>;
+    payments: Array<{
+      method: string;
+      amount: string;
+      reference?: string;
+      customerAccountId?: string;
+      beneficiaryName?: string;
+    }>;
     post?: boolean;
+    /** Cash actually counted; defaults to the cash payments (no variance). */
+    countedCash?: string;
+    explanations?: Record<string, string>;
     completeShiftAfter?: boolean;
     existingShiftId?: string;
     openingReading?: string;
@@ -566,7 +580,7 @@ export async function createApprovedSale(
       commandType: 'SaveCashDeclaration',
       ...common,
       expectedVersion: version,
-      countedCash: cashAmount,
+      countedCash: input.countedCash ?? cashAmount,
     },
     `${keyPrefix}-cash`,
     'supervisor',
@@ -579,7 +593,7 @@ export async function createApprovedSale(
       commandType: 'SaveVarianceExplanations',
       ...common,
       expectedVersion: version,
-      explanations: {},
+      explanations: input.explanations ?? {},
     },
     `${keyPrefix}-explanations`,
     'supervisor',

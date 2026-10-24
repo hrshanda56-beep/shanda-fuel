@@ -338,6 +338,9 @@ export const cashHandovers = appSchema.table(
     disputeReason: text('dispute_reason'),
     submittedAt: utcTimestamp('submitted_at'),
     acceptedAt: utcTimestamp('accepted_at'),
+    resolutionNote: text('resolution_note'),
+    resolvedBy: uuid('resolved_by'),
+    resolvedAt: utcTimestamp('resolved_at'),
     version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
@@ -388,6 +391,11 @@ export const cashHandovers = appSchema.table(
       columns: [table.tenantId, table.receivedBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'cash_handovers_received_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.resolvedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'cash_handovers_resolved_by_fk',
     }),
   ],
 );

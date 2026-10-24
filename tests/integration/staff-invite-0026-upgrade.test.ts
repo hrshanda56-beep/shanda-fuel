@@ -42,7 +42,18 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
     const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
     const currentMigrationSql = await readFile(currentMigrationPath, 'utf8');
     const currentMigrationHash = createHash('sha256').update(currentMigrationSql).digest('hex');
-    const latestMigrationSql = await readFile(latestMigrationPath, 'utf8');
+    // Follow the journal so adding a later migration never breaks this check.
+    const journal = JSON.parse(
+      await readFile(
+        resolve(import.meta.dirname, '../../src/platform/db/migrations/meta/_journal.json'),
+        'utf8',
+      ),
+    ) as { entries: { tag: string }[] };
+    const latestTag = journal.entries.at(-1)?.tag ?? '';
+    const latestMigrationSql = await readFile(
+      resolve(import.meta.dirname, `../../src/platform/db/migrations/${latestTag}.sql`),
+      'utf8',
+    );
     const latestMigrationHash = createHash('sha256').update(latestMigrationSql).digest('hex');
     const previousMigrationSql = await readFile(previousMigrationPath, 'utf8');
     const previousMigrationHash = createHash('sha256').update(previousMigrationSql).digest('hex');
@@ -50,6 +61,13 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     await expect(
       client.begin(async (transaction) => {
+        // 0026 and 0027 explicitly name auth.user. Restore that historical
+        // relation name inside this rollback-only transaction and execute the
+        // original SQL verbatim; do not rewrite old migrations for app.users.
+        await transaction.unsafe(`
+          ALTER TABLE app.users RENAME TO "user";
+          ALTER TABLE app."user" SET SCHEMA auth;
+        `);
         await transaction.unsafe(`
           DROP FUNCTION IF EXISTS app.accept_manual_staff_invitation(text, uuid, text, uuid);
           DROP FUNCTION IF EXISTS app.resolve_manual_staff_invitation(text, text);
@@ -69,6 +87,9 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
             DROP COLUMN IF EXISTS delivery_method;
           DROP TABLE IF EXISTS app.staff_number_registry;
           DROP TABLE IF EXISTS app.auth_identities;
+          -- Rollback-only historical fixture: old 0025 required email. Later
+          -- username-only synthetic fixtures must not prevent schema replay.
+          UPDATE auth."user" SET email = id::text || '@historical-fixture.invalid' WHERE email IS NULL;
           ALTER TABLE auth."user" ALTER COLUMN email SET NOT NULL;
           DROP POLICY IF EXISTS membership_roles_staff_invitation_acceptance
             ON app.membership_role_assignments;
@@ -82,10 +103,8 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
           DROP TABLE IF EXISTS app.staff_invitations;
           DROP INDEX IF EXISTS auth.auth_user_normalized_email_uidx;
           DELETE FROM drizzle.__drizzle_migrations
-          WHERE hash IN (
-            '${migrationHash}', '${previousMigrationHash}', '${currentMigrationHash}',
-            '${latestMigrationHash}'
-          );
+          WHERE created_at >= (SELECT created_at FROM drizzle.__drizzle_migrations
+            WHERE hash = '${migrationHash}');
         `);
 
         const before = await transaction<{ migration_count: number; table_name: string }[]>`
@@ -138,7 +157,18 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
   });
 
   it('records 0026 exactly once with the migration source hash', async () => {
-    const latestMigrationSql = await readFile(latestMigrationPath, 'utf8');
+    // Follow the journal so adding a later migration never breaks this check.
+    const journal = JSON.parse(
+      await readFile(
+        resolve(import.meta.dirname, '../../src/platform/db/migrations/meta/_journal.json'),
+        'utf8',
+      ),
+    ) as { entries: { tag: string }[] };
+    const latestTag = journal.entries.at(-1)?.tag ?? '';
+    const latestMigrationSql = await readFile(
+      resolve(import.meta.dirname, `../../src/platform/db/migrations/${latestTag}.sql`),
+      'utf8',
+    );
     const latestMigrationHash = createHash('sha256').update(latestMigrationSql).digest('hex');
     const rows = await client<
       {
@@ -158,7 +188,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
 
     expect(rows).toEqual([
       {
-        migration_count: 30,
+        migration_count: journal.entries.length,
         latest_hash: latestMigrationHash,
         exact_hash_count: 1,
       },
@@ -259,7 +289,7 @@ describe('0025 to 0026 staff invitation database upgrade', () => {
       select indexname
       from pg_indexes
       where (schemaname = 'app' and tablename in ('staff_invitations', 'staff_invitation_stations'))
-         or (schemaname = 'auth' and indexname = 'auth_user_normalized_email_uidx')
+         or (schemaname = 'app' and indexname = 'auth_user_normalized_email_uidx')
       order by indexname
     `;
 

@@ -8,7 +8,11 @@ export const CLERK_STEP_UP_COOKIE = 'shanda-fuel.clerk-step-up';
 export const CLERK_STEP_UP_CHALLENGE_COOKIE = 'shanda-fuel.clerk-step-up-challenge';
 export const CLERK_STEP_UP_ACTION = 'LOCK_BUSINESS_DAY' as const;
 export const CLERK_DEACTIVATE_STAFF_ACTION = 'DEACTIVATE_STAFF_MEMBER' as const;
-export type ClerkStepUpAction = typeof CLERK_STEP_UP_ACTION | typeof CLERK_DEACTIVATE_STAFF_ACTION;
+export const CLERK_PRIVILEGED_ACTION = 'PRIVILEGED_OPERATION' as const;
+export type ClerkStepUpAction =
+  | typeof CLERK_STEP_UP_ACTION
+  | typeof CLERK_DEACTIVATE_STAFF_ACTION
+  | typeof CLERK_PRIVILEGED_ACTION;
 export type ClerkReverificationLevel = 'strict' | 'strict_mfa';
 
 const TOKEN_VERSION = 'v1';
@@ -63,11 +67,19 @@ function parse(value: string | undefined, now = Date.now()): SignedToken | null 
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as SignedToken;
     if (
       (payload.action !== CLERK_STEP_UP_ACTION &&
-        payload.action !== CLERK_DEACTIVATE_STAFF_ACTION) ||
+        payload.action !== CLERK_DEACTIVATE_STAFF_ACTION &&
+        payload.action !== CLERK_PRIVILEGED_ACTION) ||
+      (payload.level !== 'strict' && payload.level !== 'strict_mfa') ||
+      !payload.providerSessionId ||
+      !payload.internalUserId ||
+      !payload.tenantId ||
+      !payload.nonce ||
       !Number.isSafeInteger(payload.issuedAt) ||
       !Number.isSafeInteger(payload.expiresAt) ||
       payload.expiresAt <= now ||
-      payload.issuedAt > now
+      payload.issuedAt > now ||
+      payload.expiresAt <= payload.issuedAt ||
+      payload.expiresAt - payload.issuedAt > TOKEN_TTL_MS
     ) {
       return null;
     }

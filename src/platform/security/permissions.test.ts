@@ -210,6 +210,12 @@ describe('permission authorization', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).toContain('customer.credit.authorize');
   });
 
+  it('lets Finance send a reconciliation back but not a supervisor or attendant', () => {
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).toContain('reconciliation.return');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('reconciliation.return');
+    expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT).not.toContain('reconciliation.return');
+  });
+
   it('rejects a tenant scope carrying narrower identifiers', () => {
     expect(() =>
       scopeCovers(

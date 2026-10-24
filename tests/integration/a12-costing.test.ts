@@ -1,11 +1,10 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { makeSignature } from 'better-auth/crypto';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as inventoryValuationGet } from '../../src/app/api/inventory/valuation/route';
 import { GET as inventoryRevaluationGet } from '../../src/app/api/inventory/valuation/revaluations/[id]/route';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for A12.3 costing integration tests.');
@@ -57,6 +56,9 @@ const ids = {
   businessBoundaryClosing: 'a1220000-0000-4000-8000-000000000111',
   revaluation: 'a1220000-0000-4000-8000-000000000091',
   phase2Session: 'a1220000-0000-4000-8000-000000000112',
+  approver: 'a1220000-0000-4000-8000-000000000121',
+  approverMembership: 'a1220000-0000-4000-8000-000000000122',
+  approverSession: 'a1220000-0000-4000-8000-000000000123',
 };
 
 let client: Sql;
@@ -118,13 +120,17 @@ async function postInventoryCommand(
   input: Record<string, unknown>,
   key: string,
 ): Promise<Response> {
-  const token = 'a122-phase2-session-token';
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  // A revaluation must be approved by someone other than the person who requested it.
+  const token =
+    input.commandType === 'ApproveInventoryCostRevaluation'
+      ? 'a122-approver-session-token'
+      : 'a122-phase2-session-token';
+  const signedToken = token;
   return inventoryCommandPost(
     new Request('http://127.0.0.1:3000/api/inventory/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${signedToken}`,
+        ...clerkHeaders(signedToken),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -135,11 +141,11 @@ async function postInventoryCommand(
 
 async function getInventoryValuation(tenantId: string, stationId: string): Promise<Response> {
   const token = 'a122-phase2-session-token';
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return inventoryValuationGet(
     new Request(
       `http://127.0.0.1:3000/api/inventory/valuation?tenantId=${tenantId}&stationId=${stationId}`,
-      { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      { headers: { ...clerkHeaders(signedToken) } },
     ),
   );
 }
@@ -150,11 +156,11 @@ async function getInventoryRevaluation(
   revaluationId: string,
 ): Promise<Response> {
   const token = 'a122-phase2-session-token';
-  const signedToken = `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  const signedToken = token;
   return inventoryRevaluationGet(
     new Request(
       `http://127.0.0.1:3000/api/inventory/valuation/revaluations/${revaluationId}?tenantId=${tenantId}&stationId=${stationId}`,
-      { headers: { cookie: `shanda-fuel.session_token=${signedToken}` } },
+      { headers: { ...clerkHeaders(signedToken) } },
     ),
     { params: Promise.resolve({ id: revaluationId }) },
   );
@@ -162,18 +168,21 @@ async function getInventoryRevaluation(
 
 describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
   beforeAll(async () => {
-    client = postgres(databaseUrl, { max: 1, prepare: false });
+    client = postgres(databaseUrl, { max: 1, prepare: false, connection: { TimeZone: 'UTC' } });
     await setContext(ids.tenant, ids.station);
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values ('${ids.tenant}', 'A12.2 Tenant', 'a122-tenant') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values ('${ids.actor}', 'A12.2 Operator', 'a122@example.test') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${ids.actor}', 'A12.2 Operator', 'a122@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${ids.approver}', 'A12.2 Approver', 'a122-approver@example.test') on conflict (id) do nothing;
+      insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.approverMembership}', '${ids.tenant}', '${ids.approver}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'A12.2 Legal') on conflict (id) do nothing;
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values
         ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'A122-1', 'A12.2 Station 1', 'ACTIVE'),
         ('${ids.stationTwo}', '${ids.tenant}', '${ids.legal}', 'A122-2', 'A12.2 Station 2', 'ACTIVE') on conflict (id) do nothing;
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
-      values ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'TENANT', null, null) on conflict do nothing;
+      values ('${ids.tenant}', '${ids.membership}', 'ADMINISTRATOR', 'TENANT', null, null),
+        ('${ids.tenant}', '${ids.approverMembership}', 'ADMINISTRATOR', 'TENANT', null, null) on conflict do nothing;
       insert into app.products (id, tenant_id, code, name) values
         ('${ids.product}', '${ids.tenant}', 'A122-DIESEL', 'A12.2 Diesel'),
         ('${ids.productTwo}', '${ids.tenant}', 'A122-PETROL', 'A12.2 Petrol') on conflict (id) do nothing;
@@ -254,11 +263,17 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
         ('${ids.effectiveCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.effectiveSegment}', '2026-09-25T15:59:00Z', '2026-09-25', '-12.3456', 'USD', '${ids.membership}'),
         ('${ids.businessCostEvent}', '${ids.tenant}', '${ids.station}', '${ids.tank}', '${ids.product}', 'SALE_COGS', 'METER_SEGMENT_SALE', '${ids.businessSegment}', '2026-09-25T20:00:00Z', '2026-09-26', '-12.3456', 'USD', '${ids.membership}')
       on conflict (id) do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-      values ('${ids.phase2Session}', '2030-01-01T00:00:00Z', 'a122-phase2-session-token', '${ids.actor}', true, now())
-      on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(client, ids.phase2Session, 'a122-phase2-session-token', ids.actor, true);
     await seedActiveStepUp(client, ids.phase2Session, ids.tenant);
+    await seedClerkSession(
+      client,
+      ids.approverSession,
+      'a122-approver-session-token',
+      ids.approver,
+      true,
+    );
+    await seedActiveStepUp(client, ids.approverSession, ids.tenant);
   });
 
   afterAll(async () => client?.end());
@@ -584,12 +599,19 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       values ('${phase.openingLateAttribution}', '${ids.tenant}', '${ids.stationTwo}', '${phase.openingLateTank}', '${ids.productTwo}', '${phase.openingLateSaleMovement}', '${phase.openingLateSegment}', '10.000', '1.00000000', '10.0000', 'VALUED', 'PRE_SALE_WAC', 'a122-phase2-opening-original', '${phase.openingLateSaleCost}', '2026-09-27T12:00:00Z', '2026-09-27');
     `);
 
+    const a122SupplierId = 'a1220000-0000-4000-8000-0000000001a1';
+    await client`
+      insert into app.suppliers (id, tenant_id, code, legal_name, status, created_by, updated_by)
+      values (${a122SupplierId}, ${ids.tenant}, 'A122-SUP-1', 'A12 Fuel Supplier', 'ACTIVE',
+              ${ids.membership}, ${ids.membership})
+      on conflict (id) do nothing`;
     const createdDelivery = await postInventoryCommand(
       {
         commandType: 'CreateDelivery',
         tenantId: ids.tenant,
         stationId: ids.stationTwo,
         productId: ids.productTwo,
+        supplierId: a122SupplierId,
         deliveryNoteNumber: 'A122-PHASE2-1',
         deliveredAt: '2026-09-27T07:00:00Z',
         noteQuantityLitres: '100.000',
@@ -1040,9 +1062,32 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
     const stationTwoResponse = await getInventoryValuation(ids.tenant, ids.stationTwo);
     expect(stationTwoResponse.status).toBe(200);
     const stationTwoBody = (await stationTwoResponse.json()) as {
-      streams: Array<{ station: { id: string } }>;
+      streams: Array<{ station: { id: string }; quantityLitres: string }>;
       revaluations: Array<{ id: string; status: string; affectedSales: number }>;
+      tankReport: {
+        filters: { toDate: string };
+        inventory: {
+          rows: Array<{
+            stationId: string;
+            expectedLitres: string;
+            capacityLitres: string;
+          }>;
+        };
+      };
     };
+    expect(stationTwoBody.tankReport.filters.toDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(stationTwoBody.tankReport.inventory.rows.length).toBeGreaterThan(0);
+    for (const tank of stationTwoBody.tankReport.inventory.rows) {
+      expect(tank.stationId).toBe(ids.stationTwo);
+      expect(typeof tank.expectedLitres).toBe('string');
+      expect(typeof tank.capacityLitres).toBe('string');
+      expect(tank).not.toHaveProperty('movementIds');
+      expect(tank).not.toHaveProperty('deliveryIds');
+    }
+    for (const stream of stationTwoBody.streams)
+      expect(typeof stream.quantityLitres).toBe('string');
+    expect(stationTwoBody).not.toHaveProperty('sales');
+    expect(stationTwoBody).not.toHaveProperty('suppliers');
     expect(stationTwoBody.streams.every((stream) => stream.station.id === ids.stationTwo)).toBe(
       true,
     );

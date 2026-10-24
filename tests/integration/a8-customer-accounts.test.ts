@@ -1,5 +1,5 @@
+import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session-fixtures';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeSignature } from 'better-auth/crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as customerCommandPost } from '../../src/app/api/customers/commands/route';
 import { GET as customerSummaryGet } from '../../src/app/api/customers/summary/route';
@@ -9,7 +9,6 @@ import { POST as inventoryCommandPost } from '../../src/app/api/inventory/comman
 import { postInventoryMovementInTransaction } from '../../src/modules/inventory/persistence';
 import { createTrustedTenantTransactionContext } from '../../src/platform/db/tenant-context';
 import { withTenantTransaction } from '../../src/platform/db/transaction';
-import { seedActiveStepUp } from './auth-session-fixtures';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -51,7 +50,7 @@ const ids = {
 let client: Sql;
 
 async function signedCookie(token: string): Promise<string> {
-  return `${token}.${await makeSignature(token, process.env.BETTER_AUTH_SECRET!)}`;
+  return token;
 }
 
 async function command(
@@ -63,7 +62,7 @@ async function command(
     new Request('http://127.0.0.1:3000/api/customers/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie(sessionToken)}`,
+        ...clerkHeaders(await signedCookie(sessionToken)),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -72,12 +71,16 @@ async function command(
   );
 }
 
-async function forecourtCommand(input: Record<string, unknown>, key: string) {
+async function forecourtCommand(
+  input: Record<string, unknown>,
+  key: string,
+  sessionToken = 'a8-session-token',
+) {
   return forecourtCommandPost(
     new Request('http://127.0.0.1:3000/api/forecourt/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
+        ...clerkHeaders(await signedCookie(sessionToken)),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -91,7 +94,7 @@ async function inventoryCommand(input: Record<string, unknown>, key: string) {
     new Request('http://127.0.0.1:3000/api/inventory/commands', {
       method: 'POST',
       headers: {
-        cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
+        ...clerkHeaders(await signedCookie('a8-session-token')),
         'content-type': 'application/json',
         'idempotency-key': key,
       },
@@ -114,7 +117,7 @@ async function expectForecourtStatus(response: Response, expectedStatus: number)
   return result;
 }
 
-async function createPostedA5Evidence() {
+async function createPostedA5Evidence(customerAccountId: string) {
   await expectForecourtStatus(
     await forecourtCommand(
       {
@@ -207,7 +210,14 @@ async function createPostedA5Evidence() {
         commandType: 'SavePaymentAllocations',
         ...common,
         expectedVersion: 1,
-        payments: [{ id: ids.creditPayment, method: 'CUSTOMER_CREDIT', amount: '50.0000' }],
+        payments: [
+          {
+            id: ids.creditPayment,
+            method: 'CUSTOMER_CREDIT',
+            amount: '50.0000',
+            customerAccountId,
+          },
+        ],
       },
       'a8-a5-payments',
     ),
@@ -240,6 +250,7 @@ async function createPostedA5Evidence() {
     await forecourtCommand(
       { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
       'a8-a5-approve',
+      'a8-finance-session-token',
     ),
   );
   await expectForecourtOk(
@@ -260,15 +271,15 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_SECRET ??= 'integration-only-better-auth-secret-32-bytes';
+
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-a8-key';
     process.env.AUDIT_SIGNING_KEY ??= 'integration-a8-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values ('${ids.tenant}', 'A8 Customer Tenant', 'a8-customer-tenant') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values ('${ids.actor}', 'A8 Finance', 'a8-finance@example.test') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${ids.actor}', 'A8 Finance', 'a8-finance@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.membership}', '${ids.tenant}', '${ids.actor}', 'ACTIVE') on conflict (id) do nothing;
-      insert into auth."user" (id, name, email) values ('${ids.financeActor}', 'A8 Operational Finance', 'a8-operational-finance@example.test') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${ids.financeActor}', 'A8 Operational Finance', 'a8-operational-finance@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values ('${ids.financeMembership}', '${ids.tenant}', '${ids.financeActor}', 'ACTIVE') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.legal}', '${ids.tenant}', 'A8 Customer Legal') on conflict (id) do nothing;
       insert into app.legal_entities (id, tenant_id, legal_name) values ('${ids.otherLegal}', '${ids.tenant}', 'A8 Other Legal') on conflict (id) do nothing;
@@ -324,14 +335,17 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
           ('${ids.tenant}', '${ids.membership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}'),
           ('${ids.tenant}', '${ids.financeMembership}', 'FINANCE', 'TENANT', null, null)
         on conflict do nothing;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values ('${ids.session}', '2030-01-01T00:00:00Z', 'a8-session-token', '${ids.actor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
-      insert into auth.session (id, expires_at, token, user_id, strong_authentication_verified, strong_authenticated_at)
-        values ('${ids.financeSession}', '2030-01-01T00:00:00Z', 'a8-finance-session-token', '${ids.financeActor}', true, now())
-        on conflict (id) do update set expires_at = excluded.expires_at, strong_authentication_verified = true;
     `);
+    await seedClerkSession(client, ids.session, 'a8-session-token', ids.actor, true);
+    await seedClerkSession(
+      client,
+      ids.financeSession,
+      'a8-finance-session-token',
+      ids.financeActor,
+      true,
+    );
     await seedActiveStepUp(client, ids.session, ids.tenant);
+    await seedActiveStepUp(client, ids.financeSession, ids.tenant);
     await withTenantTransaction(
       createTrustedTenantTransactionContext({
         tenantId: ids.tenant,
@@ -376,16 +390,6 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
   afterAll(async () => client?.end());
 
   it('persists exact prepaid value balances and retry-safe station authorizations', async () => {
-    await createPostedA5Evidence();
-    const revisionRows = await client.unsafe<{ id: string }[]>(`
-      select id from app.reconciliation_revisions
-      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
-        and reconciliation_id='${ids.reconciliation}' and state='POSTED'
-      order by revision desc limit 1
-    `);
-    expect(revisionRows).toHaveLength(1);
-    const postedRevisionId = revisionRows[0]!.id;
-
     const customerResponse = await command(
       {
         commandType: 'CreateCustomer',
@@ -430,7 +434,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         `http://127.0.0.1:3000/api/customers/summary?tenantId=${ids.tenant}&customerId=${customer.customerId}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
+            ...clerkHeaders(await signedCookie('a8-session-token')),
           },
         },
       ),
@@ -485,7 +489,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         `http://127.0.0.1:3000/api/customers/statement?tenantId=${ids.tenant}&accountId=${account.accountId}`,
         {
           headers: {
-            cookie: `shanda-fuel.session_token=${await signedCookie('a8-session-token')}`,
+            ...clerkHeaders(await signedCookie('a8-session-token')),
           },
         },
       ),
@@ -506,6 +510,16 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
       'a8-create-credit-account',
     );
     const creditAccount = await body(creditAccountResponse);
+    // A credit sale in a reconciliation must name the customer account it is charged to.
+    await createPostedA5Evidence(creditAccount.accountId);
+    const revisionRows = await client.unsafe<{ id: string }[]>(`
+      select id from app.reconciliation_revisions
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and reconciliation_id='${ids.reconciliation}' and state='POSTED'
+      order by revision desc limit 1
+    `);
+    expect(revisionRows).toHaveLength(1);
+    const postedRevisionId = revisionRows[0]!.id;
     const authorization = await command(
       {
         commandType: 'RequestCustomerFuelAuthorization',
@@ -562,6 +576,7 @@ describe('A8 customer accounts PostgreSQL persistence', () => {
         },
         occurredAt: '2026-09-24T08:20:00+02:00',
         businessDate: '2026-09-24',
+        entryDetails: { vehicleRegistration: 'abc 1234', voucherNumber: 'A8-V-001' },
       },
       'a8-complete-credit-from-a5-evidence',
     );
