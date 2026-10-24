@@ -170,6 +170,21 @@ unauthenticated "Demo user" shell that Clerk-only authentication removed. The
 browser suite cannot be called green until those users exist and stale specs are
 updated.
 
+### Daily report (2026-10-24, on `codex/v1-daily-report`)
+
+A one-page, read-only daily report per shift, in the layout attendants send on WhatsApp, at
+`/operations/reconciliations/<id>/report?tenantId=…&stationId=…` (`src/modules/forecourt/daily-report*.ts`,
+`ui/daily-report.tsx`). It shows price and pump opening/closing/litres per product, litres per
+product, expenses, counted cash and excess/shortfall, drop, dips (mm and litres), attendants,
+supervisor and a month-to-date block (approved shifts plus this one). "Copy as WhatsApp text" and
+Print/PDF are client-side; nothing is sent anywhere, so DEC-044's exclusion of WhatsApp alerts is
+not affected. No schema change. Choices to confirm with the owner: **Drop** is every cash handover
+submitted on the station's calendar day (handovers are not linked to a shift); a tank's **opening
+and closing dip** are the earliest and latest dip linked to the shift. A "Daily report" link was
+added to the control room and the reconciliation workspace (owner-approved edit of two locked
+files; manifest re-baselined). Validated: unit tests, typecheck, lint, format, UI-lock guard, and
+an integration test in `a5-production-reconciliation` on a fresh local PG18 database.
+
 ### Reports expansion (2026-10-22, committed on the integration branch)
 
 Ten plain-table reports were added next to the original eight, through one shared layer

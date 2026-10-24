@@ -553,6 +553,14 @@ export function OperationsControlRoom({
                                 Reconciliation
                               </a>
                             ) : null}
+                            {reconciliation ? (
+                              <a
+                                className="text-link"
+                                href={`/operations/reconciliations/${reconciliation.id}/report?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+                              >
+                                Daily report
+                              </a>
+                            ) : null}
                           </div>
                         </article>
                       );
