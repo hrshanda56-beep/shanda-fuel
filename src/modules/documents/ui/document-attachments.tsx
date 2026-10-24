@@ -171,7 +171,13 @@ export function DocumentAttachments({
             hint="A photo or PDF, up to 10 MB."
             error={fileError ?? undefined}
           >
-            <input id={`doc-file-${subjectId}`} name="file" type="file" accept={ACCEPT} />
+            <input
+              id={`doc-file-${subjectId}`}
+              name="file"
+              type="file"
+              accept={ACCEPT}
+              style={{ width: '100%', minWidth: 0 }}
+            />
           </Field>
           <Button type="submit" variant="secondary" loading={busy}>
             Add file

@@ -163,7 +163,7 @@
     "src/modules/customers/ui/types.ts": "3ccbb34e093bda0eee8cbffe418361fa452aefe6f33a03907956d0940afd50bf",
     "src/modules/deliveries/ui/deliveries-list.tsx": "7f13de3bd33a1d934856865d50597e8c52551cf56b048780dad85804cc211af2",
     "src/modules/deliveries/ui/delivery-details.tsx": "d33943b65c13279c21d65424d411b61159fb169293ec5b88f8117a686dec0683",
-    "src/modules/documents/ui/document-attachments.tsx": "93ef7c40da7a379edebc03de1d1a537a6e605ad733452c62d66036d7fd088711",
+    "src/modules/documents/ui/document-attachments.tsx": "7fbab453511796ae1d0edfb93f1563ba1a16fa1100c95d9d2069b70c0705adad",
     "src/modules/expenses/ui/expense-format.ts": "7d165a7eb5198e48109a4caee1b70d1aa2f250d9000abf0d87e4f67bb96a4812",
     "src/modules/expenses/ui/expense-workspace.tsx": "877ace382b56d3239a0495eea756c4d48ac9c8e073019657b3f85e826a41fcfa",
     "src/modules/expenses/ui/expenses.module.css": "34ac32d01cade2e13e018356e4827f63c96d22dc1c71d31cc3b0b59acaae981c",
