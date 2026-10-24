@@ -30,7 +30,8 @@ DEC-040. The tool is `scripts/first-user-provisioning.ts`. If this file disagree
 
 ## Sequence
 
-1. **Preflight (read only).** Run the reviewed Stage 1 migration-owner preflight. Expected: the
+1. **Preflight (read only).** Run the reviewed Stage 1 migration-owner preflight (operator tooling kept outside this repo; see
+   [`stage1-rls-policy-diagnostic.md`](stage1-rls-policy-diagnostic.md) for the read-only check that backs it). Expected: the
    `first_user_provisioner` role has no password and every security check passes. Record the result.
    Then run the helper with `assign` to set the temporary password (hidden prompts only).
 2. **Find the scope ids.** Using the read-only inspect mode, find the tenant, legal entity and station

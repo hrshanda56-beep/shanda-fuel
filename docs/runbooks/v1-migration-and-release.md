@@ -1,6 +1,6 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-10-24** for the merged v1 head (`b11f9f0` on `main`): 57 migrations, 0000 to 0071.
+**Updated 2026-10-24** for the merged v1 head (`4338c56` on `main`, PR #155): 57 migrations, 0000 to 0071.
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -80,8 +80,9 @@ Tick each box and write who ticked it and when in the record (section 7).
 
 1. [ ] The exact commit to release is chosen and recorded. It is a commit on `main` (after the
    integration branch merges), not a branch name.
-2. [ ] Required GitHub checks are green on that commit. This needs the Clerk test secret and variable
-   in GitHub so the `quality` and runtime-role jobs can run.
+2. [ ] Required GitHub checks are green on that commit. The Clerk test secret and variable are now set
+   in GitHub, so the `quality` and runtime-role jobs run. Dependabot runs do not get that secret, so
+   dependency bumps are verified on a maintainer branch instead.
 3. [ ] Unit, database-integration and tenant-isolation tests passed on that commit. Any suite that was
    skipped is listed as a skip, not a pass.
 4. [ ] `pnpm db:check`, typecheck, lint, format check and production build are green.
@@ -107,17 +108,27 @@ and not to add a second sign-in provider (2026-10-24). The app already has a swi
 - Everyone signs in with email or Staff Number and a password. No second code.
 - The Owner re-enters their password (not a code) for closing a business day and for deactivating
   a staff member. Other roles cannot use that path.
-- **Open item, needs the project lead's approval before go-live:** report exports and the
-  report-table runs use the stricter "privileged operation" check, which today still demands a
-  second factor even when `REQUIRE_LOGIN_MFA=false`. With MFA off, no one can pass it, so exports
-  would be refused for everyone. Fixing it is a small, tested code change (let the Owner's password
-  re-check satisfy this check while `REQUIRE_LOGIN_MFA=false`). It is a deliberate weakening of a
-  recorded security rule; DEC-047 in `docs/DECISIONS.md` is approved and the fix is on its own branch.
-  Until that branch is merged and released, exports are unavailable in production.
+- **Exports:** report exports and the report-table runs use the stricter "privileged operation"
+  check. While `REQUIRE_LOGIN_MFA=false`, the Owner's password re-check satisfies it (DEC-047). This
+  fix is merged in `main` (PR #150), so exports work in the release. Confirm it in the smoke test
+  (section 4) by running one export as the Owner.
 - Mitigations while MFA is off: strong unique passwords, Clerk's password-breach check and
   rate limits on, short sessions, the signed audit trail, and a review of who holds the Owner and
   Administrator roles. Turn real MFA on later by setting `REQUIRE_LOGIN_MFA=true` once a Clerk plan
   that includes it is bought; no code change is needed for that.
+
+### 3b. Vercel production variables (names only, checked 2026-10-24)
+
+Check these on the **`shanda-fuel`** Vercel project (not `shanda-fuel-staging`; the repo's local
+`.vercel` link points at staging, so pass the project explicitly). Never paste values into chat.
+
+- **Must be present:** `APP_ENV`, `APP_URL`, `DATABASE_URL`, `AUDIT_SIGNING_KEY`, `AUDIT_SIGNING_KEY_ID`,
+  `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CRON_SECRET`, `REQUIRE_LOGIN_MFA=false`,
+  `REQUIRE_PRIVILEGED_STEP_UP=true`, the `R2_*` set, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`.
+- **Should not be present (retired by DEC-043):** `BETTER_AUTH_SECRET`, `AUTH_PROVIDER`.
+- **Not in the web app on purpose:** `DATABASE_DIRECT_URL` (migration owner only, typed at a hidden prompt).
+- On 2026-10-24 production had no Clerk keys, `CRON_SECRET` or Resend variables yet, and still held
+  the two retired ones. Record the state on release day in section 7.
 
 ## 4. The release, in order
 
