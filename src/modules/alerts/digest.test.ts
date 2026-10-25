@@ -52,7 +52,7 @@ describe('composeDigest', () => {
   it('says how to stop the emails', () => {
     const digest = composeDigest({ ...base, items: [item('a')] });
     expect(digest.text).toContain(
-      'To stop these emails: https://fuel.shandahr.com/settings/alert-email',
+      'Stop these emails: https://fuel.shandahr.com/settings/alert-email',
     );
     expect(digest.html).toContain('href="https://fuel.shandahr.com/settings/alert-email"');
   });
