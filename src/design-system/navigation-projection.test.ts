@@ -178,7 +178,6 @@ describe('server navigation projection', () => {
       'daily-profit',
       'financial-position',
       'fuel-deliveries',
-      'customer-controls',
       'staff-benefit',
       'payments-due',
       'reports',

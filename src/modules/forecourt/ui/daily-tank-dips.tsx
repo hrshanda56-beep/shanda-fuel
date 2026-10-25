@@ -6,6 +6,7 @@ import { TableScrollRegion } from '@/design-system/table';
 import { formatLitres } from '@/design-system/formatters';
 import { classifyStockVariance } from '../../approvals/operations-alerts';
 import type { RecordData } from '../daily-operations-read-model';
+import { dipInstantForSheet } from '../dip-time';
 
 type Tank = RecordData['tanks'][number];
 
@@ -29,6 +30,7 @@ function newKey(tankId: string) {
 export function DailyTankDips({
   tenantId,
   stationId,
+  timezone,
   reconciliationId,
   record,
   editable,
@@ -36,6 +38,7 @@ export function DailyTankDips({
 }: Readonly<{
   tenantId: string;
   stationId: string;
+  timezone: string;
   reconciliationId: string;
   record: RecordData;
   editable: boolean;
@@ -78,7 +81,7 @@ export function DailyTankDips({
         tenantId,
         stationId,
         tankId: tank.tankId,
-        measuredAt: new Date().toISOString(),
+        measuredAt: dipInstantForSheet(new Date(), record.business_date, timezone).toISOString(),
         ...(tank.hasMillimetreChart
           ? { rawMeasurement: reading, measurementUnit: 'mm' }
           : { physicalLitres: reading }),

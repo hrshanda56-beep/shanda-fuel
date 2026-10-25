@@ -14,7 +14,7 @@ const FUELS = [
 function PumpTable({ label, fuel }: { label: string; fuel: ShiftMessageFuel }) {
   if (fuel.pumps.length === 0) return null;
   return (
-    <Card>
+    <Card className="panel stack">
       <h3>{label}</h3>
       <p>Price per litre: {fuel.price ?? 'not in the message'}</p>
       <TableScrollRegion label={`${label} pump readings`}>
@@ -56,7 +56,7 @@ export function ShiftMessageCheck() {
         title="Check a shift message"
         description="Paste the supervisor's WhatsApp shift summary. We read the figures and check the sums. Nothing is saved."
       />
-      <Card>
+      <Card className="panel stack">
         <Field
           id="shift-message"
           label="Shift message"
@@ -83,11 +83,11 @@ export function ShiftMessageCheck() {
             description="Each line is something in the message that does not add up, or is missing."
           >
             {parsed.checks.length === 0 ? (
-              <Card>
+              <Card className="panel stack">
                 <StatusBadge tone="positive">All the sums in the message add up</StatusBadge>
               </Card>
             ) : (
-              <Card>
+              <Card className="panel stack">
                 <ul>
                   {parsed.checks.map((check) => (
                     <li key={`${check.code}-${check.message}`}>
@@ -100,7 +100,7 @@ export function ShiftMessageCheck() {
           </Section>
 
           <Section title="What the message says">
-            <Card>
+            <Card className="panel stack">
               <p>
                 {parsed.date ?? 'No date'} · {parsed.shift ? `${parsed.shift} shift` : 'No shift'}
               </p>
@@ -113,7 +113,7 @@ export function ShiftMessageCheck() {
               <PumpTable key={key} label={label} fuel={parsed[key]} />
             ))}
             {parsed.expenses.length > 0 ? (
-              <Card>
+              <Card className="panel stack">
                 <h3>Expenses</h3>
                 <ul>
                   {parsed.expenses.map((expense, index) => (

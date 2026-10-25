@@ -522,7 +522,7 @@ export function PaymentsView({ overview, reload }: { overview: Ready; reload: ()
       <ProviderSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <AccountSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <BankSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
-      <BankBalancePanel tenantId={overview.tenantId} stationId={overview.stationOptions[0]?.id} />
+      <BankBalancePanel tenantId={overview.tenantId} stations={overview.stationOptions} />
       <StepUpDialog
         open={pending !== null}
         tenantId={overview.tenantId}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { Button, EmptyState, ErrorState, Field, LoadingState } from '@/design-system/primitives';
+import { Select } from '@/design-system/forms';
 import { formatUsd } from '@/design-system/formatters';
 
 import { friendlySetupError } from '../guided-setup';
@@ -25,8 +26,12 @@ type Loaded = { accounts: Account[]; canRecord: boolean };
  */
 export function BankBalancePanel({
   tenantId,
-  stationId,
-}: Readonly<{ tenantId: string; stationId: string | undefined }>) {
+  stations,
+}: Readonly<{
+  tenantId: string;
+  stations: ReadonlyArray<{ id: string; name: string; code: string }>;
+}>) {
+  const [stationId, setStationId] = useState<string | undefined>(stations[0]?.id);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -61,7 +66,7 @@ export function BankBalancePanel({
     if (!/^-?\d+(?:\.\d{1,4})?$/.test(balance))
       return setError('Enter the balance as a number, such as 1250.50.');
     if (!asOfDate) return setError('Choose the date on the bank statement.');
-    if (!stationId) return setError('Choose a station at the top of the page first.');
+    if (!stationId) return setError('Choose a station first.');
     setBusy(account.id);
     setError(null);
     setSaved(null);
@@ -113,6 +118,19 @@ export function BankBalancePanel({
         Type in the balance from the bank statement. The financial position uses it for the money in
         the bank once every account has one; until then it uses the deposits recorded in the app.
       </p>
+      {loaded.canRecord && stations.length > 1 ? (
+        <Field id="balance-station" label="Entering as station">
+          <Select
+            id="balance-station"
+            value={stationId ?? ''}
+            onChange={(event) => setStationId(event.target.value)}
+            options={stations.map((station) => ({
+              value: station.id,
+              label: `${station.name} (${station.code})`,
+            }))}
+          />
+        </Field>
+      ) : null}
       {loaded.accounts.length === 0 ? (
         <EmptyState
           title="No bank accounts entered"

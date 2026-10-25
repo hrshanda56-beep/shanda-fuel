@@ -12,6 +12,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatTileMoney } from '../../reporting/format';
+import styles from './cash-handover.module.css';
 import {
   HANDOVER_STATE_LABELS,
   availableHandoverActions,
@@ -158,9 +159,6 @@ export function CashHandoverPanel(props: Props) {
       <div className="panel-heading">
         <div>
           <h2 id="cash-handover-title">Handing over cash</h2>
-          <p>
-            Whoever hands cash over says how much. A different person confirms they received it.
-          </p>
         </div>
       </div>
 
@@ -171,43 +169,50 @@ export function CashHandoverPanel(props: Props) {
       ) : null}
 
       {props.canSubmit ? (
-        <form onSubmit={submit} className="stack">
-          <Field id="handover-from" label="Cash is coming from" required>
-            <Select
-              id="handover-from"
-              name="fromLocationId"
-              defaultValue=""
-              placeholder="Choose where the cash is now"
-              options={locations.map((l) => ({ value: l.locationId, label: l.name }))}
+        <form onSubmit={submit} className={styles.form}>
+          <div className={styles.route}>
+            <Field id="handover-from" label="Cash is coming from" required>
+              <Select
+                id="handover-from"
+                name="fromLocationId"
+                defaultValue=""
+                placeholder="Choose where the cash is now"
+                options={locations.map((l) => ({ value: l.locationId, label: l.name }))}
+              />
+            </Field>
+            <span className={styles.arrow} aria-hidden="true">
+              →
+            </span>
+            <Field id="handover-to" label="Handing it to" required>
+              <Select
+                id="handover-to"
+                name="toLocationId"
+                defaultValue=""
+                placeholder="Choose where it is going"
+                options={locations.map((l) => ({ value: l.locationId, label: l.name }))}
+              />
+            </Field>
+          </div>
+          <div className={styles.amounts}>
+            <NumericInput
+              id="handover-expected"
+              name="expectedAmount"
+              label="Amount that should be handed over"
+              required
+              inputMode="decimal"
+              value={expected}
+              onChange={(event) => setExpected(event.target.value)}
             />
-          </Field>
-          <Field id="handover-to" label="Handing it to" required>
-            <Select
-              id="handover-to"
-              name="toLocationId"
-              defaultValue=""
-              placeholder="Choose where it is going"
-              options={locations.map((l) => ({ value: l.locationId, label: l.name }))}
+            <NumericInput
+              id="handover-counted"
+              name="countedAmount"
+              label="Amount you actually counted"
+              required
+              inputMode="decimal"
+              value={counted}
+              onChange={(event) => setCounted(event.target.value)}
             />
-          </Field>
-          <NumericInput
-            id="handover-expected"
-            name="expectedAmount"
-            label="Amount that should be handed over"
-            required
-            inputMode="decimal"
-            value={expected}
-            onChange={(event) => setExpected(event.target.value)}
-          />
-          <NumericInput
-            id="handover-counted"
-            name="countedAmount"
-            label="Amount you actually counted"
-            required
-            inputMode="decimal"
-            value={counted}
-            onChange={(event) => setCounted(event.target.value)}
-          />
+          </div>
           {mismatch ? (
             <Field
               id="handover-reason"
@@ -218,38 +223,42 @@ export function CashHandoverPanel(props: Props) {
               <textarea id="handover-reason" name="reason" rows={2} maxLength={500} />
             </Field>
           ) : null}
-          <Button type="submit" disabled={busy}>
-            Hand over cash
-          </Button>
+          <div className={styles.actions}>
+            <Button type="submit" disabled={busy}>
+              Hand over cash
+            </Button>
+          </div>
         </form>
       ) : null}
 
-      <h3>Waiting for action</h3>
-      {open.length === 0 ? (
-        <EmptyState title="Nothing waiting" message="No cash is waiting to be accepted." />
-      ) : (
-        <ul className="stack" aria-label="Handovers waiting for action">
-          {open.map((h) => (
-            <HandoverRow
-              key={h.handoverId}
-              handover={h}
-              from={name(h.fromLocationId)}
-              to={name(h.toLocationId)}
-              money={money}
-              actions={availableHandoverActions(h, viewer)}
-              busy={busy}
-              settling={settling === h.handoverId}
-              onStartSettle={() => setSettling(h.handoverId)}
-              onAct={(action, note) => void act(h, action, note)}
-            />
-          ))}
-        </ul>
-      )}
+      <section className={styles.waiting} aria-label="Waiting for action">
+        <h3>Waiting for action</h3>
+        {open.length === 0 ? (
+          <EmptyState title="Nothing waiting" message="No cash is waiting to be accepted." />
+        ) : (
+          <ul className={styles.list} aria-label="Handovers waiting for action">
+            {open.map((h) => (
+              <HandoverRow
+                key={h.handoverId}
+                handover={h}
+                from={name(h.fromLocationId)}
+                to={name(h.toLocationId)}
+                money={money}
+                actions={availableHandoverActions(h, viewer)}
+                busy={busy}
+                settling={settling === h.handoverId}
+                onStartSettle={() => setSettling(h.handoverId)}
+                onAct={(action, note) => void act(h, action, note)}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
 
       {recent.length > 0 ? (
-        <>
+        <section className={styles.recent}>
           <h3>Last 14 days</h3>
-          <ul className="stack" aria-label="Recent handovers">
+          <ul className={styles.list} aria-label="Recent handovers">
             {recent.map((h) => (
               <HandoverRow
                 key={h.handoverId}
@@ -265,7 +274,7 @@ export function CashHandoverPanel(props: Props) {
               />
             ))}
           </ul>
-        </>
+        </section>
       ) : null}
     </Card>
   );

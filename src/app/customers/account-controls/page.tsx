@@ -4,7 +4,7 @@ import { getAccountControlsPageDataFromRequest } from '@/modules/customers/accou
 import { getCustomerAccountsFromRequest } from '@/modules/customers/queries';
 import { AccountControlsWorkspace } from '@/modules/customers/ui/account-controls-workspace';
 
-export const metadata = { title: 'Credit limits and transaction details' };
+export const metadata = { title: 'Customer controls' };
 
 export default async function Page({ searchParams }: { searchParams: Promise<PageSearch> }) {
   const search = await searchParams;

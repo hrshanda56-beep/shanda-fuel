@@ -21,6 +21,7 @@
 .summaryCard {
   display: grid;
   gap: var(--space-1);
+  padding: var(--space-4) var(--space-5);
   min-width: 0;
 }
 
@@ -36,7 +37,7 @@
 }
 
 .summaryValue {
-  margin: 0;
+  margin: var(--space-1) 0;
   color: var(--text-primary);
   font-size: var(--font-size-xl, 1.5rem);
   font-weight: var(--font-weight-semibold, 600);

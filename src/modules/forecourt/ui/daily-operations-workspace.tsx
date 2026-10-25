@@ -1605,6 +1605,7 @@ export function DailyOperationsWorkspace({
             <DailyTankDips
               tenantId={context.tenantId}
               stationId={context.stationId}
+              timezone={operation.station.timezone}
               reconciliationId={activeReconciliationId ?? ''}
               record={record}
               editable={editable}

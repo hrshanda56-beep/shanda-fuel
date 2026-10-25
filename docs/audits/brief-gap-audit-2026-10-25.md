@@ -49,25 +49,27 @@ the 20 L tolerance placeholder is fine, and every tank must always be visible.
 - **Transporters.** No new record: a transporter set up as a supplier is counted under "Owed to
   suppliers". Other creditors are still not recorded.
 
-Decisions recorded here, not in `DECISIONS.md` (the owner gave them in chat; they should be copied
-there before release): both bank balance sources; revisions stay and no reversal commands; staff-benefit
-cost deferred; tank tolerance placeholder accepted; all tanks always visible; transporters as suppliers.
+Decisions given in chat (both bank balance sources; revisions stay and no reversal commands;
+staff-benefit cost deferred; tank tolerance placeholder accepted; all tanks always visible;
+transporters as suppliers; alert emails deferred) are now recorded in `DECISIONS.md`, "Brief-gap
+decisions (TEI Oils audit)".
 
 ## Still open
 
 - **Migration `0072` is new and applied nowhere.** It needs the same explicit, reviewed production
   migration as the others.
-- **Dip time.** A dip saved on the daily sheet is stamped with the time it is saved. If it is saved
-  after midnight, the station-date no longer matches the day's sheet and the server refuses it with
-  an explanation; the supervisor then has to use the dip form on the inventory screen with the
-  right time. Not changed.
+- **Dip time (fixed).** A dip typed on a daily sheet for an earlier day is stamped with the last
+  minute of that sheet's day in the station's timezone (`dip-time.ts`), so saving after midnight
+  works.
 - **Dipstick chart units.** The millimetre entry only works for a tank whose calibration chart is in
   `mm`. Other tanks fall back to litres.
-- **Bank balances are entered from Settings, Payments** with the first station in the list as the
-  authority context, so the person needs finance rights at that station.
+- **Bank balances** are entered from Settings, Payments. Where there is more than one station the
+  form lets the person pick which station they are entering as (their finance rights are checked
+  there).
 - Alert emails (ADR-020 review, DNS, owner go-ahead), scheduled backups, first-user provisioning,
   production migrations, training and UAT, offline behaviour on a real phone, and a browser test of
-  the new screens (the e2e suite needs the Clerk test secrets).
+  the new screens (the e2e suite also needs the `E2E_CLERK_USERS` fixture mapping, which is not set
+  in this environment).
 - Loading history: no import exists, and the workbook itself is needed.
 - Stock variance for an old approved day uses all movements up to the dip time, so later movements
   can distort a day looked at weeks later (sale movements are stamped at the end of the meter

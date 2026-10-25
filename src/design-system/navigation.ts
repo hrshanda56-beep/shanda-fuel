@@ -29,7 +29,6 @@ export type NavigationKey =
   | 'daily-profit'
   | 'financial-position'
   | 'fuel-deliveries'
-  | 'customer-controls'
   | 'payments-due'
   | 'reports'
   | 'settings';
@@ -228,15 +227,6 @@ export const navigationSections: readonly NavigationSection[] = [
         destination: { kind: 'route', path: '/customers' },
         availability: 'active',
         match: [/^\/customers(?!\/account-controls|\/staff-benefit)(\/|$)/],
-      },
-      {
-        key: 'customer-controls',
-        label: 'Customer controls',
-        searchLabel: 'Customer controls',
-        icon: 'users',
-        destination: { kind: 'route', path: '/customers/account-controls' },
-        availability: 'active',
-        match: [/^\/customers\/account-controls(\/|$)/],
       },
       {
         key: 'staff-benefit',

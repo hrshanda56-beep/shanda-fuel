@@ -516,7 +516,8 @@ async function run(client: Sql) {
       documentType: 'INVOICE',
       referenceNumber: 'INV-20458',
       documentDate: '2026-09-01',
-      dueDate: '2026-09-30',
+      paymentTerms: 'CREDIT',
+      creditPeriodDays: 29,
       amount: '12500.0000',
       lines: [{ description: 'Diesel 50 (bulk delivery)', quantity: '10000', unitPrice: '1.25' }],
     },
@@ -735,7 +736,7 @@ async function run(client: Sql) {
   );
   const insurancePeriod = await recurringPeriod('insurance', insurance.templateId, '2026-10-01');
   await recognize('insurance', insurancePeriod.periodId, '2026-10-01');
-  await recognize('insurance', insurancePeriod.periodId, '2026-10-31');
+  await recognize('insurance', insurancePeriod.periodId, '2026-10-24');
 
   // Salary is recognized and paid, while one recognition is reversed with the original kept.
   const salary = await recurringTemplate(

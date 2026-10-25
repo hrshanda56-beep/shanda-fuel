@@ -417,7 +417,7 @@ export function CustomerActions({
                 id="action-voucher"
                 label="Voucher or slip number"
                 optional
-                hint="Who approved it, and a photo of the slip, can be added afterwards under Credit limits and transaction details."
+                hint="Who approved it, and a photo of the slip, can be added afterwards under Customer controls."
               >
                 <input
                   id="action-voucher"
@@ -516,7 +516,7 @@ export function CustomerActions({
                 id="action-voucher"
                 label="Voucher or slip number"
                 optional
-                hint="Who approved it, and a photo of the slip, can be added afterwards under Credit limits and transaction details."
+                hint="Who approved it, and a photo of the slip, can be added afterwards under Customer controls."
               >
                 <input
                   id="action-voucher"
