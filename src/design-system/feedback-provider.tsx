@@ -40,10 +40,15 @@ type Feedback = {
 
 const FeedbackContext = createContext<Feedback | null>(null);
 
+const STANDALONE_FEEDBACK: Feedback = {
+  toast: () => {},
+  confirm: (request) => Promise.resolve(window.confirm(request.consequence)),
+};
+
 function useFeedback(): Feedback {
-  const value = useContext(FeedbackContext);
-  if (!value) throw new Error('Feedback hooks need <FeedbackProvider> above them.');
-  return value;
+  // Without a provider (isolated renders, tests) toasts are silent and confirmations
+  // fall back to the browser's own question, so a screen never breaks.
+  return useContext(FeedbackContext) ?? STANDALONE_FEEDBACK;
 }
 
 export function useToast() {
