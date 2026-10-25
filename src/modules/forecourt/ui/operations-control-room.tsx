@@ -2,6 +2,7 @@
 
 import { useReverification } from '@clerk/nextjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConfirm } from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -154,6 +155,7 @@ export function OperationsControlRoom({
   /** `reconciliations` leads with the station's reconciliations, exceptions first. */
   focus?: 'operations' | 'reconciliations';
 }) {
+  const confirm = useConfirm();
   const [overview, setOverview] = useState<Overview | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [busy, setBusy] = useState(false);
@@ -273,7 +275,16 @@ export function OperationsControlRoom({
     consequence: string,
     success: string,
   ) {
-    if (!window.confirm(consequence)) return;
+    if (
+      !(await confirm({
+        title: 'Please confirm',
+        consequence,
+        confirmLabel: 'Continue',
+        tone: 'warning',
+      }))
+    ) {
+      return;
+    }
     setBusy(true);
     setError(undefined);
     setConflict(undefined);
