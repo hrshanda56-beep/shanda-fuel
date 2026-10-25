@@ -1,3 +1,4 @@
+import { escapeHtml, renderEmail } from '../../platform/email/layout';
 import type { ActionItem } from '../approvals/action-center-model';
 
 /**
@@ -59,14 +60,6 @@ export type Digest = Readonly<{
   itemIds: readonly string[];
 }>;
 
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-
 /** Only things that need action are emailed; informational notes stay in the app. */
 export function itemsWorthEmailing(items: readonly ActionItem[]): ActionItem[] {
   return items.filter((item) => item.tone === 'attention');
@@ -100,41 +93,38 @@ export function composeDigest(input: DigestInput): Digest {
       : `${count} things need your attention at ${input.stationName}`;
   const greeting = input.recipientName?.trim() ? `Hello ${input.recipientName.trim()},` : 'Hello,';
 
-  const textLines = [
-    greeting,
-    '',
-    `${input.stationName} has ${count === 1 ? 'something' : 'some things'} that need attention:`,
-    '',
-    ...shown.flatMap((item) => [
-      `- ${genericLabel(item)}`,
-      `  ${absolute(input.appUrl, item.href)}`,
-    ]),
-    ...(more > 0 ? ['', `...and ${more} more. Open the app to see everything.`] : []),
-    ...(input.unavailable.length > 0
-      ? ['', `Not checked this time: ${input.unavailable.join(', ')}.`]
-      : []),
-    '',
-    `Open Shanda Fuel: ${input.appUrl.replace(/\/+$/, '')}`,
-    `To stop these emails: ${absolute(input.appUrl, STOP_PATH)}`,
-  ];
-
+  const base = input.appUrl.replace(/\/+$/, '');
+  const intro = `${input.stationName} has ${count === 1 ? 'something' : 'some things'} that need attention:`;
+  const textItems = shown.flatMap((item) => [
+    `- ${genericLabel(item)}`,
+    `  ${absolute(input.appUrl, item.href)}`,
+  ]);
   const htmlItems = shown
     .map(
       (item) =>
-        `<li><strong>${escapeHtml(genericLabel(item))}</strong><br>` +
-        `<a href="${escapeHtml(absolute(input.appUrl, item.href))}">Open</a></li>`,
+        `<li style="margin:0 0 12px;"><strong>${escapeHtml(genericLabel(item))}</strong><br>` +
+        `<a href="${escapeHtml(absolute(input.appUrl, item.href))}" style="color:#0a5a4a;">Open</a></li>`,
     )
     .join('');
-  const html =
-    `<p>${escapeHtml(greeting)}</p>` +
-    `<p>${escapeHtml(input.stationName)} has ${count === 1 ? 'something' : 'some things'} that need attention:</p>` +
-    `<ul>${htmlItems}</ul>` +
-    (more > 0 ? `<p>…and ${more} more. Open the app to see everything.</p>` : '') +
-    (input.unavailable.length > 0
-      ? `<p>Not checked this time: ${escapeHtml(input.unavailable.join(', '))}.</p>`
-      : '') +
-    `<p><a href="${escapeHtml(input.appUrl.replace(/\/+$/, ''))}">Open Shanda Fuel</a></p>` +
-    `<p><a href="${escapeHtml(absolute(input.appUrl, STOP_PATH))}">Stop these emails</a></p>`;
+  const extra = [
+    ...(more > 0 ? [`...and ${more} more. Open the app to see everything.`] : []),
+    ...(input.unavailable.length > 0
+      ? [`Not checked this time: ${input.unavailable.join(', ')}.`]
+      : []),
+  ];
+  const { text, html } = renderEmail({
+    logoUrl: `${base}/email-logo.png`,
+    heading: 'Needs your attention',
+    subheading: input.stationName,
+    greeting,
+    paragraphs: [intro],
+    bodyHtml: `<ul style="margin:0 0 16px;padding-left:20px;font-size:16px;line-height:1.6;">${htmlItems}</ul>`,
+    bodyText: textItems.join('\n'),
+    ...(extra.length > 0 ? { notice: { title: 'Also', body: extra.join(' ') } } : {}),
+    button: { label: 'Open Shanda Fuel', url: base },
+    footer: 'Sent by Shanda Fuel.',
+    footerLinks: [{ label: 'Stop these emails', url: absolute(input.appUrl, STOP_PATH) }],
+  });
 
-  return { subject, text: textLines.join('\n'), html, itemIds: worth.map((item) => item.id) };
+  return { subject, text, html, itemIds: worth.map((item) => item.id) };
 }
