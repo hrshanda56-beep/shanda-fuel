@@ -36,6 +36,7 @@ import {
   validateInvitationScope,
 } from './domain';
 import type { StaffInvitationScope } from './contracts';
+import { buildInvitationEmail } from './invitation-email';
 
 type StaffTransaction = Parameters<Parameters<ReturnType<typeof getDatabase>['transaction']>[0]>[0];
 
@@ -172,8 +173,12 @@ async function sendInvitationEmail(input: {
     const url = `${appUrl}/invite/${input.token}`;
     await sender.send({
       to: input.email,
-      subject: `Your ${input.organisationName} invitation`,
-      text: `Hello ${input.name},\n\nYou have been invited to join ${input.organisationName} on Shanda Fuel.\n\nOpen this link to continue: ${url}\n\nThis link expires after 72 hours.`,
+      ...buildInvitationEmail({
+        name: input.name,
+        organisationName: input.organisationName,
+        url,
+        logoUrl: `${appUrl}/email-logo.png`,
+      }),
     });
     return 'sent';
   } catch {
