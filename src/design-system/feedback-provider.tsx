@@ -280,7 +280,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         <RouteChangeWatcher onSettled={endNavigation} />
       </Suspense>
       {children}
-      <div className="progress-bar" data-active={busy || undefined} aria-hidden="true" />
+      <div className="progress-bar" data-active={busy || undefined} />
       <div className="feedback-region" aria-live="polite">
         {slow ? (
           <p className="feedback-slow" role="status">
