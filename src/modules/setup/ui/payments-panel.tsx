@@ -14,6 +14,7 @@ import {
 } from '@/design-system/primitives';
 
 import type { PaymentProviderRow, SetupOverview } from '../contracts';
+import { BankBalancePanel } from './bank-balance-panel';
 import styles from './setup.module.css';
 import { StepUpDialog } from './step-up-dialog';
 import { useSetupOverview } from './use-setup-overview';
@@ -521,6 +522,7 @@ export function PaymentsView({ overview, reload }: { overview: Ready; reload: ()
       <ProviderSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <AccountSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <BankSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
+      <BankBalancePanel tenantId={overview.tenantId} stationId={overview.stationOptions[0]?.id} />
       <StepUpDialog
         open={pending !== null}
         tenantId={overview.tenantId}

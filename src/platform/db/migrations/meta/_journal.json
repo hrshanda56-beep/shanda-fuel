@@ -400,6 +400,13 @@
       "when": 1792600071000,
       "tag": "0071_alert_email",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1792600072000,
+      "tag": "0072_bank_balance_statements",
+      "breakpoints": true
     }
   ]
 }

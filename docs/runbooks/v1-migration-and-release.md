@@ -1,6 +1,6 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-10-24** for the merged v1 head (`4338c56` on `main`, PR #155): 57 migrations, 0000 to 0071.
+**Updated 2026-10-24** for the merged v1 head (`4338c56` on `main`, PR #155): 57 migrations, 0000 to 0071. **Branch `codex/v1-audit-gaps-20261025` adds `0072` (58 migrations); the counts below are for the merged head until it lands.**
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -67,6 +67,7 @@ that was reviewed.
 | 0066 | supplier_payment_proof_documents | Proof of payment on supplier payments | Needs the R2 bucket (documents) |
 | 0070 | staff_benefit_accounts | Staff fuel benefit accounts with a monthly USD limit | |
 | 0071 | alert_email | Alert email settings, switched off by default | Email stays off until ADR-020, DNS and the owner's switch |
+| 0072 | bank_balance_statements | Bank statement balances typed in per account (append-only, tenant RLS) | On branch `codex/v1-audit-gaps-20261025`, not merged; not applied anywhere |
 
 The journal in `src/platform/db/migrations/meta/_journal.json` lists 57 entries, 0000 to 0071 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
@@ -208,6 +209,7 @@ fba749dd518a95f32719b8eb744a51432c99a1286abc8335c72720622a10b78c  0065_delivery_
 6ba5e670b30380d37edc1fe4c3c43a861e7fae7d529e013d4ea4cf444fa3754b  0066_supplier_payment_proof_documents.sql
 6ef6b6ac14edd5e1a1a36ed43c1831d4ca588efa3af6708016437a6b4c3d7bd8  0070_staff_benefit_accounts.sql
 b515c33a1a2386bc4a3699634987e1b98538f4294ef9dad2f61dedba7abb6b1c  0071_alert_email.sql
+b1c8ea9323e8d6e37158d5e3b7053d2acb972f128680f21fe370a28df35dd2dc  0072_bank_balance_statements.sql (branch only)
 ```
 
 ## 7. Release record (copy this and fill it in)

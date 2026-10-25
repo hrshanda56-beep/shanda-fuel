@@ -103,7 +103,50 @@ describe('buildFinancialPosition', () => {
     const p = buildFinancialPosition(base());
     const other = find(p, 'Transporters and other creditors');
     expect(other?.value).toBeNull();
-    expect(other?.note).toContain('Not recorded');
+    expect(other?.note).toContain('counted under suppliers');
+    expect(other?.note).toContain('not recorded');
     expect(p.missing).not.toContain('Transporters and other creditors');
+  });
+
+  const owner = (bankBalance: unknown) => ({
+    stockValue: '5000.1234',
+    unvaluedStockStreams: 0,
+    unpaidExpenses: '75.5000',
+    expensesAwaitingApproval: { count: 2, amount: '40.0000' },
+    bankBalance,
+  });
+
+  it('uses the typed-in bank balance instead of recorded deposits, never both', () => {
+    const p = buildFinancialPosition(
+      base({
+        ownerPosition: owner({
+          amount: '2000.0000',
+          asOfDate: '2026-10-24',
+          accountsWithBalance: 1,
+          accountsTotal: 1,
+        }),
+      }),
+    );
+    expect(find(p, 'Money in the bank (from the bank statement)')?.value).toBe('2000.0000');
+    expect(find(p, 'Cash banked')).toBeUndefined();
+    // 1200.5 + 2000 + 300.25 + 450 + 5000.1234 = 8950.8734, not counting the 800 of deposits.
+    expect(p.totalHeld).toBe('8950.8734');
+  });
+
+  it('falls back to deposits, and says so, until every account has a balance', () => {
+    const p = buildFinancialPosition(
+      base({
+        ownerPosition: owner({
+          amount: null,
+          asOfDate: null,
+          accountsWithBalance: 1,
+          accountsTotal: 2,
+        }),
+      }),
+    );
+    const line = find(p, 'Cash banked');
+    expect(line?.value).toBe('800.0000');
+    expect(line?.note).toContain('1 of 2 accounts');
+    expect(p.totalHeld).toBe('7750.8734');
   });
 });

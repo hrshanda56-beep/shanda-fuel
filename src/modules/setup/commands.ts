@@ -36,6 +36,7 @@ export const SETUP_COMMAND_TYPES = [
   'UpdateSupplier',
   'SetResponsibleSupervisor',
   'SetAlertSettings',
+  'RecordBankBalance',
 ] as const;
 export type SetupCommandType = (typeof SETUP_COMMAND_TYPES)[number];
 
@@ -99,6 +100,17 @@ const setAlertSettingsPayload = authority.extend({
   posSettlementLagDays: z.number().int().min(0).max(30),
   reportGraceDays: z.number().int().min(0).max(14),
   cashShortageMinimum: z.string().regex(/^\d+(?:\.\d{1,4})?$/),
+});
+
+const recordBankBalancePayload = authority.extend({
+  bankAccountId: uuid,
+  /** The balance on the bank statement, as of the date given. */
+  balance: z
+    .string()
+    .trim()
+    .regex(/^-?\d+(?:\.\d{1,4})?$/, 'A balance such as 1250.50 is required'),
+  asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  note: z.string().trim().max(500).optional(),
 });
 
 function isUniqueViolation(error: unknown): boolean {
@@ -532,4 +544,60 @@ export function setAlertSettingsCommand(
 export async function setAlertSettingsFromRequest(request: Request, input: unknown) {
   const payload = setAlertSettingsPayload.parse(input);
   return setAlertSettingsCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+/**
+ * Types in the balance the bank statement shows for one account. It never changes the deposits
+ * recorded in the app: the financial position uses the typed balance for the bank and falls back to
+ * recorded deposits only for accounts that have none. Lines are never edited; a correction is a
+ * newer line.
+ */
+export function recordBankBalanceCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof recordBankBalancePayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.RecordBankBalance',
+    permissionCode: 'cash.deposit.confirm',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.BANK_BALANCE_RECORDED',
+      subjectType: 'BankAccount',
+      subjectId: () => payload.bankAccountId,
+    },
+    execute: async (transaction) => {
+      const [account] = await transaction.execute<{ id: string }>(sql`
+        select id from app.bank_accounts
+        where tenant_id = ${context.tenantId} and id = ${payload.bankAccountId} and status = 'ACTIVE'
+      `);
+      if (!account) throw new AppError('NOT_FOUND', 'That bank account was not found');
+      const [latest] = await transaction.execute<{ as_of_date: string }>(sql`
+        select as_of_date::text as as_of_date from app.bank_balance_statements
+        where tenant_id = ${context.tenantId} and bank_account_id = ${payload.bankAccountId}
+        order by as_of_date desc, entered_at desc limit 1
+      `);
+      if (latest && payload.asOfDate < latest.as_of_date) {
+        throw new AppError(
+          'CONFLICT',
+          `A balance for ${latest.as_of_date} is already entered. Enter one for that date or later.`,
+        );
+      }
+      const [row] = await transaction.execute<{ id: string }>(sql`
+        insert into app.bank_balance_statements
+          (tenant_id, bank_account_id, as_of_date, balance, note, entered_by)
+        values (${context.tenantId}, ${payload.bankAccountId}, ${payload.asOfDate},
+          ${payload.balance}, ${payload.note ?? null}, ${context.authority.membership.membershipId})
+        returning id
+      `);
+      return { id: row!.id };
+    },
+  });
+}
+
+export async function recordBankBalanceFromRequest(request: Request, input: unknown) {
+  const payload = recordBankBalancePayload.parse(input);
+  return recordBankBalanceCommand(await contextFor(request, payload), payload, keyOf(request));
 }

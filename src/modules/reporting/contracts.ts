@@ -223,6 +223,23 @@ export type OwnerPosition = Readonly<{
   unpaidExpenses: ReportMoney;
   /** Submitted expenses waiting for approval. */
   expensesAwaitingApproval: Readonly<{ count: number; amount: ReportMoney }>;
+  /**
+   * Balances typed in from the bank statements. The amount is only given when every active bank
+   * account has one; the date is the oldest of the latest statement dates.
+   */
+  /** Stock on hand for each station and fuel; the value is null while any of it has no cost yet. */
+  stockByStation?: readonly Readonly<{
+    stationName: string;
+    productName: string;
+    litres: ReportLitres;
+    value: ReportMoney | null;
+  }>[];
+  bankBalance?: Readonly<{
+    amount: ReportMoney | null;
+    asOfDate: string | null;
+    accountsWithBalance: number;
+    accountsTotal: number;
+  }>;
 }>;
 
 export type ManagementReport = Readonly<{

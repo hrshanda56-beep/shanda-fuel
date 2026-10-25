@@ -33,6 +33,8 @@ import {
 } from '../../../platform/drafts/outbox';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { TableScrollRegion } from '../../../design-system/table';
+import Link from 'next/link';
+import { DailyTankDips } from './daily-tank-dips';
 import {
   formatBusinessDate,
   formatLitres,
@@ -869,6 +871,10 @@ export function DailyOperationsWorkspace({
         {error ? (
           <ErrorState message={error} action={<Button onClick={() => void load()}>Retry</Button>} />
         ) : null}
+        <p className="muted-small">
+          Got the supervisor&apos;s WhatsApp message?{' '}
+          <Link href="/operations/daily/check-message">Check it before you enter it</Link>.
+        </p>
         <Card
           as="section"
           className="panel operations-start-card"
@@ -1596,6 +1602,14 @@ export function DailyOperationsWorkspace({
                 <strong>{Object.keys(record.totals.stockVariance).length}</strong>
               </div>
             </div>
+            <DailyTankDips
+              tenantId={context.tenantId}
+              stationId={context.stationId}
+              reconciliationId={activeReconciliationId ?? ''}
+              record={record}
+              editable={editable}
+              onChanged={load}
+            />
             {record.deliveries.length || record.dips.length ? (
               <TableScrollRegion label="Inventory evidence linked to this reconciliation">
                 <table className="responsive-table">

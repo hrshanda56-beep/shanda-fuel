@@ -6,6 +6,7 @@ import type { ManagementReportQuery } from '../contracts';
 import type { TableReportRow } from './definitions';
 import { TABLE_REPORT_ROW_LIMIT } from './definitions';
 import { readCustomerAgeing } from './customer-ageing-read';
+import { readSalesByPeriod, readStationDailyReport, readStockVariance } from './read-more';
 import {
   bankingStatusForDeposit,
   cashStatusForLocationType,
@@ -534,4 +535,7 @@ export const TABLE_REPORT_READERS: Readonly<Record<string, TableReportReader>> =
   'supplier-payments': readSupplierPayments,
   'sales-by-attendant': readSalesByAttendant,
   'payment-method-breakdown': readPaymentMethodBreakdown,
+  'station-daily-report': readStationDailyReport,
+  'sales-by-period': readSalesByPeriod,
+  'stock-variance': readStockVariance,
 };

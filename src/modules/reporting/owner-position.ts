@@ -3,7 +3,7 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import type { OwnerPosition } from './contracts';
-import { formatMoney } from './domain';
+import { formatLitres, formatMoney } from './domain';
 
 type PositionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -61,7 +61,58 @@ export async function readOwnerPosition(
   `);
   const row = rows[0];
   if (!row) return emptyOwnerPosition();
+  const [bank] = await transaction.execute<{
+    accounts_total: string | number;
+    accounts_with_balance: string | number;
+    total: string | null;
+    oldest: string | null;
+  }>(sql`
+    select count(*) as accounts_total,
+      count(latest.balance) as accounts_with_balance,
+      sum(latest.balance)::text as total,
+      min(latest.as_of_date)::text as oldest
+    from app.bank_accounts a
+    left join lateral (
+      select s.balance, s.as_of_date from app.bank_balance_statements s
+      where s.tenant_id = a.tenant_id and s.bank_account_id = a.id
+      order by s.as_of_date desc, s.entered_at desc limit 1
+    ) latest on true
+    where a.tenant_id = ${filters.tenantId} and a.status = 'ACTIVE'
+  `);
+  const stock = await transaction.execute<{
+    station: string;
+    product: string;
+    litres: string;
+    value: string | null;
+  }>(sql`
+    select st.name as station, p.name as product,
+      sum(s.quantity_litres)::text as litres,
+      case when count(*) filter (where s.valuation_status <> 'VALUED' and s.quantity_litres > 0) > 0
+        then null else coalesce(sum(s.inventory_value), 0)::text end as value
+    from app.inventory_cost_stream_state s
+    join app.stations st on st.tenant_id = s.tenant_id and st.id = s.station_id
+    join app.products p on p.tenant_id = s.tenant_id and p.id = s.product_id
+    where s.tenant_id = ${filters.tenantId} ${stationFilter('s', filters.stationIds)}
+    group by st.name, p.name
+    order by st.name, p.name
+  `);
+  const accountsTotal = Number(bank?.accounts_total ?? 0);
+  const accountsWithBalance = Number(bank?.accounts_with_balance ?? 0);
+  const complete =
+    accountsTotal > 0 && accountsWithBalance === accountsTotal && bank?.total != null;
   return {
+    stockByStation: stock.map((row) => ({
+      stationName: row.station,
+      productName: row.product,
+      litres: formatLitres(row.litres),
+      value: row.value === null ? null : formatMoney(row.value),
+    })),
+    bankBalance: {
+      amount: complete ? formatMoney(bank!.total) : null,
+      asOfDate: complete ? (bank!.oldest ?? null) : null,
+      accountsWithBalance,
+      accountsTotal,
+    },
     stockValue: row.stock_value === null ? null : formatMoney(row.stock_value),
     unvaluedStockStreams: Number(row.unvalued_streams),
     unpaidExpenses: formatMoney(row.unpaid_expenses),
