@@ -42,7 +42,10 @@ const FeedbackContext = createContext<Feedback | null>(null);
 
 const STANDALONE_FEEDBACK: Feedback = {
   toast: () => {},
-  confirm: (request) => Promise.resolve(window.confirm(request.consequence)),
+  confirm: (request) =>
+    Promise.resolve(
+      window.confirm(typeof request.consequence === 'string' ? request.consequence : request.title),
+    ),
 };
 
 function useFeedback(): Feedback {
