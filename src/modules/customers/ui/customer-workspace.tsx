@@ -358,7 +358,7 @@ export function CustomerWorkspace({
             className="button button-secondary"
             href={buildContextHref('/customers/account-controls', search, current)}
           >
-            Credit limits and transaction details
+            Customer controls
           </Link>
         </div>
       ) : null}

@@ -1,5 +1,9 @@
 # Your 22-section brief: where each part stands
 
+> **Stale (2026-10-25).** Many rows below still say "being built" for work that has since been
+> finished and merged. Do not send this table. See `docs/audits/brief-gap-audit-2026-10-25.md` for the
+> current position until this file is regenerated.
+
 **Written for:** the owner of TEI Oils. No technical knowledge is needed.
 
 **Important limit on this table.** Our working audit numbers brief sections S2 to S20 and groups some

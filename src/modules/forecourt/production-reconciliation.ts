@@ -807,7 +807,14 @@ async function loadMetrics(
   }>(sql`
     select r.tank_id, r.product_id, d.physical_litres as physical,
       coalesce((select sum(m.quantity_litres) from app.inventory_movements m where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id), 0) as expected,
-      coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.reconciliation_id=r.reconciliation_id and m.product_id=r.product_id), 0) as sold
+      -- Sale movements are posted on approval, so once approved they are already inside "expected".
+      case when exists (
+        select 1 from app.reconciliations rec
+        where rec.tenant_id=r.tenant_id and rec.station_id=r.station_id and rec.id=r.reconciliation_id
+          and rec.state in ('APPROVED','POSTED','LOCKED'))
+      then 0
+      else coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.reconciliation_id=r.reconciliation_id and m.product_id=r.product_id), 0)
+      end as sold
     from app.reconciliation_dip_refs r join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id
     where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${reconciliationId}
   `);
@@ -1416,6 +1423,16 @@ export async function getProductionReconciliationFromRequest(
           sql`select category, explanation from app.reconciliation_variance_explanations where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId} order by category`,
         ),
       ]);
+    const tanks = await transaction.execute<RecordData['tanks'][number]>(sql`
+      select t.id as "tankId", t.code, t.product_id as "productId", p.name as "productName",
+        t.capacity_litres::text as "capacityLitres",
+        t.acceptable_variance_litres::text as "toleranceLitres",
+        exists (select 1 from app.tank_calibration_points c
+          where c.tenant_id = t.tenant_id and c.tank_id = t.id and c.measurement_unit = 'mm') as "hasMillimetreChart"
+      from app.tanks t join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
+      where t.tenant_id=${context.tenantId} and t.station_id=${context.stationId} and t.status='ACTIVE'
+      order by p.name, t.code
+    `);
     const metrics = await loadMetrics(transaction, context, input.reconciliationId);
     // Tells the review page to hide Approve from the person who submitted the day, using the same
     // rule the approve command enforces.
@@ -1468,6 +1485,7 @@ export async function getProductionReconciliationFromRequest(
       expenses,
       deliveries,
       dips,
+      tanks,
       cash: cash[0] ?? null,
       explanations,
       totals: {

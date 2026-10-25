@@ -119,7 +119,7 @@ export function SupplierDueView({
         />
       ) : (
         listed.map((group) => (
-          <Card key={group.bucket} as="section" aria-label={group.label}>
+          <Card key={group.bucket} as="section" className="panel" aria-label={group.label}>
             <div className={styles.groupHead}>
               <h3 className={styles.groupTitle}>{group.label}</h3>
               <span className={styles.groupTotal}>{formatTileMoney(group.total)}</span>

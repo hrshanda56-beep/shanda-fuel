@@ -2,6 +2,13 @@ import { seedClerkSession, seedActiveStepUp, clerkHeaders } from './auth-session
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { readOwnerPosition } from '../../src/modules/reporting/owner-position';
+import {
+  readSalesByPeriod,
+  readStationDailyReport,
+  readStockVariance,
+} from '../../src/modules/reporting/table-reports/read-more';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { POST as inventoryCommandPost } from '../../src/app/api/inventory/commands/route';
 import { GET as reconciliationGet } from '../../src/app/api/forecourt/reconciliations/[id]/route';
@@ -954,6 +961,38 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const successfulApproval = concurrentResults.find((result) => result.status === 200)!;
     expect(successfulApproval.body.state).toBe('APPROVED');
     expect(successfulApproval.body.saleMovementIds).toHaveLength(2);
+    // Approval posts the sale movements; the stock variance must not subtract the sold litres twice.
+    const approvedRecord = await expectOk(await readReconciliation(reconciliationId));
+    expectDecimalEqual(approvedRecord.totals!.stockVariance[ids.tank]!, '0.000');
+    // The approved day shows up in the owner's reports with the same figures.
+    const reportFilters = {
+      tenantId: ids.tenant,
+      stationIds: [ids.station],
+      fromDate: '2000-01-01',
+      toDate: '2100-01-01',
+    };
+    // Own connection: drizzle changes how a postgres client parses dates.
+    const reportClient = postgres(process.env.DATABASE_URL!, { max: 1 });
+    const reportDb = drizzle(reportClient) as never;
+    const byPeriod = await readSalesByPeriod(reportDb, reportFilters, { legalEntityIds: [] });
+    expect(byPeriod).toHaveLength(1);
+    expectDecimalEqual(byPeriod[0]!.litres!, '500.000');
+    expectDecimalEqual(byPeriod[0]!.sales!, '750.0000');
+    expect(byPeriod[0]!.weekStarting).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const dailySheet = await readStationDailyReport(reportDb, reportFilters, {
+      legalEntityIds: [],
+    });
+    expect(dailySheet).toHaveLength(1);
+    expectDecimalEqual(dailySheet[0]!.totalSales!, '750.0000');
+    const variances = await readStockVariance(reportDb, reportFilters, { legalEntityIds: [] });
+    expect(Array.isArray(variances)).toBe(true);
+    const position = await readOwnerPosition(reportDb, {
+      tenantId: ids.tenant,
+      stationIds: [ids.station],
+    });
+    expect(position.stockByStation!.length).toBeGreaterThan(0);
+    expect(position.stockByStation![0]!.stationName).toBeTruthy();
+    await reportClient.end();
     const saleMovements = await client.unsafe<
       { id: string; source_id: string; quantity_litres: string }[]
     >(`

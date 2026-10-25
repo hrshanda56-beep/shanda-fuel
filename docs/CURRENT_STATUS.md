@@ -1,5 +1,15 @@
 # Shanda Fuel — Current Status
 
+## Brief gap audit — 2026-10-25
+
+Audit of `origin/main` at `a3a769f` against the TEI Oils brief and samples; details in
+`docs/audits/brief-gap-audit-2026-10-25.md`. On branch `codex/v1-audit-gaps-20261025` (not pushed, not
+merged): a stock-variance double count after approval fixed, three new reports (Station Daily Report,
+Sales by Day/Week/Month, Stock Variances), a missing page for Customer Debtors Ageing added, and a
+WhatsApp shift message check at `/operations/daily/check-message`, tank dips on the daily sheet (every
+tank always listed), fuel stock by station and a typed-in bank balance on the financial position
+(new migration `0072`, applied nowhere). Open items are listed in the audit file. `docs/client/03-brief-coverage.md` is stale and should not be sent as it stands.
+
 ## After the combined finish — 2026-10-24 (later)
 
 Merged into `main` after PR #149: PR #150 as `6f59fd3` (export fix and the v1 runbooks), PR #152 as

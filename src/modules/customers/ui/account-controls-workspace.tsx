@@ -135,13 +135,15 @@ export function AccountControlsWorkspace({
   const [limits, setLimits] = useState<Record<string, string>>({});
 
   return (
-    <div className="customer-workspace">
-      <Card aria-label="Credit limits">
-        <h2>Credit limits</h2>
-        <p className="field-hint">
-          The most each credit customer may owe at one time. A change needs an approver and a
-          reason, and is kept on record.
-        </p>
+    <div className="content-grid wide-workspace customer-workspace">
+      <Card className="panel content-span" aria-label="Credit limits">
+        <div className="section-heading">
+          <h2>Credit limits</h2>
+          <p className="field-hint">
+            The most each credit customer may owe at one time. A change needs an approver and a
+            reason, and is kept on record.
+          </p>
+        </div>
         {message ? (
           <p className="field-hint" role="status">
             {message}
@@ -215,11 +217,13 @@ export function AccountControlsWorkspace({
         ) : null}
       </Card>
 
-      <Card aria-label="Details of each transaction">
-        <h2>Details of each transaction</h2>
-        <p className="field-hint">
-          For a customer account: the vehicle, driver, voucher or slip number and who approved it.
-        </p>
+      <Card className="panel content-span stack" aria-label="Details of each transaction">
+        <div className="section-heading">
+          <h2>Details of each transaction</h2>
+          <p className="field-hint">
+            For a customer account: the vehicle, driver, voucher or slip number and who approved it.
+          </p>
+        </div>
         {creditCustomers.length === 0 ? (
           <EmptyState
             layout="block"
@@ -272,7 +276,7 @@ export function AccountControlsWorkspace({
           setLimitTarget(null);
         }}
       />
-      <p className="field-hint">
+      <p className="field-hint content-span">
         <Link href="/customers">Back to customers</Link>
       </p>
     </div>
@@ -417,7 +421,7 @@ function CustomerEntries({
         </ul>
       )}
 
-      <h3 className="field-hint">Credit limit changes</h3>
+      <h3 className="section-subheading">Credit limit changes</h3>
       {state.overrides.length === 0 ? (
         <p className="field-hint">The credit limit has not been changed since it was set.</p>
       ) : (

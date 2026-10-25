@@ -1,0 +1,195 @@
+/* Staff fuel benefit page. A module so it cannot collide with other pages' styles. */
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.summaryCard {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+}
+
+.summaryLabel {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.summaryValue {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xl, 1.5rem);
+  font-weight: var(--font-weight-semibold, 600);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--space-3);
+}
+
+.person {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.personHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--surface-subtle, var(--surface-raised));
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.personName {
+  display: grid;
+  min-width: 0;
+}
+
+.personName h2 {
+  margin: 0;
+  font-size: var(--font-size-md);
+  overflow-wrap: anywhere;
+}
+
+.personName span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.useLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.useLine strong {
+  font-size: var(--font-size-lg, 1.125rem);
+}
+
+.bar {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-subtle, var(--border-subtle, var(--border-strong)));
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tone-success-text, var(--accent, currentColor));
+}
+
+.barFill[data-level='high'] {
+  background: var(--tone-warning-text, currentColor);
+}
+
+.barFill[data-level='over'] {
+  background: var(--tone-critical-text, currentColor);
+}
+
+.personFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-5);
+  text-align: center;
+}
+
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.empty h2,
+.empty p {
+  margin: 0;
+}
+
+.empty p {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.money {
+  position: relative;
+}
+
+.money > span {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: var(--space-3);
+  display: grid;
+  align-items: center;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.money > input {
+  width: 100%;
+  padding-inline-start: calc(var(--space-3) + 1.25rem);
+}
+
+@media (max-width: 48rem) {
+  .summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .formGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

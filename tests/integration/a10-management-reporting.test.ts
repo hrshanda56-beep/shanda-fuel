@@ -747,6 +747,16 @@ describe('A10 management reporting PostgreSQL read model', () => {
       unvaluedStockStreams: 0,
       unpaidExpenses: '0.0000',
       expensesAwaitingApproval: { count: 1, amount: '2.0000' },
+      // The tenant has one active bank account and no statement balance typed in for it.
+      bankBalance: { amount: null, asOfDate: null, accountsWithBalance: 0, accountsTotal: 1 },
+      stockByStation: [
+        {
+          stationName: 'A10 Main Station',
+          productName: 'A10 Petrol',
+          litres: '84.500',
+          value: '169.0000',
+        },
+      ],
     });
 
     const priorBusinessDateResponse = await managementReportGet(
@@ -978,6 +988,9 @@ describe('A10 management reporting PostgreSQL read model', () => {
       unvaluedStockStreams: 0,
       unpaidExpenses: '0.0000',
       expensesAwaitingApproval: { count: 0, amount: '0.0000' },
+      // Stock is listed only for the chosen station; bank accounts belong to the whole organisation.
+      stockByStation: [],
+      bankBalance: { amount: null, asOfDate: null, accountsWithBalance: 0, accountsTotal: 1 },
     });
   });
 

@@ -90,7 +90,7 @@ export function StaffBenefitExpenseWorkspace({
           </Link>
         }
       />
-      <Card>
+      <Card className="panel">
         <Field id="benefit-month" label="Month">
           <Select
             id="benefit-month"
@@ -112,7 +112,7 @@ export function StaffBenefitExpenseWorkspace({
       ) : (
         <div className="stack">
           {rows.map((row) => (
-            <Card key={row.accountId} as="article">
+            <Card key={row.accountId} as="article" className="panel stack">
               <h2>{row.staffName}</h2>
               {row.cost.status === 'NO_FUEL' ? (
                 <p className="muted">No fuel was taken at this station in {month}.</p>

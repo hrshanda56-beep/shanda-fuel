@@ -6,6 +6,7 @@ import {
   createProductFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,
+  recordBankBalanceFromRequest,
   setAlertSettingsFromRequest,
   setResponsibleSupervisorFromRequest,
   updateSupplierFromRequest,
@@ -44,6 +45,9 @@ export const POST = withRequestObservability(
           break;
         case 'SetAlertSettings':
           result = await setAlertSettingsFromRequest(request, body);
+          break;
+        case 'RecordBankBalance':
+          result = await recordBankBalanceFromRequest(request, body);
           break;
       }
       return NextResponse.json(result, { status: 200, headers: { 'Cache-Control': 'no-store' } });
