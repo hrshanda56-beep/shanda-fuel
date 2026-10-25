@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useConfirm } from '../../../design-system/feedback-provider';
 import { Button, Card, Field, StatusBadge } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
 
@@ -84,6 +85,7 @@ export function ProductionReconciliationWorkflow({
   context: ProductionReconciliationContext;
   role?: 'SUPERVISOR' | 'MANAGEMENT';
 }) {
+  const confirm = useConfirm();
   const [record, setRecord] = useState<RecordData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -237,9 +239,13 @@ export function ProductionReconciliationWorkflow({
     }
     if (
       commandType === 'ApproveProductionReconciliation' &&
-      !window.confirm(
-        'Approve this production reconciliation? The server will post canonical sale evidence and the record cannot be edited afterwards.',
-      )
+      !(await confirm({
+        title: 'Approve this production reconciliation?',
+        consequence:
+          'The server will post canonical sale evidence and the record cannot be edited afterwards.',
+        confirmLabel: 'Approve reconciliation',
+        tone: 'warning',
+      }))
     ) {
       return;
     }

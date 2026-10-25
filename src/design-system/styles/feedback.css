@@ -1,0 +1,109 @@
+/* Global feedback: progress bar, "still working" note, toasts. See feedback-provider.tsx. */
+
+.progress-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 1000;
+  height: 3px;
+  background: var(--color-brand);
+  transform: scaleX(0);
+  transform-origin: left;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.progress-bar[data-active] {
+  opacity: 1;
+  transform: scaleX(0.85);
+  transition:
+    opacity 0.1s ease,
+    transform 12s cubic-bezier(0.1, 0.8, 0.3, 1);
+}
+
+/* Anything the person has asked for and is waiting on shows the busy cursor. */
+html[data-busy],
+html[data-busy] a,
+html[data-busy] button {
+  cursor: progress;
+}
+
+[aria-busy='true'] {
+  cursor: progress;
+}
+
+form[aria-busy='true'] {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.feedback-region {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.toast,
+.feedback-slow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(26rem, 100%);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  pointer-events: auto;
+  animation: toast-in 0.2s ease;
+}
+
+.toast[data-tone='success'] {
+  border-color: var(--color-positive);
+}
+
+.toast[data-tone='error'] {
+  border-color: var(--color-critical-border);
+  background: var(--color-critical-soft);
+  color: var(--color-critical-ink);
+}
+
+.toast-close {
+  margin-left: auto;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar,
+  .progress-bar[data-active],
+  .toast {
+    transition: none;
+    animation: none;
+  }
+}

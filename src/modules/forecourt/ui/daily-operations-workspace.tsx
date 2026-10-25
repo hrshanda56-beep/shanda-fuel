@@ -2,6 +2,7 @@
 import type { RecordData } from '../daily-operations-read-model';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConfirm } from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -259,6 +260,7 @@ export function DailyOperationsWorkspace({
   };
   role?: 'SUPERVISOR' | 'MANAGEMENT';
 }) {
+  const confirm = useConfirm();
   const [activeReconciliationId, setActiveReconciliationId] = useState(context.reconciliationId);
   const [operation, setOperation] = useState<OperationsContext | null>(
     initialData?.operation ?? null,
@@ -651,9 +653,13 @@ export function DailyOperationsWorkspace({
     }
     if (
       commandType === 'ApproveProductionReconciliation' &&
-      !window.confirm(
-        'Approve this production reconciliation? The server will post canonical sale evidence and the record cannot be edited afterwards.',
-      )
+      !(await confirm({
+        title: 'Approve this production reconciliation?',
+        consequence:
+          'The server will post canonical sale evidence and the record cannot be edited afterwards.',
+        confirmLabel: 'Approve reconciliation',
+        tone: 'warning',
+      }))
     ) {
       return;
     }

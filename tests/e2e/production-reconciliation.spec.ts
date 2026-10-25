@@ -1,9 +1,23 @@
 import { seedClerkIdentity, authenticateClerk, establishClerkStepUp } from './clerk-fixtures';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type BrowserContext,
+  type Page,
+} from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { ExactDecimal } from '../../src/platform/domain/primitives';
+
+/** The app's own confirmation dialog (it replaced the browser's confirm popup). */
+async function acceptConfirmation(page: Page) {
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: /^(Continue|Approve reconciliation)$/ })
+    .click();
+}
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -386,13 +400,13 @@ test.describe('production reconciliation persistence', () => {
       `update app.shifts set version = version + 1 where id = '${ids.controlRoomShift}'`,
     );
 
-    page.once('dialog', (dialog) => void dialog.accept());
     const responsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/forecourt/commands') &&
         response.request().method() === 'POST',
     );
     await closeMeters.click();
+    await acceptConfirmation(page);
     const response = await responsePromise;
     expect(response.status()).toBe(409);
     await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
@@ -515,8 +529,8 @@ test.describe('production reconciliation persistence', () => {
         response.url().includes('/api/forecourt/commands') &&
         response.request().method() === 'POST',
     );
-    page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
+    await acceptConfirmation(page);
     const approveResponse = await approveResponsePromise;
     expect(approveResponse.ok(), await approveResponse.text()).toBe(true);
     await expect
@@ -745,8 +759,8 @@ test.describe('production reconciliation persistence', () => {
       page,
       `/operations/reconciliations/${reconciliationId}/review?${query.toString()}`,
     );
-    page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Approve production reconciliation' }).click();
+    await acceptConfirmation(page);
     await expect(page.getByText('Approved', { exact: true })).toBeVisible();
     await expect(page.getByText(/Canonical sale evidence has been posted/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save persisted draft' })).toBeDisabled();
