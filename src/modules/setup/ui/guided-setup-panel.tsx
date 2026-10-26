@@ -186,11 +186,13 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
   const { save, busy, outcome } = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
   const [errors, setErrors] = useState<Errors>({});
   const products = activeProducts(ctx.data);
+  // Held in state, not read from the form, so it is cleared even if the screen was redrawn while
+  // the identity check was open.
+  const [fuelName, setFuelName] = useState('');
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const name = text(new FormData(form), 'name');
+    const name = fuelName.trim();
     const next = { name: name ? undefined : 'Enter the name of the fuel, for example Diesel.' };
     setErrors(next);
     if (hasErrors(next)) return;
@@ -209,7 +211,7 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
         },
         `${name} was added.`,
       );
-      if (saved) form.reset();
+      if (saved) setFuelName('');
     });
   }
 
@@ -225,6 +227,8 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
             <input
               id="fuel-name"
               name="name"
+              value={fuelName}
+              onChange={(event) => setFuelName(event.target.value)}
               autoComplete="off"
               maxLength={120}
               placeholder="Diesel"
