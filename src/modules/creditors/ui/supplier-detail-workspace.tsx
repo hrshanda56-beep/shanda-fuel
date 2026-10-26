@@ -632,6 +632,25 @@ export function SupplierDetailWorkspace({
                 <dt>Not yet due</dt>
                 <dd>{formatTileMoney(supplier.current)}</dd>
               </div>
+              {pending.length > 0 ? (
+                <div>
+                  <dt>Waiting to be posted</dt>
+                  <dd>
+                    {formatTileMoney(
+                      pending
+                        .reduce(
+                          (sum, item) =>
+                            item.documentType === 'CREDIT_NOTE'
+                              ? sum.minus(item.amount)
+                              : sum.plus(item.amount),
+                          new Decimal(0),
+                        )
+                        .toFixed(4),
+                    )}
+                    <small> not counted above</small>
+                  </dd>
+                </div>
+              ) : null}
               <div data-tone={late ? 'warning' : undefined}>
                 <dt>Overdue</dt>
                 <dd>{formatTileMoney(supplier.overdue)}</dd>
