@@ -23,7 +23,10 @@ export async function loadDocumentApprovalFacts(
   const canPrice = may('price.change.approve');
   const canOrder = may('purchase_order.approve');
   const canPost = may('supplier.document.post');
-  if (!canPrice && !canOrder && !canPost) return { prices: null, orders: null, invoices: null };
+  const canExpense = may('expense.approve');
+  if (!canPrice && !canOrder && !canPost && !canExpense) {
+    return { prices: null, orders: null, invoices: null, expenses: null };
+  }
 
   const empty = sql`select null as unavailable where false`;
   const alternate = (permission: string) =>
@@ -58,6 +61,15 @@ export async function loadDocumentApprovalFacts(
   group by d.supplier_id,d.document_type`
     : empty;
 
+  const expenses = canExpense
+    ? sql`
+  select e.id, e.submitted_by, e.description, e.amount::text as amount
+  from app.expenses e
+  where e.tenant_id=${context.tenantId} and e.station_id=${context.stationId}
+    and e.state='SUBMITTED'
+  order by e.created_at,e.id`
+    : empty;
+
   const rows = await transaction.execute<{
     prices: {
       id: string;
@@ -72,15 +84,24 @@ export async function loadDocumentApprovalFacts(
       supplier_name: string;
     }[];
     invoices: { supplier_id: string; document_type: string; count: number }[];
+    expenses: {
+      id: string;
+      submitted_by: string | null;
+      description: string;
+      amount: string;
+    }[];
     other_price_approver: boolean;
     other_order_approver: boolean;
+    other_expense_approver: boolean;
   }>(sql`
- with prices as (${prices}),orders as (${orders}),invoices as (${invoices})
+ with prices as (${prices}),orders as (${orders}),invoices as (${invoices}),expenses as (${expenses})
  select coalesce((select json_agg(prices) from prices),'[]'::json) as prices,
  coalesce((select json_agg(orders) from orders),'[]'::json) as orders,
  coalesce((select json_agg(invoices) from invoices),'[]'::json) as invoices,
+ coalesce((select json_agg(expenses) from expenses),'[]'::json) as expenses,
  exists(${canPrice ? alternate('price.change.approve') : empty}) as other_price_approver,
- exists(${canOrder ? alternate('purchase_order.approve') : empty}) as other_order_approver
+ exists(${canOrder ? alternate('purchase_order.approve') : empty}) as other_order_approver,
+ exists(${canExpense ? alternate('expense.approve') : empty}) as other_expense_approver
  `);
   const row = rows[0];
   if (!row) throw new AppError('INVARIANT_VIOLATION', 'Approval facts were not returned');
@@ -105,6 +126,17 @@ export async function loadDocumentApprovalFacts(
             submittedByMe: o.submitted_by === me,
           })),
           soleApprover: !row.other_order_approver,
+        }
+      : null,
+    expenses: canExpense
+      ? {
+          rows: row.expenses.map((e) => ({
+            id: e.id,
+            description: e.description,
+            amount: e.amount,
+            submittedByMe: e.submitted_by === me,
+          })),
+          soleApprover: !row.other_expense_approver,
         }
       : null,
     invoices: canPost
