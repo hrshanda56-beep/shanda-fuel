@@ -6,6 +6,7 @@ import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import { companyForNewCustomer } from '../company-choice';
 import { makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
 
 type Kind = 'CREDIT' | 'PREPAID_VALUE' | 'PREPAID_LITRES' | 'STAFF';
@@ -43,13 +44,16 @@ async function post(input: Record<string, unknown>, key: string): Promise<unknow
  */
 export function AddCustomer({
   tenantId,
-  legalEntityId,
+  legalEntityId: selectedLegalEntityId,
+  companies = [],
   canAdd,
   canOpenAccount,
 }: {
   tenantId: string;
   /** The company chosen in the context selector; a customer's credit is with one company. */
   legalEntityId: string | null;
+  /** Every company the person may add customers to, for when none is chosen yet. */
+  companies?: ReadonlyArray<{ id: string; name: string }>;
   canAdd: boolean;
   canOpenAccount: boolean;
 }) {
@@ -57,6 +61,14 @@ export function AddCustomer({
   // The staff fuel benefit page links here with ?add=staff so the form opens ready for a staff member.
   const startsAsStaff = useSearchParams().get('add') === 'staff';
   const [open, setOpen] = useState(startsAsStaff);
+  // With no company selected at the top and several to choose from, ask before the form opens.
+  const [pickedCompany, setPickedCompany] = useState('');
+  const [askingCompany, setAskingCompany] = useState(false);
+  const { legalEntityId, mustAskFirst } = companyForNewCustomer({
+    selected: selectedLegalEntityId,
+    companies,
+    picked: pickedCompany,
+  });
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [kind, setKind] = useState<Kind | ''>(startsAsStaff ? 'STAFF' : '');
@@ -196,11 +208,47 @@ export function AddCustomer({
         onClick={() => {
           reset();
           setDone(null);
-          setOpen(true);
+          if (mustAskFirst) setAskingCompany(true);
+          else setOpen(true);
         }}
       >
         Add customer
       </Button>
+      <Modal
+        open={askingCompany}
+        onClose={() => setAskingCompany(false)}
+        title="Which company is this customer with?"
+        description="A customer's credit is with one company. Choose it first."
+        size="sm"
+      >
+        <form
+          className="form-stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!pickedCompany) return;
+            setAskingCompany(false);
+            setOpen(true);
+          }}
+        >
+          <Field id="add-customer-company" label="Company" required>
+            <Select
+              id="add-customer-company"
+              value={pickedCompany}
+              onChange={(event) => setPickedCompany(event.target.value)}
+              placeholder="Choose a company"
+              options={companies.map((company) => ({ value: company.id, label: company.name }))}
+            />
+          </Field>
+          <div className="form-actions">
+            <Button variant="secondary" type="button" onClick={() => setAskingCompany(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!pickedCompany}>
+              Continue
+            </Button>
+          </div>
+        </form>
+      </Modal>
       {done ? <p role="status">{done}</p> : null}
       <Modal
         open={open && stepUpRetry === null}
@@ -276,7 +324,7 @@ export function AddCustomer({
             <Field
               id="add-customer-days"
               label="Usual days to pay"
-              hint="Only a note for your team. It does not stop a sale."
+              hint="How many days they have to pay. It sets when each charge falls due and when it counts as overdue."
               optional
             >
               <input

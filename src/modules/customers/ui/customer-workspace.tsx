@@ -376,6 +376,11 @@ export function CustomerWorkspace({
                 return companies.length === 1 ? (companies[0]?.id ?? null) : null;
               })()
             }
+            companies={
+              context?.available?.organisations
+                .find((o) => o.id === current.organisationId)
+                ?.legalEntities.map((entity) => ({ id: entity.id, name: entity.name })) ?? []
+            }
             canAdd={capabilities?.manageCustomer ?? false}
             canOpenAccount={capabilities?.openAccount ?? false}
           />
