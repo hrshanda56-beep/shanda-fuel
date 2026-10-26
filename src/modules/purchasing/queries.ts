@@ -249,18 +249,22 @@ export async function getPurchaseOrderDetailFromRequest(
     // Same rule the approve command applies, so the screen can hide a button that would be refused.
     const me = context.authority.membership.membershipId;
     const submitter = rows[0].submitted_by ?? rows[0].created_by;
-    const approvalBlockedForYou =
-      rows[0].state === 'SUBMITTED' &&
-      submitter === me &&
+    const sentByMe = rows[0].state === 'SUBMITTED' && submitter === me;
+    const someoneElseCanApprove =
+      sentByMe &&
       (await hasAlternateApprover(transaction, {
         tenantId: context.tenantId,
         stationId: context.stationId,
         excludeMembershipId: submitter,
         permission: 'purchase_order.approve',
       }));
+    const approvalBlockedForYou = sentByMe && someoneElseCanApprove;
+    // The sender is the only possible approver: allowed, with a reason.
+    const approvalIsSelf = sentByMe && !someoneElseCanApprove;
     return {
       ...headerResult(rows[0], lines),
       approvalBlockedForYou,
+      approvalIsSelf,
       deliveries: [...links].map((row) => ({
         linkId: row.id,
         purchaseOrderLineId: row.purchase_order_line_id,

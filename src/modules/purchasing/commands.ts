@@ -63,6 +63,7 @@ const HANDLERS: { [K in PurchasingCommandType]: Handler<K> } = {
   ApprovePurchaseOrder: {
     subjectType: 'PurchaseOrder',
     subjectId: orderId,
+    reason: (input) => input.selfApprovalReason,
     created: false,
     run: approvePurchaseOrderInTransaction,
   },
