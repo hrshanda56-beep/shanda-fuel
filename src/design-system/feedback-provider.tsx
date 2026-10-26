@@ -14,6 +14,7 @@ import {
 } from 'react';
 
 import { ConfirmDialog, type ConfirmTone } from './dialogs';
+import { fetchWithFreshSession, type ClerkLike } from './session-refresh';
 
 /* Global feedback --------------------------------------------------------
  * One place that tells people the app heard them:
@@ -184,7 +185,15 @@ function useBusyTracking(
       sync();
       const savePath = saveRequestPath(input, init);
       try {
-        const response = await originalFetch(input, init);
+        // A command first makes sure the sign-in is fresh, so a tab left idle does not meet a 401.
+        const response = savePath
+          ? await fetchWithFreshSession(
+              originalFetch,
+              input,
+              init,
+              (window as unknown as { Clerk?: ClerkLike }).Clerk,
+            )
+          : await originalFetch(input, init);
         if (savePath) {
           onSaveRef.current(
             response.ok ? 'saved' : response.status >= 500 ? 'failed' : 'rejected',
