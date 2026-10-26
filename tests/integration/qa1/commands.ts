@@ -362,6 +362,7 @@ export async function createDelivery(
       stationId: ctx.stationId,
       productId: ctx.productId,
       supplierId: input.supplierId,
+      noPoReason: 'EMERGENCY_PURCHASE',
       deliveryNoteNumber: `QA1-DN-${keyPrefix}`,
       deliveredAt: input.deliveredAt,
       noteQuantityLitres: input.noteQuantityLitres ?? input.quantityLitres,

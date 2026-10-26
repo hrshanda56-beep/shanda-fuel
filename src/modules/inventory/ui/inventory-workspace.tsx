@@ -640,8 +640,19 @@ export type DeliveryFormValues = Readonly<{
   sealReference?: string;
   preDeliveryDipId?: string;
   postDeliveryDipId?: string;
+  /** Why there is no purchase order; empty when the delivery will be linked to one. */
+  noPoReason?: string;
+  noPoNote?: string;
   tankId: string;
 }>;
+
+export const NO_PO_REASON_OPTIONS = [
+  { value: 'EMERGENCY_PURCHASE', label: 'Emergency purchase' },
+  { value: 'CASH_PURCHASE', label: 'Bought for cash' },
+  { value: 'SUPPLIER_DIRECT', label: 'Supplier delivered without an order' },
+  { value: 'PO_NOT_RAISED', label: 'The order was not raised in time' },
+  { value: 'OTHER', label: 'Another reason' },
+] as const;
 
 /**
  * Build the existing CreateDelivery command without sending empty optional strings.
@@ -667,6 +678,8 @@ export function buildDeliveryCommand(values: DeliveryFormValues): Record<string,
     sealReference: values.sealReference,
     preDeliveryDipId: values.preDeliveryDipId,
     postDeliveryDipId: values.postDeliveryDipId,
+    noPoReason: values.noPoReason,
+    noPoNote: values.noPoReason ? values.noPoNote : undefined,
   } as const;
   for (const [key, value] of Object.entries(optional)) {
     if (value?.trim()) command[key] = value.trim();
@@ -698,6 +711,8 @@ export function DeliveryForm({
   const [sealReference, setSealReference] = useState('');
   const [preDeliveryDipId, setPreDeliveryDipId] = useState('');
   const [postDeliveryDipId, setPostDeliveryDipId] = useState('');
+  const [noPoReason, setNoPoReason] = useState('');
+  const [noPoNote, setNoPoNote] = useState('');
   const [deliveredAt, setDeliveredAt] = useState('');
   const [noteQuantityLitres, setNoteQuantityLitres] = useState('');
   const [actualQuantityLitres, setActualQuantityLitres] = useState('');
@@ -752,6 +767,8 @@ export function DeliveryForm({
           sealReference,
           preDeliveryDipId,
           postDeliveryDipId,
+          noPoReason,
+          noPoNote,
         }),
         createKey.current,
       )) as { deliveryId?: string } | null;
@@ -846,6 +863,35 @@ export function DeliveryForm({
             onChange={(event) => setSupplierReference(event.target.value)}
           />
         </Field>
+        <Field
+          id="delivery-no-po-reason"
+          label="Purchase order"
+          hint="Link this delivery to its purchase order on the Purchasing page, or say why there is none. One of the two is needed before the delivery can be confirmed."
+        >
+          <select
+            id="delivery-no-po-reason"
+            value={noPoReason}
+            onChange={(event) => setNoPoReason(event.target.value)}
+          >
+            <option value="">I will link a purchase order</option>
+            {NO_PO_REASON_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                No purchase order: {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {noPoReason === 'OTHER' ? (
+          <Field id="delivery-no-po-note" label="Why is there no purchase order?" required>
+            <input
+              id="delivery-no-po-note"
+              value={noPoNote}
+              onChange={(event) => setNoPoNote(event.target.value)}
+              maxLength={300}
+              required
+            />
+          </Field>
+        ) : null}
         <Field id="delivery-transporter" label="Transporter" optional>
           <input
             id="delivery-transporter"

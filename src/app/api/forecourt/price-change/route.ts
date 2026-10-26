@@ -1,0 +1,23 @@
+import { NextResponse } from 'next/server';
+import { requireAuthenticatedActor } from '../../../../modules/identity';
+import {
+  getPriceChangeFromRequest,
+  priceChangeQuery,
+} from '../../../../modules/forecourt/price-change';
+import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
+
+export const GET = withRequestObservability(async (request: Request): Promise<Response> => {
+  try {
+    await requireAuthenticatedActor(request);
+    const url = new URL(request.url);
+    const input = priceChangeQuery.parse({
+      tenantId: url.searchParams.get('tenantId'),
+      stationId: url.searchParams.get('stationId'),
+    });
+    return NextResponse.json(await getPriceChangeFromRequest(request, input), {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch (error) {
+    return apiErrorResponse(request, error);
+  }
+});

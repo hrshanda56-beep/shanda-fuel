@@ -612,6 +612,7 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
         stationId: ids.stationTwo,
         productId: ids.productTwo,
         supplierId: a122SupplierId,
+        noPoReason: 'EMERGENCY_PURCHASE',
         deliveryNoteNumber: 'A122-PHASE2-1',
         deliveredAt: '2026-09-27T07:00:00Z',
         noteQuantityLitres: '100.000',

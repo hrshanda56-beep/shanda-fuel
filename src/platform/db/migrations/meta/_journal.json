@@ -442,6 +442,20 @@
       "when": 1792600077000,
       "tag": "0077_expense_payment_mobile_money",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1792600078000,
+      "tag": "0078_price_changeover",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1792600079000,
+      "tag": "0079_delivery_no_po_reason",
+      "breakpoints": true
     }
   ]
 }

@@ -147,7 +147,7 @@ describe('setup readiness (PostgreSQL)', () => {
       Object.fromEntries(station.areas.map((a: any) => [a.code, a.status]));
     expect(state(full)).toEqual({
       PRICES: 'READY',
-      TANKS: 'READY',
+      TANKS: 'PARTIAL', // tank entered, opening stock not recorded yet
       PUMPS: 'READY',
       SHIFTS: 'READY',
       PAYMENTS: 'PARTIAL', // bank account entered, provider account not yet
@@ -164,6 +164,46 @@ describe('setup readiness (PostgreSQL)', () => {
       STAFF: 'NOT_ENTERED',
     });
     expect(empty.blockedSummary).toMatch(/^Blocked until setup is complete/);
+  });
+
+  it('moves the tank from no opening stock, to unvalued opening stock, to ready', async () => {
+    const tankDetail = async () => {
+      const { body } = await overview('setup-admin-token');
+      const full = body.stations.find((s: any) => s.stationCode === 'SETFULL');
+      return full.areas.find((a: any) => a.code === 'TANKS');
+    };
+    expect(await tankDetail()).toMatchObject({
+      status: 'PARTIAL',
+      detail: expect.stringContaining('opening stock not recorded for 1'),
+    });
+
+    const sourceId = 'a5e70000-0000-4000-8000-0000000000a1';
+    await client.unsafe(`
+      insert into app.inventory_movements (
+        tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres,
+        effective_at, business_date, source_type, source_id, actor_membership_id
+      )
+      select t.tenant_id, t.station_id, t.id, t.product_id, 'OPENING_BALANCE', 5000,
+        now(), to_char(now(), 'YYYY-MM-DD'), 'OPENING_BALANCE', '${sourceId}', '${ids.adminMembership}'
+      from app.tanks t where t.tenant_id = '${ids.tenant}' and t.code = 'SETUP-T1'
+      on conflict do nothing
+    `);
+    expect(await tankDetail()).toMatchObject({
+      status: 'PARTIAL',
+      detail: expect.stringContaining('opening stock has no cost for 1'),
+    });
+
+    await client.unsafe(`
+      insert into app.inventory_cost_events (
+        tenant_id, station_id, tank_id, product_id, event_type, source_type, source_id,
+        effective_at, business_date, amount, currency, actor_membership_id
+      )
+      select t.tenant_id, t.station_id, t.id, t.product_id, 'OPENING_COST', 'OPENING_BALANCE',
+        '${sourceId}', now(), to_char(now(), 'YYYY-MM-DD'), 7500, 'USD', '${ids.adminMembership}'
+      from app.tanks t where t.tenant_id = '${ids.tenant}' and t.code = 'SETUP-T1'
+      on conflict do nothing
+    `);
+    expect(await tankDetail()).toMatchObject({ status: 'READY' });
   });
 
   it('never exposes another tenant stations, providers or bank accounts', async () => {

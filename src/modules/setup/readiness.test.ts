@@ -12,6 +12,8 @@ const empty: StationSetupFacts = {
   pricedProducts: 0,
   activeTanks: 0,
   tanksMissingTolerance: 0,
+  tanksMissingOpeningStock: 0,
+  tanksMissingOpeningCost: 0,
   activePumps: 0,
   activeNozzles: 0,
   pumpsWithoutNozzle: 0,
@@ -62,6 +64,18 @@ describe('computeStationReadiness', () => {
     const partial = area({ ...complete, pricedProducts: 1 }, 'PRICES');
     expect(partial.status).toBe('PARTIAL');
     expect(partial.detail).toBe('1 of 2 products priced here; the rest are not entered.');
+  });
+
+  it('flags tanks with no opening stock as incomplete', () => {
+    const result = area({ ...complete, tanksMissingOpeningStock: 1 }, 'TANKS');
+    expect(result.status).toBe('PARTIAL');
+    expect(result.detail).toContain('opening stock not recorded for 1');
+  });
+
+  it('flags opening stock that has no cost as incomplete', () => {
+    const result = area({ ...complete, tanksMissingOpeningCost: 2 }, 'TANKS');
+    expect(result.status).toBe('PARTIAL');
+    expect(result.detail).toContain('opening stock has no cost for 2');
   });
 
   it('flags tanks without a variance tolerance as incomplete', () => {

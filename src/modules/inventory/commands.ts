@@ -5,7 +5,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
-import { litres } from '../../platform/domain/primitives';
+import { DECIMAL_POLICIES, ExactDecimal, litres } from '../../platform/domain/primitives';
 import {
   fuelDeliveries,
   fuelDeliveryAllocations,
@@ -94,32 +94,48 @@ const calibrationPayload = authorityPayload.extend({
 });
 
 const allocationPayload = z.object({ tankId: uuid, quantityLitres: decimalText });
-const deliveryPayload = authorityPayload.extend({
-  productId: uuid,
-  /** Mandatory: who delivered the fuel. Must be an active supplier of this tenant. */
-  supplierId: uuid,
-  deliveryNoteNumber: z.string().trim().min(1).max(80),
-  deliveredAt: instant,
-  noteQuantityLitres: decimalText,
-  actualQuantityLitres: decimalText,
-  allocations: z.array(allocationPayload).min(1),
-  supplierReference: z.string().trim().max(120).nullish(),
-  transporter: z.string().trim().max(120).nullish(),
-  driver: z.string().trim().max(120).nullish(),
-  truckRegistration: z.string().trim().max(80).nullish(),
-  sealReference: z.string().trim().max(80).nullish(),
-  preDeliveryDipId: uuid.nullish(),
-  postDeliveryDipId: uuid.nullish(),
-  unitLandedCost: z
-    .string()
-    .regex(/^\d+(?:\.\d{1,8})?$/)
-    .nullish(),
-  totalLandedCost: z
-    .string()
-    .regex(/^\d+(?:\.\d{1,4})?$/)
-    .nullish(),
-  currency: z.string().trim().length(3).nullish(),
-});
+/** Why a delivery has no purchase order. OTHER needs a short note. */
+export const NO_PO_REASONS = [
+  'EMERGENCY_PURCHASE',
+  'CASH_PURCHASE',
+  'SUPPLIER_DIRECT',
+  'PO_NOT_RAISED',
+  'OTHER',
+] as const;
+
+const deliveryPayload = authorityPayload
+  .extend({
+    productId: uuid,
+    /** Mandatory: who delivered the fuel. Must be an active supplier of this tenant. */
+    supplierId: uuid,
+    deliveryNoteNumber: z.string().trim().min(1).max(80),
+    deliveredAt: instant,
+    noteQuantityLitres: decimalText,
+    actualQuantityLitres: decimalText,
+    allocations: z.array(allocationPayload).min(1),
+    supplierReference: z.string().trim().max(120).nullish(),
+    transporter: z.string().trim().max(120).nullish(),
+    driver: z.string().trim().max(120).nullish(),
+    truckRegistration: z.string().trim().max(80).nullish(),
+    sealReference: z.string().trim().max(80).nullish(),
+    preDeliveryDipId: uuid.nullish(),
+    postDeliveryDipId: uuid.nullish(),
+    unitLandedCost: z
+      .string()
+      .regex(/^\d+(?:\.\d{1,8})?$/)
+      .nullish(),
+    totalLandedCost: z
+      .string()
+      .regex(/^\d+(?:\.\d{1,4})?$/)
+      .nullish(),
+    currency: z.string().trim().length(3).nullish(),
+    noPoReason: z.enum(NO_PO_REASONS).nullish(),
+    noPoNote: z.string().trim().max(300).nullish(),
+  })
+  .refine((value) => value.noPoReason !== 'OTHER' || !!value.noPoNote, {
+    message: 'Say in a few words why there is no purchase order',
+    path: ['noPoNote'],
+  });
 
 const confirmDeliveryPayload = authorityPayload.extend({ deliveryId: uuid });
 const correctDeliverySupplierPayload = authorityPayload.extend({
@@ -148,6 +164,11 @@ const openingInventoryCostPayload = authorityPayload.extend({
   tankId: uuid,
   amount: costAmount.optional(),
   inventoryValue: costAmount.optional(),
+  /** Cost per litre, as an alternative to the total: the total is worked out from the opening litres. */
+  unitCost: z
+    .string()
+    .regex(/^\d+(?:\.\d{1,6})?$/)
+    .optional(),
   currency: currencyCode,
 });
 const receiptCostPayload = authorityPayload.extend({
@@ -545,6 +566,8 @@ async function insertDelivery(
     preDeliveryDipId: payload.preDeliveryDipId ?? null,
     postDeliveryDipId: payload.postDeliveryDipId ?? null,
     status: 'DRAFT',
+    noPoReason: payload.noPoReason ?? null,
+    noPoNote: payload.noPoReason ? payload.noPoNote || null : null,
     unitLandedCost: payload.unitLandedCost ?? null,
     totalLandedCost: payload.totalLandedCost ?? null,
     currency: payload.currency?.toUpperCase() ?? null,
@@ -625,6 +648,18 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
       await assertActiveSupplier(transaction, context.tenantId, delivery.supplierId);
       if (delivery.status !== 'DRAFT')
         throw new AppError('CONFLICT', 'Only draft deliveries can be confirmed');
+      if (delivery.noPoReason === null) {
+        const linked = await transaction.execute(sql`
+          select 1 from app.purchase_order_delivery_links
+          where tenant_id = ${context.tenantId} and delivery_id = ${delivery.id} and state = 'ACTIVE'
+        `);
+        if (linked.length === 0) {
+          throw new AppError(
+            'CONFLICT',
+            'This delivery has no purchase order. Link it to a purchase order, or record why there is none, before confirming it.',
+          );
+        }
+      }
       // Only enforced when the owner turned the water-test rule on; otherwise recorded, not blocking.
       await assertWaterTestAllowsConfirmation(transaction, {
         tenantId: context.tenantId,
@@ -935,8 +970,14 @@ export async function recordOpeningBalanceFromRequest(request: Request, input: u
 export async function recordOpeningInventoryCostFromRequest(request: Request, input: unknown) {
   const payload = openingInventoryCostPayload
     .superRefine((value, ctx) => {
-      if (!value.amount && !value.inventoryValue) {
+      if (!value.amount && !value.inventoryValue && !value.unitCost) {
         ctx.addIssue({ code: 'custom', message: 'An opening inventory value is required' });
+      }
+      if (value.unitCost && (value.amount || value.inventoryValue)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Give either the cost per litre or the total value, not both',
+        });
       }
       if (value.amount && value.inventoryValue && value.amount !== value.inventoryValue) {
         ctx.addIssue({ code: 'custom', message: 'amount and inventoryValue must agree' });
@@ -956,15 +997,33 @@ export async function recordOpeningInventoryCostFromRequest(request: Request, in
       subjectType: 'InventoryCostEvent',
       subjectId: (result) => (result as { costEventId: string }).costEventId,
     },
-    execute: (transaction) =>
-      postOpeningInventoryCostInTransaction(transaction, {
+    execute: async (transaction) => {
+      let amount = payload.amount ?? payload.inventoryValue;
+      if (!amount) {
+        const rows = await transaction.execute<{ quantity: string }>(sql`
+          select quantity_litres::text as quantity
+          from app.inventory_movements
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and tank_id = ${payload.tankId} and movement_type = 'OPENING_BALANCE'
+        `);
+        const opening = rows[0];
+        if (!opening) {
+          throw new AppError('CONFLICT', 'Record the opening litres for this tank before its cost');
+        }
+        amount = new ExactDecimal(opening.quantity)
+          .multiply(new ExactDecimal(payload.unitCost!))
+          .quantize(DECIMAL_POLICIES.money)
+          .toString();
+      }
+      return postOpeningInventoryCostInTransaction(transaction, {
         tenantId: context.tenantId,
         stationId: context.stationId,
         tankId: payload.tankId,
-        amount: payload.amount ?? payload.inventoryValue!,
+        amount,
         currency: payload.currency,
         actorMembershipId: context.authority.membership.membershipId,
-      }),
+      });
+    },
   });
 }
 
