@@ -71,8 +71,8 @@ async function loadPriceChange(
   input: PriceChangeInput,
   capabilities: PriceChangeData['capabilities'],
 ): Promise<PriceChangeData> {
-  const stationRows = await transaction.execute<{ id: string; name: string }>(sql`
-    select id, name from app.stations
+  const stationRows = await transaction.execute<{ id: string; name: string; timezone: string }>(sql`
+    select id, name, timezone from app.stations
     where tenant_id = ${context.tenantId} and id = ${input.stationId}
   `);
   const station = stationRows[0];
@@ -139,15 +139,34 @@ async function loadPriceChange(
     state: string;
     version: number | string;
     requestedByMe: boolean;
+    plannedFrom: Date | string;
   }>(sql`
     select distinct on (product_id)
            id, product_id as "productId", unit_price::text as "unitPrice", state, version,
+           effective_from as "plannedFrom",
            (requested_by = ${context.authority.membership.membershipId}) as "requestedByMe"
     from app.selling_prices
     where tenant_id = ${context.tenantId} and station_id = ${input.stationId}
       and state in ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SCHEDULED',
                     'PENDING_STATION_ACTIVATION', 'BOUNDARIES_IN_PROGRESS')
     order by product_id, effective_from desc, id desc
+  `);
+
+  const history = await transaction.execute<{
+    id: string;
+    productId: string;
+    unitPrice: string;
+    startedAt: Date | string;
+    endedAt: Date | string | null;
+    state: string;
+  }>(sql`
+    select id, product_id as "productId", unit_price::text as "unitPrice",
+           effective_from as "startedAt", effective_to as "endedAt", state
+    from app.selling_prices
+    where tenant_id = ${context.tenantId} and station_id = ${input.stationId}
+      and (state in ('ACTIVE', 'SUPERSEDED') or activated_at is not null)
+    order by effective_from desc, id desc
+    limit 120
   `);
 
   const nozzles = await transaction.execute<{
@@ -198,7 +217,7 @@ async function loadPriceChange(
 
   return {
     tenantId: context.tenantId,
-    station: { id: station.id, name: station.name },
+    station: { id: station.id, name: station.name, timezone: station.timezone },
     capabilities,
     shift: shift
       ? {
@@ -222,8 +241,19 @@ async function loadPriceChange(
               state: change.state,
               version: Number(change.version),
               requestedByMe: change.requestedByMe,
+              plannedFrom: new Date(change.plannedFrom).toISOString(),
             }
           : null,
+        history: history
+          .filter((row) => row.productId === product.id)
+          .slice(0, 8)
+          .map((row) => ({
+            priceId: row.id,
+            unitPrice: row.unitPrice,
+            startedAt: new Date(row.startedAt).toISOString(),
+            endedAt: row.endedAt ? new Date(row.endedAt).toISOString() : null,
+            state: row.state,
+          })),
         nozzles: nozzles
           .filter((row) => row.productId === product.id)
           .map((row) => ({

@@ -27,6 +27,17 @@ export type PriceChange = {
   state: string;
   version: number;
   requestedByMe: boolean;
+  /** The date and time it was planned to start. The pump meter readings set the real start. */
+  plannedFrom?: string;
+};
+
+/** A price that has been in use, newest first: kept so a past sale can be checked against it. */
+export type PriceHistoryEntry = {
+  priceId: string;
+  unitPrice: string;
+  startedAt: string;
+  endedAt: string | null;
+  state: string;
 };
 
 export type PriceChangeProduct = {
@@ -34,12 +45,13 @@ export type PriceChangeProduct = {
   name: string;
   currentPrice: string | null;
   change: PriceChange | null;
+  history?: PriceHistoryEntry[];
   nozzles: PriceChangeNozzle[];
 };
 
 export type PriceChangeData = {
   tenantId: string;
-  station: { id: string; name: string };
+  station: { id: string; name: string; timezone: string };
   capabilities: PriceChangeCapabilities;
   shift: { id: string; businessDayId: string; label: string | null; version: number } | null;
   attendants: Array<{ id: string; name: string }>;
