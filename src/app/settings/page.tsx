@@ -35,7 +35,8 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const request = buildSettingsRequest(await headers(), await searchParams);
+  const params = await searchParams;
+  const request = buildSettingsRequest(await headers(), params);
   let view: SettingsView | undefined;
   let failure: unknown;
 
@@ -65,7 +66,10 @@ export default async function SettingsPage({
       userName={view.account.name}
       pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
     >
-      <SettingsWorkspace view={view} />
+      <SettingsWorkspace
+        view={view}
+        initialTab={typeof params.tab === 'string' ? params.tab : undefined}
+      />
     </AppShell>
   );
 }

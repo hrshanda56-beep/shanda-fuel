@@ -377,6 +377,7 @@ function ContextForm({
                   key={station.id}
                   title={station.name}
                   detail={showEntityHeadings ? undefined : entity.name}
+                  badge={station.status === 'ONBOARDING' ? 'Setting up' : undefined}
                   selected={inCurrentOrganisation && current.stationId === station.id}
                   pending={pendingKey === station.id}
                   disabled={submitting}
@@ -428,6 +429,7 @@ function ContextForm({
 function ContextOption({
   title,
   detail,
+  badge,
   selected,
   pending,
   disabled,
@@ -435,6 +437,7 @@ function ContextOption({
 }: {
   title: string;
   detail?: string | undefined;
+  badge?: string | undefined;
   selected: boolean;
   pending: boolean;
   disabled: boolean;
@@ -453,6 +456,7 @@ function ContextOption({
         <span className="context-selector-option-text">
           <span className="context-selector-option-title">{title}</span>
           {detail ? <span className="context-selector-option-detail">{detail}</span> : null}
+          {badge ? <span className="context-selector-option-detail">{badge}</span> : null}
         </span>
         {pending ? (
           <span className="context-selector-spinner" aria-hidden="true" />

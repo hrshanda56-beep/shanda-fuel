@@ -50,7 +50,8 @@ export type StaffOverview = Readonly<{
 export type StaffScopeOption = Readonly<{
   id: string;
   name: string;
-  stations: readonly { id: string; code: string; name: string }[];
+  /** `setup` marks a station that is still being set up; staff can already be assigned to it. */
+  stations: readonly { id: string; code: string; name: string; setup?: boolean }[];
 }>;
 
 export type InvitationView =

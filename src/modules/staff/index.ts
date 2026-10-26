@@ -33,5 +33,6 @@ export {
   resendStaffInvitationFromRequest,
   revokeStaffInvitationFromRequest,
   signUpFromInvitation,
+  updateStaffAssignmentFromRequest,
   type StaffCommandDependencies,
 } from './commands';

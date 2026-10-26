@@ -60,6 +60,8 @@ export type StationSetupFacts = Readonly<{
   stationCode: string;
   stationName: string;
   legalEntityId: string;
+  /** ONBOARDING until the station is activated; absent means live. */
+  stationStatus?: 'ACTIVE' | 'ONBOARDING';
   activeProducts: number;
   pricedProducts: number;
   activeTanks: number;
@@ -83,11 +85,23 @@ export type ReadinessArea = Readonly<{
   detail: string;
   blocks: string;
 }>;
+/** One thing that must be done before a station can go live, and the Settings tab that fixes it. */
+export type ActivationMissing = Readonly<{
+  code: ReadinessAreaCode;
+  label: string;
+  detail: string;
+  tab: 'setup' | 'payments' | 'staff';
+}>;
 export type StationReadiness = Readonly<{
   stationId: string;
   stationCode: string;
   stationName: string;
   legalEntityId: string;
+  stationStatus: 'ACTIVE' | 'ONBOARDING';
+  /** What still stops this station going live. Opening stock is entered after go-live. */
+  missing: readonly ActivationMissing[];
+  /** True when the station is still being set up and nothing is missing. */
+  canActivate: boolean;
   areas: readonly ReadinessArea[];
   ready: boolean;
   blockedSummary: string | null;

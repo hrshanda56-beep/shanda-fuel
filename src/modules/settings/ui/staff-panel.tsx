@@ -75,6 +75,163 @@ function initials(name: string) {
   ).toUpperCase();
 }
 
+/** Change one active person's role and stations. The server re-checks everything. */
+function EditAccessModal({
+  member,
+  overview,
+  verify,
+  onClose,
+  onSave,
+}: {
+  member: StaffMember | undefined;
+  overview: StaffOverview;
+  verify: () => Promise<unknown>;
+  onClose: () => void;
+  onSave: (body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const first = member?.assignments?.[0];
+  const [role, setRole] = useState<Role>(first?.role ?? 'ATTENDANT');
+  const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
+    (first?.scopeType as 'TENANT' | 'LEGAL_ENTITY' | 'STATION' | undefined) ?? defaultScope(role),
+  );
+  const entityOf = (stationId?: string) =>
+    overview.scopeOptions.find((option) =>
+      option.stations.some((station) => station.id === stationId),
+    )?.id;
+  const [legalEntityId, setLegalEntityId] = useState(
+    first?.legalEntityId ??
+      entityOf(first?.stationId) ??
+      (overview.scopeOptions.length === 1 ? (overview.scopeOptions[0]?.id ?? '') : ''),
+  );
+  const [stationIds, setStationIds] = useState<string[]>(
+    (member?.assignments ?? []).flatMap((item) => (item.stationId ? [item.stationId] : [])),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const entity = overview.scopeOptions.find((option) => option.id === legalEntityId);
+
+  function changeRole(next: Role) {
+    setRole(next);
+    setScopeType(defaultScope(next));
+    setStationIds([]);
+    if (defaultScope(next) === 'TENANT') setLegalEntityId('');
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(undefined);
+    try {
+      await verify();
+    } catch {
+      setError('Security verification was not completed. Nothing was changed.');
+      setBusy(false);
+      return;
+    }
+    const saved = await onSave({
+      membershipId: member?.membershipId,
+      assignedRole: role,
+      scopeType,
+      ...(scopeType !== 'TENANT' && legalEntityId ? { legalEntityId } : {}),
+      stationIds: scopeType === 'STATION' ? stationIds : [],
+    });
+    if (!saved) setError('The change was not saved. See the message on the page.');
+    setBusy(false);
+  }
+
+  return (
+    <Modal
+      open={Boolean(member)}
+      onClose={onClose}
+      title={member ? `Edit access for ${member.name}` : 'Edit access'}
+      description="Change the role and the stations this person can work in. It takes effect straight away."
+      presentation="side"
+    >
+      <form className={styles.staffForm} onSubmit={save}>
+        <label>
+          <span>Role</span>
+          <select value={role} onChange={(event) => changeRole(event.target.value as Role)}>
+            {(Object.keys(ROLE_LABELS) as Role[])
+              .filter((item) => item !== 'OWNER' || overview.canInviteOwner)
+              .map((item) => (
+                <option key={item} value={item}>
+                  {ROLE_LABELS[item]}
+                </option>
+              ))}
+          </select>
+        </label>
+        {role === 'FINANCE' ? (
+          <label>
+            <span>Scope</span>
+            <select
+              value={scopeType}
+              onChange={(event) => {
+                setScopeType(event.target.value as 'LEGAL_ENTITY' | 'STATION');
+                setStationIds([]);
+              }}
+            >
+              <option value="LEGAL_ENTITY">Whole company</option>
+              <option value="STATION">Selected stations</option>
+            </select>
+          </label>
+        ) : null}
+        {scopeType !== 'TENANT' ? (
+          <label>
+            <span>Company</span>
+            <select
+              required
+              value={legalEntityId}
+              onChange={(event) => {
+                setLegalEntityId(event.target.value);
+                setStationIds([]);
+              }}
+            >
+              <option value="">Choose a company</option>
+              {overview.scopeOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {scopeType === 'STATION' ? (
+          <fieldset className={styles.staffStations}>
+            <legend>Stations</legend>
+            {entity?.stations.length ? (
+              entity.stations.map((station) => (
+                <label key={station.id} className={styles.staffCheck}>
+                  <input
+                    type="checkbox"
+                    checked={stationIds.includes(station.id)}
+                    onChange={() =>
+                      setStationIds((current) =>
+                        current.includes(station.id)
+                          ? current.filter((id) => id !== station.id)
+                          : [...current, station.id],
+                      )
+                    }
+                  />
+                  <span>
+                    {station.name} <small>{station.code}</small>
+                    {station.setup ? <small> · Setting up</small> : null}
+                  </span>
+                </label>
+              ))
+            ) : (
+              <p className={styles.note}>Choose a company to see its stations.</p>
+            )}
+          </fieldset>
+        ) : null}
+        {error ? <p role="alert">{error}</p> : null}
+        <Button type="submit" variant="primary" loading={busy}>
+          Save changes
+        </Button>
+      </form>
+    </Modal>
+  );
+}
+
 export function StaffPanel({
   tenantId,
   overview,
@@ -103,6 +260,7 @@ export function StaffPanel({
     activationCode: string;
     expiresAt: string;
   }>();
+  const [editTarget, setEditTarget] = useState<StaffMember>();
   const [deactivationTarget, setDeactivationTarget] = useState<StaffMember>();
   const [deactivationBusy, setDeactivationBusy] = useState(false);
   const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
@@ -147,7 +305,10 @@ export function StaffPanel({
         body: JSON.stringify({ tenantId, ...body }),
       });
       if (!response.ok) {
-        setMessage('That action could not be completed. Check your access or try again.');
+        const failure = (await response.json().catch(() => null)) as { message?: string } | null;
+        setMessage(
+          failure?.message ?? 'That action could not be completed. Check your access or try again.',
+        );
         return false;
       }
       const result = (await response.json().catch(() => null)) as unknown;
@@ -369,16 +530,29 @@ export function StaffPanel({
       statusLabel: 'Active',
       tone: 'positive',
       actions: (
-        <Button
-          type="button"
-          variant="quiet"
-          className={styles.staffDanger}
-          size="sm"
-          onClick={() => openDeactivation(member)}
-          disabled={busy || deactivationBusy}
-        >
-          Deactivate
-        </Button>
+        <>
+          {overview.canManage ? (
+            <Button
+              type="button"
+              variant="quiet"
+              size="sm"
+              onClick={() => setEditTarget(member)}
+              disabled={busy || deactivationBusy}
+            >
+              Edit access
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="quiet"
+            className={styles.staffDanger}
+            size="sm"
+            onClick={() => openDeactivation(member)}
+            disabled={busy || deactivationBusy}
+          >
+            Deactivate
+          </Button>
+        </>
       ),
     })),
     ...overview.pendingInvitations.map((invitation): StaffRowModel => ({
@@ -808,6 +982,7 @@ export function StaffPanel({
                     />
                     <span>
                       {station.name} <small>{station.code}</small>
+                      {station.setup ? <small> · Setting up</small> : null}
                     </span>
                   </label>
                 ))
@@ -821,6 +996,19 @@ export function StaffPanel({
           </Button>
         </form>
       </Modal>
+
+      <EditAccessModal
+        key={editTarget?.membershipId ?? 'none'}
+        member={editTarget}
+        overview={overview}
+        verify={verifyStaffManagement}
+        onClose={() => setEditTarget(undefined)}
+        onSave={async (body) => {
+          const result = await command({ commandType: 'UpdateStaffAssignment', ...body }, false);
+          if (result) window.location.reload();
+          return Boolean(result);
+        }}
+      />
 
       <Modal
         open={Boolean(manualActivation)}

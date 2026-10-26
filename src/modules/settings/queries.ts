@@ -89,6 +89,7 @@ function buildStation(
     code: stationMatch.station.code,
     name: stationMatch.station.name,
     timezone: stationMatch.station.timezone,
+    ...(stationMatch.station.status ? { status: stationMatch.station.status } : {}),
   };
 }
 
@@ -141,6 +142,7 @@ export function buildSettingsView(
             name: station.name,
             code: station.code,
             timezone: station.timezone,
+            ...(station.status ? { status: station.status } : {}),
           })),
         ),
       selectedStation: buildStation(
