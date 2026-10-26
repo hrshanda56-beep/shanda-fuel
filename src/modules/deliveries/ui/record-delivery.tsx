@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation';
 import { Button, Card, ErrorState, Field, SuccessState } from '@/design-system/primitives';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import type { DeliveryTank } from '../queries';
+import {
+  clearDraft,
+  draftStorageKey,
+  loadDraft,
+  saveDraft,
+} from '../../../platform/drafts/local-draft';
 import { compartmentSumProblem, shortageOrExcess, type CompartmentRow } from '../record-delivery';
 
 export const NO_PO_REASONS = [
@@ -17,6 +23,24 @@ export const NO_PO_REASONS = [
 ] as const;
 
 type Failure = { message: string };
+/** What is typed so far, kept on this device so a dropped connection does not lose it. */
+type DeliveryDraft = {
+  supplierId: string;
+  tankId: string;
+  deliveryNote: string;
+  noteLitres: string;
+  receivedLitres: string;
+  transporter: string;
+  driver: string;
+  truck: string;
+  dipBefore: string;
+  dipAfter: string;
+  compartments: CompartmentRow[];
+  water: '' | 'PASS' | 'FAIL';
+  waterMm: string;
+  noPo: string;
+  noPoNote: string;
+};
 type Progress = {
   dipBeforeId?: string;
   dipAfterId?: string;
@@ -83,6 +107,63 @@ export function RecordDelivery({
     () => compartmentSumProblem(compartments, noteLitres, receivedLitres),
     [compartments, noteLitres, receivedLitres],
   );
+
+  // The draft is offered back, never applied silently, and goes once the delivery is recorded.
+  const draftKey = draftStorageKey(['delivery', tenantId, stationId]);
+  const [restorable, setRestorable] = useState<DeliveryDraft | null>(null);
+  const typed: DeliveryDraft = {
+    supplierId,
+    tankId,
+    deliveryNote,
+    noteLitres,
+    receivedLitres,
+    transporter,
+    driver,
+    truck,
+    dipBefore,
+    dipAfter,
+    compartments,
+    water,
+    waterMm,
+    noPo,
+    noPoNote,
+  };
+  const typedJson = JSON.stringify(typed);
+  const touched = useRef(false);
+  useEffect(() => {
+    void Promise.resolve().then(() =>
+      setRestorable(loadDraft<DeliveryDraft>(draftKey, 'new')?.data ?? null),
+    );
+  }, [draftKey]);
+  useEffect(() => {
+    if (deliveryId !== null) {
+      clearDraft(draftKey);
+      return;
+    }
+    if (!touched.current) return;
+    const timer = window.setTimeout(() => saveDraft(draftKey, 'new', JSON.parse(typedJson)), 500);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, typedJson, deliveryId]);
+  function restoreDraft() {
+    if (!restorable) return;
+    setSupplierId(restorable.supplierId);
+    setTankId(restorable.tankId);
+    setDeliveryNote(restorable.deliveryNote);
+    setNoteLitres(restorable.noteLitres);
+    setReceivedLitres(restorable.receivedLitres);
+    setTransporter(restorable.transporter);
+    setDriver(restorable.driver);
+    setTruck(restorable.truck);
+    setDipBefore(restorable.dipBefore);
+    setDipAfter(restorable.dipAfter);
+    setCompartments(restorable.compartments);
+    setWater(restorable.water);
+    setWaterMm(restorable.waterMm);
+    setNoPo(restorable.noPo);
+    setNoPoNote(restorable.noPoNote);
+    touched.current = true;
+    setRestorable(null);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -269,7 +350,33 @@ export function RecordDelivery({
         Fill in what you have. A purchase order is optional: link one later, or say why there is
         none.
       </p>
-      <form className="dialog-form" onSubmit={record}>
+      {restorable && deliveryId === null ? (
+        <div className="table-secondary" role="status">
+          <p>
+            Your earlier entries for a delivery were kept on this phone. They are not saved yet.
+          </p>
+          <Button type="button" onClick={restoreDraft}>
+            Restore them
+          </Button>{' '}
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              clearDraft(draftKey);
+              setRestorable(null);
+            }}
+          >
+            Discard
+          </Button>
+        </div>
+      ) : null}
+      <form
+        className="dialog-form"
+        onSubmit={record}
+        onChange={() => {
+          touched.current = true;
+        }}
+      >
         <fieldset disabled={recorded && busy === null && failure === null} className="form-stack">
           <Field id="rd-supplier" label="Supplier" required>
             <select
