@@ -22,6 +22,7 @@ export const CUSTOMER_AGEING_REPORT: TableReportDefinition = {
   category: 'credit',
   scope: 'organisation',
   emptyMessage: 'No credit customer owes money as at this date.',
+  filters: ['customer'],
   columns: [
     { key: 'customer', label: 'Customer', kind: 'text' },
     { key: 'accountReference', label: 'Account reference', kind: 'text' },

@@ -393,7 +393,7 @@ describe('customer account controls (S13)', () => {
         on conflict (id) do nothing;
     `);
     // Payments already recorded on this account total 30.0000 (three of 10.0000, dated 2026-10-20).
-    const run = async (tenant: string, membership: string, actor: string) =>
+    const run = async (tenant: string, membership: string, actor: string, onlyCustomer?: string) =>
       withTenantTransaction(
         createTrustedTenantTransactionContext({
           tenantId: tenant,
@@ -409,6 +409,7 @@ describe('customer account controls (S13)', () => {
               fromDate: '2026-10-01',
               toDate: '2026-10-23',
               stationIds: [],
+              ...(onlyCustomer ? { customerId: onlyCustomer } : {}),
             } as never,
             { legalEntityIds: [] },
           ),
@@ -425,5 +426,9 @@ describe('customer account controls (S13)', () => {
       oldestUnpaid: '2026-06-01',
     });
     expect(await run(ids.otherTenant, ids.outsiderMembership, ids.outsiderActor)).toEqual([]);
+    // Narrowed to one customer: that customer is shown, another customer's choice shows nothing.
+    const only = await run(ids.tenant, ids.adminMembership, ids.adminActor, customerId);
+    expect(only.map((row) => row.accountReference)).toEqual([reference]);
+    expect(await run(ids.tenant, ids.adminMembership, ids.adminActor, randomUUID())).toEqual([]);
   });
 });

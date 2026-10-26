@@ -10,6 +10,8 @@ import { exact, ratioPercentage, subtractExact } from '../domain';
 import { findReport, reportsInCategory } from '../catalog';
 import type { IncomeRow, IncomeStatement, StatementUnit } from '../statements';
 import { formatStatementAmount } from './statement';
+import { ReportActionStatus } from './report-action-status';
+import { useReportActions } from './use-report-actions';
 
 function amount(value: string | null, unit?: StatementUnit) {
   if (value !== null && exact(value).value.isZero()) return '–';
@@ -61,6 +63,16 @@ export function StatementWorkspace({
   filtersMenu: ReactNode;
 }) {
   const tabs = reportsInCategory(findReport(slug)?.category ?? 'statements');
+  const actions = useReportActions();
+  // The same Excel and PDF downloads the report list offers, for exactly what is on screen.
+  const exportTarget = {
+    tenantId: report.filters.tenantId,
+    slug,
+    stationIds: report.filters.stationIds,
+    period: 'custom',
+    fromDate: report.filters.fromDate,
+    toDate: report.filters.toDate,
+  } as const;
   const [detailed, setDetailed] = useState(true);
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const expandable = new Set(
@@ -123,6 +135,26 @@ export function StatementWorkspace({
             </label>
           ) : null}
           {filtersMenu}
+          {findReport(slug)?.exportable ? (
+            <>
+              <button
+                type="button"
+                className="button button-secondary button-sm"
+                disabled={actions.busy}
+                onClick={() => void actions.exportCsv(exportTarget, false, 'xlsx')}
+              >
+                Download for Excel
+              </button>
+              <button
+                type="button"
+                className="button button-secondary button-sm"
+                disabled={actions.busy}
+                onClick={() => void actions.exportCsv(exportTarget, false, 'pdf')}
+              >
+                Download PDF
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             className="button button-secondary button-sm"
@@ -132,6 +164,11 @@ export function StatementWorkspace({
           </button>
         </div>
       </div>
+      <ReportActionStatus
+        status={actions.status}
+        onDismiss={actions.dismiss}
+        stepUp={actions.stepUp}
+      />
 
       <div className="income-scroll">
         <table className="income" data-foldable={expandable.size > 0 || undefined}>

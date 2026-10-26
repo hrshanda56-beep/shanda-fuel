@@ -276,7 +276,7 @@
     "src/modules/reporting/ui/report-list.tsx": "b24ee19ddeb88e22b8a0899b3543fe31bdbda6e012bdad91648398fdb3b6064d",
     "src/modules/reporting/ui/reports-filters.tsx": "03023518ef533132ed18dec2001afeb84b26aca44405b53de42449a1dfe4d95b",
     "src/modules/reporting/ui/reports-rail.tsx": "c536ac09c6a19d4e0a88ce078e3fb95f7a8b50d63b3851300a94bfdac7b4477e",
-    "src/modules/reporting/ui/statement-workspace.tsx": "962eb06e4d75359b451e05abf8e2efa2c7c35e861f0676fd3b3d1f99be8d9c52",
+    "src/modules/reporting/ui/statement-workspace.tsx": "99e56e45a6208bb9f503df9bb76e6d81d4eee4a601bdf99b39fd92f2f189a7ea",
     "src/modules/reporting/ui/statement.tsx": "ce7cfe44ad3dc3785e300c024a6ac1f9201621144e6b9f77a5d27017cdc7bd98",
     "src/modules/reporting/ui/step-up-needed.ts": "9122d4c7eecff9d414145499f2ea187360b87ea7ec3133c1f80200ab8f36cf09",
     "src/modules/reporting/ui/use-available-stations.ts": "cb1eb17a82ed6bf77399696cfcc819e41e0ad692a6fa5c2d82e8bea46d72e28a",
