@@ -98,6 +98,69 @@ async function collectionAllocationTotals(
   return rows[0] ?? { allocated: '0', confirmed: '0' };
 }
 
+/**
+ * Cash paid out of the station's own cash for expenses since the last collection, and the cash
+ * still open to collect from approved shift reports. An expense paid from station cash is taken
+ * off what can be collected, so the books never say the cash is still there. Expenses entered on a
+ * shift report are already inside that report's count, so only those entered outside a shift are
+ * taken off here.
+ */
+function stationCashPositionQuery(context: CashCommandContext) {
+  return sql`
+    select
+      coalesce((
+        select sum(greatest(cd.counted_cash - coalesce(al.allocated, 0), 0))
+        from app.reconciliations r
+        join app.reconciliation_cash_declarations cd
+          on cd.tenant_id = r.tenant_id and cd.station_id = r.station_id and cd.reconciliation_id = r.id
+        left join lateral (
+          select sum(a.amount) as allocated from app.cash_collection_allocations a
+          where a.tenant_id = r.tenant_id and a.station_id = r.station_id and a.reconciliation_id = r.id
+        ) al on true
+        where r.tenant_id = ${context.tenantId} and r.station_id = ${context.stationId}
+          and r.state in ('APPROVED', 'POSTED', 'LOCKED')
+      ), 0)::text as open_to_collect,
+      coalesce((
+        select sum(e.amount) from app.expenses e
+        where e.tenant_id = ${context.tenantId} and e.station_id = ${context.stationId}
+          and e.payment_method = 'STATION_CASH' and e.shift_id is null
+          and e.state in ('SUBMITTED', 'APPROVED', 'POSTED')
+          and e.created_at > coalesce((
+            select max(c.recorded_at) from app.cash_collections c
+            where c.tenant_id = ${context.tenantId} and c.station_id = ${context.stationId}
+              and c.state <> 'REVERSED'), '-infinity'::timestamptz)
+      ), 0)::text as paid_out
+  `;
+}
+
+type CashPositionRow = { open_to_collect: string; paid_out: string };
+
+function cashPositionFrom(row: CashPositionRow | undefined) {
+  const open = decimal(row?.open_to_collect ?? '0');
+  const paidOut = decimal(row?.paid_out ?? '0');
+  const remaining = open.subtract(paidOut);
+  return {
+    openToCollect: open.toString(),
+    paidOut: paidOut.toString(),
+    cashToCollect: remaining.value.lt(0) ? '0' : remaining.toString(),
+  };
+}
+
+/**
+ * Cash paid out of the station's own cash for expenses since the last collection, and the cash
+ * still open to collect from approved shift reports. An expense paid from station cash is taken
+ * off what can be collected, so the books never say the cash is still there. Expenses entered on a
+ * shift report are already inside that report's count, so only those entered outside a shift are
+ * taken off here.
+ */
+export async function stationCashPosition(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+) {
+  const rows = await transaction.execute<CashPositionRow>(stationCashPositionQuery(context));
+  return cashPositionFrom(rows[0]);
+}
+
 export async function recordCashCollectionInTransaction(
   transaction: ForecourtTransaction,
   context: CashCommandContext,
@@ -170,6 +233,14 @@ export async function recordCashCollectionInTransaction(
     };
   });
   const amount = calculateCashCollectionAmount(sourceValues);
+  const position = await stationCashPosition(transaction, context);
+  if (decimal(amount).value.gt(decimal(position.cashToCollect).value)) {
+    throw new AppError(
+      'CONFLICT',
+      `The station paid out USD ${position.paidOut} in cash since the last collection, so only USD ${position.cashToCollect} can be collected now.`,
+      { cashToCollect: position.cashToCollect, paidOut: position.paidOut },
+    );
+  }
   const collectionId = randomUUID();
 
   await transaction.execute(sql`
@@ -708,6 +779,7 @@ export async function getCashStationSummaryInTransaction(
     shiftLinks: ShiftLinkRow[];
     bankAccounts: BankAccountsRow[];
     handovers: HandoverSummaryRow[];
+    cashPosition: CashPositionRow[];
   }>(sql`
     with rows_rows as (${rowsQuery}),
 locations_rows as (${locationsQuery}),
@@ -716,7 +788,8 @@ depositRows_rows as (${depositRowsQuery}),
 depositLinks_rows as (${depositLinksQuery}),
 shiftLinks_rows as (${shiftLinksQuery}),
 bankAccounts_rows as (${bankAccountsQuery}),
-handovers_rows as (${handoversQuery})
+handovers_rows as (${handoversQuery}),
+cashPosition_rows as (${stationCashPositionQuery(context)})
     select coalesce((select json_agg(rows_rows) from rows_rows), '[]'::json) as "rows",
 coalesce((select json_agg(locations_rows) from locations_rows), '[]'::json) as "locations",
 coalesce((select json_agg(reconciliationSources_rows) from reconciliationSources_rows), '[]'::json) as "reconciliationSources",
@@ -724,7 +797,8 @@ coalesce((select json_agg(depositRows_rows) from depositRows_rows), '[]'::json) 
 coalesce((select json_agg(depositLinks_rows) from depositLinks_rows), '[]'::json) as "depositLinks",
 coalesce((select json_agg(shiftLinks_rows) from shiftLinks_rows), '[]'::json) as "shiftLinks",
 coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json) as "bankAccounts",
-coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "handovers"
+coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "handovers",
+coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json) as "cashPosition"
   `);
   const snapshot = sections[0];
   if (!snapshot) throw new AppError('INVARIANT_VIOLATION', 'Cash summary was not returned');
@@ -737,6 +811,7 @@ coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "
     shiftLinks,
     bankAccounts,
     handovers,
+    cashPosition: cashPositionRows = [],
   } = snapshot;
   const iso = (value: string | Date | null) => (value ? new Date(value).toISOString() : null);
 
@@ -851,6 +926,7 @@ coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "
   return {
     stationId: context.stationId,
     currency: 'USD',
+    cashPosition: cashPositionFrom(cashPositionRows[0]),
     totals: {
       availableAtStation: availableAtStation.toString(),
       collectedButUnbanked: collectedButUnbanked.toString(),

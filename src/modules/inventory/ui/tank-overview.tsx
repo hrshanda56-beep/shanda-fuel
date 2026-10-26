@@ -145,7 +145,7 @@ export function TankOverview({
           <ul className="tank-grid">
             {tanks.map((tank) => {
               const level = tankLevel(tank);
-              const streamPath = `/inventory/valuation/streams/${tank.tankId}/${tank.productId}`;
+              const streamPath = `/inventory/tanks/${tank.tankId}`;
               const compact = (value: string | null) => formatTileLitres(value).replace(' L', 'L');
               return (
                 <li key={tank.tankId}>
@@ -164,6 +164,7 @@ export function TankOverview({
                       <StockSignalBadge
                         variance={tank.physicalLitres === null ? null : tank.varianceLitres}
                         tolerance={tank.acceptableVarianceLitres ?? null}
+                        red={tank.varianceRedLitres ?? null}
                       />
                     </span>
                     <span className="tank-figure">
@@ -216,8 +217,9 @@ export function TankOverview({
 function StockSignalBadge({
   variance,
   tolerance,
-}: Readonly<{ variance: string | null; tolerance: string | null }>) {
-  const signal = classifyStockVariance(variance, tolerance);
+  red,
+}: Readonly<{ variance: string | null; tolerance: string | null; red: string | null }>) {
+  const signal = classifyStockVariance(variance, tolerance, red);
   if (signal === 'unjudged') {
     return <StatusBadge tone="neutral">Not checked</StatusBadge>;
   }

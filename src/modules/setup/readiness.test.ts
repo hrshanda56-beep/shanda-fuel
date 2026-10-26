@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { StationSetupFacts } from './contracts';
-import { computeStationReadiness, statusLabel } from './readiness';
+import { activationMissing, computeStationReadiness, statusLabel } from './readiness';
 
 const empty: StationSetupFacts = {
   stationId: 's1',
@@ -113,5 +113,41 @@ describe('computeStationReadiness', () => {
     expect(statusLabel('READY')).toBe('Ready');
     expect(statusLabel('PARTIAL')).toBe('Incomplete');
     expect(statusLabel('NOT_ENTERED')).toBe('Not entered');
+  });
+});
+
+describe('going live', () => {
+  const onboarding: StationSetupFacts = { ...complete, stationStatus: 'ONBOARDING' };
+
+  it('lists exactly what is missing, each with the settings section that fixes it', () => {
+    const missing = activationMissing({ ...empty, stationStatus: 'ONBOARDING' });
+    expect(missing.map((item) => item.code)).toEqual([
+      'PRICES',
+      'TANKS',
+      'PUMPS',
+      'SHIFTS',
+      'STAFF',
+    ]);
+    expect(missing.find((item) => item.code === 'STAFF')?.tab).toBe('staff');
+    expect(missing.find((item) => item.code === 'TANKS')?.tab).toBe('setup');
+  });
+
+  it('can be activated once the essentials exist, even before opening stock or payments', () => {
+    const result = computeStationReadiness({
+      ...onboarding,
+      tanksMissingOpeningStock: 2,
+      providerAccounts: 0,
+      bankAccounts: 0,
+    });
+    expect(result.missing).toEqual([]);
+    expect(result.canActivate).toBe(true);
+    expect(result.stationStatus).toBe('ONBOARDING');
+  });
+
+  it('cannot be activated while something is missing, or when already live', () => {
+    expect(computeStationReadiness({ ...onboarding, assignedStaff: 0 }).canActivate).toBe(false);
+    expect(computeStationReadiness({ ...complete, stationStatus: 'ACTIVE' }).canActivate).toBe(
+      false,
+    );
   });
 });

@@ -125,6 +125,54 @@ describe('audit viewer', () => {
 
   afterAll(async () => client?.end());
 
+  it('shows names, never identifiers, for the records and values an event touched', async () => {
+    const product = 'a9d00000-0000-4000-8000-0000000000a1';
+    const tank = 'a9d00000-0000-4000-8000-0000000000a2';
+    const price = 'a9d00000-0000-4000-8000-0000000000a3';
+    const supplier = 'a9d00000-0000-4000-8000-0000000000a4';
+    const order = 'a9d00000-0000-4000-8000-0000000000a5';
+    const unknown = 'a9d00000-0000-4000-8000-0000000000ff';
+    await client.unsafe(`
+      insert into app.products (id, tenant_id, code, name) values ('${product}', '${ids.tenant}', 'A9D-DSL', 'Audit Diesel') on conflict (id) do nothing;
+      insert into app.tanks (id, tenant_id, station_id, code, product_id, capacity_litres, created_by, updated_by)
+        values ('${tank}', '${ids.tenant}', '${ids.station}', 'A9DT1', '${product}', 10000, '${ids.adminMembership}', '${ids.adminMembership}') on conflict (id) do nothing;
+      insert into app.selling_prices (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+        values ('${price}', '${ids.tenant}', '${ids.station}', '${product}', now(), 1.95, 'DRAFT', '${ids.adminMembership}') on conflict (id) do nothing;
+      insert into app.suppliers (id, tenant_id, code, legal_name, created_by, updated_by)
+        values ('${supplier}', '${ids.tenant}', 'A9D-SUP', 'Audit Supplier', '${ids.adminMembership}', '${ids.adminMembership}') on conflict (id) do nothing;
+      insert into platform.security_events (tenant_id, membership_id, actor_id, event_code, request_id, details, key_id, signature)
+        values
+        ('${ids.tenant}', '${ids.adminMembership}', '${ids.adminActor}', 'AUDITNAMES.TANK_VARIANCE_LIMITS_SET', gen_random_uuid(),
+          jsonb_build_object('subjectType', 'Tank', 'subjectId', '${tank}',
+            'before', jsonb_build_object('productId', '${unknown}'),
+            'after', jsonb_build_object('productId', '${product}', 'supplierId', '${supplier}')),
+          'test', 'sig-a9d-1'),
+        ('${ids.tenant}', '${ids.adminMembership}', '${ids.adminActor}', 'AUDITNAMES.PRICE_DRAFTED', gen_random_uuid(),
+          jsonb_build_object('subjectType', 'SellingPrice', 'subjectId', '${price}'), 'test', 'sig-a9d-2');
+    `);
+    const { body } = await read(ADMIN, { limit: '10' });
+    const tankEvent = body.items.find((item: Record<string, any>) =>
+      /variance limits/i.test(item.action),
+    );
+    expect(tankEvent.subject).toBe('Tank tank A9DT1 (Audit Diesel)');
+    expect(tankEvent.changes).toEqual(
+      expect.arrayContaining([
+        // The old value pointed at nothing we can name; the new ones are names.
+        { field: 'Product', before: 'A record', after: 'Audit Diesel' },
+        { field: 'Supplier', before: null, after: 'Audit Supplier' },
+      ]),
+    );
+    const priceEvent = body.items.find((item: Record<string, any>) =>
+      /price drafted/i.test(item.action),
+    );
+    expect(priceEvent.subject).toMatch(/^Selling price Audit Diesel at 1\.95/);
+    // Only the shown wording is checked: an event's own id is not part of what a manager reads.
+    const shown = body.items.map((item: Record<string, any>) =>
+      JSON.stringify([item.subject, item.action, item.reason, item.changes]),
+    );
+    expect(shown.join(' ')).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i);
+  });
+
   it('shows who did what, with the values recorded, to an organisation-level reader', async () => {
     const { status, body } = await read(ADMIN, { area: 'CASH' });
     expect(status).toBe(200);

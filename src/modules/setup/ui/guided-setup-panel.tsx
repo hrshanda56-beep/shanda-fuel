@@ -186,11 +186,13 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
   const { save, busy, outcome } = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
   const [errors, setErrors] = useState<Errors>({});
   const products = activeProducts(ctx.data);
+  // Held in state, not read from the form, so it is cleared even if the screen was redrawn while
+  // the identity check was open.
+  const [fuelName, setFuelName] = useState('');
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const name = text(new FormData(form), 'name');
+    const name = fuelName.trim();
     const next = { name: name ? undefined : 'Enter the name of the fuel, for example Diesel.' };
     setErrors(next);
     if (hasErrors(next)) return;
@@ -209,7 +211,7 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
         },
         `${name} was added.`,
       );
-      if (saved) form.reset();
+      if (saved) setFuelName('');
     });
   }
 
@@ -225,6 +227,8 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
             <input
               id="fuel-name"
               name="name"
+              value={fuelName}
+              onChange={(event) => setFuelName(event.target.value)}
               autoComplete="off"
               maxLength={120}
               placeholder="Diesel"
@@ -430,6 +434,8 @@ function TankStep({ ctx }: { ctx: FormContext }) {
     const reorder = reorderText ? parsePositiveDecimal(reorderText, 3) : null;
     const differenceText = text(data, 'difference');
     const difference = differenceText ? parsePositiveDecimal(differenceText, 3) : null;
+    const redText = text(data, 'red');
+    const red = redText ? parsePositiveDecimal(redText, 3) : null;
     const next = {
       name: name ? undefined : 'Give the tank a name, for example Tank 1.',
       product: productId ? undefined : 'Choose the fuel in this tank.',
@@ -440,6 +446,14 @@ function TankStep({ ctx }: { ctx: FormContext }) {
         differenceText && !difference
           ? 'Enter a number of litres, or leave this empty.'
           : undefined,
+      red:
+        redText && !red
+          ? 'Enter a number of litres, or leave this empty.'
+          : red && !difference
+            ? 'Set the yellow limit first.'
+            : red && difference && Number(red) < Number(difference)
+              ? 'The red limit cannot be lower than the yellow one.'
+              : undefined,
     };
     setErrors(next);
     if (hasErrors(next) || !capacity) return;
@@ -457,6 +471,7 @@ function TankStep({ ctx }: { ctx: FormContext }) {
           capacityLitres: capacity,
           reorderLevelLitres: reorder,
           acceptableVarianceLitres: difference,
+          varianceRedLitres: red,
         },
         `${name} was added.`,
       );
@@ -498,12 +513,21 @@ function TankStep({ ctx }: { ctx: FormContext }) {
           </Field>
           <Field
             id="tank-difference"
-            label="Acceptable difference (litres)"
-            hint="How far the dip reading may be from the book stock before you are warned."
+            label="Yellow: explain above (litres)"
+            hint="How far the dip reading may be from the book stock before the difference must be explained."
             error={errors.difference}
             optional
           >
             <input id="tank-difference" name="difference" inputMode="decimal" autoComplete="off" />
+          </Field>
+          <Field
+            id="tank-red"
+            label="Red: urgent above (litres)"
+            hint="A difference above this is urgent. Leave it empty to use twice the yellow limit."
+            error={errors.red}
+            optional
+          >
+            <input id="tank-red" name="red" inputMode="decimal" autoComplete="off" />
           </Field>
           <Field
             id="tank-reorder"

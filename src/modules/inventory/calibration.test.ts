@@ -77,6 +77,17 @@ describe('parseCalibrationText', () => {
     ]);
   });
 
+  it('skips the heading row of a spreadsheet export, but only the first line', () => {
+    expect(parseCalibrationText('mm,litres\n0,0\n500,9200\n')).toEqual([
+      { measurement: '0', litres: '0' },
+      { measurement: '500', litres: '9200' },
+    ]);
+    expect(parseCalibrationText('Dip (mm);Litres\r\n10;120.5')).toEqual([
+      { measurement: '10', litres: '120.5' },
+    ]);
+    expect(() => parseCalibrationText('mm,litres\n0,0\nbad,line')).toThrow(/Line 3/);
+  });
+
   it('points at the line that is wrong', () => {
     expect(() => parseCalibrationText('0,0\nhello\n')).toThrow(/Line 2/);
     expect(() => parseCalibrationText('1,2,3')).toThrow(/Line 1/);

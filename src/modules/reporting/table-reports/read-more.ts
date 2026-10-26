@@ -77,6 +77,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     expected: string;
     variance: string;
     tolerance: string | null;
+    red: string | null;
     day_approved: boolean;
   }>(sql`
     select d.business_date::text as date, s.name as station, t.code as tank, p.name as product,
@@ -84,6 +85,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
       coalesce(book.expected, 0)::text as expected,
       (d.physical_litres - coalesce(book.expected, 0))::text as variance,
       t.acceptable_variance_litres::text as tolerance,
+      t.variance_red_litres::text as red,
       exists (
         select 1 from app.reconciliation_dip_refs ref
         join app.reconciliations r
@@ -114,9 +116,10 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     tank: string;
     product: string;
     tolerance: string | null;
+    red: string | null;
   }>(sql`
     select s.name as station, t.code as tank, p.name as product,
-      t.acceptable_variance_litres::text as tolerance
+      t.acceptable_variance_litres::text as tolerance, t.variance_red_litres::text as red
     from app.tanks t
     join app.stations s on s.tenant_id = t.tenant_id and s.id = t.station_id
     join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
@@ -140,6 +143,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
         expected: row.expected,
         variance: row.variance,
         tolerance: row.tolerance,
+        red: row.red,
         dayApproved: row.day_approved,
       }),
     ),

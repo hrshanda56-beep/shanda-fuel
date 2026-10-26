@@ -58,6 +58,8 @@ export type OrderRevision = {
 export type PurchaseOrderDetailData = PurchaseOrder & {
   /** True when you sent this order and someone else could approve it, so you may not. */
   approvalBlockedForYou?: boolean;
+  /** True when you sent this order and nobody else could approve it, so you give a reason. */
+  approvalIsSelf?: boolean;
   deliveries: OrderDelivery[];
   revisions: OrderRevision[];
 };

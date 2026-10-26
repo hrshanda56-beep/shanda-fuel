@@ -142,7 +142,6 @@ test('key figures say when no approved report exists yet', async ({ page }) => {
   }
   const note = page.locator('.today-figures-note');
   await expect(note).toContainText('Approved figures for 08 Oct 2026');
-  await expect(note).toContainText('Expected cash and stock variance are not available yet.');
   await expect(page.getByRole('heading', { name: 'Sales performance Litres' })).toBeVisible();
   await expect(page.getByText('No approved sales in this period yet.')).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);

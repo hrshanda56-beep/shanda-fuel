@@ -50,20 +50,23 @@ export function alertSettingsFromRow(row: AlertSettingsRow | null | undefined): 
 export type StockSignal = 'ok' | 'watch' | 'alert' | 'unjudged';
 
 /**
- * Green, yellow or red for a tank. Within the tolerance is fine; up to twice the tolerance is a
- * warning; beyond that is an alert. Without a dip or a tolerance nothing is judged, which is shown
- * as "not checked" and never as green.
+ * Green, yellow or red for a tank. Within the yellow limit is fine; above it the difference must
+ * be explained (yellow); above the red limit it is urgent (red). Where no red limit is set it is
+ * twice the yellow one. Without a dip or a yellow limit nothing is judged, which is shown as "not
+ * checked" and never as green.
  */
 export function classifyStockVariance(
   variance: string | null,
   tolerance: string | null,
+  redLimit?: string | null,
 ): StockSignal {
   if (variance === null || tolerance === null) return 'unjudged';
   const limit = new ExactDecimal(tolerance).value;
   if (limit.isNegative()) return 'unjudged';
   const size = new ExactDecimal(variance).value.abs();
   if (size.lte(limit)) return 'ok';
-  return size.lte(limit.mul(2)) ? 'watch' : 'alert';
+  const red = redLimit == null ? limit.mul(2) : new ExactDecimal(redLimit).value;
+  return size.lte(red) ? 'watch' : 'alert';
 }
 
 /**
@@ -93,9 +96,13 @@ export type TankAlertFacts = Readonly<{
   physicalLitres: string | null;
   varianceAtDipLitres: string | null;
   toleranceLitres: string | null;
+  /** The red limit; empty means twice the yellow one. */
+  redLitres?: string | null;
   /** Litres sold since the previous dip (up to the latest); the base for the starting tolerance. */
   soldSincePreviousDipLitres?: string | null;
   reorderLevelLitres: string | null;
+  /** False until the tank's opening stock has been entered; its empty books are not a low tank. */
+  openingStockRecorded?: boolean;
 }>;
 
 export type OperationsFacts = Readonly<{
@@ -203,6 +210,7 @@ export function buildOperationsAlerts(
     const signal = classifyStockVariance(
       tank.varianceAtDipLitres,
       effectiveTankTolerance(tank.toleranceLitres, tank.soldSincePreviousDipLitres),
+      tank.toleranceLitres === null ? null : (tank.redLitres ?? null),
     );
     if (signal === 'watch' || signal === 'alert') {
       const variance = new ExactDecimal(tank.varianceAtDipLitres!);
@@ -218,7 +226,10 @@ export function buildOperationsAlerts(
         tone: signal === 'alert' ? 'attention' : 'info',
       });
     }
+    const noOpeningYet =
+      tank.openingStockRecorded === false && !new ExactDecimal(tank.expectedLitres).value.gt(0);
     if (
+      !noOpeningYet &&
       tank.reorderLevelLitres !== null &&
       new ExactDecimal(tank.expectedLitres).value.lte(
         new ExactDecimal(tank.reorderLevelLitres).value,

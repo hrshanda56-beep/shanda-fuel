@@ -535,6 +535,15 @@ export function authorize(input: {
   now?: Date;
 }): void {
   if (!isAuthorized(input)) {
+    // The role allows it; only the recent identity check is missing. Say so, so the screen can ask
+    // for the check instead of reporting a refusal that is not true.
+    if (highRiskPermissions.has(input.permissionCode) && isPermissionGranted(input)) {
+      throw new AppError(
+        'STEP_UP_REQUIRED',
+        'Please confirm it is you (step-up check) to do this. Nothing was changed.',
+        { permissionCode: input.permissionCode, stepUpRequired: true },
+      );
+    }
     throw new AppError('FORBIDDEN', 'The actor is not authorized for this action or scope', {
       permissionCode: input.permissionCode,
     });

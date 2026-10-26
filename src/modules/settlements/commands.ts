@@ -44,6 +44,9 @@ const configureAccountSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/),
   accountStationId: z.string().uuid().nullable().optional(),
   legalEntityId: z.string().uuid().nullable().optional(),
+  /** What the provider charges: a percentage of each settlement (0 to 100) and/or a fixed fee. */
+  feePercent: decimalString.nullable().optional(),
+  feeFixed: decimalString.nullable().optional(),
   metadata,
 });
 
@@ -166,6 +169,8 @@ export async function configureProviderAccountFromRequest(request: Request, body
         currency: input.currency,
         stationId: input.accountStationId ?? null,
         legalEntityId: input.legalEntityId ?? null,
+        feePercent: input.feePercent ?? null,
+        feeFixed: input.feeFixed ?? null,
         metadata: input.metadata,
       }),
       after: { providerAccountId, providerId: input.providerId },

@@ -11,6 +11,7 @@ import {
   assertSettlementCanBeReconciled,
   assertSettlementCanReceiveAllocation,
   calculateSettlementSummary,
+  computeExpectedFee,
   formatSettlementMoney,
 } from './domain';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from './contracts';
@@ -24,6 +25,8 @@ type ProviderAccountRow = {
   account_currency: string;
   account_status: string;
   account_station_id: string | null;
+  fee_percent: string | null;
+  fee_fixed: string | null;
 };
 
 type SettlementRow = {
@@ -78,7 +81,9 @@ async function loadProviderAccount(
            a.account_reference,
            a.currency as account_currency,
            a.status as account_status,
-           a.station_id as account_station_id
+           a.station_id as account_station_id,
+           a.fee_percent::text as fee_percent,
+           a.fee_fixed::text as fee_fixed
       from app.provider_accounts a
       join app.payment_providers p
         on p.tenant_id = a.tenant_id
@@ -125,6 +130,18 @@ export async function createPaymentProviderInTransaction(
   return { providerId: input.id, code: input.code };
 }
 
+function assertFeeSettings(percent: string | null, fixed: string | null): void {
+  if (percent !== null) {
+    const value = new ExactDecimal(percent).value;
+    if (value.isNegative() || value.gt(100)) {
+      throw new AppError('VALIDATION_FAILED', 'The fee percentage must be between 0 and 100');
+    }
+  }
+  if (fixed !== null && new ExactDecimal(fixed).value.isNegative()) {
+    throw new AppError('VALIDATION_FAILED', 'The fixed fee cannot be negative');
+  }
+}
+
 export async function configureProviderAccountInTransaction(
   transaction: ForecourtTransaction,
   context: SettlementCommandContext,
@@ -136,9 +153,12 @@ export async function configureProviderAccountInTransaction(
     currency: string;
     stationId: string | null;
     legalEntityId: string | null;
+    feePercent?: string | null;
+    feeFixed?: string | null;
     metadata: Record<string, unknown>;
   },
 ) {
+  assertFeeSettings(input.feePercent ?? null, input.feeFixed ?? null);
   if (input.stationId && input.stationId !== context.stationId) {
     throw new AppError('FORBIDDEN', 'A provider account station must match the active station');
   }
@@ -169,10 +189,11 @@ export async function configureProviderAccountInTransaction(
   await transaction.execute(sql`
     insert into app.provider_accounts
       (id, tenant_id, provider_id, legal_entity_id, station_id, account_reference,
-       display_name, currency, metadata, created_by, updated_by)
+       display_name, currency, fee_percent, fee_fixed, metadata, created_by, updated_by)
     values
       (${input.id}, ${context.tenantId}, ${input.providerId}, ${input.legalEntityId}, ${input.stationId},
        ${input.accountReference}, ${input.displayName}, ${input.currency},
+       ${input.feePercent ?? null}, ${input.feeFixed ?? null},
        ${JSON.stringify(input.metadata)}::jsonb, ${context.actor.membershipId}, ${context.actor.membershipId})
   `);
   return { providerAccountId: input.id, accountReference: input.accountReference };
@@ -212,6 +233,19 @@ export async function recordProviderSettlementInTransaction(
       'Settlement currency must match provider account currency',
     );
   }
+  // The account's fee settings give the charge it should have taken. When the fee was not typed
+  // in, that is the fee; either way it is kept so any difference from what was kept can be shown.
+  const expectedFee = computeExpectedFee({
+    grossAmount: input.grossAmount,
+    feePercent: account.fee_percent,
+    feeFixed: account.fee_fixed,
+  });
+  const providerFeeAmount =
+    input.providerFeeAmount === null &&
+    input.reportedNetAmount === null &&
+    input.providerDeductionAmount === null
+      ? expectedFee
+      : input.providerFeeAmount;
   const duplicate = await transaction.execute<{ id: string }>(sql`
     select id from app.provider_settlements
      where tenant_id = ${context.tenantId}
@@ -225,13 +259,13 @@ export async function recordProviderSettlementInTransaction(
     insert into app.provider_settlements
       (id, tenant_id, provider_account_id, station_id, settlement_reference, batch_reference,
        transaction_date, settlement_date, currency, gross_amount, provider_fee_amount,
-       provider_deduction_amount, reported_net_amount, source_type, source_key,
+       expected_fee_amount, provider_deduction_amount, reported_net_amount, source_type, source_key,
        source_metadata, recorded_by)
     values
       (${input.id}, ${context.tenantId}, ${input.providerAccountId}, ${context.stationId},
        ${input.settlementReference}, ${input.batchReference}, ${input.transactionDate},
-       ${input.settlementDate}, ${input.currency}, ${input.grossAmount}, ${input.providerFeeAmount},
-       ${input.providerDeductionAmount}, ${input.reportedNetAmount}, ${input.sourceType},
+       ${input.settlementDate}, ${input.currency}, ${input.grossAmount}, ${providerFeeAmount},
+       ${expectedFee}, ${input.providerDeductionAmount}, ${input.reportedNetAmount}, ${input.sourceType},
        ${input.sourceKey}, ${JSON.stringify(input.sourceMetadata)}::jsonb, ${context.actor.membershipId})
   `);
   return {
@@ -570,6 +604,7 @@ function settlementSummaryQuery(context: SettlementCommandContext) {
                )
            ), 0)::text as "allocatedAmount",
            s.provider_fee_amount::text as "providerFeeAmount",
+           s.expected_fee_amount::text as "expectedFeeAmount",
            s.provider_deduction_amount::text as "providerDeductionAmount",
            s.reported_net_amount::text as "reportedNetAmount",
            s.state,
@@ -583,8 +618,8 @@ function settlementSummaryQuery(context: SettlementCommandContext) {
      group by s.id, p.id, p.code, p.name, a.id, a.account_reference,
               s.station_id, s.settlement_reference, s.batch_reference,
               s.transaction_date, s.settlement_date, s.currency, s.gross_amount,
-              s.provider_fee_amount, s.provider_deduction_amount, s.reported_net_amount,
-              s.state, s.version
+              s.provider_fee_amount, s.expected_fee_amount, s.provider_deduction_amount,
+              s.reported_net_amount, s.state, s.version
      order by s.settlement_date desc, s.id desc
 `;
 }
@@ -597,6 +632,7 @@ function mapSettlementRows(rows: ProviderSettlementSummaryRow[]) {
       providerFeeAmount: row.providerFeeAmount,
       providerDeductionAmount: row.providerDeductionAmount,
       reportedNetAmount: row.reportedNetAmount,
+      expectedFeeAmount: row.expectedFeeAmount ?? null,
       state: row.state,
     });
     return mapSettlementSummary({

@@ -119,7 +119,31 @@ function subjectLabel(
 /** Looked-up names for what an event touched, keyed `<SubjectType>:<id>`. */
 export type SubjectNames = ReadonlyMap<string, string>;
 
-export function toAuditItem(row: StoredAuditRow, names?: SubjectNames): AuditItem {
+const ID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * An identifier that appears as an old or new value becomes the name of what it points at, or a
+ * plain "a record" when the name is not known. A machine id is never put in front of a manager.
+ */
+export function nameChangeValues(
+  changes: readonly AuditChange[],
+  valueNames?: ReadonlyMap<string, string>,
+): AuditChange[] {
+  const name = (value: string | null) =>
+    value !== null && ID_VALUE.test(value) ? (valueNames?.get(value) ?? 'A record') : value;
+  return changes.map((change) => ({
+    // "Product id" reads as "Product" once the value is a name.
+    field: change.field.replace(/ id$/i, ''),
+    before: name(change.before),
+    after: name(change.after),
+  }));
+}
+
+export function toAuditItem(
+  row: StoredAuditRow,
+  names?: SubjectNames,
+  valueNames?: ReadonlyMap<string, string>,
+): AuditItem {
   const details = isRecord(row.details) ? row.details : {};
   const { area, action } = describeAction(row.eventCode);
   const hasBefore = details.before !== undefined && details.before !== null;
@@ -133,7 +157,7 @@ export function toAuditItem(row: StoredAuditRow, names?: SubjectNames): AuditIte
     area,
     subject: subjectLabel(subjectType, subjectId, names),
     reason: typeof details.reason === 'string' && details.reason.trim() ? details.reason : null,
-    changes: diffAudit(details.before, details.after),
+    changes: nameChangeValues(diffAudit(details.before, details.after), valueNames),
     created: !hasBefore,
   };
 }

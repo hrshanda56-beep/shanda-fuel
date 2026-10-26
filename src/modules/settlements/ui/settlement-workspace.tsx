@@ -931,6 +931,28 @@ export function SettlementWorkspace({
                               : '—'}
                           </dd>
                         </div>
+                        {row.expectedFeeAmount ? (
+                          <div>
+                            <dt>Charge it should have taken</dt>
+                            <dd>{money(row.expectedFeeAmount, row.currency)}</dd>
+                          </div>
+                        ) : null}
+                        {row.feeDifferenceAmount ? (
+                          <div
+                            data-tone={
+                              Number(row.feeDifferenceAmount) !== 0 ? 'warning' : undefined
+                            }
+                          >
+                            <dt>Charge difference</dt>
+                            <dd>
+                              {Number(row.feeDifferenceAmount) === 0
+                                ? 'None: it took what it should'
+                                : Number(row.feeDifferenceAmount) > 0
+                                  ? `${money(row.feeDifferenceAmount, row.currency)} more than it should`
+                                  : `${money(row.feeDifferenceAmount.replace(/^-/, ''), row.currency)} less than it should`}
+                            </dd>
+                          </div>
+                        ) : null}
                         <div>
                           <dt>Deduction</dt>
                           <dd>

@@ -19,6 +19,27 @@ export type ExpenseCategoryClassification = (typeof EXPENSE_CATEGORY_CLASSIFICAT
 export const EXPENSE_STATES = ['SUBMITTED', 'APPROVED', 'REJECTED', 'POSTED', 'REVERSED'] as const;
 export type ExpenseState = (typeof EXPENSE_STATES)[number];
 
+/** How an expense was paid, said when it is entered. */
+export const EXPENSE_PAYMENT_METHODS = ['STATION_CASH', 'ECOCASH', 'BANK', 'CARD'] as const;
+export type ExpensePaymentMethod = (typeof EXPENSE_PAYMENT_METHODS)[number];
+export const EXPENSE_PAYMENT_METHOD_LABELS: Readonly<Record<ExpensePaymentMethod, string>> = {
+  STATION_CASH: 'Station cash',
+  ECOCASH: 'EcoCash',
+  BANK: 'Bank',
+  CARD: 'Card',
+};
+
+/** The month-end staff fuel benefit category. It is posted only through the staff benefit account. */
+export const STAFF_FUEL_CATEGORY_CODE = 'STAFF_FUEL_BENEFIT';
+
+/** Staff fuel goes through the staff benefit account, issued at cost, never typed in as an expense. */
+export function isStaffFuelCategory(category: { code: string; name?: string | null }): boolean {
+  return category.code === STAFF_FUEL_CATEGORY_CODE || /staff\s*fuel/i.test(category.name ?? '');
+}
+
+export const STAFF_FUEL_EXPENSE_MESSAGE =
+  'Staff fuel is not entered as an expense. Issue it on the staff fuel benefit account, at cost.';
+
 export const SETTLEMENT_SOURCES = ['CASH', 'BANK', 'REIMBURSEMENT', 'MOBILE_MONEY'] as const;
 export type SettlementSource = (typeof SETTLEMENT_SOURCES)[number];
 

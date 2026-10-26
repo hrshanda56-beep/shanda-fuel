@@ -12,7 +12,7 @@ import { withInventoryReadContext } from '../inventory/application';
 import { getSupplierSummaryFromRequest } from '../creditors/queries';
 import { getSettlementOverviewFromRequest } from '../settlements/queries';
 import { ExactDecimal } from '../../platform/domain/primitives';
-import { AppError } from '../../platform/errors';
+import { AppError, isAccessRefusal } from '../../platform/errors';
 import { observeError } from '../../platform/observability';
 import { classifyCreditUse, type ActionCenterFacts, type Section } from './action-center-model';
 import { DEFAULT_ALERT_SETTINGS } from './operations-alerts';
@@ -27,7 +27,7 @@ async function section<T>(
   try {
     return { status: 'ok', value: await load() };
   } catch (error) {
-    if (error instanceof AppError && error.code === 'FORBIDDEN') return { status: 'restricted' };
+    if (isAccessRefusal(error)) return { status: 'restricted' };
     observeError(request, error, `finance.action-center.${name}`);
     return { status: 'unavailable' };
   }

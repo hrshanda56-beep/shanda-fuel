@@ -134,7 +134,13 @@ export function DailyTankDips({
               const dip = record.dips.find((entry) => entry.tankId === tank.tankId);
               const variance = record.totals.stockVariance[tank.tankId] ?? null;
               const [tone, label] =
-                SIGNAL[classifyStockVariance(dip ? variance : null, tank.toleranceLitres)];
+                SIGNAL[
+                  classifyStockVariance(
+                    dip ? variance : null,
+                    tank.toleranceLitres,
+                    tank.redLitres ?? null,
+                  )
+                ];
               return (
                 <tr key={tank.tankId}>
                   <th scope="row" data-label="Tank">

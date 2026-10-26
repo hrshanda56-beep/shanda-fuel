@@ -30,6 +30,7 @@ import {
   deactivateStaffMemberFromRequest,
   signUpFromInvitation,
   generateManualStaffActivationFromRequest,
+  updateStaffAssignmentFromRequest,
 } from './commands';
 import { getDatabase } from '../../platform/db';
 
@@ -278,5 +279,101 @@ describe('Clerk staff deactivation revocation contract', () => {
     await expect(deactivateStaffMemberFromRequest(request, body(), {})).rejects.toThrow('step-up');
     expect(authorize).not.toHaveBeenCalled();
     expect(transactionExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("Changing a staff member's access", () => {
+  const stationId = '10000000-0000-4000-8000-0000000000a1';
+  const entityId = '10000000-0000-4000-8000-0000000000b1';
+  const change = {
+    commandType: 'UpdateStaffAssignment',
+    tenantId,
+    membershipId: targetMembershipId,
+    assignedRole: 'SUPERVISOR',
+    scopeType: 'STATION',
+    legalEntityId: entityId,
+    stationIds: [stationId],
+  };
+  function privilegedAuthority(overrides: Record<string, unknown> = {}) {
+    const typed = authority as unknown as { actor: { session: Record<string, unknown> } };
+    return {
+      ...(authority as unknown as Record<string, unknown>),
+      actor: {
+        ...typed.actor,
+        session: { ...typed.actor.session, stepUpAction: 'PRIVILEGED_OPERATION', ...overrides },
+      },
+    } as never;
+  }
+
+  it('needs a current step-up and touches nothing without it', async () => {
+    resolveAuthority.mockResolvedValueOnce(privilegedAuthority({ stepUpExpiresAt: undefined }));
+    await expect(updateStaffAssignmentFromRequest(request, change)).rejects.toThrow('step-up');
+    expect(transactionExecute).not.toHaveBeenCalled();
+  });
+
+  it('will not let someone change their own access', async () => {
+    resolveAuthority.mockResolvedValueOnce(privilegedAuthority());
+    await expect(
+      updateStaffAssignmentFromRequest(request, { ...change, membershipId: ownerMembershipId }),
+    ).rejects.toThrow('your own access');
+    expect(transactionExecute).not.toHaveBeenCalled();
+  });
+
+  it('refuses to demote the last active owner', async () => {
+    resolveAuthority.mockResolvedValueOnce(privilegedAuthority());
+    transactionExecute
+      .mockResolvedValueOnce([]) // tenant lock
+      .mockResolvedValueOnce([{ status: 'ACTIVE' }]) // target
+      .mockResolvedValueOnce([{ role_code: 'OWNER', scope_type: 'TENANT' }]) // current
+      .mockResolvedValueOnce([{ count: '1' }]); // owners
+    await expect(updateStaffAssignmentFromRequest(request, change)).rejects.toThrow(
+      'last active owner',
+    );
+    expect(appendSecurityEvent).not.toHaveBeenCalled();
+  });
+
+  it('replaces the assignments and writes an audit event', async () => {
+    resolveAuthority.mockResolvedValueOnce(privilegedAuthority());
+    transactionExecute
+      .mockResolvedValueOnce([]) // tenant lock
+      .mockResolvedValueOnce([{ status: 'ACTIVE' }]) // target
+      .mockResolvedValueOnce([
+        {
+          role_code: 'ATTENDANT',
+          scope_type: 'STATION',
+          legal_entity_id: entityId,
+          station_id: 'x',
+        },
+      ]) // current
+      .mockResolvedValueOnce([{ station_id: stationId }]) // station check
+      .mockResolvedValue([]); // delete + insert
+    const result = await updateStaffAssignmentFromRequest(request, change);
+    expect(result).toMatchObject({ role: 'SUPERVISOR', scopeType: 'STATION' });
+    expect(appendSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: 'STAFF.ASSIGNMENT_CHANGED',
+        subjectId: targetMembershipId,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('only lets an owner change an administrator', async () => {
+    const typed = privilegedAuthority() as unknown as Record<string, unknown>;
+    resolveAuthority.mockResolvedValueOnce({
+      ...typed,
+      authorization: {
+        roleAssignments: [{ tenantId, scopeType: 'TENANT', roleCode: 'ADMINISTRATOR' }],
+        temporaryGrants: [],
+      },
+    } as never);
+    transactionExecute
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ status: 'ACTIVE' }])
+      .mockResolvedValueOnce([{ role_code: 'ADMINISTRATOR', scope_type: 'TENANT' }]);
+    await expect(updateStaffAssignmentFromRequest(request, change)).rejects.toThrow(
+      'Only an owner',
+    );
   });
 });

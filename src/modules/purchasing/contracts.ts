@@ -55,6 +55,8 @@ export const approvePurchaseOrderSchema = stationBase.extend({
   commandType: z.literal('ApprovePurchaseOrder'),
   purchaseOrderId: uuid,
   expectedVersion: version,
+  /** Required only when the approver is the person who sent the order and nobody else could approve. */
+  selfApprovalReason: z.string().trim().min(3).max(300).optional(),
 });
 
 export const amendPurchaseOrderSchema = stationBase.extend({

@@ -406,6 +406,38 @@ describe('purchase orders PostgreSQL persistence', () => {
     expect(list.json.orders).toEqual([]);
   });
 
+  it('lets a sole approver approve their own order, but only with a reason that is audited', async () => {
+    await client`update app.memberships set status = 'DISABLED' where id = ${ids.adminMembership}`;
+    try {
+      const own = await createOrder({}, tokens.finance);
+      const ownId = own.json.purchaseOrderId as string;
+      await transition('SubmitPurchaseOrder', ownId, 0, tokens.finance);
+      // Nobody else can approve, so the screen shows a reason box instead of hiding the button.
+      const view = await detail(ownId, tokens.finance);
+      expect(view.approvalBlockedForYou).toBe(false);
+      expect(view.approvalIsSelf).toBe(true);
+
+      const noReason = await transition('ApprovePurchaseOrder', ownId, 1, tokens.finance);
+      expect(noReason.status).toBeGreaterThanOrEqual(400);
+      expect(noReason.status).toBeLessThan(500);
+      expect(String(noReason.json.message)).toMatch(/approving it yourself/);
+      expect((await detail(ownId, tokens.finance)).state).toBe('SUBMITTED');
+
+      const approved = await transition('ApprovePurchaseOrder', ownId, 1, tokens.finance, {
+        selfApprovalReason: 'I am the only approver at this company',
+      });
+      expect(approved.json).toMatchObject({ state: 'APPROVED' });
+      const audit = await client<{ reason: string | null }[]>`
+        select details->>'reason' as reason from platform.security_events
+        where tenant_id = ${ids.tenant} and details->>'subjectId' = ${ownId}
+          and event_code = 'PURCHASE_ORDER.APPROVED'
+      `;
+      expect(audit.map((row) => row.reason)).toContain('I am the only approver at this company');
+    } finally {
+      await client`update app.memberships set status = 'ACTIVE' where id = ${ids.adminMembership}`;
+    }
+  });
+
   it('follows the state machine with named commands and optimistic versions', async () => {
     const created = await createOrder();
     const id = created.json.purchaseOrderId as string;

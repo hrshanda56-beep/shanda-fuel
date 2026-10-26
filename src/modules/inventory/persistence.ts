@@ -21,6 +21,7 @@ export type TankRecord = Readonly<{
   capacityLitres: string;
   reorderLevelLitres: string | null;
   acceptableVarianceLitres: string | null;
+  varianceRedLitres: string | null;
   status: string;
   version: number;
 }>;
@@ -61,6 +62,7 @@ export async function loadTankForUpdate(
       capacityLitres: tanks.capacityLitres,
       reorderLevelLitres: tanks.reorderLevelLitres,
       acceptableVarianceLitres: tanks.acceptableVarianceLitres,
+      varianceRedLitres: tanks.varianceRedLitres,
       status: tanks.status,
       version: tanks.version,
     })

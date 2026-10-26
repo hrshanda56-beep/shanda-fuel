@@ -225,3 +225,24 @@ describe('recurring cost schedule', () => {
     assertPeriodWithinTemplate(period, { startDate: '2026-10-15', endDate: null });
   });
 });
+
+describe('staff fuel is not an expense category', () => {
+  it('recognises the reserved benefit category and any staff fuel name', async () => {
+    const { isStaffFuelCategory } = await import('./domain');
+    expect(isStaffFuelCategory({ code: 'STAFF_FUEL_BENEFIT' })).toBe(true);
+    expect(isStaffFuelCategory({ code: 'X1', name: 'Staff fuel' })).toBe(true);
+    expect(isStaffFuelCategory({ code: 'X2', name: 'STAFF FUEL allowance' })).toBe(true);
+    expect(isStaffFuelCategory({ code: 'GEN', name: 'Generator diesel' })).toBe(false);
+    expect(isStaffFuelCategory({ code: 'UNI', name: 'Staff uniforms' })).toBe(false);
+  });
+
+  it('offers exactly station cash, EcoCash, bank and card', async () => {
+    const { EXPENSE_PAYMENT_METHODS, EXPENSE_PAYMENT_METHOD_LABELS } = await import('./domain');
+    expect(EXPENSE_PAYMENT_METHODS.map((m) => EXPENSE_PAYMENT_METHOD_LABELS[m])).toEqual([
+      'Station cash',
+      'EcoCash',
+      'Bank',
+      'Card',
+    ]);
+  });
+});

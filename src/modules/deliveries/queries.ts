@@ -26,9 +26,19 @@ export type DeliveryListItem = Readonly<{
   driverConfirmed: boolean | null;
 }>;
 
+/** An active tank the station can receive fuel into. */
+export type DeliveryTank = Readonly<{
+  id: string;
+  code: string;
+  productId: string;
+  productName: string;
+}>;
+
 export type DeliveryList = Readonly<{
   stationTimezone: string;
   waterTestRequired: boolean;
+  /** Active tanks, for the Record delivery form. */
+  tanks: readonly DeliveryTank[];
   deliveries: readonly DeliveryListItem[];
 }>;
 
@@ -84,9 +94,28 @@ export async function queryDeliveryList(input: {
         select water_test_required from app.delivery_settings
         where tenant_id = ${context.tenantId}
       `);
+      const tanks = await transaction.execute<{
+        id: string;
+        code: string;
+        product_id: string;
+        product_name: string;
+      }>(sql`
+        select t.id, t.code, t.product_id, p.name as product_name
+        from app.tanks t
+        join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
+        where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
+          and t.status = 'ACTIVE'
+        order by p.name, t.code
+      `);
       return {
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
+        tanks: tanks.map((row) => ({
+          id: row.id,
+          code: row.code,
+          productId: row.product_id,
+          productName: row.product_name,
+        })),
         deliveries: rows.map((row) => ({
           id: row.id,
           deliveryNoteNumber: row.delivery_note_number,

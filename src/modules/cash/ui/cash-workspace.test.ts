@@ -125,12 +125,13 @@ describe('Cash and banking, plain-language guidance', () => {
     expect(html).toContain('Bank cash');
   });
 
-  it('shows three parts that never overlap instead of a collected-not-banked slice', () => {
+  it('shows three parts that never overlap, and names a collection that is not banked yet', () => {
     const html = render(summary);
     expect(html).toContain('At the station');
     expect(html).toContain('Waiting for the bank');
     expect(html).toContain('Banked');
-    expect(html).not.toContain('Collected, not banked');
+    // The collection itself is called Collected, so it can never be mistaken for banked cash.
+    expect(html).toContain('Collected, not banked yet');
   });
 
   it('uses plain words for where cash is and for deposit status', () => {

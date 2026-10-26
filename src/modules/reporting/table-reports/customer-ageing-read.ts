@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { AgeingLedgerLine } from '../../customers/ageing';
 import { buildCustomerAgeingRows } from './customer-ageing';
 import type { TableReportReader } from './read';
+import { equalsClause } from './read-extra';
 
 /**
  * Credit-account ledger lines up to the report's end date ("as at"), grouped per account and aged
@@ -29,6 +30,7 @@ export const readCustomerAgeing: TableReportReader = async (transaction, filters
     where l.tenant_id = ${filters.tenantId}
       and l.account_type = 'CREDIT'
       and l.business_date <= ${filters.toDate}
+      ${equalsClause('l.customer_id', filters.customerId)}
     order by l.account_id, l.business_date, l.occurred_at, l.id
   `);
   const accounts = new Map<

@@ -304,6 +304,14 @@ export async function approvePurchaseOrderInTransaction(
     approverMembershipId: actorId(context),
     alternateApproverExists,
   });
+  // Reaching here as the submitter means no one else could approve (a solo operator). That is
+  // allowed, but only with a stated reason, which the command audit records.
+  if (submitter === actorId(context) && !input.selfApprovalReason) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'You sent this order and nobody else can approve it. Say why you are approving it yourself.',
+    );
+  }
   await transaction.execute(sql`
     update app.purchase_orders
     set state = 'APPROVED', approved_by = ${actorId(context)}, approved_at = now(),

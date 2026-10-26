@@ -66,3 +66,15 @@
   font-size: var(--font-size-sm);
   color: var(--tone-critical-text, var(--text-primary));
 }
+
+.history {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.history ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+}

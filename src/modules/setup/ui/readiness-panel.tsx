@@ -10,6 +10,7 @@ import {
   type StatusTone,
 } from '@/design-system/primitives';
 import { Notice } from '@/design-system/feedback';
+import { useState } from 'react';
 
 import type { ReadinessStatus, SetupOverview, StationReadiness } from '../contracts';
 import { statusLabel } from '../readiness';
@@ -22,18 +23,103 @@ const TONE: Record<ReadinessStatus, StatusTone> = {
   NOT_ENTERED: 'neutral',
 };
 
-function StationCard({ station }: { station: StationReadiness }) {
+function tabHref(tab: string) {
+  const params = new URLSearchParams(window.location.search);
+  params.set('tab', tab);
+  return `/settings?${params.toString()}`;
+}
+
+function StationCard({
+  station,
+  tenantId,
+  onActivated,
+}: {
+  station: StationReadiness;
+  tenantId: string;
+  onActivated: () => void;
+}) {
   const headingId = `readiness-${station.stationId}`;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  async function activate() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const response = await fetch('/api/forecourt/commands', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
+        body: JSON.stringify({
+          commandType: 'ActivateStation',
+          tenantId,
+          stationId: station.stationId,
+        }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        setError(body?.message ?? 'The station could not be activated. Nothing was changed.');
+        return;
+      }
+      onActivated();
+    } catch {
+      setError('The station could not be activated. Check your connection and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className={styles.card} aria-labelledby={headingId}>
       <div className={styles.cardHeader}>
         <h3 id={headingId} className={styles.cardTitle}>
           {station.stationName} <span className={styles.note}>({station.stationCode})</span>
         </h3>
-        <StatusBadge tone={station.ready ? 'positive' : 'warning'}>
-          {station.ready ? 'Setup complete' : 'Setup incomplete'}
+        <StatusBadge
+          tone={
+            station.stationStatus === 'ONBOARDING'
+              ? 'pending'
+              : station.ready
+                ? 'positive'
+                : 'warning'
+          }
+        >
+          {station.stationStatus === 'ONBOARDING'
+            ? 'Setting up'
+            : station.ready
+              ? 'Setup complete'
+              : 'Setup incomplete'}
         </StatusBadge>
       </div>
+      {station.stationStatus === 'ONBOARDING' ? (
+        <div>
+          {station.missing.length > 0 ? (
+            <>
+              <p className={styles.note}>Before this station can go live you still need:</p>
+              <ul className={styles.list} aria-label={`${station.stationName} still needed`}>
+                {station.missing.map((item) => (
+                  <li key={item.code} className={styles.row}>
+                    <div className={styles.rowMain}>
+                      <span className={styles.rowTitle}>{item.label}</span>
+                      <span className={styles.rowDetail}>{item.detail}</span>
+                    </div>
+                    <a href={tabHref(item.tab)}>Fix this</a>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className={styles.note}>
+              Everything needed is in place. Opening stock is entered after the station goes live.
+            </p>
+          )}
+          {station.canActivate ? (
+            <Button variant="primary" loading={busy} onClick={activate}>
+              Activate station
+            </Button>
+          ) : null}
+          {error ? <p role="alert">{error}</p> : null}
+        </div>
+      ) : null}
       <ul className={styles.list} aria-label={`${station.stationName} setup`}>
         {station.areas.map((area) => (
           <li key={area.code} className={styles.row}>
@@ -56,8 +142,10 @@ function StationCard({ station }: { station: StationReadiness }) {
 
 export function ReadinessView({
   overview,
+  onActivated = () => window.location.reload(),
 }: {
   overview: Extract<SetupOverview, { status: 'ready' }>;
+  onActivated?: () => void;
 }) {
   if (!overview.canViewReadiness) {
     return <AccessDeniedState message="You do not have access to station setup readiness." />;
@@ -77,7 +165,12 @@ export function ReadinessView({
         been set up, and transactions that depend on it are blocked until it is.
       </p>
       {overview.stations.map((station) => (
-        <StationCard key={station.stationId} station={station} />
+        <StationCard
+          key={station.stationId}
+          station={station}
+          tenantId={overview.tenantId}
+          onActivated={onActivated}
+        />
       ))}
     </div>
   );

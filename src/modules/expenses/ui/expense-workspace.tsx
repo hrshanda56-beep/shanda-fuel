@@ -17,6 +17,12 @@ import { Icon } from '@/design-system/icons';
 import { Modal } from '@/design-system/modal';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import {
+  EXPENSE_PAYMENT_METHODS,
+  EXPENSE_PAYMENT_METHOD_LABELS,
+  isStaffFuelCategory,
+  type ExpensePaymentMethod,
+} from '../domain';
 import styles from './expenses.module.css';
 import {
   EXPENSE_FILTERS,
@@ -228,6 +234,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [payee, setPayee] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<ExpensePaymentMethod>('STATION_CASH');
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -256,7 +263,11 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const stationName = (id: string) => stations.find((station) => station.id === id)?.name ?? '';
 
   const activeCategories = (reference?.categories ?? []).filter(
-    (category) => category.status === 'ACTIVE' && category.classification === 'OPERATING',
+    (category) =>
+      category.status === 'ACTIVE' &&
+      category.classification === 'OPERATING' &&
+      // Staff fuel goes through the staff benefit account, not through this form.
+      !isStaffFuelCategory(category),
   );
 
   function scopeParams(): URLSearchParams {
@@ -348,6 +359,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       setAmount('');
       setDate(today);
       setPayee('');
+      setPaymentMethod('STATION_CASH');
       setDescription('');
       setReceipt('');
       setReceiptFile(null);
@@ -497,6 +509,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           expenseDate: date,
           description: description.trim(),
           amount: value,
+          paymentMethod,
           ...(payee.trim() ? { payee: payee.trim() } : {}),
           ...(receipt.trim() ? { reference: receipt.trim() } : {}),
         },
@@ -1222,6 +1235,23 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   </select>
                 </Field>
               ) : null}
+              <Field
+                id="expense-payment-method"
+                label="Paid with"
+                hint="Cash paid out of the station's cash is taken off the cash to collect."
+                required
+              >
+                <select
+                  value={paymentMethod}
+                  onChange={(event) => setPaymentMethod(event.target.value as ExpensePaymentMethod)}
+                >
+                  {EXPENSE_PAYMENT_METHODS.map((method) => (
+                    <option key={method} value={method}>
+                      {EXPENSE_PAYMENT_METHOD_LABELS[method]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <Field id="expense-payee" label="Paid to" optional>
                 <input
                   value={payee}

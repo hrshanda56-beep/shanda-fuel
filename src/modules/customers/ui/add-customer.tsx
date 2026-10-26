@@ -6,6 +6,8 @@ import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import { companyForNewCustomer } from '../company-choice';
+import { makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
 
 type Kind = 'CREDIT' | 'PREPAID_VALUE' | 'PREPAID_LITRES' | 'STAFF';
 
@@ -17,16 +19,6 @@ const KIND_LABELS: Record<Kind, string> = {
 };
 
 const POSITIVE_MONEY = /^(?!0+(?:\.0+)?$)\d{1,16}(?:\.\d{1,2})?$/;
-
-/** A short code people never have to type: letters from the name plus a few digits. */
-function makeReference(name: string): string {
-  const letters = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 6);
-  const digits = String(Math.floor(1000 + Math.random() * 9000));
-  return `${letters || 'CUST'}-${digits}`;
-}
 
 async function post(input: Record<string, unknown>, key: string): Promise<unknown> {
   const response = await fetch('/api/customers/commands', {
@@ -47,19 +39,21 @@ async function post(input: Record<string, unknown>, key: string): Promise<unknow
 }
 
 /**
- * Adds a customer and, when a kind is chosen, opens its first account. The customer record is
- * created once; if opening the account then fails the form says so and a retry only repeats the
- * account step, so no duplicate customer is made.
+ * Adds a customer and, when a kind is chosen, opens its first account. With an account it is one
+ * command after the identity check, so a refusal or a cancelled check saves nothing at all.
  */
 export function AddCustomer({
   tenantId,
-  legalEntityId,
+  legalEntityId: selectedLegalEntityId,
+  companies = [],
   canAdd,
   canOpenAccount,
 }: {
   tenantId: string;
   /** The company chosen in the context selector; a customer's credit is with one company. */
   legalEntityId: string | null;
+  /** Every company the person may add customers to, for when none is chosen yet. */
+  companies?: ReadonlyArray<{ id: string; name: string }>;
   canAdd: boolean;
   canOpenAccount: boolean;
 }) {
@@ -67,6 +61,14 @@ export function AddCustomer({
   // The staff fuel benefit page links here with ?add=staff so the form opens ready for a staff member.
   const startsAsStaff = useSearchParams().get('add') === 'staff';
   const [open, setOpen] = useState(startsAsStaff);
+  // With no company selected at the top and several to choose from, ask before the form opens.
+  const [pickedCompany, setPickedCompany] = useState('');
+  const [askingCompany, setAskingCompany] = useState(false);
+  const { legalEntityId, mustAskFirst } = companyForNewCustomer({
+    selected: selectedLegalEntityId,
+    companies,
+    picked: pickedCompany,
+  });
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [kind, setKind] = useState<Kind | ''>(startsAsStaff ? 'STAFF' : '');
@@ -79,7 +81,6 @@ export function AddCustomer({
   const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
   const [done, setDone] = useState<string | null>(null);
   // Keeps one key per create so a retry after a dropped connection cannot make two customers.
-  const created = useRef<{ customerId: string } | null>(null);
   const keys = useRef<{ customer: string; account: string; reference: string } | null>(null);
 
   if (!canAdd) return null;
@@ -93,7 +94,6 @@ export function AddCustomer({
     setStaffName('');
     setError(null);
     setFieldError(null);
-    created.current = null;
     keys.current = null;
   }
 
@@ -117,8 +117,29 @@ export function AddCustomer({
     setBusy(true);
     setError(null);
     try {
-      if (!created.current) {
-        const result = (await post(
+      if (kind) {
+        // One command, so a refusal or a dropped connection leaves nothing half-saved.
+        await post(
+          {
+            commandType: 'CreateCustomerWithAccount',
+            tenantId,
+            accountReference: keys.current.reference,
+            displayName: customerName,
+            contactMetadata: {
+              ...(phone.trim() ? { phone: phone.trim() } : {}),
+              ...(kind === 'STAFF' ? { kind: STAFF_CUSTOMER_KIND } : {}),
+            },
+            ...(legalEntityId ? { legalEntityId } : {}),
+            accountType: kind === 'STAFF' ? 'CREDIT' : kind,
+            currency: 'USD',
+            ...(kind === 'CREDIT' || kind === 'STAFF' ? { creditLimit: limit.trim() } : {}),
+            ...(kind === 'CREDIT' && days.trim() ? { creditDays: Number(days.trim()) } : {}),
+            ...(kind === 'STAFF' ? { staffBenefit: { staffName: staffName.trim() } } : {}),
+          },
+          keys.current.customer,
+        );
+      } else {
+        await post(
           {
             commandType: 'CreateCustomer',
             tenantId,
@@ -128,22 +149,6 @@ export function AddCustomer({
             ...(legalEntityId ? { legalEntityId } : {}),
           },
           keys.current.customer,
-        )) as { customerId: string };
-        created.current = { customerId: result.customerId };
-      }
-      if (kind) {
-        await post(
-          {
-            commandType: 'CreateCustomerAccount',
-            tenantId,
-            customerId: created.current.customerId,
-            accountType: kind === 'STAFF' ? 'CREDIT' : kind,
-            currency: 'USD',
-            ...(kind === 'CREDIT' || kind === 'STAFF' ? { creditLimit: limit.trim() } : {}),
-            ...(kind === 'CREDIT' && days.trim() ? { creditDays: Number(days.trim()) } : {}),
-            ...(kind === 'STAFF' ? { staffBenefit: { staffName: staffName.trim() } } : {}),
-          },
-          keys.current.account,
         );
       }
       setDone(
@@ -156,14 +161,10 @@ export function AddCustomer({
       router.refresh();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'This could not be saved.';
-      if (!alreadyConfirmed && /not authorized|step-up/i.test(message)) {
+      if (!alreadyConfirmed && /step-up/i.test(message)) {
         setStepUpRetry(() => () => void run(true));
-      } else if (created.current) {
-        setError(
-          `${customerName} was added, but the account could not be opened: ${message} Press save again to retry the account.`,
-        );
       } else {
-        setError(message);
+        setError(`${message} Nothing was saved.`);
       }
     } finally {
       setBusy(false);
@@ -207,11 +208,47 @@ export function AddCustomer({
         onClick={() => {
           reset();
           setDone(null);
-          setOpen(true);
+          if (mustAskFirst) setAskingCompany(true);
+          else setOpen(true);
         }}
       >
         Add customer
       </Button>
+      <Modal
+        open={askingCompany}
+        onClose={() => setAskingCompany(false)}
+        title="Which company is this customer with?"
+        description="A customer's credit is with one company. Choose it first."
+        size="sm"
+      >
+        <form
+          className="form-stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!pickedCompany) return;
+            setAskingCompany(false);
+            setOpen(true);
+          }}
+        >
+          <Field id="add-customer-company" label="Company" required>
+            <Select
+              id="add-customer-company"
+              value={pickedCompany}
+              onChange={(event) => setPickedCompany(event.target.value)}
+              placeholder="Choose a company"
+              options={companies.map((company) => ({ value: company.id, label: company.name }))}
+            />
+          </Field>
+          <div className="form-actions">
+            <Button variant="secondary" type="button" onClick={() => setAskingCompany(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!pickedCompany}>
+              Continue
+            </Button>
+          </div>
+        </form>
+      </Modal>
       {done ? <p role="status">{done}</p> : null}
       <Modal
         open={open && stepUpRetry === null}
@@ -287,7 +324,7 @@ export function AddCustomer({
             <Field
               id="add-customer-days"
               label="Usual days to pay"
-              hint="Only a note for your team. It does not stop a sale."
+              hint="How many days they have to pay. It sets when each charge falls due and when it counts as overdue."
               optional
             >
               <input

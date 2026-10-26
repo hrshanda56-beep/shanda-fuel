@@ -248,7 +248,7 @@ test.describe('My Shift capture', () => {
       route.fulfill({
         status: 403,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'FORBIDDEN', message: 'internal detail' }),
+        body: JSON.stringify({ error: 'FORBIDDEN', message: 'Not allowed.' }),
       }),
     );
     await page.goto('/my-shift');
@@ -258,6 +258,6 @@ test.describe('My Shift capture', () => {
     await expect(
       page.getByText('You are not allowed to record this reading. Tell your supervisor.'),
     ).toBeVisible();
-    await expect(page.getByText('internal detail')).toHaveCount(0);
+    await expect(page.getByText('FORBIDDEN')).toHaveCount(0);
   });
 });

@@ -2,7 +2,7 @@
 import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   buildContextHref,
@@ -210,6 +210,7 @@ export function CustomerWorkspace({
   };
 }) {
   const contextFetch = useContextFetch();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
@@ -375,6 +376,11 @@ export function CustomerWorkspace({
                     ?.legalEntities ?? [];
                 return companies.length === 1 ? (companies[0]?.id ?? null) : null;
               })()
+            }
+            companies={
+              context?.available?.organisations
+                .find((o) => o.id === current.organisationId)
+                ?.legalEntities.map((entity) => ({ id: entity.id, name: entity.name })) ?? []
             }
             canAdd={capabilities?.manageCustomer ?? false}
             canOpenAccount={capabilities?.openAccount ?? false}
@@ -588,6 +594,11 @@ export function CustomerWorkspace({
                           <Link
                             className="button button-primary customer-open"
                             href={customerHref(customer)}
+                            onClick={(event) => {
+                              // Go there explicitly, so the row's own click can never swallow it.
+                              event.preventDefault();
+                              router.push(customerHref(customer));
+                            }}
                           >
                             Open full account
                             <Icon name="arrow-right" />

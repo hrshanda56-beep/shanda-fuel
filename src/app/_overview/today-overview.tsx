@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import { formatBusinessDate } from '@/design-system/formatters';
 import { Icon, type IconName } from '@/design-system/icons';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
+import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
 
 import { businessToday } from '@/modules/reporting/period';
@@ -23,6 +24,7 @@ import {
   litresSeries,
   plotValue,
   productTotals,
+  signedLitres,
   signedMoney,
   varianceTone,
   type ChartRange,
@@ -32,6 +34,10 @@ import {
 } from './dashboard-figures';
 import { FinanceTiles } from '@/modules/owner/ui/finance-tiles';
 import type { FinanceTile } from '@/modules/reporting/finance-tiles';
+import {
+  countDaysWithoutReport,
+  type DashboardSnapshot,
+} from '@/modules/reporting/dashboard-snapshot';
 
 import { PerformanceChart } from './performance-chart';
 import {
@@ -120,6 +126,9 @@ export function TodayOverview({
   const [daily, setDaily] = useState<Section<DailyReport>>(
     initialData?.daily ?? { status: 'loading' },
   );
+  const [snapshot, setSnapshot] = useState<Section<DashboardSnapshot>>(
+    initialData?.snapshot ?? { status: 'loading' },
+  );
   const [finance, setFinance] = useState<Section<readonly FinanceTile[]>>(
     initialData?.finance ?? { status: 'loading' },
   );
@@ -161,6 +170,7 @@ export function TodayOverview({
       operations: Section<TodayOperations> | null;
       chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
       finance?: Section<readonly FinanceTile[]>;
+      snapshot?: Section<DashboardSnapshot>;
     }>(`/api/dashboard?${params}`, controller.signal, 'Sales could not be loaded.').then(
       (section) => {
         if (section.status === 'ready') {
@@ -168,12 +178,14 @@ export function TodayOverview({
           setCustomers(section.data.customers);
           if (section.data.operations) setOperations(section.data.operations);
           setFinance(section.data.finance ?? { status: 'forbidden' });
+          setSnapshot(section.data.snapshot ?? { status: 'forbidden' });
           setChart({ ...section.data.chart, key: `${tenantId}|${stationId ?? ''}|30D` });
         } else {
           setDaily(section);
           setCustomers(section);
           setOperations(section);
           setFinance(section);
+          setSnapshot(section);
           setChart({ ...section, key: `${tenantId}|${stationId ?? ''}|30D` });
         }
       },
@@ -300,7 +312,7 @@ export function TodayOverview({
           {daily.status === 'ready' && daily.data.filters?.fromDate
             ? formatBusinessDate(daily.data.filters.fromDate)
             : 'today'}
-          . Expected cash and stock variance are not available yet.
+          .
         </p>
         <dl
           className="today-figures"
@@ -350,6 +362,16 @@ export function TodayOverview({
             sub={totals ? 'Credit and prepaid accounts' : null}
           />
         </dl>
+        {snapshot.status === 'ready' ? (
+          <SnapshotTiles
+            snapshot={snapshot.data}
+            daysWithoutReport={
+              daily.status === 'ready' ? countDaysWithoutReport(daily.data.rows) : null
+            }
+            reportsHref={reportsHref}
+            dailyHref={dailyHref}
+          />
+        ) : null}
         {/* Money at a glance: only for people allowed to see the management figures. */}
         {finance.status === 'ready' ? (
           <div style={{ marginBlockStart: 'var(--space-6)' }}>
@@ -551,6 +573,66 @@ function Figure({
   );
 }
 
+function SnapshotTiles({
+  snapshot,
+  daysWithoutReport,
+  reportsHref,
+  dailyHref,
+}: {
+  snapshot: DashboardSnapshot;
+  daysWithoutReport: number | null;
+  reportsHref: string;
+  dailyHref: string;
+}) {
+  const { cash, stockVariance } = snapshot;
+  const litres = snapshot.litresByProduct.length
+    ? snapshot.litresByProduct
+        .map((row) => `${row.productName} ${formatTileLitres(row.litres)}`)
+        .join(' · ')
+    : 'No fuel sold yet';
+  return (
+    <section
+      className="metric-grid"
+      aria-label="Litres, cash and stock"
+      style={{ marginBlockStart: 'var(--space-6)' }}
+    >
+      <MetricCard label="Litres sold by fuel" value={litres} href={reportsHref} />
+      <MetricCard
+        label="Cash expected"
+        value={formatTileMoney(cash.expected)}
+        meta={`Collected ${formatTileMoney(cash.collected)} · ${
+          varianceTone(cash.difference) === 'none'
+            ? 'matches'
+            : `${signedMoney(cash.difference)} difference`
+        }`}
+        tone={varianceTone(cash.difference) === 'short' ? 'critical' : 'default'}
+        href={reportsHref}
+      />
+      <MetricCard
+        label="Stock variance"
+        value={stockVariance.litres === null ? 'Not available' : signedLitres(stockVariance.litres)}
+        meta={
+          stockVariance.litres === null
+            ? 'No tank has a dip reading yet.'
+            : `${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured`
+        }
+        href="/inventory"
+      />
+      <MetricCard
+        label="Reports not submitted"
+        value={daysWithoutReport === null ? 'Not available' : String(daysWithoutReport)}
+        meta={
+          daysWithoutReport === 0
+            ? 'Every day has a report.'
+            : 'Days with activity but no approved report'
+        }
+        tone={daysWithoutReport ? 'critical' : 'default'}
+        href={dailyHref}
+      />
+    </section>
+  );
+}
+
 function OperationsRow({ operations, href }: { operations: TodayOperations; href: string }) {
   const close = CLOSE_STATUS_PRESENTATION[operations.status.close];
   const approval = approvalLabel(operations.status.approval);
@@ -653,4 +735,5 @@ export type DashboardInitialData = {
   operations: Section<TodayOperations> | null;
   chart: Section<{ sales: { rows: readonly SalesRow[] } }>;
   finance?: Section<readonly FinanceTile[]>;
+  snapshot?: Section<DashboardSnapshot>;
 };

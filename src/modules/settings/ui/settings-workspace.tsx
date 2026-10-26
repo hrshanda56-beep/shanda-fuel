@@ -205,6 +205,10 @@ export function SettingsStations({
               items={[
                 { label: 'Code', value: station.code },
                 { label: 'Time zone', value: station.timezone },
+                {
+                  label: 'Status',
+                  value: station.status === 'ONBOARDING' ? 'Setting up' : 'Live',
+                },
               ]}
             />
             {canManage && tenantId ? <EditStation tenantId={tenantId} station={station} /> : null}
@@ -217,8 +221,17 @@ export function SettingsStations({
   );
 }
 
-export function SettingsWorkspace({ view }: { view: SettingsView }) {
-  const [tab, setTab] = useState<Tab>('organisation');
+export function SettingsWorkspace({
+  view,
+  initialTab,
+}: {
+  view: SettingsView;
+  /** A section to open first, e.g. from a link on the readiness list. */
+  initialTab?: string;
+}) {
+  const [tab, setTab] = useState<Tab>(
+    TABS.some((item) => item.value === initialTab) ? (initialTab as Tab) : 'organisation',
+  );
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
   if (!organisation) {

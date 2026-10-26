@@ -131,9 +131,13 @@ export function hasCurrentStepUp(context: ExpenseCommandContext, now: Date = new
 
 export function assertStepUp(context: ExpenseCommandContext, why: string): void {
   if (!hasCurrentStepUp(context)) {
-    throw new AppError('FORBIDDEN', `${why} requires a recent strong-authentication step-up`, {
-      stepUpRequired: true,
-    });
+    throw new AppError(
+      'STEP_UP_REQUIRED',
+      `${why} requires a recent strong-authentication step-up`,
+      {
+        stepUpRequired: true,
+      },
+    );
   }
 }
 

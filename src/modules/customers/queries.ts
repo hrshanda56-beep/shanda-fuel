@@ -12,6 +12,7 @@ import type {
 import { customerStatementQuerySchema } from './validation';
 import { authorizeCustomerCommand } from './application';
 import { withTenantTransaction } from '../../platform/db/transaction';
+import { computeAccountAgeing, dueDateFor } from './ageing';
 import { deriveAccountBalance } from './domain';
 import { loadAccount } from './persistence';
 import { isPermissionGranted } from '../../platform/security/permissions';
@@ -60,6 +61,9 @@ export type CustomerAccountSummary = Readonly<{
   currency: string;
   creditLimit: string | null;
   creditDays: number | null;
+  /** The oldest charge still unpaid and the date it falls due (its date plus the credit days). */
+  oldestUnpaidDate?: string | null;
+  dueBy?: string | null;
   balance: string | null;
   availableBalance: string | null;
   availableCredit: string | null;
@@ -438,22 +442,40 @@ export async function getCustomerAccountsFromRequest(
           order by e.occurred_at desc, e.id desc
           limit 50`
       : sql`select null as unavailable where false`;
+    // Every charge and payment on this customer's credit accounts, to find what is still unpaid.
+    const ledgerRowsQuery = query.customerId
+      ? sql`
+          select e.account_id, e.id, e.direction, e.business_date, e.amount::text as amount
+          from app.customer_ledger_entries e
+          where e.tenant_id = ${context.tenantId}
+            and e.customer_id = ${query.customerId}
+            and e.account_type = 'CREDIT'
+          order by e.business_date, e.occurred_at, e.id`
+      : sql`select null as unavailable where false`;
     const sections = await transaction.execute<{
       rows: CustomerAccountSummaryRow[];
       products: CustomerProductBalanceRow[];
       stationRows: CustomerAccountStationRow[];
       transactionRows: CustomerTransactionRow[];
+      ledgerRows?: Array<{
+        account_id: string;
+        id: string;
+        direction: 'INCREASE' | 'DECREASE';
+        business_date: string;
+        amount: string;
+      }>;
     }>(sql`
- with account_rows as (${rowsQuery}), product_rows as (${productsQuery}), station_rows as (${stationRowsQuery}), transaction_rows as (${transactionRowsQuery})
+ with account_rows as (${rowsQuery}), product_rows as (${productsQuery}), station_rows as (${stationRowsQuery}), transaction_rows as (${transactionRowsQuery}), ledger_rows as (${ledgerRowsQuery})
  select coalesce((select json_agg(account_rows) from account_rows),'[]'::json) as rows,
  coalesce((select json_agg(product_rows) from product_rows),'[]'::json) as products,
  coalesce((select json_agg(station_rows) from station_rows),'[]'::json) as "stationRows",
- coalesce((select json_agg(transaction_rows) from transaction_rows),'[]'::json) as "transactionRows"
+ coalesce((select json_agg(transaction_rows) from transaction_rows),'[]'::json) as "transactionRows",
+ coalesce((select json_agg(ledger_rows) from ledger_rows),'[]'::json) as "ledgerRows"
  `);
     const snapshot = sections[0];
     if (!snapshot)
       throw new AppError('INVARIANT_VIOLATION', 'Customer account summary was not returned');
-    const { rows, products, stationRows, transactionRows } = snapshot;
+    const { rows, products, stationRows, transactionRows, ledgerRows = [] } = snapshot;
     const stationsByAccount = new Map<string, string[]>();
     for (const station of stationRows) {
       const current = stationsByAccount.get(station.account_id) ?? [];
@@ -488,6 +510,30 @@ export async function getCustomerAccountsFromRequest(
         stationsByAccount.get(row.account_id ?? '') ?? [],
       );
       if (account) {
+        if (account.accountType === 'CREDIT') {
+          const lines = ledgerRows.filter((line) => line.account_id === account.accountId);
+          if (lines.length > 0) {
+            const lastDate = lines.reduce(
+              (latest, line) => (line.business_date > latest ? line.business_date : latest),
+              lines[0]!.business_date,
+            );
+            const oldest = computeAccountAgeing(
+              lines.map((line) => ({
+                id: line.id,
+                businessDate: line.business_date,
+                direction: line.direction,
+                amount: line.amount,
+              })),
+              { asAt: lastDate },
+            ).oldestOpenChargeDate;
+            (customer.accounts as CustomerAccountSummary[]).push({
+              ...account,
+              oldestUnpaidDate: oldest,
+              dueBy: oldest ? dueDateFor(oldest, account.creditDays) : null,
+            });
+            continue;
+          }
+        }
         (customer.accounts as CustomerAccountSummary[]).push(account);
       }
     }

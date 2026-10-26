@@ -594,6 +594,7 @@ async function readInventory(
     capacity: string;
     reorder_level: string | null;
     acceptable_variance: string | null;
+    variance_red: string | null;
     expected: string;
     physical: string | null;
     variance: string | null;
@@ -627,6 +628,7 @@ async function readInventory(
       p.code as product_code, p.name as product_name,
       t.capacity_litres::text as capacity, t.reorder_level_litres::text as reorder_level,
       t.acceptable_variance_litres::text as acceptable_variance,
+      t.variance_red_litres::text as variance_red,
       coalesce(m.expected, '0') as expected, d.physical,
       case when d.physical is null then null else (d.physical::numeric - coalesce(m.expected, '0')::numeric)::text end as variance,
       coalesce(del.delivery_litres, '0') as delivery_litres,
@@ -653,6 +655,7 @@ async function readInventory(
     reorderLevelLitres: row.reorder_level === null ? null : formatLitres(row.reorder_level),
     acceptableVarianceLitres:
       row.acceptable_variance === null ? null : formatLitres(row.acceptable_variance),
+    varianceRedLitres: row.variance_red === null ? null : formatLitres(row.variance_red),
     expectedLitres: formatLitres(row.expected),
     physicalLitres: row.physical === null ? null : formatLitres(row.physical),
     varianceLitres: row.variance === null ? null : formatLitres(row.variance),

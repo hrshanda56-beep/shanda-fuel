@@ -62,6 +62,15 @@ const createTankPayload = authorityPayload.extend({
   capacityLitres: decimalText,
   reorderLevelLitres: decimalText.nullish(),
   acceptableVarianceLitres: decimalText.nullish(),
+  /** Red limit: above it a difference is urgent. Empty means twice the yellow limit. */
+  varianceRedLitres: decimalText.nullish(),
+});
+
+/** Change a tank's two variance limits: yellow (explain) and red (urgent). */
+const setTankVarianceLimitsPayload = authorityPayload.extend({
+  tankId: uuid,
+  acceptableVarianceLitres: decimalText.nullable(),
+  varianceRedLitres: decimalText.nullable(),
 });
 
 const deactivateTankPayload = authorityPayload.extend({
@@ -219,6 +228,25 @@ function requireIdempotency(request: Request): string {
   return key;
 }
 
+/** Yellow and red limits: neither is negative, and red is never below yellow. */
+function assertVarianceLimits(
+  yellow: string | null | undefined,
+  red: string | null | undefined,
+): void {
+  if (yellow && litres(yellow).value.isNegative()) {
+    throw new AppError('VALIDATION_FAILED', 'The yellow limit cannot be negative');
+  }
+  if (red && litres(red).value.isNegative()) {
+    throw new AppError('VALIDATION_FAILED', 'The red limit cannot be negative');
+  }
+  if (red && !yellow) {
+    throw new AppError('VALIDATION_FAILED', 'Set the yellow limit before the red one');
+  }
+  if (red && yellow && litres(red).value.lt(litres(yellow).value)) {
+    throw new AppError('VALIDATION_FAILED', 'The red limit cannot be lower than the yellow limit');
+  }
+}
+
 async function insertTank(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
@@ -240,6 +268,7 @@ async function insertTank(
   ) {
     throw new AppError('VALIDATION_FAILED', 'Acceptable variance cannot be negative');
   }
+  assertVarianceLimits(payload.acceptableVarianceLitres, payload.varianceRedLitres);
   const tankId = randomUUID();
   try {
     await transaction.insert(tanks).values({
@@ -254,6 +283,9 @@ async function insertTank(
         : null,
       acceptableVarianceLitres: payload.acceptableVarianceLitres
         ? litres(payload.acceptableVarianceLitres).toString()
+        : null,
+      varianceRedLitres: payload.varianceRedLitres
+        ? litres(payload.varianceRedLitres).toString()
         : null,
       status: 'ACTIVE',
       createdBy: context.authority.membership.membershipId,
@@ -288,6 +320,57 @@ export async function createTankFromRequest(request: Request, input: unknown) {
     execute: async (transaction) => {
       const result = await insertTank(transaction, context, payload);
       return result;
+    },
+  });
+}
+
+export async function setTankVarianceLimitsFromRequest(request: Request, input: unknown) {
+  const payload = setTankVarianceLimitsPayload.parse(input);
+  assertVarianceLimits(payload.acceptableVarianceLitres, payload.varianceRedLitres);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'SetTankVarianceLimits',
+    permissionCode: 'inventory.tank.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_VARIANCE_LIMITS_SET',
+      subjectType: 'Tank',
+      subjectId: payload.tankId,
+    },
+    execute: async (transaction) => {
+      const tank = await loadTankForUpdate(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+      });
+      await transaction
+        .update(tanks)
+        .set({
+          acceptableVarianceLitres: payload.acceptableVarianceLitres
+            ? litres(payload.acceptableVarianceLitres).toString()
+            : null,
+          varianceRedLitres: payload.varianceRedLitres
+            ? litres(payload.varianceRedLitres).toString()
+            : null,
+          updatedBy: context.authority.membership.membershipId,
+          version: tank.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(tanks.tenantId, context.tenantId),
+            eq(tanks.stationId, context.stationId),
+            eq(tanks.id, tank.id),
+          ),
+        );
+      return {
+        tankId: tank.id,
+        acceptableVarianceLitres: payload.acceptableVarianceLitres ?? null,
+        varianceRedLitres: payload.varianceRedLitres ?? null,
+      };
     },
   });
 }

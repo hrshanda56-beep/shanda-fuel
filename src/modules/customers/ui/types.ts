@@ -19,6 +19,9 @@ export type CustomerAccount = {
   currency: string;
   creditLimit: string | null;
   creditDays?: number | null;
+  /** The oldest charge still unpaid, and the date it falls due (its date plus the credit days). */
+  oldestUnpaidDate?: string | null;
+  dueBy?: string | null;
   balance: string | null;
   availableBalance: string | null;
   availableCredit: string | null;

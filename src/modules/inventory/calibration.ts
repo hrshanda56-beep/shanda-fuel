@@ -105,9 +105,14 @@ export function litresForReading(chart: readonly CalibrationPoint[], reading: st
  */
 export function parseCalibrationText(text: string): CalibrationPoint[] {
   const rows: CalibrationPoint[] = [];
+  let firstLine = true;
   for (const [index, raw] of text.split(/\r?\n/).entries()) {
     const line = raw.trim();
     if (line === '') continue;
+    // A spreadsheet export starts with a heading such as "mm,litres": skip it.
+    const isFirst = firstLine;
+    firstLine = false;
+    if (isFirst && /[A-Za-z]/.test(line) && !/\d/.test(line)) continue;
     const parts = line.split(/[\s,;\t]+/).filter((part) => part !== '');
     const numbers = parts.map((part) => part.replace(/,/g, ''));
     if (numbers.length !== 2 || !numbers.every((value) => /^\d+(?:\.\d+)?$/.test(value))) {

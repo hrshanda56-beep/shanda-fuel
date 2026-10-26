@@ -193,6 +193,53 @@ describe('documents', () => {
     expect(download.expiresInSeconds).toBe(300);
   });
 
+  it("attaches the supplier's own invoice file to a supplier document of the same company", async () => {
+    const supplierId = 'a9f00000-0000-4000-8000-000000000091';
+    const documentId = 'a9f00000-0000-4000-8000-000000000092';
+    await client.unsafe(`
+      insert into app.suppliers (id, tenant_id, code, legal_name, created_by, updated_by) values
+        ('${supplierId}', '${ids.tenant}', 'A9F-SUP', 'Docs Supplier', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      insert into app.supplier_documents
+        (id, tenant_id, legal_entity_id, supplier_id, document_type, reference_number, document_date, amount, state, created_by)
+        values ('${documentId}', '${ids.tenant}', '${ids.legal}', '${supplierId}', 'INVOICE', 'A9F-INV-1', '2026-10-20', 100, 'SUBMITTED', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+    `);
+    const storage = new FakeStorage();
+    const fields = {
+      tenantId: ids.tenant,
+      stationId: ids.stationA,
+      subjectType: 'SUPPLIER_DOCUMENT',
+      subjectId: documentId,
+      kind: 'INVOICE',
+    };
+    const uploaded = await uploadDocumentFromRequest(
+      request(SUPERVISOR),
+      form(fields, { name: 'invoice.pdf', type: 'application/pdf', body: pdf('invoice') }),
+      { storage },
+    );
+    expect(uploaded).toMatchObject({ subjectType: 'SUPPLIER_DOCUMENT', subjectId: documentId });
+    // It is listed from the other station too, because an invoice belongs to the company.
+    const listed = await listDocumentsFromRequest(request(SUPERVISOR), {
+      tenantId: ids.tenant,
+      stationId: ids.stationA,
+      subjectType: 'SUPPLIER_DOCUMENT',
+      subjectId: documentId,
+    });
+    expect(listed.items.map((item) => item.documentId)).toEqual([uploaded.documentId]);
+    // A record that does not exist is refused.
+    await expect(
+      uploadDocumentFromRequest(
+        request(SUPERVISOR),
+        form(
+          { ...fields, subjectId: 'a9f00000-0000-4000-8000-0000000000ff' },
+          { name: 'invoice.pdf', type: 'application/pdf', body: pdf('x') },
+        ),
+        { storage },
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
   it('refuses a file whose content does not match what it claims to be', async () => {
     const storage = new FakeStorage();
     const before = await count();

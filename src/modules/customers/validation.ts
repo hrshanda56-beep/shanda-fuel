@@ -166,72 +166,99 @@ export const setCustomerAccountStationsSchema = z
   })
   .superRefine(refineStationScope);
 
+/** The fields that describe an account, shared by opening one alone and by creating a customer with one. */
+const customerAccountFields = {
+  accountType: customerAccountTypeSchema,
+  currency,
+  creditLimit: decimalText.optional(),
+  /** Usual days to pay (0 to 365). Informational: it never blocks a sale. */
+  creditDays: z.number().int().min(0).max(365).optional(),
+  /**
+   * Marks the credit account as a staff fuel benefit. The credit limit is then the monthly USD
+   * limit (PROPOSED default, awaiting owner sign-off). Changing it later needs the credit-limit
+   * override approval.
+   */
+  staffBenefit: z
+    .object({
+      staffName: z.string().trim().min(1, 'Enter the staff member’s name.').max(200),
+      staffMembershipId: uuid.optional(),
+    })
+    .optional(),
+  /** Optional during onboarding; omitted scope remains unconfigured. */
+  stationScope: customerAccountStationScopeSchema.optional(),
+  stationIds: z.array(uuid).max(100).optional(),
+};
+
+type CustomerAccountRuleInput = {
+  accountType: z.infer<typeof customerAccountTypeSchema>;
+  currency: string;
+  creditLimit?: string | undefined;
+  creditDays?: number | undefined;
+  staffBenefit?: unknown;
+  stationScope?: 'ALL' | 'SELECTED' | undefined;
+  stationIds?: string[] | undefined;
+};
+
+function refineCustomerAccount(input: CustomerAccountRuleInput, refinement: z.RefinementCtx) {
+  refineStationScope(input, refinement);
+  if (input.accountType === 'CREDIT' && (!input.creditLimit || !/[1-9]/.test(input.creditLimit))) {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['creditLimit'],
+      message: 'Credit accounts require a positive credit limit',
+    });
+  }
+  if (input.accountType !== 'CREDIT' && input.creditLimit) {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['creditLimit'],
+      message: 'Only credit accounts have a credit limit.',
+    });
+  }
+  if (input.creditDays !== undefined && input.accountType !== 'CREDIT') {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['creditDays'],
+      message: 'Only credit accounts have a credit period.',
+    });
+  }
+  if (input.staffBenefit && input.accountType !== 'CREDIT') {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['staffBenefit'],
+      message: 'A staff fuel benefit uses a credit account.',
+    });
+  }
+  if (input.staffBenefit && input.currency !== 'USD') {
+    refinement.addIssue({
+      code: 'custom',
+      path: ['currency'],
+      message: 'A staff fuel benefit limit is in US dollars.',
+    });
+  }
+}
+
 export const createCustomerAccountSchema = z
   .object({
     commandType: z.literal('CreateCustomerAccount'),
     tenantId: uuid,
     customerId: uuid,
-    accountType: customerAccountTypeSchema,
-    currency,
-    creditLimit: decimalText.optional(),
-    /** Usual days to pay (0 to 365). Informational: it never blocks a sale. */
-    creditDays: z.number().int().min(0).max(365).optional(),
-    /**
-     * Marks the credit account as a staff fuel benefit. The credit limit is then the monthly USD
-     * limit (PROPOSED default, awaiting owner sign-off). Changing it later needs the credit-limit
-     * override approval.
-     */
-    staffBenefit: z
-      .object({
-        staffName: z.string().trim().min(1, 'Enter the staff member’s name.').max(200),
-        staffMembershipId: uuid.optional(),
-      })
-      .optional(),
-    /** Optional during onboarding; omitted scope remains unconfigured. */
-    stationScope: customerAccountStationScopeSchema.optional(),
-    stationIds: z.array(uuid).max(100).optional(),
+    ...customerAccountFields,
   })
-  .superRefine((input, refinement) => {
-    refineStationScope(input, refinement);
-    if (
-      input.accountType === 'CREDIT' &&
-      (!input.creditLimit || !/[1-9]/.test(input.creditLimit))
-    ) {
-      refinement.addIssue({
-        code: 'custom',
-        path: ['creditLimit'],
-        message: 'Credit accounts require a positive credit limit',
-      });
-    }
-    if (input.accountType !== 'CREDIT' && input.creditLimit) {
-      refinement.addIssue({
-        code: 'custom',
-        path: ['creditLimit'],
-        message: 'Only credit accounts have a credit limit.',
-      });
-    }
-    if (input.creditDays !== undefined && input.accountType !== 'CREDIT') {
-      refinement.addIssue({
-        code: 'custom',
-        path: ['creditDays'],
-        message: 'Only credit accounts have a credit period.',
-      });
-    }
-    if (input.staffBenefit && input.accountType !== 'CREDIT') {
-      refinement.addIssue({
-        code: 'custom',
-        path: ['staffBenefit'],
-        message: 'A staff fuel benefit uses a credit account.',
-      });
-    }
-    if (input.staffBenefit && input.currency !== 'USD') {
-      refinement.addIssue({
-        code: 'custom',
-        path: ['currency'],
-        message: 'A staff fuel benefit limit is in US dollars.',
-      });
-    }
-  });
+  .superRefine(refineCustomerAccount);
+
+/** A new customer and its account in one step, so a failure never leaves half of it behind. */
+export const createCustomerWithAccountSchema = z
+  .object({
+    commandType: z.literal('CreateCustomerWithAccount'),
+    tenantId: uuid,
+    accountReference: z.string().trim().min(1).max(80),
+    displayName: z.string().trim().min(1).max(200),
+    contactMetadata: z.record(z.string(), z.string().trim().max(200)).optional(),
+    legalEntityId: uuid.optional(),
+    ...customerAccountFields,
+  })
+  .superRefine(refineCustomerAccount);
 
 const fuelValueSchema = z.object({
   productId: uuid,

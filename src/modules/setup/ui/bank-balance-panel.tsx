@@ -27,9 +27,12 @@ type Loaded = { accounts: Account[]; canRecord: boolean };
 export function BankBalancePanel({
   tenantId,
   stations,
+  refreshKey = '',
 }: Readonly<{
   tenantId: string;
   stations: ReadonlyArray<{ id: string; name: string; code: string }>;
+  /** Changes whenever the bank accounts change, so the list below is read again. */
+  refreshKey?: string;
 }>) {
   const [stationId, setStationId] = useState<string | undefined>(stations[0]?.id);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -51,9 +54,10 @@ export function BankBalancePanel({
     }
   }, [tenantId]);
 
+  // Read again whenever a bank account is added or changed elsewhere on the page.
   useEffect(() => {
     void Promise.resolve().then(load);
-  }, [load]);
+  }, [load, refreshKey]);
 
   async function save(event: FormEvent<HTMLFormElement>, account: Account) {
     event.preventDefault();

@@ -243,7 +243,17 @@ function AccountSection({
       .trim()
       .toUpperCase();
     const station = overview.stationOptions.find((option) => option.id === stationId);
+    const feePercent = String(data.get('feePercent') ?? '').trim();
+    const feeFixed = String(data.get('feeFixed') ?? '').trim();
     const next = {
+      feePercent:
+        feePercent === '' || (/^\d+(?:\.\d{1,4})?$/.test(feePercent) && Number(feePercent) <= 100)
+          ? undefined
+          : 'Enter a percentage from 0 to 100, for example 1.5, or leave it empty.',
+      feeFixed:
+        feeFixed === '' || /^\d+(?:\.\d{1,4})?$/.test(feeFixed)
+          ? undefined
+          : 'Enter an amount, for example 0.10, or leave it empty.',
       providerId: providerId ? undefined : 'Choose a provider.',
       stationId: station ? undefined : 'Choose a station.',
       displayName: displayName ? undefined : 'Enter a name for this account.',
@@ -264,6 +274,8 @@ function AccountSection({
           currency,
           accountStationId: station.id,
           legalEntityId: station.legalEntityId,
+          feePercent: feePercent || null,
+          feeFixed: feeFixed || null,
           metadata: {},
         },
         `${displayName} was added for ${station.name}.`,
@@ -293,6 +305,9 @@ function AccountSection({
                   {account.stationId
                     ? (stationName.get(account.stationId) ?? 'Another station')
                     : 'All stations'}
+                  {account.feePercent || account.feeFixed
+                    ? ` · Charges ${[account.feePercent ? `${Number(account.feePercent)}%` : '', account.feeFixed ? `${Number(account.feeFixed)} each time` : ''].filter(Boolean).join(' + ')}`
+                    : ''}
                 </span>
               </div>
               <StatusBadge tone={account.status === 'ACTIVE' ? 'positive' : 'neutral'}>
@@ -362,6 +377,34 @@ function AccountSection({
             >
               <input id="account-currency" name="currency" autoComplete="off" maxLength={3} />
             </Field>
+            <Field
+              id="account-fee-percent"
+              label="Charge as a percentage (%)"
+              hint="What the provider keeps from each settlement, for example 1 for EcoCash at 1%. Leave empty if there is none."
+              error={errors.feePercent}
+              optional
+            >
+              <input
+                id="account-fee-percent"
+                name="feePercent"
+                inputMode="decimal"
+                autoComplete="off"
+              />
+            </Field>
+            <Field
+              id="account-fee-fixed"
+              label="Fixed charge each time"
+              hint="A flat amount the provider keeps on top, if any."
+              error={errors.feeFixed}
+              optional
+            >
+              <input
+                id="account-fee-fixed"
+                name="feeFixed"
+                inputMode="decimal"
+                autoComplete="off"
+              />
+            </Field>
             <div className={styles.formActions}>
               <Button type="submit" loading={busy}>
                 Add provider account
@@ -388,18 +431,34 @@ function BankSection({
 }) {
   const { run, busy, outcome } = useCommand(reload, onDenied);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  // A bank account belongs to the company, not to a station: every station of the company uses it.
+  // Any one of the company's stations is only needed to prove the person may act for it.
+  const companies = [
+    ...new Map(
+      overview.stationOptions.map((option) => [
+        option.legalEntityId,
+        {
+          id: option.legalEntityId,
+          name: option.legalEntityName ?? 'Company',
+          stationId: option.id,
+        },
+      ]),
+    ).values(),
+  ];
+  const companyName = new Map(companies.map((company) => [company.id, company.name]));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    const stationId = String(data.get('stationId') ?? '');
-    const station = overview.stationOptions.find((option) => option.id === stationId);
+    const companyId = String(data.get('companyId') ?? '');
+    const company = companies.find((option) => option.id === companyId);
+    const station = overview.stationOptions.find((option) => option.id === company?.stationId);
     const name = String(data.get('name') ?? '').trim();
     const bankName = String(data.get('bankName') ?? '').trim();
     const accountReferenceMasked = String(data.get('accountReferenceMasked') ?? '').trim();
     const next = {
-      stationId: station ? undefined : 'Choose a station.',
+      companyId: company ? undefined : 'Choose the company this account belongs to.',
       name: name ? undefined : 'Enter an account name.',
       bankName: bankName ? undefined : 'Enter the bank name.',
       accountReferenceMasked: accountReferenceMasked
@@ -420,7 +479,7 @@ function BankSection({
           accountReferenceMasked,
           currency: 'USD',
         },
-        `${name} was added for ${station.name}'s legal entity.`,
+        `${name} was added to ${company?.name ?? 'the company'}. All its stations can use it.`,
       );
       if (saved) form.reset();
     });
@@ -443,7 +502,8 @@ function BankSection({
               <div className={styles.rowMain}>
                 <span className={styles.rowTitle}>{bank.name}</span>
                 <span className={styles.rowDetail}>
-                  {bank.bankName} · {bank.accountReferenceMasked} · {bank.currency}
+                  {bank.bankName} · {bank.accountReferenceMasked} · {bank.currency} ·{' '}
+                  {companyName.get(bank.legalEntityId) ?? 'Company'}
                 </span>
               </div>
               <StatusBadge tone={bank.status === 'ACTIVE' ? 'positive' : 'neutral'}>
@@ -455,16 +515,19 @@ function BankSection({
       )}
       {overview.canManagePayments ? (
         <form className={styles.form} onSubmit={submit} noValidate aria-label="Add bank account">
-          <Field id="bank-station" label="Station" error={errors.stationId} required>
+          <Field
+            id="bank-company"
+            label="Company"
+            hint="The account belongs to the company. All its stations use it."
+            error={errors.companyId}
+            required
+          >
             <Select
-              id="bank-station"
-              name="stationId"
-              defaultValue=""
-              placeholder="Choose a station"
-              options={overview.stationOptions.map((station) => ({
-                value: station.id,
-                label: `${station.name} (${station.code})`,
-              }))}
+              id="bank-company"
+              name="companyId"
+              defaultValue={companies.length === 1 ? (companies[0]?.id ?? '') : ''}
+              placeholder="Choose a company"
+              options={companies.map((company) => ({ value: company.id, label: company.name }))}
             />
           </Field>
           <Field id="bank-account-name" label="Account name" error={errors.name} required>
@@ -522,7 +585,11 @@ export function PaymentsView({ overview, reload }: { overview: Ready; reload: ()
       <ProviderSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <AccountSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <BankSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
-      <BankBalancePanel tenantId={overview.tenantId} stations={overview.stationOptions} />
+      <BankBalancePanel
+        tenantId={overview.tenantId}
+        stations={overview.stationOptions}
+        refreshKey={overview.bankAccounts.map((bank) => `${bank.id}:${bank.status}`).join(',')}
+      />
       <StepUpDialog
         open={pending !== null}
         tenantId={overview.tenantId}

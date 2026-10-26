@@ -134,7 +134,7 @@ test.describe('Setup readiness and payment setup', () => {
     const bare = page.getByRole('region', { name: /Setup Bare Station/ });
     await expect(bare).toBeVisible();
     await expect(bare.getByText('Not entered').first()).toBeVisible();
-    await expect(bare.getByText('Setup incomplete')).toBeVisible();
+    await expect(bare.getByText('Setting up', { exact: true })).toBeVisible();
     await expect(bare.getByText('No tanks have been entered.')).toBeVisible();
     await expect(
       bare.getByText(/transactions|Blocked until setup is complete/).first(),

@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
-import { getAuditSigningKey } from '../config/env';
+import { getAuditSigningKey, getServerEnv } from '../config/env';
 
 export const CLERK_STEP_UP_COOKIE = 'shanda-fuel.clerk-step-up';
 export const CLERK_STEP_UP_CHALLENGE_COOKIE = 'shanda-fuel.clerk-step-up-challenge';
@@ -16,7 +16,10 @@ export type ClerkStepUpAction =
 export type ClerkReverificationLevel = 'strict' | 'strict_mfa';
 
 const TOKEN_VERSION = 'v1';
-const TOKEN_TTL_MS = 10 * 60_000;
+/** How long one identity check covers privileged actions (STEP_UP_REUSE_MINUTES, default 15). */
+export function stepUpTtlMs(): number {
+  return getServerEnv().STEP_UP_REUSE_MINUTES * 60_000;
+}
 const CHALLENGE_TTL_MS = 5 * 60_000;
 
 type SignedToken = {
@@ -79,7 +82,7 @@ function parse(value: string | undefined, now = Date.now()): SignedToken | null 
       payload.expiresAt <= now ||
       payload.issuedAt > now ||
       payload.expiresAt <= payload.issuedAt ||
-      payload.expiresAt - payload.issuedAt > TOKEN_TTL_MS
+      payload.expiresAt - payload.issuedAt > stepUpTtlMs()
     ) {
       return null;
     }
@@ -182,9 +185,9 @@ export function issueClerkStepUpAssertion(input: {
       level: input.level,
       nonce: randomUUID(),
       issuedAt: now,
-      expiresAt: now + TOKEN_TTL_MS,
+      expiresAt: now + stepUpTtlMs(),
     }),
-    Math.floor(TOKEN_TTL_MS / 1000),
+    Math.floor(stepUpTtlMs() / 1000),
   );
 }
 

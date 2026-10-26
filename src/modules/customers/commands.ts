@@ -30,6 +30,7 @@ import {
   completeCustomerFuelTransactionSchema,
   createCustomerAccountSchema,
   createCustomerSchema,
+  createCustomerWithAccountSchema,
   setCustomerAccountStationsSchema,
   setCustomerLegalEntitySchema,
   activateCustomerSchema,
@@ -47,6 +48,7 @@ export const CUSTOMER_COMMAND_TYPES = [
   'ActivateCustomer',
   'DeactivateCustomer',
   'CreateCustomerAccount',
+  'CreateCustomerWithAccount',
   'SetCustomerLegalEntity',
   'SetCustomerAccountStations',
   'RequestCustomerFuelAuthorization',
@@ -185,6 +187,58 @@ export async function createCustomerAccountFromRequest(request: Request, body: u
       subjectId: (result) => (result as { accountId: string }).accountId,
     },
     execute: (transaction) => createCustomerAccountInTransaction(transaction, context, input),
+  });
+}
+
+/**
+ * Creates a customer and opens its account in one transaction, after the identity check. If any
+ * part is refused nothing is saved, and the limit the person typed is never lost to a half-made
+ * customer.
+ */
+export async function createCustomerWithAccountFromRequest(request: Request, body: unknown) {
+  const input = parseCommand(createCustomerWithAccountSchema, body);
+  const context = await resolveCustomerCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+  });
+  // The customer half needs its own permission as well as the account's.
+  authorizeCustomerCommand(context, 'customer.manage');
+  const { commandType: _commandType, ...fields } = input;
+  void _commandType;
+  return executeCustomerCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'customer.account.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: customerRequestHash(input),
+    audit: {
+      actionCode: 'CUSTOMER.CREATED_WITH_ACCOUNT',
+      subjectType: 'Customer',
+      subjectId: (result) => (result as { customerId: string }).customerId,
+    },
+    execute: async (transaction) => {
+      const customer = await createCustomerInTransaction(transaction, context, {
+        commandType: 'CreateCustomer',
+        tenantId: fields.tenantId,
+        accountReference: fields.accountReference,
+        displayName: fields.displayName,
+        ...(fields.contactMetadata ? { contactMetadata: fields.contactMetadata } : {}),
+        ...(fields.legalEntityId ? { legalEntityId: fields.legalEntityId } : {}),
+      });
+      const account = await createCustomerAccountInTransaction(transaction, context, {
+        commandType: 'CreateCustomerAccount',
+        tenantId: fields.tenantId,
+        customerId: customer.customerId,
+        accountType: fields.accountType,
+        currency: fields.currency,
+        ...(fields.creditLimit !== undefined ? { creditLimit: fields.creditLimit } : {}),
+        ...(fields.creditDays !== undefined ? { creditDays: fields.creditDays } : {}),
+        ...(fields.staffBenefit ? { staffBenefit: fields.staffBenefit } : {}),
+        ...(fields.stationScope ? { stationScope: fields.stationScope } : {}),
+        ...(fields.stationIds ? { stationIds: fields.stationIds } : {}),
+      });
+      return { ...customer, ...account };
+    },
   });
 }
 

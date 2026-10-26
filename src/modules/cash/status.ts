@@ -5,8 +5,9 @@ import { ExactDecimal } from '../../platform/domain/primitives';
  * decides them, so the cash page, the reports and any export say the same thing.
  *
  * Nothing here is stored. The names are worked out from the amounts and states already recorded.
- * Bank reference and deposit proof are NOT required to bank cash (the owner has not decided that
- * yet); a missing one is reported as a visible warning only.
+ * Cash is only Fully banked once the bank has confirmed it, and a deposit cannot be confirmed
+ * without its deposit slip. Collected is never banked: it is cash taken from the till and not yet in
+ * a confirmed deposit. A missing bank reference is a visible warning only.
  */
 
 /** The stored/derived custody states the cash workspace already uses. */
@@ -20,7 +21,10 @@ export const CUSTODY_STATES = [
 export type CustodyState = (typeof CUSTODY_STATES)[number];
 
 export const CASH_STATUS_LABELS = {
-  AT_STATION: 'At the station',
+  /** Counted cash nobody has collected yet. */
+  AT_STATION: 'Still at the station',
+  /** Collected from the till, not in a bank deposit yet. It is not banked. */
+  COLLECTED: 'Collected, not banked yet',
   IN_TRANSIT: 'On its way to the bank',
   HELD_BY_MANAGEMENT: 'Held by management',
   PARTLY_BANKED: 'Partly banked',
@@ -29,7 +33,8 @@ export const CASH_STATUS_LABELS = {
 export type CashStatus = keyof typeof CASH_STATUS_LABELS;
 
 const CUSTODY_TO_STATUS: Record<CustodyState, CashStatus> = {
-  AT_STATION: 'AT_STATION',
+  // A collection exists, so the cash has been collected; it is not banked.
+  AT_STATION: 'COLLECTED',
   // A collection that management has received and not yet put into a deposit.
   RECEIVED: 'HELD_BY_MANAGEMENT',
   IN_TRANSIT: 'IN_TRANSIT',
@@ -57,7 +62,7 @@ export function cashStatusLabelForCustody(custodyState: string): string {
 
 /**
  * The status of one collection from its amounts. Exact decimals throughout.
- * Nothing banked yet and nothing in a deposit: at the station, or held by management once
+ * Nothing banked yet and nothing in a deposit: collected, or held by management once
  * management has received it. Partly banked means some of it, but not all, has gone to the bank.
  */
 export function deriveCashStatus(input: {
@@ -74,7 +79,7 @@ export function deriveCashStatus(input: {
   if (allocated.value.gt(0)) {
     return allocated.value.gte(amount.value) ? 'IN_TRANSIT' : 'PARTLY_BANKED';
   }
-  return input.received ? 'HELD_BY_MANAGEMENT' : 'AT_STATION';
+  return input.received ? 'HELD_BY_MANAGEMENT' : 'COLLECTED';
 }
 
 /** Where a handover leaves the cash, from the type of the location that receives it. */
@@ -102,7 +107,7 @@ export type DepositProofFlags = Readonly<{
 export const MISSING_PROOF_LABEL = 'No deposit slip attached';
 export const MISSING_REFERENCE_LABEL = 'No bank reference yet';
 
-/** Warnings only. They never stop a deposit being recorded or confirmed. */
+/** The slip is required to confirm a deposit; this only reports what is missing before that. */
 export function depositProofFlags(input: {
   slipCount: number;
   bankReference: string | null | undefined;

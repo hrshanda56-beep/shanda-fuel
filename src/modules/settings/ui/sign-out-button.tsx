@@ -1,12 +1,10 @@
 'use client';
 
 import { useClerk } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 export function SignOutButton() {
   const { signOut } = useClerk();
-  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,9 +12,8 @@ export function SignOutButton() {
     setPending(true);
     setError(null);
     try {
-      await signOut();
-      router.replace('/login');
-      router.refresh();
+      // Go to the sign-in page as soon as the session ends, rather than via the home page.
+      await signOut({ redirectUrl: '/login' });
     } catch {
       setError('Sign out failed. Please try again.');
     } finally {

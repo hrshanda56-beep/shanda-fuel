@@ -42,6 +42,12 @@ export type OrderWaiting = {
   supplierName: string;
   submittedByMe: boolean;
 };
+export type ExpenseWaiting = {
+  id: string;
+  description: string;
+  amount: string;
+  submittedByMe: boolean;
+};
 /** Supplier invoices and credit notes entered but not yet posted, counted per supplier. */
 export type InvoiceWaiting = { supplierId: string; documentType: string; count: number };
 
@@ -54,6 +60,7 @@ export type ActionCenterFacts = {
   prices?: Section<{ rows: readonly PriceWaiting[]; soleApprover: boolean }>;
   orders?: Section<{ rows: readonly OrderWaiting[]; soleApprover: boolean }>;
   invoices?: Section<{ rows: readonly InvoiceWaiting[] }>;
+  expenses?: Section<{ rows: readonly ExpenseWaiting[]; soleApprover: boolean }>;
   cash: Section<{ collectedButUnbanked: string; pendingBankConfirmation: string }>;
   settlements: Section<{
     toMatch: number;
@@ -198,6 +205,23 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
           ? 'You requested this, so someone else needs to approve it.'
           : 'Check the price, then approve it so it can be used.',
         href: '/settings',
+        tone: 'attention',
+      });
+    }
+  }
+
+  if (facts.expenses?.status === 'unavailable') unavailable.push('Expenses');
+  if (facts.expenses?.status === 'ok') {
+    for (const row of facts.expenses.value.rows) {
+      const blocked = row.submittedByMe && !facts.expenses.value.soleApprover;
+      items.push({
+        id: `expense-${row.id}`,
+        area: 'Approvals',
+        title: `An expense of ${formatUsd(row.amount)} (${row.description}) is waiting for approval`,
+        detail: blocked
+          ? 'You submitted this, so someone else needs to approve it.'
+          : 'Check the receipt, then approve or reject it.',
+        href: '/expenses',
         tone: 'attention',
       });
     }
