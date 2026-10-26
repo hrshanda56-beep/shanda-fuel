@@ -476,7 +476,7 @@ async function assertPaymentReferences(
       if (balance.add(amount).value.gt(limit.value)) {
         throw new AppError(
           'CONFLICT',
-          `This would put ${account.display_name} over their credit limit. Lower the amount or record a payment first.`,
+          `This would put ${account.display_name} over their credit limit. Record a payment first, or ask a manager to approve a higher limit on the customer's page.`,
         );
       }
     } else if (balance.value.lt(amount.value)) {

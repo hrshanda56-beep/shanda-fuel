@@ -97,3 +97,46 @@ describe('customer ageing report', () => {
     expect(CUSTOMER_AGEING_REPORT.emptyMessage).toMatch(/no credit customer owes/i);
   });
 });
+
+describe('due dates and overdue amounts follow the account credit days', () => {
+  it('shows when the oldest charge falls due and what is already past due', () => {
+    const rows = buildCustomerAgeingRows(
+      [
+        {
+          customer: 'Fleet Co',
+          accountReference: 'FLEET-1',
+          creditDays: 14,
+          lines: [
+            { id: 'c1', businessDate: '2026-10-01', direction: 'INCREASE', amount: '100.0000' },
+            { id: 'c2', businessDate: '2026-10-20', direction: 'INCREASE', amount: '50.0000' },
+          ],
+        },
+      ],
+      '2026-10-25',
+    );
+    // 14 days from 1 Oct is 15 Oct: the first charge is 10 days late, the second is not due yet.
+    expect(rows[0]).toMatchObject({
+      oldestUnpaid: '2026-10-01',
+      dueBy: '2026-10-15',
+      current: '50.0000',
+      days1to30: '100.0000',
+      overdue: '100.0000',
+      totalOwed: '150.0000',
+    });
+  });
+
+  it('is not overdue when everything is still inside the credit days', () => {
+    const [row] = buildCustomerAgeingRows(
+      [
+        {
+          customer: 'Fleet Co',
+          accountReference: 'FLEET-1',
+          creditDays: 30,
+          lines: [{ id: 'c1', businessDate: '2026-10-20', direction: 'INCREASE', amount: '80' }],
+        },
+      ],
+      '2026-10-25',
+    );
+    expect(row).toMatchObject({ dueBy: '2026-11-19', overdue: '0.0000' });
+  });
+});

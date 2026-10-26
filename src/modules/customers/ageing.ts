@@ -101,6 +101,13 @@ export function daysBetween(chargeDate: string, asAt: string): number {
   return dayNumber(asAt) - dayNumber(chargeDate);
 }
 
+/** The business date a charge falls due: its own date plus the account's credit days. */
+export function dueDateFor(chargeDate: string, creditDays: number | null | undefined): string {
+  const days = creditDays ?? DEFAULT_CUSTOMER_CREDIT_DAYS;
+  const due = new Date((dayNumber(chargeDate) + days) * 86_400_000);
+  return due.toISOString().slice(0, 10);
+}
+
 export function bucketForAge(ageDays: number): AgeingBucketKey {
   const age = Math.max(0, ageDays);
   const found = AGEING_BUCKETS.find((bucket) => bucket.maxDays === null || age <= bucket.maxDays);

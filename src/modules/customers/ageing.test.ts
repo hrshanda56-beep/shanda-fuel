@@ -155,3 +155,14 @@ describe('computeAccountAgeing', () => {
     expect(ageing.buckets.over90).toBe('10.0000');
   });
 });
+
+describe('when a charge falls due', () => {
+  it('adds the account credit days to the charge date, or 30 when none is set', async () => {
+    const { dueDateFor } = await import('./ageing');
+    expect(dueDateFor('2026-10-01', 14)).toBe('2026-10-15');
+    expect(dueDateFor('2026-10-20', 14)).toBe('2026-11-03');
+    expect(dueDateFor('2026-12-20', 30)).toBe('2027-01-19');
+    expect(dueDateFor('2026-10-01', null)).toBe('2026-10-31');
+    expect(dueDateFor('2026-10-01', 0)).toBe('2026-10-01');
+  });
+});

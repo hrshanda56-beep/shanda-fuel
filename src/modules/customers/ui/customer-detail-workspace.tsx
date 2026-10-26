@@ -155,7 +155,7 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
                   account.creditDays == null
                     ? ''
                     : `. Usually pays within ${account.creditDays} days`
-                }`
+                }${account.dueBy ? `. The oldest unpaid charge (${account.oldestUnpaidDate}) falls due on ${account.dueBy}` : ''}`
           }
         />
       </section>
