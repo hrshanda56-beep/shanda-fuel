@@ -1,17 +1,21 @@
 'use client';
 
 import { useClerk } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 export type AccountAuthProvider = 'CLERK';
 
 export function AccountSignOutItem(_props: { provider?: AccountAuthProvider }) {
   const { signOut } = useClerk();
+  const router = useRouter();
   return (
     <SignOutItem
       run={async () => {
         // Go to the sign-in page as soon as the session ends, rather than via the home page.
         await signOut({ redirectUrl: '/login' });
+        router.replace('/login');
+        router.refresh();
       }}
     />
   );
