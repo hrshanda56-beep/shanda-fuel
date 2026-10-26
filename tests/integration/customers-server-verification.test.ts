@@ -285,6 +285,56 @@ describe('Customers server-side verification (real PostgreSQL, real route handle
 
   afterAll(async () => client?.end());
 
+  it('creates a customer and its account in one command, and saves nothing when it is refused', async () => {
+    const body = {
+      commandType: 'CreateCustomerWithAccount',
+      tenantId: ids.tenant,
+      accountReference: 'CV-ATOMIC-1',
+      displayName: 'Atomic Customer',
+      legalEntityId: ids.legal,
+      accountType: 'CREDIT',
+      currency: 'USD',
+      creditLimit: '500.0000',
+      creditDays: 14,
+      stationScope: 'ALL',
+    };
+    const created = await send(body, 'key-atomic-1');
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const { customerId, accountId } = created.body as { customerId: string; accountId: string };
+    const rows = await client.unsafe<{ credit_limit: string; credit_days: number }[]>(
+      `select credit_limit::text, credit_days from app.customer_accounts where id='${accountId}' and customer_id='${customerId}'`,
+    );
+    expect(rows).toEqual([{ credit_limit: '500.0000', credit_days: 14 }]);
+    expect(await auditRows('CUSTOMER.CREATED_WITH_ACCOUNT', customerId)).toHaveLength(1);
+    // A retry with the same key returns the same result and creates nothing more.
+    const again = await send(body, 'key-atomic-1');
+    expect(again.body).toMatchObject({ customerId, accountId });
+
+    // Without the identity check: refused, and no orphan customer is left behind.
+    const refused = await send(
+      { ...body, accountReference: 'CV-ATOMIC-2', displayName: 'Orphan Customer' },
+      'key-atomic-2',
+      tokens.noStepUp,
+    );
+    expectPlainFailure(refused, 403, 'STEP_UP_REQUIRED', /step-up/i);
+    const orphans = await client.unsafe<{ id: string }[]>(
+      `select id from app.customers where tenant_id='${ids.tenant}' and account_reference='CV-ATOMIC-2'`,
+    );
+    expect(orphans).toEqual([]);
+
+    // An account that cannot be opened (credit without a limit) saves no customer either.
+    const invalid = await send(
+      { ...body, accountReference: 'CV-ATOMIC-3', creditLimit: undefined },
+      'key-atomic-3',
+    );
+    expect(invalid.status).toBe(400);
+    expect(
+      await client.unsafe(
+        `select id from app.customers where tenant_id='${ids.tenant}' and account_reference='CV-ATOMIC-3'`,
+      ),
+    ).toEqual([]);
+  });
+
   it('requires a fresh step-up to change an account scope, and the retry is idempotent', async () => {
     const customer = await createCustomer('CV-SCOPE-1', 'Scope Customer');
     // Opening an account without a scope leaves it unconfirmed.

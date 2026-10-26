@@ -47,9 +47,8 @@ async function post(input: Record<string, unknown>, key: string): Promise<unknow
 }
 
 /**
- * Adds a customer and, when a kind is chosen, opens its first account. The customer record is
- * created once; if opening the account then fails the form says so and a retry only repeats the
- * account step, so no duplicate customer is made.
+ * Adds a customer and, when a kind is chosen, opens its first account. With an account it is one
+ * command after the identity check, so a refusal or a cancelled check saves nothing at all.
  */
 export function AddCustomer({
   tenantId,
@@ -79,7 +78,6 @@ export function AddCustomer({
   const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
   const [done, setDone] = useState<string | null>(null);
   // Keeps one key per create so a retry after a dropped connection cannot make two customers.
-  const created = useRef<{ customerId: string } | null>(null);
   const keys = useRef<{ customer: string; account: string; reference: string } | null>(null);
 
   if (!canAdd) return null;
@@ -93,7 +91,6 @@ export function AddCustomer({
     setStaffName('');
     setError(null);
     setFieldError(null);
-    created.current = null;
     keys.current = null;
   }
 
@@ -117,8 +114,26 @@ export function AddCustomer({
     setBusy(true);
     setError(null);
     try {
-      if (!created.current) {
-        const result = (await post(
+      if (kind) {
+        // One command, so a refusal or a dropped connection leaves nothing half-saved.
+        await post(
+          {
+            commandType: 'CreateCustomerWithAccount',
+            tenantId,
+            accountReference: keys.current.reference,
+            displayName: customerName,
+            ...(phone.trim() ? { contactMetadata: { phone: phone.trim() } } : {}),
+            ...(legalEntityId ? { legalEntityId } : {}),
+            accountType: kind === 'STAFF' ? 'CREDIT' : kind,
+            currency: 'USD',
+            ...(kind === 'CREDIT' || kind === 'STAFF' ? { creditLimit: limit.trim() } : {}),
+            ...(kind === 'CREDIT' && days.trim() ? { creditDays: Number(days.trim()) } : {}),
+            ...(kind === 'STAFF' ? { staffBenefit: { staffName: staffName.trim() } } : {}),
+          },
+          keys.current.customer,
+        );
+      } else {
+        await post(
           {
             commandType: 'CreateCustomer',
             tenantId,
@@ -128,22 +143,6 @@ export function AddCustomer({
             ...(legalEntityId ? { legalEntityId } : {}),
           },
           keys.current.customer,
-        )) as { customerId: string };
-        created.current = { customerId: result.customerId };
-      }
-      if (kind) {
-        await post(
-          {
-            commandType: 'CreateCustomerAccount',
-            tenantId,
-            customerId: created.current.customerId,
-            accountType: kind === 'STAFF' ? 'CREDIT' : kind,
-            currency: 'USD',
-            ...(kind === 'CREDIT' || kind === 'STAFF' ? { creditLimit: limit.trim() } : {}),
-            ...(kind === 'CREDIT' && days.trim() ? { creditDays: Number(days.trim()) } : {}),
-            ...(kind === 'STAFF' ? { staffBenefit: { staffName: staffName.trim() } } : {}),
-          },
-          keys.current.account,
         );
       }
       setDone(
@@ -158,12 +157,8 @@ export function AddCustomer({
       const message = cause instanceof Error ? cause.message : 'This could not be saved.';
       if (!alreadyConfirmed && /step-up/i.test(message)) {
         setStepUpRetry(() => () => void run(true));
-      } else if (created.current) {
-        setError(
-          `${customerName} was added, but the account could not be opened: ${message} Press save again to retry the account.`,
-        );
       } else {
-        setError(message);
+        setError(`${message} Nothing was saved.`);
       }
     } finally {
       setBusy(false);

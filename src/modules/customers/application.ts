@@ -45,6 +45,7 @@ export const CUSTOMER_COMMAND_TYPES = [
   'ActivateCustomer',
   'DeactivateCustomer',
   'CreateCustomerAccount',
+  'CreateCustomerWithAccount',
   'SetCustomerLegalEntity',
   'SetCustomerAccountStations',
   'RequestCustomerFuelAuthorization',
@@ -109,6 +110,13 @@ export const CUSTOMER_COMMAND_POLICY: Readonly<
     requiresExpectedVersion: true,
   },
   CreateCustomerAccount: {
+    permissionCode: 'customer.account.manage',
+    scopeType: 'TENANT',
+    requiresStepUp: true,
+    requiresExpectedVersion: false,
+  },
+  // Both halves at once, so it needs the permissions of both and the identity check of the account.
+  CreateCustomerWithAccount: {
     permissionCode: 'customer.account.manage',
     scopeType: 'TENANT',
     requiresStepUp: true,

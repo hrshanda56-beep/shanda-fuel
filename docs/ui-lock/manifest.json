@@ -207,7 +207,7 @@
     "src/modules/creditors/ui/supplier-payment-proof-view.tsx": "f5749ab5cff561827643c84a50be4f2e66736478659edb11452b8ebc2cd6fea1",
     "src/modules/creditors/ui/supplier-workspace.tsx": "204106ce9c36bcc9abd31ff8014447a44ea875f02a1bc8c1a800d5f0d422ec94",
     "src/modules/customers/ui/account-controls-workspace.tsx": "914be86049331b80c4493f3683ea064f2582d5d06cede74e485722313827c7e5",
-    "src/modules/customers/ui/add-customer.tsx": "7a07bbcdbbef61ee1a9b6ae7048faebefc547cc9c48a13bae76595e9e6dc5162",
+    "src/modules/customers/ui/add-customer.tsx": "24628d8706fe7ac29f2b6b285c231682a421ce50c79330137294118acaedd570",
     "src/modules/customers/ui/customer-actions.tsx": "4e888159cc4008665273ec3359dac139f7a7a8b051aad5cc2d0488bc879f714f",
     "src/modules/customers/ui/customer-detail-workspace.tsx": "5d39f84df0d952999f4867ed247c2ce48807e857c91e6319e90a0b45b8b8fa06",
     "src/modules/customers/ui/customer-workspace.tsx": "b7605d8aacac4ff0c5df26d2a4792dfc18665d41714d81df4c6d90af68a24a65",
