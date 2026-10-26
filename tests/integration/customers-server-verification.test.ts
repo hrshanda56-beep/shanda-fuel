@@ -335,6 +335,57 @@ describe('Customers server-side verification (real PostgreSQL, real route handle
     ).toEqual([]);
   });
 
+  it('adds a staff member as a customer marked Staff with their benefit, in one command', async () => {
+    const created = await send(
+      {
+        commandType: 'CreateCustomerWithAccount',
+        tenantId: ids.tenant,
+        accountReference: 'CV-STAFF-1',
+        displayName: 'Tendai Moyo',
+        contactMetadata: { kind: 'STAFF' },
+        legalEntityId: ids.legal,
+        accountType: 'CREDIT',
+        currency: 'USD',
+        creditLimit: '60.0000',
+        staffBenefit: { staffName: 'Tendai Moyo' },
+        stationScope: 'ALL',
+      },
+      'key-staff-atomic',
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const { customerId, accountId } = created.body as { customerId: string; accountId: string };
+    const rows = await client.unsafe<{ kind: string; staff_name: string; credit_limit: string }[]>(
+      `select c.contact_metadata->>'kind' as kind, t.staff_name, a.credit_limit::text
+         from app.customers c
+         join app.customer_accounts a on a.customer_id = c.id
+         join app.customer_staff_benefit_terms t on t.account_id = a.id
+        where c.id = '${customerId}' and a.id = '${accountId}'`,
+    );
+    expect(rows).toEqual([{ kind: 'STAFF', staff_name: 'Tendai Moyo', credit_limit: '60.0000' }]);
+
+    // A benefit that cannot be opened saves no customer record either.
+    const refused = await send(
+      {
+        commandType: 'CreateCustomerWithAccount',
+        tenantId: ids.tenant,
+        accountReference: 'CV-STAFF-2',
+        displayName: 'No Limit Person',
+        contactMetadata: { kind: 'STAFF' },
+        legalEntityId: ids.legal,
+        accountType: 'PREPAID_VALUE',
+        currency: 'USD',
+        staffBenefit: { staffName: 'No Limit Person' },
+      },
+      'key-staff-atomic-bad',
+    );
+    expect(refused.status).toBe(400);
+    expect(
+      await client.unsafe(
+        `select id from app.customers where tenant_id='${ids.tenant}' and account_reference='CV-STAFF-2'`,
+      ),
+    ).toEqual([]);
+  });
+
   it('requires a fresh step-up to change an account scope, and the retry is idempotent', async () => {
     const customer = await createCustomer('CV-SCOPE-1', 'Scope Customer');
     // Opening an account without a scope leaves it unconfirmed.

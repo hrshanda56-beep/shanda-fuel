@@ -2,6 +2,7 @@ import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { getCustomerAccountsFromRequest } from '@/modules/customers/queries';
 import { getStaffBenefitAccountsFromRequest } from '@/modules/customers/staff-benefit-read';
+import { staffRecordsWithoutBenefit } from '@/modules/customers/staff-records';
 import { StaffBenefitWorkspace } from '@/modules/customers/ui/staff-benefit-workspace';
 
 export const metadata = { title: 'Staff fuel benefit' };
@@ -37,13 +38,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
             />
           );
         }
-        const customers = data.accounts.customers
-          .filter((customer) => customer.status === 'ACTIVE')
-          .map((customer) => ({
-            customerId: customer.customerId,
-            name: customer.displayName,
-            reference: customer.accountReference,
-          }));
+        const customers = staffRecordsWithoutBenefit(
+          data.accounts.customers,
+          new Set(data.rows.map((row) => row.customerId)),
+        );
         return (
           <StaffBenefitWorkspace
             key={JSON.stringify(current)}

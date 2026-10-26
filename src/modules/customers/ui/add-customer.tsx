@@ -6,6 +6,7 @@ import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import { makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
 
 type Kind = 'CREDIT' | 'PREPAID_VALUE' | 'PREPAID_LITRES' | 'STAFF';
 
@@ -17,16 +18,6 @@ const KIND_LABELS: Record<Kind, string> = {
 };
 
 const POSITIVE_MONEY = /^(?!0+(?:\.0+)?$)\d{1,16}(?:\.\d{1,2})?$/;
-
-/** A short code people never have to type: letters from the name plus a few digits. */
-function makeReference(name: string): string {
-  const letters = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 6);
-  const digits = String(Math.floor(1000 + Math.random() * 9000));
-  return `${letters || 'CUST'}-${digits}`;
-}
 
 async function post(input: Record<string, unknown>, key: string): Promise<unknown> {
   const response = await fetch('/api/customers/commands', {
@@ -122,7 +113,10 @@ export function AddCustomer({
             tenantId,
             accountReference: keys.current.reference,
             displayName: customerName,
-            ...(phone.trim() ? { contactMetadata: { phone: phone.trim() } } : {}),
+            contactMetadata: {
+              ...(phone.trim() ? { phone: phone.trim() } : {}),
+              ...(kind === 'STAFF' ? { kind: STAFF_CUSTOMER_KIND } : {}),
+            },
             ...(legalEntityId ? { legalEntityId } : {}),
             accountType: kind === 'STAFF' ? 'CREDIT' : kind,
             currency: 'USD',
