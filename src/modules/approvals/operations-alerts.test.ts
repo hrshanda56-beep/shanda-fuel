@@ -3,6 +3,7 @@ import {
   DEFAULT_ALERT_SETTINGS,
   buildOperationsAlerts,
   classifyStockVariance,
+  effectiveTankTolerance,
   daysBetween,
   type OperationsFacts,
   type TankAlertFacts,
@@ -47,6 +48,25 @@ describe('classifyStockVariance', () => {
     expect(classifyStockVariance(null, '50')).toBe('unjudged');
     expect(classifyStockVariance('10', null)).toBe('unjudged');
     expect(classifyStockVariance('10', '-1')).toBe('unjudged');
+  });
+});
+
+describe('effectiveTankTolerance', () => {
+  it("keeps a tank's own limit", () => {
+    expect(effectiveTankTolerance('50.000', '10000')).toBe('50.000');
+  });
+
+  it('starts at 0.5% of the litres sold since the previous dip, so 1% is the alert line', () => {
+    const tolerance = effectiveTankTolerance(null, '10000');
+    expect(tolerance).toBe('50');
+    expect(classifyStockVariance('50', tolerance)).toBe('ok');
+    expect(classifyStockVariance('51', tolerance)).toBe('watch');
+    expect(classifyStockVariance('101', tolerance)).toBe('alert');
+  });
+
+  it('does not judge a tank with no limit and nothing sold', () => {
+    expect(effectiveTankTolerance(null, null)).toBeNull();
+    expect(effectiveTankTolerance(null, '0')).toBeNull();
   });
 });
 

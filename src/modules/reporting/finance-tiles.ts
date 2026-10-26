@@ -1,6 +1,6 @@
 import type { ManagementReport } from './contracts';
 import { addExact, exact, subtractExact } from './domain';
-import { approvedFuelBenefit } from './statements';
+import { approvedFuelBenefit, buildFinancialPosition } from './statements';
 
 export type FinanceTile = Readonly<{
   id:
@@ -12,6 +12,7 @@ export type FinanceTile = Readonly<{
     | 'posAwaiting'
     | 'debtors'
     | 'creditors'
+    | 'netPosition'
     | 'expensesAwaitingApproval';
   label: string;
   /** Exact money text, or null when the figure is not available (never zero). */
@@ -27,6 +28,7 @@ export type FinanceTile = Readonly<{
 /** The finance tiles for the dashboard, each from a figure the report already carries. */
 export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
   const own = report.ownerPosition;
+  const position = buildFinancialPosition(report);
   const customersKnown = report.customers.availability === 'AVAILABLE';
   // Same arithmetic as the profit statement's "Net operating result", so the tile ties to it.
   const operating =
@@ -105,6 +107,18 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
       id: 'creditors',
       label: 'Owed to suppliers',
       value: report.suppliers.outstandingBalance,
+      href: '/financial-position',
+    },
+    {
+      id: 'netPosition',
+      label: 'Net position',
+      value: position.net,
+      unavailableReason:
+        position.net === null
+          ? customersKnown
+            ? 'Not every figure is known yet.'
+            : 'Choose all stations to see the net position.'
+          : undefined,
       href: '/financial-position',
     },
     {

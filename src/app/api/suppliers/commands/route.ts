@@ -6,6 +6,7 @@ import {
   createSupplierFromRequest,
   updateSupplierDetailsFromRequest,
   postSupplierDocumentFromRequest,
+  returnSupplierDocumentFromRequest,
   postSupplierPaymentFromRequest,
   reverseSupplierDocumentFromRequest,
   reverseSupplierPaymentFromRequest,
@@ -39,6 +40,8 @@ export const POST = withRequestObservability(
           return response(await submitSupplierDocumentFromRequest(request, body), 201);
         case 'PostSupplierDocument':
           return response(await postSupplierDocumentFromRequest(request, body));
+        case 'ReturnSupplierDocument':
+          return response(await returnSupplierDocumentFromRequest(request, body));
         case 'ReverseSupplierDocument':
           return response(await reverseSupplierDocumentFromRequest(request, body));
         case 'SubmitSupplierPayment':

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ManagementReport } from './contracts';
 import { buildFinanceTiles } from './finance-tiles';
+import { buildFinancialPosition } from './statements';
 
 const report = (over: Record<string, unknown> = {}) =>
   ({
@@ -33,14 +34,22 @@ const byId = (tiles: ReturnType<typeof buildFinanceTiles>, id: string) =>
   tiles.find((t) => t.id === id)!;
 
 describe('buildFinanceTiles', () => {
-  it('returns all nine tiles from report figures', () => {
+  it('returns all ten tiles from report figures', () => {
     const tiles = buildFinanceTiles(report());
-    expect(tiles.map((t) => t.id)).toHaveLength(9);
+    expect(tiles.map((t) => t.id)).toHaveLength(10);
     expect(byId(tiles, 'grossProfit').value).toBe('100.0000');
     // 100 gross - 10 operating - 20 fixed - 5 approved fuel
     expect(byId(tiles, 'operatingProfit').value).toBe('65');
     expect(byId(tiles, 'stockValue').value).toBe('6.0000');
     expect(byId(tiles, 'expensesAwaitingApproval')).toMatchObject({ value: '7.0000', count: 3 });
+  });
+
+  it('shows the net position from the financial position, and says why when it is not known', () => {
+    const known = buildFinancialPosition(report());
+    expect(byId(buildFinanceTiles(report()), 'netPosition').value).toBe(known.net);
+    const unknown = buildFinanceTiles(report({ ownerPosition: undefined }));
+    expect(byId(unknown, 'netPosition').value).toBeNull();
+    expect(byId(unknown, 'netPosition').unavailableReason).toBeTruthy();
   });
 
   it('never shows zero for figures that are not known', () => {

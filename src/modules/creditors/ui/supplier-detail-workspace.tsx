@@ -59,7 +59,36 @@ type StatementLine = {
   currency: string;
 };
 
-type LineForm = { description: string; quantity: string; unitPrice: string };
+type PendingDocument = {
+  id: string;
+  documentType: string;
+  referenceNumber: string;
+  documentDate: string;
+  dueDate: string | null;
+  amount: string;
+  currency: string;
+  version: number;
+};
+
+type LineType = 'FUEL' | 'TRANSPORT' | 'OTHER_DIRECT_COST';
+type LineForm = {
+  lineType: LineType;
+  /** The fuel on a fuel line; empty when it is not said. */
+  productId: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+};
+type InvoiceChoices = {
+  products: { id: string; name: string }[];
+  stations: { id: string; name: string }[];
+};
+
+const LINE_TYPE_LABELS: Record<LineType, string> = {
+  FUEL: 'Fuel',
+  TRANSPORT: 'Transport',
+  OTHER_DIRECT_COST: 'Other direct cost',
+};
 
 type DocumentForm = {
   documentType: 'INVOICE' | 'CREDIT_NOTE';
@@ -69,6 +98,8 @@ type DocumentForm = {
   paymentTerms: '' | 'CASH' | 'CREDIT';
   creditPeriodDays: string;
   amount: string;
+  /** null = not touched yet, so the current station is used; '' = no station. */
+  stationId: string | null;
   lines: LineForm[];
 };
 
@@ -79,7 +110,13 @@ type PaymentForm = {
 };
 
 const SUPPLIER_ROUTE_POLICY = contextRoutePolicy('/suppliers/:supplierId');
-const EMPTY_LINE: LineForm = { description: '', quantity: '', unitPrice: '' };
+const EMPTY_LINE: LineForm = {
+  lineType: 'FUEL',
+  productId: '',
+  description: '',
+  quantity: '',
+  unitPrice: '',
+};
 const EMPTY_DOCUMENT_FORM: DocumentForm = {
   documentType: 'INVOICE',
   referenceNumber: '',
@@ -88,6 +125,7 @@ const EMPTY_DOCUMENT_FORM: DocumentForm = {
   paymentTerms: '',
   creditPeriodDays: '',
   amount: '',
+  stationId: null,
   lines: [EMPTY_LINE],
 };
 const EMPTY_PAYMENT_FORM: PaymentForm = {
@@ -145,6 +183,8 @@ export function SupplierDetailWorkspace({
     resolution: ContextResolution;
     supplier: SupplierSummary | null;
     statement: StatementLine[];
+    pending?: PendingDocument[];
+    choices?: InvoiceChoices;
   };
 }) {
   const contextFetch = useContextFetch();
@@ -155,6 +195,7 @@ export function SupplierDetailWorkspace({
   const [contextError, setContextError] = useState<string | null>(null);
   const [supplier, setSupplier] = useState<SupplierSummary | null>(initial?.supplier ?? null);
   const [statement, setStatement] = useState<StatementLine[]>(initial?.statement ?? []);
+  const [pending, setPending] = useState<PendingDocument[]>(initial?.pending ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentForm, setDocumentForm] = useState<DocumentForm>(EMPTY_DOCUMENT_FORM);
@@ -178,6 +219,9 @@ export function SupplierDetailWorkspace({
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState<'document' | 'payment' | null>(null);
   const [limitText, setLimitText] = useState('');
+  const choices: InvoiceChoices = initial?.choices ?? { products: [], stations: [] };
+  const [returning, setReturning] = useState<PendingDocument | null>(null);
+  const [returnReason, setReturnReason] = useState('');
   const [contactForm, setContactForm] = useState<{
     name: string;
     phone: string;
@@ -248,7 +292,7 @@ export function SupplierDetailWorkspace({
         legalEntityId: selection.legalEntityId ?? '',
         supplierId,
       });
-      const [summaryResponse, statementResponse] = await Promise.all([
+      const [summaryResponse, statementResponse, pendingResponse] = await Promise.all([
         fetch(`/api/suppliers/summary?${summaryParams.toString()}`, {
           cache: 'no-store',
           credentials: 'same-origin',
@@ -259,11 +303,18 @@ export function SupplierDetailWorkspace({
           credentials: 'same-origin',
           signal,
         }),
+        fetch(`/api/suppliers/pending?${statementParams.toString()}`, {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal,
+        }),
       ]);
-      const [summaryResult, statementResult]: [unknown, unknown] = await Promise.all([
-        summaryResponse.json(),
-        statementResponse.json(),
-      ]);
+      const [summaryResult, statementResult, pendingResult]: [unknown, unknown, unknown] =
+        await Promise.all([
+          summaryResponse.json(),
+          statementResponse.json(),
+          pendingResponse.json(),
+        ]);
       if (!summaryResponse.ok || !Array.isArray(summaryResult)) {
         throw new Error(getErrorMessage(summaryResult, 'Supplier balance could not be loaded'));
       }
@@ -272,6 +323,12 @@ export function SupplierDetailWorkspace({
       }
       setSupplier((summaryResult as SupplierSummary[])[0] ?? null);
       setStatement(statementResult as StatementLine[]);
+      // A failed list must not hide the rest of the page; it shows as nothing waiting.
+      setPending(
+        pendingResponse.ok && Array.isArray(pendingResult)
+          ? (pendingResult as PendingDocument[])
+          : [],
+      );
     } catch (cause) {
       if (!signal?.aborted) {
         setError(cause instanceof Error ? cause.message : 'Supplier detail could not be loaded');
@@ -302,6 +359,8 @@ export function SupplierDetailWorkspace({
     commandType:
       | 'SubmitSupplierDocument'
       | 'SubmitSupplierPayment'
+      | 'PostSupplierDocument'
+      | 'ReturnSupplierDocument'
       | 'SetSupplierCreditLimit'
       | 'UpdateSupplierDetails',
     body: Record<string, unknown>,
@@ -419,10 +478,14 @@ export function SupplierDetailWorkspace({
       );
       return;
     }
+    const stationId = form.stationId ?? current?.stationId ?? '';
     const submitted = await submitCommand(
       'SubmitSupplierDocument',
       {
+        ...(stationId ? { stationId } : {}),
         lines: filledLines.map((line) => ({
+          lineType: line.lineType,
+          ...(line.lineType === 'FUEL' && line.productId ? { productId: line.productId } : {}),
           description: line.description.trim(),
           quantity: line.quantity.trim(),
           unitPrice: line.unitPrice.trim(),
@@ -715,6 +778,126 @@ export function SupplierDetailWorkspace({
             </form>
           </Card>
 
+          {pending.length > 0 ? (
+            <Card
+              as="section"
+              className="panel content-span"
+              aria-labelledby="supplier-pending-title"
+            >
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Entered, not counted yet</p>
+                  <h2 id="supplier-pending-title">Waiting to be posted</h2>
+                </div>
+              </div>
+              <p>
+                These are not in the amount owed until they are posted. Check each one against the
+                supplier&apos;s paper invoice, then post it.
+              </p>
+              <ul className="list-rows" aria-label="Supplier documents waiting to be posted">
+                {pending.map((document) => (
+                  <li key={document.id} className="list-row ledger-row">
+                    <span className="list-cell ledger-movement" data-label="Document">
+                      {document.documentType === 'CREDIT_NOTE' ? 'Credit note' : 'Invoice'}{' '}
+                      {document.referenceNumber}
+                    </span>
+                    <span className="list-cell" data-label="Dated">
+                      {document.documentDate}
+                      {document.dueDate ? `, due ${document.dueDate}` : ''}
+                    </span>
+                    <span className="list-cell list-amount" data-label="Amount">
+                      {formatTileMoney(document.amount, document.currency)}
+                    </span>
+                    <span className="list-cell" data-label="">
+                      <Button
+                        variant="secondary"
+                        loading={action === 'PostSupplierDocument'}
+                        disabled={action !== null}
+                        onClick={() =>
+                          void submitCommand(
+                            'PostSupplierDocument',
+                            { documentId: document.id, expectedVersion: document.version },
+                            `${document.referenceNumber} was posted.`,
+                          )
+                        }
+                      >
+                        Post
+                      </Button>{' '}
+                      <Button
+                        variant="secondary"
+                        disabled={action !== null}
+                        onClick={() => {
+                          setReturnReason('');
+                          setReturning(document);
+                        }}
+                      >
+                        Return
+                      </Button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
+          <Modal
+            open={returning !== null}
+            onClose={() => (action === null ? setReturning(null) : undefined)}
+            title="Return this document"
+            size="sm"
+          >
+            <form
+              className="form-stack"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const target = returning;
+                if (!target || !returnReason.trim()) return;
+                void submitCommand(
+                  'ReturnSupplierDocument',
+                  {
+                    documentId: target.id,
+                    expectedVersion: target.version,
+                    reason: returnReason.trim(),
+                  },
+                  `${target.referenceNumber} was returned. Enter it again once it is corrected.`,
+                ).then((done) => {
+                  if (done) setReturning(null);
+                });
+              }}
+            >
+              <p>
+                {returning?.referenceNumber} will not be counted as owed. It stays in the history,
+                and its reference number can be used again.
+              </p>
+              <Field id="supplier-return-reason" label="Why is it being returned?" required>
+                <input
+                  id="supplier-return-reason"
+                  maxLength={500}
+                  autoComplete="off"
+                  value={returnReason}
+                  onChange={(event) => setReturnReason(event.target.value)}
+                />
+              </Field>
+              <div className="form-actions">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={action !== null}
+                  onClick={() => setReturning(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={action === 'ReturnSupplierDocument'}
+                  disabled={!returnReason.trim()}
+                >
+                  Return document
+                </Button>
+              </div>
+            </form>
+          </Modal>
+
           <Card
             as="section"
             className="panel content-span"
@@ -812,6 +995,29 @@ export function SupplierDetailWorkspace({
                   <option value="CREDIT_NOTE">Credit note</option>
                 </select>
               </Field>
+              {choices.stations.length > 0 ? (
+                <Field
+                  id="document-station"
+                  label="Station"
+                  hint="Which station this invoice is for. Leave it blank if it covers the whole company."
+                  optional
+                >
+                  <select
+                    id="document-station"
+                    value={documentForm.stationId ?? current?.stationId ?? ''}
+                    onChange={(event) =>
+                      setDocumentForm((form) => ({ ...form, stationId: event.target.value }))
+                    }
+                  >
+                    <option value="">Not for one station</option>
+                    {choices.stations.map((station) => (
+                      <option key={station.id} value={station.id}>
+                        {station.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
               <Field id="document-reference" label="Reference number" required>
                 <input
                   id="document-reference"
@@ -833,7 +1039,12 @@ export function SupplierDetailWorkspace({
                     }
                   />
                 </Field>
-                <Field id="document-due-date" label="Due date" optional>
+                <Field
+                  id="document-due-date"
+                  label="Due date"
+                  optional={documentForm.paymentTerms !== 'CREDIT'}
+                  required={documentForm.paymentTerms === 'CREDIT'}
+                >
                   <input
                     id="document-due-date"
                     type="date"
@@ -893,6 +1104,42 @@ export function SupplierDetailWorkspace({
                 <legend>Invoice lines</legend>
                 {documentForm.lines.map((line, index) => (
                   <div className="form-grid" key={index}>
+                    <Field id={`document-line-${index}-type`} label="What is it for?" required>
+                      <select
+                        id={`document-line-${index}-type`}
+                        value={line.lineType}
+                        onChange={(event) =>
+                          setDocumentLine(index, {
+                            lineType: event.target.value as LineType,
+                            productId: '',
+                          })
+                        }
+                      >
+                        {(Object.keys(LINE_TYPE_LABELS) as LineType[]).map((type) => (
+                          <option key={type} value={type}>
+                            {LINE_TYPE_LABELS[type]}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    {line.lineType === 'FUEL' && choices.products.length > 0 ? (
+                      <Field id={`document-line-${index}-product`} label="Fuel type" optional>
+                        <select
+                          id={`document-line-${index}-product`}
+                          value={line.productId}
+                          onChange={(event) =>
+                            setDocumentLine(index, { productId: event.target.value })
+                          }
+                        >
+                          <option value="">Not said</option>
+                          {choices.products.map((product) => (
+                            <option key={product.id} value={product.id}>
+                              {product.name}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    ) : null}
                     <Field id={`document-line-${index}-description`} label="Description" required>
                       <input
                         id={`document-line-${index}-description`}

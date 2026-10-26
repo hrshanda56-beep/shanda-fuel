@@ -163,6 +163,15 @@ describe('settlement is separate from recognition', () => {
     ).toThrow();
     assertSettlementReference({ source: 'CASH', cashMovementId: 'x' });
     assertSettlementReference({ source: 'REIMBURSEMENT', externalReference: 'vch-1' });
+    assertSettlementReference({ source: 'MOBILE_MONEY', externalReference: 'MP261026.1234' });
+    expect(() => assertSettlementReference({ source: 'MOBILE_MONEY' })).toThrow();
+    expect(() =>
+      assertSettlementReference({
+        source: 'MOBILE_MONEY',
+        cashMovementId: 'x',
+        externalReference: 'r',
+      }),
+    ).toThrow();
   });
 
   it('caps settlements at the outstanding balance exactly', () => {

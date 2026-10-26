@@ -423,6 +423,9 @@ describe('purchase orders PostgreSQL persistence', () => {
     const own = await createOrder({}, tokens.finance);
     const ownId = own.json.purchaseOrderId as string;
     await transition('SubmitPurchaseOrder', ownId, 0, tokens.finance);
+    // The screen is told the same thing the command enforces.
+    expect((await detail(ownId, tokens.finance)).approvalBlockedForYou).toBe(true);
+    expect((await detail(ownId, tokens.admin)).approvalBlockedForYou).toBe(false);
     const self = await transition('ApprovePurchaseOrder', ownId, 1, tokens.finance);
     expect(self.status).toBe(403);
     const other = await transition('ApprovePurchaseOrder', ownId, 1, tokens.admin);

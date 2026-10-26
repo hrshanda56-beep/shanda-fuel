@@ -7,6 +7,7 @@ import { AppError } from '../../platform/errors';
 import { meterSegments } from '../../platform/db/schema/a3';
 import { litres, money, unitPrice } from '../../platform/domain/primitives';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
+import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import {
   executeForecourtCommand,
   type ForecourtCommandContext,
@@ -2215,6 +2216,21 @@ async function priceContext(request: Request, payload: { tenantId: string; stati
   });
 }
 
+/** True when no other price for this fuel at this station has ever been in use. */
+async function isFirstPriceForProduct(
+  transaction: ForecourtTransaction,
+  input: { tenantId: string; stationId: string; productId: string; priceId: string },
+): Promise<boolean> {
+  const rows = await transaction.execute<{ found: number }>(sql`
+    select 1 as found from app.selling_prices
+    where tenant_id = ${input.tenantId} and station_id = ${input.stationId}
+      and product_id = ${input.productId} and id <> ${input.priceId}
+      and (state in ('ACTIVE', 'SUPERSEDED') or activated_at is not null)
+    limit 1
+  `);
+  return rows.length === 0;
+}
+
 const requestPricePayload = z
   .object({
     commandType: z.literal('RequestPriceChange').optional(),
@@ -2289,6 +2305,12 @@ export async function approvePriceChangeFromRequest(request: Request, input: unk
         priceFromRow(price),
         context.actor,
         await serverNow(transaction),
+        await hasAlternateApprover(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          excludeMembershipId: price.requested_by,
+          permission: 'price.change.approve',
+        }),
       );
       await transaction.execute(sql`
         update app.selling_prices
@@ -2328,20 +2350,33 @@ export async function activatePriceChangeFromRequest(request: Request, input: un
       const price = rows[0];
       if (!price) throw new AppError('NOT_FOUND', 'Selling price was not found');
       const now = await serverNow(transaction);
-      const boundaries = await loadPriceActivationBoundaries(transaction, {
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        productId: price.product_id,
-        priceId: price.id,
-      });
       if (
         price.state !== 'PENDING_STATION_ACTIVATION' &&
         price.state !== 'BOUNDARIES_IN_PROGRESS'
       ) {
         throw new AppError('CONFLICT', `ActivatePriceChange is not allowed from ${price.state}`);
       }
-      if (boundaries.length === 0 || boundaries.some((boundary) => boundary.state !== 'SEALED')) {
-        throw new AppError('CONFLICT', 'All affected persisted meter boundaries must be complete');
+      // A meter boundary pins the old price to the litres sold before a change. The first price
+      // for a fuel at a station has no earlier price to pin, so it needs no meter readings.
+      const firstPrice = await isFirstPriceForProduct(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        productId: price.product_id,
+        priceId: price.id,
+      });
+      if (!firstPrice) {
+        const boundaries = await loadPriceActivationBoundaries(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          productId: price.product_id,
+          priceId: price.id,
+        });
+        if (boundaries.length === 0 || boundaries.some((boundary) => boundary.state !== 'SEALED')) {
+          throw new AppError(
+            'CONFLICT',
+            'All affected persisted meter boundaries must be complete',
+          );
+        }
       }
       const requiresBoundaryPhase = price.state === 'PENDING_STATION_ACTIVATION';
       if (requiresBoundaryPhase) {

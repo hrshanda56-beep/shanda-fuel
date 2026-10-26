@@ -4,7 +4,11 @@
  * `approvals/extra-alert-facts.ts`. Dates are station business dates.
  */
 import { DECIMAL_POLICIES, ExactDecimal } from '../../platform/domain/primitives';
-import { computeAccountAgeing, type AgeingLedgerLine } from './ageing';
+import {
+  computeAccountAgeing,
+  DEFAULT_CUSTOMER_CREDIT_DAYS,
+  type AgeingLedgerLine,
+} from './ageing';
 import { staffBenefitUse, type StaffBenefitLine } from './staff-benefit';
 
 export type CustomerAlertAccount = Readonly<{
@@ -13,6 +17,8 @@ export type CustomerAlertAccount = Readonly<{
   customerName: string;
   /** Credit limit; for a staff benefit account this is the monthly limit. */
   limit: string | null;
+  /** Days the customer has to pay; null means the default of 30. */
+  creditDays?: number | null;
   isStaffBenefit: boolean;
   staffName: string | null;
   lines: readonly (AgeingLedgerLine & { entryType: string; reversalOfEntryId?: string | null })[];
@@ -24,6 +30,8 @@ export type CustomerOverdueFact = Readonly<{
   customerName: string;
   /** Business date of the oldest charge that is still unpaid. */
   oldestUnpaidDate: string;
+  /** Days this customer has to pay, counted from the charge date. */
+  creditDays: number;
   /** Everything still unpaid. */
   owed: string;
 }>;
@@ -48,7 +56,8 @@ export function buildCustomerAlertFacts(
   const overdue: CustomerOverdueFact[] = [];
   const overLimit: CustomerOverLimitFact[] = [];
   for (const account of accounts) {
-    const ageing = computeAccountAgeing(account.lines, { asAt: today });
+    const creditDays = account.creditDays ?? DEFAULT_CUSTOMER_CREDIT_DAYS;
+    const ageing = computeAccountAgeing(account.lines, { asAt: today, termsDays: creditDays });
     if (ageing.oldestOpenChargeDate && new ExactDecimal(ageing.totalOwed).value.gt(0)) {
       overdue.push({
         accountId: account.accountId,
@@ -56,6 +65,7 @@ export function buildCustomerAlertFacts(
         customerName:
           account.isStaffBenefit && account.staffName ? account.staffName : account.customerName,
         oldestUnpaidDate: ageing.oldestOpenChargeDate,
+        creditDays,
         owed: ageing.totalOwed,
       });
     }

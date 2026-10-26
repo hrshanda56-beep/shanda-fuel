@@ -1,5 +1,35 @@
 # Shanda Fuel — Current Status
 
+## Getting to the first sale — 2026-10-26 (branch `codex/v1-selling-unblock-20261026`, from `codex/v1-audit-fixes-20261025`, uncommitted)
+
+Response to the audit retest blockers that stopped any station from selling. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions: DECISIONS.md, "Getting a station to its first sale" (PROPOSED).
+
+Changed:
+
+- **Prices can be approved and put to use (setup > Selling prices).** Each price shows its real state (a draft no longer reads "waiting for approval") and one button takes it as far as the person's rights allow: send for approval, approve, then start using. Prices show two decimals. The first price for a fuel goes live without meter readings; later changes still need them. A requester can approve only when nobody else could.
+- **First shift.** The operations control room offers "Open shift" with the station's shift templates when the day has no shift, or points to Settings when none exists.
+- **Supplier invoices can be posted.** The supplier page lists entered-but-unposted documents as "Waiting to be posted" with a Post button. "Not yet due", overdue and ageing now use posted documents, matching "Owed in total".
+- **Supplier invoice records the station and what each line is for (migration 0075).** The invoice form has an optional Station (defaults to the current station) and each line has a type (Fuel, Transport, Other direct cost) and, for fuel, an optional fuel type. Nothing is required, so existing invoices and callers are unaffected. Landed cost does not use these yet; the delivery link and file upload are still to do. Migration 0075 has only been applied to the local test database; no browser check was run.
+- **Supplier invoices can be returned before posting (migration 0074).** A submitted invoice or credit note on the posting queue has a Return button (needs `supplier.document.post`, a reason is mandatory). It becomes RETURNED (final, kept in history, never counted as owed) and its reference number can be entered again. Not run: a browser check. Migration 0074 has not been applied anywhere except the local test database.
+- **Approvals inbox (Finance) lists more work.** Pending price changes, submitted purchase orders and unposted supplier invoices now appear, each shown only to people who may act on it. A requester is told someone else must approve unless they are the only approver. The price link opens Settings. Integration tests for this loader and a browser check were not run.
+- **Purchase order and supplier invoice screens.** "Approve order" is hidden from the person who sent the order when another approver exists (same rule the server applies; a sole owner still sees it). The supplier invoice form marks Due date as required for credit. Not done: station and fuel-type fields on the supplier invoice (needs schema and a decision). Browser check not run.
+
+Not changed: schema (no migration), roles and permissions, authentication, RLS. Self-approval and first-price activation are code rules only.
+
+Validated (throwaway local PostgreSQL 18 at 127.0.0.1:54351, `DATABASE_URL` and `DATABASE_DIRECT_URL` pinned to it, fresh database per run, migrations 0000-0073):
+
+| Gate | Result |
+| --- | --- |
+| `pnpm typecheck`, `pnpm lint`, Prettier on changed files | PASS |
+| `pnpm test:unit` | PASS: 215 files, 1,515 tests |
+| `pnpm test:integration` | 42 files passed, 314 tests; `unified-expense-versions` NOT RUN (needs its own database and runtime URL, "Separate local integration database required"); 6 opt-in files skipped. New: first price vs change, supplier posting basis. One existing test (`forged boundary`) was changed to make its price a real change by giving the fuel an earlier used price. |
+| `pnpm format:check`, `pnpm db:check`, `pnpm build` | PASS |
+| `pnpm test:e2e`, `pnpm test:a11y` | NOT RUN: no dedicated Clerk test keys on this machine. The new buttons and the Open shift control have not been seen in a browser. |
+
+UI lock: re-baselined for `guided-setup-panel.tsx`, `operations-control-room.tsx`, `supplier-detail-workspace.tsx` and the supplier detail page.
+
+Still open from the retest (not done here): approvals inbox does not yet count pending prices, orders and invoices; PO Approve still shows to the submitter; supplier invoice has no fuel type, station, delivery link or file; price effective date; no way to return an unposted invoice; opening stock and delivery-without-order were already built.
+
 ### Follow-up on the audit retest — 2026-10-26 (uncommitted)
 
 - **Owner 403 on setup, root cause:** the guided-setup saves ran without the identity check, so the server refused them. Fuel, price, tank, pump, nozzle and supervisor saves now ask for the check first (`guided-setup-panel.tsx`; UI lock re-baselined with the project lead's approval). The Owner role already held the permissions.
@@ -39,6 +69,7 @@ UI lock: re-baselined (`docs/ui-lock/manifest.json`) for the screens the project
 
 Not done, and why:
 
+- Customer credit days (30 unless the account sets its own) now drive the customer ageing report and the overdue alert. A tank with no tolerance of its own is judged against 0.5% of litres sold since the previous dip. Open shifts with no opening or closing dip raise a reminder alert. The dashboard has a Net position tile. An expense can be paid by EcoCash (migration 0076, applied only to the local test DB). Accepted 2026-10-26; see DECISIONS.md. Not built: paying an expense from the till (no cash disbursement screen), EcoCash/POS fee expenses, tank-level badges using the default tolerance.
 - Starting values now follow the audit: purchasing tolerance 0.5% on litres and none on price; "report late after" 0 days (accepted by the project lead 2026-10-25; the client can change both in Settings).
 - Closing a day with no approved reconciliation needs a typed reason (audited). Customer credit accounts have an optional usual days to pay (migration 0073).
 - Vehicle and driver registry: decided not to build for v1 (see DECISIONS, 2026-10-25).

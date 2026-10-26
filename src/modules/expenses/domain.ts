@@ -19,7 +19,7 @@ export type ExpenseCategoryClassification = (typeof EXPENSE_CATEGORY_CLASSIFICAT
 export const EXPENSE_STATES = ['SUBMITTED', 'APPROVED', 'REJECTED', 'POSTED', 'REVERSED'] as const;
 export type ExpenseState = (typeof EXPENSE_STATES)[number];
 
-export const SETTLEMENT_SOURCES = ['CASH', 'BANK', 'REIMBURSEMENT'] as const;
+export const SETTLEMENT_SOURCES = ['CASH', 'BANK', 'REIMBURSEMENT', 'MOBILE_MONEY'] as const;
 export type SettlementSource = (typeof SETTLEMENT_SOURCES)[number];
 
 export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';

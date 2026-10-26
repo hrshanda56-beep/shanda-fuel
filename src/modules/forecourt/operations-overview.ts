@@ -362,17 +362,37 @@ async function loadOperationsOverview(
   const sections = await profileDatabaseRead<{
     shifts: ShiftRow[];
     reconciliations: ReconciliationRow[];
+    shiftTemplates?: Array<{
+      id: string;
+      name: string;
+      startTime: string | null;
+      durationMinutes: number | string;
+    }>;
   }>(
     transaction,
     sql`
-    with shift_rows as (${shiftQuery}), reconciliation_rows as (${reconciliationQuery})
+    with shift_rows as (${shiftQuery}), reconciliation_rows as (${reconciliationQuery}),
+      shift_template_rows as (
+        select t.id, t.name, t.start_time::text as "startTime", t.duration_minutes as "durationMinutes"
+        from app.shift_templates t
+        where t.tenant_id=${context.tenantId} and t.station_id=${context.stationId} and t.active
+        order by t.start_time nulls last, t.code
+      )
     select coalesce((select json_agg(shift_rows) from shift_rows), '[]'::json) as shifts,
-      coalesce((select json_agg(reconciliation_rows) from reconciliation_rows), '[]'::json) as reconciliations
+      coalesce((select json_agg(reconciliation_rows) from reconciliation_rows), '[]'::json) as reconciliations,
+      coalesce((select json_agg(shift_template_rows) from shift_template_rows), '[]'::json) as "shiftTemplates"
   `,
   );
   const section = sections[0];
   if (!section) throw new AppError('INVARIANT_VIOLATION', 'Operations sections were not returned');
   const { shifts, reconciliations } = section;
+  /** Active shift templates, so the screen can offer a first shift when none is planned yet. */
+  const shiftTemplates = (section.shiftTemplates ?? []).map((template) => ({
+    id: template.id,
+    name: template.name,
+    startTime: template.startTime ? template.startTime.slice(0, 5) : null,
+    durationMinutes: Number(template.durationMinutes),
+  }));
   markReadTiming('operations.shifts.loaded');
   markReadTiming('operations.reconciliations.loaded');
 
@@ -423,6 +443,7 @@ async function loadOperationsOverview(
       notOperatedReason: shift.notOperatedReason,
       attendantCount: Number(shift.attendantCount),
     })),
+    shiftTemplates,
     reconciliations: reconciliations.map((item) => ({
       id: item.id,
       shiftId: item.shiftId,

@@ -35,6 +35,7 @@ export type SupplierCommandType =
   | 'UpdateSupplierDetails'
   | 'SubmitSupplierDocument'
   | 'PostSupplierDocument'
+  | 'ReturnSupplierDocument'
   | 'ReverseSupplierDocument'
   | 'SubmitSupplierPayment'
   | 'PostSupplierPayment'
@@ -81,6 +82,11 @@ export const SUPPLIER_COMMAND_POLICY: Readonly<Record<SupplierCommandType, Suppl
     PostSupplierDocument: {
       permissionCode: 'supplier.document.post',
       requiresApproval: true,
+      requiresExpectedVersion: true,
+    },
+    ReturnSupplierDocument: {
+      permissionCode: 'supplier.document.post',
+      requiresApproval: false,
       requiresExpectedVersion: true,
     },
     ReverseSupplierDocument: {

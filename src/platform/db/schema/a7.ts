@@ -102,6 +102,12 @@ export const supplierDocuments = appSchema.table(
     reversedBy: uuid('reversed_by'),
     reversedAt: utcTimestamp('reversed_at'),
     reversalReason: text('reversal_reason'),
+    /** The station the invoice is for; null = not tied to one (migration 0075). */
+    stationId: uuid('station_id'),
+    /** Set when a submitted document is sent back before posting (migration 0074). */
+    returnedBy: uuid('returned_by'),
+    returnedAt: utcTimestamp('returned_at'),
+    returnReason: text('return_reason'),
     /** NULL net/vat/mode marks a legacy header-only document (migration 0037). */
     netAmount: moneyColumn('net_amount'),
     vatAmount: moneyColumn('vat_amount'),
@@ -122,7 +128,7 @@ export const supplierDocuments = appSchema.table(
     // may reuse the reference of one that was reversed.
     uniqueIndex('supplier_documents_tenant_supplier_reference_uidx')
       .on(table.tenantId, table.supplierId, table.referenceNumber)
-      .where(sql`${table.state} <> 'REVERSED'`),
+      .where(sql`${table.state} not in ('REVERSED','RETURNED')`),
     index('supplier_documents_tenant_supplier_state_idx').on(
       table.tenantId,
       table.supplierId,
@@ -135,7 +141,7 @@ export const supplierDocuments = appSchema.table(
     check('supplier_documents_amount_positive_ck', sql`${table.amount} > 0`),
     check(
       'supplier_documents_state_ck',
-      sql`${table.state} in ('DRAFT','SUBMITTED','POSTED','PARTIALLY_PAID','PAID','REVERSED')`,
+      sql`${table.state} in ('DRAFT','SUBMITTED','POSTED','PARTIALLY_PAID','PAID','REVERSED','RETURNED')`,
     ),
     check(
       'supplier_documents_due_date_order_ck',
@@ -157,6 +163,10 @@ export const supplierDocuments = appSchema.table(
           and (${table.creditPeriodDays} is null or ${table.dueDate} = to_char((${table.documentDate})::date + ${table.creditPeriodDays}, 'YYYY-MM-DD')))`,
     ),
     check(
+      'supplier_documents_return_provenance_ck',
+      sql`${table.state} <> 'RETURNED' or (${table.returnedBy} is not null and ${table.returnedAt} is not null and btrim(coalesce(${table.returnReason}, '')) <> '' and ${table.postedAt} is null)`,
+    ),
+    check(
       'supplier_documents_post_provenance_ck',
       sql`${table.postedAt} is null or ${table.postedBy} is not null`,
     ),
@@ -164,6 +174,11 @@ export const supplierDocuments = appSchema.table(
       'supplier_documents_reversal_provenance_ck',
       sql`${table.state} <> 'REVERSED' or (${table.reversedBy} is not null and ${table.reversedAt} is not null and btrim(coalesce(${table.reversalReason}, '')) <> '')`,
     ),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId, table.stationId],
+      foreignColumns: [stations.tenantId, stations.legalEntityId, stations.id],
+      name: 'supplier_documents_station_fk',
+    }),
     foreignKey({
       columns: [table.tenantId, table.legalEntityId],
       foreignColumns: [legalEntities.tenantId, legalEntities.id],

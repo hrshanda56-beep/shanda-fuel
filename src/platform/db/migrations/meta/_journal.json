@@ -414,6 +414,27 @@
       "when": 1792600073000,
       "tag": "0073_customer_credit_days",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792600074000,
+      "tag": "0074_supplier_document_returned",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792600075000,
+      "tag": "0075_supplier_invoice_station_and_line_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792600076000,
+      "tag": "0076_expense_payment_mobile_money",
+      "breakpoints": true
     }
   ]
 }

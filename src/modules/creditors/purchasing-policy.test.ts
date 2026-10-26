@@ -92,6 +92,47 @@ describe('invoice line arithmetic', () => {
     expect(line.vatAmount).toBe('0.0000');
   });
 
+  it('keeps the line type, and refuses a fuel type on a line that is not fuel', () => {
+    const product = '11111111-1111-4111-8111-111111111111';
+    expect(
+      computeInvoiceLine(
+        {
+          lineType: 'FUEL',
+          productId: product,
+          description: 'Diesel',
+          quantity: '1',
+          unitPrice: '2',
+        },
+        1,
+        none,
+      ),
+    ).toMatchObject({ lineType: 'FUEL', productId: product });
+    expect(
+      computeInvoiceLine(
+        { lineType: 'TRANSPORT', description: 'Haulage', quantity: '1', unitPrice: '90' },
+        2,
+        none,
+      ),
+    ).toMatchObject({ lineType: 'TRANSPORT', productId: null });
+    expect(
+      computeInvoiceLine({ description: 'Old line', quantity: '1', unitPrice: '1' }, 3, none)
+        .lineType,
+    ).toBeNull();
+    expect(() =>
+      computeInvoiceLine(
+        {
+          lineType: 'TRANSPORT',
+          productId: product,
+          description: 'x',
+          quantity: '1',
+          unitPrice: '1',
+        },
+        4,
+        none,
+      ),
+    ).toThrow('not fuel');
+  });
+
   it('rounds the extension half-up to 4 decimal places at one boundary', () => {
     const line = computeInvoiceLine(
       { description: 'x', quantity: '1.000', unitPrice: '0.00005' },

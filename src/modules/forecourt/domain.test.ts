@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  approvePriceChange,
   approveReconciliation,
   assertNoOverlappingOperationalSegments,
   calculateReconciliation,
@@ -13,6 +14,7 @@ import {
   submitReconciliation,
   requestReconciliationApproval,
   type MeterBoundary,
+  type SellingPrice,
   type Shift,
 } from './domain';
 import {
@@ -318,5 +320,40 @@ describe('A3 forecourt domain', () => {
         lockedAt: '2026-09-20T15:00:00.000Z',
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe('price approval separation of duties', () => {
+  const pending = (requestedBy: string): SellingPrice => ({
+    id: '17171717-1717-4717-8717-171717171717',
+    tenantId: ids.tenant,
+    stationId: ids.station,
+    productId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    effectiveFrom: '2026-10-26T06:00:00.000Z',
+    unitPrice: unitPrice('1.65'),
+    currency: 'USD',
+    requestedBy,
+    version: 1,
+    state: 'PENDING_APPROVAL',
+  });
+  const now = '2026-10-26T07:00:00.000Z';
+
+  it('blocks the requester while another approver exists', () => {
+    expect(() => approvePriceChange(pending(ids.actor), trustedActor, now)).toThrow(/requester/);
+    expect(() => approvePriceChange(pending(ids.actor), trustedActor, now, true)).toThrow(
+      /requester/,
+    );
+  });
+
+  it('lets a solo owner approve their own price when nobody else could', () => {
+    const approved = approvePriceChange(pending(ids.actor), trustedActor, now, false);
+    expect(approved.state).toBe('APPROVED');
+    expect(approved.approvedBy).toBe(ids.actor);
+    expect(approved.version).toBe(2);
+  });
+
+  it('lets a different person approve either way', () => {
+    const other = '99999999-9999-4999-8999-999999999990';
+    expect(approvePriceChange(pending(other), trustedActor, now).state).toBe('APPROVED');
   });
 });

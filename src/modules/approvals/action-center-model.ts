@@ -30,6 +30,20 @@ export type ReconciliationWaiting = {
   submittedByMe: boolean;
 };
 export type RevaluationWaiting = { id: string; requestedByMe: boolean };
+export type PriceWaiting = {
+  id: string;
+  productName: string;
+  unitPrice: string;
+  requestedByMe: boolean;
+};
+export type OrderWaiting = {
+  id: string;
+  orderNumber: string;
+  supplierName: string;
+  submittedByMe: boolean;
+};
+/** Supplier invoices and credit notes entered but not yet posted, counted per supplier. */
+export type InvoiceWaiting = { supplierId: string; documentType: string; count: number };
 
 export type ActionCenterFacts = {
   tenantId: string;
@@ -37,6 +51,9 @@ export type ActionCenterFacts = {
   /** `soleApprover`: nobody else could approve, so the person may approve their own work. */
   reconciliations: Section<{ rows: readonly ReconciliationWaiting[]; soleApprover: boolean }>;
   revaluations: Section<{ rows: readonly RevaluationWaiting[]; soleApprover: boolean }>;
+  prices?: Section<{ rows: readonly PriceWaiting[]; soleApprover: boolean }>;
+  orders?: Section<{ rows: readonly OrderWaiting[]; soleApprover: boolean }>;
+  invoices?: Section<{ rows: readonly InvoiceWaiting[] }>;
   cash: Section<{ collectedButUnbanked: string; pendingBankConfirmation: string }>;
   settlements: Section<{
     toMatch: number;
@@ -164,6 +181,55 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
           ? 'You requested this, so someone else needs to approve it.'
           : 'Review the cost impact before approving.',
         href: `/inventory/valuation/revaluations/${encodeURIComponent(row.id)}`,
+        tone: 'attention',
+      });
+    }
+  }
+
+  if (facts.prices?.status === 'unavailable') unavailable.push('Price changes');
+  if (facts.prices?.status === 'ok') {
+    for (const row of facts.prices.value.rows) {
+      const blocked = row.requestedByMe && !facts.prices.value.soleApprover;
+      items.push({
+        id: `price-${row.id}`,
+        area: 'Approvals',
+        title: `A new ${row.productName} price of ${formatUsd(row.unitPrice)} is waiting for approval`,
+        detail: blocked
+          ? 'You requested this, so someone else needs to approve it.'
+          : 'Check the price, then approve it so it can be used.',
+        href: '/settings',
+        tone: 'attention',
+      });
+    }
+  }
+
+  if (facts.orders?.status === 'unavailable') unavailable.push('Purchase orders');
+  if (facts.orders?.status === 'ok') {
+    for (const row of facts.orders.value.rows) {
+      const blocked = row.submittedByMe && !facts.orders.value.soleApprover;
+      items.push({
+        id: `order-${row.id}`,
+        area: 'Approvals',
+        title: `Order ${row.orderNumber} from ${row.supplierName} is waiting for approval`,
+        detail: blocked
+          ? 'You sent this, so someone else needs to approve it.'
+          : 'Review the fuel and prices before approving.',
+        href: `/purchasing/${encodeURIComponent(row.id)}`,
+        tone: 'attention',
+      });
+    }
+  }
+
+  if (facts.invoices?.status === 'unavailable') unavailable.push('Supplier invoices');
+  if (facts.invoices?.status === 'ok') {
+    for (const row of facts.invoices.value.rows) {
+      const noun = row.documentType === 'INVOICE' ? 'invoice' : 'credit note';
+      items.push({
+        id: `invoice-${row.supplierId}-${row.documentType}`,
+        area: 'Payables',
+        title: `${row.count} supplier ${plural(row.count, noun, `${noun}s`)} not yet posted`,
+        detail: 'Nothing is owed until it is posted. Open the supplier to post it.',
+        href: `/suppliers/${encodeURIComponent(row.supplierId)}`,
         tone: 'attention',
       });
     }

@@ -100,6 +100,7 @@ export async function loadOperationsFacts(
       physical: string | null;
       variance: string | null;
       tolerance: string | null;
+      sold: string | null;
       reorder: string | null;
     }>(sql`
       select t.id as tank_id, t.code as tank_code, p.name as product_name,
@@ -107,6 +108,7 @@ export async function loadOperationsFacts(
         d.physical_litres::text as physical,
         (d.physical_litres - coalesce(at_dip.expected, 0))::text as variance,
         t.acceptable_variance_litres::text as tolerance,
+        sold.litres::text as sold,
         t.reorder_level_litres::text as reorder
       from app.tanks t
       join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
@@ -126,6 +128,18 @@ export async function loadOperationsFacts(
           and m.tank_id = t.id and m.product_id = t.product_id
           and m.effective_at <= d.measured_at
       ) at_dip on true
+      left join lateral (
+        select -sum(m.quantity_litres) as litres from app.inventory_movements m
+        where m.tenant_id = t.tenant_id and m.station_id = t.station_id
+          and m.tank_id = t.id and m.product_id = t.product_id
+          and m.movement_type = 'SALE'
+          and m.effective_at <= d.measured_at
+          and m.effective_at > coalesce((
+            select p.measured_at from app.tank_dips p
+            where p.tenant_id = t.tenant_id and p.station_id = t.station_id
+              and p.tank_id = t.id and p.measured_at < d.measured_at
+            order by p.measured_at desc, p.id desc limit 1), '-infinity'::timestamptz)
+      ) sold on true
       where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
         and t.status = 'ACTIVE'
       order by t.code`);
@@ -137,6 +151,7 @@ export async function loadOperationsFacts(
       physicalLitres: row.physical,
       varianceAtDipLitres: row.variance,
       toleranceLitres: row.tolerance,
+      soldSincePreviousDipLitres: row.sold,
       reorderLevelLitres: row.reorder,
     }));
   }

@@ -192,6 +192,49 @@ export async function loadExtraAlertFacts(
     approvedInformationChanges = Number(row?.total ?? 0);
   }
 
+  const dipReminders = can('inventory.view')
+    ? await (async () => {
+        const rows = await transaction.execute<{
+          shift_id: string;
+          kind: 'OPENING' | 'CLOSING';
+          tank_code: string;
+        }>(sql`
+      select s.id as shift_id, k.kind, t.code as tank_code
+      from app.shifts s
+      join app.tanks t on t.tenant_id = s.tenant_id and t.station_id = s.station_id
+        and t.status = 'ACTIVE'
+      cross join lateral (values ('OPENING'), ('CLOSING')) as k(kind)
+      where s.tenant_id = ${tenantId} and s.station_id = ${stationId} and s.state = 'OPEN'
+        and (
+          (k.kind = 'OPENING' and s.opened_at is not null
+            and now() >= s.opened_at + interval '30 minutes'
+            and not exists (select 1 from app.tank_dips d
+              where d.tenant_id = t.tenant_id and d.station_id = t.station_id
+                and d.tank_id = t.id and d.measured_at >= s.opened_at - interval '60 minutes'))
+          or (k.kind = 'CLOSING' and now() >= s.planned_end_at - interval '30 minutes'
+            and not exists (select 1 from app.tank_dips d
+              where d.tenant_id = t.tenant_id and d.station_id = t.station_id
+                and d.tank_id = t.id and d.measured_at >= s.planned_end_at - interval '30 minutes'))
+        )
+      order by s.planned_end_at, s.id, k.kind, t.code`);
+        const grouped = new Map<
+          string,
+          { shiftId: string; kind: 'OPENING' | 'CLOSING'; tankCodes: string[] }
+        >();
+        for (const row of rows) {
+          const key = `${row.shift_id}:${row.kind}`;
+          const entry = grouped.get(key) ?? {
+            shiftId: row.shift_id,
+            kind: row.kind,
+            tankCodes: [],
+          };
+          entry.tankCodes.push(row.tank_code);
+          grouped.set(key, entry);
+        }
+        return [...grouped.values()];
+      })()
+    : null;
+
   let customerOverdue: ExtraAlertFacts['customerOverdue'] = null;
   let customerOverLimit: ExtraAlertFacts['customerOverLimit'] = null;
   if (can('customer.statement.view')) {
@@ -200,10 +243,11 @@ export async function loadExtraAlertFacts(
       customer_id: string;
       display_name: string;
       credit_limit: string | null;
+      credit_days: number | null;
       staff_name: string | null;
     }>(sql`
       select a.id as account_id, c.id as customer_id, c.display_name,
-             a.credit_limit::text as credit_limit, t.staff_name
+             a.credit_limit::text as credit_limit, a.credit_days, t.staff_name
       from app.customer_accounts a
       join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id
       left join app.customer_staff_benefit_terms t
@@ -245,6 +289,7 @@ export async function loadExtraAlertFacts(
         customerId: row.customer_id,
         customerName: row.display_name,
         limit: row.credit_limit,
+        creditDays: row.credit_days === null ? null : Number(row.credit_days),
         isStaffBenefit: row.staff_name !== null,
         staffName: row.staff_name,
         lines: byAccount.get(row.account_id) ?? [],
@@ -265,5 +310,6 @@ export async function loadExtraAlertFacts(
     shortDeliveries,
     approvedInformationChanges,
     unprovenSupplierPayments,
+    dipReminders,
   };
 }

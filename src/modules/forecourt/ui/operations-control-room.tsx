@@ -1,6 +1,7 @@
 'use client';
 
 import { useReverification } from '@clerk/nextjs';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
@@ -11,6 +12,7 @@ import {
   StatusBadge,
 } from '../../../design-system/primitives';
 import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
+import { Select } from '../../../design-system/forms';
 import { ReconciliationBoard } from './reconciliation-board';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
@@ -58,6 +60,12 @@ type Overview = {
     openedAt: string | null;
     closedAt: string | null;
   };
+  shiftTemplates?: Array<{
+    id: string;
+    name: string;
+    startTime: string | null;
+    durationMinutes: number;
+  }>;
   shifts: Array<{
     id: string;
     state: string;
@@ -134,6 +142,49 @@ function timeRange(start: string | null, end: string | null, timeZone: string) {
   return `${formatter.format(new Date(start))} – ${formatter.format(new Date(end))}`;
 }
 
+function templateLength(minutes: number) {
+  if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? '' : 's'}`;
+  return `${minutes} minutes`;
+}
+
+/** Opens the day's first shift from one of the station's shift templates. */
+function OpenFirstShift({
+  templates,
+  busy,
+  onOpen,
+}: {
+  templates: NonNullable<Overview['shiftTemplates']>;
+  busy: boolean;
+  onOpen: (templateId: string) => void;
+}) {
+  const [chosen, setChosen] = useState('');
+  const templateId = chosen || templates[0]?.id || '';
+  if (templates.length === 0) {
+    return (
+      <p>
+        No shift has been set up for this station yet. Add a Day or Night shift in{' '}
+        <Link href="/settings">Settings, under Station setup</Link>, then come back here.
+      </p>
+    );
+  }
+  return (
+    <div className="inline-links">
+      <Select
+        aria-label="Shift to open"
+        value={templateId}
+        onChange={(event) => setChosen(event.target.value)}
+        options={templates.map((template) => ({
+          value: template.id,
+          label: `${template.name} (${templateLength(template.durationMinutes)})`,
+        }))}
+      />
+      <Button disabled={busy || !templateId} onClick={() => onOpen(templateId)}>
+        Open shift
+      </Button>
+    </div>
+  );
+}
+
 function formatTimestamp(value: string | null, timeZone: string) {
   return value
     ? new Intl.DateTimeFormat('en-GB', {
@@ -163,6 +214,8 @@ export function OperationsControlRoom({
   const [notice, setNotice] = useState<string>();
   const [statementOpen, setStatementOpen] = useState(false);
   const idempotencyKeys = useRef(new Map<string, string>());
+  // One id per visit, so retrying the first shift's opening cannot create two shifts.
+  const [firstShiftId] = useState(() => crypto.randomUUID());
 
   const endpoint = useMemo(() => {
     const params = new URLSearchParams({
@@ -446,10 +499,40 @@ export function OperationsControlRoom({
                   </div>
                 </div>
                 {!day || overview.shifts.length === 0 ? (
-                  <EmptyState
-                    title="No shifts recorded"
-                    message="Shifts appear here once they are planned for this business day."
-                  />
+                  <>
+                    <EmptyState
+                      title="No shifts recorded"
+                      message={
+                        day?.state === 'OPEN'
+                          ? 'No shift has been opened for this business day yet.'
+                          : 'Open the business day first, then you can open a shift.'
+                      }
+                    />
+                    {day?.state === 'OPEN' && overview.actions.StartShift.canExecute ? (
+                      <OpenFirstShift
+                        templates={overview.shiftTemplates ?? []}
+                        busy={busy}
+                        onOpen={(templateId) => {
+                          const values = {
+                            tenantId: context.tenantId,
+                            stationId: context.stationId,
+                            businessDayId: day.id,
+                            shiftId: firstShiftId,
+                            expectedVersion: 0,
+                            plannedStartAt: new Date().toISOString(),
+                            shiftTemplateId: templateId,
+                          };
+                          void runCommand(
+                            'StartShift',
+                            values,
+                            firstShiftId,
+                            'Open a shift now for this business day?',
+                            'Shift opened.',
+                          );
+                        }}
+                      />
+                    ) : null}
+                  </>
                 ) : (
                   <div className="operations-list">
                     {overview.shifts.map((shift) => {

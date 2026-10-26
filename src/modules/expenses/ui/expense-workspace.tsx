@@ -139,6 +139,12 @@ const PAY_SOURCES = [
     hint: 'For example the transfer or payment number.',
   },
   {
+    value: 'MOBILE_MONEY',
+    label: 'Paid by EcoCash',
+    refLabel: 'EcoCash transaction code',
+    hint: 'The code from the EcoCash confirmation message.',
+  },
+  {
     value: 'REIMBURSEMENT',
     label: 'Paid back to someone who covered it',
     refLabel: 'Who was paid back, and how',
@@ -149,6 +155,7 @@ const PAY_SOURCES = [
 const SOURCE_WORDS: Record<string, string> = {
   BANK: 'Bank',
   CASH: 'Cash',
+  MOBILE_MONEY: 'EcoCash',
   REIMBURSEMENT: 'Paid back to staff',
 };
 
@@ -226,7 +233,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [stationId, setStationId] = useState('');
   const [reason, setReason] = useState('');
-  const [paySource, setPaySource] = useState<'BANK' | 'REIMBURSEMENT'>('BANK');
+  const [paySource, setPaySource] = useState<'BANK' | 'MOBILE_MONEY' | 'REIMBURSEMENT'>('BANK');
   const [payRef, setPayRef] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -617,7 +624,9 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
         return setFormError(
           paySource === 'BANK'
             ? 'Enter the bank reference so the payment can be found later.'
-            : 'Say who was paid back and how.',
+            : paySource === 'MOBILE_MONEY'
+              ? 'Enter the EcoCash transaction code so the payment can be found later.'
+              : 'Say who was paid back and how.',
         );
       }
       return send(

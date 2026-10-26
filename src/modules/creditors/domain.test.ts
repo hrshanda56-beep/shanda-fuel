@@ -99,6 +99,16 @@ describe('supplier creditor domain', () => {
     expect(outstandingPayable(document, money('40.10')).amount.toString()).toBe('60');
   });
 
+  it('lets only a submitted document be returned, and a returned one goes no further', () => {
+    expect(() => assertSupplierDocumentTransition('SUBMITTED', 'RETURNED')).not.toThrow();
+    expect(() => assertSupplierDocumentTransition('POSTED', 'RETURNED')).toThrow(
+      'cannot transition',
+    );
+    expect(() => assertSupplierDocumentTransition('RETURNED', 'POSTED')).toThrow(
+      'cannot transition',
+    );
+  });
+
   it('prevents over-allocation and cross-supplier allocation', () => {
     const payment = {
       id: 'payment-1',

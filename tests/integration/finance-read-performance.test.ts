@@ -147,6 +147,12 @@ describe.skipIf(!enabled)('optimized finance reads under app_runtime', { timeout
       reconciliations: 'ok',
       revaluations: 'ok',
     });
+    // Prices, orders and supplier invoices are permission-gated: they may be restricted for this
+    // person, but the queries behind them must never fail.
+    for (const section of [facts.prices, facts.orders, facts.invoices]) {
+      expect(section).toBeDefined();
+      expect(section?.status).not.toBe('unavailable');
+    }
   });
   it('loads dashboard projections directly through runtime-scoped queries', async () => {
     const result = await getDashboardFromRequest(request('/', {}), {

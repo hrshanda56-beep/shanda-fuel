@@ -159,14 +159,15 @@ describe('extra alerts', () => {
     expect(run({ unprovenSupplierPayments: null })).toEqual([]);
   });
 
-  it('flags overdue customers by the oldest unpaid charge, and names accounts over their limit', () => {
+  it('flags overdue customers once they pass their own credit days, and names accounts over their limit', () => {
     const alerts = run({
       customerOverdue: [
         {
           accountId: 'a1',
           customerId: 'c1',
           customerName: 'Acme',
-          oldestUnpaidDate: '2026-09-20',
+          oldestUnpaidDate: '2026-09-19',
+          creditDays: 30,
           owed: '50.0000',
         },
         {
@@ -174,7 +175,16 @@ describe('extra alerts', () => {
           customerId: 'c2',
           customerName: 'Young',
           oldestUnpaidDate: '2026-10-10',
+          creditDays: 30,
           owed: '9.0000',
+        },
+        {
+          accountId: 'a4',
+          customerId: 'c4',
+          customerName: 'Quick Payer',
+          oldestUnpaidDate: '2026-10-10',
+          creditDays: 7,
+          owed: '4.0000',
         },
       ],
       customerOverLimit: [
@@ -188,10 +198,31 @@ describe('extra alerts', () => {
         },
       ],
     });
-    expect(alerts.map((a) => a.id)).toEqual(['customer-overdue-a1', 'customer-over-limit-a3']);
+    expect(alerts.map((a) => a.id)).toEqual([
+      'customer-overdue-a1',
+      'customer-overdue-a4',
+      'customer-over-limit-a3',
+    ]);
     expect(alerts[0]!.title).toContain('Acme');
-    expect(alerts[1]!.title).toContain('monthly staff fuel limit');
+    expect(alerts[1]!.title).toContain('Quick Payer');
+    expect(alerts[2]!.title).toContain('monthly staff fuel limit');
     expect(alerts.every((a) => a.tone === 'attention')).toBe(true);
+  });
+
+  it('reminds the shift to take opening and closing dips, once per shift and kind', () => {
+    const alerts = run({
+      dipReminders: [
+        { shiftId: 'sh1', kind: 'OPENING', tankCodes: ['T1'] },
+        { shiftId: 'sh1', kind: 'CLOSING', tankCodes: ['T1', 'T2'] },
+      ],
+    });
+    expect(alerts.map((a) => a.id)).toEqual([
+      'dip-reminder-opening-sh1',
+      'dip-reminder-closing-sh1',
+    ]);
+    expect(alerts[0]!.title).toContain('opening dip reading on T1');
+    expect(alerts[1]!.title).toContain('closing dip reading on T1, T2');
+    expect(run({ dipReminders: null })).toEqual([]);
   });
 
   it('says nothing about customers it could not check', () => {

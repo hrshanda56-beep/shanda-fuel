@@ -496,7 +496,7 @@ export const expensePayments = appSchema.table(
     check('expense_payments_amount_positive_ck', sql`${table.amount} > 0`),
     check(
       'expense_payments_source_ck',
-      sql`${table.settlementSource} in ('CASH','BANK','REIMBURSEMENT')`,
+      sql`${table.settlementSource} in ('CASH','BANK','REIMBURSEMENT','MOBILE_MONEY')`,
     ),
     check('expense_payments_state_ck', sql`${table.state} in ('RECORDED','REVERSED')`),
     check(

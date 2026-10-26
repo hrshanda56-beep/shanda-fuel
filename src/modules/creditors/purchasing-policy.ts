@@ -196,8 +196,14 @@ export function validatePurchasingPolicyValues(input: {
 // Invoice lines and VAT
 // ---------------------------------------------------------------------------------------
 
+/** What an invoice line is for. A line with no type was entered before types existed. */
+export const INVOICE_LINE_TYPES = ['FUEL', 'TRANSPORT', 'OTHER_DIRECT_COST'] as const;
+export type InvoiceLineType = (typeof INVOICE_LINE_TYPES)[number];
+
 export type InvoiceLineInput = Readonly<{
+  /** The fuel on a FUEL line. Transport and other direct costs carry no product. */
   productId?: string | undefined;
+  lineType?: InvoiceLineType | undefined;
   description: string;
   /** Litres or units, at most 3 decimal places. */
   quantity: string;
@@ -220,6 +226,7 @@ export type InvoiceLineInput = Readonly<{
 export type ComputedInvoiceLine = Readonly<{
   lineNo: number;
   productId: string | null;
+  lineType: InvoiceLineType | null;
   description: string;
   quantity: string;
   unitPrice: string;
@@ -254,6 +261,9 @@ export function computeInvoiceLine(
   const label = `Line ${lineNo}`;
   const description = input.description.trim();
   if (!description) bad(`${label} needs a description.`);
+  if (input.lineType && input.lineType !== 'FUEL' && input.productId) {
+    bad(`${label} is not fuel, so it cannot name a fuel type.`);
+  }
   const quantity = parse(input.quantity, LITRES, `${label} quantity`);
   if (!quantity.value.gt(0)) bad(`${label} quantity must be greater than zero.`);
   const unitPrice = parse(input.unitPrice, UNIT_PRICE, `${label} unit price`);
@@ -316,6 +326,7 @@ export function computeInvoiceLine(
   return {
     lineNo,
     productId: input.productId ?? null,
+    lineType: input.lineType ?? null,
     description,
     quantity: quantity.value.toFixed(LITRES.scale),
     unitPrice: unitPrice.value.toFixed(UNIT_PRICE.scale),

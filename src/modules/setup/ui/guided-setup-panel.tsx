@@ -17,10 +17,14 @@ import type { ConfigurationSetupOverview, SetupOverview } from '../contracts';
 import {
   buildGuidedSteps,
   describeDuration,
+  describePriceState,
+  displayPrice,
   firstOpenStep,
+  friendlyPriceError,
   friendlySetupError,
   hoursToMinutes,
   parsePositiveDecimal,
+  planPriceAdvance,
   progress,
   suggestCode,
   type GuidedStep,
@@ -243,6 +247,74 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
   const products = activeProducts(ctx.data);
   const nameOf = (id: string) => products.find((p) => p.id === id)?.name ?? 'Fuel';
   const prices = (ctx.data.prices ?? []).filter((p) => p.state !== 'SUPERSEDED');
+  const advanceKeys = useRef(new Map<string, string>());
+  const [advancing, setAdvancing] = useState<string | null>(null);
+  const [advanceOutcome, setAdvanceOutcome] = useState<Outcome>();
+
+  /** Runs each step the person may take, one after another, and stops at the first refusal. */
+  function advance(price: (typeof prices)[number]) {
+    const { commands } = planPriceAdvance(price.state, ctx.data.capabilities);
+    if (commands.length === 0) return;
+    ctx.gate(async () => {
+      setAdvancing(price.id);
+      setAdvanceOutcome(undefined);
+      let version = price.version;
+      let last: string | undefined;
+      try {
+        for (const commandType of commands) {
+          const body = {
+            commandType,
+            tenantId: ctx.tenantId,
+            stationId: ctx.stationId,
+            priceId: price.id,
+            expectedVersion: version,
+          };
+          const logical = JSON.stringify(body);
+          const key = advanceKeys.current.get(logical) ?? `guided-setup-${crypto.randomUUID()}`;
+          advanceKeys.current.set(logical, key);
+          const response = await fetch('/api/forecourt/commands', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json', 'idempotency-key': key },
+            body: JSON.stringify(body),
+          });
+          if (!response.ok) {
+            const failure = (await response.json().catch(() => null)) as {
+              message?: string;
+            } | null;
+            const approved = failure?.message ? /meter boundaries/i.test(failure.message) : false;
+            setAdvanceOutcome({
+              kind: approved ? 'success' : 'error',
+              message: friendlyPriceError(response.status, failure?.message),
+            });
+            return;
+          }
+          advanceKeys.current.delete(logical);
+          version += 1;
+          last = commandType;
+        }
+        setAdvanceOutcome({
+          kind: 'success',
+          message:
+            last === 'ActivatePriceChange'
+              ? `The price for ${nameOf(price.productId)} is now in use.`
+              : last === 'ApprovePriceChange'
+                ? 'The price was approved.'
+                : last === 'PreparePriceActivation'
+                  ? 'The price is ready to start.'
+                  : 'The price was sent for approval.',
+        });
+      } catch {
+        setAdvanceOutcome({
+          kind: 'error',
+          message: 'That could not be saved. Check your connection and try again.',
+        });
+      } finally {
+        setAdvancing(null);
+        ctx.refresh();
+      }
+    });
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -275,15 +347,34 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
 
   return (
     <>
-      <ItemList
-        label="Prices"
-        items={prices.map((p) => ({
-          id: p.id,
-          text: `${nameOf(p.productId)}: ${p.unitPrice} USD per litre (${
-            p.state === 'ACTIVE' ? 'in use' : 'waiting for approval'
-          })`,
-        }))}
-      />
+      {prices.length > 0 ? (
+        <ul className={styles.itemList} aria-label="Prices">
+          {prices.map((p) => {
+            const { label } = planPriceAdvance(p.state, ctx.data.capabilities);
+            return (
+              <li key={p.id}>
+                {`${nameOf(p.productId)}: ${displayPrice(p.unitPrice)} USD per litre (${describePriceState(p.state)})`}
+                {label ? (
+                  <>
+                    {' '}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={advancing === p.id}
+                      disabled={advancing !== null}
+                      onClick={() => advance(p)}
+                    >
+                      {label}
+                    </Button>
+                  </>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      <Message outcome={advanceOutcome} />
       {ctx.data.capabilities.priceRequest ? (
         <form className={styles.form} onSubmit={submit} noValidate aria-label="Set a selling price">
           <Field id="price-product" label="Fuel" error={errors.product} required>
