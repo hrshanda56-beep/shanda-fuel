@@ -75,8 +75,12 @@ that was reviewed.
 | 0077 | expense_payment_mobile_money | Mobile money added to the expense payment sources | Replaces a check constraint |
 | 0078 | price_changeover | Price overlap rule covers ACTIVE prices only; an ACTIVE price may have its end date set once | On branch `halfway`, not merged; applied only to local test databases. Replaces a constraint on `selling_prices` and the shared trigger function `reject_authoritative_forecourt_mutation` |
 | 0079 | delivery_no_po_reason | Reason a fuel delivery has no purchase order (`no_po_reason`, `no_po_note`) | On branch `halfway`, not merged; applied only to local test databases. Confirming a delivery now needs a PO link or a reason |
+| 0080 | supplier_document_files | Files can be attached to a supplier invoice (`SUPPLIER_DOCUMENT` document subject) | On branch `fix/pilot-readiness`, not merged; applied only to local test databases |
+| 0081 | expense_payment_method | How an expense was paid (`payment_method`) | On branch `fix/pilot-readiness`, not merged; applied only to local test databases |
+| 0082 | tank_variance_red | Red variance limit per tank (`variance_red_litres`) | On branch `fix/pilot-readiness`, not merged; applied only to local test databases |
+| 0083 | provider_account_fees | Fee percent and fixed fee per payment account; expected fee on settlements | On branch `fix/pilot-readiness`, not merged; applied only to local test databases |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 65 entries, 0000 to 0079 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 69 entries, 0000 to 0083 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -224,6 +228,10 @@ cfcd5e8de59ad39847a2c81fdef6d3a974f1fd8fe1f1d164d7330208d0570821  0075_supplier_
 f04f371940a99355bdd00c44028a69884688bf6375ff818b1a3704afd571879e  0077_expense_payment_mobile_money.sql
 7b38233c09584fc73c266b75cce18868ec7de2081afc8392e8c5a8c59b3ee392  0078_price_changeover.sql
 cc6a85b654099b7bb548ced4e234dd4f1cf8224053ea42306cc5276d4b8fa353  0079_delivery_no_po_reason.sql
+dd7dd2a5c489f521727baf18f46c4366cde7ef6827e6fccbd095227125f2cce1  0080_supplier_document_files.sql
+7e08999d2012fd7ab4d665f8abd7e378b1f9f604445706e12b033ad69e930839  0081_expense_payment_method.sql
+fe3af7cff3c83ceb2a1b1ecb9672c52b2f695f3afcaf75c83e4e5a1ba6d92d0a  0082_tank_variance_red.sql
+6fdd01b7a433cf388c2694f4eafcbd16492dde1ca022c538c9dcb86c493cf624  0083_provider_account_fees.sql
 ```
 
 ## 7. Release record (copy this and fill it in)
