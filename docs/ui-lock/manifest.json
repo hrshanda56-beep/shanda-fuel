@@ -222,7 +222,7 @@
     "src/modules/customers/ui/types.ts": "dbf24b1ad7b6554d562d8e2485e6d02d624a21727ab6b6dc200dc8693a734544",
     "src/modules/deliveries/ui/deliveries-list.tsx": "4ce702a62597c5d39c56db0b1ca3f1173b6efea0821640aa3a16e5930fd078e0",
     "src/modules/deliveries/ui/delivery-details.tsx": "d33943b65c13279c21d65424d411b61159fb169293ec5b88f8117a686dec0683",
-    "src/modules/deliveries/ui/record-delivery.tsx": "bc3d528fb26e8796963904a00da8de5124599e0a4c8b3877b8c3fcedfa709c6d",
+    "src/modules/deliveries/ui/record-delivery.tsx": "aec09209489fcd82a00d808a863d3d51f39c2d51137a9524a7902cb08ba3c6e2",
     "src/modules/documents/ui/document-attachments.tsx": "7fbab453511796ae1d0edfb93f1563ba1a16fa1100c95d9d2069b70c0705adad",
     "src/modules/expenses/ui/expense-format.ts": "8fac28d0894d4d061b6df6dee6d8795f3cd9d1e33d1e38e691e86df48c468f7c",
     "src/modules/expenses/ui/expense-workspace.tsx": "32de1a17242e679d9b5f11d3c9c83b575734f8769ad78abae5db5bc2efcb670f",
