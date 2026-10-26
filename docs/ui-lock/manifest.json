@@ -231,7 +231,7 @@
     "src/modules/forecourt/ui/my-shift-workspace.tsx": "25c3ff1ccd6c3d269aef780be3604f2ebe9dd9195500b82ded59c2678ed86c27",
     "src/modules/forecourt/ui/operations-control-room.tsx": "208bb4137a27b6e5ff0f08e01c8a26531d0c6e6653edc2ef9dac499f210669ba",
     "src/modules/forecourt/ui/operations-labels.ts": "2cbc656e2ccb02c4e2ddc08b05cbd25baf481c9aae8bd1a99cdeecaefbc371c5",
-    "src/modules/forecourt/ui/price-change-workspace.tsx": "efe172345acb52ad78e610cbff616969e9b0d1c7a33a48b1acf54eae7e2e85a9",
+    "src/modules/forecourt/ui/price-change-workspace.tsx": "1c237ee16de5d2f20a4409689be7411981bbe4eb447e9e06d606d4284ed8200c",
     "src/modules/forecourt/ui/price-change.module.css": "a5644458eb4da3cffc9511a8b625cb8a4ce40b6cf77df10c670bbda4cbffd2c1",
     "src/modules/forecourt/ui/production-reconciliation-workflow.tsx": "45c175f9f89a10b879ce5989038aaa5c2c22dfe293b60b3079409cfc6e078a26",
     "src/modules/forecourt/ui/reconciliation-board.tsx": "1a1b7c3194e89d4886b9685ec3ed39febcc855e0dfeb56b16953494cd4cea563",
