@@ -55,4 +55,19 @@ describe('buildFinanceTiles', () => {
       expect(byId(tiles, id).value).toBeNull();
     expect(byId(tiles, 'debtors').unavailableReason).toContain('all stations');
   });
+
+  it('says there are no sales, not that costs are missing, when nothing was sold', () => {
+    const tiles = buildFinanceTiles(
+      report({ grossMargin: null, sales: { salesValue: '0.0000', payments: [] } }),
+    );
+    expect(byId(tiles, 'grossProfit').unavailableReason).toBe('No sales yet.');
+    expect(byId(tiles, 'operatingProfit').unavailableReason).toBe('No sales yet.');
+  });
+
+  it('still reports missing fuel cost when there are sales', () => {
+    const tiles = buildFinanceTiles(
+      report({ grossMargin: null, sales: { salesValue: '50.0000', payments: [] } }),
+    );
+    expect(byId(tiles, 'grossProfit').unavailableReason).toBe('Some sales have no fuel cost yet.');
+  });
 });

@@ -1,8 +1,10 @@
 import 'server-only';
 
+import Decimal from 'decimal.js';
 import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import type { OwnerPosition } from './contracts';
+import { readSupplierExposure } from '../creditors/purchasing-queries';
 import { formatMoney } from './domain';
 
 type PositionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -24,6 +26,7 @@ function stationFilter(alias: string, stationIds: readonly string[]) {
 export async function readOwnerPosition(
   transaction: PositionTransaction,
   filters: { tenantId: string; stationIds: readonly string[] },
+  legalEntityIds: readonly string[] = [],
 ): Promise<OwnerPosition> {
   const rows = await transaction.execute<{
     stock_value: string | null;
@@ -61,7 +64,13 @@ export async function readOwnerPosition(
   `);
   const row = rows[0];
   if (!row) return emptyOwnerPosition();
+  const [bank, receivedNotInvoiced] = await Promise.all([
+    readBank(transaction, filters.tenantId, legalEntityIds),
+    readReceivedNotInvoiced(transaction, filters.tenantId, legalEntityIds),
+  ]);
   return {
+    bank,
+    receivedNotInvoiced,
     stockValue: row.stock_value === null ? null : formatMoney(row.stock_value),
     unvaluedStockStreams: Number(row.unvalued_streams),
     unpaidExpenses: formatMoney(row.unpaid_expenses),
@@ -72,11 +81,78 @@ export async function readOwnerPosition(
   };
 }
 
+async function readBank(
+  transaction: PositionTransaction,
+  tenantId: string,
+  legalEntityIds: readonly string[],
+): Promise<NonNullable<OwnerPosition['bank']>> {
+  if (legalEntityIds.length === 0) {
+    return { balance: null, asOf: null, accountCount: 0, accountsWithoutBalance: 0 };
+  }
+  const rows = await transaction.execute<{
+    accounts: string | number;
+    with_balance: string | number;
+    total: string | null;
+    as_of: string | null;
+  }>(sql`
+    with latest as (
+      select distinct on (b.id) b.id, bal.amount, bal.as_of_date
+      from app.bank_accounts b
+      left join app.bank_account_balances bal
+        on bal.tenant_id = b.tenant_id and bal.bank_account_id = b.id
+      where b.tenant_id = ${tenantId} and b.status = 'ACTIVE'
+        and b.legal_entity_id in (${sql.join(
+          legalEntityIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+      order by b.id, bal.as_of_date desc nulls last, bal.recorded_at desc nulls last
+    )
+    select count(*) as accounts, count(amount) as with_balance,
+      sum(amount)::text as total, min(as_of_date)::text as as_of
+    from latest
+  `);
+  const row = rows[0];
+  const accountCount = Number(row?.accounts ?? 0);
+  const withBalance = Number(row?.with_balance ?? 0);
+  const complete = accountCount > 0 && withBalance === accountCount;
+  return {
+    balance: complete && row?.total != null ? formatMoney(row.total) : null,
+    asOf: complete ? (row?.as_of ?? null) : null,
+    accountCount,
+    accountsWithoutBalance: accountCount - withBalance,
+  };
+}
+
+async function readReceivedNotInvoiced(
+  transaction: PositionTransaction,
+  tenantId: string,
+  legalEntityIds: readonly string[],
+): Promise<NonNullable<OwnerPosition['receivedNotInvoiced']>> {
+  const today = new Date().toISOString().slice(0, 10);
+  let value = new Decimal(0);
+  let unpriced = new Decimal(0);
+  for (const legalEntityId of legalEntityIds) {
+    const exposure = await readSupplierExposure(transaction, {
+      tenantId,
+      legalEntityId,
+      asOf: today,
+    });
+    value = value.add(exposure.totals.unbilledValue);
+    unpriced = unpriced.add(exposure.totals.unpricedUnbilledLitres);
+  }
+  return {
+    value: unpriced.isZero() ? formatMoney(value.toFixed(4)) : null,
+    unpricedLitres: unpriced.toFixed(3),
+  };
+}
+
 export function emptyOwnerPosition(): OwnerPosition {
   return {
     stockValue: '0.0000',
     unvaluedStockStreams: 0,
     unpaidExpenses: '0.0000',
     expensesAwaitingApproval: { count: 0, amount: '0.0000' },
+    bank: { balance: null, asOf: null, accountCount: 0, accountsWithoutBalance: 0 },
+    receivedNotInvoiced: { value: '0.0000', unpricedLitres: '0.000' },
   };
 }

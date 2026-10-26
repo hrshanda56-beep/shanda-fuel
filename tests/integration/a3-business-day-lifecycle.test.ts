@@ -359,6 +359,71 @@ describe('A3 production BusinessDate derivation and full-day lifecycle', () => {
       `a3bl-conflicting-open-${secondId}`,
     );
     expect(second.status).toBe(409);
+
+    // A day on which nothing was recorded cannot be closed: closing it would hide that nobody
+    // recorded the day. It stays open until its shifts are recorded or marked not operated.
+    const close = await postCommand(
+      {
+        commandType: 'CloseBusinessDay',
+        tenantId: ids.tenant,
+        stationId: ids.stationIdempotent,
+        businessDayId: firstId,
+        expectedVersion: 1,
+      },
+      `a3bl-close-empty-${firstId}`,
+    );
+    expect(close.status).toBe(409);
+    expect(JSON.stringify(await close.json())).toContain('no shifts recorded');
+    const [day] = await client`
+      select state from app.station_business_days where id = ${firstId}
+    `;
+    expect(day?.state).toBe('OPEN');
+
+    // Once the day has a shift marked not operated it can close, but with no approved
+    // reconciliation the person closing must give a reason.
+    const shiftId = randomUUID();
+    await client`
+      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      select ${shiftId}, tenant_id, station_id, id, 'PLANNED', now(), now() + interval '8 hours', business_date
+      from app.station_business_days where id = ${firstId}
+    `;
+    await client`
+      update app.shifts set state = 'NOT_OPERATED', not_operated_reason = 'No trading' where id = ${shiftId}
+    `;
+    const noReason = await postCommand(
+      {
+        commandType: 'CloseBusinessDay',
+        tenantId: ids.tenant,
+        stationId: ids.stationIdempotent,
+        businessDayId: firstId,
+        expectedVersion: 1,
+      },
+      `a3bl-close-noreason-${firstId}`,
+    );
+    expect(noReason.status).toBe(409);
+    expect(JSON.stringify(await noReason.json())).toContain('no approved reconciliation');
+    const withReason = await postCommand(
+      {
+        commandType: 'CloseBusinessDay',
+        tenantId: ids.tenant,
+        stationId: ids.stationIdempotent,
+        businessDayId: firstId,
+        expectedVersion: 1,
+        reasonWithoutReconciliation: 'Manager away, reconcile on Monday',
+      },
+      `a3bl-close-reason-${firstId}`,
+    );
+    expect(withReason.status).toBe(200);
+    const [closed] = await client`
+      select state from app.station_business_days where id = ${firstId}
+    `;
+    expect(closed?.state).toBe('CLOSED');
+    const events = await client`
+      select details from platform.security_events
+      where tenant_id = ${ids.tenant} and details::text like ${`%${firstId}%`}
+        and details::text like '%Manager away, reconcile on Monday%'
+    `;
+    expect(events.length).toBeGreaterThan(0);
   });
 
   it('drives a full authoritative day from OpenBusinessDay through LockBusinessDay using only production commands for workflow state, including an operated zero-sales segment', async () => {

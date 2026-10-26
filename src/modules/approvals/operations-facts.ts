@@ -14,6 +14,7 @@ const LOOKBACK_DAYS = 14;
 
 export type OperationsReportFacts = Readonly<{
   unsubmittedDates: readonly string[];
+  closedUnreconciledDates: readonly string[];
   cashShortages: readonly { businessDate: string; amount: string }[];
 }>;
 
@@ -46,8 +47,8 @@ export async function loadOperationsFacts(
 
   let reports: OperationsReportFacts | null = null;
   if (can('reconciliation.view')) {
-    const days = await transaction.execute<{ business_date: string }>(sql`
-      select bd.business_date::text as business_date
+    const days = await transaction.execute<{ business_date: string; state: string }>(sql`
+      select bd.business_date::text as business_date, bd.state
       from app.station_business_days bd
       where bd.tenant_id = ${context.tenantId} and bd.station_id = ${context.stationId}
         and bd.state in ('OPEN', 'OPERATIONS_COMPLETE', 'CLOSED', 'LOCKED')
@@ -79,6 +80,9 @@ export async function loadOperationsFacts(
       order by bd.business_date desc`);
     reports = {
       unsubmittedDates: days.map((row) => row.business_date),
+      closedUnreconciledDates: days
+        .filter((row) => row.state === 'CLOSED' || row.state === 'LOCKED')
+        .map((row) => row.business_date),
       cashShortages: shortages.map((row) => ({
         businessDate: row.business_date,
         amount: row.amount,

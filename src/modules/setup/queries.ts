@@ -4,9 +4,15 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
-import { authorize, type PermissionCode } from '../../platform/security/permissions';
+import {
+  isPermissionGranted,
+  type AccessScope,
+  type AuthorizationActor,
+  type PermissionCode,
+} from '../../platform/security/permissions';
 import { resolveInventoryCommandContext } from '../inventory/application';
 import { computeSetupBlockers } from './blockers';
+import { resolveSetupCapabilities } from './capabilities';
 import type { ConfigurationSetupOverview } from './contracts';
 
 const input = z.object({ tenantId: z.string().uuid(), stationId: z.string().uuid() });
@@ -28,29 +34,13 @@ export async function getSetupOverview(args: {
     requestedTenantId: parsed.tenantId,
     stationId: parsed.stationId,
   });
-  const can = (permissionCode: PermissionCode): boolean => {
-    try {
-      authorize({
-        actor: context.authority.authorization,
-        permissionCode,
-        requestedScope: context.scope,
-      });
-      return true;
-    } catch (error) {
-      if (error instanceof AppError && error.code === 'FORBIDDEN') return false;
-      throw error;
-    }
-  };
-  const capabilities = {
-    products: can('station.manage'),
-    tanks: can('inventory.tank.manage'),
-    forecourt: can('station.manage'),
-    shiftTemplates: can('shift.template.manage'),
-    priceRequest: can('price.change.request'),
-    priceApprove: can('price.change.approve'),
-    priceActivate: can('price.change.activate'),
-    suppliers: can('supplier.manage'),
-  };
+  const { capabilities } = resolveSetupCapabilities(context.authority.authorization, context.scope);
+  const can = (permissionCode: PermissionCode): boolean =>
+    isPermissionGranted({
+      actor: context.authority.authorization,
+      permissionCode,
+      requestedScope: context.scope,
+    });
   const view = {
     stationView: can('station.view'),
     inventory: can('inventory.view'),

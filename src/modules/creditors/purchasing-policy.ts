@@ -5,7 +5,7 @@ import { ExactDecimal, type DecimalPolicy } from '../../platform/domain/primitiv
 /**
  * Pure purchasing-policy and invoice-line arithmetic (ADR-018). No tax rate, threshold or
  * tolerance is hard-coded here: every figure comes from the tenant's purchasing policy.
- * Absent configuration is strict (zero tolerance) and VAT-free (mode NONE).
+ * Absent configuration allows 0.5% on litres, nothing on price, and is VAT-free (mode NONE).
  *
  * Rounding rule (documented once, applied everywhere): a derived monetary amount is rounded
  * half-up (a tie moves away from zero) to 4 decimal places, at exactly one named boundary per
@@ -48,10 +48,13 @@ export type ResolvedPurchasingPolicy = PurchasingPolicyValues &
     source: 'DEFAULT' | 'TENANT' | 'SUPPLIER_OVERRIDE';
   }>;
 
-/** Used until a tenant configures a policy: strict, VAT-free, invoices carry lines. */
+/**
+ * Used until a tenant configures a policy: VAT-free, invoices carry lines, 0.5% allowed on litres
+ * (dip and meter readings never agree exactly) and none on price, which is an agreed figure.
+ */
 export const BUILT_IN_PURCHASING_POLICY: PurchasingPolicyValues = {
   quantityToleranceLitres: null,
-  quantityTolerancePercent: null,
+  quantityTolerancePercent: '0.5',
   priceTolerancePercent: null,
   amountTolerance: null,
   overReceiptToleranceLitres: null,

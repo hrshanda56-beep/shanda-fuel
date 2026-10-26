@@ -19,7 +19,7 @@ const exclusive = { vatMode: 'EXCLUSIVE' as const, defaultVatRate: '15.0000', pr
 const inclusive = { vatMode: 'INCLUSIVE' as const, defaultVatRate: '15.0000', productVatRates: {} };
 
 describe('purchasing policy resolution', () => {
-  it('is strict, VAT-free and line-requiring until a policy is configured', () => {
+  it('allows 0.5% on litres, is VAT-free and line-requiring until a policy is configured', () => {
     const resolved = resolvePurchasingPolicy(null, null);
     expect(resolved).toMatchObject({
       source: 'DEFAULT',
@@ -27,6 +27,7 @@ describe('purchasing policy resolution', () => {
       toleranceAction: 'FLAG',
       requireInvoiceLines: true,
       quantityToleranceLitres: null,
+      quantityTolerancePercent: '0.5',
       priceTolerancePercent: null,
     });
   });

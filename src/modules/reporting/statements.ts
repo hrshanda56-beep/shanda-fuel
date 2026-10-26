@@ -386,6 +386,16 @@ export function buildNetPosition(report: ManagementReport): Statement {
   };
 }
 
+function bankNote(extra: ManagementReport['ownerPosition'] | null): string | undefined {
+  const bank = extra?.bank;
+  if (!bank) return 'Not available.';
+  if (bank.accountCount === 0) return 'No bank account is set up yet (Settings, Payments).';
+  if (bank.balance === null) {
+    return `${bank.accountsWithoutBalance} bank account(s) have no balance recorded yet (Settings, Payments).`;
+  }
+  return bank.asOf ? `From the bank statement dated ${bank.asOf}.` : undefined;
+}
+
 export type PositionFlag = 'POSITIVE' | 'NEGATIVE' | 'EVEN' | 'UNAVAILABLE';
 
 export type FinancialPosition = Readonly<{
@@ -418,7 +428,11 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
     customers.prepaidValueBalance !== null;
   const held: StatementLine[] = [
     { label: 'Cash at stations, not yet banked', value: cash.collectedButNotBanked },
-    { label: 'Cash banked', value: cash.banked },
+    {
+      label: 'Money in the bank',
+      value: extra?.bank?.balance ?? null,
+      note: bankNote(extra),
+    },
     {
       label: 'Card and mobile payments awaiting settlement',
       value: providers.unmatchedEvidenceAmount,
@@ -439,6 +453,15 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
     { label: 'Owed to suppliers', value: suppliers.outstandingBalance },
     { label: 'Expenses not yet paid', value: extra?.unpaidExpenses ?? null },
     { label: 'Prepaid customer balances', value: customers.prepaidValueBalance },
+    {
+      label: 'Fuel received, not yet invoiced',
+      value: extra?.receivedNotInvoiced?.value ?? null,
+      note: !extra?.receivedNotInvoiced
+        ? 'Not available.'
+        : extra.receivedNotInvoiced.value === null
+          ? `${extra.receivedNotInvoiced.unpricedLitres} litres were received with no cost recorded yet.`
+          : undefined,
+    },
     {
       label: 'Transporters and other creditors',
       value: null,
@@ -479,8 +502,8 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
         { lines: [{ label: 'Net position', value: net, kind: 'total' }] },
       ],
       notes: [
-        'Cash banked is the deposits recorded in the chosen dates; it is not a bank statement balance.',
-        'Stock and unpaid expenses are shown as they stand now.',
+        'Cash deposited during the chosen dates is on the cash movement report. It is a movement, not a balance, so it is not added here.',
+        'Money in the bank, stock, unpaid expenses and fuel received but not yet invoiced are shown as they stand now.',
         ...(customersKnown
           ? []
           : [

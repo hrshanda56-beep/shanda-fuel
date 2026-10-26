@@ -37,6 +37,10 @@ type SupplierSummary = {
   total: string;
   asOf?: string;
   version?: number;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  defaultCreditDays?: number | null;
   creditLimit?: {
     status: 'none' | 'ok' | 'near' | 'over';
     limit: string | null;
@@ -174,6 +178,12 @@ export function SupplierDetailWorkspace({
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState<'document' | 'payment' | null>(null);
   const [limitText, setLimitText] = useState('');
+  const [contactForm, setContactForm] = useState<{
+    name: string;
+    phone: string;
+    email: string;
+    days: string;
+  } | null>(null);
 
   const current = context?.current ?? null;
   const hasRequiredContext = Boolean(
@@ -289,7 +299,11 @@ export function SupplierDetailWorkspace({
   }, [current?.organisationId, current?.legalEntityId, current?.stationId, current?.allStations]);
 
   async function submitCommand(
-    commandType: 'SubmitSupplierDocument' | 'SubmitSupplierPayment' | 'SetSupplierCreditLimit',
+    commandType:
+      | 'SubmitSupplierDocument'
+      | 'SubmitSupplierPayment'
+      | 'SetSupplierCreditLimit'
+      | 'UpdateSupplierDetails',
     body: Record<string, unknown>,
     successMessage: string,
   ): Promise<boolean> {
@@ -344,6 +358,28 @@ export function SupplierDetailWorkspace({
     if (saved) setLimitText('');
   }
 
+  async function saveContact(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!contactForm) return;
+    const days = contactForm.days.trim();
+    if (days && !/^\d{1,3}$/.test(days)) {
+      setActionError('Enter the usual credit period as a whole number of days, for example 30.');
+      return;
+    }
+    const saved = await submitCommand(
+      'UpdateSupplierDetails',
+      {
+        expectedVersion: supplier?.version ?? 0,
+        contactName: contactForm.name.trim() || null,
+        contactPhone: contactForm.phone.trim() || null,
+        contactEmail: contactForm.email.trim() || null,
+        defaultCreditDays: days ? Number(days) : null,
+      },
+      'Supplier details saved.',
+    );
+    if (saved) setContactForm(null);
+  }
+
   async function submitDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = documentForm;
@@ -353,6 +389,10 @@ export function SupplierDetailWorkspace({
     }
     const isInvoice = form.documentType === 'INVOICE';
     const creditDays = periodDays(form.creditPeriodDays);
+    if (isInvoice && form.paymentTerms === '') {
+      setActionError('Say how this invoice is paid: cash now, or credit to pay later.');
+      return;
+    }
     if (isInvoice && form.paymentTerms === 'CREDIT') {
       if (creditDays === 'invalid') {
         setActionError('Credit period must be a whole number of days, from 0 to 365.');
@@ -547,6 +587,107 @@ export function SupplierDetailWorkspace({
             </dl>
           </Card>
 
+          <Card
+            as="section"
+            className="panel content-span"
+            aria-labelledby="supplier-contact-title"
+          >
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Who to call and when you pay</p>
+                <h2 id="supplier-contact-title">Contact and credit period</h2>
+              </div>
+            </div>
+            {contactForm ? (
+              <form onSubmit={saveContact} className="stack">
+                <Field id="supplier-edit-name" label="Contact person" optional>
+                  <input
+                    id="supplier-edit-name"
+                    value={contactForm.name}
+                    maxLength={200}
+                    onChange={(event) =>
+                      setContactForm({ ...contactForm, name: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field id="supplier-edit-phone" label="Phone number" optional>
+                  <input
+                    id="supplier-edit-phone"
+                    type="tel"
+                    value={contactForm.phone}
+                    maxLength={60}
+                    onChange={(event) =>
+                      setContactForm({ ...contactForm, phone: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field id="supplier-edit-email" label="Email" optional>
+                  <input
+                    id="supplier-edit-email"
+                    type="email"
+                    value={contactForm.email}
+                    maxLength={200}
+                    onChange={(event) =>
+                      setContactForm({ ...contactForm, email: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field id="supplier-edit-days" label="Usual credit period (days)" optional>
+                  <input
+                    id="supplier-edit-days"
+                    inputMode="numeric"
+                    maxLength={3}
+                    value={contactForm.days}
+                    onChange={(event) =>
+                      setContactForm({ ...contactForm, days: event.target.value })
+                    }
+                  />
+                </Field>
+                <div className="form-actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setContactForm(null)}
+                    disabled={action !== null}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={action !== null}>
+                    Save details
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <p>
+                  {supplier.contactName || supplier.contactPhone || supplier.contactEmail
+                    ? [supplier.contactName, supplier.contactPhone, supplier.contactEmail]
+                        .filter(Boolean)
+                        .join(' · ')
+                    : 'No contact details recorded yet.'}
+                </p>
+                <p>
+                  {supplier.defaultCreditDays === null || supplier.defaultCreditDays === undefined
+                    ? 'Usual credit period not recorded.'
+                    : `Usual credit period: ${supplier.defaultCreditDays} days.`}
+                </p>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    setContactForm({
+                      name: supplier.contactName ?? '',
+                      phone: supplier.contactPhone ?? '',
+                      email: supplier.contactEmail ?? '',
+                      days: supplier.defaultCreditDays?.toString() ?? '',
+                    })
+                  }
+                >
+                  Edit details
+                </Button>
+              </>
+            )}
+          </Card>
+
           <Card as="section" className="panel content-span" aria-labelledby="supplier-limit-title">
             <div className="panel-heading">
               <div>
@@ -566,7 +707,6 @@ export function SupplierDetailWorkspace({
                   value={limitText}
                   onChange={(event) => setLimitText(event.target.value)}
                   inputMode="decimal"
-                  placeholder="5000.00"
                 />
               </Field>
               <Button type="submit" variant="secondary" disabled={action !== null}>
@@ -707,7 +847,7 @@ export function SupplierDetailWorkspace({
               </div>
               {documentForm.documentType === 'INVOICE' ? (
                 <div className="form-grid">
-                  <Field id="document-payment-terms" label="How is this invoice paid?" optional>
+                  <Field id="document-payment-terms" label="How is this invoice paid?" required>
                     <select
                       id="document-payment-terms"
                       value={documentForm.paymentTerms}
@@ -716,12 +856,17 @@ export function SupplierDetailWorkspace({
                           ...form,
                           paymentTerms: event.target.value as DocumentForm['paymentTerms'],
                           ...(event.target.value === 'CREDIT'
-                            ? {}
+                            ? {
+                                // The supplier's usual credit period, unless one was already typed.
+                                creditPeriodDays:
+                                  form.creditPeriodDays ||
+                                  (supplier?.defaultCreditDays?.toString() ?? ''),
+                              }
                             : { creditPeriodDays: '', dueDate: '' }),
                         }))
                       }
                     >
-                      <option value="">Not stated</option>
+                      <option value="">Choose one</option>
                       <option value="CASH">Cash (paid now)</option>
                       <option value="CREDIT">Credit (pay later)</option>
                     </select>

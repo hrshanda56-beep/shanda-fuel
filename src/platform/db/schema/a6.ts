@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   AnyPgColumn,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -428,6 +429,43 @@ export const bankAccounts = appSchema.table(
       columns: [table.tenantId, table.legalEntityId],
       foreignColumns: [legalEntities.tenantId, legalEntities.id],
       name: 'bank_accounts_tenant_legal_entity_fk',
+    }),
+  ],
+);
+
+export const bankAccountBalances = appSchema.table(
+  'bank_account_balances',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    bankAccountId: uuid('bank_account_id').notNull(),
+    asOfDate: date('as_of_date').notNull(),
+    amount: numeric('amount', { precision: 20, scale: 4 }).notNull(),
+    note: text('note'),
+    recordedBy: uuid('recorded_by').notNull(),
+    recordedAt: utcTimestamp('recorded_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('bank_account_balances_tenant_id_id_uidx').on(table.tenantId, table.id),
+    index('bank_account_balances_latest_idx').on(
+      table.tenantId,
+      table.bankAccountId,
+      table.asOfDate.desc(),
+      table.recordedAt.desc(),
+    ),
+    check(
+      'bank_account_balances_note_ck',
+      sql`${table.note} is null or char_length(${table.note}) <= 500`,
+    ),
+    foreignKey({
+      columns: [table.tenantId, table.bankAccountId],
+      foreignColumns: [bankAccounts.tenantId, bankAccounts.id],
+      name: 'bank_account_balances_account_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.recordedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'bank_account_balances_recorded_by_fk',
     }),
   ],
 );

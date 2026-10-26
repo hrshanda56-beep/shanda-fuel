@@ -1,5 +1,5 @@
 import type { ManagementReport } from './contracts';
-import { addExact, subtractExact } from './domain';
+import { addExact, exact, subtractExact } from './domain';
 import { approvedFuelBenefit } from './statements';
 
 export type FinanceTile = Readonly<{
@@ -40,19 +40,27 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
           ),
         );
   const costMissing = report.grossMargin === null;
+  // With nothing sold there is no cost to be missing, so say that instead.
+  const salesValue = report.sales?.salesValue;
+  const noSales = salesValue !== undefined && exact(salesValue).value.isZero();
+  const profitReason = costMissing
+    ? noSales
+      ? 'No sales yet.'
+      : 'Some sales have no fuel cost yet.'
+    : undefined;
   return [
     {
       id: 'grossProfit',
       label: 'Gross profit',
       value: report.grossMargin,
-      unavailableReason: costMissing ? 'Some sales have no fuel cost yet.' : undefined,
+      unavailableReason: profitReason,
       href: '/daily-profit',
     },
     {
       id: 'operatingProfit',
       label: 'Operating profit',
       value: operating,
-      unavailableReason: costMissing ? 'Some sales have no fuel cost yet.' : undefined,
+      unavailableReason: profitReason,
       href: '/daily-profit',
     },
     {

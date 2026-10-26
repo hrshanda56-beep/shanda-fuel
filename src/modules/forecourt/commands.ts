@@ -637,6 +637,8 @@ const closeBusinessDayPayload = z
     stationId: z.string().uuid(),
     businessDayId: z.string().uuid(),
     expectedVersion: z.number().int().nonnegative(),
+    /** Required when the day has no approved reconciliation; kept in the activity log. */
+    reasonWithoutReconciliation: z.string().trim().min(5).max(500).optional(),
   })
   .strict();
 
@@ -668,6 +670,32 @@ export async function closeBusinessDayFromRequest(request: Request, input: unkno
       const row = rows[0];
       if (!row) throw new AppError('NOT_FOUND', 'Business day was not found');
       await assertBusinessDayOperationalCompleteness(transaction, context, payload.businessDayId);
+      // A day with no shifts at all has nothing to account for; closing it would hide that
+      // nobody recorded the day. A day nobody traded is closed by marking its shifts NOT_OPERATED.
+      const recorded = await transaction.execute<{ count: number }>(sql`
+        select count(*)::int as count from app.shifts
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and business_day_id=${payload.businessDayId}
+      `);
+      if (Number(recorded[0]?.count ?? 0) === 0)
+        throw new AppError(
+          'CONFLICT',
+          'This day has no shifts recorded. Record each shift, or mark it as not operated, before closing the day.',
+        );
+      // Closing before the reconciliation is approved is allowed, so a station is not stuck when
+      // the manager is away, but the person closing must say why and the reason is audited.
+      const reconciled = await transaction.execute<{ count: number }>(sql`
+        select count(*)::int as count from app.reconciliations
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and business_day_id=${payload.businessDayId}
+          and state in ('APPROVED','POSTED','LOCKED')
+      `);
+      const hasReconciliation = Number(reconciled[0]?.count ?? 0) > 0;
+      if (!hasReconciliation && !payload.reasonWithoutReconciliation)
+        throw new AppError(
+          'CONFLICT',
+          'This day has no approved reconciliation. Give a reason to close it anyway; the reason is kept in the activity log.',
+        );
       const day = {
         id: row.id,
         tenantId: context.tenantId,
@@ -687,7 +715,12 @@ export async function closeBusinessDayFromRequest(request: Request, input: unkno
         update app.station_business_days set state='CLOSED', closed_at=${now}::timestamptz, version=version+1, updated_at=${now}::timestamptz
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.businessDayId} and version=${payload.expectedVersion + 1}
       `);
-      return { result: { businessDayId: closed.id }, after: closed };
+      return {
+        result: { businessDayId: closed.id },
+        after: hasReconciliation
+          ? closed
+          : { ...closed, closedWithoutReconciliationReason: payload.reasonWithoutReconciliation },
+      };
     },
   });
 }

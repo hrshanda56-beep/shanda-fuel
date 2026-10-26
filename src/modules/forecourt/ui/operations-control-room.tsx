@@ -677,7 +677,23 @@ export function OperationsControlRoom({
                     <Button
                       variant="danger"
                       disabled={busy}
-                      onClick={() =>
+                      onClick={() => {
+                        const reconciled = overview.reconciliations.some((item) =>
+                          ['APPROVED', 'POSTED', 'LOCKED'].includes(item.state),
+                        );
+                        const reason = reconciled
+                          ? undefined
+                          : (
+                              window.prompt(
+                                'This day has no approved reconciliation. Why is it being closed anyway? The reason is kept in the activity log.',
+                              ) ?? ''
+                            ).trim();
+                        if (reason !== undefined && reason.length < 5) {
+                          setError(
+                            'Closing without a reconciliation needs a reason (at least 5 characters). The day was not closed.',
+                          );
+                          return;
+                        }
                         void runCommand(
                           'CloseBusinessDay',
                           {
@@ -685,12 +701,13 @@ export function OperationsControlRoom({
                             stationId: context.stationId,
                             businessDayId: day.id,
                             expectedVersion: day.version,
+                            ...(reason ? { reasonWithoutReconciliation: reason } : {}),
                           },
                           day.id,
                           'Close this business day? Every operated shift must have complete meter readings.',
                           'Business day closed.',
-                        )
-                      }
+                        );
+                      }}
                     >
                       Close business day
                     </Button>

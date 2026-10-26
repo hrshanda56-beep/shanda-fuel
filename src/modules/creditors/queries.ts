@@ -23,6 +23,10 @@ type SummaryRow = {
   overdue_15_30: string;
   overdue_over_30: string;
   credit_limit: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  default_credit_days: number | string | null;
   version: number | string;
 };
 type StatementRow = {
@@ -120,6 +124,7 @@ export async function getSupplierSummaryFromRequest(
         coalesce(d.overdue_over_30, '0') as overdue_over_30,
         coalesce(m.total, '0') as total,
         s.credit_limit::text as credit_limit,
+        s.contact_name, s.contact_phone, s.contact_email, s.default_credit_days,
         s.version
       from app.suppliers s
       left join document_totals d on d.supplier_id = s.id
@@ -148,6 +153,10 @@ export async function getSupplierSummaryFromRequest(
       asOf,
       version: Number(row.version),
       creditLimit: creditLimitPosition(row.total, row.credit_limit),
+      contactName: row.contact_name,
+      contactPhone: row.contact_phone,
+      contactEmail: row.contact_email,
+      defaultCreditDays: row.default_credit_days === null ? null : Number(row.default_credit_days),
     }));
   });
 }

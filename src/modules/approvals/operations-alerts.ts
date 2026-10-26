@@ -25,7 +25,7 @@ export type AlertSettings = Readonly<{
 export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   dueSoonDays: 7,
   posSettlementLagDays: 3,
-  reportGraceDays: 1,
+  reportGraceDays: 0,
   cashShortageMinimum: '0.01',
 };
 
@@ -83,6 +83,8 @@ export type OperationsFacts = Readonly<{
   today: string;
   /** Business dates with an operated shift but no submitted reconciliation. */
   unsubmittedDates: readonly string[];
+  /** Business dates already closed or locked with no submitted reconciliation. */
+  closedUnreconciledDates?: readonly string[];
   /** Days (newest first) where counted cash was less than expected. Amount is the shortage. */
   cashShortages: readonly { businessDate: string; amount: string }[];
   tanks: readonly TankAlertFacts[];
@@ -134,6 +136,21 @@ export function buildOperationsAlerts(
         late.length === 1
           ? 'The day has been worked but its reconciliation is still not in.'
           : `The oldest is ${oldest}. Each worked day needs its reconciliation submitted.`,
+      href: `${stationPath}/reconciliations`,
+      tone: 'attention',
+    });
+  }
+
+  const closedUnreconciled = facts.closedUnreconciledDates ?? [];
+  if (closedUnreconciled.length > 0) {
+    out.push({
+      id: 'closed-without-reconciliation',
+      title:
+        closedUnreconciled.length === 1
+          ? `${closedUnreconciled[0]} was closed without a reconciliation`
+          : `${closedUnreconciled.length} days were closed without a reconciliation`,
+      detail:
+        'The reason given when the day was closed is in the activity log. Submit the reconciliation to clear this.',
       href: `${stationPath}/reconciliations`,
       tone: 'attention',
     });

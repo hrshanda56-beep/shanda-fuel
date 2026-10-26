@@ -55,9 +55,15 @@ describe('buildOperationsAlerts', () => {
     expect(alerts({ tanks: [tank()] })).toEqual([]);
   });
 
+  it('starts with no grace: an unsubmitted report is late from the next day', () => {
+    expect(DEFAULT_ALERT_SETTINGS.reportGraceDays).toBe(0);
+    expect(alerts({ unsubmittedDates: ['2026-10-21'] })).toHaveLength(1);
+  });
+
   it('flags a late report only after the grace period', () => {
-    expect(alerts({ unsubmittedDates: ['2026-10-21'] })).toEqual([]);
-    const [late] = alerts({ unsubmittedDates: ['2026-10-20'] });
+    const oneDay = { ...DEFAULT_ALERT_SETTINGS, reportGraceDays: 1 };
+    expect(alerts({ unsubmittedDates: ['2026-10-21'] }, oneDay)).toEqual([]);
+    const [late] = alerts({ unsubmittedDates: ['2026-10-20'] }, oneDay);
     expect(late).toMatchObject({
       id: 'reports-late',
       title: 'The report for 2026-10-20 has not been submitted',
@@ -122,5 +128,18 @@ describe('buildOperationsAlerts', () => {
 describe('daysBetween', () => {
   it('counts calendar days across month ends', () => {
     expect(daysBetween('2026-09-29', '2026-10-02')).toBe(3);
+  });
+});
+
+describe('closed without a reconciliation', () => {
+  it('flags a closed day that still has no reconciliation', () => {
+    const [alert] = alerts({ closedUnreconciledDates: ['2026-10-20'] });
+    expect(alert?.id).toBe('closed-without-reconciliation');
+    expect(alert?.title).toContain('2026-10-20');
+    expect(alert?.href).toBe('/stations/st-1/reconciliations');
+  });
+
+  it('says nothing when every closed day has its reconciliation', () => {
+    expect(alerts({ closedUnreconciledDates: [] })).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import {
   allocateSupplierPaymentFromRequest,
   assertSupplierCommandType,
   createSupplierFromRequest,
+  updateSupplierDetailsFromRequest,
   postSupplierDocumentFromRequest,
   postSupplierPaymentFromRequest,
   reverseSupplierDocumentFromRequest,
@@ -32,6 +33,8 @@ export const POST = withRequestObservability(
       switch (assertSupplierCommandType(commandType)) {
         case 'CreateSupplier':
           return response(await createSupplierFromRequest(request, body), 201);
+        case 'UpdateSupplierDetails':
+          return response(await updateSupplierDetailsFromRequest(request, body));
         case 'SubmitSupplierDocument':
           return response(await submitSupplierDocumentFromRequest(request, body), 201);
         case 'PostSupplierDocument':

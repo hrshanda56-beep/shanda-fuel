@@ -60,6 +60,7 @@ export type ActionCenterFacts = {
   today: string | null;
   reports: Section<{
     unsubmittedDates: readonly string[];
+    closedUnreconciledDates?: readonly string[];
     cashShortages: readonly { businessDate: string; amount: string }[];
   }>;
   stock: Section<{ tanks: readonly TankAlertFacts[] }>;
@@ -324,6 +325,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
       {
         today: facts.today,
         unsubmittedDates: reports?.unsubmittedDates ?? [],
+        closedUnreconciledDates: reports?.closedUnreconciledDates ?? [],
         cashShortages: reports?.cashShortages ?? [],
         tanks: stock?.tanks ?? [],
         unsettledPaymentDates: settlements?.unmatchedDates ?? [],

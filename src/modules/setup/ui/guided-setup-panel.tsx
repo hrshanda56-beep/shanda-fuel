@@ -182,7 +182,7 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
   const [errors, setErrors] = useState<Errors>({});
   const products = activeProducts(ctx.data);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const name = text(new FormData(form), 'name');
@@ -193,17 +193,19 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
       name,
       (ctx.data.products ?? []).map((p) => p.code),
     );
-    const saved = await save(
-      {
-        commandType: 'CreateProduct',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        code,
-        name,
-      },
-      `${name} was added.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await save(
+        {
+          commandType: 'CreateProduct',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          code,
+          name,
+        },
+        `${name} was added.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   return (
@@ -242,7 +244,7 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
   const nameOf = (id: string) => products.find((p) => p.id === id)?.name ?? 'Fuel';
   const prices = (ctx.data.prices ?? []).filter((p) => p.state !== 'SUPERSEDED');
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -254,19 +256,21 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
     };
     setErrors(next);
     if (hasErrors(next) || !price) return;
-    const saved = await save(
-      {
-        commandType: 'DraftPriceChange',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        productId,
-        unitPrice: price,
-        currency: 'USD',
-        effectiveFrom: new Date().toISOString(),
-      },
-      `The price for ${nameOf(productId)} was saved. It starts being used once it is approved.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await save(
+        {
+          commandType: 'DraftPriceChange',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          productId,
+          unitPrice: price,
+          currency: 'USD',
+          effectiveFrom: new Date().toISOString(),
+        },
+        `The price for ${nameOf(productId)} was saved. It starts being used once it is approved.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   return (
@@ -319,7 +323,7 @@ function TankStep({ ctx }: { ctx: FormContext }) {
   const nameOf = (id: string) => products.find((p) => p.id === id)?.name ?? 'Fuel';
   const tanks = (ctx.data.tanks ?? []).filter((t) => t.status === 'ACTIVE');
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -343,23 +347,25 @@ function TankStep({ ctx }: { ctx: FormContext }) {
     };
     setErrors(next);
     if (hasErrors(next) || !capacity) return;
-    const saved = await save(
-      {
-        commandType: 'CreateTank',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        code: suggestCode(
-          name,
-          (ctx.data.tanks ?? []).map((t) => t.code),
-        ),
-        productId,
-        capacityLitres: capacity,
-        reorderLevelLitres: reorder,
-        acceptableVarianceLitres: difference,
-      },
-      `${name} was added.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await save(
+        {
+          commandType: 'CreateTank',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          code: suggestCode(
+            name,
+            (ctx.data.tanks ?? []).map((t) => t.code),
+          ),
+          productId,
+          capacityLitres: capacity,
+          reorderLevelLitres: reorder,
+          acceptableVarianceLitres: difference,
+        },
+        `${name} was added.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   return (
@@ -435,7 +441,7 @@ function PumpStep({ ctx }: { ctx: FormContext }) {
   const pumpLabel = (p: { number: string; name: string | null }) =>
     p.name ? `Pump ${p.number} (${p.name})` : `Pump ${p.number}`;
 
-  async function addPump(event: FormEvent<HTMLFormElement>) {
+  function addPump(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -444,20 +450,22 @@ function PumpStep({ ctx }: { ctx: FormContext }) {
     const next = { number: number ? undefined : 'Enter the pump number, for example 1.' };
     setPumpErrors(next);
     if (hasErrors(next)) return;
-    const saved = await pumpSaver.save(
-      {
-        commandType: 'CreatePump',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        number,
-        name: name || null,
-      },
-      `Pump ${number} was added. Now add its nozzle.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await pumpSaver.save(
+        {
+          commandType: 'CreatePump',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          number,
+          name: name || null,
+        },
+        `Pump ${number} was added. Now add its nozzle.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
-  async function addNozzle(event: FormEvent<HTMLFormElement>) {
+  function addNozzle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -473,19 +481,21 @@ function PumpStep({ ctx }: { ctx: FormContext }) {
     };
     setNozzleErrors(next);
     if (hasErrors(next)) return;
-    const saved = await nozzleSaver.save(
-      {
-        commandType: 'CreateNozzle',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        pumpId,
-        number,
-        productId,
-        meterSerialNumber: meter,
-      },
-      `Nozzle ${number} was added.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await nozzleSaver.save(
+        {
+          commandType: 'CreateNozzle',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          pumpId,
+          number,
+          productId,
+          meterSerialNumber: meter,
+        },
+        `Nozzle ${number} was added.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   const canEdit = ctx.data.capabilities.forecourt;
@@ -665,7 +675,7 @@ function SupervisorStep({ ctx }: { ctx: FormContext }) {
   const [choice, setChoice] = useState(ctx.data.responsibleSupervisorMembershipId ?? '');
   const [error, setError] = useState<string>();
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!choice) {
       setError('Choose who is in charge of this station.');
@@ -673,15 +683,17 @@ function SupervisorStep({ ctx }: { ctx: FormContext }) {
     }
     setError(undefined);
     const chosen = supervisors.find((s) => s.membershipId === choice);
-    await save(
-      {
-        commandType: 'SetResponsibleSupervisor',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        membershipId: choice,
-      },
-      `${chosen?.name ?? 'The supervisor'} is now in charge of this station.`,
-    );
+    ctx.gate(async () => {
+      await save(
+        {
+          commandType: 'SetResponsibleSupervisor',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          membershipId: choice,
+        },
+        `${chosen?.name ?? 'The supervisor'} is now in charge of this station.`,
+      );
+    });
   }
 
   if (!ctx.data.capabilities.forecourt) return null;
@@ -876,7 +888,7 @@ function GuideSteps({
       <StepUpDialog
         open={pending !== null}
         tenantId={tenantId}
-        description="Saving a shift needs a fresh identity check. Nothing is saved until you confirm."
+        description="Saving this setup needs a fresh identity check. Nothing is saved until you confirm."
         onCancel={() => setPending(null)}
         onVerified={() => {
           confirmedUntil.current = Date.now() + STEP_UP_REUSE_MS;

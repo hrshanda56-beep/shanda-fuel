@@ -90,6 +90,8 @@ export const customerAccounts = appSchema.table(
     accountType: text('account_type').notNull(),
     currency: text('currency').notNull().default('USD'),
     creditLimit: money('credit_limit'),
+    /** Usual days to pay, credit accounts only. Informational; never blocks a sale. */
+    creditDays: integer('credit_days'),
     /** Copy of the customer's legal entity; kept equal by a composite foreign key. */
     legalEntityId: uuid('legal_entity_id'),
     /** `ALL`: every station of the legal entity. `SELECTED`: only active customer_account_stations rows. */
@@ -124,6 +126,10 @@ export const customerAccounts = appSchema.table(
     check(
       'customer_accounts_type_ck',
       sql`${table.accountType} in ('CREDIT','PREPAID_VALUE','PREPAID_LITRES')`,
+    ),
+    check(
+      'customer_accounts_credit_days_ck',
+      sql`${table.creditDays} is null or (${table.accountType} = 'CREDIT' and ${table.creditDays} between 0 and 365)`,
     ),
     check('customer_accounts_currency_ck', sql`${table.currency} ~ '^[A-Z]{3}$'`),
     check('customer_accounts_status_ck', sql`${table.status} in ('ACTIVE','SUSPENDED','CLOSED')`),

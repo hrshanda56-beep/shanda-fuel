@@ -58,6 +58,20 @@ const createBankAccountSchema = z.object({
   currency: z.literal('USD').optional(),
 });
 
+const recordBankBalanceSchema = z.object({
+  commandType: z.literal('RecordBankBalance'),
+  tenantId: z.string().uuid(),
+  stationId: z.string().uuid(),
+  bankAccountId: z.string().uuid(),
+  /** The date the bank statement shows this balance for. */
+  asOfDate: dateString,
+  /** May be negative for an overdrawn account. */
+  amount: z
+    .string()
+    .regex(/^-?\d+(?:\.\d{1,4})?$/, 'Enter the balance as an amount, for example 12500.50'),
+  note: z.string().trim().max(500).optional(),
+});
+
 const recordSettlementSchema = z.object({
   commandType: z.literal('RecordProviderSettlement'),
   tenantId: z.string().uuid(),
@@ -170,6 +184,48 @@ export async function configureProviderAccountFromRequest(request: Request, body
       }),
       after: { providerAccountId, providerId: input.providerId },
     }),
+  });
+}
+
+export async function recordBankBalanceFromRequest(request: Request, body: unknown) {
+  const input = recordBankBalanceSchema.parse(body);
+  const context = await resolveSettlementCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    stationId: input.stationId,
+  });
+  const balanceId = randomUUID();
+  return executeSettlementCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'provider.manage',
+    authorizeTenantScope: true,
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    subjectType: 'BankAccount',
+    subjectId: input.bankAccountId,
+    execute: async (transaction) => {
+      const today = new Date().toISOString().slice(0, 10);
+      if (input.asOfDate > today) {
+        throw new AppError('VALIDATION_FAILED', 'A bank balance cannot be dated in the future.');
+      }
+      const account = await transaction.execute<{ id: string }>(sql`
+        select id from app.bank_accounts
+        where tenant_id = ${context.tenantId} and id = ${input.bankAccountId} and status = 'ACTIVE'
+      `);
+      if (!account[0]) throw new AppError('NOT_FOUND', 'That bank account was not found.');
+      await transaction.execute(sql`
+        insert into app.bank_account_balances
+          (id, tenant_id, bank_account_id, as_of_date, amount, note, recorded_by)
+        values
+          (${balanceId}, ${context.tenantId}, ${input.bankAccountId}, ${input.asOfDate},
+           ${input.amount}, ${input.note || null}, ${context.authority.membership.membershipId})
+      `);
+      return {
+        result: { balanceId, bankAccountId: input.bankAccountId, asOfDate: input.asOfDate },
+        after: { amount: input.amount, asOfDate: input.asOfDate },
+      };
+    },
   });
 }
 
@@ -379,6 +435,7 @@ export function assertSettlementCommandType(
   | 'CreatePaymentProvider'
   | 'ConfigureProviderAccount'
   | 'CreateBankAccount'
+  | 'RecordBankBalance'
   | 'RecordProviderSettlement'
   | 'AllocateProviderSettlement'
   | 'ReverseProviderSettlementAllocation'
@@ -387,6 +444,7 @@ export function assertSettlementCommandType(
     value === 'CreatePaymentProvider' ||
     value === 'ConfigureProviderAccount' ||
     value === 'CreateBankAccount' ||
+    value === 'RecordBankBalance' ||
     value === 'RecordProviderSettlement' ||
     value === 'AllocateProviderSettlement' ||
     value === 'ReverseProviderSettlementAllocation' ||

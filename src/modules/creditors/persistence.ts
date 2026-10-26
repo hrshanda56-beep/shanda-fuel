@@ -79,7 +79,16 @@ async function assertSupplierAndEntity(
 export async function createSupplierInTransaction(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,
-  input: { code: string; legalName: string; registrationReference?: string },
+  input: {
+    code: string;
+    legalName: string;
+    registrationReference?: string | undefined;
+    contactName?: string | null | undefined;
+    contactPhone?: string | null | undefined;
+    contactEmail?: string | null | undefined;
+    defaultCreditDays?: number | null | undefined;
+    creditLimit?: string | null | undefined;
+  },
 ) {
   if (!input.code.trim() || !input.legalName.trim()) {
     throw new AppError('VALIDATION_FAILED', 'Supplier code and legal name are required');
@@ -88,14 +97,59 @@ export async function createSupplierInTransaction(
   await transaction.execute(sql`
     insert into app.suppliers (
       id, tenant_id, code, legal_name, registration_reference, status,
+      contact_name, contact_phone, contact_email, default_credit_days, credit_limit,
       created_by, updated_by
     ) values (
       ${id}, ${context.tenantId}, ${input.code.trim()}, ${input.legalName.trim()},
       ${input.registrationReference?.trim() || null}, 'ACTIVE',
+      ${input.contactName?.trim() || null}, ${input.contactPhone?.trim() || null},
+      ${input.contactEmail?.trim() || null}, ${input.defaultCreditDays ?? null},
+      ${input.creditLimit ?? null},
       ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId}
     )
   `);
   return { supplierId: id, code: input.code.trim(), legalName: input.legalName.trim() };
+}
+
+/** Changes who to contact and the usual credit period. A field left out stays as it was; null clears it. */
+export async function updateSupplierDetailsInTransaction(
+  transaction: SupplierTransaction,
+  context: SupplierCommandContext,
+  input: {
+    supplierId: string;
+    expectedVersion: number;
+    contactName?: string | null | undefined;
+    contactPhone?: string | null | undefined;
+    contactEmail?: string | null | undefined;
+    defaultCreditDays?: number | null | undefined;
+  },
+) {
+  const pick = <T>(value: T | undefined, column: ReturnType<typeof sql.raw>) =>
+    value === undefined ? sql`${column}` : sql`${value}`;
+  const text = (value: string | null | undefined) =>
+    value === undefined ? undefined : value?.trim() || null;
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.suppliers
+    set contact_name = ${pick(text(input.contactName), sql.raw('contact_name'))},
+        contact_phone = ${pick(text(input.contactPhone), sql.raw('contact_phone'))},
+        contact_email = ${pick(text(input.contactEmail), sql.raw('contact_email'))},
+        default_credit_days = ${pick(input.defaultCreditDays, sql.raw('default_credit_days'))},
+        version = version + 1,
+        updated_by = ${context.authority.membership.membershipId},
+        updated_at = now()
+    where tenant_id = ${context.tenantId}
+      and id = ${input.supplierId}
+      and version = ${input.expectedVersion}
+    returning version
+  `);
+  if (!updated[0]) {
+    const exists = await transaction.execute<{ id: string }>(sql`
+      select id from app.suppliers where tenant_id = ${context.tenantId} and id = ${input.supplierId}
+    `);
+    if (!exists[0]) throw new AppError('NOT_FOUND', 'That supplier was not found');
+    throw new AppError('CONFLICT', 'Someone else changed this supplier. Refresh and try again.');
+  }
+  return { supplierId: input.supplierId, version: Number(updated[0].version) };
 }
 
 /** Sets or clears the most this business wants to owe one supplier. It never blocks a purchase. */

@@ -571,7 +571,11 @@ export function SettlementWorkspace({
                 const content = (
                   <>
                     <div className="channel-logos">
-                      {method === 'ECOCASH' ? (
+                      {/* Brand marks only where this channel has payments; a business that never
+                          took EcoCash or card payments sees the plain name, not a logo. */}
+                      {!total && !target ? (
+                        <strong>{method === 'ECOCASH' ? 'EcoCash' : 'Card'}</strong>
+                      ) : method === 'ECOCASH' ? (
                         <EcoCashMark />
                       ) : (
                         <>

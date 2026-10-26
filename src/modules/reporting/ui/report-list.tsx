@@ -11,7 +11,7 @@ import { CATEGORY_ICONS } from './report-icons';
 import { ReportCategoryFilter, ReportsFilters } from './reports-filters';
 import { ReportActionMenu } from './report-action-menu';
 import { ReportActionStatus } from './report-action-status';
-import { useReportActions, type ReportActionTarget } from './use-report-actions';
+import { useReportActions, type ExportFormat, type ReportActionTarget } from './use-report-actions';
 import { REPORT_CATALOG, categoryLabel, type ReportDefinition } from '../catalog';
 import { applyReportFilters, parseReportFilters, resolveReportFilters } from '../filters';
 import { REPORT_PERIODS, REPORT_PERIOD_LABELS, businessToday, type ReportPeriod } from '../period';
@@ -63,7 +63,7 @@ export function ReportList({ tenantId }: { tenantId: string }) {
               rowPeriod={rowPeriod}
               busy={actions.busy}
               onShare={(target) => void actions.share(target, report.title)}
-              onExport={(target) => void actions.exportCsv(target)}
+              onExport={(target, format) => void actions.exportCsv(target, false, format)}
               onPeriod={(next) => setOverrides((current) => ({ ...current, [report.slug]: next }))}
             />
           );
@@ -91,7 +91,7 @@ function ReportRow({
   rowPeriod: RowPeriod;
   busy: boolean;
   onShare: (target: ReportActionTarget) => void;
-  onExport: (target: ReportActionTarget) => void;
+  onExport: (target: ReportActionTarget, format: ExportFormat) => void;
   onPeriod: (next: RowPeriod) => void;
 }) {
   const filters = { stationIds, ...rowPeriod };
@@ -179,13 +179,17 @@ function ReportRow({
                   { kind: 'link', label: 'View', href },
                   { kind: 'action', label: 'Share private link', onSelect: () => onShare(target) },
                   ...(report.exportable
-                    ? [
-                        {
-                          kind: 'action' as const,
-                          label: 'Export CSV',
-                          onSelect: () => onExport(target),
-                        },
-                      ]
+                    ? (
+                        [
+                          ['Download for Excel', 'xlsx'],
+                          ['Download PDF', 'pdf'],
+                          ['Export CSV', 'csv'],
+                        ] as const
+                      ).map(([label, format]) => ({
+                        kind: 'action' as const,
+                        label,
+                        onSelect: () => onExport(target, format),
+                      }))
                     : []),
                 ]
               : []

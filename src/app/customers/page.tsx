@@ -20,7 +20,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
         data ? (
           <CustomerWorkspace
             key={JSON.stringify(resolution.current)}
-            initial={{ resolution, customers: [...data.customers] }}
+            initial={{
+              resolution,
+              customers: [...data.customers],
+              capabilities: data.capabilities,
+            }}
           />
         ) : (
           <ContextRequiredState

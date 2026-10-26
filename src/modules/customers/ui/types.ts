@@ -18,6 +18,7 @@ export type CustomerAccount = {
   ready: boolean;
   currency: string;
   creditLimit: string | null;
+  creditDays?: number | null;
   balance: string | null;
   availableBalance: string | null;
   availableCredit: string | null;
@@ -72,6 +73,7 @@ export type CustomerSummary = {
 
 export type CustomerAccountsResponse = {
   customers: CustomerSummary[];
+  capabilities?: CustomerCapabilities;
   /** Active fuels for prepaid-litres top-ups; only sent for a single-customer read. */
   fuelProducts?: Array<{ id: string; code: string; name: string }>;
 };

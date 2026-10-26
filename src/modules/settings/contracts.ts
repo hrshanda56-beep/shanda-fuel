@@ -40,6 +40,8 @@ export type SettingsView = Readonly<{
     canViewPayments: boolean;
     canViewAudit?: boolean;
     canManageAlerts?: boolean;
+    canManageStations?: boolean;
+    canManageCompanies?: boolean;
   }>;
 }>;
 

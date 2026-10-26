@@ -142,6 +142,17 @@ function errorType(error: unknown): string {
   return typeof error;
 }
 
+/** The five-character Postgres error code (such as 53300) buried under a Drizzle wrapper, if any. */
+function sqlState(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return code;
+    current = current.cause;
+  }
+  return undefined;
+}
+
 function shouldLogHandledError(error: unknown): boolean {
   const classification = classifyError(error);
   return (
@@ -176,6 +187,7 @@ export function observeError(request: Request, error: unknown, event = 'http.req
     environment: environment(),
     errorType: errorType(error),
     errorClassification: classifyError(error),
+    ...(sqlState(error) ? { sqlState: sqlState(error) } : {}),
     ...(error instanceof AppError
       ? { status: error.httpStatus, statusClass: classifyStatus(error.httpStatus) }
       : {}),

@@ -35,6 +35,11 @@ export const suppliers = appSchema.table(
     registrationReference: text('registration_reference'),
     status: text('status').notNull().default('ACTIVE'),
     creditLimit: numeric('credit_limit', { precision: 20, scale: 4 }),
+    contactName: text('contact_name'),
+    contactPhone: text('contact_phone'),
+    contactEmail: text('contact_email'),
+    /** Usual credit period; null = not recorded. Pre-fills the invoice's due date only. */
+    defaultCreditDays: integer('default_credit_days'),
     version: integer('version').notNull().default(0),
     createdBy: uuid('created_by').notNull(),
     updatedBy: uuid('updated_by').notNull(),
@@ -48,6 +53,10 @@ export const suppliers = appSchema.table(
     check('suppliers_code_nonempty_ck', sql`btrim(${table.code}) <> ''`),
     check('suppliers_legal_name_nonempty_ck', sql`btrim(${table.legalName}) <> ''`),
     check('suppliers_status_ck', sql`${table.status} in ('ACTIVE','INACTIVE')`),
+    check(
+      'suppliers_default_credit_days_ck',
+      sql`${table.defaultCreditDays} is null or ${table.defaultCreditDays} between 0 and 365`,
+    ),
     check(
       'suppliers_credit_limit_ck',
       sql`${table.creditLimit} is null or ${table.creditLimit} >= 0`,

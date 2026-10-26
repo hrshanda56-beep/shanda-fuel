@@ -11,6 +11,7 @@ import {
 import {
   allocateSupplierPaymentInTransaction,
   createSupplierInTransaction,
+  updateSupplierDetailsInTransaction,
   postSupplierDocumentInTransaction,
   postSupplierPaymentInTransaction,
   reverseSupplierDocumentInTransaction,
@@ -28,11 +29,33 @@ const decimal = z
   .regex(/^\d+(?:\.\d+)?$/, 'An exact decimal string is required');
 const base = z.object({ tenantId: uuid, legalEntityId: uuid });
 
+const creditLimitText = z
+  .string()
+  .regex(/^\d+(?:\.\d{1,4})?$/, 'An amount with at most four decimals is required');
+
+const supplierDetailFields = {
+  contactName: z.string().trim().max(200).nullable().optional(),
+  contactPhone: z.string().trim().max(60).nullable().optional(),
+  contactEmail: z.string().trim().max(200).nullable().optional(),
+  /** Usual credit period in days; null clears it. */
+  defaultCreditDays: z.number().int().min(0).max(365).nullable().optional(),
+};
+
 const createSupplierSchema = base.extend({
   commandType: z.literal('CreateSupplier'),
   code: z.string().trim().min(1).max(80),
   legalName: z.string().trim().min(1).max(240),
   registrationReference: z.string().trim().max(120).optional(),
+  ...supplierDetailFields,
+  /** The most the business wants to owe this supplier; null/omitted = no limit. */
+  creditLimit: creditLimitText.nullable().optional(),
+});
+
+const updateSupplierDetailsSchema = base.extend({
+  commandType: z.literal('UpdateSupplierDetails'),
+  supplierId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  ...supplierDetailFields,
 });
 
 const setCreditLimitSchema = base.extend({
@@ -40,10 +63,7 @@ const setCreditLimitSchema = base.extend({
   supplierId: uuid,
   expectedVersion: z.number().int().nonnegative(),
   /** Null removes the limit. */
-  creditLimit: z
-    .string()
-    .regex(/^\d+(?:\.\d{1,4})?$/, 'An amount with at most four decimals is required')
-    .nullable(),
+  creditLimit: creditLimitText.nullable(),
 });
 
 const percent = z.string().regex(/^\d+(?:\.\d+)?$/, 'An exact decimal string is required');
@@ -386,7 +406,30 @@ export async function setSupplierCreditLimitFromRequest(request: Request, body: 
   });
 }
 
+export async function updateSupplierDetailsFromRequest(request: Request, body: unknown) {
+  const input = updateSupplierDetailsSchema.parse(body);
+  const context = await resolveSupplierCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+  });
+  return executeSupplierCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'supplier.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    audit: {
+      actionCode: 'SUPPLIER.DETAILS_UPDATED',
+      subjectType: 'Supplier',
+      subjectId: input.supplierId,
+    },
+    execute: (transaction) => updateSupplierDetailsInTransaction(transaction, context, input),
+  });
+}
+
 export type SupplierCommandName =
+  | 'UpdateSupplierDetails'
   | 'SetSupplierCreditLimit'
   | 'CreateSupplier'
   | 'SubmitSupplierDocument'
@@ -401,6 +444,7 @@ export type SupplierCommandName =
 export function assertSupplierCommandType(value: unknown): SupplierCommandName {
   if (
     value === 'CreateSupplier' ||
+    value === 'UpdateSupplierDetails' ||
     value === 'SubmitSupplierDocument' ||
     value === 'PostSupplierDocument' ||
     value === 'ReverseSupplierDocument' ||

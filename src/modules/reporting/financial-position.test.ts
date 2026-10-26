@@ -17,6 +17,8 @@ const base = (overrides: Record<string, unknown> = {}) =>
       unvaluedStockStreams: 0,
       unpaidExpenses: '75.5000',
       expensesAwaitingApproval: { count: 2, amount: '40.0000' },
+      bank: { balance: '800.0000', asOf: '2026-10-24', accountCount: 1, accountsWithoutBalance: 0 },
+      receivedNotInvoiced: { value: '250.0000', unpricedLitres: '0.000' },
     },
     ...overrides,
   }) as unknown as ManagementReport;
@@ -25,18 +27,18 @@ const find = (p: ReturnType<typeof buildFinancialPosition>, label: string) =>
   p.statement.groups.flatMap((g) => g.lines).find((l) => l.label === label);
 
 describe('buildFinancialPosition', () => {
-  it('adds stock, banked cash and unpaid expenses exactly and flags a positive position', () => {
+  it('adds stock, bank balance, unpaid expenses and un-invoiced fuel exactly and flags a positive position', () => {
     const p = buildFinancialPosition(base());
     expect(p.totalHeld).toBe('7750.8734');
-    expect(p.totalOwed).toBe('1075.5');
-    expect(p.net).toBe('6675.3734');
+    expect(p.totalOwed).toBe('1325.5');
+    expect(p.net).toBe('6425.3734');
     expect(p.flag).toBe('POSITIVE');
     expect(p.missing).toEqual([]);
   });
 
   it('flags a negative position', () => {
     const p = buildFinancialPosition(base({ suppliers: { outstandingBalance: '20000.0000' } }));
-    expect(p.net).toBe('-12424.6266');
+    expect(p.net).toBe('-12674.6266');
     expect(p.flag).toBe('NEGATIVE');
   });
 
@@ -56,6 +58,13 @@ describe('buildFinancialPosition', () => {
           unvaluedStockStreams: 0,
           unpaidExpenses: '0.0000',
           expensesAwaitingApproval: { count: 0, amount: '0.0000' },
+          bank: {
+            balance: '0.0000',
+            asOf: '2026-10-24',
+            accountCount: 1,
+            accountsWithoutBalance: 0,
+          },
+          receivedNotInvoiced: { value: '0.0000', unpricedLitres: '0.000' },
         },
       }),
     );
@@ -70,6 +79,13 @@ describe('buildFinancialPosition', () => {
           unvaluedStockStreams: 2,
           unpaidExpenses: '0.0000',
           expensesAwaitingApproval: { count: 0, amount: '0.0000' },
+          bank: {
+            balance: '800.0000',
+            asOf: '2026-10-24',
+            accountCount: 1,
+            accountsWithoutBalance: 0,
+          },
+          receivedNotInvoiced: { value: '250.0000', unpricedLitres: '0.000' },
         },
       }),
     );
@@ -105,5 +121,47 @@ describe('buildFinancialPosition', () => {
     expect(other?.value).toBeNull();
     expect(other?.note).toContain('Not recorded');
     expect(p.missing).not.toContain('Transporters and other creditors');
+  });
+
+  it('uses the recorded bank balance, not the deposits in the chosen dates', () => {
+    const a = buildFinancialPosition(base());
+    const b = buildFinancialPosition(
+      base({ cash: { collectedButNotBanked: '1200.5000', banked: '99999.0000' } }),
+    );
+    expect(b.net).toBe(a.net);
+    expect(find(a, 'Money in the bank')?.value).toBe('800.0000');
+    expect(find(a, 'Money in the bank')?.note).toContain('2026-10-24');
+  });
+
+  it('shows no net and says so when a bank account has no balance recorded', () => {
+    const p = buildFinancialPosition(
+      base({
+        ownerPosition: {
+          ...base().ownerPosition,
+          bank: { balance: null, asOf: null, accountCount: 2, accountsWithoutBalance: 1 },
+        },
+      }),
+    );
+    expect(p.net).toBeNull();
+    expect(p.missing).toContain('Money in the bank');
+    expect(find(p, 'Money in the bank')?.note).toContain('1 bank account');
+  });
+
+  it('counts fuel received but not yet invoiced as money owed', () => {
+    const p = buildFinancialPosition(base());
+    expect(find(p, 'Fuel received, not yet invoiced')?.value).toBe('250.0000');
+  });
+
+  it('shows no net when received fuel has no cost recorded yet', () => {
+    const p = buildFinancialPosition(
+      base({
+        ownerPosition: {
+          ...base().ownerPosition,
+          receivedNotInvoiced: { value: null, unpricedLitres: '500.000' },
+        },
+      }),
+    );
+    expect(p.net).toBeNull();
+    expect(find(p, 'Fuel received, not yet invoiced')?.note).toContain('500.000 litres');
   });
 });

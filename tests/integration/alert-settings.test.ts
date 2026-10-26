@@ -110,7 +110,7 @@ describe('alert settings', () => {
     expect(first.body).toMatchObject({
       version: null,
       canManage: true,
-      settings: { dueSoonDays: 7, posSettlementLagDays: 3, reportGraceDays: 1 },
+      settings: { dueSoonDays: 7, posSettlementLagDays: 3, reportGraceDays: 0 },
     });
 
     expect((await save(ADMIN, {})).status).toBe(200);

@@ -39,3 +39,10 @@ it('does not treat an invalid setting as permission to enable prepared statement
     expect.objectContaining({ prepare: false }),
   );
 });
+it('reuses one pool when the module is evaluated again, as Next dev HMR does', async () => {
+  getDatabase();
+  vi.resetModules();
+  const { getDatabase: reloaded } = await import('./client');
+  reloaded();
+  expect(mocks.postgres).toHaveBeenCalledTimes(1);
+});

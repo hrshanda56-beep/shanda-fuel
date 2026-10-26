@@ -113,7 +113,12 @@ export function StaffBenefitWorkspace({
       {rows.length === 0 ? (
         <EmptyState
           title="No staff benefit accounts yet"
-          message="Open one below. Each staff member gets a monthly limit that only an owner or administrator can change."
+          message="Each staff member gets a monthly limit that only an owner or administrator can change."
+          action={
+            <Link className="button" href="/customers?add=staff">
+              Add a staff member
+            </Link>
+          }
         />
       ) : (
         <div className="stack">

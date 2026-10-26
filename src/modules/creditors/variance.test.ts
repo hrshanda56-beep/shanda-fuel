@@ -11,7 +11,8 @@ import {
   type VarianceInput,
 } from './variance';
 
-const policy = BUILT_IN_PURCHASING_POLICY;
+// Most cases below need a policy with no tolerance at all; the built-in one allows 0.5% on litres.
+const policy = { ...BUILT_IN_PURCHASING_POLICY, quantityTolerancePercent: null };
 
 function input(overrides: Partial<VarianceInput> = {}): VarianceInput {
   return {
@@ -62,6 +63,12 @@ describe('tolerance arithmetic', () => {
 });
 
 describe('delivery variance', () => {
+  it('allows 0.5% on litres until a policy says otherwise', () => {
+    const builtIn = BUILT_IN_PURCHASING_POLICY;
+    expect(builtIn.quantityTolerancePercent).toBe('0.5');
+    expect(builtIn.priceTolerancePercent).toBeNull();
+  });
+
   it('reports nothing when everything agrees', () => {
     const result = evaluateDeliveryVariance(input());
     expect(result.findings).toEqual([]);
