@@ -523,9 +523,11 @@ export function CustomerDetailWorkspace({
       setRefreshState('failed');
     }
   }
+  // Read the customer again first and only then say it is done, so the message and the page
+  // (an account that was just opened, a new balance) never disagree.
   async function actionDone(message: string) {
-    setActionMessage(message);
-    if (!current) return;
+    setActionMessage(null);
+    if (!current) return setActionMessage(message);
     try {
       const refreshed = await fetchCustomerSummary(current);
       if (refreshed) {
@@ -533,6 +535,7 @@ export function CustomerDetailWorkspace({
         setScopeLegalEntityId(refreshed.legalEntityId ?? '');
         setScopeForms(scopeFormsForCustomer(refreshed));
       }
+      setActionMessage(message);
     } catch {
       setActionMessage(`${message} Refresh the page to see the new figures.`);
     }
