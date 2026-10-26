@@ -328,7 +328,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
         // are ever counted after the switch starts.
         for (const nozzle of todo) {
           const slot = `${change.priceId}:${nozzle.nozzleId}:closed`;
-          if (closed.current.has(slot)) continue;
+          if (nozzle.closed || closed.current.has(slot)) continue;
           await post('/api/forecourt/commands', {
             ...base,
             commandType: 'ConfirmBoundary',

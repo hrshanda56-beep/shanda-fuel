@@ -158,10 +158,12 @@ async function loadPriceChange(
     meterInstallationId: string | null;
     lastReading: string | null;
     doneForPriceId: string | null;
+    closedForPriceId: string | null;
   }>(sql`
     select n.id as "nozzleId", n.product_id as "productId", p.number as "pumpNumber",
            n.number as "nozzleNumber", installation.id as "meterInstallationId",
-           previous.reading_value::text as "lastReading", done.price_change_id as "doneForPriceId"
+           previous.reading_value::text as "lastReading", done.price_change_id as "doneForPriceId",
+           closed.price_change_id as "closedForPriceId"
     from app.nozzles n
     join app.pumps p
       on p.tenant_id = n.tenant_id and p.station_id = n.station_id and p.id = n.pump_id
@@ -191,6 +193,24 @@ async function loadPriceChange(
         )
       limit 1
     ) done on true
+    left join lateral (
+      -- The old-price reading was already saved for the change under way (an earlier attempt
+      -- stopped before the new-price reading), so it must not be recorded a second time.
+      select sp.id as price_change_id
+      from app.selling_prices sp
+      where sp.tenant_id = n.tenant_id and sp.station_id = n.station_id
+        and sp.product_id = n.product_id
+        and sp.state in ('PENDING_STATION_ACTIVATION', 'BOUNDARIES_IN_PROGRESS')
+        and exists (
+          select 1 from app.meter_boundaries b
+          where b.tenant_id = n.tenant_id and b.station_id = n.station_id
+            and b.nozzle_id = n.id and b.reason = 'SHIFT_CLOSE'
+            and b.reading_status = 'AVAILABLE'
+            and b.shift_id is not distinct from ${shift?.id ?? null}
+            and b.created_at >= sp.created_at
+        )
+      limit 1
+    ) closed on true
     where n.tenant_id = ${context.tenantId} and n.station_id = ${input.stationId}
       and n.status = 'ACTIVE'
     order by p.number, n.number, n.id
@@ -232,6 +252,7 @@ async function loadPriceChange(
             meterInstallationId: row.meterInstallationId,
             lastReading: row.lastReading,
             done: change !== undefined && row.doneForPriceId === change.id,
+            closed: change !== undefined && row.closedForPriceId === change.id,
           })),
       };
     }),
