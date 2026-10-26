@@ -92,13 +92,115 @@ async function lookupSubjectNames(
     (ids) =>
       sql`select 'Shift', h.id::text, s.name || ', ' || h.business_date from app.shifts h join app.stations s on s.tenant_id = h.tenant_id and s.id = h.station_id where h.tenant_id = ${tenantId} and h.id in (${ids})`,
   );
+  add(
+    'Tank',
+    (ids) =>
+      sql`select 'Tank', t.id::text, 'tank ' || t.code || ' (' || p.name || ')' from app.tanks t join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id where t.tenant_id = ${tenantId} and t.id in (${ids})`,
+  );
+  add(
+    'FuelDelivery',
+    (ids) =>
+      sql`select 'FuelDelivery', d.id::text, 'note ' || d.delivery_note_number from app.fuel_deliveries d where d.tenant_id = ${tenantId} and d.id in (${ids})`,
+  );
+  add(
+    'SellingPrice',
+    (ids) =>
+      sql`select 'SellingPrice', sp.id::text, p.name || ' at ' || sp.unit_price::numeric(20,4)::text from app.selling_prices sp join app.products p on p.tenant_id = sp.tenant_id and p.id = sp.product_id where sp.tenant_id = ${tenantId} and sp.id in (${ids})`,
+  );
+  add(
+    'Expense',
+    (ids) =>
+      sql`select 'Expense', e.id::text, e.description from app.expenses e where e.tenant_id = ${tenantId} and e.id in (${ids})`,
+  );
+  add(
+    'PurchaseOrder',
+    (ids) =>
+      sql`select 'PurchaseOrder', o.id::text, 'order ' || o.order_number from app.purchase_orders o where o.tenant_id = ${tenantId} and o.id in (${ids})`,
+  );
+  add(
+    'SupplierDocument',
+    (ids) =>
+      sql`select 'SupplierDocument', d.id::text, d.reference_number from app.supplier_documents d where d.tenant_id = ${tenantId} and d.id in (${ids})`,
+  );
+  add(
+    'SupplierPayment',
+    (ids) =>
+      sql`select 'SupplierPayment', p.id::text, p.payment_reference from app.supplier_payments p where p.tenant_id = ${tenantId} and p.id in (${ids})`,
+  );
+  add(
+    'Membership',
+    (ids) =>
+      sql`select 'Membership', m.id::text, coalesce(nullif(u.name, ''), u.email) from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = ${tenantId} and m.id in (${ids})`,
+  );
+  add(
+    'CustomerAccount',
+    (ids) =>
+      sql`select 'CustomerAccount', a.id::text, c.display_name from app.customer_accounts a join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id where a.tenant_id = ${tenantId} and a.id in (${ids})`,
+  );
+  add(
+    'ProviderSettlement',
+    (ids) =>
+      sql`select 'ProviderSettlement', s.id::text, s.settlement_reference from app.provider_settlements s where s.tenant_id = ${tenantId} and s.id in (${ids})`,
+  );
+  add(
+    'Reconciliation',
+    (ids) =>
+      sql`select 'Reconciliation', r.id::text, s.name || ', ' || d.business_date from app.reconciliations r join app.station_business_days d on d.tenant_id = r.tenant_id and d.id = r.business_day_id join app.stations s on s.tenant_id = r.tenant_id and s.id = r.station_id where r.tenant_id = ${tenantId} and r.id in (${ids})`,
+  );
+  add(
+    'Product',
+    (ids) =>
+      sql`select 'Product', id::text, name from app.products where tenant_id = ${tenantId} and id in (${ids})`,
+  );
   if (parts.length === 0) return new Map();
+  // Named by position, because the first branch of a union names the columns for all the rest.
   const rows = await transaction.execute<{ t: string; id: string; name: string | null }>(
-    sql.join(parts, sql` union all `),
+    sql`select t, id, name from (${sql.join(parts, sql` union all `)}) as found(t, id, name)`,
   );
   return new Map(
     rows.filter((row) => row.name).map((row) => [`${row.t}:${row.id}`, row.name as string]),
   );
+}
+
+const UUID_IN_TEXT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Every identifier that appears as a value inside the old and new values of these events. */
+function idsInChanges(details: readonly unknown[]): string[] {
+  const found = new Set<string>();
+  for (const item of details) {
+    if (typeof item !== 'object' || item === null) continue;
+    const { before, after } = item as { before?: unknown; after?: unknown };
+    for (const part of [before, after]) {
+      for (const match of JSON.stringify(part ?? null).matchAll(UUID_IN_TEXT)) found.add(match[0]);
+    }
+  }
+  return [...found].slice(0, 100);
+}
+
+/** Names for identifiers that appear as values, whatever kind of record they point at. */
+async function lookupValueNames(
+  transaction: Parameters<Parameters<typeof withTenantTransaction>[1]>[0],
+  tenantId: string,
+  ids: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  if (ids.length === 0) return new Map();
+  const list = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = await transaction.execute<{ id: string; name: string | null }>(sql`
+    select id::text, name from app.stations where tenant_id = ${tenantId} and id in (${list})
+    union all select id::text, legal_name from app.legal_entities where tenant_id = ${tenantId} and id in (${list})
+    union all select id::text, name from app.products where tenant_id = ${tenantId} and id in (${list})
+    union all select id::text, 'tank ' || code from app.tanks where tenant_id = ${tenantId} and id in (${list})
+    union all select id::text, legal_name from app.suppliers where tenant_id = ${tenantId} and id in (${list})
+    union all select id::text, display_name from app.customers where tenant_id = ${tenantId} and id in (${list})
+    union all select id::text, name from app.bank_accounts where tenant_id = ${tenantId} and id in (${list})
+    union all select m.id::text, coalesce(nullif(u.name, ''), u.email)
+      from app.memberships m join app.users u on u.id = m.identity_id
+      where m.tenant_id = ${tenantId} and m.id in (${list})
+  `);
+  return new Map(rows.filter((row) => row.name).map((row) => [row.id, row.name as string]));
 }
 
 export type AuditPage = Readonly<{ items: readonly AuditItem[]; next: string | null }>;
@@ -122,7 +224,7 @@ export async function listAuditEventsFromRequest(
     requestedScope: { tenantId: input.tenantId, scopeType: 'TENANT' },
   });
   const [afterAt, afterId] = input.after ? input.after.split('|') : [];
-  const { rows, names } = await withTenantTransaction(
+  const { rows, names, valueNames } = await withTenantTransaction(
     authority.transaction,
     async (transaction) => {
       const found = await transaction.execute<{
@@ -147,12 +249,10 @@ export async function listAuditEventsFromRequest(
       order by e.occurred_at desc, e.id desc
       limit ${input.limit + 1}
     `);
-      const names = await lookupSubjectNames(
-        transaction,
-        input.tenantId,
-        found.slice(0, input.limit).map((row) => row.details),
-      );
-      return { rows: [...found], names };
+      const shown = found.slice(0, input.limit).map((row) => row.details);
+      const names = await lookupSubjectNames(transaction, input.tenantId, shown);
+      const valueNames = await lookupValueNames(transaction, input.tenantId, idsInChanges(shown));
+      return { rows: [...found], names, valueNames };
     },
   );
   const page = rows.slice(0, input.limit);
@@ -168,6 +268,7 @@ export async function listAuditEventsFromRequest(
           details: row.details,
         },
         names,
+        valueNames,
       ),
     ),
     next:

@@ -123,6 +123,7 @@ export function classifyError(error: unknown): ErrorClassification {
       VALIDATION_FAILED: 'validation',
       UNAUTHENTICATED: 'unauthenticated',
       FORBIDDEN: 'forbidden',
+      STEP_UP_REQUIRED: 'forbidden',
       NOT_FOUND: 'not_found',
       CONFLICT: 'conflict',
       INVARIANT_VIOLATION: 'invariant',

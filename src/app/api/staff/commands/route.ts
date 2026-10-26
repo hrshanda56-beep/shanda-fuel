@@ -7,6 +7,7 @@ import {
   activateManualStaffFromRequest,
   resendStaffInvitationFromRequest,
   revokeStaffInvitationFromRequest,
+  updateStaffAssignmentFromRequest,
 } from '../../../../modules/staff';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
@@ -50,6 +51,8 @@ export const POST = withRequestObservability(
           return response(await resendStaffInvitationFromRequest(request, body));
         case 'RevokeStaffInvitation':
           return response(await revokeStaffInvitationFromRequest(request, body));
+        case 'UpdateStaffAssignment':
+          return response(await updateStaffAssignmentFromRequest(request, body));
         case 'DeactivateStaffMember': {
           const result = await deactivateStaffMemberFromRequest(request, body);
           return response(result, staffDeactivationResponseStatus(result));

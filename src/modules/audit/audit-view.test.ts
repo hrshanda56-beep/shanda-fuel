@@ -122,3 +122,28 @@ describe('toAuditItem', () => {
     ).toBe('Station');
   });
 });
+
+describe('names instead of identifiers', () => {
+  it('turns an identifier value into the name of what it points at, or a plain word', async () => {
+    const { nameChangeValues } = await import('./audit-view');
+    const id = '11111111-2222-4333-8444-555555555555';
+    const other = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+    const changes = nameChangeValues(
+      [
+        { field: 'Product id', before: other, after: id },
+        { field: 'Unit price', before: '1.9500', after: '1.9900' },
+        { field: 'Note', before: null, after: 'raised' },
+      ],
+      new Map([[id, 'Diesel']]),
+    );
+    expect(changes).toEqual([
+      { field: 'Product', before: 'A record', after: 'Diesel' },
+      { field: 'Unit price', before: '1.9500', after: '1.9900' },
+      { field: 'Note', before: null, after: 'raised' },
+    ]);
+    // With no names at all an identifier still never shows.
+    expect(nameChangeValues([{ field: 'Station id', before: null, after: id }])[0]?.after).toBe(
+      'A record',
+    );
+  });
+});

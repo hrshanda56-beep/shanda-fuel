@@ -1,7 +1,7 @@
 'use client';
 
 import { useReverification } from '@clerk/nextjs';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Modal } from '@/design-system/modal';
 import { Button } from '@/design-system/primitives';
@@ -54,6 +54,27 @@ function ClerkForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const submitted = useRef(false);
+  const silentTried = useRef(false);
+
+  // If an identity check is still active (or the person has just signed in), the server says so
+  // straight away and nothing needs to be asked. Otherwise the button below is shown as before.
+  useEffect(() => {
+    if (silentTried.current) return;
+    silentTried.current = true;
+    void (async () => {
+      try {
+        const response = await fetch('/api/auth/step-up', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tenantId, action: 'PRIVILEGED_OPERATION' }),
+        });
+        if (response.ok) onVerified();
+      } catch {
+        // Offline or blocked: the person can still use the button.
+      }
+    })();
+  }, [tenantId, onVerified]);
+
   const reverify = useReverification(async () => {
     const response = await fetch('/api/auth/step-up', {
       method: 'POST',

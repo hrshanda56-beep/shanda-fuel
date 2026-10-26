@@ -3,6 +3,7 @@ import {
   bankingStatusForDeposit,
   cashStatusForCustody,
   cashStatusForLocationType,
+  cashStatusLabel,
   cashStatusLabelForCustody,
   deriveCashStatus,
   depositProofFlags,
@@ -12,7 +13,7 @@ import {
 
 describe('cash status names', () => {
   it('maps every stored custody state to a plain name', () => {
-    expect(cashStatusLabelForCustody('AT_STATION')).toBe('At the station');
+    expect(cashStatusLabelForCustody('AT_STATION')).toBe('Collected, not banked yet');
     expect(cashStatusLabelForCustody('RECEIVED')).toBe('Held by management');
     expect(cashStatusLabelForCustody('IN_TRANSIT')).toBe('On its way to the bank');
     expect(cashStatusLabelForCustody('PARTIALLY_DEPOSITED')).toBe('Partly banked');
@@ -31,7 +32,7 @@ describe('cash status names', () => {
       confirmedAmount: '0',
       received: false,
     };
-    expect(deriveCashStatus(base)).toBe('AT_STATION');
+    expect(deriveCashStatus(base)).toBe('COLLECTED');
     expect(deriveCashStatus({ ...base, received: true })).toBe('HELD_BY_MANAGEMENT');
     expect(deriveCashStatus({ ...base, allocatedAmount: '100' })).toBe('IN_TRANSIT');
     expect(deriveCashStatus({ ...base, allocatedAmount: '99.9999' })).toBe('PARTLY_BANKED');
@@ -45,9 +46,39 @@ describe('cash status names', () => {
 
   it('names where a handover leaves the cash', () => {
     expect(cashStatusForLocationType('STATION_SAFE')).toBe('AT_STATION');
+    expect(cashStatusLabel('AT_STATION')).toBe('Still at the station');
     expect(cashStatusForLocationType('TRANSIT')).toBe('IN_TRANSIT');
     expect(cashStatusForLocationType('COLLECTOR')).toBe('HELD_BY_MANAGEMENT');
     expect(cashStatusForLocationType('OTHER')).toBeNull();
+  });
+
+  it('never counts collected cash as banked', () => {
+    // Every state short of a bank-confirmed deposit is a different status from Fully banked.
+    const base = { amount: '100', allocatedAmount: '0', confirmedAmount: '0', received: false };
+    expect(deriveCashStatus(base)).not.toBe('FULLY_BANKED');
+    expect(deriveCashStatus({ ...base, received: true })).not.toBe('FULLY_BANKED');
+    expect(deriveCashStatus({ ...base, allocatedAmount: '100' })).not.toBe('FULLY_BANKED');
+    expect(deriveCashStatus({ ...base, allocatedAmount: '100', confirmedAmount: '100' })).toBe(
+      'FULLY_BANKED',
+    );
+    // The six names a person sees, in plain words.
+    expect(
+      [
+        'AT_STATION',
+        'COLLECTED',
+        'IN_TRANSIT',
+        'HELD_BY_MANAGEMENT',
+        'PARTLY_BANKED',
+        'FULLY_BANKED',
+      ].map((key) => cashStatusLabel(key as never)),
+    ).toEqual([
+      'Still at the station',
+      'Collected, not banked yet',
+      'On its way to the bank',
+      'Held by management',
+      'Partly banked',
+      'Fully banked',
+    ]);
   });
 
   it('names the banking status of a deposit', () => {

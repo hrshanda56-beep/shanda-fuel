@@ -28,17 +28,22 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe('Clerk action and tenant assurance', () => {
   it.each(['clerk-mfa', 'clerk-reverification'] as const)(
-    'binds %s to both tenant and named action',
+    'binds %s to its tenant, and one assertion covers every named action',
     (strongAuthenticationMethod) => {
       const actorSession = { ...session, strongAuthenticationMethod };
       expect(() =>
         assertStepUp(actorSession, 1, now, 'tenant_1', 'LOCK_BUSINESS_DAY'),
       ).not.toThrow();
       expect(() => assertStepUp(actorSession, 1, now, 'tenant_2', 'LOCK_BUSINESS_DAY')).toThrow();
+      // Once the person has verified, other areas do not ask again.
       expect(() =>
         assertStepUp(actorSession, 1, now, 'tenant_1', 'DEACTIVATE_STAFF_MEMBER'),
+      ).not.toThrow();
+      expect(() => assertStepUp(actorSession, 1, now, 'tenant_1')).not.toThrow();
+      // But with no assertion at all there is nothing to reuse.
+      expect(() =>
+        assertStepUp({ ...actorSession, stepUpAction: undefined }, 1, now, 'tenant_1'),
       ).toThrow();
-      expect(() => assertStepUp(actorSession, 1, now, 'tenant_1')).toThrow();
     },
   );
 
@@ -67,6 +72,15 @@ describe('Clerk action and tenant assurance', () => {
     expect(
       readClerkStepUpAssertion(request(`${CLERK_STEP_UP_COOKIE}=${tampered}`), now),
     ).toBeNull();
-    expect(readClerkStepUpAssertion(request(cookie), new Date(now.getTime() + 600_000))).toBeNull();
+    expect(
+      readClerkStepUpAssertion(request(cookie), new Date(now.getTime() + 16 * 60_000)),
+    ).toBeNull();
+    // Still valid inside the default 15 minute reuse window.
+    expect(
+      readClerkStepUpAssertion(request(cookie), new Date(now.getTime() + 14 * 60_000)),
+    ).not.toBeNull();
+    expect(
+      readClerkStepUpAssertion(request(cookie), new Date(now.getTime() + 600_000)),
+    ).not.toBeNull();
   });
 });

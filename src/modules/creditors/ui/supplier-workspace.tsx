@@ -2,7 +2,7 @@
 import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   buildContextHref,
@@ -108,6 +108,7 @@ function legalEntityName(
 
 /** Row actions. A sibling of the row link, not inside it, so a click never opens the supplier. */
 function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -159,7 +160,17 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
       </button>
       {open ? (
         <div className="row-menu-list" role="menu">
-          <Link role="menuitem" className="row-menu-item" href={href}>
+          <Link
+            role="menuitem"
+            className="row-menu-item"
+            href={href}
+            onClick={(event) => {
+              // Close the menu and go there explicitly, so the click can never be lost.
+              event.preventDefault();
+              setOpen(false);
+              router.push(href);
+            }}
+          >
             <Icon name="arrow-right" />
             Open supplier
           </Link>

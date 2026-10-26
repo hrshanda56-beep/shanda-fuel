@@ -39,6 +39,7 @@ export default async function Page({
           getSupplierInvoiceChoicesFromRequest(request, {
             tenantId: input.tenantId,
             legalEntityId: input.legalEntityId,
+            supplierId: input.supplierId,
           }),
         ]);
       }}

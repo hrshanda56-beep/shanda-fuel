@@ -346,7 +346,9 @@ describe('Phase 0 station activation in PostgreSQL', () => {
     });
 
     const editRace = await activation!;
-    expect(editRace.status, await editRace.clone().text()).toBe(409);
+    // Shifts are the station's own, so a committed edit to 07:00 no longer blocks going live.
+    // The activation still waited for the edit's lock and saw its result.
+    expect(editRace.status, await editRace.clone().text()).toBe(200);
     const editRaceState = await client<{ status: string; start_time: string }[]>`
       select station.status, to_char(template.start_time, 'HH24:MI') as start_time
       from app.stations station
@@ -354,7 +356,7 @@ describe('Phase 0 station activation in PostgreSQL', () => {
         and template.station_id = station.id and template.id = ${ids.raceEditDayTemplate}
       where station.tenant_id = ${ids.tenant} and station.id = ${ids.raceEditStation}
     `;
-    expect(editRaceState).toEqual([{ status: 'ONBOARDING', start_time: '07:00' }]);
+    expect(editRaceState).toEqual([{ status: 'ACTIVE', start_time: '07:00' }]);
   });
 
   it('denies wrong-tenant and missing station.manage requests and rejects an invalid source state', async () => {
@@ -375,21 +377,26 @@ describe('Phase 0 station activation in PostgreSQL', () => {
     expect(invalidState.status).toBe(409);
   });
 
-  it('fails closed when the schedule is missing or incomplete', async () => {
+  it("fails closed with no shift, then goes live with the station's own single shift", async () => {
     const missing = await activate(ids.incomplete, `phase0-no-schedule-${ids.incomplete}`);
     expect(missing.status).toBe(409);
+    const stillOnboarding = await client<{ status: string }[]>`
+      select status from app.stations where tenant_id = ${ids.tenant} and id = ${ids.incomplete}
+    `;
+    expect(stillOnboarding[0]?.status).toBe('ONBOARDING');
 
+    // Shifts are the station's own: one custom shift is enough, it need not be 06:00 and 18:00.
     await configureShift(ids.incomplete, ids.incompleteTemplate, {
       code: 'DAY',
       name: 'Day Shift',
-      startTime: '06:00',
+      startTime: '07:30',
     });
-    const incomplete = await activate(ids.incomplete, `phase0-incomplete-${ids.incomplete}`);
-    expect(incomplete.status).toBe(409);
+    const live = await activate(ids.incomplete, `phase0-one-shift-${ids.incomplete}`);
+    expect(live.status, await live.clone().text()).toBe(200);
     const status = await client<{ status: string }[]>`
       select status from app.stations where tenant_id = ${ids.tenant} and id = ${ids.incomplete}
     `;
-    expect(status[0]?.status).toBe('ONBOARDING');
+    expect(status[0]?.status).toBe('ACTIVE');
   });
 
   it('replays the same idempotency key once and serializes competing activations', async () => {

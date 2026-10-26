@@ -27,6 +27,12 @@ export const DOCUMENT_SUBJECTS = {
     label: 'Supplier payment',
     entityScoped: true,
   },
+  // An invoice or credit note belongs to a legal entity too; its file is listed wherever it was added.
+  SUPPLIER_DOCUMENT: {
+    table: 'supplier_documents',
+    label: 'Supplier invoice',
+    entityScoped: true,
+  },
 } as const satisfies Record<string, { table: string; label: string; entityScoped?: boolean }>;
 
 export type DocumentSubjectType = keyof typeof DOCUMENT_SUBJECTS;

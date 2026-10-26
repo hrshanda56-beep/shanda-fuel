@@ -1270,6 +1270,7 @@
 }
 
 .income-actions {
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 

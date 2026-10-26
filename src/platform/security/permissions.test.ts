@@ -103,6 +103,27 @@ describe('permission authorization', () => {
     ).toBe(false);
   });
 
+  it('says a check is needed, not that the person is refused, when only the step-up is missing', () => {
+    const requestedScope = { tenantId, scopeType: 'STATION' as const, legalEntityId, stationId };
+    const withoutCheck = { ...actor, stepUpTenantId: undefined };
+    let thrown: unknown;
+    try {
+      authorize({ actor: withoutCheck, permissionCode: 'meter.reset', requestedScope });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({
+      code: 'STEP_UP_REQUIRED',
+      httpStatus: 403,
+      details: { stepUpRequired: true, permissionCode: 'meter.reset' },
+    });
+    expect((thrown as Error).message).toMatch(/step-up/);
+    // A person who does not hold the permission at all is still simply refused.
+    expect(() =>
+      authorize({ actor: withoutCheck, permissionCode: 'membership.manage', requestedScope }),
+    ).toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
+  });
+
   it('does not let generic approval authority lock a business day', () => {
     const genericApprovalOnly: AuthorizationActor = {
       ...actor,

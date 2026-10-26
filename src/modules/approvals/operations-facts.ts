@@ -100,16 +100,22 @@ export async function loadOperationsFacts(
       physical: string | null;
       variance: string | null;
       tolerance: string | null;
+      red: string | null;
       sold: string | null;
       reorder: string | null;
+      opening_recorded: boolean;
     }>(sql`
       select t.id as tank_id, t.code as tank_code, p.name as product_name,
         coalesce(now_stock.expected, 0)::text as expected,
         d.physical_litres::text as physical,
         (d.physical_litres - coalesce(at_dip.expected, 0))::text as variance,
         t.acceptable_variance_litres::text as tolerance,
+        t.variance_red_litres::text as red,
         sold.litres::text as sold,
-        t.reorder_level_litres::text as reorder
+        t.reorder_level_litres::text as reorder,
+        exists (select 1 from app.inventory_movements o
+          where o.tenant_id = t.tenant_id and o.station_id = t.station_id
+            and o.tank_id = t.id and o.movement_type = 'OPENING_BALANCE') as opening_recorded
       from app.tanks t
       join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
       left join lateral (
@@ -151,8 +157,10 @@ export async function loadOperationsFacts(
       physicalLitres: row.physical,
       varianceAtDipLitres: row.variance,
       toleranceLitres: row.tolerance,
+      redLitres: row.red,
       soldSincePreviousDipLitres: row.sold,
       reorderLevelLitres: row.reorder,
+      openingStockRecorded: row.opening_recorded,
     }));
   }
   const [settingsRow] = await transaction.execute<AlertSettingsRow>(sql`

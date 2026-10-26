@@ -8,6 +8,7 @@ import { assertSessionActive } from '../../platform/security';
 import {
   clerkUserHasMfa,
   hasRecentClerkReverification,
+  hasRecentClerkSignIn,
   resolveClerkSession,
 } from '../../platform/auth/provider';
 import {
@@ -18,13 +19,14 @@ import {
   type ClerkStepUpAction,
   issueClerkStepUpAssertion,
   issueClerkStepUpChallenge,
+  readClerkStepUpAssertion,
   readClerkStepUpChallenge,
+  stepUpTtlMs,
 } from '../../platform/auth/clerk-step-up';
 import { appendSecurityEvent } from '../audit/contracts';
 import type { TenantExecutionContext } from '../tenancy/authority';
 
 export const STEP_UP_LEVEL = 1 as const;
-export const STEP_UP_TTL_MS = 10 * 60_000;
 
 type TenantTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -142,23 +144,46 @@ export async function establishStepUp(input: {
     level,
   } as const;
 
-  if (!readClerkStepUpChallenge(input.request, challengeInput, now)) {
-    throw new ClerkReverificationRequiredError(
-      level,
-      issueClerkStepUpChallenge({ ...challengeInput, now }),
-    );
+  // One identity check covers every privileged action until it expires, so a person is not
+  // asked again in another area. Reusing it issues nothing new and writes no second event.
+  const existing = readClerkStepUpAssertion(input.request, now);
+  if (
+    existing &&
+    existing.providerSessionId === session.providerSessionId &&
+    existing.internalUserId === session.internalUserId &&
+    existing.tenantId === input.context.membership.tenantId &&
+    (existing.level === level || existing.level === 'strict_mfa')
+  ) {
+    return {
+      level: STEP_UP_LEVEL,
+      tenantId: input.context.membership.tenantId,
+      expiresAt: new Date(
+        Math.min(session.expiresAt.getTime(), existing.expiresAt.getTime()),
+      ).toISOString(),
+    };
   }
-  if (!hasRecentClerkReverification(input.request, level)) {
-    throw new AppError('FORBIDDEN', 'Clerk reverification is required for this action');
+  // A password sign-in (or a check) inside the reuse window is itself the step-up: no challenge.
+  const reuseMinutes = stepUpTtlMs() / 60_000;
+  const freshSignIn = hasRecentClerkSignIn(input.request, level, reuseMinutes);
+  if (!freshSignIn) {
+    if (!readClerkStepUpChallenge(input.request, challengeInput, now)) {
+      throw new ClerkReverificationRequiredError(
+        level,
+        issueClerkStepUpChallenge({ ...challengeInput, now }),
+      );
+    }
+    if (!hasRecentClerkReverification(input.request, level)) {
+      throw new AppError('FORBIDDEN', 'Clerk reverification is required for this action');
+    }
   }
-  const expiresAt = new Date(Math.min(session.expiresAt.getTime(), now.getTime() + STEP_UP_TTL_MS));
+  const expiresAt = new Date(Math.min(session.expiresAt.getTime(), now.getTime() + stepUpTtlMs()));
   await withTenantTransaction(input.context.transaction, async (transaction) => {
     await appendStepUpEvent(transaction, input.context, now, 'SECURITY.STEP_UP_SUCCEEDED', {
       outcome: 'success',
       level: STEP_UP_LEVEL,
       expiresAt: expiresAt.toISOString(),
       tenantId: input.context.membership.tenantId,
-      authenticationMethod: 'clerk-reverification',
+      authenticationMethod: freshSignIn ? 'clerk-sign-in' : 'clerk-reverification',
     });
   });
   const setCookie = issueClerkStepUpAssertion({ ...challengeInput, now });

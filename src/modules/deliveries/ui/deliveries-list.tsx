@@ -6,9 +6,10 @@ import { PageHeader } from '@/design-system/layout';
 import { Notice } from '@/design-system/feedback';
 import { Checkbox } from '@/design-system/forms';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
-import { Card, EmptyState, StatusBadge } from '@/design-system/primitives';
+import { Button, Card, EmptyState, StatusBadge } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
 import type { DeliveryList } from '../queries';
+import { RecordDelivery } from './record-delivery';
 
 export function DeliveriesList({
   context,
@@ -51,6 +52,7 @@ export function DeliveriesList({
   }
 
   const { deliveries } = initialData;
+  const [recording, setRecording] = useState(false);
   return (
     <div className="stack-lg">
       <PageHeader
@@ -58,6 +60,19 @@ export function DeliveriesList({
         title="Fuel deliveries"
         description="Open a delivery to record its truck compartments, seals, water test and what the driver confirmed."
       />
+      {recording ? (
+        <RecordDelivery
+          tenantId={context.tenantId}
+          stationId={context.stationId}
+          tanks={initialData.tanks}
+        />
+      ) : (
+        <div>
+          <Button type="button" onClick={() => setRecording(true)}>
+            Record delivery
+          </Button>
+        </div>
+      )}
       {deliveries.length === 0 ? (
         <EmptyState
           title="No deliveries yet"

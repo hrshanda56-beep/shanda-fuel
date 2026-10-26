@@ -180,7 +180,7 @@ describe('forecourt command authorization preflight', () => {
         body: { tenantId: ids.tenant, stationId: ids.station },
         loadStation,
       }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    ).rejects.toMatchObject({ code: 'STEP_UP_REQUIRED' });
 
     tenantResolver.mockResolvedValue(authority('OWNER', true));
     await expect(

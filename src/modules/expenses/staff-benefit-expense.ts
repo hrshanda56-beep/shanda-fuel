@@ -67,16 +67,21 @@ export async function submitStaffBenefitExpenseInTransaction(
     );
   }
   const categoryId = await ensureCategory(transaction, context);
-  const result = await submitExpenseInTransaction(transaction, context, {
-    commandType: 'SubmitExpense',
-    tenantId: context.tenantId,
-    stationId: input.stationId,
-    categoryId,
-    expenseDate: benefitExpenseDate(input.month),
-    description: staffBenefitExpenseDescription(month.staffName, input.month),
-    reference: month.reference,
-    amount: month.cost.total,
-  });
+  const result = await submitExpenseInTransaction(
+    transaction,
+    context,
+    {
+      commandType: 'SubmitExpense',
+      tenantId: context.tenantId,
+      stationId: input.stationId,
+      categoryId,
+      expenseDate: benefitExpenseDate(input.month),
+      description: staffBenefitExpenseDescription(month.staffName, input.month),
+      reference: month.reference,
+      amount: month.cost.total,
+    },
+    { allowStaffFuel: true },
+  );
   return { ...result, accountId: input.accountId, month: input.month };
 }
 

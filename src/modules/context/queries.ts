@@ -50,6 +50,7 @@ type ContextRow = {
   station_code: string | null;
   station_name: string | null;
   station_timezone: string | null;
+  station_status?: string | null;
 };
 
 export type AuthorizedContextRow = ContextRow;
@@ -97,7 +98,8 @@ async function readTenantRows(
         s.id as station_id,
         s.code as station_code,
         s.name as station_name,
-        s.timezone as station_timezone
+        s.timezone as station_timezone,
+        s.status as station_status
       from app.tenants t
       left join app.legal_entities le
         on le.tenant_id = t.id
@@ -105,7 +107,7 @@ async function readTenantRows(
       left join app.stations s
         on s.tenant_id = le.tenant_id
        and s.legal_entity_id = le.id
-       and s.status = 'ACTIVE'
+       and s.status in ('ACTIVE', 'ONBOARDING')
       where t.id = ${authority.membership.tenantId}
         and t.status = 'ACTIVE'
         ${selection?.legalEntityId ? sql`and le.id = ${selection.legalEntityId}` : sql``}
@@ -205,6 +207,7 @@ export function filterAuthorizedContextRows(
         code: row.station_code,
         name: row.station_name,
         timezone: row.station_timezone,
+        ...(row.station_status === 'ONBOARDING' ? { status: 'ONBOARDING' as const } : {}),
       });
     }
   }

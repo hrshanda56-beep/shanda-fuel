@@ -9,7 +9,7 @@ import {
   LoadingState,
 } from '@/design-system/primitives';
 import { withRequestAuthority } from '@/modules/tenancy/request-authority';
-import { AppError } from '@/platform/errors';
+import { AppError, isAccessRefusal } from '@/platform/errors';
 import { observeError } from '@/platform/observability';
 import { buildContextHref } from './routes';
 import type { ContextResolution } from './contracts';
@@ -123,7 +123,7 @@ async function StationFacts({
       withRequestAuthority(() => loadPortfolioStation(request, row.selection, area)),
     );
   } catch (error) {
-    if (error instanceof AppError && error.code === 'FORBIDDEN')
+    if (isAccessRefusal(error))
       return table ? (
         <PortfolioStationRow {...rowProps} message="Access restricted" />
       ) : (
@@ -212,7 +212,7 @@ async function EntitySuppliers({
       ),
     );
   } catch (error) {
-    if (error instanceof AppError && error.code === 'FORBIDDEN') return <AccessDeniedState />;
+    if (isAccessRefusal(error)) return <AccessDeniedState />;
     observeError(request, error, 'portfolio.suppliers.read');
     return <ErrorState title="Supplier data unavailable" message="Reload to try again." />;
   }

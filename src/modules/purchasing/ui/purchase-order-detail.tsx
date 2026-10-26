@@ -189,7 +189,13 @@ export function PurchaseOrderDetail({
     state === 'DRAFT' && capabilities.createOrders ? (
       <Button onClick={() => setAction('submit')}>Send for approval</Button>
     ) : state === 'SUBMITTED' && capabilities.approveOrders && !order?.approvalBlockedForYou ? (
-      <Button onClick={() => setAction('approve')}>Approve order</Button>
+      <Button onClick={() => setAction('approve')}>
+        {order?.approvalIsSelf ? 'Approve my own order' : 'Approve order'}
+      </Button>
+    ) : state === 'SUBMITTED' && capabilities.approveOrders && order?.approvalBlockedForYou ? (
+      <p className="muted-small" role="note">
+        You sent this order, so someone else has to approve it.
+      </p>
     ) : canLink && display !== 'RECEIVED' ? (
       <Button onClick={() => setLinkOpen(true)}>Link a delivery</Button>
     ) : null;
@@ -478,14 +484,45 @@ export function PurchaseOrderDetail({
       <ConfirmDialog
         open={action === 'approve'}
         onClose={() => setAction(null)}
-        onConfirm={() =>
+        onConfirm={() => {
+          if (order?.approvalIsSelf && !reason.trim()) {
+            return setActionError('Say briefly why you are approving your own order.');
+          }
           void run(
-            { commandType: 'ApprovePurchaseOrder', expectedVersion: order?.version },
+            {
+              commandType: 'ApprovePurchaseOrder',
+              expectedVersion: order?.version,
+              ...(order?.approvalIsSelf ? { selfApprovalReason: reason.trim() } : {}),
+            },
             'The order is approved. Link the delivery to it when the fuel arrives.',
-          )
-        }
+          );
+        }}
         title={`Approve order ${order?.orderNumber ?? ''}?`}
-        consequence="Approving says this order is agreed. It does not pay anything. If it is changed later, it needs approving again."
+        consequence={
+          <div className={styles.confirmBox}>
+            <p>
+              Approving says this order is agreed. It does not pay anything. If it is changed later,
+              it needs approving again.
+            </p>
+            {order?.approvalIsSelf ? (
+              <>
+                <p>
+                  You sent this order and nobody else can approve it, so you may approve it
+                  yourself. The reason is kept in the audit trail.
+                </p>
+                <Field id="po-self-approve-reason" label="Why are you approving it?" required>
+                  <input
+                    id="po-self-approve-reason"
+                    value={reason}
+                    maxLength={300}
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="e.g. I am the only approver at this company"
+                  />
+                </Field>
+              </>
+            ) : null}
+          </div>
+        }
         details={
           order
             ? [

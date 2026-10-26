@@ -10,6 +10,7 @@ import {
   LoadingState,
   StatusBadge,
 } from '@/design-system/primitives';
+import { stationLocalToInstant } from '@/platform/domain/business-time';
 import { friendlySetupError } from '@/modules/setup/guided-setup';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 
@@ -37,6 +38,19 @@ type Outcome = { kind: 'success' | 'error'; message: string };
 type Gate = (run: () => Promise<void>) => void;
 
 const STEP_UP_REUSE_MS = 5 * 60_000;
+
+/** Date and time in the station's own timezone, never the viewer's. */
+function stationDateTime(value: string, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone,
+    }).format(new Date(value));
+  } catch {
+    return '—';
+  }
+}
 
 const COMMAND_OF: Record<Exclude<QuickStep, 'DRAFT'>, string> = {
   REQUEST: 'RequestPriceChange',
@@ -214,7 +228,12 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
     }
   }
 
-  async function advance(state: string | null, priceId: string | null, unitPrice: string) {
+  async function advance(
+    state: string | null,
+    priceId: string | null,
+    unitPrice: string,
+    plannedStart?: Date,
+  ) {
     const plan = quickSteps(state, data.capabilities);
     let id = priceId;
     for (const { step, expectedVersion } of plan.run) {
@@ -226,7 +245,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           productId: product.productId,
           unitPrice,
           currency: 'USD',
-          effectiveFrom: new Date().toISOString(),
+          effectiveFrom: (plannedStart ?? new Date()).toISOString(),
         })) as { priceId?: string; data?: { priceId?: string } } | null;
         id = created?.priceId ?? created?.data?.priceId ?? null;
         if (!id)
@@ -247,18 +266,25 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
   function submitPrice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    const checked = checkNewPrice(
-      String(new FormData(form).get('price') ?? ''),
-      product.currentPrice,
-    );
+    const formData = new FormData(form);
+    const checked = checkNewPrice(String(formData.get('price') ?? ''), product.currentPrice);
     if (!checked.ok) {
       setPriceError(checked.message);
+      return;
+    }
+    // The planned start is typed in the station's own time, never the browser's.
+    const plannedText = String(formData.get('startsAt') ?? '').trim();
+    const plannedStart = plannedText
+      ? stationLocalToInstant(plannedText, data.station.timezone)
+      : null;
+    if (plannedText && !plannedStart) {
+      setPriceError('Enter the date and time the new price should start, or leave it empty.');
       return;
     }
     setPriceError(undefined);
     gate(() =>
       run(async () => {
-        const stoppedAt = await advance(null, null, checked.value);
+        const stoppedAt = await advance(null, null, checked.value, plannedStart ?? undefined);
         form.reset();
         return stoppedAt
           ? `The new price was saved. ${whoCanHelp(stoppedAt)}`
@@ -392,6 +418,13 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
               placeholder="For example 1.65"
             />
           </Field>
+          <Field
+            id={`starts-${product.productId}`}
+            label="Planned start (optional)"
+            hint="The date and time you want it to start, in this station's time. The price really starts when the pump meters are read. Leave empty for now."
+          >
+            <input name="startsAt" type="datetime-local" />
+          </Field>
           <div className={styles.actions}>
             <Button type="submit" loading={busy} disabled={!data.capabilities.request}>
               Change the price
@@ -405,6 +438,11 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
         <div className={styles.form}>
           <p className={styles.actions}>
             <strong>New price: {change.unitPrice} per litre</strong>
+            {change.plannedFrom ? (
+              <span className={styles.muted}>
+                Planned for {stationDateTime(change.plannedFrom, data.station.timezone)}
+              </span>
+            ) : null}
             <StatusBadge tone="pending">
               {describePriceChange(
                 change.state,
@@ -489,6 +527,23 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           ) : null}
         </div>
       )}
+
+      {product.history && product.history.length > 0 ? (
+        <details className={styles.history}>
+          <summary>Price history</summary>
+          <ul>
+            {product.history.map((entry) => (
+              <li key={entry.priceId}>
+                <strong>{entry.unitPrice}</strong> from{' '}
+                {stationDateTime(entry.startedAt, data.station.timezone)}
+                {entry.endedAt
+                  ? ` to ${stationDateTime(entry.endedAt, data.station.timezone)}`
+                  : ' (in use now)'}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {outcome ? (
         <p

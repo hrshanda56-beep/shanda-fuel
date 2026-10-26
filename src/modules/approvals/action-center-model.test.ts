@@ -322,6 +322,30 @@ describe('buildActionCenter documents waiting on a person', () => {
     expect(result.items[2]?.title).toBe('2 supplier invoices not yet posted');
   });
 
+  it('lists an expense waiting for approval under Approvals, with the reason it is blocked', () => {
+    const waiting = (submittedByMe: boolean, soleApprover: boolean) =>
+      buildActionCenter({
+        ...clear,
+        expenses: {
+          status: 'ok',
+          value: {
+            rows: [{ id: 'e1', description: 'Generator diesel', amount: '20.0000', submittedByMe }],
+            soleApprover,
+          },
+        },
+      }).items[0]!;
+    expect(waiting(false, false)).toMatchObject({
+      area: 'Approvals',
+      href: '/expenses',
+      title: expect.stringContaining('Generator diesel'),
+    });
+    expect(waiting(true, false).detail).toMatch(/someone else needs to approve/);
+    expect(waiting(true, true).detail).not.toMatch(/someone else needs to approve/);
+    expect(
+      buildActionCenter({ ...clear, expenses: { status: 'unavailable' } }).unavailable,
+    ).toEqual(['Expenses']);
+  });
+
   it('tells the requester to wait for someone else unless they are the only approver', () => {
     const price = (soleApprover: boolean) =>
       buildActionCenter({

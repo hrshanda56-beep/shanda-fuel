@@ -264,10 +264,13 @@ export async function getSupplierDocumentsAwaitingPostingFromRequest(
   });
 }
 
-/** The choices on the invoice form: the fuels the company sells and the stations of the company. */
+/**
+ * The choices on the invoice form: the fuels the company sells, the stations of the company and,
+ * for one supplier, the confirmed deliveries that no posted invoice covers yet.
+ */
 export async function getSupplierInvoiceChoicesFromRequest(
   request: Request,
-  input: { tenantId: string; legalEntityId: string },
+  input: { tenantId: string; legalEntityId: string; supplierId?: string },
   authenticatedActor?: AuthenticatedActorContext,
 ) {
   const context = await resolveSupplierReadContext({
@@ -292,9 +295,44 @@ export async function getSupplierInvoiceChoicesFromRequest(
       where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
       order by name
     `);
+    const deliveries = input.supplierId
+      ? await transaction.execute<{
+          id: string;
+          station_id: string;
+          product_id: string;
+          delivery_note_number: string;
+          business_date: string;
+          received: string;
+          on_note: string;
+        }>(sql`
+          select d.id, d.station_id, d.product_id, d.delivery_note_number, d.business_date,
+            d.actual_quantity_litres::text as received, d.note_quantity_litres::text as on_note
+          from app.fuel_deliveries d
+          join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
+          where d.tenant_id = ${context.tenantId}
+            and s.legal_entity_id = ${context.legalEntityId}
+            and d.supplier_id = ${input.supplierId}
+            and d.status = 'CONFIRMED'
+            and not exists (
+              select 1 from app.supplier_document_delivery_refs r
+              where r.tenant_id = d.tenant_id and r.delivery_id = d.id
+                and r.active and r.document_type = 'INVOICE')
+          order by d.delivered_at desc, d.id
+          limit 100
+        `)
+      : [];
     return {
       products: products.map((row) => ({ id: row.id, name: row.name })),
       stations: stations.map((row) => ({ id: row.id, name: row.name })),
+      deliveries: deliveries.map((row) => ({
+        id: row.id,
+        stationId: row.station_id,
+        productId: row.product_id,
+        deliveryNoteNumber: row.delivery_note_number,
+        businessDate: row.business_date,
+        receivedLitres: row.received,
+        noteLitres: row.on_note,
+      })),
     };
   });
 }

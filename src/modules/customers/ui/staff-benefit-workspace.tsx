@@ -10,6 +10,7 @@ import { ExactDecimal } from '@/platform/domain/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StaffBenefitRow } from '../staff-benefit-rows';
+import { makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
 import styles from './staff-benefit.module.css';
 
 export type StaffBenefitCustomerOption = { customerId: string; name: string; reference: string };
@@ -51,16 +52,35 @@ export function StaffBenefitWorkspace({
   const [stepUp, setStepUp] = useState(false);
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
+  // One reference per attempt, so a retry after a dropped connection cannot make a second record.
+  const reference = useRef<string | null>(null);
+
   async function save(alreadyConfirmed = false) {
-    const body = {
-      commandType: 'CreateCustomerAccount',
-      tenantId,
-      customerId,
-      accountType: 'CREDIT',
-      currency: 'USD',
-      creditLimit: limit.trim(),
-      staffBenefit: { staffName: staffName.trim() },
-    };
+    // A new staff member is one command: the customer record (marked Staff) and the benefit
+    // account together, so a cancelled identity check saves nothing. Choosing an existing staff
+    // record only opens the benefit account on it.
+    reference.current ??= makeReference(staffName);
+    const body = customerId
+      ? {
+          commandType: 'CreateCustomerAccount',
+          tenantId,
+          customerId,
+          accountType: 'CREDIT',
+          currency: 'USD',
+          creditLimit: limit.trim(),
+          staffBenefit: { staffName: staffName.trim() },
+        }
+      : {
+          commandType: 'CreateCustomerWithAccount',
+          tenantId,
+          accountReference: reference.current,
+          displayName: staffName.trim(),
+          contactMetadata: { kind: STAFF_CUSTOMER_KIND },
+          accountType: 'CREDIT',
+          currency: 'USD',
+          creditLimit: limit.trim(),
+          staffBenefit: { staffName: staffName.trim() },
+        };
     const fingerprint = JSON.stringify(body);
     if (attempt.current?.fingerprint !== fingerprint) {
       attempt.current = { fingerprint, key: crypto.randomUUID() };
@@ -80,13 +100,14 @@ export function StaffBenefitWorkspace({
           typeof result === 'object' && result !== null && 'message' in result
             ? String((result as { message: unknown }).message)
             : 'This could not be saved.';
-        if (!alreadyConfirmed && /not authorized|step-up/i.test(message)) {
+        if (!alreadyConfirmed && /step-up/i.test(message)) {
           setStepUp(true);
           return;
         }
         throw new Error(message);
       }
       attempt.current = null;
+      reference.current = null;
       setDone(`${staffName.trim()} added.`);
       setCustomerId('');
       setStaffName('');
@@ -102,7 +123,6 @@ export function StaffBenefitWorkspace({
   function submit(event: FormEvent) {
     event.preventDefault();
     setDone(null);
-    if (!customerId) return setError('Choose the customer record this benefit belongs to.');
     if (!staffName.trim()) return setError('Enter the staff member’s name.');
     if (!POSITIVE_MONEY.test(limit.trim())) {
       return setError('Enter the monthly limit in US dollars, for example 60 or 60.50.');
@@ -222,20 +242,33 @@ export function StaffBenefitWorkspace({
             </div>
             <form className="form-stack" onSubmit={submit} noValidate>
               <div className={styles.formGrid}>
-                <div className={styles.wide}>
-                  <Field id="staff-customer" label="Customer record" required>
-                    <Select
+                {customers.length > 0 ? (
+                  <div className={styles.wide}>
+                    <Field
                       id="staff-customer"
-                      value={customerId}
-                      onChange={(event) => setCustomerId(event.target.value)}
-                      placeholder="Choose a customer"
-                      options={customers.map((customer) => ({
-                        value: customer.customerId,
-                        label: `${customer.name} (${customer.reference})`,
-                      }))}
-                    />
-                  </Field>
-                </div>
+                      label="Existing staff record"
+                      hint="Leave empty to add a new staff member. Only people already kept as staff are listed."
+                      optional
+                    >
+                      <Select
+                        id="staff-customer"
+                        value={customerId}
+                        onChange={(event) => {
+                          const chosen = customers.find(
+                            (customer) => customer.customerId === event.target.value,
+                          );
+                          setCustomerId(event.target.value);
+                          if (chosen) setStaffName(chosen.name);
+                        }}
+                        placeholder="A new staff member"
+                        options={customers.map((customer) => ({
+                          value: customer.customerId,
+                          label: `${customer.name} (${customer.reference})`,
+                        }))}
+                      />
+                    </Field>
+                  </div>
+                ) : null}
                 <Field id="staff-name" label="Staff member" required>
                   <input
                     id="staff-name"

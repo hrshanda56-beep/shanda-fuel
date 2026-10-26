@@ -35,6 +35,8 @@ type FactRow = {
   station_code: string;
   station_name: string;
   legal_entity_id: string;
+  legal_entity_name: string;
+  station_status: string;
   active_products: number | string;
   priced_products: number | string;
   active_tanks: number | string;
@@ -66,6 +68,9 @@ export async function readStationSetupFacts(
       s.code as station_code,
       s.name as station_name,
       s.legal_entity_id,
+      (select le.legal_name from app.legal_entities le
+        where le.tenant_id = s.tenant_id and le.id = s.legal_entity_id) as legal_entity_name,
+      s.status as station_status,
       (select count(*) from app.products p
         where p.tenant_id = s.tenant_id and p.status = 'ACTIVE') as active_products,
       (select count(distinct sp.product_id)
@@ -142,6 +147,8 @@ export async function readStationSetupFacts(
     stationCode: row.station_code,
     stationName: row.station_name,
     legalEntityId: row.legal_entity_id,
+    legalEntityName: row.legal_entity_name,
+    stationStatus: row.station_status === 'ONBOARDING' ? 'ONBOARDING' : 'ACTIVE',
     activeProducts: count(row.active_products),
     pricedProducts: count(row.priced_products),
     activeTanks: count(row.active_tanks),
@@ -185,9 +192,12 @@ export async function readPaymentSetup(transaction: SetupTransaction): Promise<{
     display_name: string;
     currency: string;
     status: ProviderAccountRow['status'];
+    fee_percent: string | null;
+    fee_fixed: string | null;
   }>(sql`
     select pa.id, pa.provider_id, pp.name as provider_name, pa.station_id, pa.legal_entity_id,
-           pa.account_reference, pa.display_name, pa.currency, pa.status
+           pa.account_reference, pa.display_name, pa.currency, pa.status,
+           pa.fee_percent::text as fee_percent, pa.fee_fixed::text as fee_fixed
     from app.provider_accounts pa
     join app.payment_providers pp on pp.tenant_id = pa.tenant_id and pp.id = pa.provider_id
     where pa.tenant_id = current_setting('app.tenant_id')::uuid
@@ -225,6 +235,8 @@ export async function readPaymentSetup(transaction: SetupTransaction): Promise<{
       displayName: row.display_name,
       currency: row.currency,
       status: row.status,
+      feePercent: row.fee_percent,
+      feeFixed: row.fee_fixed,
     })),
     bankAccounts: banks.map((row) => ({
       id: row.id,
@@ -314,6 +326,7 @@ export async function resolveSetupOverview(
     code: station.stationCode,
     name: station.stationName,
     legalEntityId: station.legalEntityId,
+    ...(station.legalEntityName ? { legalEntityName: station.legalEntityName } : {}),
   }));
   return {
     status: 'ready',

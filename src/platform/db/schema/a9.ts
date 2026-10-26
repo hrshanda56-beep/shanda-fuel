@@ -73,6 +73,10 @@ export const providerAccounts = appSchema.table(
     displayName: text('display_name').notNull(),
     currency: text('currency').notNull().default('USD'),
     status: text('status').notNull().default('ACTIVE'),
+    /** What the provider charges as a percentage of each settlement (0 to 100). */
+    feePercent: numeric('fee_percent', { precision: 9, scale: 4 }),
+    /** What the provider charges as a fixed amount on each settlement. */
+    feeFixed: numeric('fee_fixed', { precision: 20, scale: 4 }),
     metadata: jsonb('metadata')
       .notNull()
       .default(sql`'{}'::jsonb`),
@@ -144,6 +148,8 @@ export const providerSettlements = appSchema.table(
     currency: text('currency').notNull(),
     grossAmount: numeric('gross_amount', { precision: 20, scale: 4 }).notNull(),
     providerFeeAmount: numeric('provider_fee_amount', { precision: 20, scale: 4 }),
+    /** The charge worked out from the account's fee settings, to compare with what was kept. */
+    expectedFeeAmount: numeric('expected_fee_amount', { precision: 20, scale: 4 }),
     providerDeductionAmount: numeric('provider_deduction_amount', {
       precision: 20,
       scale: 4,

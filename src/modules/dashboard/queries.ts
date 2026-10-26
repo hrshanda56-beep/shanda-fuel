@@ -6,17 +6,18 @@ import {
   getManagementReportFromRequest,
 } from '../reporting/queries';
 import { buildFinanceTiles } from '../reporting/finance-tiles';
+import { buildDashboardSnapshot } from '../reporting/dashboard-snapshot';
 import { getCustomerAccountsFromRequest } from '../customers/queries';
 import { getOperationsOverviewFromRequest } from '../forecourt/operations-overview';
 import { withRequestAuthority } from '../tenancy/request-authority';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
-import { AppError } from '../../platform/errors';
+import { AppError, isAccessRefusal } from '../../platform/errors';
 
 async function section<T>(work: () => Promise<T>) {
   try {
     return { status: 'ready' as const, data: await work() };
   } catch (error) {
-    return error instanceof AppError && error.code === 'FORBIDDEN'
+    return isAccessRefusal(error)
       ? { status: 'forbidden' as const }
       : { status: 'error' as const, message: 'This dashboard section could not be loaded.' };
   }
@@ -36,7 +37,7 @@ export async function getDashboardFromRequest(request: Request, input: Dashboard
       tenantId: input.tenantId,
       ...(input.stationId ? { stationIds: input.stationId } : {}),
     };
-    const [daily, customers, operations, chart, finance] = await Promise.all([
+    const [daily, customers, operations, chart, report] = await Promise.all([
       section(() => getDailyOperationsFromRequest(request, reportScope)),
       section(() => getCustomerAccountsFromRequest(request, { tenantId: input.tenantId })),
       input.stationId
@@ -54,16 +55,23 @@ export async function getDashboardFromRequest(request: Request, input: Dashboard
           toDate: input.toDate,
         }),
       ),
-      section(async () =>
-        buildFinanceTiles(
-          await getManagementReportFromRequest(request, {
-            ...reportScope,
-            fromDate: input.fromDate,
-            toDate: input.toDate,
-          }),
-        ),
+      section(() =>
+        getManagementReportFromRequest(request, {
+          ...reportScope,
+          fromDate: input.fromDate,
+          toDate: input.toDate,
+        }),
       ),
     ]);
-    return { daily, customers, operations, chart, finance };
+    // One management report feeds both the money tiles and the stock and cash snapshot.
+    const finance =
+      report.status === 'ready'
+        ? { status: 'ready' as const, data: buildFinanceTiles(report.data) }
+        : report;
+    const snapshot =
+      report.status === 'ready'
+        ? { status: 'ready' as const, data: buildDashboardSnapshot(report.data) }
+        : report;
+    return { daily, customers, operations, chart, finance, snapshot };
   });
 }

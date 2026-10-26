@@ -4,7 +4,7 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { withTenantTransaction } from '../../platform/db/transaction';
-import { AppError } from '../../platform/errors';
+import { AppError, isAccessRefusal } from '../../platform/errors';
 import { assertStepUp } from '../../platform/security';
 import { authorize, isPermissionGranted } from '../../platform/security/permissions';
 import {
@@ -92,7 +92,7 @@ function hasPermission(
     });
     return true;
   } catch (error) {
-    if (error instanceof AppError && error.code === 'FORBIDDEN') return false;
+    if (isAccessRefusal(error)) return false;
     throw error;
   }
 }
@@ -122,7 +122,7 @@ function actionAvailability(
         stepUpAction,
       );
     } catch (error) {
-      if (error instanceof AppError && error.code === 'FORBIDDEN') {
+      if (isAccessRefusal(error)) {
         return { canExecute: false, permissionGranted: true, requiresStepUp: true };
       }
       throw error;

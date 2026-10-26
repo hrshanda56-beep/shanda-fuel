@@ -845,7 +845,7 @@ const activateStationPayload = z
   })
   .strict();
 
-/** Explicit ONBOARDING -> ACTIVE transition, guarded by the approved TEI schedule. */
+/** Explicit ONBOARDING -> ACTIVE transition, guarded by the station having at least one shift. */
 export async function activateStationFromRequest(request: Request, input: unknown) {
   const payload = activateStationPayload.parse(input);
   const key = request.headers.get('idempotency-key')?.trim();
@@ -884,24 +884,19 @@ export async function activateStationFromRequest(request: Request, input: unknow
       if (station.tenant_status !== 'ACTIVE' || station.entity_status !== 'ACTIVE') {
         throw new AppError('CONFLICT', 'The station tenant and legal entity must be ACTIVE');
       }
-      // Read the schedule in a separate statement after taking the station
-      // lock. DefineShiftTemplate uses the same lock, so READ COMMITTED gives
-      // this query a fresh snapshot after any preceding template edit commits.
-      const scheduleRows = await transaction.execute<{ schedule_ok: boolean }>(sql`
-        select coalesce(
-          count(*) = 2
-            and array_agg(to_char(start_time, 'HH24:MI') order by start_time)
-              = array['06:00', '18:00']::text[]
-            and bool_and(duration_minutes = 720),
-          false
-        ) as schedule_ok
+      // Read the shifts in a separate statement after taking the station lock.
+      // DefineShiftTemplate uses the same lock, so READ COMMITTED gives this query a
+      // fresh snapshot after any preceding template edit commits. Each station sets
+      // its own shifts; a station only needs at least one to trade.
+      const scheduleRows = await transaction.execute<{ shifts: number | string }>(sql`
+        select count(*) as shifts
         from app.shift_templates
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and active
       `);
-      if (station.timezone !== 'Africa/Harare' || !scheduleRows[0]?.schedule_ok) {
+      if (!station.timezone || Number(scheduleRows[0]?.shifts ?? 0) === 0) {
         throw new AppError(
           'CONFLICT',
-          'Activation requires active 06:00 and 18:00 twelve-hour shifts in Africa/Harare',
+          'Activation requires at least one active shift and a station time zone',
         );
       }
       await transaction.execute(sql`

@@ -87,6 +87,8 @@ function depositLabel(deposit: {
 export type CashSummary = {
   stationId: string;
   currency: string;
+  /** Cash open to collect, less cash paid out of the station's own cash since the last collection. */
+  cashPosition?: { openToCollect: string; paidOut: string; cashToCollect: string };
   totals: {
     availableAtStation: string;
     collectedButUnbanked: string;
@@ -873,6 +875,14 @@ export function CashWorkspace({
                   <p className="cash-sheet-intro">
                     Record the cash you collected from an approved shift.
                   </p>
+                  {summary?.cashPosition && Number(summary.cashPosition.paidOut) > 0 ? (
+                    <p className="cash-sheet-note" role="note">
+                      USD {summary.cashPosition.paidOut} was paid out of station cash for expenses
+                      since the last collection, so only{' '}
+                      <strong>USD {summary.cashPosition.cashToCollect}</strong> can be collected
+                      now.
+                    </p>
+                  ) : null}
                   <Field id="reconciliation-id" label="Shift cash" required>
                     <Select
                       id="reconciliation-id"

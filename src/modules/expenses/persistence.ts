@@ -16,12 +16,15 @@ import {
   assertSettlementReference,
   assertSettlementWithinOutstanding,
   expenseRequiresStepUp,
+  isStaffFuelCategory,
   monthPeriod,
   outstandingAmount,
   paymentStatus,
   positiveMoney,
   recognitionAmountForDate,
   requiredApprovals,
+  STAFF_FUEL_CATEGORY_CODE,
+  STAFF_FUEL_EXPENSE_MESSAGE,
   validateExpensePolicy,
   validateExpenseSubmission,
   UNCONFIGURED_EXPENSE_POLICY,
@@ -75,6 +78,7 @@ export async function loadExpensePolicy(
 type CategoryRow = {
   id: string;
   code: string;
+  name: string;
   classification: ExpenseCategoryClassification;
   status: string;
 };
@@ -85,7 +89,7 @@ async function loadCategory(
   categoryId: string,
 ): Promise<CategoryRow> {
   const rows = await transaction.execute<CategoryRow>(sql`
-    select id, code, classification, status
+    select id, code, name, classification, status
     from app.expense_categories
     where tenant_id = ${context.tenantId} and id = ${categoryId}
   `);
@@ -149,6 +153,13 @@ export async function createExpenseCategoryInTransaction(
   context: ExpenseCommandContext,
   input: ExpenseCommandInput<'CreateExpenseCategory'>,
 ) {
+  // The staff fuel benefit category is created by the month-end staff benefit flow alone.
+  if (
+    input.code !== STAFF_FUEL_CATEGORY_CODE &&
+    isStaffFuelCategory({ code: input.code, name: input.name })
+  ) {
+    throw new AppError('VALIDATION_FAILED', STAFF_FUEL_EXPENSE_MESSAGE);
+  }
   const existing = await transaction.execute(sql`
     select 1 from app.expense_categories
     where tenant_id = ${context.tenantId} and code = ${input.code}
@@ -224,10 +235,15 @@ export async function submitExpenseInTransaction(
   transaction: ExpenseTransaction,
   rawContext: ExpenseCommandContext,
   input: ExpenseCommandInput<'SubmitExpense'>,
+  /** Only the month-end staff benefit flow may use the staff fuel category. */
+  options: { allowStaffFuel?: boolean } = {},
 ) {
   const context = requireStation(rawContext);
   const category = await loadCategory(transaction, context, input.categoryId);
   assertCategoryUsableForExpense(category.classification, 'MANUAL_EXPENSE');
+  if (!options.allowStaffFuel && isStaffFuelCategory(category)) {
+    throw new AppError('VALIDATION_FAILED', STAFF_FUEL_EXPENSE_MESSAGE);
+  }
   const validated = validateExpenseSubmission(input);
   if (validated.reference) {
     const duplicate = await transaction.execute(sql`
@@ -272,11 +288,11 @@ export async function submitExpenseInTransaction(
   await transaction.execute(sql`
     insert into app.expenses (
       id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description,
-      payee, reference, currency, amount, state, version, required_approvals, submitted_by, shift_id, observed_at
+      payee, reference, payment_method, currency, amount, state, version, required_approvals, submitted_by, shift_id, observed_at
     ) values (
       ${expenseId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
       ${input.categoryId}, ${validated.expenseDate}, ${validated.description},
-      ${validated.payee}, ${validated.reference}, 'USD', ${validated.amount.amount.toString()},
+      ${validated.payee}, ${validated.reference}, ${input.paymentMethod ?? null}, 'USD', ${validated.amount.amount.toString()},
       'SUBMITTED', 0, ${approvalsRequired}, ${actorId(context)}, ${input.shiftId ?? null}, ${input.observedAt ?? null}::timestamptz
     )
   `);

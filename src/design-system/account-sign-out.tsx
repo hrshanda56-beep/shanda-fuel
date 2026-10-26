@@ -12,7 +12,8 @@ export function AccountSignOutItem(_props: { provider?: AccountAuthProvider }) {
   return (
     <SignOutItem
       run={async () => {
-        await signOut();
+        // Go to the sign-in page as soon as the session ends, rather than via the home page.
+        await signOut({ redirectUrl: '/login' });
         router.replace('/login');
         router.refresh();
       }}

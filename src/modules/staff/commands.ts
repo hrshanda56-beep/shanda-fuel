@@ -15,7 +15,10 @@ import { authorize } from '../../platform/security/permissions';
 import { assertStepUp } from '../../platform/security';
 import { requireAuthenticatedActor } from '../identity';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
-import { CLERK_DEACTIVATE_STAFF_ACTION } from '../../platform/auth/clerk-step-up';
+import {
+  CLERK_DEACTIVATE_STAFF_ACTION,
+  CLERK_PRIVILEGED_ACTION,
+} from '../../platform/auth/clerk-step-up';
 import {
   createClerkCredentialIdentity,
   deleteClerkCredentialIdentity,
@@ -69,6 +72,16 @@ const deactivateSchema = z.object({
   commandType: z.literal('DeactivateStaffMember'),
   tenantId: z.string().uuid(),
   membershipId: z.string().uuid(),
+});
+
+const updateAssignmentSchema = z.object({
+  commandType: z.literal('UpdateStaffAssignment'),
+  tenantId: z.string().uuid(),
+  membershipId: z.string().uuid(),
+  assignedRole: z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']),
+  scopeType: z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']),
+  legalEntityId: z.string().uuid().optional(),
+  stationIds: z.array(z.string().uuid()).max(100).default([]),
 });
 
 const acceptanceSchema = z.object({ token: z.string().min(1).max(256) });
@@ -286,7 +299,7 @@ export async function createStaffInvitationFromRequest(
               scope.stationIds.map((id) => sql`${id}::uuid`),
               sql`, `,
             )})
-            and status = 'ACTIVE'
+            and status in ('ACTIVE', 'ONBOARDING')
           order by id
         `);
         if (stations.length !== scope.stationIds.length) {
@@ -750,6 +763,159 @@ export async function deactivateStaffMemberFromRequest(
         revocationStatus: 'PROVIDER_ERROR' as const,
       };
     }
+  } catch (error) {
+    throw transactionError(error);
+  }
+}
+
+/**
+ * Change an active staff member's role and where it applies. The old assignments are replaced
+ * as one unit, so a person never ends up with half of the old access and half of the new.
+ */
+export async function updateStaffAssignmentFromRequest(
+  request: Request,
+  body: unknown,
+  deps: StaffCommandDependencies = {},
+) {
+  const input = updateAssignmentSchema.parse(body);
+  const role = parseRole(input.assignedRole);
+  const scope = validateInvitationScope(role, {
+    scopeType: input.scopeType,
+    legalEntityId: input.legalEntityId,
+    stationIds: input.stationIds,
+  });
+  const authority = await resolveStaffAuthority(request, input.tenantId, deps);
+  assertStepUp(authority.actor.session, 1, new Date(), input.tenantId, CLERK_PRIVILEGED_ACTION);
+  authorizeInvitation(authority, role, scope);
+  if (input.membershipId === authority.membership.membershipId) {
+    throw new AppError('FORBIDDEN', 'You cannot change your own access');
+  }
+
+  try {
+    return await withTenantTransaction(authority.transaction, async (transaction) => {
+      await transaction.execute(
+        sql`select id from app.tenants where id = ${input.tenantId} for update`,
+      );
+      const targetRows = await transaction.execute<{ status: string }>(sql`
+        select status from app.memberships
+        where tenant_id = ${input.tenantId} and id = ${input.membershipId}
+        for update
+      `);
+      const target = targetRows[0];
+      if (!target) throw new AppError('NOT_FOUND', 'Staff member not found');
+      if (target.status !== 'ACTIVE') {
+        throw new AppError('CONFLICT', 'Only an active staff member can be changed');
+      }
+
+      const current = await transaction.execute<{
+        role_code: string;
+        scope_type: string;
+        legal_entity_id: string | null;
+        station_id: string | null;
+      }>(sql`
+        select role_code, scope_type, legal_entity_id, station_id
+        from app.membership_role_assignments
+        where tenant_id = ${input.tenantId} and membership_id = ${input.membershipId}
+          and (expires_at is null or expires_at > now())
+        order by role_code, scope_type, station_id
+      `);
+      const targetIsPrivileged = current.some(
+        (row) =>
+          row.scope_type === 'TENANT' &&
+          (row.role_code === 'OWNER' || row.role_code === 'ADMINISTRATOR'),
+      );
+      if (targetIsPrivileged && !hasTenantRole(authority, 'OWNER')) {
+        throw new AppError('FORBIDDEN', 'Only an owner can change an owner or administrator');
+      }
+      const targetIsOwner = current.some(
+        (row) => row.scope_type === 'TENANT' && row.role_code === 'OWNER',
+      );
+      if (targetIsOwner && role !== 'OWNER') {
+        const owners = await transaction.execute<{ count: string }>(sql`
+          select count(distinct membership.id)::text as count
+          from app.memberships membership
+          join app.membership_role_assignments assignment
+            on assignment.tenant_id = membership.tenant_id
+           and assignment.membership_id = membership.id
+          where membership.tenant_id = ${input.tenantId}
+            and membership.status = 'ACTIVE'
+            and assignment.role_code = 'OWNER' and assignment.scope_type = 'TENANT'
+            and (assignment.expires_at is null or assignment.expires_at > now())
+        `);
+        if (Number(owners[0]?.count ?? 0) <= 1) {
+          throw new AppError('INVARIANT_VIOLATION', 'The last active owner cannot be changed');
+        }
+      }
+
+      if (scope.scopeType === 'STATION') {
+        const stations = await transaction.execute<{ station_id: string }>(sql`
+          select id as station_id from app.stations
+          where tenant_id = ${input.tenantId}
+            and legal_entity_id = ${scope.legalEntityId!}
+            and id in (${sql.join(
+              scope.stationIds.map((id) => sql`${id}::uuid`),
+              sql`, `,
+            )})
+            and status in ('ACTIVE', 'ONBOARDING')
+        `);
+        if (stations.length !== scope.stationIds.length) {
+          throw new AppError('FORBIDDEN', 'One or more selected stations are not available');
+        }
+      } else if (scope.scopeType === 'LEGAL_ENTITY') {
+        const entity = await transaction.execute(sql`
+          select id from app.legal_entities
+          where tenant_id = ${input.tenantId} and id = ${scope.legalEntityId!} and status = 'ACTIVE'
+        `);
+        if (!entity[0])
+          throw new AppError('FORBIDDEN', 'The selected legal entity is not available');
+      }
+
+      await transaction.execute(sql`
+        delete from app.membership_role_assignments
+        where tenant_id = ${input.tenantId} and membership_id = ${input.membershipId}
+      `);
+      if (scope.scopeType === 'STATION') {
+        for (const stationId of scope.stationIds) {
+          await transaction.execute(sql`
+            insert into app.membership_role_assignments
+              (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+            values (${input.tenantId}, ${input.membershipId}, ${role}, 'STATION',
+              ${scope.legalEntityId!}, ${stationId})
+          `);
+        }
+      } else {
+        await transaction.execute(sql`
+          insert into app.membership_role_assignments
+            (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+          values (${input.tenantId}, ${input.membershipId}, ${role}, ${scope.scopeType},
+            ${scope.scopeType === 'LEGAL_ENTITY' ? scope.legalEntityId! : null}, null)
+        `);
+      }
+      await appendSecurityEvent(
+        {
+          eventId: randomUUID(),
+          tenantId: input.tenantId,
+          membershipId: authority.membership.membershipId,
+          actorId: authority.actor.identityId,
+          actorType: 'HUMAN',
+          actionCode: 'STAFF.ASSIGNMENT_CHANGED',
+          subjectType: 'Membership',
+          subjectId: input.membershipId,
+          requestId: authority.transaction.requestId!,
+          occurredAt: new Date().toISOString(),
+          before: current.map((row) => ({
+            role: row.role_code,
+            scopeType: row.scope_type,
+            legalEntityId: row.legal_entity_id,
+            stationId: row.station_id,
+          })),
+          after: { role, ...scope },
+        },
+        getAuditSigningKey(),
+        transaction,
+      );
+      return { membershipId: input.membershipId, role, scopeType: scope.scopeType };
+    });
   } catch (error) {
     throw transactionError(error);
   }

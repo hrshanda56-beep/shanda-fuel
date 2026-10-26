@@ -5,10 +5,11 @@
  * Rule awaiting the owner's confirmation (docs/v1-owner-decisions.md item 2): a payment clears the
  * customer's oldest unpaid charge first. See `modules/customers/ageing.ts`.
  */
-import { ExactDecimal } from '../../../platform/domain/primitives';
+import { DECIMAL_POLICIES, ExactDecimal } from '../../../platform/domain/primitives';
 import {
   computeAccountAgeing,
   DEFAULT_CUSTOMER_CREDIT_DAYS,
+  dueDateFor,
   type AgeingLedgerLine,
 } from '../../customers/ageing';
 import type { TableReportDefinition, TableReportRow } from './definitions';
@@ -21,6 +22,7 @@ export const CUSTOMER_AGEING_REPORT: TableReportDefinition = {
   category: 'credit',
   scope: 'organisation',
   emptyMessage: 'No credit customer owes money as at this date.',
+  filters: ['customer'],
   columns: [
     { key: 'customer', label: 'Customer', kind: 'text' },
     { key: 'accountReference', label: 'Account reference', kind: 'text' },
@@ -31,6 +33,8 @@ export const CUSTOMER_AGEING_REPORT: TableReportDefinition = {
     { key: 'over90', label: 'Over 90 days (USD)', kind: 'number' },
     { key: 'totalOwed', label: 'Total owed (USD)', kind: 'number' },
     { key: 'oldestUnpaid', label: 'Oldest unpaid charge', kind: 'text' },
+    { key: 'dueBy', label: 'Oldest charge falls due', kind: 'text' },
+    { key: 'overdue', label: 'Overdue (USD)', kind: 'number' },
   ],
 };
 
@@ -75,5 +79,13 @@ export function buildCustomerAgeingRows(
       over90: ageing.buckets.over90,
       totalOwed: ageing.totalOwed,
       oldestUnpaid: ageing.oldestOpenChargeDate,
+      dueBy: ageing.oldestOpenChargeDate
+        ? dueDateFor(ageing.oldestOpenChargeDate, account.creditDays)
+        : null,
+      // Everything past its due date: what is owed less what is still inside the credit days.
+      overdue: new ExactDecimal(ageing.totalOwed)
+        .subtract(new ExactDecimal(ageing.buckets.current))
+        .quantize(DECIMAL_POLICIES.money)
+        .value.toFixed(DECIMAL_POLICIES.money.scale),
     }));
 }

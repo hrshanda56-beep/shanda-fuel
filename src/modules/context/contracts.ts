@@ -5,6 +5,8 @@ export type ContextStation = Readonly<{
   code: string;
   name: string;
   timezone: string;
+  /** ONBOARDING while the station is still being set up; absent means live. */
+  status?: 'ACTIVE' | 'ONBOARDING';
 }>;
 
 export type ContextLegalEntity = Readonly<{

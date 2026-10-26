@@ -21,6 +21,8 @@ export type SettingsStation = Readonly<{
   code: string;
   name: string;
   timezone: string;
+  /** ONBOARDING while the station is still being set up. */
+  status?: 'ACTIVE' | 'ONBOARDING';
 }>;
 
 export type SettingsContext = Readonly<{

@@ -242,7 +242,7 @@ describe('A3 authoritative command seam', () => {
         expectedVersion: 0,
         execute: async () => ({ result: 'approved' as const }),
       }),
-    ).rejects.toThrow(/not authorized/);
+    ).rejects.toThrow(/step-up/);
   });
 
   it('requires an active step-up for forecourt STEP_UP commands', async () => {
@@ -307,7 +307,7 @@ describe('A3 authoritative command seam', () => {
         }),
         idempotencyKey: 'retry-step-up-strong-expired',
       }),
-    ).rejects.toThrow(/not authorized|Strong authentication/);
+    ).rejects.toThrow(/step-up|Strong authentication/);
   });
 
   it('requires and invokes the transaction-bound optimistic version check', async () => {

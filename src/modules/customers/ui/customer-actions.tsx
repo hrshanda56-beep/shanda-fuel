@@ -159,7 +159,7 @@ export function CustomerActions({
       onDone(successMessage);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'This could not be saved.';
-      if (!alreadyConfirmed && /not authorized|step-up/i.test(message)) {
+      if (!alreadyConfirmed && /step-up/i.test(message)) {
         setStepUpRetry(() => () => void send(input, successMessage, sourceKind, true));
       } else {
         setError(message);

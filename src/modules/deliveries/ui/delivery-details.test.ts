@@ -75,6 +75,7 @@ describe('delivery detail screens', () => {
     const empty: DeliveryList = {
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
+      tanks: [],
       deliveries: [],
     };
     const html = renderToStaticMarkup(
@@ -87,6 +88,7 @@ describe('delivery detail screens', () => {
     const list: DeliveryList = {
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
+      tanks: [],
       deliveries: [
         {
           id: 'd1',

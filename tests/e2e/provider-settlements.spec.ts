@@ -350,7 +350,9 @@ test.describe('provider settlement workspace', () => {
     await matchDialog.getByLabel('Customer payment').selectOption('payment-1');
     await matchDialog.getByLabel('Amount to match').fill('40.0000');
     await matchDialog.getByRole('button', { name: 'Match', exact: true }).click();
-    await expect(page.getByText('The provider settlement is stale')).toBeVisible();
+    await expect(
+      page.getByRole('alert').getByText('The provider settlement is stale'),
+    ).toBeVisible();
     await page.getByRole('button', { name: 'Match', exact: true }).click();
     await expect(
       page.locator('p[role="status"]').filter({ hasText: 'Allocation saved' }),

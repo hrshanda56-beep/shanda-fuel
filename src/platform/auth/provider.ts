@@ -151,6 +151,25 @@ export function hasRecentClerkReverification(
   return auth.isAuthenticated && auth.has({ reverification: level });
 }
 
+/**
+ * True when the person signed in (or re-verified) recently enough, using the configured reuse
+ * window rather than Clerk's fixed one. A fresh password sign-in therefore counts as a step-up.
+ * Strict MFA needs the second factor to be that recent too.
+ */
+export function hasRecentClerkSignIn(
+  request: Request,
+  level: 'strict' | 'strict_mfa',
+  withinMinutes: number,
+): boolean {
+  const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
+  if (!auth.isAuthenticated) return false;
+  const ages = auth.factorVerificationAge;
+  if (!Array.isArray(ages)) return false;
+  const recent = (age: unknown) =>
+    typeof age === 'number' && Number.isFinite(age) && age >= 0 && age < withinMinutes;
+  return level === 'strict_mfa' ? ages.length === 2 && ages.every(recent) : recent(ages[0]);
+}
+
 export async function clerkUserHasMfa(providerUserId: string): Promise<boolean> {
   const client = await clerkClient();
   const user = await client.users.getUser(providerUserId);

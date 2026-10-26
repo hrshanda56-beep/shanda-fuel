@@ -1,4 +1,5 @@
 import type {
+  ActivationMissing,
   ReadinessArea,
   ReadinessStatus,
   StationReadiness,
@@ -204,6 +205,47 @@ function staffArea(facts: StationSetupFacts): ReadinessArea {
       };
 }
 
+/**
+ * What must exist before a station can trade. Opening stock, tolerances and payment accounts
+ * are entered after go-live, so they do not hold the station back.
+ */
+export function activationMissing(facts: StationSetupFacts): ActivationMissing[] {
+  const missing: ActivationMissing[] = [];
+  const prices = pricesArea(facts);
+  if (prices.status !== 'READY') {
+    missing.push({ code: 'PRICES', label: 'Fuel prices', detail: prices.detail, tab: 'setup' });
+  }
+  if (facts.activeTanks === 0) {
+    missing.push({
+      code: 'TANKS',
+      label: 'Tanks',
+      detail: 'Add at least one tank.',
+      tab: 'setup',
+    });
+  }
+  const pumps = pumpsArea(facts);
+  if (pumps.status !== 'READY') {
+    missing.push({ code: 'PUMPS', label: 'Pumps and nozzles', detail: pumps.detail, tab: 'setup' });
+  }
+  if (facts.activeShiftTemplates === 0) {
+    missing.push({
+      code: 'SHIFTS',
+      label: 'Shifts',
+      detail: 'Add the shifts this station works.',
+      tab: 'setup',
+    });
+  }
+  if (facts.assignedStaff === 0) {
+    missing.push({
+      code: 'STAFF',
+      label: 'Staff',
+      detail: 'Assign at least one person to this station.',
+      tab: 'staff',
+    });
+  }
+  return missing;
+}
+
 export function computeStationReadiness(facts: StationSetupFacts): StationReadiness {
   const areas = [
     pricesArea(facts),
@@ -218,11 +260,16 @@ export function computeStationReadiness(facts: StationSetupFacts): StationReadin
     open.length === 0
       ? null
       : `Blocked until setup is complete: ${open.map((area) => area.blocks.toLowerCase()).join('; ')}.`;
+  const stationStatus = facts.stationStatus ?? 'ACTIVE';
+  const missing = activationMissing(facts);
   return {
     stationId: facts.stationId,
     stationCode: facts.stationCode,
     stationName: facts.stationName,
     legalEntityId: facts.legalEntityId,
+    stationStatus,
+    missing,
+    canActivate: stationStatus === 'ONBOARDING' && missing.length === 0,
     areas,
     ready: open.length === 0,
     blockedSummary,

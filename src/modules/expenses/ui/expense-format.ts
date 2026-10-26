@@ -221,7 +221,7 @@ export function sumAmounts(values: readonly string[]): string {
 }
 
 export function isStepUpMessage(message: string): boolean {
-  return /step-up|strong-authentication|not authorized/i.test(message);
+  return /step-up|strong-authentication/i.test(message);
 }
 
 /** Turns a server message into something a station owner can act on. */

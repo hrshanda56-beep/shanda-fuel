@@ -230,17 +230,19 @@ export async function resolveStaffOverview(
       station_id: string | null;
       station_code: string | null;
       station_name: string | null;
+      station_status: string | null;
     }>(sql`
       select legal_entity.id as legal_entity_id,
              legal_entity.legal_name as legal_entity_name,
              station.id as station_id,
              station.code as station_code,
-             station.name as station_name
+             station.name as station_name,
+             station.status as station_status
       from app.legal_entities legal_entity
       left join app.stations station
         on station.tenant_id = legal_entity.tenant_id
        and station.legal_entity_id = legal_entity.id
-       and station.status = 'ACTIVE'
+       and station.status in ('ACTIVE', 'ONBOARDING')
       where legal_entity.tenant_id = current_setting('app.tenant_id')::uuid
         and legal_entity.status = 'ACTIVE'
       order by legal_entity.legal_name, station.code
@@ -281,6 +283,7 @@ export async function resolveStaffOverview(
           id: row.station_id,
           code: row.station_code,
           name: row.station_name,
+          ...(row.station_status === 'ONBOARDING' ? { setup: true } : {}),
         });
       }
     }

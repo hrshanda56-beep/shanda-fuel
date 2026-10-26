@@ -481,7 +481,7 @@ function useSaver(tenantId: string) {
       onDone();
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : 'This could not be saved.';
-      if (!confirmed && /not authorized|step-up/i.test(text)) {
+      if (!confirmed && /step-up/i.test(text)) {
         setRetry(() => () => void run(input, onDone, true));
       } else {
         setError(text);

@@ -1,5 +1,5 @@
 import 'server-only';
-import { AppError } from '@/platform/errors';
+import { AppError, isAccessRefusal } from '@/platform/errors';
 import { observeError } from '@/platform/observability';
 import { Suspense, type ReactNode } from 'react';
 import { headers } from 'next/headers';
@@ -115,10 +115,7 @@ async function PageData<T>({
     data = await withRequestAuthority(() => load(request, resolution));
   } catch (error) {
     observeError(request, error, 'page.data.error');
-    if (
-      error instanceof AppError &&
-      (error.code === 'FORBIDDEN' || error.code === 'UNAUTHENTICATED')
-    )
+    if (isAccessRefusal(error) || (error instanceof AppError && error.code === 'UNAUTHENTICATED'))
       return <AccessDeniedState />;
     return (
       <ErrorState
