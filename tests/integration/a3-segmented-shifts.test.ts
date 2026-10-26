@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
+import { POST as setupCommandPost } from '../../src/app/api/setup/commands/route';
+import { GET as priceChangeGet } from '../../src/app/api/forecourt/price-change/route';
 import { stationBusinessDayBounds } from './station-business-time';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -934,23 +936,42 @@ describe('A3 shift templates and multi-segment shifts through production command
     `;
     const cutover = cutoverRows[0]!.effective_at.toISOString();
 
-    // Fix the old price's range and activate it directly: only the NEW price's
-    // activation is the scenario under test (see the RequestPriceChange ->
+    // Activate the old price directly and leave it open-ended: ActivatePriceChange must close it at
+    // the changeover instant itself. Only the NEW price's activation is the scenario under test (see the RequestPriceChange ->
     // ApprovePriceChange -> ConfirmPriceChangeBoundary -> ActivatePriceChange
     // sequence below), matching how every other station's pre-existing active
     // price in this file is seeded.
     await client.unsafe(`
-      update app.selling_prices set effective_to = '${cutover}' where id = '${ids.priceOld}';
       update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.priceOld}' and state = 'DRAFT';
       update app.selling_prices set state = 'APPROVED', approved_by = '${ids.membership}', approved_at = clock_timestamp() where id = '${ids.priceOld}' and state = 'PENDING_APPROVAL';
       update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.priceOld}' and state = 'APPROVED';
       update app.selling_prices set state = 'BOUNDARIES_IN_PROGRESS' where id = '${ids.priceOld}' and state = 'PENDING_STATION_ACTIVATION';
       update app.selling_prices set state = 'ACTIVE' where id = '${ids.priceOld}' and state = 'BOUNDARIES_IN_PROGRESS';
-      insert into app.selling_prices
-        (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
-        values ('${ids.priceNew}', '${ids.tenant}', '${ids.stationPrice}', '${ids.product}', '${cutover}', 1.800000, 'DRAFT', '${ids.membership}')
-        on conflict (id) do nothing;
     `);
+
+    // The new price is drafted through the real setup command while the old price is still in use:
+    // a second price for the same fuel must be possible.
+    const draftNew = await setupCommandPost(
+      new Request('http://127.0.0.1:3000/api/setup/commands', {
+        method: 'POST',
+        headers: {
+          ...clerkHeaders('a3c-session-token', {}),
+          'content-type': 'application/json',
+          'idempotency-key': `a3c-price-draft-${shiftId}`,
+        },
+        body: JSON.stringify({
+          commandType: 'DraftPriceChange',
+          tenantId: ids.tenant,
+          stationId: ids.stationPrice,
+          productId: ids.product,
+          unitPrice: '1.800000',
+          currency: 'USD',
+          effectiveFrom: new Date().toISOString(),
+        }),
+      }),
+    );
+    expect(draftNew.status).toBe(200);
+    const priceNewId = (await json<{ priceId: string }>(draftNew)).priceId;
 
     // RequestPriceChange -> ApprovePriceChange (real commands).
     const request = await postCommand(
@@ -958,10 +979,10 @@ describe('A3 shift templates and multi-segment shifts through production command
         commandType: 'RequestPriceChange',
         tenantId: ids.tenant,
         stationId: ids.stationPrice,
-        priceId: ids.priceNew,
+        priceId: priceNewId,
         expectedVersion: 0,
       },
-      `a3c-price-request-${ids.priceNew}`,
+      `a3c-price-request-${priceNewId}`,
       'a3c-approver-session-token',
     );
     expect(request.status).toBe(200);
@@ -971,10 +992,10 @@ describe('A3 shift templates and multi-segment shifts through production command
         commandType: 'ApprovePriceChange',
         tenantId: ids.tenant,
         stationId: ids.stationPrice,
-        priceId: ids.priceNew,
+        priceId: priceNewId,
         expectedVersion: 1,
       },
-      `a3c-price-approve-${ids.priceNew}`,
+      `a3c-price-approve-${priceNewId}`,
       'a3c-approver-session-token',
     );
     expect(approvePrice.status).toBe(200);
@@ -984,13 +1005,39 @@ describe('A3 shift templates and multi-segment shifts through production command
         commandType: 'PreparePriceActivation',
         tenantId: ids.tenant,
         stationId: ids.stationPrice,
-        priceId: ids.priceNew,
+        priceId: priceNewId,
         expectedVersion: 2,
       },
-      `a3c-price-prepare-${ids.priceNew}`,
+      `a3c-price-prepare-${priceNewId}`,
       'a3c-approver-session-token',
     );
     expect(preparePrice.status).toBe(200);
+
+    // The "Change a price" screen's data: the change under way, and the pump still to be read.
+    const readPriceChange = () =>
+      priceChangeGet(
+        new Request(
+          `http://127.0.0.1:3000/api/forecourt/price-change?tenantId=${ids.tenant}&stationId=${ids.stationPrice}`,
+          { headers: clerkHeaders('a3c-approver-session-token') },
+        ),
+      );
+    const beforeReadings = await readPriceChange();
+    expect(beforeReadings.status).toBe(200);
+    const beforeBody = await json<{
+      shift: { id: string } | null;
+      products: Array<{
+        currentPrice: string | null;
+        change: { state: string; version: number } | null;
+        nozzles: Array<{ done: boolean; lastReading: string | null }>;
+      }>;
+    }>(beforeReadings);
+    const priceProduct = beforeBody.products[0]!;
+    expect(priceProduct.currentPrice).toBe('1.500000');
+    expect(priceProduct.change).toMatchObject({ state: 'PENDING_STATION_ACTIVATION', version: 3 });
+    expect(priceProduct.nozzles).toEqual([
+      expect.objectContaining({ done: false, lastReading: '8300.000' }),
+    ]);
+    expect(beforeBody.shift?.id).toBe(shiftId);
 
     // A price-change boundary is like an attendant handover: it must inherit
     // the immediately prior sealed reading verbatim (resolveOpeningReading),
@@ -1011,25 +1058,49 @@ describe('A3 shift templates and multi-segment shifts through production command
         reason: 'PRICE_CHANGE',
         readingStatus: 'AVAILABLE',
         readingValue: '8300.000',
-        priceChangeId: ids.priceNew,
+        priceChangeId: priceNewId,
         expectedVersion: 3,
       },
       `a3c-price-boundary-${shiftId}`,
     );
     expect(priceBoundary.status).toBe(200);
+    const afterReadings = await json<{
+      products: Array<{ nozzles: Array<{ done: boolean }> }>;
+    }>(await readPriceChange());
+    expect(afterReadings.products[0]!.nozzles).toEqual([expect.objectContaining({ done: true })]);
 
     const activate = await postCommand(
       {
         commandType: 'ActivatePriceChange',
         tenantId: ids.tenant,
         stationId: ids.stationPrice,
-        priceId: ids.priceNew,
+        priceId: priceNewId,
         expectedVersion: 3,
       },
-      `a3c-price-activate-${ids.priceNew}`,
+      `a3c-price-activate-${priceNewId}`,
       'a3c-approver-session-token',
     );
     expect(activate.status).toBe(200);
+
+    // The changeover is one instant: the old price ends and the new one starts at the first
+    // price-change meter reading.
+    const changeover = await client<
+      { id: string; effective_from: Date; effective_to: Date | null }[]
+    >`
+      select id, effective_from, effective_to from app.selling_prices
+      where id in (${ids.priceOld}, ${priceNewId})
+    `;
+    const pcAt = (
+      await client<{ effective_at: Date }[]>`
+        select effective_at from app.meter_boundaries where id = ${priceChangeBoundaryId}
+      `
+    )[0]!.effective_at.toISOString();
+    expect(changeover.find((row) => row.id === ids.priceOld)!.effective_to!.toISOString()).toBe(
+      pcAt,
+    );
+    expect(changeover.find((row) => row.id === priceNewId)!.effective_from.toISOString()).toBe(
+      pcAt,
+    );
 
     const finalCloseBoundaryId = randomUUID();
     const finalClose = await postCommand(
@@ -1097,7 +1168,7 @@ describe('A3 shift templates and multi-segment shifts through production command
         closingBoundaryId: finalCloseBoundaryId,
         productId: ids.product,
         responsibleAttendantId: ids.membership,
-        startAt: cutover,
+        startAt: at(priceChangeBoundaryId),
         endAt: at(finalCloseBoundaryId),
         expectedVersion: 0,
       },

@@ -2387,15 +2387,66 @@ export async function activatePriceChangeFromRequest(request: Request, input: un
             and version = ${payload.expectedVersion}
         `);
       }
+      // The new price starts when the first pump meter was read for this change, and the price it
+      // replaces ends at that same instant. The pump-by-pump meter segments keep each pump's litres exact.
+      const previous = await transaction.execute<{ id: string; effective_from: Date | string }>(sql`
+        select id, effective_from from app.selling_prices
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and product_id = ${price.product_id} and state = 'ACTIVE' and effective_to is null
+          and id <> ${price.id}
+        for update
+      `);
+      let effectiveFrom = timestamp(price.effective_from)!;
+      if (previous[0]) {
+        const cutoverRows = await transaction.execute<{
+          cutover: Date | string | null;
+          lastClose: Date | string | null;
+        }>(sql`
+          select min(b.effective_at) as cutover,
+                 max((select p.effective_at from app.meter_boundaries p
+                      where p.tenant_id = b.tenant_id and p.station_id = b.station_id
+                        and p.nozzle_id = b.nozzle_id and p.reading_status = 'AVAILABLE'
+                        and (p.effective_at, p.id) < (b.effective_at, b.id)
+                      order by p.effective_at desc, p.id desc limit 1)) as "lastClose"
+          from app.meter_boundaries b
+          where b.tenant_id = ${context.tenantId} and b.station_id = ${context.stationId}
+            and b.price_change_id = ${price.id} and b.reason = 'PRICE_CHANGE'
+            and b.reading_status = 'AVAILABLE'
+        `);
+        const lastClose = timestamp(cutoverRows[0]?.lastClose);
+        const cutover = timestamp(cutoverRows[0]?.cutover);
+        if (!cutover)
+          throw new AppError('CONFLICT', 'The pump readings for this change were not found');
+        if (lastClose && new Date(lastClose) > new Date(cutover)) {
+          throw new AppError(
+            'CONFLICT',
+            'Read every pump before switching the price: one pump was read after the first switch reading',
+          );
+        }
+        if (new Date(cutover) <= new Date(previous[0].effective_from)) {
+          throw new AppError(
+            'CONFLICT',
+            'The pump readings are dated before the price now in use started',
+          );
+        }
+        await transaction.execute(sql`
+          update app.selling_prices set effective_to = ${cutover}::timestamptz
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${previous[0].id}
+        `);
+        effectiveFrom = cutover;
+      }
       const updated: SellingPrice = {
         ...priceFromRow(price),
+        effectiveFrom,
         state: 'ACTIVE',
         activatedAt: now,
         version: Number(price.version) + (requiresBoundaryPhase ? 2 : 1),
       };
       await transaction.execute(sql`
         update app.selling_prices
-        set state = 'ACTIVE', activated_at = ${now}::timestamptz, version = version + 1
+        set state = 'ACTIVE', activated_at = ${now}::timestamptz, version = version + 1,
+            effective_from = ${effectiveFrom}::timestamptz
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${payload.priceId}
           and version = ${payload.expectedVersion + (requiresBoundaryPhase ? 1 : 0)}
       `);

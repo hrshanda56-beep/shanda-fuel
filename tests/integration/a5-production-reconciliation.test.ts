@@ -494,7 +494,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       insert into app.suppliers (id, tenant_id, code, legal_name, status, created_by, updated_by)
         values ('a5b00000-0000-4000-8000-0000000001a2', '${ids.tenant}', 'A5-SUP-SEED', 'A5 Seeded Supplier', 'ACTIVE', '${ids.supervisorMembership}', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
-      update app.fuel_deliveries set supplier_id = 'a5b00000-0000-4000-8000-0000000001a2'
+      update app.fuel_deliveries set supplier_id = 'a5b00000-0000-4000-8000-0000000001a2', no_po_reason = 'EMERGENCY_PURCHASE'
         where id in ('${ids.delivery}', '${ids.transitionDelivery}', '${ids.unvaluedDelivery}') and status = 'DRAFT';
       insert into app.tank_dips
         (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
@@ -1448,6 +1448,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
             stationId: ids.station,
             productId: ids.product,
             supplierId: a5SupplierId,
+            noPoReason: 'EMERGENCY_PURCHASE',
             deliveryNoteNumber: `A5-P3-LATE-${phase3TankId.slice(0, 8)}`,
             deliveredAt: lateEffectiveAt.toISOString(),
             noteQuantityLitres: '100.000',

@@ -1,5 +1,30 @@
 # Shanda Fuel — Decision Log
 
+## DEC-051 — A delivery needs a purchase order or a reason
+
+Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the project lead (reason
+required "for audit purposes"). A fuel delivery cannot be confirmed unless it is linked to a purchase
+order or carries a recorded no-PO reason (emergency purchase, bought for cash, supplier delivered
+without an order, order not raised in time, or another reason with a note).
+
+## DEC-050 — A price change takes effect at the first pump-meter reading
+
+Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the project lead
+("go", with the earliest-reading rule stated). A new price starts, and the price it replaces ends, at
+the earliest `PRICE_CHANGE` meter reading recorded for that change. All pumps are read for the old
+price first, then for the new one; activation is refused if any pump was read after that instant.
+Per-pump meter segments keep each pump's litres exact. Finance at TEI Oils has not yet confirmed this.
+
+## DEC-049 — A price's requester may approve it when no one else could
+
+Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the project lead.
+The person who asks for a price change may not approve it, unless nobody else at the station could:
+no other active member holds `price.change.approve` there. Attendants do not hold that permission,
+so a station with an owner and one attendant counts as a one-person station and the owner may
+approve their own price. The moment a second approver exists the block applies again. This is the
+same solo-operator rule already used for purchase orders, expenses, revaluations and reconciliations
+(`src/platform/security/separation-of-duties.ts`). Step-up is still required.
+
 ## DEC-048 — Go-live housekeeping answers (ACCEPTED by the project lead in chat, 2026-10-24)
 
 **Date:** 2026-10-24. **Status:** accepted. Recorded from the project lead's chat answers (24 Oct, 14:23 and later).

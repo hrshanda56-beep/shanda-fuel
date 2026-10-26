@@ -1,6 +1,6 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-10-24** for the merged v1 head (`4338c56` on `main`, PR #155): 57 migrations, 0000 to 0071. **Branch `codex/v1-audit-gaps-20261025` adds `0072` (58 migrations); the counts below are for the merged head until it lands.**
+**Updated 2026-10-26** for branch `halfway` (on top of `main` f4acdf4, not yet merged; the release commit is the merge commit on `main`, recorded in section 7): 65 migrations, 0000 to 0079. `main` itself is at 0077 (63 migrations); `halfway` adds 0078 and 0079. Production's own count is not known from the repository: read it first (section 4, step 2).
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -67,9 +67,16 @@ that was reviewed.
 | 0066 | supplier_payment_proof_documents | Proof of payment on supplier payments | Needs the R2 bucket (documents) |
 | 0070 | staff_benefit_accounts | Staff fuel benefit accounts with a monthly USD limit | |
 | 0071 | alert_email | Alert email settings, switched off by default | Email stays off until ADR-020, DNS and the owner's switch |
-| 0072 | bank_balance_statements | Bank statement balances typed in per account (append-only, tenant RLS) | On branch `codex/v1-audit-gaps-20261025`, not merged; not applied anywhere |
+| 0072 | bank_balance_statements | Bank statement balances typed in per account (append-only, tenant RLS) |  |
+| 0073 | supplier_contact_and_terms | Supplier contact person and usual credit period (nullable) |  |
+| 0074 | customer_credit_days | A credit customer's usual days to pay (nullable, informational) |  |
+| 0075 | supplier_document_returned | A submitted supplier invoice or credit note can be returned before posting | Adds a RETURNED state |
+| 0076 | supplier_invoice_station_and_line_type | Optional station on a supplier invoice and a type on each line (nullable) |  |
+| 0077 | expense_payment_mobile_money | Mobile money added to the expense payment sources | Replaces a check constraint |
+| 0078 | price_changeover | Price overlap rule covers ACTIVE prices only; an ACTIVE price may have its end date set once | On branch `halfway`, not merged; applied only to local test databases. Replaces a constraint on `selling_prices` and the shared trigger function `reject_authoritative_forecourt_mutation` |
+| 0079 | delivery_no_po_reason | Reason a fuel delivery has no purchase order (`no_po_reason`, `no_po_note`) | On branch `halfway`, not merged; applied only to local test databases. Confirming a delivery now needs a PO link or a reason |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 57 entries, 0000 to 0071 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 65 entries, 0000 to 0079 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -209,7 +216,14 @@ fba749dd518a95f32719b8eb744a51432c99a1286abc8335c72720622a10b78c  0065_delivery_
 6ba5e670b30380d37edc1fe4c3c43a861e7fae7d529e013d4ea4cf444fa3754b  0066_supplier_payment_proof_documents.sql
 6ef6b6ac14edd5e1a1a36ed43c1831d4ca588efa3af6708016437a6b4c3d7bd8  0070_staff_benefit_accounts.sql
 b515c33a1a2386bc4a3699634987e1b98538f4294ef9dad2f61dedba7abb6b1c  0071_alert_email.sql
-b1c8ea9323e8d6e37158d5e3b7053d2acb972f128680f21fe370a28df35dd2dc  0072_bank_balance_statements.sql (branch only)
+b1c8ea9323e8d6e37158d5e3b7053d2acb972f128680f21fe370a28df35dd2dc  0072_bank_balance_statements.sql
+84ed54bfa153387fef055c1fb807c27e2936be0aa1589d6788c76390f4520d68  0073_supplier_contact_and_terms.sql
+eb3d80fc779ddf215fa03d412f8276970de41227d27dca7ed513389645f4475a  0074_customer_credit_days.sql
+cfcd5e8de59ad39847a2c81fdef6d3a974f1fd8fe1f1d164d7330208d0570821  0075_supplier_document_returned.sql
+20c0335e495aafced2b669af6100be84c1cb4e4f7753f6a3bc3b967338dbf933  0076_supplier_invoice_station_and_line_type.sql
+f04f371940a99355bdd00c44028a69884688bf6375ff818b1a3704afd571879e  0077_expense_payment_mobile_money.sql
+7b38233c09584fc73c266b75cce18868ec7de2081afc8392e8c5a8c59b3ee392  0078_price_changeover.sql
+cc6a85b654099b7bb548ced4e234dd4f1cf8224053ea42306cc5276d4b8fa353  0079_delivery_no_po_reason.sql
 ```
 
 ## 7. Release record (copy this and fill it in)

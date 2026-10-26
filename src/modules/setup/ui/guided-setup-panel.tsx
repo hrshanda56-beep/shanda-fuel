@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Icon } from '@/design-system/icons';
@@ -403,6 +404,10 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
           </div>
         </form>
       ) : null}
+      <p className={styles.note}>
+        To change the price of a fuel that is already selling, use{' '}
+        <Link href="/operations/daily/price-change">Change a price</Link>.
+      </p>
     </>
   );
 }

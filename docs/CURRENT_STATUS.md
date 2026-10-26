@@ -1,5 +1,43 @@
 # Shanda Fuel — Current Status
 
+## Pilot-blocker audit work — 2026-10-26 (branch `halfway`, brought level with `main` f4acdf4, uncommitted)
+
+Checked against the 2026-10-25 platform audit. Production was not contacted; nothing was committed,
+pushed, merged or deployed. Migrations 0078 and 0079 are applied only to local test databases.
+
+After the branch was brought level with `main`, these audit items turned out to be already built there
+(first shift from the control room, supplier invoices waiting to be posted and returned, price steps in
+setup, the solo-approver rule on price approval), so this branch's own versions of them were dropped
+and `main`'s kept. What this branch adds on top of `main`:
+
+- **Changing a price from the app (DEC-049, DEC-050; migration 0078).** The overlap constraint
+  `selling_prices_effective_no_overlap` now covers ACTIVE prices only, and an ACTIVE price may have its
+  end date set once (NULL to a value, no other column may change). `ActivatePriceChange` ends the price
+  in use and starts the new one at the earliest `PRICE_CHANGE` meter reading, and refuses if any pump
+  was read after that instant. The project lead approved the earliest-reading rule; finance at TEI Oils
+  has not yet confirmed it.
+- **"Change a price" screen** at `/operations/daily/price-change` (new page, `GET /api/forecourt/price-change`):
+  type the price once; it runs every approval step the person may do, asks for each pump meter reading,
+  then switches the price on. The setup price step links to it. The solo-approver rule it relies on
+  (DEC-049) is `main`'s existing `hasAlternateApprover` check in `ApprovePriceChange`.
+- **No-PO reason (DEC-051; migration 0079).** `fuel_deliveries` gains `no_po_reason` and `no_po_note`.
+  `CreateDelivery` accepts them (`OTHER` needs a note); `ConfirmDelivery` refuses a delivery with neither
+  an active purchase-order link nor a reason. Already-confirmed deliveries are untouched. The delivery
+  form (`inventory-workspace.tsx`, a locked screen) gained the field; it was not one of the screens the
+  project lead named, so flag it at review.
+- **Station readiness:** a tank with no opening stock, or opening stock with no cost, makes the Tanks
+  area incomplete (`tanksMissingOpeningStock`, `tanksMissingOpeningCost`).
+- **Cost per litre:** `RecordOpeningInventoryCost` accepts `unitCost` as an alternative to the total; the
+  total is worked out exactly from the opening litres and rounded to four decimals.
+
+Known gaps:
+
+- The solo-approver rule has a domain unit test but no integration test through the real command path.
+- If a price-change reading run is interrupted after the old-price readings, reloading the page and
+  entering them again records the old-price reading twice for those pumps.
+- Browser/e2e suites were not run (no Clerk test keys on this machine); the new screen has not been
+  seen in a browser.
+
 ## Merge into main — 2026-10-26
 
 The audit-fixes and selling-unblock work was merged with `main` after main moved on (alert email, bank balance statements, global feedback, branded email, audit gaps). Two things changed at the merge:

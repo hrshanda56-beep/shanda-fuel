@@ -68,6 +68,24 @@ function tanksArea(facts: StationSetupFacts): ReadinessArea {
       blocks,
     };
   }
+  if (facts.tanksMissingOpeningStock > 0) {
+    return {
+      code: 'TANKS',
+      label: 'Tanks',
+      status: 'PARTIAL',
+      detail: `${plural(facts.activeTanks, 'tank')} entered; opening stock not recorded for ${facts.tanksMissingOpeningStock}.`,
+      blocks: 'Fuel stock levels and the cost of fuel sold',
+    };
+  }
+  if (facts.tanksMissingOpeningCost > 0) {
+    return {
+      code: 'TANKS',
+      label: 'Tanks',
+      status: 'PARTIAL',
+      detail: `${plural(facts.activeTanks, 'tank')} entered; opening stock has no cost for ${facts.tanksMissingOpeningCost}.`,
+      blocks: 'The cost of fuel sold and stock value',
+    };
+  }
   return {
     code: 'TANKS',
     label: 'Tanks',

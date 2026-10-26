@@ -212,6 +212,9 @@ export const fuelDeliveries = appSchema.table(
     preDeliveryDipId: uuid('pre_delivery_dip_id'),
     postDeliveryDipId: uuid('post_delivery_dip_id'),
     status: text('status').notNull().default('DRAFT'),
+    /** Why the delivery has no purchase order (migration 0072); NULL when one is linked. */
+    noPoReason: text('no_po_reason'),
+    noPoNote: text('no_po_note'),
     unitLandedCost: numeric('unit_landed_cost', { precision: 20, scale: 8 }),
     totalLandedCost: numeric('total_landed_cost', { precision: 20, scale: 4 }),
     currency: text('currency'),

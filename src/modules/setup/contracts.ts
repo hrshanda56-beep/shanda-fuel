@@ -64,6 +64,10 @@ export type StationSetupFacts = Readonly<{
   pricedProducts: number;
   activeTanks: number;
   tanksMissingTolerance: number;
+  /** Active tanks with no opening quantity recorded yet. */
+  tanksMissingOpeningStock: number;
+  /** Active tanks with an opening quantity but no opening cost, so the stock is unvalued. */
+  tanksMissingOpeningCost: number;
   activePumps: number;
   activeNozzles: number;
   pumpsWithoutNozzle: number;

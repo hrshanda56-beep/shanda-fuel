@@ -39,6 +39,8 @@ type FactRow = {
   priced_products: number | string;
   active_tanks: number | string;
   tanks_missing_tolerance: number | string;
+  tanks_missing_opening_stock: number | string;
+  tanks_missing_opening_cost: number | string;
   active_pumps: number | string;
   active_nozzles: number | string;
   pumps_without_nozzle: number | string;
@@ -79,6 +81,25 @@ export async function readStationSetupFacts(
       (select count(*) from app.tanks t
         where t.tenant_id = s.tenant_id and t.station_id = s.id and t.status = 'ACTIVE'
           and t.acceptable_variance_litres is null) as tanks_missing_tolerance,
+      (select count(*) from app.tanks t
+        where t.tenant_id = s.tenant_id and t.station_id = s.id and t.status = 'ACTIVE'
+          and not exists (
+            select 1 from app.inventory_movements m
+             where m.tenant_id = t.tenant_id and m.station_id = t.station_id
+               and m.tank_id = t.id and m.movement_type = 'OPENING_BALANCE'
+          )) as tanks_missing_opening_stock,
+      (select count(*) from app.tanks t
+        where t.tenant_id = s.tenant_id and t.station_id = s.id and t.status = 'ACTIVE'
+          and exists (
+            select 1 from app.inventory_movements m
+             where m.tenant_id = t.tenant_id and m.station_id = t.station_id
+               and m.tank_id = t.id and m.movement_type = 'OPENING_BALANCE'
+          )
+          and not exists (
+            select 1 from app.inventory_cost_events e
+             where e.tenant_id = t.tenant_id and e.station_id = t.station_id
+               and e.tank_id = t.id and e.event_type = 'OPENING_COST'
+          )) as tanks_missing_opening_cost,
       (select count(*) from app.pumps pu
         where pu.tenant_id = s.tenant_id and pu.station_id = s.id and pu.status = 'ACTIVE')
         as active_pumps,
@@ -125,6 +146,8 @@ export async function readStationSetupFacts(
     pricedProducts: count(row.priced_products),
     activeTanks: count(row.active_tanks),
     tanksMissingTolerance: count(row.tanks_missing_tolerance),
+    tanksMissingOpeningStock: count(row.tanks_missing_opening_stock),
+    tanksMissingOpeningCost: count(row.tanks_missing_opening_cost),
     activePumps: count(row.active_pumps),
     activeNozzles: count(row.active_nozzles),
     pumpsWithoutNozzle: count(row.pumps_without_nozzle),

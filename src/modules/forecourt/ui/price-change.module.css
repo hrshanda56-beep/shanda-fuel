@@ -1,0 +1,68 @@
+/* The "Change a price" screen. A module so it cannot collide with other pages' styles. */
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.intro {
+  margin: 0;
+  max-width: 46rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.card {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cardHead h3,
+.cardHead p {
+  margin: 0;
+}
+
+.muted {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 28rem;
+}
+
+.readings {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 28rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.message {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.messageError {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--tone-critical-text, var(--text-primary));
+}

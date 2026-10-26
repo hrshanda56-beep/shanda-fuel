@@ -136,6 +136,7 @@ async function createDelivery(
     noteQuantityLitres: litres,
     actualQuantityLitres: litres,
     allocations: [{ tankId: ids.tank, quantityLitres: litres }],
+    noPoReason: 'EMERGENCY_PURCHASE',
     ...overrides,
   });
   return result;
@@ -331,6 +332,33 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
     const stored = await client`
       select supplier_id from app.fuel_deliveries where id = ${ok.json.deliveryId}`;
     expect(stored[0]!.supplier_id).toBe(s1);
+  });
+
+  it('refuses to confirm a delivery that has neither a purchase order nor a reason', async () => {
+    const bare = await createDelivery(s1, { noPoReason: undefined });
+    expect(bare.status).toBe(200);
+    const refused = await inventoryCmd(tokens.admin, {
+      ...station,
+      commandType: 'ConfirmDelivery',
+      deliveryId: bare.json.deliveryId,
+    });
+    expect(refused.status).toBe(409);
+
+    const noNote = await createDelivery(s1, { noPoReason: 'OTHER' });
+    expect(noNote.status).toBe(400);
+
+    const withNote = await createDelivery(s1, {
+      noPoReason: 'OTHER',
+      noPoNote: 'Borrowed from the neighbouring station',
+    });
+    expect(withNote.status).toBe(200);
+    const row = await client<{ no_po_reason: string; no_po_note: string }[]>`
+      select no_po_reason, no_po_note from app.fuel_deliveries where id = ${withNote.json.deliveryId}
+    `;
+    expect(row[0]).toEqual({
+      no_po_reason: 'OTHER',
+      no_po_note: 'Borrowed from the neighbouring station',
+    });
   });
 
   it('shows a legacy delivery as supplier unassigned and refuses to confirm it', async () => {
