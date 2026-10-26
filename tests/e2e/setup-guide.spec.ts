@@ -103,12 +103,12 @@ test.describe('Guided station setup', () => {
     expect(commands).toHaveLength(0);
   });
 
-  test('opens the price step once a fuel type exists and offers Next', async ({ page }) => {
+  test('opens the price step by itself once a fuel type exists', async ({ page }) => {
     await mockApi(page, [{ id: 'p1', code: 'UNLEADED95', name: 'Unleaded 95', status: 'ACTIVE' }]);
     await page.goto('/dev-preview/setup-guide');
     await expect(page.getByText('1 of 6 steps done for Main Station')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Selling prices/ })).toBeEnabled();
-    await page.getByRole('button', { name: /^Selling prices/ }).click();
+    // The first step still to do opens on its own.
     await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeVisible();
   });
 
