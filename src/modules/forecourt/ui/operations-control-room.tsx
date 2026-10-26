@@ -148,6 +148,41 @@ function templateLength(minutes: number) {
   return `${minutes} minutes`;
 }
 
+/**
+ * Says why a shift cannot be opened yet and where to go, instead of leaving a dead page.
+ * The shift list shows its own empty state; this adds the reason and the way forward.
+ */
+export function ShiftPrerequisite({
+  dayOpen,
+  canOpenDay,
+  canStartShift,
+}: {
+  dayOpen: boolean;
+  canOpenDay: boolean;
+  canStartShift: boolean;
+}) {
+  if (!dayOpen) {
+    return (
+      <p className="semantic-note" role="note">
+        {canOpenDay
+          ? 'Open the business day with the button at the top of this page, then open the first shift here.'
+          : 'The business day has not been opened. Ask the station supervisor or an owner to open it.'}{' '}
+        If the station is still being set up, finish it in{' '}
+        <Link href="/settings?tab=readiness">Settings, under Readiness</Link>.
+      </p>
+    );
+  }
+  if (!canStartShift) {
+    return (
+      <p className="semantic-note" role="note">
+        You can see the shifts but not open one. Ask the station supervisor or an owner to open the
+        shift.
+      </p>
+    );
+  }
+  return null;
+}
+
 /** Opens the day's first shift from one of the station's shift templates. */
 function OpenFirstShift({
   templates,
@@ -327,7 +362,7 @@ export function OperationsControlRoom({
     subjectId: string,
     consequence: string,
     success: string,
-  ) {
+  ): Promise<boolean> {
     if (
       !(await confirm({
         title: 'Please confirm',
@@ -336,7 +371,7 @@ export function OperationsControlRoom({
         tone: 'warning',
       }))
     ) {
-      return;
+      return false;
     }
     setBusy(true);
     setError(undefined);
@@ -349,6 +384,7 @@ export function OperationsControlRoom({
       await command(commandType, values, subjectId);
       setNotice(success);
       await load();
+      return true;
     } catch (caught) {
       if (isConflictError(caught)) {
         await load(true);
@@ -358,6 +394,7 @@ export function OperationsControlRoom({
       } else {
         setError(commandErrorMessage(caught, commandType));
       }
+      return false;
     } finally {
       setBusy(false);
     }
@@ -519,6 +556,11 @@ export function OperationsControlRoom({
                           : 'Open the business day first, then you can open a shift.'
                       }
                     />
+                    <ShiftPrerequisite
+                      dayOpen={day?.state === 'OPEN'}
+                      canOpenDay={openBusinessDay.canExecute}
+                      canStartShift={overview.actions.StartShift.canExecute}
+                    />
                     {day?.state === 'OPEN' && overview.actions.StartShift.canExecute ? (
                       <OpenFirstShift
                         templates={overview.shiftTemplates ?? []}
@@ -539,7 +581,10 @@ export function OperationsControlRoom({
                             firstShiftId,
                             'Open a shift now for this business day?',
                             'Shift opened.',
-                          );
+                          ).then((opened) => {
+                            // Next: the opening meter readings for each nozzle and who is on duty.
+                            if (opened) window.location.assign(dayHref(day.id, firstShiftId));
+                          });
                         }}
                       />
                     ) : null}
