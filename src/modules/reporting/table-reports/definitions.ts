@@ -5,6 +5,9 @@
  */
 import type { ReportCategoryId } from '../catalog';
 import { CUSTOMER_AGEING_REPORT } from './customer-ageing';
+import { SALES_BY_PERIOD_REPORT } from './sales-by-period';
+import { STATION_DAILY_REPORT } from './station-daily-report';
+import { STOCK_VARIANCE_REPORT } from './stock-variance';
 
 export type TableReportColumn = Readonly<{
   key: string;
@@ -222,6 +225,9 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     ],
   },
   CUSTOMER_AGEING_REPORT,
+  STATION_DAILY_REPORT,
+  SALES_BY_PERIOD_REPORT,
+  STOCK_VARIANCE_REPORT,
   {
     slug: 'purchases',
     title: 'Purchases',

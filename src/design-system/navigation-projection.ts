@@ -85,7 +85,6 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     'daily-profit': ['report.view'],
     'financial-position': ['report.view'],
     'fuel-deliveries': ['inventory.view'],
-    'customer-controls': ['customer.view'],
     'staff-benefit': ['customer.statement.view'],
     'payments-due': ['supplier.view'],
     reports: ['report.view'],

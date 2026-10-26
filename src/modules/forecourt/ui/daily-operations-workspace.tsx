@@ -2,6 +2,7 @@
 import type { RecordData } from '../daily-operations-read-model';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConfirm } from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -33,6 +34,8 @@ import {
 } from '../../../platform/drafts/outbox';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { TableScrollRegion } from '../../../design-system/table';
+import Link from 'next/link';
+import { DailyTankDips } from './daily-tank-dips';
 import {
   formatBusinessDate,
   formatLitres,
@@ -257,6 +260,7 @@ export function DailyOperationsWorkspace({
   };
   role?: 'SUPERVISOR' | 'MANAGEMENT';
 }) {
+  const confirm = useConfirm();
   const [activeReconciliationId, setActiveReconciliationId] = useState(context.reconciliationId);
   const [operation, setOperation] = useState<OperationsContext | null>(
     initialData?.operation ?? null,
@@ -649,9 +653,13 @@ export function DailyOperationsWorkspace({
     }
     if (
       commandType === 'ApproveProductionReconciliation' &&
-      !window.confirm(
-        'Approve this production reconciliation? The server will post canonical sale evidence and the record cannot be edited afterwards.',
-      )
+      !(await confirm({
+        title: 'Approve this production reconciliation?',
+        consequence:
+          'The server will post canonical sale evidence and the record cannot be edited afterwards.',
+        confirmLabel: 'Approve reconciliation',
+        tone: 'warning',
+      }))
     ) {
       return;
     }
@@ -869,6 +877,10 @@ export function DailyOperationsWorkspace({
         {error ? (
           <ErrorState message={error} action={<Button onClick={() => void load()}>Retry</Button>} />
         ) : null}
+        <p className="muted-small">
+          Got the supervisor&apos;s WhatsApp message?{' '}
+          <Link href="/operations/daily/check-message">Check it before you enter it</Link>.
+        </p>
         <Card
           as="section"
           className="panel operations-start-card"
@@ -1596,6 +1608,15 @@ export function DailyOperationsWorkspace({
                 <strong>{Object.keys(record.totals.stockVariance).length}</strong>
               </div>
             </div>
+            <DailyTankDips
+              tenantId={context.tenantId}
+              stationId={context.stationId}
+              timezone={operation.station.timezone}
+              reconciliationId={activeReconciliationId ?? ''}
+              record={record}
+              editable={editable}
+              onChanged={load}
+            />
             {record.deliveries.length || record.dips.length ? (
               <TableScrollRegion label="Inventory evidence linked to this reconciliation">
                 <table className="responsive-table">
@@ -1852,6 +1873,12 @@ export function DailyOperationsWorkspace({
                 href={`/operations/reconciliations/${activeReconciliationId}/review?${contextQuery.toString()}`}
               >
                 Open review route
+              </a>
+              <a
+                className="text-link"
+                href={`/operations/reconciliations/${activeReconciliationId}/report?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+              >
+                Daily report
               </a>
             </div>
           </Card>

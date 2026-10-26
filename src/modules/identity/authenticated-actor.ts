@@ -6,6 +6,7 @@ import {
   type SessionRecord,
 } from '../../platform/security';
 import { resolveClerkSession, revokeClerkUserSessions } from '../../platform/auth/provider';
+import { digestActorOverride } from './digest-actor';
 
 /** Clerk authenticates identity; Shanda Fuel resolves business authority. */
 export type AuthenticatedActorContext = {
@@ -23,6 +24,9 @@ export async function resolveAuthenticatedActor(
   request: Request,
   now = new Date(),
 ): Promise<AuthenticatedActorContext | null> {
+  // Set only inside a scheduled alert-email run (ADR-020); see digest-actor.ts.
+  const digestActor = digestActorOverride();
+  if (digestActor) return digestActor;
   const providerSession = await resolveClerkSession(request);
   if (!providerSession) return null;
   const session: SessionRecord = {

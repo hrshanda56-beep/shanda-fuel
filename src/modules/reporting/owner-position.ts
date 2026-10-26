@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import type { OwnerPosition } from './contracts';
 import { readSupplierExposure } from '../creditors/purchasing-queries';
-import { formatMoney } from './domain';
+import { formatLitres, formatMoney } from './domain';
 
 type PositionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -64,13 +64,64 @@ export async function readOwnerPosition(
   `);
   const row = rows[0];
   if (!row) return emptyOwnerPosition();
-  const [bank, receivedNotInvoiced] = await Promise.all([
-    readBank(transaction, filters.tenantId, legalEntityIds),
-    readReceivedNotInvoiced(transaction, filters.tenantId, legalEntityIds),
-  ]);
+  const [bank] = await transaction.execute<{
+    accounts_total: string | number;
+    accounts_with_balance: string | number;
+    total: string | null;
+    oldest: string | null;
+  }>(sql`
+    select count(*) as accounts_total,
+      count(latest.balance) as accounts_with_balance,
+      sum(latest.balance)::text as total,
+      min(latest.as_of_date)::text as oldest
+    from app.bank_accounts a
+    left join lateral (
+      select s.balance, s.as_of_date from app.bank_balance_statements s
+      where s.tenant_id = a.tenant_id and s.bank_account_id = a.id
+      order by s.as_of_date desc, s.entered_at desc limit 1
+    ) latest on true
+    where a.tenant_id = ${filters.tenantId} and a.status = 'ACTIVE'
+  `);
+  const stock = await transaction.execute<{
+    station: string;
+    product: string;
+    litres: string;
+    value: string | null;
+  }>(sql`
+    select st.name as station, p.name as product,
+      sum(s.quantity_litres)::text as litres,
+      case when count(*) filter (where s.valuation_status <> 'VALUED' and s.quantity_litres > 0) > 0
+        then null else coalesce(sum(s.inventory_value), 0)::text end as value
+    from app.inventory_cost_stream_state s
+    join app.stations st on st.tenant_id = s.tenant_id and st.id = s.station_id
+    join app.products p on p.tenant_id = s.tenant_id and p.id = s.product_id
+    where s.tenant_id = ${filters.tenantId} ${stationFilter('s', filters.stationIds)}
+    group by st.name, p.name
+    order by st.name, p.name
+  `);
+  const accountsTotal = Number(bank?.accounts_total ?? 0);
+  const accountsWithBalance = Number(bank?.accounts_with_balance ?? 0);
+  const complete =
+    accountsTotal > 0 && accountsWithBalance === accountsTotal && bank?.total != null;
+  const receivedNotInvoiced = await readReceivedNotInvoiced(
+    transaction,
+    filters.tenantId,
+    legalEntityIds,
+  );
   return {
-    bank,
     receivedNotInvoiced,
+    stockByStation: stock.map((row) => ({
+      stationName: row.station,
+      productName: row.product,
+      litres: formatLitres(row.litres),
+      value: row.value === null ? null : formatMoney(row.value),
+    })),
+    bankBalance: {
+      amount: complete ? formatMoney(bank!.total) : null,
+      asOfDate: complete ? (bank!.oldest ?? null) : null,
+      accountsWithBalance,
+      accountsTotal,
+    },
     stockValue: row.stock_value === null ? null : formatMoney(row.stock_value),
     unvaluedStockStreams: Number(row.unvalued_streams),
     unpaidExpenses: formatMoney(row.unpaid_expenses),
@@ -78,48 +129,6 @@ export async function readOwnerPosition(
       count: Number(row.awaiting_count),
       amount: formatMoney(row.awaiting_amount),
     },
-  };
-}
-
-async function readBank(
-  transaction: PositionTransaction,
-  tenantId: string,
-  legalEntityIds: readonly string[],
-): Promise<NonNullable<OwnerPosition['bank']>> {
-  if (legalEntityIds.length === 0) {
-    return { balance: null, asOf: null, accountCount: 0, accountsWithoutBalance: 0 };
-  }
-  const rows = await transaction.execute<{
-    accounts: string | number;
-    with_balance: string | number;
-    total: string | null;
-    as_of: string | null;
-  }>(sql`
-    with latest as (
-      select distinct on (b.id) b.id, bal.amount, bal.as_of_date
-      from app.bank_accounts b
-      left join app.bank_account_balances bal
-        on bal.tenant_id = b.tenant_id and bal.bank_account_id = b.id
-      where b.tenant_id = ${tenantId} and b.status = 'ACTIVE'
-        and b.legal_entity_id in (${sql.join(
-          legalEntityIds.map((id) => sql`${id}`),
-          sql`, `,
-        )})
-      order by b.id, bal.as_of_date desc nulls last, bal.recorded_at desc nulls last
-    )
-    select count(*) as accounts, count(amount) as with_balance,
-      sum(amount)::text as total, min(as_of_date)::text as as_of
-    from latest
-  `);
-  const row = rows[0];
-  const accountCount = Number(row?.accounts ?? 0);
-  const withBalance = Number(row?.with_balance ?? 0);
-  const complete = accountCount > 0 && withBalance === accountCount;
-  return {
-    balance: complete && row?.total != null ? formatMoney(row.total) : null,
-    asOf: complete ? (row?.as_of ?? null) : null,
-    accountCount,
-    accountsWithoutBalance: accountCount - withBalance,
   };
 }
 
@@ -152,7 +161,6 @@ export function emptyOwnerPosition(): OwnerPosition {
     unvaluedStockStreams: 0,
     unpaidExpenses: '0.0000',
     expensesAwaitingApproval: { count: 0, amount: '0.0000' },
-    bank: { balance: null, asOf: null, accountCount: 0, accountsWithoutBalance: 0 },
     receivedNotInvoiced: { value: '0.0000', unpricedLitres: '0.000' },
   };
 }

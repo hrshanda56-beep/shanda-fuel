@@ -46,6 +46,17 @@ export type RecordData = {
     actualQuantityLitres: string;
   }>;
   dips: Array<{ dipId: string; tankId: string; physicalLitres: string }>;
+  /** Every active tank at the station, so each one is listed even before it has a dip or a tolerance. */
+  tanks: Array<{
+    tankId: string;
+    code: string;
+    productId: string;
+    productName: string;
+    capacityLitres: string;
+    toleranceLitres: string | null;
+    /** Dipstick readings in millimetres can be turned into litres. */
+    hasMillimetreChart: boolean;
+  }>;
   cash: {
     countedCash: string;
     expectedPhysicalCash: string;

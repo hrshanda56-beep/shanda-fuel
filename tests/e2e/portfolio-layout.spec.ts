@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { mockEmptyWorkContext } from './fixtures/context-route';
 // Playwright transforms JSX for locator selectors. Render the actual React components through Vitest instead.
@@ -22,7 +24,7 @@ for (const width of [1280, 390])
       await mockEmptyWorkContext(page, '/operations/daily');
       await page.goto('/operations/daily?allStations=true');
       await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
-      const markup = readFileSync('/private/tmp/shanda-portfolio-visual.html', 'utf8');
+      const markup = readFileSync(join(tmpdir(), 'shanda-portfolio-visual.html'), 'utf8');
       await page.locator('#main-content').evaluate((element, html) => {
         element.innerHTML = html;
       }, markup);
@@ -37,7 +39,7 @@ for (const width of [1280, 390])
         expect(bounds!.height).toBeLessThan(480);
       }
       await page.screenshot({
-        path: `/private/tmp/shanda-portfolio-${width}-${theme}.png`,
+        path: join(tmpdir(), `shanda-portfolio-${width}-${theme}.png`),
         fullPage: true,
       });
     });

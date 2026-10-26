@@ -17,7 +17,6 @@ const base = (overrides: Record<string, unknown> = {}) =>
       unvaluedStockStreams: 0,
       unpaidExpenses: '75.5000',
       expensesAwaitingApproval: { count: 2, amount: '40.0000' },
-      bank: { balance: '800.0000', asOf: '2026-10-24', accountCount: 1, accountsWithoutBalance: 0 },
       receivedNotInvoiced: { value: '250.0000', unpricedLitres: '0.000' },
     },
     ...overrides,
@@ -58,12 +57,6 @@ describe('buildFinancialPosition', () => {
           unvaluedStockStreams: 0,
           unpaidExpenses: '0.0000',
           expensesAwaitingApproval: { count: 0, amount: '0.0000' },
-          bank: {
-            balance: '0.0000',
-            asOf: '2026-10-24',
-            accountCount: 1,
-            accountsWithoutBalance: 0,
-          },
           receivedNotInvoiced: { value: '0.0000', unpricedLitres: '0.000' },
         },
       }),
@@ -79,12 +72,6 @@ describe('buildFinancialPosition', () => {
           unvaluedStockStreams: 2,
           unpaidExpenses: '0.0000',
           expensesAwaitingApproval: { count: 0, amount: '0.0000' },
-          bank: {
-            balance: '800.0000',
-            asOf: '2026-10-24',
-            accountCount: 1,
-            accountsWithoutBalance: 0,
-          },
           receivedNotInvoiced: { value: '250.0000', unpricedLitres: '0.000' },
         },
       }),
@@ -119,32 +106,52 @@ describe('buildFinancialPosition', () => {
     const p = buildFinancialPosition(base());
     const other = find(p, 'Transporters and other creditors');
     expect(other?.value).toBeNull();
-    expect(other?.note).toContain('Not recorded');
+    expect(other?.note).toContain('counted under suppliers');
+    expect(other?.note).toContain('not recorded');
     expect(p.missing).not.toContain('Transporters and other creditors');
   });
 
-  it('uses the recorded bank balance, not the deposits in the chosen dates', () => {
-    const a = buildFinancialPosition(base());
-    const b = buildFinancialPosition(
-      base({ cash: { collectedButNotBanked: '1200.5000', banked: '99999.0000' } }),
-    );
-    expect(b.net).toBe(a.net);
-    expect(find(a, 'Money in the bank')?.value).toBe('800.0000');
-    expect(find(a, 'Money in the bank')?.note).toContain('2026-10-24');
+  const owner = (bankBalance: unknown) => ({
+    stockValue: '5000.1234',
+    unvaluedStockStreams: 0,
+    unpaidExpenses: '75.5000',
+    expensesAwaitingApproval: { count: 2, amount: '40.0000' },
+    bankBalance,
+    receivedNotInvoiced: { value: '250.0000', unpricedLitres: '0.000' },
   });
 
-  it('shows no net and says so when a bank account has no balance recorded', () => {
+  it('uses the typed-in bank balance instead of recorded deposits, never both', () => {
     const p = buildFinancialPosition(
       base({
-        ownerPosition: {
-          ...base().ownerPosition,
-          bank: { balance: null, asOf: null, accountCount: 2, accountsWithoutBalance: 1 },
-        },
+        ownerPosition: owner({
+          amount: '2000.0000',
+          asOfDate: '2026-10-24',
+          accountsWithBalance: 1,
+          accountsTotal: 1,
+        }),
       }),
     );
-    expect(p.net).toBeNull();
-    expect(p.missing).toContain('Money in the bank');
-    expect(find(p, 'Money in the bank')?.note).toContain('1 bank account');
+    expect(find(p, 'Money in the bank (from the bank statement)')?.value).toBe('2000.0000');
+    expect(find(p, 'Cash banked')).toBeUndefined();
+    // 1200.5 + 2000 + 300.25 + 450 + 5000.1234 = 8950.8734, not counting the 800 of deposits.
+    expect(p.totalHeld).toBe('8950.8734');
+  });
+
+  it('falls back to deposits, and says so, until every account has a balance', () => {
+    const p = buildFinancialPosition(
+      base({
+        ownerPosition: owner({
+          amount: null,
+          asOfDate: null,
+          accountsWithBalance: 1,
+          accountsTotal: 2,
+        }),
+      }),
+    );
+    const line = find(p, 'Cash banked');
+    expect(line?.value).toBe('800.0000');
+    expect(line?.note).toContain('1 of 2 accounts');
+    expect(p.totalHeld).toBe('7750.8734');
   });
 
   it('counts fuel received but not yet invoiced as money owed', () => {

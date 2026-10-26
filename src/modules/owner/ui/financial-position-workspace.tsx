@@ -136,6 +136,29 @@ export function FinancialPositionWorkspace({ initial }: { initial: FinancialPosi
                   </Card>
                 ))}
 
+              {report?.ownerPosition?.stockByStation?.length ? (
+                <Card as="section" className="panel profit-panel" aria-labelledby="fp-stock-title">
+                  <div className="panel-heading">
+                    <h2 id="fp-stock-title">Fuel stock by station</h2>
+                  </div>
+                  <dl className="profit-rows" aria-label="Fuel stock by station">
+                    {report.ownerPosition.stockByStation.map((row) => (
+                      <div
+                        key={`${row.stationName}-${row.productName}`}
+                        className="profit-row"
+                        data-tone={row.value === null ? 'missing' : undefined}
+                      >
+                        <dt>
+                          {row.stationName} · {row.productName}
+                          <span className="profit-row-note">{row.litres} litres</span>
+                        </dt>
+                        <dd>{moneyOrUnavailable(row.value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Card>
+              ) : null}
+
               {position.statement.notes.map((note) => (
                 <p key={note} className="profit-footnote">
                   {note}

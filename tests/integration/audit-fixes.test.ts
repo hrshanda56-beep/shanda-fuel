@@ -4,9 +4,7 @@ import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as settingsPost } from '../../src/app/api/settings/commands/route';
 import { POST as supplierPost } from '../../src/app/api/suppliers/commands/route';
-import { POST as settlementPost } from '../../src/app/api/settlements/commands/route';
 import { POST as customerPost } from '../../src/app/api/customers/commands/route';
-import { GET as managementReportGet } from '../../src/app/api/reports/management/route';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for the audit-fix integration tests.');
@@ -349,83 +347,6 @@ describe('Audit fixes (PostgreSQL)', { timeout: 60_000 }, () => {
         select staff_name from app.customer_staff_benefit_terms where tenant_id = ${ids.tenant}
       `;
       expect(terms?.staff_name).toBe('Rosina');
-    });
-  });
-
-  describe('bank balance in the financial position', () => {
-    it('shows no bank balance until one is recorded, then the latest one, never deposits', async () => {
-      const bankId = id();
-      await client`
-        insert into app.bank_accounts (id, tenant_id, legal_entity_id, name, bank_name, account_reference_masked)
-        values (${bankId}, ${ids.tenant}, ${ids.legal}, 'Main', 'CBZ', '****1234')
-      `;
-      const read = async () => {
-        const response = await managementReportGet(
-          new Request(
-            `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&stationIds=${ids.station}`,
-            { headers: { ...clerkHeaders(tokens.owner) } },
-          ),
-        );
-        expect(response.status).toBe(200);
-        return ((await response.json()) as Record<string, any>).ownerPosition;
-      };
-      expect((await read()).bank).toMatchObject({
-        balance: null,
-        accountCount: 1,
-        accountsWithoutBalance: 1,
-      });
-
-      const first = await post(settlementPost, 'owner', `bal1-${run}`, {
-        commandType: 'RecordBankBalance',
-        tenantId: ids.tenant,
-        stationId: ids.station,
-        bankAccountId: bankId,
-        asOfDate: '2026-10-01',
-        amount: '1000.50',
-      });
-      expect(first.status).toBe(201);
-      const second = await post(settlementPost, 'owner', `bal2-${run}`, {
-        commandType: 'RecordBankBalance',
-        tenantId: ids.tenant,
-        stationId: ids.station,
-        bankAccountId: bankId,
-        asOfDate: '2026-10-20',
-        amount: '2500',
-      });
-      expect(second.status).toBe(201);
-      expect((await read()).bank).toMatchObject({
-        balance: '2500.0000',
-        asOf: '2026-10-20',
-        accountCount: 1,
-        accountsWithoutBalance: 0,
-      });
-    });
-
-    it('refuses a future date and another organisation, and keeps the history append-only', async () => {
-      const [bank] = await client`
-        select id from app.bank_accounts where tenant_id = ${ids.tenant} limit 1
-      `;
-      const future = await post(settlementPost, 'owner', `balf-${run}`, {
-        commandType: 'RecordBankBalance',
-        tenantId: ids.tenant,
-        stationId: ids.station,
-        bankAccountId: bank!.id,
-        asOfDate: '2999-01-01',
-        amount: '1',
-      });
-      expect(future.status).toBe(400);
-      const foreign = await post(settlementPost, 'otherOwner', `balx-${run}`, {
-        commandType: 'RecordBankBalance',
-        tenantId: ids.tenant,
-        stationId: ids.station,
-        bankAccountId: bank!.id,
-        asOfDate: '2026-10-21',
-        amount: '1',
-      });
-      expect([403, 404]).toContain(foreign.status);
-      await expect(
-        client`update app.bank_account_balances set amount = 1 where tenant_id = ${ids.tenant}`,
-      ).rejects.toThrow(/append-only/);
     });
   });
 });

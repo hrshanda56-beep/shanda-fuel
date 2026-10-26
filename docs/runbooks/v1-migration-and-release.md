@@ -1,5 +1,7 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
+**Updated 2026-10-24** for the merged v1 head (`4338c56` on `main`, PR #155): 57 migrations, 0000 to 0071. **Branch `codex/v1-audit-gaps-20261025` adds `0072` (58 migrations); the counts below are for the merged head until it lands.**
+
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
 Every production step below is performed by a human, with credentials entered at a hidden terminal
@@ -58,9 +60,18 @@ that was reviewed.
 | 0047 | unified_expense_evidence | Expense evidence | |
 | 0048 | unified_expense_corrections | Expense corrections | |
 | 0049 | documents | Private file attachments (photo, PDF, DOCX) | Needs the R2 bucket configured before uploads work |
+| 0055 | supplier_invoice_credit_terms | Cash or credit on every supplier invoice, with days or a due date | |
+| 0060 | customer_entry_details | Vehicle, voucher and driver on credit sales | |
+| 0061 | customer_credit_limit_overrides | Recorded approval to go over a credit limit | |
+| 0065 | delivery_compartment_detail | Compartments, seals, water test and driver confirmation on deliveries | |
+| 0066 | supplier_payment_proof_documents | Proof of payment on supplier payments | Needs the R2 bucket (documents) |
+| 0070 | staff_benefit_accounts | Staff fuel benefit accounts with a monthly USD limit | |
+| 0071 | alert_email | Alert email settings, switched off by default | Email stays off until ADR-020, DNS and the owner's switch |
+| 0072 | bank_balance_statements | Bank statement balances typed in per account (append-only, tenant RLS) | On branch `codex/v1-audit-gaps-20261025`, not merged; not applied anywhere |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 0000 to 0049 (50 entries) at the
-head of this branch. Migration `0047` to `0049` were renumbered during consolidation; none had been
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 57 entries, 0000 to 0071 (the
+numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
+expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
 from the old branch, rebuild it rather than patching it.
 
@@ -70,8 +81,9 @@ Tick each box and write who ticked it and when in the record (section 7).
 
 1. [ ] The exact commit to release is chosen and recorded. It is a commit on `main` (after the
    integration branch merges), not a branch name.
-2. [ ] Required GitHub checks are green on that commit. This needs the Clerk test secret and variable
-   in GitHub so the `quality` and runtime-role jobs can run.
+2. [ ] Required GitHub checks are green on that commit. The Clerk test secret and variable are now set
+   in GitHub, so the `quality` and runtime-role jobs run. Dependabot runs do not get that secret, so
+   dependency bumps are verified on a maintainer branch instead.
 3. [ ] Unit, database-integration and tenant-isolation tests passed on that commit. Any suite that was
    skipped is listed as a skip, not a pass.
 4. [ ] `pnpm db:check`, typecheck, lint, format check and production build are green.
@@ -86,6 +98,38 @@ Tick each box and write who ticked it and when in the record (section 7).
    `https://fuel.shandahr.com`.
 9. [ ] A maintenance window is agreed. No one is entering sales, cash or customer payments during it.
 10. [ ] Someone is named to approve a rollback and someone to run it.
+
+### 3a. Sign-in security setting (no paid Clerk plan)
+
+Clerk charges for multi-factor sign-in, and the project lead has decided not to pay for it for now
+and not to add a second sign-in provider (2026-10-24). The app already has a switch for this:
+`REQUIRE_LOGIN_MFA`. Set it to `false` in Vercel production **before** the first sign-in, and keep
+`REQUIRE_PRIVILEGED_STEP_UP=true`. What that means in practice:
+
+- Everyone signs in with email or Staff Number and a password. No second code.
+- The Owner re-enters their password (not a code) for closing a business day and for deactivating
+  a staff member. Other roles cannot use that path.
+- **Exports:** report exports and the report-table runs use the stricter "privileged operation"
+  check. While `REQUIRE_LOGIN_MFA=false`, the Owner's password re-check satisfies it (DEC-047). This
+  fix is merged in `main` (PR #150), so exports work in the release. Confirm it in the smoke test
+  (section 4) by running one export as the Owner.
+- Mitigations while MFA is off: strong unique passwords, Clerk's password-breach check and
+  rate limits on, short sessions, the signed audit trail, and a review of who holds the Owner and
+  Administrator roles. Turn real MFA on later by setting `REQUIRE_LOGIN_MFA=true` once a Clerk plan
+  that includes it is bought; no code change is needed for that.
+
+### 3b. Vercel production variables (names only, checked 2026-10-24)
+
+Check these on the **`shanda-fuel`** Vercel project (not `shanda-fuel-staging`; the repo's local
+`.vercel` link points at staging, so pass the project explicitly). Never paste values into chat.
+
+- **Must be present:** `APP_ENV`, `APP_URL`, `DATABASE_URL`, `AUDIT_SIGNING_KEY`, `AUDIT_SIGNING_KEY_ID`,
+  `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CRON_SECRET`, `REQUIRE_LOGIN_MFA=false`,
+  `REQUIRE_PRIVILEGED_STEP_UP=true`, the `R2_*` set, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`.
+- **Should not be present (retired by DEC-043):** `BETTER_AUTH_SECRET`, `AUTH_PROVIDER`.
+- **Not in the web app on purpose:** `DATABASE_DIRECT_URL` (migration owner only, typed at a hidden prompt).
+- On 2026-10-24 production had no Clerk keys, `CRON_SECRET` or Resend variables yet, and still held
+  the two retired ones. Record the state on release day in section 7.
 
 ## 4. The release, in order
 
@@ -106,9 +150,9 @@ Stop at the first step that does not give the expected result. Do not continue "
    still has no ownership, and that the runtime-role proof (the "Runtime-role proof" CI job logic) passes.
 8. **Deploy the web app** at the recorded commit only after step 7 passes. Confirm Vercel shows that
    exact commit.
-9. **First-user bootstrap** (only if production has no owner yet) follows the separate reviewed
-   sequence in AGENTS.md section 7.3 and its own runbook: dry run, zero-write proof, explicit approval,
-   a separately reviewed real run, credential cleanup. Do not combine it with this runbook.
+9. **First-user bootstrap** (only if production has no owner yet) follows
+   [`v1-first-user-provisioning.md`](v1-first-user-provisioning.md): dry run, zero-write proof,
+   explicit approval, a separately reviewed real run, credential cleanup. Do not combine it with this runbook.
 10. **Smoke test as the real owner** on `https://fuel.shandahr.com` (not a preview URL):
     sign in; open the dashboard; open Daily Operations; open one report and download its CSV;
     open Cash; open Settings. Nothing should show a made-up number; empty areas say so.
@@ -158,6 +202,14 @@ fd036e29004b5bb0744472fe389d3b4a9acb3d58b27a63f5c7503a79ad4310a7  0046_alert_set
 dedc52fc6e5a150b660606b4d9a0b182ef8f109b229823b69c688caa67b743c7  0047_unified_expense_evidence.sql
 c2f4db9e24886ba0521465883f7c7c9ebb14304700f874d63c6f197e689447c3  0048_unified_expense_corrections.sql
 14ad85e122d08a0941613a4e5a35782df3ca2c2fae010f29b2a2be4aa4346ac9  0049_documents.sql
+d6cfa9908d17d6d3687399c2e299ef5629ef8dc577affd74fdc6f1fb60af72a4  0055_supplier_invoice_credit_terms.sql
+23bd12a8991cc36de4fd81b8338d7dc9d246d8a61d6048290794f1fd05c091bc  0060_customer_entry_details.sql
+90af6348fa110154aa02029fb852a5c113cf162785b382378c92c2b7351ed9ba  0061_customer_credit_limit_overrides.sql
+fba749dd518a95f32719b8eb744a51432c99a1286abc8335c72720622a10b78c  0065_delivery_compartment_detail.sql
+6ba5e670b30380d37edc1fe4c3c43a861e7fae7d529e013d4ea4cf444fa3754b  0066_supplier_payment_proof_documents.sql
+6ef6b6ac14edd5e1a1a36ed43c1831d4ca588efa3af6708016437a6b4c3d7bd8  0070_staff_benefit_accounts.sql
+b515c33a1a2386bc4a3699634987e1b98538f4294ef9dad2f61dedba7abb6b1c  0071_alert_email.sql
+b1c8ea9323e8d6e37158d5e3b7053d2acb972f128680f21fe370a28df35dd2dc  0072_bank_balance_statements.sql (branch only)
 ```
 
 ## 7. Release record (copy this and fill it in)

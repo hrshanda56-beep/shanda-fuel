@@ -1,4 +1,6 @@
 import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
@@ -71,5 +73,5 @@ it('renders four populated station rows using the actual shared components', () 
   );
   expect(output.match(/scope="row"/g)).toHaveLength(4);
   if (process.env.PORTFOLIO_VISUAL_FIXTURE === '1')
-    writeFileSync('/private/tmp/shanda-portfolio-visual.html', output);
+    writeFileSync(join(tmpdir(), 'shanda-portfolio-visual.html'), output);
 });

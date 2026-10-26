@@ -4,9 +4,11 @@ import { runDigests, type DigestPorts, type DigestRecipient } from './run-digest
 
 const recipient = (n: number): DigestRecipient => ({
   tenantId: 't',
+  legalEntityId: 'le',
   stationId: `s${n}`,
   stationName: `Station ${n}`,
   membershipId: `m${n}`,
+  identityId: `i${n}`,
   email: `p${n}@example.test`,
   name: `Person ${n}`,
 });

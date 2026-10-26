@@ -12,7 +12,9 @@ import '@/design-system/styles/reports.css';
 import '@/design-system/styles/entry.css';
 import '@/design-system/styles/approved-ui.css';
 import '@/design-system/styles/my-shift.css';
+import '@/design-system/styles/feedback.css';
 
+import { FeedbackProvider } from '@/design-system/feedback-provider';
 import { shellInitScript } from '@/design-system/shell-preferences';
 import { themeInitScript } from '@/design-system/theme';
 
@@ -51,7 +53,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript + shellInitScript }} />
       </head>
-      <body>{content}</body>
+      <body>
+        <FeedbackProvider>{content}</FeedbackProvider>
+      </body>
     </html>
   );
 }

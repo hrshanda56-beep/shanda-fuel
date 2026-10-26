@@ -12,9 +12,11 @@ import { composeDigest, shouldSendDigest } from './digest';
 
 export type DigestRecipient = Readonly<{
   tenantId: string;
+  legalEntityId: string;
   stationId: string;
   stationName: string;
   membershipId: string;
+  identityId: string;
   email: string;
   name: string | null;
 }>;

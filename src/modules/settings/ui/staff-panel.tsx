@@ -1,7 +1,7 @@
 'use client';
 
 import { useReverification } from '@clerk/nextjs';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '@/design-system/icons';
 import { Button, EmptyState, StatusBadge } from '@/design-system/primitives';
 import type { StatusTone } from '@/design-system/primitives';
@@ -43,6 +43,8 @@ function defaultScope(role: Role) {
       ? 'LEGAL_ENTITY'
       : 'STATION';
 }
+
+const INVITE_NOTICE_KEY = 'shanda-fuel:invite-notice';
 
 type StaffFilter = 'all' | 'active' | 'invited' | 'deactivated';
 
@@ -105,6 +107,20 @@ export function StaffPanel({
   const [deactivationBusy, setDeactivationBusy] = useState(false);
   const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
   const deactivationInFlight = useRef(false);
+
+  useEffect(() => {
+    try {
+      const notice = sessionStorage.getItem(INVITE_NOTICE_KEY);
+      if (notice) {
+        sessionStorage.removeItem(INVITE_NOTICE_KEY);
+        // Read after mount: sessionStorage does not exist on the server render.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setMessage(notice);
+      }
+    } catch {
+      // Storage can be blocked; there is simply no notice to show.
+    }
+  }, []);
 
   const legalEntity = useMemo(
     () => overview.scopeOptions.find((option) => option.id === legalEntityId),
@@ -177,6 +193,21 @@ export function StaffPanel({
       setManualActivation(manual);
       setInviteOpen(false);
     } else if (result) {
+      const email = typeof result === 'object' ? (result as { delivery?: string }) : {};
+      const address = String(form.get('email') ?? '').trim();
+      // The page reloads to show the new invite, so the outcome is kept for the next load.
+      try {
+        sessionStorage.setItem(
+          INVITE_NOTICE_KEY,
+          email.delivery === 'failed'
+            ? `The invitation for ${address} was saved, but the email could not be sent. Check the address, then use Manual (staff number) to give them a code instead.`
+            : email.delivery === 'sent'
+              ? `Invitation email sent to ${address}. It can take a minute to arrive; ask them to check spam.`
+              : '',
+        );
+      } catch {
+        // Storage can be blocked; the invite itself is already saved.
+      }
       window.location.reload();
     }
   }

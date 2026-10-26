@@ -5,7 +5,6 @@ import {
   assertSettlementCommandType,
   configureProviderAccountFromRequest,
   createBankAccountFromRequest,
-  recordBankBalanceFromRequest,
   createPaymentProviderFromRequest,
   recordProviderSettlementFromRequest,
   reconcileProviderSettlementFromRequest,
@@ -37,8 +36,6 @@ export const POST = withRequestObservability(
           return response(await configureProviderAccountFromRequest(request, body), 201);
         case 'CreateBankAccount':
           return response(await createBankAccountFromRequest(request, body), 201);
-        case 'RecordBankBalance':
-          return response(await recordBankBalanceFromRequest(request, body), 201);
         case 'RecordProviderSettlement':
           return response(await recordProviderSettlementFromRequest(request, body), 201);
         case 'AllocateProviderSettlement':

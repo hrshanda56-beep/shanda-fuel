@@ -386,16 +386,6 @@ export function buildNetPosition(report: ManagementReport): Statement {
   };
 }
 
-function bankNote(extra: ManagementReport['ownerPosition'] | null): string | undefined {
-  const bank = extra?.bank;
-  if (!bank) return 'Not available.';
-  if (bank.accountCount === 0) return 'No bank account is set up yet (Settings, Payments).';
-  if (bank.balance === null) {
-    return `${bank.accountsWithoutBalance} bank account(s) have no balance recorded yet (Settings, Payments).`;
-  }
-  return bank.asOf ? `From the bank statement dated ${bank.asOf}.` : undefined;
-}
-
 export type PositionFlag = 'POSITIVE' | 'NEGATIVE' | 'EVEN' | 'UNAVAILABLE';
 
 export type FinancialPosition = Readonly<{
@@ -426,13 +416,27 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
     customers.availability === 'AVAILABLE' &&
     customers.receivableBalance !== null &&
     customers.prepaidValueBalance !== null;
+  // The bank statement balance is used when every account has one; otherwise the deposits recorded
+  // in the chosen dates stand in for it. Never both, or the same money would be counted twice.
+  const bank = extra?.bankBalance;
+  const bankLine: StatementLine =
+    bank?.amount != null
+      ? {
+          label: 'Money in the bank (from the bank statement)',
+          value: bank.amount,
+          note: bank.asOfDate ? `Balance as at ${bank.asOfDate}.` : undefined,
+        }
+      : {
+          label: 'Cash banked',
+          value: cash.banked,
+          note:
+            bank && bank.accountsTotal > 0
+              ? `Type in the bank statement balance in Settings (${bank.accountsWithBalance} of ${bank.accountsTotal} accounts so far) to use it instead of recorded deposits.`
+              : undefined,
+        };
   const held: StatementLine[] = [
     { label: 'Cash at stations, not yet banked', value: cash.collectedButNotBanked },
-    {
-      label: 'Money in the bank',
-      value: extra?.bank?.balance ?? null,
-      note: bankNote(extra),
-    },
+    bankLine,
     {
       label: 'Card and mobile payments awaiting settlement',
       value: providers.unmatchedEvidenceAmount,
@@ -465,7 +469,7 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
     {
       label: 'Transporters and other creditors',
       value: null,
-      note: 'Not recorded in the system, so not in the total.',
+      note: 'A transporter set up as a supplier is already counted under suppliers. Other creditors are not recorded, so are not in the total.',
     },
   ];
   const countable = (line: StatementLine) => line.label !== 'Transporters and other creditors';
@@ -502,8 +506,10 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
         { lines: [{ label: 'Net position', value: net, kind: 'total' }] },
       ],
       notes: [
-        'Cash deposited during the chosen dates is on the cash movement report. It is a movement, not a balance, so it is not added here.',
-        'Money in the bank, stock, unpaid expenses and fuel received but not yet invoiced are shown as they stand now.',
+        bank?.amount != null
+          ? 'Money in the bank is the balance typed in from the bank statement.'
+          : 'Cash banked is the deposits recorded in the chosen dates; it is not a bank statement balance.',
+        'Stock, unpaid expenses and fuel received but not yet invoiced are shown as they stand now.',
         ...(customersKnown
           ? []
           : [

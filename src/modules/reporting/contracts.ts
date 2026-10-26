@@ -224,15 +224,21 @@ export type OwnerPosition = Readonly<{
   /** Submitted expenses waiting for approval. */
   expensesAwaitingApproval: Readonly<{ count: number; amount: ReportMoney }>;
   /**
-   * What the bank accounts hold, from the latest balance recorded for each. Null when there is
-   * no bank account or any active account has no recorded balance, so it is never guessed.
+   * Balances typed in from the bank statements. The amount is only given when every active bank
+   * account has one; the date is the oldest of the latest statement dates.
    */
-  bank?: Readonly<{
-    balance: ReportMoney | null;
-    /** The oldest statement date among the balances used. */
-    asOf: string | null;
-    accountCount: number;
-    accountsWithoutBalance: number;
+  /** Stock on hand for each station and fuel; the value is null while any of it has no cost yet. */
+  stockByStation?: readonly Readonly<{
+    stationName: string;
+    productName: string;
+    litres: ReportLitres;
+    value: ReportMoney | null;
+  }>[];
+  bankBalance?: Readonly<{
+    amount: ReportMoney | null;
+    asOfDate: string | null;
+    accountsWithBalance: number;
+    accountsTotal: number;
   }>;
   /** Fuel received but not yet invoiced, at landed cost. Null when some of it has no cost yet. */
   receivedNotInvoiced?: Readonly<{ value: ReportMoney | null; unpricedLitres: string }>;

@@ -1,5 +1,45 @@
 # Shanda Fuel — Decision Log
 
+## DEC-048 — Go-live housekeeping answers (ACCEPTED by the project lead in chat, 2026-10-24)
+
+**Date:** 2026-10-24. **Status:** accepted. Recorded from the project lead's chat answers (24 Oct, 14:23 and later).
+
+- **Byline:** keep "by ShandaHR".
+- **Owner sign-off name and date:** not important for v1. The signature line in
+  `docs/v1-owner-decisions-proposed.md` stays blank. The one fact to record is that the company is
+  Triumph Energy, trading as T.E.I Oils (a customer of the platform, not its owner).
+- **Alert emails:** leave for now. They stay switched off at go-live (ADR-020 still proposed).
+- **Backup credential location:** a dedicated Cloudflare R2 bucket, separate from the app's file
+  bucket. The backup job gets a write-only API key. The restore key is kept offline by the owner of
+  the credential, not in Vercel. A stolen app key must not be able to read or delete backups.
+- **Staff credit balance:** keep the rule already recorded under "Staff fuel benefit accounts": a
+  monthly USD cap per staff member, no carry-over, and the month's cost entered as one expense.
+- **Unused secrets:** may be deleted. Each one is listed and confirmed with the project lead before
+  it is removed.
+
+**Not decided:** the rates for the estimate.
+
+## DEC-047 — Run v1 without paid multi-factor sign-in (ACCEPTED by the project lead in chat, 2026-10-24)
+
+**Date:** 2026-10-24. **Status:** accepted, including the export fix below (approved in chat 2026-10-24). The fix is built on its own branch and is not merged.
+
+**Decision (project lead, in chat):** Clerk charges for multi-factor sign-in. Do not pay for it for
+now, and do not add a second sign-in provider. Switch MFA off (`REQUIRE_LOGIN_MFA=false`).
+
+**What this changes:** DEC-043 and the earlier security plan assumed MFA for privileged actions. With
+the switch off, sign-in is password only. The Owner's password re-check covers closing a business day
+and deactivating staff (existing behaviour). Report exports and report-table runs still require a
+second factor today, so they would be refused for everyone; the proposed fix is a small tested code
+change letting the Owner's password re-check satisfy that check while the switch is off.
+
+**Risk accepted:** a stolen password is enough to sign in. Mitigations: strong unique passwords,
+Clerk password-breach check and rate limits, short sessions, the signed audit trail, few Owner and
+Administrator accounts. Turning MFA on later needs only `REQUIRE_LOGIN_MFA=true` and a paid Clerk plan.
+
+**Affected:** `docs/runbooks/v1-migration-and-release.md` section 3a, the skipped step-up browser
+tests (they stay skipped until MFA or a test phone number exists), `src/modules/identity/step-up.ts`
+(only if the export fix is approved).
+
 ## DEC-046 — The approved screens are locked (proposed as DEC-045 wording)
 
 Date: 2026-10-23. **Status:** ACCEPTED on the owner's behalf, on the explicit instruction of the
@@ -967,3 +1007,20 @@ Status: ACCEPTED by the project lead on 2026-10-26, on the developer's recommend
 - **Expenses paid from till or EcoCash.** Accepted in principle: an expense records where it was paid from (till cash, EcoCash or bank), and till payments reduce expected cash at shift close. Built (migration 0076): an expense can be paid by EcoCash (source MOBILE_MONEY, transaction code required), beside bank and paid-back-to-staff. Not built: paying from the till. The cash disbursement exists only in the database; it has no screen or shift-close effect, so that needs its own design (how the payment enters the shift's expected cash).
 - **Dashboard tiles:** today's sales, cash expected against counted, fuel in each tank, customers owing, suppliers owed, net position. Built: a Net position tile (the Financial Position figure, "Not available" with a reason when not every figure is known). The others were already there except fuel in each tank, which stays on the Inventory screen.
 - **Valuation and purchasing.** Stock is valued at cost. A delivery shortage over 0.5% of delivered litres is flagged (the 0.5% starting value is already in place). Purchase orders stay optional. EcoCash and POS fees are recorded as an expense when the settlement arrives, against the net amount (not built).
+
+Month-end expense entry (PROPOSED, 2026-10-23, pending owner sign-off; chosen by the project lead from three options, item 8 "the cost goes to expenses"): after a calendar month has ended at the station, an owner or administrator enters ONE expense per staff benefit account and station for the fuel taken that month, on `/customers/staff-benefit/expense`. The figure is the litres taken (fuel approvals dated in the station's own month) valued at the restated weighted-average cost per litre of that station's costed sales for the same month, not at the pump price. It is shown for confirmation, recomputed on the server when posted, and refused if it changed. The expense is dated on the month's last day, uses the operating category `STAFF_FUEL_BENEFIT` ("Staff fuel benefit", created on first use) and goes through the ordinary expense workflow (approval, posting, correction, reversal, audit `EXPENSE.STAFF_BENEFIT_SUBMITTED`). Nothing posts automatically. The same account, station and month cannot be entered twice while an earlier entry is active (the expense reference `STAFF-BENEFIT:<account>:<month>` is unique among active expenses at a station); reversing or rejecting it frees the month. No migration. Open points for the owner: (1) the benefit sale itself is still recorded as a credit sale at the pump price, so the account keeps showing what the staff member "owes"; how that balance is cleared (written off against this expense, deducted from pay, or left) is not decided and nothing here clears it; (2) a staff member who fuels at two stations gets one entry per station.
+
+Not built, and not decided: a litre-based limit; automatic posting of the expense at each sale; any payroll deduction. Customer overdue alerts use a working default of 30 days since the oldest unpaid charge (`customerOverdueDays`); the owner's sign-off did not name a different figure as far as the project lead reported; customers have no per-customer credit period.
+
+## Brief-gap decisions (TEI Oils audit) — 2026-10-25
+
+Status: ACCEPTED. Given in chat by the project lead on 2026-10-25 while the brief-gap work (docs/audits/brief-gap-audit-2026-10-25.md) was built.
+
+- **Bank balance — both sources.** The money in the bank can be typed in from the bank statement (append-only `app.bank_balance_statements`, migration 0072) and is also derivable from recorded deposits. The financial position uses the typed balance only when every active account has one, otherwise the deposit-based "Cash banked"; it never counts both and says which it used.
+- **Corrections use revisions.** No command reverses an approved reconciliation or a bank deposit.
+- **Staff-benefit cost** stays as already built (month-end expense entry, above). Nothing further now.
+- **Tank tolerance.** The 20 L allowed difference is an accepted placeholder. Every active tank is always shown on the daily sheet and in the Stock Variances report, including a tank with no dip or no allowed difference set yet.
+- **Supplier credit limit** stays warn-only and below-price sales stay flagged, not blocked (DEC-045; the brief says "prevent or flag").
+- **Transporters** are recorded as suppliers (no new schema); a transporter set up as a supplier is counted under "Owed to suppliers". "Other liabilities" stay unrecorded until the owner supplies a real example.
+- **Alert emails** are deferred for now (ADR-020 review, DNS and owner go-ahead still outstanding).
+- **Stock variance** is computed against books that already include approved sales; approved sales are not subtracted again (fix in `production-reconciliation.ts`).

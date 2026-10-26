@@ -79,6 +79,19 @@ export const correctExpenseFactsSchema = stationBase
   })
   .strict();
 
+/**
+ * Month-end staff fuel benefit expense. The amount is never taken from the caller: it is worked
+ * out again from the records, and `expectedAmount` is only the figure the person saw and confirmed.
+ */
+export const submitStaffBenefitExpenseSchema = stationBase
+  .extend({
+    commandType: z.literal('SubmitStaffBenefitExpense'),
+    accountId: uuid,
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'A YYYY-MM month is required'),
+    expectedAmount: decimal,
+  })
+  .strict();
+
 export const approveExpenseSchema = stationBase.extend({
   commandType: z.literal('ApproveExpense'),
   expenseId: uuid,
@@ -170,6 +183,7 @@ export const EXPENSE_COMMAND_SCHEMAS = {
   CreateExpenseCategory: createExpenseCategorySchema,
   SetExpensePolicy: setExpensePolicySchema,
   SubmitExpense: submitExpenseSchema,
+  SubmitStaffBenefitExpense: submitStaffBenefitExpenseSchema,
   ApproveExpense: approveExpenseSchema,
   RejectExpense: rejectExpenseSchema,
   PostExpense: postExpenseSchema,
@@ -224,6 +238,16 @@ export const EXPENSE_COMMAND_POLICY: Readonly<Record<ExpenseCommandType, Expense
     thresholdStepUp: false,
     requiresExpectedVersion: false,
     auditActionCode: 'EXPENSE.SUBMITTED',
+  },
+  // Owners and administrators only: it needs the customer account adjustment permission, which
+  // finance, supervisors and attendants do not hold. It also needs expense.submit (checked in the
+  // handler), so it still follows the ordinary expense workflow afterwards.
+  SubmitStaffBenefitExpense: {
+    permissionCode: 'customer.account.adjust',
+    alwaysStepUp: false,
+    thresholdStepUp: false,
+    requiresExpectedVersion: false,
+    auditActionCode: 'EXPENSE.STAFF_BENEFIT_SUBMITTED',
   },
   ApproveExpense: {
     permissionCode: 'expense.approve',

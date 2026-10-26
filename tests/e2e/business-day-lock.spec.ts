@@ -80,6 +80,14 @@ async function arrange(page: Page, lock: LockFlags) {
   ).toBeVisible();
 }
 
+/** The app's own confirmation dialog (it replaced the browser's confirm popup). */
+async function acceptConfirmation(page: Page) {
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: /^(Continue|Approve reconciliation)$/ })
+    .click();
+}
+
 const lockButtons = (page: Page) => page.getByRole('button', { name: 'Lock business day' });
 
 test.describe('lock business day', () => {
@@ -120,8 +128,8 @@ test.describe('lock business day', () => {
         body: JSON.stringify({ error: 'FORBIDDEN', message: 'step-up expired' }),
       });
     });
-    page.once('dialog', (dialog) => void dialog.accept());
     await lockButtons(page).click();
+    await acceptConfirmation(page);
     await expect(
       page.getByText(/requires the existing step-up authentication flow. No change was posted./),
     ).toBeVisible();
@@ -152,8 +160,8 @@ test.describe('lock business day', () => {
         body: JSON.stringify({ message: 'Identity verification failed.' }),
       }),
     );
-    page.once('dialog', (dialog) => void dialog.accept());
     await lockButtons(page).click();
+    await acceptConfirmation(page);
     await expect(page.getByText('Identity verification failed.', { exact: true })).toBeVisible();
     expect(commands).toBe(0);
   });

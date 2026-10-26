@@ -31,6 +31,7 @@ import {
   setExpensePolicyInTransaction,
   submitExpenseInTransaction,
 } from './persistence';
+import { submitStaffBenefitExpenseInTransaction } from './staff-benefit-expense';
 
 export function assertExpenseCommandType(value: unknown): ExpenseCommandType {
   if (typeof value === 'string' && (EXPENSE_COMMAND_TYPES as string[]).includes(value)) {
@@ -80,6 +81,12 @@ const HANDLERS: { [K in ExpenseCommandType]: Handler<K> } = {
     subjectId: idOf('expenseId'),
     created: true,
     run: submitExpenseInTransaction,
+  },
+  SubmitStaffBenefitExpense: {
+    subjectType: 'Expense',
+    subjectId: idOf('expenseId'),
+    created: true,
+    run: submitStaffBenefitExpenseInTransaction,
   },
   ApproveExpense: {
     subjectType: 'Expense',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ActionItem } from '../approvals/action-center-model';
-import { composeDigest, itemsWorthEmailing, shouldSendDigest } from './digest';
+import { composeDigest, genericLabel, itemsWorthEmailing, shouldSendDigest } from './digest';
 
 const item = (
   id: string,
@@ -49,13 +49,21 @@ describe('composeDigest', () => {
     expect(digest.html).toContain('href="https://fuel.shandahr.com/stations/s1/c"');
   });
 
+  it('says how to stop the emails', () => {
+    const digest = composeDigest({ ...base, items: [item('a')] });
+    expect(digest.text).toContain(
+      'Stop these emails: https://fuel.shandahr.com/settings/alert-email',
+    );
+    expect(digest.html).toContain('href="https://fuel.shandahr.com/settings/alert-email"');
+  });
+
   it('uses the singular for one alert', () => {
     expect(composeDigest({ ...base, items: [item('a')] }).subject).toBe(
       '1 thing needs your attention at Main Station',
     );
   });
 
-  it('never lets a title or name inject markup', () => {
+  it('never lets a name inject markup', () => {
     const digest = composeDigest({
       ...base,
       recipientName: '<b>Rudo</b>',
@@ -64,8 +72,36 @@ describe('composeDigest', () => {
     });
     expect(digest.html).not.toContain('<script>');
     expect(digest.html).not.toContain('<b>Rudo</b>');
-    expect(digest.html).toContain('&lt;script&gt;');
     expect(digest.html).toContain('A&amp;B &lt;Station&gt;');
+  });
+
+  it('shows fixed wording and a link, never the alert title or detail (no amounts or names)', () => {
+    const digest = composeDigest({
+      ...base,
+      items: [
+        {
+          id: 'customer-overdue-acc1',
+          area: 'Receivables',
+          title: 'Acme Haulage owes US$1,234.00, unpaid since 2026-09-01',
+          detail: 'The oldest unpaid charge is 52 days old.',
+          href: '/customers/c1',
+          tone: 'attention',
+        },
+      ],
+    });
+    for (const out of [digest.text, digest.html]) {
+      expect(out).toContain('A customer account is overdue');
+      expect(out).not.toContain('Acme');
+      expect(out).not.toContain('1,234');
+      expect(out).not.toContain('52 days');
+    }
+    expect(digest.text).toContain('https://fuel.shandahr.com/customers/c1');
+  });
+
+  it('uses the area for an alert it has no wording for', () => {
+    expect(genericLabel({ id: 'brand-new', area: 'Payables' })).toBe(
+      'Something needs a look in Payables',
+    );
   });
 
   it('caps a long list and says how many more there are', () => {

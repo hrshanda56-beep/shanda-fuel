@@ -5,6 +5,7 @@ export {
   createProductFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,
+  recordBankBalanceFromRequest,
   setAlertSettingsFromRequest,
   setResponsibleSupervisorFromRequest,
   updateSupplierFromRequest,

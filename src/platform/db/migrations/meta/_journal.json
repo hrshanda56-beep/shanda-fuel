@@ -398,42 +398,49 @@
       "idx": 56,
       "version": "7",
       "when": 1792600071000,
-      "tag": "0071_supplier_contact_and_terms",
+      "tag": "0071_alert_email",
       "breakpoints": true
     },
     {
       "idx": 57,
       "version": "7",
       "when": 1792600072000,
-      "tag": "0072_bank_account_balances",
+      "tag": "0072_bank_balance_statements",
       "breakpoints": true
     },
     {
       "idx": 58,
       "version": "7",
       "when": 1792600073000,
-      "tag": "0073_customer_credit_days",
+      "tag": "0073_supplier_contact_and_terms",
       "breakpoints": true
     },
     {
       "idx": 59,
       "version": "7",
       "when": 1792600074000,
-      "tag": "0074_supplier_document_returned",
+      "tag": "0074_customer_credit_days",
       "breakpoints": true
     },
     {
       "idx": 60,
       "version": "7",
       "when": 1792600075000,
-      "tag": "0075_supplier_invoice_station_and_line_type",
+      "tag": "0075_supplier_document_returned",
       "breakpoints": true
     },
     {
       "idx": 61,
       "version": "7",
       "when": 1792600076000,
-      "tag": "0076_expense_payment_mobile_money",
+      "tag": "0076_supplier_invoice_station_and_line_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1792600077000,
+      "tag": "0077_expense_payment_mobile_money",
       "breakpoints": true
     }
   ]

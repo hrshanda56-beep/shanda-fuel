@@ -14,6 +14,7 @@ import {
 } from '@/design-system/primitives';
 
 import type { PaymentProviderRow, SetupOverview } from '../contracts';
+import { BankBalancePanel } from './bank-balance-panel';
 import styles from './setup.module.css';
 import { StepUpDialog } from './step-up-dialog';
 import { useSetupOverview } from './use-setup-overview';
@@ -386,9 +387,7 @@ function BankSection({
   onDenied: () => void;
 }) {
   const { run, busy, outcome } = useCommand(reload, onDenied);
-  const balance = useCommand(reload, onDenied);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
-  const [balanceErrors, setBalanceErrors] = useState<Record<string, string | undefined>>({});
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -422,43 +421,6 @@ function BankSection({
           currency: 'USD',
         },
         `${name} was added for ${station.name}'s legal entity.`,
-      );
-      if (saved) form.reset();
-    });
-  }
-
-  async function submitBalance(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const bank = overview.bankAccounts.find((item) => item.id === String(data.get('bankId')));
-    const amount = String(data.get('amount') ?? '')
-      .trim()
-      .replace(/,/g, '');
-    const asOfDate = String(data.get('asOfDate') ?? '');
-    const station = overview.stationOptions.find(
-      (item) => item.legalEntityId === bank?.legalEntityId,
-    );
-    const next = {
-      bankId: bank ? undefined : 'Choose the bank account.',
-      amount: /^-?\d+(\.\d{1,2})?$/.test(amount)
-        ? undefined
-        : 'Enter the balance shown on the bank statement, for example 12500.50.',
-      asOfDate: asOfDate ? undefined : 'Choose the date of the statement.',
-    };
-    setBalanceErrors(next);
-    if (Object.values(next).some(Boolean) || !bank || !station) return;
-    gate(async () => {
-      const saved = await balance.run(
-        {
-          commandType: 'RecordBankBalance',
-          tenantId: overview.tenantId,
-          stationId: station.id,
-          bankAccountId: bank.id,
-          asOfDate,
-          amount,
-        },
-        `The balance of ${bank.name} was saved.`,
       );
       if (saved) form.reset();
     });
@@ -536,43 +498,6 @@ function BankSection({
           </div>
         </form>
       ) : null}
-      {overview.canManagePayments && overview.bankAccounts.length > 0 ? (
-        <form
-          className={styles.form}
-          onSubmit={submitBalance}
-          noValidate
-          aria-label="Record bank balance"
-        >
-          <h4 className={styles.cardTitle}>Record what the bank holds</h4>
-          <p className={styles.rowDetail}>
-            Copy the closing balance from the bank statement. The financial position uses the latest
-            one for each account.
-          </p>
-          <Field id="balance-bank" label="Bank account" error={balanceErrors.bankId} required>
-            <Select
-              id="balance-bank"
-              name="bankId"
-              defaultValue=""
-              placeholder="Choose a bank account"
-              options={overview.bankAccounts
-                .filter((bank) => bank.status === 'ACTIVE')
-                .map((bank) => ({ value: bank.id, label: `${bank.name} (${bank.bankName})` }))}
-            />
-          </Field>
-          <Field id="balance-amount" label="Balance (USD)" error={balanceErrors.amount} required>
-            <input id="balance-amount" name="amount" inputMode="decimal" autoComplete="off" />
-          </Field>
-          <Field id="balance-date" label="Statement date" error={balanceErrors.asOfDate} required>
-            <input id="balance-date" name="asOfDate" type="date" />
-          </Field>
-          <div className={styles.formActions}>
-            <Button type="submit" loading={balance.busy}>
-              Save balance
-            </Button>
-            <OutcomeMessage outcome={balance.outcome} />
-          </div>
-        </form>
-      ) : null}
     </section>
   );
 }
@@ -597,6 +522,7 @@ export function PaymentsView({ overview, reload }: { overview: Ready; reload: ()
       <ProviderSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <AccountSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
       <BankSection overview={overview} reload={reload} gate={gate} onDenied={onDenied} />
+      <BankBalancePanel tenantId={overview.tenantId} stations={overview.stationOptions} />
       <StepUpDialog
         open={pending !== null}
         tenantId={overview.tenantId}

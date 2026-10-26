@@ -1,3 +1,4 @@
+import { escapeHtml, renderEmail } from '../../platform/email/layout';
 import type { ActionItem } from '../approvals/action-center-model';
 
 /**
@@ -6,6 +7,40 @@ import type { ActionItem } from '../approvals/action-center-model';
  */
 
 const MAX_ITEMS = 15;
+/** Where each person switches the emails off. */
+export const STOP_PATH = '/settings/alert-email';
+
+/**
+ * Email is not a secure channel (ADR-020), so a message names *what kind* of thing needs a look and
+ * links to it, never the alert's own title or detail, which carry amounts, customer and supplier
+ * names. Fixed wording, matched on the start of the alert id. Longest prefixes first.
+ */
+const GENERIC_LABELS: readonly (readonly [prefix: string, label: string])[] = [
+  ['reconciliation-', 'A daily reconciliation is waiting for approval'],
+  ['revaluation-', 'A cost revaluation is waiting for approval'],
+  ['reports-late', 'A daily report is late'],
+  ['cash-pending-confirmation', 'A bank deposit is waiting to be confirmed'],
+  ['cash-unbanked', 'Cash has not been banked'],
+  ['cash-short', 'Cash was counted short'],
+  ['stock-variance-', 'A tank reading differs from the book stock'],
+  ['stock-low-', 'A tank is running low'],
+  ['settlement', 'Card or mobile money payments need matching'],
+  ['settlements-overdue', 'Card or mobile money payments are overdue'],
+  ['suppliers-', 'A supplier invoice needs attention'],
+  ['supplier-payment-no-proof', 'A supplier payment has no proof attached'],
+  ['customers-', 'A customer account needs attention'],
+  ['customer-over-limit', 'A customer account is over its limit'],
+  ['customer-overdue', 'A customer account is overdue'],
+  ['expense-high-', 'A large expense was recorded'],
+  ['sale-below-price', 'A sale was below the approved price'],
+  ['delivery-short-', 'A fuel delivery was short'],
+  ['approved-information-changed', 'Approved information was changed'],
+];
+
+export function genericLabel(item: Pick<ActionItem, 'id' | 'area'>): string {
+  const hit = GENERIC_LABELS.find(([prefix]) => item.id.startsWith(prefix));
+  return hit ? hit[1] : `Something needs a look in ${item.area}`;
+}
 
 export type DigestInput = Readonly<{
   recipientName: string | null;
@@ -24,14 +59,6 @@ export type Digest = Readonly<{
   /** The alerts that are in the email, so a later run can tell what is new. */
   itemIds: readonly string[];
 }>;
-
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 
 /** Only things that need action are emailed; informational notes stay in the app. */
 export function itemsWorthEmailing(items: readonly ActionItem[]): ActionItem[] {
@@ -66,40 +93,38 @@ export function composeDigest(input: DigestInput): Digest {
       : `${count} things need your attention at ${input.stationName}`;
   const greeting = input.recipientName?.trim() ? `Hello ${input.recipientName.trim()},` : 'Hello,';
 
-  const textLines = [
-    greeting,
-    '',
-    `${input.stationName} has ${count === 1 ? 'something' : 'some things'} that need attention:`,
-    '',
-    ...shown.flatMap((item) => [
-      `- ${item.title}`,
-      `  ${item.detail}`,
-      `  ${absolute(input.appUrl, item.href)}`,
-    ]),
-    ...(more > 0 ? ['', `...and ${more} more. Open the app to see everything.`] : []),
-    ...(input.unavailable.length > 0
-      ? ['', `Not checked this time: ${input.unavailable.join(', ')}.`]
-      : []),
-    '',
-    `Open Shanda Fuel: ${input.appUrl.replace(/\/+$/, '')}`,
-  ];
-
+  const base = input.appUrl.replace(/\/+$/, '');
+  const intro = `${input.stationName} has ${count === 1 ? 'something' : 'some things'} that need attention:`;
+  const textItems = shown.flatMap((item) => [
+    `- ${genericLabel(item)}`,
+    `  ${absolute(input.appUrl, item.href)}`,
+  ]);
   const htmlItems = shown
     .map(
       (item) =>
-        `<li><strong>${escapeHtml(item.title)}</strong><br>${escapeHtml(item.detail)}<br>` +
-        `<a href="${escapeHtml(absolute(input.appUrl, item.href))}">Open</a></li>`,
+        `<li style="margin:0 0 12px;"><strong>${escapeHtml(genericLabel(item))}</strong><br>` +
+        `<a href="${escapeHtml(absolute(input.appUrl, item.href))}" style="color:#0a5a4a;">Open</a></li>`,
     )
     .join('');
-  const html =
-    `<p>${escapeHtml(greeting)}</p>` +
-    `<p>${escapeHtml(input.stationName)} has ${count === 1 ? 'something' : 'some things'} that need attention:</p>` +
-    `<ul>${htmlItems}</ul>` +
-    (more > 0 ? `<p>…and ${more} more. Open the app to see everything.</p>` : '') +
-    (input.unavailable.length > 0
-      ? `<p>Not checked this time: ${escapeHtml(input.unavailable.join(', '))}.</p>`
-      : '') +
-    `<p><a href="${escapeHtml(input.appUrl.replace(/\/+$/, ''))}">Open Shanda Fuel</a></p>`;
+  const extra = [
+    ...(more > 0 ? [`...and ${more} more. Open the app to see everything.`] : []),
+    ...(input.unavailable.length > 0
+      ? [`Not checked this time: ${input.unavailable.join(', ')}.`]
+      : []),
+  ];
+  const { text, html } = renderEmail({
+    logoUrl: `${base}/email-logo.png`,
+    heading: 'Needs your attention',
+    subheading: input.stationName,
+    greeting,
+    paragraphs: [intro],
+    bodyHtml: `<ul style="margin:0 0 16px;padding-left:20px;font-size:16px;line-height:1.6;">${htmlItems}</ul>`,
+    bodyText: textItems.join('\n'),
+    ...(extra.length > 0 ? { notice: { title: 'Also', body: extra.join(' ') } } : {}),
+    button: { label: 'Open Shanda Fuel', url: base },
+    footer: 'Sent by Shanda Fuel.',
+    footerLinks: [{ label: 'Stop these emails', url: absolute(input.appUrl, STOP_PATH) }],
+  });
 
-  return { subject, text: textLines.join('\n'), html, itemIds: worth.map((item) => item.id) };
+  return { subject, text, html, itemIds: worth.map((item) => item.id) };
 }

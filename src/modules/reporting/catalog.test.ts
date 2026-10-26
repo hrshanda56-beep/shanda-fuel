@@ -17,6 +17,7 @@ describe('report catalog', () => {
       'tank-dip-history',
       'stock-movements',
       'delivery-variance',
+      'stock-variance',
     ]);
   });
 });

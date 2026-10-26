@@ -1,5 +1,12 @@
 # Shanda Fuel — Current Status
 
+## Merge into main — 2026-10-26
+
+The audit-fixes and selling-unblock work was merged with `main` after main moved on (alert email, bank balance statements, global feedback, branded email, audit gaps). Two things changed at the merge:
+
+- **Migrations renumbered.** Main already held `0071_alert_email` and `0072_bank_balance_statements`, so this work's migrations are now `0073_supplier_contact_and_terms`, `0074_customer_credit_days`, `0075_supplier_document_returned`, `0076_supplier_invoice_station_and_line_type` and `0077_expense_payment_mobile_money`. Older sections below use the numbers from before the merge (0071 supplier contact, 0073 credit days, 0074 return, 0075 station and line type, 0076 mobile money). None of these has been applied to production.
+- **One bank balance feature, not two.** Audit-fixes had its own `bank_account_balances` table; main's `bank_balance_statements` (Settings > Payments) is kept and the duplicate was removed. The financial position keeps main's behaviour (bank statement balance when every account has one, otherwise recorded deposits) and still adds the "Fuel received, not yet invoiced" line.
+
 ## Getting to the first sale — 2026-10-26 (branch `codex/v1-selling-unblock-20261026`, from `codex/v1-audit-fixes-20261025`, uncommitted)
 
 Response to the audit retest blockers that stopped any station from selling. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions: DECISIONS.md, "Getting a station to its first sale" (PROPOSED).
@@ -76,6 +83,76 @@ Not done, and why:
 - Dashboard split by fuel, cash expected vs collected, stock variance and unsubmitted reports; report filters (shift, fuel, supplier, customer, employee, method); alerts for reorder level, unusual expense, below-price sale and credit breach; cash statuses (in transit, held by management, partly banked); a payment-method field on expenses; ShandaHR link. These are new features with unsettled meaning, not fixes.
 - IndexedDB drafts and queuing screens other than the daily report (DECISIONS: offline queue is deliberately narrow).
 - Checks that need the live system or the vendor: Owner membership scope on the live tenant, MFA for Owner and Finance in Clerk, backup and point-in-time restore for Neon, an API-level tenant-scope test beyond the existing ones, removing the "New Tour User" test user.
+
+## Brief gap audit — 2026-10-25
+
+Audit of `origin/main` at `a3a769f` against the TEI Oils brief and samples; details in
+`docs/audits/brief-gap-audit-2026-10-25.md`. On branch `codex/v1-audit-gaps-20261025` (not pushed, not
+merged): a stock-variance double count after approval fixed, three new reports (Station Daily Report,
+Sales by Day/Week/Month, Stock Variances), a missing page for Customer Debtors Ageing added, and a
+WhatsApp shift message check at `/operations/daily/check-message`, tank dips on the daily sheet (every
+tank always listed), fuel stock by station and a typed-in bank balance on the financial position
+(new migration `0072`, applied nowhere). Open items are listed in the audit file. `docs/client/03-brief-coverage.md` is stale and should not be sent as it stands.
+
+## After the combined finish — 2026-10-24 (later)
+
+Merged into `main` after PR #149: PR #150 as `6f59fd3` (export fix and the v1 runbooks), PR #152 as
+`b0f62ec` (next 16.4.2, eslint-config-next 16.4.0; CI green on a maintainer branch with the Clerk
+test secret) and PR #151 as `a28b24b` (one-page daily report per shift; it edits two UI-locked
+files, `daily-operations-workspace.tsx` and `operations-control-room.tsx`, approved by the project
+lead, with the UI-lock manifest re-baselined). CI was green on each PR head. CI was not re-run on
+the merge commits. CodeQL is skipped on every PR. Production was not contacted. Nothing was
+deployed or migrated in production. Whether Vercel auto-deployed `main` to production has not been
+checked.
+
+The fuel-by-fuel profit split (diesel and petrol, with the Income Statement CSV) is already on
+`main`; the separate branch `codex/finance-reporting-export-20261019` carries nothing extra.
+
+Held on purpose (Dependabot): @types/node 26 (runtime is Node 24), dotenv 18, setup-python 7,
+codeql-action 4.39.0 (CodeQL is skipped, so it cannot be verified) and setup-node 7.1.0 (pinned SHA
+not verified). @clerk/backend 3.26.0 needs a regenerated lockfile. Dependabot PRs cannot read
+`CLERK_TEST_SECRET_KEY`, so their quality and runtime-role checks fail until it is added as a
+Dependabot secret in GitHub settings.
+
+First-user provisioning is still blocked at the temporary-password step: the replacement for the
+Stage 1 helper (see `docs/runbooks/deployment.md`) needs a reviewed design and the human's approval
+before any code is written.
+
+## v1 combined finish merged — 2026-10-24
+
+PR #149 (`codex/v1-combined-2`) merged into `main` as `b11f9f0` at 2026-10-24T14:12Z. CI on
+`43633fa` (the last commit before the merge) was green: quality (unit 215 files / 1,502 tests;
+integration 323 passed, 45 intentional opt-in skips; browser 365 passed, 16 skipped), secret scan,
+SAST, dependency audit and runtime-role proof. CodeQL was skipped. CI was not re-run on the merge
+commit itself. Production was not contacted. Nothing was deployed or migrated in production.
+
+Browser tests skipped on purpose (needs a Clerk step-up, and the Clerk test users have no second
+factor). These are skips, not passes. Fix: give the test users a Clerk test phone number as the
+second factor.
+
+After v1:
+
+- login-mfa (both tests)
+- staff "Owner can manage invitations"
+- staff invite-link test (also needs a Clerk-account cleanup step; it lost its invalid, revoked and
+  expired link checks while skipped)
+- production-reconciliation ("persists through refresh" and the A11 workspace test)
+- setup-readiness "adds a provider and a station account"
+- management-reporting CSV export
+- offline cash entry (out of v1 by decision) and SMS (not wanted)
+
+Triumph Energy, trading as T.E.I Oils, is the first customer of the platform, not its owner.
+Runbooks prepared (not run): `docs/runbooks/v1-migration-and-release.md` (updated to 0071) and
+`docs/runbooks/v1-first-user-provisioning.md`.
+
+Decided in chat on 2026-10-24 (DEC-048): keep the "by ShandaHR" byline; owner sign-off name and date
+not needed for v1; alert emails stay off at go-live; backup credential in a dedicated R2 bucket with
+a write-only key and an offline restore key; staff benefit rule as recorded; unused secrets may be
+deleted after review.
+
+Still open and owned by the human: rates for the estimate, MFA (decision: off for now, no paid
+Clerk plan, no second provider; see DEC-047 and the release runbook section 3a), production
+migrations, first-user provisioning, deploy, training, trial week and go-live.
 
 ## v1 delivery baseline — 2026-10-21
 
@@ -172,9 +249,25 @@ format, `db:check`, typecheck green):
   banked + card/mobile payments not yet received + owed by credit customers, less owed to suppliers
   and prepaid customer balances. Shown as unavailable (never zero) for a single station, because
   customer balances are organisation-wide. Stock at cost and unpaid expenses are not included.
-- Alert email, prepared but not enabled: digest wording and send rules plus the per-person run are
-  built and unit-tested without any database change; the cross-organisation recipient list and
-  scheduled trigger are written up in ADR-020 for security review.
+- Staff fuel benefit month-end expense (proposed design, DECISIONS.md "Staff fuel benefit accounts"):
+  `/customers/staff-benefit/expense` shows, per staff benefit account and station, the fuel taken in a
+  closed month valued at restated cost, and an owner or administrator can enter it as one SUBMITTED
+  expense (command `SubmitStaffBenefitExpense`, no migration). Double entry is refused; approval,
+  posting, correction and reversal use the ordinary expense workflow. Tested against the real
+  database (permissions, tenant isolation, station-timezone month boundary, double entry, reversal and
+  re-entry); not yet run in a signed-in browser. No link to it from the locked staff benefit page;
+  it is reached by its address until the owner approves a link there. Clearing the staff member's
+  credit balance is an open owner question.
+- Alert email, built but OFF (migration 0071, ADR-020 still PROPOSED): the recipient-list function
+  (`app.alert_digest_recipients`, SECURITY DEFINER, fixed columns), the sent-log table, the
+  organisation switch (starts off) and each person's own switch, the secret-protected daily route
+  `/api/cron/alert-digests` (07:00 Harare = 05:00 UTC in `vercel.json`) and a new page
+  `/settings/alert-email` (the Settings screen is locked, so the page is not linked from it; every
+  email links to it). The email names the kind of problem and links to it: no amounts, no names.
+  Tested locally only (15 integration tests, unit tests). Nothing is applied to production. Still
+  needed before go-live: the ADR-020 security review (especially the digest actor in
+  `src/modules/identity/digest-actor.ts`), CRON_SECRET and Resend settings in production, and the
+  `alerts@fuel.shandahr.com` sending domain (DNS).
 - Browser checks (Playwright, sample API answers, no Clerk user needed) for the cash handover card,
   activity log, document attachments and reminder settings, including accessibility and overflow
   checks at 320, 390, 768 and 1280 px. These caught one real mistake (a function passed from a
@@ -183,7 +276,7 @@ format, `db:check`, typecheck green):
 Found already built while checking (not new work): CSV, PDF and XLSX report downloads with step-up,
 and the report activity log. They have not been re-verified in a browser in this pass.
 
-Not yet built: enabling alert email (needs ADR-020 approved), dashboard tiles (left alone: the
+Not yet enabled: alert email (built, off; needs the ADR-020 review, DNS and the owner's switch). Not yet built: dashboard tiles (left alone: the
 owner-approved dashboard already has a needs-attention area), offline queue for screens other than the
 daily report, employee profiles polish, documents on supplier payments (they have no station, so
 need a design choice) and handovers, a Clerk-backed run of the signed-in browser suite.
@@ -198,6 +291,21 @@ authenticated specs need real users in a dedicated Clerk development instance
 unauthenticated "Demo user" shell that Clerk-only authentication removed. The
 browser suite cannot be called green until those users exist and stale specs are
 updated.
+
+### Daily report (2026-10-24, on `codex/v1-daily-report`)
+
+A one-page, read-only daily report per shift, in the layout attendants send on WhatsApp, at
+`/operations/reconciliations/<id>/report?tenantId=…&stationId=…` (`src/modules/forecourt/daily-report*.ts`,
+`ui/daily-report.tsx`). It shows price and pump opening/closing/litres per product, litres per
+product, expenses, counted cash and excess/shortfall, drop, dips (mm and litres), attendants,
+supervisor and a month-to-date block (approved shifts plus this one). "Copy as WhatsApp text" and
+Print/PDF are client-side; nothing is sent anywhere, so DEC-044's exclusion of WhatsApp alerts is
+not affected. No schema change. Choices to confirm with the owner: **Drop** is every cash handover
+submitted on the station's calendar day (handovers are not linked to a shift); a tank's **opening
+and closing dip** are the earliest and latest dip linked to the shift. A "Daily report" link was
+added to the control room and the reconciliation workspace (owner-approved edit of two locked
+files; manifest re-baselined). Validated: unit tests, typecheck, lint, format, UI-lock guard, and
+an integration test in `a5-production-reconciliation` on a fresh local PG18 database.
 
 ### Reports expansion (2026-10-22, committed on the integration branch)
 

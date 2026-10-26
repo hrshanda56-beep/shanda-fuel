@@ -13,7 +13,10 @@ const AUTHENTICATED_CONTEXT = {
 };
 
 test.describe('password login MFA flow', () => {
-  test('holds the MFA challenge, rejects a wrong code, and establishes a session for a correct code', async ({
+  // Legacy Better Auth flow: it mocks /api/auth/sign-in/email and a "Verify your authenticator"
+  // heading, neither of which exists now (Clerk-only, DEC-043). A real Clerk MFA sign-in test is
+  // an after-v1 item; until then these are reported as skipped, not passed.
+  test.fixme('holds the MFA challenge, rejects a wrong code, and establishes a session for a correct code', async ({
     page,
   }) => {
     let authenticated = false;
@@ -96,7 +99,8 @@ test.describe('password login MFA flow', () => {
     expect(submittedCodes).toEqual(['000000', '123456']);
   });
 
-  test('keeps the existing normal sign-in path for non-MFA accounts', async ({ page }) => {
+  // Legacy Better Auth flow, see above.
+  test.fixme('keeps the existing normal sign-in path for non-MFA accounts', async ({ page }) => {
     await page.route('**/api/auth/sign-in/email', async (route) => {
       await route.fulfill({
         status: 200,

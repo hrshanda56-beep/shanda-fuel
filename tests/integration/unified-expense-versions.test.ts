@@ -2,7 +2,14 @@ import { POST } from '../../src/app/api/expenses/commands/route';
 import { seedClerkSession, clerkHeaders, fixtureSession } from './auth-session-fixtures';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
-import { beforeAll, afterAll, it, expect } from 'vitest';
+import { beforeAll, afterAll, it as baseIt, expect } from 'vitest';
+// Opt-in suite: it needs its own database and a separate runtime role, so it is skipped (not
+// passed) wherever those are not configured, such as the shared CI database.
+const enabled =
+  !!process.env.DATABASE_URL &&
+  new URL(process.env.DATABASE_URL).pathname === '/shanda_unified_expense_test' &&
+  !!process.env.FINANCE_RUNTIME_DATABASE_URL;
+const it = baseIt.skipIf(!enabled);
 const tenant = randomUUID(),
   entity = randomUUID(),
   station = randomUUID(),
@@ -21,9 +28,8 @@ const scoped = async <T>(actor: number, run: (tx: Sql) => Promise<T>): Promise<T
     return run(tx as unknown as Sql);
   }) as Promise<T>;
 beforeAll(async () => {
-  const url = process.env.DATABASE_URL;
-  if (!url || new URL(url).pathname !== '/shanda_unified_expense_test')
-    throw Error('Separate local integration database required');
+  if (!enabled) return;
+  const url = process.env.DATABASE_URL!;
   db = postgres(url, { max: 1, onnotice: () => {} });
   runtime = postgres(process.env.FINANCE_RUNTIME_DATABASE_URL!, { max: 2, onnotice: () => {} });
   await db`insert into app.tenants(id,name,slug) values(${tenant},'Unified expenses',${tenant})`;
