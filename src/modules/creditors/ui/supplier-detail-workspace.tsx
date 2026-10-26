@@ -852,6 +852,12 @@ export function SupplierDetailWorkspace({
                   value={limitText}
                   onChange={(event) => setLimitText(event.target.value)}
                   inputMode="decimal"
+                  // Never a made-up figure: the limit in force, or a plain "no limit".
+                  placeholder={
+                    supplier.creditLimit?.limit == null
+                      ? 'No limit set'
+                      : `Currently ${supplier.creditLimit.limit}`
+                  }
                 />
               </Field>
               <Button type="submit" variant="secondary" disabled={action !== null}>
