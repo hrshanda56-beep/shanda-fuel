@@ -142,7 +142,10 @@ test.describe('Setup readiness and payment setup', () => {
     await expect(content(page).getByText(/\b0\b/)).toHaveCount(0);
 
     const ready = page.getByRole('region', { name: /Setup Ready Station/ });
-    await expect(ready.getByText('1 tank entered with variance tolerance.')).toBeVisible();
+    // The ready station has a tank but no opening stock yet, which the Tanks area now says plainly.
+    await expect(
+      ready.getByText('1 tank entered; opening stock not recorded for 1.'),
+    ).toBeVisible();
     await expect(ready.getByText('1 product with an active price.')).toBeVisible();
     await expect(ready.getByText('1 pump and 1 nozzle entered.')).toBeVisible();
     // Payment accounts and staff are genuinely not entered yet.
