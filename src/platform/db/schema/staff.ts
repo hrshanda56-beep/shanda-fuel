@@ -81,6 +81,7 @@ export const staffInvitations = appSchema.table(
     revokedByUserId: uuid('revoked_by_user_id'),
     acceptedByUserId: uuid('accepted_by_user_id'),
     acceptedMembershipId: uuid('accepted_membership_id'),
+    signupUserId: uuid('signup_user_id').references(() => users.id, { onDelete: 'restrict' }),
     deliveryMethod: text('delivery_method').notNull().default('EMAIL'),
     staffNumberRegistryId: uuid('staff_number_registry_id').references(
       () => staffNumberRegistry.id,

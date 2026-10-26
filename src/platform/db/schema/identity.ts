@@ -26,7 +26,7 @@ export const authIdentities = appSchema.table(
     unique('auth_identities_provider_user_uidx').on(table.provider, table.providerUserId),
     unique('auth_identities_internal_user_provider_uidx').on(table.internalUserId, table.provider),
     index('auth_identities_internal_user_idx').on(table.internalUserId),
-    check('auth_identities_provider_ck', sql`${table.provider} in ('BETTER_AUTH', 'CLERK')`),
+    check('auth_identities_provider_ck', sql`${table.provider} = 'CLERK'`),
     check('auth_identities_provider_user_id_ck', sql`btrim(${table.providerUserId}) <> ''`),
   ],
 );
@@ -57,7 +57,7 @@ export const authSessionAssurance = appSchema.table(
     index('auth_session_assurance_lookup_idx')
       .on(table.provider, table.providerSessionId, table.internalUserId, table.tenantId)
       .where(sql`${table.revokedAt} is null`),
-    check('auth_session_assurance_provider_ck', sql`${table.provider} in ('BETTER_AUTH', 'CLERK')`),
+    check('auth_session_assurance_provider_ck', sql`${table.provider} = 'CLERK'`),
     check('auth_session_assurance_level_ck', sql`${table.assuranceLevel} in (1, 2)`),
   ],
 );

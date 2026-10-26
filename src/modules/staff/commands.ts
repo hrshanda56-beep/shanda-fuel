@@ -8,6 +8,7 @@ import { getAuditSigningKey, getServerEnv } from '../../platform/config/env';
 import { getDatabase } from '../../platform/db';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
+import { createLogger } from '../../platform/logging';
 import { createResendEmailSender, type EmailSender } from '../../platform/email';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authorize } from '../../platform/security/permissions';
@@ -17,6 +18,7 @@ import { resolveTenantExecutionContext, type TenantExecutionContext } from '../t
 import { CLERK_DEACTIVATE_STAFF_ACTION } from '../../platform/auth/clerk-step-up';
 import {
   createClerkCredentialIdentity,
+  createClerkEmailIdentity,
   deleteClerkCredentialIdentity,
   revokeClerkUserSessions,
 } from '../../platform/auth/provider';
@@ -36,6 +38,7 @@ import {
 import type { StaffInvitationScope } from './contracts';
 
 type StaffTransaction = Parameters<Parameters<ReturnType<typeof getDatabase>['transaction']>[0]>[0];
+const logger = createLogger({ component: 'staff.signup' });
 
 const createSchema = z.object({
   commandType: z.literal('CreateStaffInvitation'),
@@ -68,6 +71,10 @@ const deactivateSchema = z.object({
 });
 
 const acceptanceSchema = z.object({ token: z.string().min(1).max(256) });
+const signupSchema = z.object({
+  token: z.string().min(1).max(256),
+  password: z.string().min(8).max(256),
+});
 const manualActivationSchema = z.object({
   staffNumber: z.string().min(3).max(32),
   activationCode: z.string().min(20).max(128),
@@ -83,6 +90,7 @@ export type StaffCommandDependencies = Readonly<{
   emailSender?: EmailSender;
   resolveAuthority?: typeof resolveTenantExecutionContext;
   createClerkIdentity?: typeof createClerkCredentialIdentity;
+  createClerkEmailIdentity?: typeof createClerkEmailIdentity;
   deleteClerkIdentity?: typeof deleteClerkCredentialIdentity;
   revokeClerkSessions?: typeof revokeClerkUserSessions;
 }>;
@@ -231,7 +239,7 @@ export async function createStaffInvitationFromRequest(
         join app.users identity on identity.id = membership.identity_id
         where membership.tenant_id = ${input.tenantId}
           and lower(btrim(identity.email)) = ${email}
-        for update
+        for update of membership
       `)
         : [];
       if (existingMembership[0]) {
@@ -779,11 +787,72 @@ export async function acceptStaffInvitationFromRequest(request: Request, body: u
   }
 }
 
-export async function signUpFromInvitation(_body: unknown): Promise<never> {
-  throw new AppError(
-    'FORBIDDEN',
-    'Create your account with Clerk, then accept the invitation while signed in',
-  );
+export async function signUpFromInvitation(body: unknown, deps: StaffCommandDependencies = {}) {
+  const input = signupSchema.parse(body);
+  const tokenHash = hashInvitationToken(assertInvitationToken(input.token));
+  const internalUserId = randomUUID();
+  const requestId = randomUUID();
+  let clerkUser: Awaited<ReturnType<typeof createClerkEmailIdentity>> | undefined;
+  let invitedEmail: string | undefined;
+  try {
+    return await getDatabase().transaction(async (transaction) => {
+      const invitations = await transaction.execute<{
+        invitation_id: string;
+        tenant_id: string;
+        invited_email: string;
+        invited_name: string;
+        signup_user_id: string | null;
+      }>(sql`select * from app.lock_email_staff_signup(${tokenHash})`);
+      const invitation = invitations[0];
+      if (!invitation) throw new AppError('FORBIDDEN', 'This invitation is no longer available');
+      invitedEmail = invitation.invited_email;
+      // A committed receipt belongs to this verified token. Retry must not
+      // create a second Clerk account or change the original password.
+      if (invitation.signup_user_id) return { email: invitation.invited_email };
+      clerkUser = await (deps.createClerkEmailIdentity ?? createClerkEmailIdentity)({
+        email: invitation.invited_email,
+        invitedName: invitation.invited_name,
+        password: input.password,
+        invitationId: invitation.invitation_id,
+      });
+      await transaction.execute(sql`
+        select app.complete_email_staff_signup(
+          ${tokenHash}, ${internalUserId}, ${clerkUser.providerUserId}
+        )
+      `);
+      await appendSecurityEvent(
+        {
+          eventId: randomUUID(), tenantId: invitation.tenant_id,
+          actorId: internalUserId, actorType: 'HUMAN',
+          actionCode: 'STAFF.EMAIL_SIGNUP_CREATED', subjectType: 'StaffInvitation',
+          subjectId: invitation.invitation_id, requestId, occurredAt: new Date().toISOString(),
+        },
+        getAuditSigningKey(), transaction,
+      );
+      return { email: invitation.invited_email };
+    });
+  } catch (error) {
+    if (clerkUser) {
+      // COMMIT can succeed before a connection reports an error. Confirm the
+      // absence of the mapping before compensating; uncertainty needs review.
+      try {
+        const rows = await getDatabase().execute<{ committed: boolean }>(sql`
+          select app.email_staff_signup_committed(
+            ${internalUserId}, ${clerkUser.providerUserId}
+          ) as committed
+        `);
+        if (rows[0]?.committed === true) return { email: invitedEmail! };
+        if (rows[0]?.committed !== false) throw new Error('Unknown signup outcome');
+        await (deps.deleteClerkIdentity ?? deleteClerkCredentialIdentity)(clerkUser.providerUserId);
+        logger.warn('STAFF.EMAIL_SIGNUP_ROLLED_BACK', { requestId, internalUserId });
+      } catch {
+        logger.error('STAFF.CLERK_SIGNUP_CLEANUP_REQUIRED', {
+          requestId, internalUserId, providerUserId: clerkUser.providerUserId,
+        });
+      }
+    }
+    throw transactionError(error);
+  }
 }
 
 export async function activateManualStaffFromRequest(
@@ -822,10 +891,6 @@ export async function activateManualStaffFromRequest(
         firstName: invitation.invited_name,
       });
 
-      await transaction.execute(sql`
-        insert into app.users (id, name, email, email_verified)
-        values (${internalUserId}, ${invitation.invited_name}, null, false)
-      `);
       const acceptedRows = await transaction.execute<{
         membership_id: string;
         tenant_id: string;

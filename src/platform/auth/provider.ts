@@ -165,6 +165,40 @@ export async function deleteClerkCredentialIdentity(providerUserId: string): Pro
   await client.users.deleteUser(providerUserId);
 }
 
+/** Only call after locking and validating the emailed invitation in PostgreSQL. */
+export async function createClerkEmailIdentity(input: {
+  email: string;
+  password: string;
+  invitedName: string;
+  invitationId: string;
+}): Promise<ClerkCredentialIdentity & { created: boolean }> {
+  const client = await clerkClient();
+  const externalId = `shanda-fuel:staff-invitation:${input.invitationId}`;
+  // Recover an identity created before a process/connection failure. Never
+  // adopt an arbitrary Clerk account merely because its email matches.
+  const existing = await client.users.getUserList({ externalId: [externalId], limit: 2 });
+  if (existing.data.length > 0) {
+    const user = existing.data[0]!;
+    if (
+      existing.data.length !== 1 ||
+      user.externalId !== externalId ||
+      !user.emailAddresses.some(
+        (address) => address.emailAddress.trim().toLowerCase() === input.email,
+      )
+    ) {
+      throw new AppError('CONFLICT', 'The invited authentication identity requires review');
+    }
+    return { providerUserId: user.id, created: false };
+  }
+  const user = await client.users.createUser({
+    emailAddress: [input.email],
+    password: input.password,
+    firstName: input.invitedName,
+    externalId,
+  });
+  return { providerUserId: user.id, created: true };
+}
+
 export async function revokeClerkUserSessions(
   providerUserId: string,
 ): Promise<ClerkSessionRevocationResult> {

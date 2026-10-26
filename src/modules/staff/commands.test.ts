@@ -46,6 +46,8 @@ const authority = {
       stepUpLevel: 2,
       stepUpExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
       stepUpTenantId: tenantId,
+      stepUpAction: 'DEACTIVATE_STAFF_MEMBER',
+      strongAuthenticationMethod: 'clerk-mfa',
     },
   },
   membership: {
