@@ -131,6 +131,21 @@ describe('buildOperationsAlerts', () => {
     expect(alerts({ tanks: [tank({ reorderLevelLitres: '1000.000' })] })).toEqual([]);
   });
 
+  it('judges a tank with two limits: yellow to explain, red to act on', () => {
+    // Yellow above 20 L, red above 50 L (not the old fixed twice-the-yellow 40 L).
+    const judge = (variance: string) => classifyStockVariance(variance, '20', '50');
+    expect(judge('-20')).toBe('ok');
+    expect(judge('-45')).toBe('watch');
+    expect(judge('50')).toBe('watch');
+    expect(judge('-51')).toBe('alert');
+    // With no red limit it is still twice the yellow limit.
+    expect(classifyStockVariance('-45', '20')).toBe('alert');
+    expect(classifyStockVariance('-45', '20', null)).toBe('alert');
+    // No yellow limit, or no dip: not judged, never green.
+    expect(classifyStockVariance('-45', null, '50')).toBe('unjudged');
+    expect(classifyStockVariance(null, '20', '50')).toBe('unjudged');
+  });
+
   it('does not call an empty tank low before its opening stock has been entered', () => {
     const empty = { expectedLitres: '0.000', reorderLevelLitres: '1000.000' };
     expect(alerts({ tanks: [tank({ ...empty, openingStockRecorded: false })] })).toEqual([]);

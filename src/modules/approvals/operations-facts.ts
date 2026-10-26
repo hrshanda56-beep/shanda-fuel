@@ -100,6 +100,7 @@ export async function loadOperationsFacts(
       physical: string | null;
       variance: string | null;
       tolerance: string | null;
+      red: string | null;
       sold: string | null;
       reorder: string | null;
       opening_recorded: boolean;
@@ -109,6 +110,7 @@ export async function loadOperationsFacts(
         d.physical_litres::text as physical,
         (d.physical_litres - coalesce(at_dip.expected, 0))::text as variance,
         t.acceptable_variance_litres::text as tolerance,
+        t.variance_red_litres::text as red,
         sold.litres::text as sold,
         t.reorder_level_litres::text as reorder,
         exists (select 1 from app.inventory_movements o
@@ -155,6 +157,7 @@ export async function loadOperationsFacts(
       physicalLitres: row.physical,
       varianceAtDipLitres: row.variance,
       toleranceLitres: row.tolerance,
+      redLitres: row.red,
       soldSincePreviousDipLitres: row.sold,
       reorderLevelLitres: row.reorder,
       openingStockRecorded: row.opening_recorded,

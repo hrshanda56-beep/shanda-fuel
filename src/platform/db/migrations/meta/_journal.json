@@ -470,6 +470,13 @@
       "when": 1792600081000,
       "tag": "0081_expense_payment_method",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792600082000,
+      "tag": "0082_tank_variance_red",
+      "breakpoints": true
     }
   ]
 }

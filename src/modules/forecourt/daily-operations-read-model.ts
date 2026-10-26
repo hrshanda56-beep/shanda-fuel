@@ -54,6 +54,8 @@ export type RecordData = {
     productName: string;
     capacityLitres: string;
     toleranceLitres: string | null;
+    /** The red limit; empty means twice the yellow one. */
+    redLitres?: string | null;
     /** Dipstick readings in millimetres can be turned into litres. */
     hasMillimetreChart: boolean;
   }>;

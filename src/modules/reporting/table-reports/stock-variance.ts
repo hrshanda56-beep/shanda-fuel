@@ -23,7 +23,7 @@ export const STOCK_VARIANCE_REPORT: TableReportDefinition = {
     { key: 'physicalLitres', label: 'Measured (L)', kind: 'number' },
     { key: 'expectedLitres', label: 'Expected (L)', kind: 'number' },
     { key: 'varianceLitres', label: 'Short (−) / over (+) (L)', kind: 'number' },
-    { key: 'toleranceLitres', label: 'Allowed difference (L)', kind: 'number' },
+    { key: 'toleranceLitres', label: 'Yellow above (L)', kind: 'number' },
     { key: 'signal', label: 'Judgement', kind: 'text' },
     { key: 'dayApproved', label: 'Day approved', kind: 'text' },
   ],
@@ -45,6 +45,8 @@ export type StockVarianceFact = Readonly<{
   expected: string;
   variance: string;
   tolerance: string | null;
+  /** The red limit; empty means twice the allowed difference. */
+  red?: string | null;
   dayApproved: boolean;
 }>;
 
@@ -58,7 +60,7 @@ export function stockVarianceRow(fact: StockVarianceFact): TableReportRow {
     expectedLitres: fact.expected,
     varianceLitres: fact.variance,
     toleranceLitres: fact.tolerance,
-    signal: SIGNAL_LABELS[classifyStockVariance(fact.variance, fact.tolerance)],
+    signal: SIGNAL_LABELS[classifyStockVariance(fact.variance, fact.tolerance, fact.red ?? null)],
     dayApproved: fact.dayApproved ? 'Yes' : 'No',
   };
 }

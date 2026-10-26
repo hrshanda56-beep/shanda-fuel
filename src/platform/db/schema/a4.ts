@@ -32,7 +32,10 @@ export const tanks = appSchema.table(
     productId: uuid('product_id').notNull(),
     capacityLitres: litresColumn('capacity_litres').notNull(),
     reorderLevelLitres: litresColumn('reorder_level_litres'),
+    /** Yellow: a difference above this must be explained. */
     acceptableVarianceLitres: litresColumn('acceptable_variance_litres'),
+    /** Red: a difference above this is urgent. Empty means twice the yellow limit. */
+    varianceRedLitres: litresColumn('variance_red_litres'),
     status: text('status').notNull().default('ACTIVE'),
     createdBy: uuid('created_by').notNull(),
     updatedBy: uuid('updated_by').notNull(),

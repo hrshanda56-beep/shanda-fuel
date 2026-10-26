@@ -12,6 +12,7 @@ export type { InventoryMovementType, StockMovement } from './domain';
 export {
   createDeliveryFromRequest,
   createTankFromRequest,
+  setTankVarianceLimitsFromRequest,
   confirmDeliveryFromRequest,
   correctDeliverySupplierFromRequest,
   deactivateTankFromRequest,

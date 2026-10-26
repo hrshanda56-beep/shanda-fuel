@@ -430,6 +430,8 @@ function TankStep({ ctx }: { ctx: FormContext }) {
     const reorder = reorderText ? parsePositiveDecimal(reorderText, 3) : null;
     const differenceText = text(data, 'difference');
     const difference = differenceText ? parsePositiveDecimal(differenceText, 3) : null;
+    const redText = text(data, 'red');
+    const red = redText ? parsePositiveDecimal(redText, 3) : null;
     const next = {
       name: name ? undefined : 'Give the tank a name, for example Tank 1.',
       product: productId ? undefined : 'Choose the fuel in this tank.',
@@ -440,6 +442,14 @@ function TankStep({ ctx }: { ctx: FormContext }) {
         differenceText && !difference
           ? 'Enter a number of litres, or leave this empty.'
           : undefined,
+      red:
+        redText && !red
+          ? 'Enter a number of litres, or leave this empty.'
+          : red && !difference
+            ? 'Set the yellow limit first.'
+            : red && difference && Number(red) < Number(difference)
+              ? 'The red limit cannot be lower than the yellow one.'
+              : undefined,
     };
     setErrors(next);
     if (hasErrors(next) || !capacity) return;
@@ -457,6 +467,7 @@ function TankStep({ ctx }: { ctx: FormContext }) {
           capacityLitres: capacity,
           reorderLevelLitres: reorder,
           acceptableVarianceLitres: difference,
+          varianceRedLitres: red,
         },
         `${name} was added.`,
       );
@@ -498,12 +509,21 @@ function TankStep({ ctx }: { ctx: FormContext }) {
           </Field>
           <Field
             id="tank-difference"
-            label="Acceptable difference (litres)"
-            hint="How far the dip reading may be from the book stock before you are warned."
+            label="Yellow: explain above (litres)"
+            hint="How far the dip reading may be from the book stock before the difference must be explained."
             error={errors.difference}
             optional
           >
             <input id="tank-difference" name="difference" inputMode="decimal" autoComplete="off" />
+          </Field>
+          <Field
+            id="tank-red"
+            label="Red: urgent above (litres)"
+            hint="A difference above this is urgent. Leave it empty to use twice the yellow limit."
+            error={errors.red}
+            optional
+          >
+            <input id="tank-red" name="red" inputMode="decimal" autoComplete="off" />
           </Field>
           <Field
             id="tank-reorder"

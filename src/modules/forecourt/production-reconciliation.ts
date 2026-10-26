@@ -1427,6 +1427,7 @@ export async function getProductionReconciliationFromRequest(
       select t.id as "tankId", t.code, t.product_id as "productId", p.name as "productName",
         t.capacity_litres::text as "capacityLitres",
         t.acceptable_variance_litres::text as "toleranceLitres",
+        t.variance_red_litres::text as "redLitres",
         exists (select 1 from app.tank_calibration_points c
           where c.tenant_id = t.tenant_id and c.tank_id = t.id and c.measurement_unit = 'mm') as "hasMillimetreChart"
       from app.tanks t join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
