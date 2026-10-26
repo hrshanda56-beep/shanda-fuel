@@ -55,7 +55,7 @@ function useSettingsCommand(tenantId: string, onSaved: () => void) {
       return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'This could not be saved.';
-      if (!confirmed && /not authorized|step-up/i.test(message)) {
+      if (!confirmed && /step-up/i.test(message)) {
         setRetry(() => () => void send(body, true));
       } else {
         setError(message);

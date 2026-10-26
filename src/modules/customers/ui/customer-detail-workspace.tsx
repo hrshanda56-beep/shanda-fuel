@@ -453,11 +453,7 @@ export function CustomerDetailWorkspace({
         message: 'Saved. This customer’s fuel-buying settings are up to date.',
       });
     } catch (cause) {
-      if (
-        !alreadyConfirmed &&
-        cause instanceof Error &&
-        /not authorized|step-up/i.test(cause.message)
-      ) {
+      if (!alreadyConfirmed && cause instanceof Error && /step-up/i.test(cause.message)) {
         setScopeSave({ status: 'idle' });
         setScopeStepUp(true);
         return;

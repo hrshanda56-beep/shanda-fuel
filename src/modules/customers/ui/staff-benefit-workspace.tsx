@@ -80,7 +80,7 @@ export function StaffBenefitWorkspace({
           typeof result === 'object' && result !== null && 'message' in result
             ? String((result as { message: unknown }).message)
             : 'This could not be saved.';
-        if (!alreadyConfirmed && /not authorized|step-up/i.test(message)) {
+        if (!alreadyConfirmed && /step-up/i.test(message)) {
           setStepUp(true);
           return;
         }

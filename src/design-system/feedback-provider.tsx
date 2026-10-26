@@ -131,7 +131,9 @@ function RouteChangeWatcher({ onSettled }: { onSettled: () => void }) {
   return null;
 }
 
-function useBusyTracking(onSave: (outcome: SaveOutcome, path: string) => void) {
+function useBusyTracking(
+  onSave: (outcome: SaveOutcome, path: string, response?: Response) => void,
+) {
   const onSaveRef = useRef(onSave);
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -187,6 +189,7 @@ function useBusyTracking(onSave: (outcome: SaveOutcome, path: string) => void) {
           onSaveRef.current(
             response.ok ? 'saved' : response.status >= 500 ? 'failed' : 'rejected',
             savePath,
+            response,
           );
         }
         return response;
@@ -228,13 +231,38 @@ function useBusyTracking(onSave: (outcome: SaveOutcome, path: string) => void) {
   return { busy, slow, endNavigation };
 }
 
+/**
+ * The words to show for a refused or conflicting command, or null when the screen already
+ * handles it: a sign-in or step-up check has its own dialog, and other failures (such as a
+ * validation message under a field) belong to the form.
+ */
+export async function refusalMessage(response: Response): Promise<string | null> {
+  if (![403, 409, 422].includes(response.status)) return null;
+  try {
+    const body = (await response.clone().json()) as {
+      error?: string;
+      message?: string;
+      clerk_error?: unknown;
+    };
+    if (body.clerk_error || body.error === 'STEP_UP_REQUIRED') return null;
+    return typeof body.message === 'string' && body.message.trim() ? body.message.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const toastRef = useRef<(tone: ToastTone, message: string) => void>(() => {});
-  const { busy, slow, endNavigation } = useBusyTracking((outcome, path) => {
+  const { busy, slow, endNavigation } = useBusyTracking((outcome, path, response) => {
     if (outcome === 'saved' && !OWN_SUCCESS_MESSAGE_PATHS.includes(path)) {
       toastRef.current('success', 'Saved');
     } else if (outcome === 'failed') {
       toastRef.current('error', 'That did not go through. Check your connection and try again.');
+    } else if (outcome === 'rejected' && response) {
+      // A refusal or conflict is never silent: say what the server said, in its own words.
+      void refusalMessage(response).then((message) => {
+        if (message) toastRef.current('error', message);
+      });
     }
   });
   const [toasts, setToasts] = useState<Toast[]>([]);

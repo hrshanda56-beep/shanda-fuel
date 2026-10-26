@@ -156,7 +156,7 @@ export function AddCustomer({
       router.refresh();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'This could not be saved.';
-      if (!alreadyConfirmed && /not authorized|step-up/i.test(message)) {
+      if (!alreadyConfirmed && /step-up/i.test(message)) {
         setStepUpRetry(() => () => void run(true));
       } else if (created.current) {
         setError(

@@ -51,7 +51,11 @@ export function assertStepUp(
     // it is not tied to the screen that asked. A named action only has to have been asserted.
     ((requiredAction || session.strongAuthenticationMethod) && !session.stepUpAction)
   ) {
-    throw new AppError('FORBIDDEN', 'A current step-up authentication is required for this action');
+    throw new AppError(
+      'STEP_UP_REQUIRED',
+      'A current step-up authentication is required for this action',
+      { stepUpRequired: true },
+    );
   }
 }
 

@@ -297,10 +297,9 @@ export async function resolveCustomerCommandContext(input: {
 }
 
 /**
- * The customer screens open their identity-check dialog when an error message
- * matches /not authorized|step-up/. A missing permission must therefore never
- * say "not authorized" (a re-check cannot help), while a missing fresh check
- * must always say "step-up".
+ * The customer screens open their identity-check dialog when the error is STEP_UP_REQUIRED
+ * (or its message says "step-up"). A missing permission must therefore never say "not
+ * authorized" (a re-check cannot help), while a missing fresh check must always say "step-up".
  */
 export const CUSTOMER_PERMISSION_DENIED_MESSAGE =
   'You do not have permission to do this. Ask an owner or administrator if you need access.';
@@ -320,7 +319,9 @@ export function authorizeCustomerCommand(
     throw new AppError('FORBIDDEN', CUSTOMER_PERMISSION_DENIED_MESSAGE);
   }
   if (!isAuthorized(request)) {
-    throw new AppError('FORBIDDEN', CUSTOMER_STEP_UP_REQUIRED_MESSAGE);
+    throw new AppError('STEP_UP_REQUIRED', CUSTOMER_STEP_UP_REQUIRED_MESSAGE, {
+      stepUpRequired: true,
+    });
   }
 }
 
