@@ -60,6 +60,7 @@ export type StationSetupFacts = Readonly<{
   stationCode: string;
   stationName: string;
   legalEntityId: string;
+  legalEntityName?: string;
   /** ONBOARDING until the station is activated; absent means live. */
   stationStatus?: 'ACTIVE' | 'ONBOARDING';
   activeProducts: number;
@@ -141,6 +142,8 @@ export type SetupStationOption = Readonly<{
   code: string;
   name: string;
   legalEntityId: string;
+  /** The company the station belongs to; bank accounts belong to it, not to the station. */
+  legalEntityName?: string;
 }>;
 
 export type SetupCapabilities = Readonly<{

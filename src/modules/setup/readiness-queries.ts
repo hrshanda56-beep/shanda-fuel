@@ -35,6 +35,7 @@ type FactRow = {
   station_code: string;
   station_name: string;
   legal_entity_id: string;
+  legal_entity_name: string;
   station_status: string;
   active_products: number | string;
   priced_products: number | string;
@@ -67,6 +68,8 @@ export async function readStationSetupFacts(
       s.code as station_code,
       s.name as station_name,
       s.legal_entity_id,
+      (select le.legal_name from app.legal_entities le
+        where le.tenant_id = s.tenant_id and le.id = s.legal_entity_id) as legal_entity_name,
       s.status as station_status,
       (select count(*) from app.products p
         where p.tenant_id = s.tenant_id and p.status = 'ACTIVE') as active_products,
@@ -144,6 +147,7 @@ export async function readStationSetupFacts(
     stationCode: row.station_code,
     stationName: row.station_name,
     legalEntityId: row.legal_entity_id,
+    legalEntityName: row.legal_entity_name,
     stationStatus: row.station_status === 'ONBOARDING' ? 'ONBOARDING' : 'ACTIVE',
     activeProducts: count(row.active_products),
     pricedProducts: count(row.priced_products),
@@ -322,6 +326,7 @@ export async function resolveSetupOverview(
     code: station.stationCode,
     name: station.stationName,
     legalEntityId: station.legalEntityId,
+    ...(station.legalEntityName ? { legalEntityName: station.legalEntityName } : {}),
   }));
   return {
     status: 'ready',
