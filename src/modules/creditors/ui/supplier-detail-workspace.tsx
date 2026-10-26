@@ -26,6 +26,8 @@ import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { calculateDueDate } from '../credit-terms';
+import { previewLandedCost } from '../landed-cost-preview';
+import { DocumentAttachments } from '@/modules/documents/ui/document-attachments';
 import { initials, isOverdue, movementLabel, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
@@ -78,10 +80,23 @@ type LineForm = {
   description: string;
   quantity: string;
   unitPrice: string;
+  /** The confirmed delivery a fuel line is for; empty when it is not tied to one. */
+  deliveryId: string;
+};
+type InvoiceDelivery = {
+  id: string;
+  stationId: string;
+  productId: string;
+  deliveryNoteNumber: string;
+  businessDate: string;
+  receivedLitres: string;
+  noteLitres: string;
 };
 type InvoiceChoices = {
   products: { id: string; name: string }[];
   stations: { id: string; name: string }[];
+  /** Confirmed deliveries from this supplier that no posted invoice covers yet. */
+  deliveries?: InvoiceDelivery[];
 };
 
 const LINE_TYPE_LABELS: Record<LineType, string> = {
@@ -116,6 +131,7 @@ const EMPTY_LINE: LineForm = {
   description: '',
   quantity: '',
   unitPrice: '',
+  deliveryId: '',
 };
 const EMPTY_DOCUMENT_FORM: DocumentForm = {
   documentType: 'INVOICE',
@@ -217,9 +233,15 @@ export function SupplierDetailWorkspace({
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [openForm, setOpenForm] = useState<'document' | 'payment' | null>(null);
+  const [openForm, setOpenForm] = useState<'document' | 'document-file' | 'payment' | null>(null);
   const [limitText, setLimitText] = useState('');
-  const choices: InvoiceChoices = initial?.choices ?? { products: [], stations: [] };
+  const choices: InvoiceChoices = initial?.choices ?? {
+    products: [],
+    stations: [],
+    deliveries: [],
+  };
+  const [savedDocumentId, setSavedDocumentId] = useState<string | null>(null);
+  const [savedStationId, setSavedStationId] = useState('');
   const [returning, setReturning] = useState<PendingDocument | null>(null);
   const [returnReason, setReturnReason] = useState('');
   const [contactForm, setContactForm] = useState<{
@@ -388,6 +410,14 @@ export function SupplierDetailWorkspace({
       });
       const result: unknown = await response.json();
       if (!response.ok) throw new Error(getErrorMessage(result, 'The supplier command failed'));
+      if (
+        commandType === 'SubmitSupplierDocument' &&
+        typeof result === 'object' &&
+        result !== null &&
+        'documentId' in result
+      ) {
+        setSavedDocumentId(String((result as { documentId: unknown }).documentId));
+      }
       setActionSuccess(successMessage);
       await loadDetails(current);
       return true;
@@ -478,7 +508,36 @@ export function SupplierDetailWorkspace({
       );
       return;
     }
+    if (
+      choices.products.length > 0 &&
+      filledLines.some((line) => line.lineType === 'FUEL' && !line.productId)
+    ) {
+      setActionError('Choose the fuel type on every fuel line.');
+      return;
+    }
     const stationId = form.stationId ?? current?.stationId ?? '';
+    const deliveryRefs = [
+      ...new Set(
+        filledLines
+          .filter((line) => line.lineType === 'FUEL' && line.deliveryId)
+          .map((l) => l.deliveryId),
+      ),
+    ].map((deliveryId) => {
+      const delivery = (choices.deliveries ?? []).find((candidate) => candidate.id === deliveryId)!;
+      const own = filledLines.filter(
+        (line) => line.lineType === 'FUEL' && line.deliveryId === deliveryId,
+      );
+      return {
+        stationId: delivery.stationId,
+        deliveryId,
+        invoicedQuantityLitres: own
+          .reduce((sum, line) => sum.add(line.quantity.trim()), new Decimal(0))
+          .toFixed(3),
+        invoicedAmount: own
+          .reduce((sum, line) => sum.add(lineTotal(line) ?? 0), new Decimal(0))
+          .toFixed(4),
+      };
+    });
     const submitted = await submitCommand(
       'SubmitSupplierDocument',
       {
@@ -486,10 +545,12 @@ export function SupplierDetailWorkspace({
         lines: filledLines.map((line) => ({
           lineType: line.lineType,
           ...(line.lineType === 'FUEL' && line.productId ? { productId: line.productId } : {}),
+          ...(line.lineType === 'FUEL' && line.deliveryId ? { deliveryId: line.deliveryId } : {}),
           description: line.description.trim(),
           quantity: line.quantity.trim(),
           unitPrice: line.unitPrice.trim(),
         })),
+        ...(deliveryRefs.length > 0 ? { deliveryReferences: deliveryRefs } : {}),
         documentType: form.documentType,
         referenceNumber: form.referenceNumber.trim(),
         documentDate: form.documentDate,
@@ -509,8 +570,10 @@ export function SupplierDetailWorkspace({
       'Supplier document submitted for posting review.',
     );
     if (submitted) {
+      setSavedStationId(stationId);
       setDocumentForm(EMPTY_DOCUMENT_FORM);
-      setOpenForm(null);
+      // Stay on the form's last step so the supplier's paper or PDF can be attached.
+      setOpenForm('document-file');
     }
   }
 
@@ -1142,7 +1205,7 @@ export function SupplierDetailWorkspace({
                       </select>
                     </Field>
                     {line.lineType === 'FUEL' && choices.products.length > 0 ? (
-                      <Field id={`document-line-${index}-product`} label="Fuel type" optional>
+                      <Field id={`document-line-${index}-product`} label="Fuel type" required>
                         <select
                           id={`document-line-${index}-product`}
                           value={line.productId}
@@ -1150,12 +1213,44 @@ export function SupplierDetailWorkspace({
                             setDocumentLine(index, { productId: event.target.value })
                           }
                         >
-                          <option value="">Not said</option>
+                          <option value="">Choose the fuel</option>
                           {choices.products.map((product) => (
                             <option key={product.id} value={product.id}>
                               {product.name}
                             </option>
                           ))}
+                        </select>
+                      </Field>
+                    ) : null}
+                    {line.lineType === 'FUEL' && (choices.deliveries ?? []).length > 0 ? (
+                      <Field
+                        id={`document-line-${index}-delivery`}
+                        label="Delivery"
+                        hint="Optional. Tie the fuel to the delivery it was for, so its litres received set the cost per litre."
+                        optional
+                      >
+                        <select
+                          id={`document-line-${index}-delivery`}
+                          value={line.deliveryId}
+                          onChange={(event) =>
+                            setDocumentLine(index, { deliveryId: event.target.value })
+                          }
+                        >
+                          <option value="">Not tied to a delivery</option>
+                          {(choices.deliveries ?? [])
+                            .filter(
+                              (delivery) =>
+                                (!line.productId || delivery.productId === line.productId) &&
+                                (!(documentForm.stationId ?? current?.stationId) ||
+                                  delivery.stationId ===
+                                    (documentForm.stationId ?? current?.stationId)),
+                            )
+                            .map((delivery) => (
+                              <option key={delivery.id} value={delivery.id}>
+                                {delivery.deliveryNoteNumber} · {delivery.businessDate} ·{' '}
+                                {delivery.receivedLitres} L received
+                              </option>
+                            ))}
                         </select>
                       </Field>
                     ) : null}
@@ -1215,6 +1310,21 @@ export function SupplierDetailWorkspace({
                   Add line
                 </Button>
                 <p className="muted-small">Lines add up to {linesSubtotal(documentForm.lines)}.</p>
+                {previewLandedCost(
+                  documentForm.lines,
+                  (choices.deliveries ?? []).map((delivery) => ({
+                    id: delivery.id,
+                    deliveryNoteNumber: delivery.deliveryNoteNumber,
+                    receivedLitres: delivery.receivedLitres,
+                  })),
+                ).map((cost) => (
+                  <p key={cost.deliveryId} className="muted-small" role="status">
+                    Landed cost for delivery {cost.deliveryNoteNumber}: ({cost.purchaseCost} fuel +{' '}
+                    {cost.directCosts} transport and other costs) ÷ {cost.receivedLitres} L actually
+                    received = <strong>{cost.perLitre} a litre</strong>. After posting, record it on
+                    the delivery with Record receipt cost so stock and cost of sales use it.
+                  </p>
+                ))}
               </fieldset>
               <Field
                 id="document-amount"
@@ -1232,6 +1342,43 @@ export function SupplierDetailWorkspace({
                 />
               </Field>
             </form>
+          </Modal>
+
+          <Modal
+            open={openForm === 'document-file'}
+            onClose={() => {
+              setOpenForm(null);
+              setSavedDocumentId(null);
+            }}
+            title="Add the supplier's invoice"
+            description="The invoice is saved and waiting to be posted. Add the supplier's paper or PDF so it can be checked."
+            footer={
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setOpenForm(null);
+                  setSavedDocumentId(null);
+                }}
+              >
+                Done
+              </Button>
+            }
+          >
+            {current?.stationId && savedDocumentId ? (
+              <DocumentAttachments
+                tenantId={current.organisationId}
+                stationId={savedStationId || current.stationId}
+                subjectType="SUPPLIER_DOCUMENT"
+                subjectId={savedDocumentId}
+                defaultKind="INVOICE"
+                title="Supplier invoice file"
+              />
+            ) : (
+              <p className="muted-small">
+                Choose a station at the top of the page to attach the supplier&apos;s file to this
+                invoice.
+              </p>
+            )}
           </Modal>
 
           <Modal
