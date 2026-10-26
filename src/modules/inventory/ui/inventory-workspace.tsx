@@ -145,7 +145,7 @@ export function InventoryOperationalActions({
         <ActionDisclosure title="Post stock adjustment">
           <AdjustmentForm context={context} tankId={tankId} onRefresh={onRefresh} />
         </ActionDisclosure>
-        <ActionDisclosure title="Record opening inventory">
+        <ActionDisclosure title="Record opening stock">
           <OpeningInventoryForm context={context} tankId={tankId} onRefresh={onRefresh} />
         </ActionDisclosure>
         <ActionDisclosure title="Record delivery receipt">
@@ -506,122 +506,103 @@ function OpeningInventoryForm({
 }: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
   const quantityKey = useRef<string | null>(null);
   const costKey = useRef<string | null>(null);
+  const quantityDone = useRef(false);
   const [quantityLitres, setQuantityLitres] = useState('');
+  const [unitCost, setUnitCost] = useState('');
   const [effectiveAt, setEffectiveAt] = useState('');
-  const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('USD');
   const [error, setError] = useState<CommandFailure | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [saving, setSaving] = useState<'quantity' | 'cost' | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  async function submitQuantity(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaving('quantity');
+    setSaving(true);
     setError(null);
     setSuccess(null);
-    quantityKey.current ??= crypto.randomUUID();
     try {
+      if (!quantityDone.current) {
+        quantityKey.current ??= crypto.randomUUID();
+        await postInventoryCommand(
+          context,
+          {
+            commandType: 'RecordOpeningBalance',
+            tankId,
+            quantityLitres,
+            effectiveAt: isoFromLocal(effectiveAt),
+          },
+          quantityKey.current,
+        );
+        quantityDone.current = true;
+      }
+      costKey.current ??= crypto.randomUUID();
       await postInventoryCommand(
         context,
         {
-          commandType: 'RecordOpeningBalance',
+          commandType: 'RecordOpeningInventoryCost',
           tankId,
-          quantityLitres,
-          effectiveAt: isoFromLocal(effectiveAt),
+          unitCost: unitCost.trim(),
+          currency: 'USD',
         },
-        quantityKey.current,
+        costKey.current,
+      );
+      setSuccess(
+        'The opening stock and its cost were recorded. Book stock, average cost and stock value now start from them.',
       );
       quantityKey.current = null;
-      setSuccess('The opening quantity was posted. Add its authoritative cost below when known.');
+      costKey.current = null;
+      quantityDone.current = false;
       setQuantityLitres('');
+      setUnitCost('');
       setEffectiveAt('');
       onRefresh();
     } catch (caught) {
       setError(caught as CommandFailure);
     } finally {
-      setSaving(null);
-    }
-  }
-
-  async function submitCost(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving('cost');
-    setError(null);
-    setSuccess(null);
-    costKey.current ??= crypto.randomUUID();
-    try {
-      await postInventoryCommand(
-        context,
-        { commandType: 'RecordOpeningInventoryCost', tankId, amount, currency: currency.trim() },
-        costKey.current,
-      );
-      costKey.current = null;
-      setSuccess('The opening inventory cost was recorded in the costing ledger.');
-      setAmount('');
-      onRefresh();
-    } catch (caught) {
-      setError(caught as CommandFailure);
-    } finally {
-      setSaving(null);
+      setSaving(false);
     }
   }
 
   return (
-    <div className="dialog-form">
+    <form className="dialog-form" onSubmit={submit}>
       <p className="muted-small">
-        Opening quantity and opening cost are separate authoritative commands. Do not enter an
-        unknown cost as zero.
+        Enter what is in this tank when you go live, from the opening dip, and what each litre cost.
+        Book stock, the average cost and the stock value all start from these two figures. Do not
+        enter an unknown cost as zero.
       </p>
-      <form onSubmit={submitQuantity}>
-        <Field id="opening-litres" label="Opening quantity litres" required>
-          <input
-            id="opening-litres"
-            value={quantityLitres}
-            onChange={(event) => setQuantityLitres(event.target.value)}
-            inputMode="decimal"
-            required
-            placeholder="0.000"
-          />
-        </Field>
-        <Field id="opening-effective-at" label="Effective at" required>
-          <input
-            id="opening-effective-at"
-            type="datetime-local"
-            value={effectiveAt}
-            onChange={(event) => setEffectiveAt(event.target.value)}
-            required
-          />
-        </Field>
-        <Button type="submit" loading={saving === 'quantity'}>
-          Post opening quantity
-        </Button>
-      </form>
-      <form onSubmit={submitCost}>
-        <Field id="opening-cost" label="Authoritative inventory value" required>
-          <input
-            id="opening-cost"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            inputMode="decimal"
-            required
-            placeholder="0.0000"
-          />
-        </Field>
-        <Field id="opening-currency" label="Currency" required>
-          <input
-            id="opening-currency"
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-            maxLength={3}
-            required
-          />
-        </Field>
-        <Button type="submit" loading={saving === 'cost'}>
-          Record opening cost
-        </Button>
-      </form>
+      <Field id="opening-litres" label="Opening dip (litres)" required>
+        <input
+          id="opening-litres"
+          value={quantityLitres}
+          onChange={(event) => setQuantityLitres(event.target.value)}
+          inputMode="decimal"
+          required
+          placeholder="0.000"
+        />
+      </Field>
+      <Field id="opening-unit-cost" label="Opening cost per litre (USD)" required>
+        <input
+          id="opening-unit-cost"
+          value={unitCost}
+          onChange={(event) => setUnitCost(event.target.value)}
+          inputMode="decimal"
+          required
+          placeholder="1.760"
+        />
+      </Field>
+      <Field id="opening-effective-at" label="As at" required>
+        <input
+          id="opening-effective-at"
+          type="datetime-local"
+          value={effectiveAt}
+          onChange={(event) => setEffectiveAt(event.target.value)}
+          required
+        />
+      </Field>
       <CommandFeedback error={error} success={success} />
-    </div>
+      <Button type="submit" loading={saving}>
+        Record opening stock
+      </Button>
+    </form>
   );
 }
 

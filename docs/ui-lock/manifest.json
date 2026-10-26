@@ -238,7 +238,7 @@
     "src/modules/forecourt/ui/reconciliation-board.tsx": "1a1b7c3194e89d4886b9685ec3ed39febcc855e0dfeb56b16953494cd4cea563",
     "src/modules/forecourt/ui/reconciliation-statement.ts": "358aad323a8b5d0942673e2b1674f646fb33cb5ee938f1d987f06a6f6114ad30",
     "src/modules/forecourt/ui/shift-message-check.tsx": "45839c210f01feaff8a88ba4f2bd44852cf06e772e2476660c40ba4d8a9a98f7",
-    "src/modules/inventory/ui/inventory-workspace.tsx": "444c6d2acbbc4d9756bc3b042005928059f02268d3e0cc01d95a1091771e8c83",
+    "src/modules/inventory/ui/inventory-workspace.tsx": "f5a5a50caf491d0fd3cbfb18b4adcf7b392bf6493063097d06052a94cb314ad4",
     "src/modules/inventory/ui/tank-drum.tsx": "7954348e49d8472fdde747a8af52e60e1ae62084869d42073d6009828eebc504",
     "src/modules/inventory/ui/tank-overview-model.ts": "40246680c9ffe2543bb87ce8e83c1ea21a9e66cacbe8f173dbda996c1d2001af",
     "src/modules/inventory/ui/tank-overview.tsx": "0bbaa7320b2e81eee30fffc0c2e62626ed75b37262896f381b3fe6688bcca520",

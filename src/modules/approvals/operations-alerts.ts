@@ -96,6 +96,8 @@ export type TankAlertFacts = Readonly<{
   /** Litres sold since the previous dip (up to the latest); the base for the starting tolerance. */
   soldSincePreviousDipLitres?: string | null;
   reorderLevelLitres: string | null;
+  /** False until the tank's opening stock has been entered; its empty books are not a low tank. */
+  openingStockRecorded?: boolean;
 }>;
 
 export type OperationsFacts = Readonly<{
@@ -218,7 +220,10 @@ export function buildOperationsAlerts(
         tone: signal === 'alert' ? 'attention' : 'info',
       });
     }
+    const noOpeningYet =
+      tank.openingStockRecorded === false && !new ExactDecimal(tank.expectedLitres).value.gt(0);
     if (
+      !noOpeningYet &&
       tank.reorderLevelLitres !== null &&
       new ExactDecimal(tank.expectedLitres).value.lte(
         new ExactDecimal(tank.reorderLevelLitres).value,
