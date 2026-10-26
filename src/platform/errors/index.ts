@@ -37,3 +37,13 @@ export class AppError extends Error {
     this.details = details;
   }
 }
+
+/**
+ * True for a refusal that a read or an availability check treats as "not for you": a missing
+ * permission, or a high-risk action that is allowed but needs an identity check first.
+ */
+export function isAccessRefusal(error: unknown): error is AppError {
+  return (
+    error instanceof AppError && (error.code === 'FORBIDDEN' || error.code === 'STEP_UP_REQUIRED')
+  );
+}

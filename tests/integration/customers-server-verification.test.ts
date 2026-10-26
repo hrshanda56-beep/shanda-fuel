@@ -99,6 +99,7 @@ const STABLE_CODES = [
   'VALIDATION_FAILED',
   'UNAUTHENTICATED',
   'FORBIDDEN',
+  'STEP_UP_REQUIRED',
   'NOT_FOUND',
   'CONFLICT',
   'INVARIANT_VIOLATION',
@@ -312,9 +313,9 @@ describe('Customers server-side verification (real PostgreSQL, real route handle
 
     // 1. Signed in strongly but without a fresh step-up: rejected, nothing changes.
     const denied = await send(scopeChange, 'key-scope-save', tokens.noStepUp);
-    expectPlainFailure(denied, 403, 'FORBIDDEN', /step-up/i);
-    // The UI opens its identity-check dialog by matching this text.
-    expect(denied.body.message).toMatch(/not authorized|step-up/i);
+    expectPlainFailure(denied, 403, 'STEP_UP_REQUIRED', /step-up/i);
+    // The UI opens its identity-check dialog for this code (and this wording).
+    expect(denied.body.message).toMatch(/step-up/i);
     const untouched = await client.unsafe<{ version: number; station_scope_configured: boolean }[]>(
       `select version, station_scope_configured from app.customer_accounts where id='${accountId}'`,
     );
@@ -378,9 +379,9 @@ describe('Customers server-side verification (real PostgreSQL, real route handle
       'key-stale-mfa',
       tokens.staleMfa,
     );
-    expectPlainFailure(result, 403, 'FORBIDDEN');
-    // The customer screens only offer the identity check for /not authorized|step-up/.
-    expect(result.body.message).toMatch(/not authorized|step-up/i);
+    expectPlainFailure(result, 403, 'STEP_UP_REQUIRED');
+    // The customer screens offer the identity check for this code.
+    expect(result.body.message).toMatch(/step-up/i);
   });
 
   it('records customer payments and prepaid top-ups with exact decimals and audit rows', async () => {
@@ -974,7 +975,7 @@ describe('Customers server-side verification (real PostgreSQL, real route handle
         'key-err-no-step-up',
         tokens.staleMfa,
       );
-      expectPlainFailure(noStepUp, 403, 'FORBIDDEN', /step-up/i);
+      expectPlainFailure(noStepUp, 403, 'STEP_UP_REQUIRED', /step-up/i);
     });
 
     it('explains validation problems field by field without library jargon', async () => {

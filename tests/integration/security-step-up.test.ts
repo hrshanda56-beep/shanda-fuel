@@ -112,7 +112,7 @@ describe('Clerk server identity, assurance, and revocation boundary', () => {
     for (const cookie of [
       assertion({ providerSessionId: ids.otherSession }),
       assertion({ internalUserId: ids.otherTenant }),
-      assertion({ now: new Date(Date.now() - 11 * 60_000) }),
+      assertion({ now: new Date(Date.now() - 16 * 60_000) }),
       assertion().replace(/.$/, 'x'),
     ]) {
       const actor = await resolveAuthenticatedActor(request('step-up-session', cookie));

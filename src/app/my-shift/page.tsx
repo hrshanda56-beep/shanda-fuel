@@ -11,7 +11,7 @@ import {
 import { AccessDeniedState, ErrorState } from '@/design-system/primitives';
 import { resolveCurrentContext } from '@/modules/context/server';
 import { MyShiftWorkspace } from '@/modules/forecourt/ui/my-shift-workspace';
-import { AppError } from '@/platform/errors';
+import { AppError, isAccessRefusal } from '@/platform/errors';
 
 export const metadata = { title: 'My Shift' };
 export const dynamic = 'force-dynamic';
@@ -65,7 +65,7 @@ export default async function MyShiftPage({
 
   return (
     <AppShell attendantHome>
-      {failure instanceof AppError && failure.code === 'FORBIDDEN' ? (
+      {isAccessRefusal(failure) ? (
         <AccessDeniedState />
       ) : failure ? (
         <AccessDeniedState message="Your station could not be loaded. Try again, or tell your supervisor." />
@@ -96,10 +96,7 @@ async function ShiftContent({
   try {
     initialData = await getMyShiftFromRequest(request, { tenantId, stationId });
   } catch (error) {
-    if (
-      error instanceof AppError &&
-      (error.code === 'FORBIDDEN' || error.code === 'UNAUTHENTICATED')
-    )
+    if (isAccessRefusal(error) || (error instanceof AppError && error.code === 'UNAUTHENTICATED'))
       return <AccessDeniedState />;
     return (
       <ErrorState title="Your shift could not be loaded" message="Reload the page to try again." />

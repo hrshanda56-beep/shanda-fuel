@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { AccessDeniedState } from '@/design-system/primitives';
 import { PageContainer } from '@/design-system/layout';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
-import { AppError } from '@/platform/errors';
+import { AppError, isAccessRefusal } from '@/platform/errors';
 import { resolveSettings } from '@/modules/settings';
 import type { SettingsView } from '@/modules/settings';
 import { SettingsWorkspace } from '@/modules/settings/ui/settings-workspace';
@@ -49,7 +49,7 @@ export default async function SettingsPage({
   if (failure instanceof AppError && failure.code === 'UNAUTHENTICATED') {
     redirect('/login');
   }
-  if (failure instanceof AppError && failure.code === 'FORBIDDEN') {
+  if (isAccessRefusal(failure)) {
     return (
       <AppShell pageSubtitle="Review the organisation, legal entities, stations, and account available to you.">
         <PageContainer width="narrow">

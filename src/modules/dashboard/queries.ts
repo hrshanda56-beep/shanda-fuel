@@ -10,13 +10,13 @@ import { getCustomerAccountsFromRequest } from '../customers/queries';
 import { getOperationsOverviewFromRequest } from '../forecourt/operations-overview';
 import { withRequestAuthority } from '../tenancy/request-authority';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
-import { AppError } from '../../platform/errors';
+import { AppError, isAccessRefusal } from '../../platform/errors';
 
 async function section<T>(work: () => Promise<T>) {
   try {
     return { status: 'ready' as const, data: await work() };
   } catch (error) {
-    return error instanceof AppError && error.code === 'FORBIDDEN'
+    return isAccessRefusal(error)
       ? { status: 'forbidden' as const }
       : { status: 'error' as const, message: 'This dashboard section could not be loaded.' };
   }
