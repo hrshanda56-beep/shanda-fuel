@@ -418,8 +418,9 @@ describe('customer account controls (S13)', () => {
     // 350.2500 charged, 30.0000 paid; the payments clear the oldest (June) charge first.
     expect(mine).toMatchObject({
       over90: '270.2500',
-      current: '0.0000',
-      days1to30: '50.0000',
+      // The account names no credit days, so the default 30 applies: a 3-day-old charge is current.
+      current: '50.0000',
+      days1to30: '0.0000',
       totalOwed: '320.2500',
       oldestUnpaid: '2026-06-01',
     });

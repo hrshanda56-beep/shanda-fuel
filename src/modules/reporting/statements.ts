@@ -458,6 +458,15 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
     { label: 'Expenses not yet paid', value: extra?.unpaidExpenses ?? null },
     { label: 'Prepaid customer balances', value: customers.prepaidValueBalance },
     {
+      label: 'Fuel received, not yet invoiced',
+      value: extra?.receivedNotInvoiced?.value ?? null,
+      note: !extra?.receivedNotInvoiced
+        ? 'Not available.'
+        : extra.receivedNotInvoiced.value === null
+          ? `${extra.receivedNotInvoiced.unpricedLitres} litres were received with no cost recorded yet.`
+          : undefined,
+    },
+    {
       label: 'Transporters and other creditors',
       value: null,
       note: 'A transporter set up as a supplier is already counted under suppliers. Other creditors are not recorded, so are not in the total.',
@@ -500,7 +509,7 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
         bank?.amount != null
           ? 'Money in the bank is the balance typed in from the bank statement.'
           : 'Cash banked is the deposits recorded in the chosen dates; it is not a bank statement balance.',
-        'Stock and unpaid expenses are shown as they stand now.',
+        'Stock, unpaid expenses and fuel received but not yet invoiced are shown as they stand now.',
         ...(customersKnown
           ? []
           : [

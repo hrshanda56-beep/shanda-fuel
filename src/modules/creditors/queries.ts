@@ -23,6 +23,10 @@ type SummaryRow = {
   overdue_15_30: string;
   overdue_over_30: string;
   credit_limit: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  default_credit_days: number | string | null;
   version: number | string;
 };
 type StatementRow = {
@@ -81,7 +85,9 @@ export async function getSupplierSummaryFromRequest(
         ) a on a.document_id = d.id
         where d.tenant_id = ${context.tenantId}
           and d.legal_entity_id = ${context.legalEntityId}
-          and d.state <> 'REVERSED'
+          -- Same basis as the account movements behind the total: a document owes nothing
+          -- until it is posted, so submitted ones are listed apart as waiting to be posted.
+          and d.state in ('POSTED', 'PARTIALLY_PAID', 'PAID')
       ), document_totals as (
         select supplier_id,
           coalesce(sum(case when due_date is null or due_date >= ${asOf}
@@ -120,6 +126,7 @@ export async function getSupplierSummaryFromRequest(
         coalesce(d.overdue_over_30, '0') as overdue_over_30,
         coalesce(m.total, '0') as total,
         s.credit_limit::text as credit_limit,
+        s.contact_name, s.contact_phone, s.contact_email, s.default_credit_days,
         s.version
       from app.suppliers s
       left join document_totals d on d.supplier_id = s.id
@@ -148,6 +155,10 @@ export async function getSupplierSummaryFromRequest(
       asOf,
       version: Number(row.version),
       creditLimit: creditLimitPosition(row.total, row.credit_limit),
+      contactName: row.contact_name,
+      contactPhone: row.contact_phone,
+      contactEmail: row.contact_email,
+      defaultCreditDays: row.default_credit_days === null ? null : Number(row.default_credit_days),
     }));
   });
 }
@@ -201,5 +212,89 @@ export async function getSupplierStatementFromRequest(
         needsProof: proofCount === null ? false : paymentNeedsProofFlag(row.amount, proofCount),
       };
     });
+  });
+}
+
+/** Invoices and credit notes that were entered but not posted, so nothing owes them yet. */
+export async function getSupplierDocumentsAwaitingPostingFromRequest(
+  request: Request,
+  input: { tenantId: string; legalEntityId: string; supplierId: string },
+  authenticatedActor?: AuthenticatedActorContext,
+) {
+  const context = await resolveSupplierReadContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+    authenticatedActor,
+  });
+  authorize({
+    actor: context.authority.authorization,
+    permissionCode: 'supplier.view',
+    requestedScope: context.scope,
+  });
+  return withTenantTransaction(context.authority.transaction, async (transaction) => {
+    const rows = await transaction.execute<{
+      id: string;
+      document_type: string;
+      reference_number: string;
+      document_date: string;
+      due_date: string | null;
+      amount: string;
+      version: number | string;
+    }>(sql`
+      select id, document_type, reference_number, document_date::text, due_date::text,
+        amount::text, version
+      from app.supplier_documents
+      where tenant_id = ${context.tenantId}
+        and legal_entity_id = ${context.legalEntityId}
+        and supplier_id = ${input.supplierId}
+        and state = 'SUBMITTED'
+      order by document_date, created_at, id
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      documentType: row.document_type,
+      referenceNumber: row.reference_number,
+      documentDate: row.document_date,
+      dueDate: row.due_date,
+      amount: row.amount,
+      currency: 'USD' as const,
+      version: Number(row.version),
+    }));
+  });
+}
+
+/** The choices on the invoice form: the fuels the company sells and the stations of the company. */
+export async function getSupplierInvoiceChoicesFromRequest(
+  request: Request,
+  input: { tenantId: string; legalEntityId: string },
+  authenticatedActor?: AuthenticatedActorContext,
+) {
+  const context = await resolveSupplierReadContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+    authenticatedActor,
+  });
+  authorize({
+    actor: context.authority.authorization,
+    permissionCode: 'supplier.view',
+    requestedScope: context.scope,
+  });
+  return withTenantTransaction(context.authority.transaction, async (transaction) => {
+    const products = await transaction.execute<{ id: string; name: string }>(sql`
+      select id, name from app.products
+      where tenant_id = ${context.tenantId} and status = 'ACTIVE'
+      order by name
+    `);
+    const stations = await transaction.execute<{ id: string; name: string }>(sql`
+      select id, name from app.stations
+      where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
+      order by name
+    `);
+    return {
+      products: products.map((row) => ({ id: row.id, name: row.name })),
+      stations: stations.map((row) => ({ id: row.id, name: row.name })),
+    };
   });
 }

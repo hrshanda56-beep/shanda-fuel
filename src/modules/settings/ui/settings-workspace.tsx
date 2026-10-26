@@ -14,6 +14,7 @@ import { GuidedSetupPanel } from '../../setup/ui/guided-setup-panel';
 import { AlertSettingsPanel } from '../../setup/ui/alert-settings-panel';
 import { PaymentsPanel } from '../../setup/ui/payments-panel';
 import { ReadinessPanel } from '../../setup/ui/readiness-panel';
+import { AddCompany, AddStation, EditCompany, EditStation } from './structure-forms';
 import styles from './settings-workspace.module.css';
 
 type Tab =
@@ -181,10 +182,21 @@ export function SettingsSectionMenu({
   );
 }
 
-export function SettingsStations({ context }: { context: SettingsView['context'] }) {
+export function SettingsStations({
+  context,
+  tenantId,
+  canManage = false,
+}: {
+  context: SettingsView['context'];
+  tenantId?: string;
+  canManage?: boolean;
+}) {
   const stations = context.selectedStation ? [context.selectedStation] : (context.stations ?? []);
   return (
     <Section headingId="stations" title={context.selectedStation ? 'Station details' : 'Stations'}>
+      {canManage && tenantId ? (
+        <AddStation tenantId={tenantId} companies={context.legalEntities} />
+      ) : null}
       {stations.length ? (
         stations.map((station) => (
           <section key={station.id}>
@@ -195,6 +207,7 @@ export function SettingsStations({ context }: { context: SettingsView['context']
                 { label: 'Time zone', value: station.timezone },
               ]}
             />
+            {canManage && tenantId ? <EditStation tenantId={tenantId} station={station} /> : null}
           </section>
         ))
       ) : (
@@ -246,7 +259,21 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
     <PageContainer width="wide" className={`settings-page ${styles.page}`}>
       <div className={styles.layout}>
         <SettingsSectionMenu items={visibleTabs} active={active} onSelect={setTab} />
-        <nav className={styles.subnav} aria-label="Settings sections">
+        <nav
+          className={styles.subnav}
+          aria-label="Settings sections"
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+            const buttons = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>('button'),
+            );
+            const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            if (at < 0) return;
+            event.preventDefault();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            buttons[(at + step + buttons.length) % buttons.length]?.focus();
+          }}
+        >
           {visibleTabs.map((item) => (
             <button
               key={item.value}
@@ -264,7 +291,9 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
         <div className={styles.content}>
           <header className={styles.contentHeader}>
             <h2 className={styles.contentTitle}>{active.label}</h2>
-            {['organisation', 'companies', 'stations'].includes(tab) ? (
+            {tab === 'organisation' ||
+            (tab === 'companies' && !view.access?.canManageCompanies) ||
+            (tab === 'stations' && !view.access?.canManageStations) ? (
               <p className={styles.note}>These details are read-only on this screen.</p>
             ) : null}
           </header>
@@ -277,11 +306,19 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
 
           {tab === 'companies' ? (
             <Section headingId="companies" title="Companies">
+              {view.access?.canManageCompanies ? <AddCompany tenantId={organisation.id} /> : null}
               {legalEntities.length > 0 ? (
                 <Fields
                   items={legalEntities.map((legalEntity, index) => ({
                     label: legalEntities.length > 1 ? `Company ${index + 1}` : 'Company',
-                    value: legalEntity.name,
+                    value: view.access?.canManageCompanies ? (
+                      <>
+                        {legalEntity.name}{' '}
+                        <EditCompany tenantId={organisation.id} company={legalEntity} />
+                      </>
+                    ) : (
+                      legalEntity.name
+                    ),
                   }))}
                 />
               ) : (
@@ -290,7 +327,13 @@ export function SettingsWorkspace({ view }: { view: SettingsView }) {
             </Section>
           ) : null}
 
-          {tab === 'stations' ? <SettingsStations context={view.context} /> : null}
+          {tab === 'stations' ? (
+            <SettingsStations
+              context={view.context}
+              tenantId={organisation.id}
+              canManage={Boolean(view.access?.canManageStations)}
+            />
+          ) : null}
 
           {tab === 'setup' && view.access?.canViewReadiness ? <GuidedSetupPanel /> : null}
 

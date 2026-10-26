@@ -1,5 +1,89 @@
 # Shanda Fuel — Current Status
 
+## Merge into main — 2026-10-26
+
+The audit-fixes and selling-unblock work was merged with `main` after main moved on (alert email, bank balance statements, global feedback, branded email, audit gaps). Two things changed at the merge:
+
+- **Migrations renumbered.** Main already held `0071_alert_email` and `0072_bank_balance_statements`, so this work's migrations are now `0073_supplier_contact_and_terms`, `0074_customer_credit_days`, `0075_supplier_document_returned`, `0076_supplier_invoice_station_and_line_type` and `0077_expense_payment_mobile_money`. Older sections below use the numbers from before the merge (0071 supplier contact, 0073 credit days, 0074 return, 0075 station and line type, 0076 mobile money). None of these has been applied to production.
+- **One bank balance feature, not two.** Audit-fixes had its own `bank_account_balances` table; main's `bank_balance_statements` (Settings > Payments) is kept and the duplicate was removed. The financial position keeps main's behaviour (bank statement balance when every account has one, otherwise recorded deposits) and still adds the "Fuel received, not yet invoiced" line.
+
+## Getting to the first sale — 2026-10-26 (branch `codex/v1-selling-unblock-20261026`, from `codex/v1-audit-fixes-20261025`, uncommitted)
+
+Response to the audit retest blockers that stopped any station from selling. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions: DECISIONS.md, "Getting a station to its first sale" (PROPOSED).
+
+Changed:
+
+- **Prices can be approved and put to use (setup > Selling prices).** Each price shows its real state (a draft no longer reads "waiting for approval") and one button takes it as far as the person's rights allow: send for approval, approve, then start using. Prices show two decimals. The first price for a fuel goes live without meter readings; later changes still need them. A requester can approve only when nobody else could.
+- **First shift.** The operations control room offers "Open shift" with the station's shift templates when the day has no shift, or points to Settings when none exists.
+- **Supplier invoices can be posted.** The supplier page lists entered-but-unposted documents as "Waiting to be posted" with a Post button. "Not yet due", overdue and ageing now use posted documents, matching "Owed in total".
+- **Supplier invoice records the station and what each line is for (migration 0075).** The invoice form has an optional Station (defaults to the current station) and each line has a type (Fuel, Transport, Other direct cost) and, for fuel, an optional fuel type. Nothing is required, so existing invoices and callers are unaffected. Landed cost does not use these yet; the delivery link and file upload are still to do. Migration 0075 has only been applied to the local test database; no browser check was run.
+- **Supplier invoices can be returned before posting (migration 0074).** A submitted invoice or credit note on the posting queue has a Return button (needs `supplier.document.post`, a reason is mandatory). It becomes RETURNED (final, kept in history, never counted as owed) and its reference number can be entered again. Not run: a browser check. Migration 0074 has not been applied anywhere except the local test database.
+- **Approvals inbox (Finance) lists more work.** Pending price changes, submitted purchase orders and unposted supplier invoices now appear, each shown only to people who may act on it. A requester is told someone else must approve unless they are the only approver. The price link opens Settings. Integration tests for this loader and a browser check were not run.
+- **Purchase order and supplier invoice screens.** "Approve order" is hidden from the person who sent the order when another approver exists (same rule the server applies; a sole owner still sees it). The supplier invoice form marks Due date as required for credit. Not done: station and fuel-type fields on the supplier invoice (needs schema and a decision). Browser check not run.
+
+Not changed: schema (no migration), roles and permissions, authentication, RLS. Self-approval and first-price activation are code rules only.
+
+Validated (throwaway local PostgreSQL 18 at 127.0.0.1:54351, `DATABASE_URL` and `DATABASE_DIRECT_URL` pinned to it, fresh database per run, migrations 0000-0073):
+
+| Gate | Result |
+| --- | --- |
+| `pnpm typecheck`, `pnpm lint`, Prettier on changed files | PASS |
+| `pnpm test:unit` | PASS: 215 files, 1,515 tests |
+| `pnpm test:integration` | 42 files passed, 314 tests; `unified-expense-versions` NOT RUN (needs its own database and runtime URL, "Separate local integration database required"); 6 opt-in files skipped. New: first price vs change, supplier posting basis. One existing test (`forged boundary`) was changed to make its price a real change by giving the fuel an earlier used price. |
+| `pnpm format:check`, `pnpm db:check`, `pnpm build` | PASS |
+| `pnpm test:e2e`, `pnpm test:a11y` | NOT RUN: no dedicated Clerk test keys on this machine. The new buttons and the Open shift control have not been seen in a browser. |
+
+UI lock: re-baselined for `guided-setup-panel.tsx`, `operations-control-room.tsx`, `supplier-detail-workspace.tsx` and the supplier detail page.
+
+Still open from the retest (not done here): approvals inbox does not yet count pending prices, orders and invoices; PO Approve still shows to the submitter; supplier invoice has no fuel type, station, delivery link or file; price effective date; no way to return an unposted invoice; opening stock and delivery-without-order were already built.
+
+### Follow-up on the audit retest — 2026-10-26 (uncommitted)
+
+- **Owner 403 on setup, root cause:** the guided-setup saves ran without the identity check, so the server refused them. Fuel, price, tank, pump, nozzle and supervisor saves now ask for the check first (`guided-setup-panel.tsx`; UI lock re-baselined with the project lead's approval). The Owner role already held the permissions.
+- **Local connection exhaustion:** `src/platform/db/client.ts` kept the Postgres pool in module variables, so Next dev re-evaluation opened a pool per copy until Postgres refused (53300) and every page failed with a Drizzle error. In development the pool now lives on `globalThis`; production is unchanged. Test added.
+- **Logging:** `observeError` now logs a `sqlState` field (the five-character Postgres code found under a query wrapper, never the query text).
+- **Add customer:** asks for the identity check before the first write; defaults to the only company; Staff benefit empty state links to `/customers?add=staff`.
+- **Expenses and suppliers:** "Staff fuel" removed from the usual kinds; approval-limit copy corrected; invoice payment terms required.
+- **Could not reproduce:** the "Open supplier" and "Open full account" links (code is correct; probably a symptom of the exhaustion). Not seen in a browser.
+- Open items for a decision are in `docs/v1-audit-followups-proposed.md`.
+
+## Audit fixes — 2026-10-25 (branch `codex/v1-audit-fixes-20261025`, from `main` 2a110f5, uncommitted)
+
+Response to the external audit of the live site. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions are in DECISIONS.md ("Business structure, bank balance and audit fixes", PROPOSED). The audit was run on the live site, not this branch, so several of its claims did not hold here; each was checked in code first.
+
+Changed:
+
+- **Setup (audit B1):** the setup page asked "does this person hold a fresh identity check" instead of "do they hold the permission", so an owner who had not just re-verified saw "you do not have permission" on fuel types and pumps. It now shows the forms to anyone holding the permission; saving still needs the fresh check. Test: `src/modules/setup/capabilities.test.ts`. Not confirmed against the live owner account, which is the one thing to check after release.
+- **Add customer (B3/B4):** Customers has an Add customer button (credit, prepaid money, prepaid fuel or staff fuel benefit, with phone and limit). Staff benefit needed an existing customer; it no longer has to.
+- **Suppliers:** contact person, phone, email, usual credit period (migration 0071) and a credit limit on the add form; edit on the supplier page; choosing credit on an invoice fills in the usual period.
+- **Expenses:** receipt photo on the add form; "Add the usual kinds" one-click set (generator, data, cleaning, repairs, transport, staff fuel, stationery, other). Payment method stays at the pay step (the expense is entered, approved, then paid); no shift field was added.
+- **Settings (B5):** add and edit companies and stations (needs the permission and a fresh identity check; station code is fixed). Arrow keys move between the settings sections.
+- **Financial position:** uses a recorded bank balance (migration 0072, entered under Settings > Payments) instead of period deposits, and has a "Fuel received, not yet invoiced" liability line.
+- **Other:** a day with no shifts cannot be closed; profit tiles say "No sales yet." instead of a cost problem; the activity log names stations, companies, customers, suppliers, bank accounts, days and shifts instead of cut-off ids; payout cards show brand logos only when that channel has payments; the reports row menu offers Excel, PDF and CSV; the internal "waiting for the owner" sentence is gone from Sales by Attendant.
+- **Offline (B6, partly):** installable app (manifest, icons) and a plain offline page via a service worker that caches no pages or data. The earlier unsent-entry copy and the daily-report queue are unchanged.
+
+Validated (local PostgreSQL 18 scratch database `shanda_fuel_audit_fixes` on 127.0.0.1:54331, `DATABASE_URL` and `DATABASE_DIRECT_URL` pinned to it, migrations 0000-0072, fresh database per run):
+
+| Gate | Result |
+| --- | --- |
+| `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm db:check` | PASS |
+| `pnpm test:unit` | PASS: 214 files, 1,499 tests |
+| `pnpm build` | PASS (manifest and apple icon routes present) |
+| `pnpm test:integration` | PASS except `unified-expense-versions` (needs its own database `shanda_unified_expense_test` and a runtime URL; NOT RUN, not a pass). One failure in a new test (stale version in my own request) was fixed and `a3-business-day-lifecycle` re-run: PASS. New file `tests/integration/audit-fixes.test.ts`: 11 tests PASS. 45 tests intentionally skipped (opt-in suites). |
+| `pnpm test:e2e`, `pnpm test:a11y` | NOT RUN: no dedicated Clerk test keys on this machine. The new screens have not been seen in a browser. |
+
+UI lock: re-baselined (`docs/ui-lock/manifest.json`) for the screens the project lead approved: customers, suppliers, expenses, settings, settlements, reports row menu, plus `payments-panel.tsx` (the bank balance form, under Settings) and `globals.css` (one toolbar rule).
+
+Not done, and why:
+
+- Customer credit days (30 unless the account sets its own) now drive the customer ageing report and the overdue alert. A tank with no tolerance of its own is judged against 0.5% of litres sold since the previous dip. Open shifts with no opening or closing dip raise a reminder alert. The dashboard has a Net position tile. An expense can be paid by EcoCash (migration 0076, applied only to the local test DB). Accepted 2026-10-26; see DECISIONS.md. Not built: paying an expense from the till (no cash disbursement screen), EcoCash/POS fee expenses, tank-level badges using the default tolerance.
+- Starting values now follow the audit: purchasing tolerance 0.5% on litres and none on price; "report late after" 0 days (accepted by the project lead 2026-10-25; the client can change both in Settings).
+- Closing a day with no approved reconciliation needs a typed reason (audited). Customer credit accounts have an optional usual days to pay (migration 0073).
+- Vehicle and driver registry: decided not to build for v1 (see DECISIONS, 2026-10-25).
+- Dashboard split by fuel, cash expected vs collected, stock variance and unsubmitted reports; report filters (shift, fuel, supplier, customer, employee, method); alerts for reorder level, unusual expense, below-price sale and credit breach; cash statuses (in transit, held by management, partly banked); a payment-method field on expenses; ShandaHR link. These are new features with unsettled meaning, not fixes.
+- IndexedDB drafts and queuing screens other than the daily report (DECISIONS: offline queue is deliberately narrow).
+- Checks that need the live system or the vendor: Owner membership scope on the live tenant, MFA for Owner and Finance in Clerk, backup and point-in-time restore for Neon, an API-level tenant-scope test beyond the existing ones, removing the "New Tour User" test user.
+
 ## Brief gap audit — 2026-10-25
 
 Audit of `origin/main` at `a3a769f` against the TEI Oils brief and samples; details in

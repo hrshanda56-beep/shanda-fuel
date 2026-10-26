@@ -104,6 +104,7 @@ const ids = {
   routeRacePrice: 'a3000000-0000-4000-8000-000000000220',
   negativePrice: 'a3000000-0000-4000-8000-000000000221',
   forgedBoundaryPrice: 'a3000000-0000-4000-8000-000000000222',
+  earlierPrice: 'a3000000-0000-4000-8000-000000000223',
   routeRaceOpening: 'a3000000-0000-4000-8000-000000000223',
   routeRaceClosing: 'a3000000-0000-4000-8000-000000000224',
   routeRaceSegment: 'a3000000-0000-4000-8000-000000000225',
@@ -1696,6 +1697,14 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       update app.selling_prices set state = 'PENDING_APPROVAL'
       where id in ('${ids.negativePrice}', '${ids.forgedBoundaryPrice}');
     `);
+    // An earlier price that was already in use makes the prices above price *changes*, which need
+    // sealed meter boundaries; the first price for a fuel needs none.
+    await client.unsafe(`
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by, activated_at)
+      values
+        ('${ids.earlierPrice}', '${ids.tenantA}', '${ids.stationA}', '${ids.productC}', '2026-09-25T00:00:00Z', '2026-09-26T00:00:00Z', 1.900000, 'DRAFT', '${ids.membershipD}', '2026-09-25T00:00:00Z');
+    `);
 
     const priceInput = {
       commandType: 'ApprovePriceChange',
@@ -1835,6 +1844,73 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
         where command_type = 'ActivatePriceChange' and idempotency_key = 'a3-price-forged-boundary'
       `,
     ).resolves.toEqual([{ count: 0 }]);
+  });
+
+  it('activates the first price for a fuel without meter boundaries but still requires them for a change', async () => {
+    process.env.AUDIT_SIGNING_KEY_ID = 'integration-a3-key';
+    process.env.AUDIT_SIGNING_KEY = 'integration-a3-secret';
+    const productId = 'a3000000-0000-4000-8000-0000000003a1';
+    const firstPriceId = 'a3000000-0000-4000-8000-0000000003a2';
+    const changePriceId = 'a3000000-0000-4000-8000-0000000003a3';
+    await client.unsafe(`
+      insert into app.products (id, tenant_id, code, name)
+        values ('${productId}', '${ids.tenantA}', 'A3-FIRST-PRICE', 'First price fuel');
+      insert into app.selling_prices
+        (id, tenant_id, station_id, product_id, effective_from, effective_to, unit_price, state, requested_by)
+      values
+        ('${firstPriceId}', '${ids.tenantA}', '${ids.stationA}', '${productId}', '2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z', 1.650000, 'DRAFT', '${ids.membershipC}'),
+        ('${changePriceId}', '${ids.tenantA}', '${ids.stationA}', '${productId}', '2026-10-02T00:00:00Z', '2026-10-03T00:00:00Z', 1.700000, 'DRAFT', '${ids.membershipC}');
+      update app.selling_prices set state = 'PENDING_APPROVAL'
+      where id in ('${firstPriceId}', '${changePriceId}');
+    `);
+    async function post(input: Record<string, unknown>, key: string) {
+      return forecourtCommandPost(
+        new Request('http://127.0.0.1:3000/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            ...clerkHeaders('a3-route-session-token', input),
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+    }
+    const step = (commandType: string, priceId: string, expectedVersion: number) => ({
+      commandType,
+      tenantId: ids.tenantA,
+      stationId: ids.stationA,
+      priceId,
+      expectedVersion,
+    });
+
+    // The first price for the fuel: no earlier price, so no meter reading is needed.
+    expect(
+      (await post(step('ApprovePriceChange', firstPriceId, 0), 'a3-first-approve')).status,
+    ).toBe(200);
+    expect(
+      (await post(step('PreparePriceActivation', firstPriceId, 1), 'a3-first-prepare')).status,
+    ).toBe(200);
+    expect(
+      (await post(step('ActivatePriceChange', firstPriceId, 2), 'a3-first-activate')).status,
+    ).toBe(200);
+    await expect(
+      client<{ state: string }[]>`select state from app.selling_prices where id = ${firstPriceId}`,
+    ).resolves.toEqual([{ state: 'ACTIVE' }]);
+
+    // Now the fuel has a price in use, so the next one is a change and needs sealed boundaries.
+    expect(
+      (await post(step('ApprovePriceChange', changePriceId, 0), 'a3-change-approve')).status,
+    ).toBe(200);
+    expect(
+      (await post(step('PreparePriceActivation', changePriceId, 1), 'a3-change-prepare')).status,
+    ).toBe(200);
+    expect(
+      (await post(step('ActivatePriceChange', changePriceId, 2), 'a3-change-activate')).status,
+    ).toBe(409);
+    await expect(
+      client<{ state: string }[]>`select state from app.selling_prices where id = ${changePriceId}`,
+    ).resolves.toEqual([{ state: 'PENDING_STATION_ACTIVATION' }]);
   });
 
   it('persists correction and reversal lineage and carries it into the outbox snapshot', async () => {

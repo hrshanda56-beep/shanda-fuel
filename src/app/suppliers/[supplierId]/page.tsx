@@ -3,6 +3,8 @@ import { ContextRequiredState } from '@/design-system/primitives';
 import {
   getSupplierSummaryFromRequest,
   getSupplierStatementFromRequest,
+  getSupplierDocumentsAwaitingPostingFromRequest,
+  getSupplierInvoiceChoicesFromRequest,
 } from '@/modules/creditors/queries';
 import { SupplierDetailWorkspace } from '@/modules/creditors/ui/supplier-detail-workspace';
 export const metadata = { title: 'Suppliers' };
@@ -33,6 +35,11 @@ export default async function Page({
         return Promise.all([
           getSupplierSummaryFromRequest(request, input),
           getSupplierStatementFromRequest(request, input),
+          getSupplierDocumentsAwaitingPostingFromRequest(request, input),
+          getSupplierInvoiceChoicesFromRequest(request, {
+            tenantId: input.tenantId,
+            legalEntityId: input.legalEntityId,
+          }),
         ]);
       }}
       render={(data, resolution) =>
@@ -40,7 +47,13 @@ export default async function Page({
           <SupplierDetailWorkspace
             key={JSON.stringify(resolution.current) + id}
             supplierId={id}
-            initial={{ resolution, supplier: data[0][0] ?? null, statement: data[1] }}
+            initial={{
+              resolution,
+              supplier: data[0][0] ?? null,
+              statement: data[1],
+              pending: data[2],
+              choices: data[3],
+            }}
           />
         ) : (
           <ContextRequiredState

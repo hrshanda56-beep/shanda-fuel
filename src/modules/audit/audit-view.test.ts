@@ -70,7 +70,7 @@ describe('toAuditItem', () => {
     expect(item).toMatchObject({
       who: 'Rudo',
       area: 'Supplier',
-      subject: 'Supplier 11111111…',
+      subject: 'Supplier',
       reason: 'Renegotiated',
       created: false,
       changes: [{ field: 'Credit limit', before: '100', after: '200' }],
@@ -87,5 +87,38 @@ describe('toAuditItem', () => {
         details: null,
       }),
     ).toMatchObject({ who: 'Unknown person', changes: [], created: true, subject: null });
+  });
+
+  it('names what the event touched when the name is known', () => {
+    const id = '11111111-2222-3333-4444-555555555555';
+    const item = toAuditItem(
+      {
+        id: 'e3',
+        eventCode: 'STATION.UPDATED',
+        occurredAt: '2026-10-21T08:00:00.000Z',
+        actorName: 'Rudo',
+        details: { subjectType: 'Station', subjectId: id },
+      },
+      new Map([[`Station:${id}`, 'Bindura']]),
+    );
+    expect(item.subject).toBe('Station Bindura');
+  });
+
+  it('keeps a short reference but never shows a cut-off machine id', () => {
+    const base = {
+      id: 'e4',
+      eventCode: 'X.Y',
+      occurredAt: '2026-10-21T08:00:00.000Z',
+      actorName: 'R',
+    };
+    expect(
+      toAuditItem({ ...base, details: { subjectType: 'Supplier', subjectId: 'SUP-001' } }).subject,
+    ).toBe('Supplier SUP-001');
+    expect(
+      toAuditItem({
+        ...base,
+        details: { subjectType: 'Station', subjectId: '11111111-2222-3333-4444-555555555555' },
+      }).subject,
+    ).toBe('Station');
   });
 });

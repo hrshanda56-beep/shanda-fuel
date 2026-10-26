@@ -139,6 +139,12 @@ const PAY_SOURCES = [
     hint: 'For example the transfer or payment number.',
   },
   {
+    value: 'MOBILE_MONEY',
+    label: 'Paid by EcoCash',
+    refLabel: 'EcoCash transaction code',
+    hint: 'The code from the EcoCash confirmation message.',
+  },
+  {
     value: 'REIMBURSEMENT',
     label: 'Paid back to someone who covered it',
     refLabel: 'Who was paid back, and how',
@@ -149,6 +155,7 @@ const PAY_SOURCES = [
 const SOURCE_WORDS: Record<string, string> = {
   BANK: 'Bank',
   CASH: 'Cash',
+  MOBILE_MONEY: 'EcoCash',
   REIMBURSEMENT: 'Paid back to staff',
 };
 
@@ -163,6 +170,16 @@ function messageOf(result: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+const USUAL_EXPENSE_KINDS = [
+  'Generator',
+  'Data and airtime',
+  'Cleaning',
+  'Repairs',
+  'Transport',
+  'Stationery',
+  'Other',
+] as const;
 
 export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [items, setItems] = useState<ExpenseRow[]>(initial?.items ?? []);
@@ -213,9 +230,10 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [payee, setPayee] = useState('');
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [stationId, setStationId] = useState('');
   const [reason, setReason] = useState('');
-  const [paySource, setPaySource] = useState<'BANK' | 'REIMBURSEMENT'>('BANK');
+  const [paySource, setPaySource] = useState<'BANK' | 'MOBILE_MONEY' | 'REIMBURSEMENT'>('BANK');
   const [payRef, setPayRef] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -332,6 +350,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       setPayee('');
       setDescription('');
       setReceipt('');
+      setReceiptFile(null);
       setStationId(
         current?.stationId && !current.allStations
           ? current.stationId
@@ -377,6 +396,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     successMessage: string,
     keepOpenAfter = false,
     confirmed = false,
+    afterSave?: (result: unknown) => Promise<string | null>,
   ) {
     const fingerprint = JSON.stringify(body);
     // A retry of the same request keeps its key, so a dropped connection never records twice.
@@ -396,18 +416,56 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       if (!response.ok) throw new Error(messageOf(result, 'This could not be saved.'));
       attempt.current = null;
       if (!keepOpenAfter) setSheet(null);
-      setNotice(successMessage);
+      // The expense is already saved; a failed photo upload is reported, never rolled back.
+      const afterNote = afterSave ? await afterSave(result) : null;
+      setNotice(afterNote ? `${successMessage} ${afterNote}` : successMessage);
       setDetails({});
       await refresh();
       if (openId) void loadPayments(openId);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'This could not be saved.';
       if (!confirmed && isStepUpMessage(message)) {
-        setStepUpRetry(() => () => void send(body, successMessage, keepOpenAfter, true));
+        setStepUpRetry(() => () => void send(body, successMessage, keepOpenAfter, true, afterSave));
       } else {
         setFormError(friendlyError(message, 'This could not be saved.'));
         void refresh();
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** One click for a new business: the kinds of cost a forecourt usually has. */
+  async function addUsualKinds() {
+    setBusy(true);
+    setFormError(null);
+    try {
+      for (const name of USUAL_EXPENSE_KINDS) {
+        const code = categoryCodeFromName(name);
+        if (!code) continue;
+        const response = await fetch('/api/expenses/commands', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json', 'idempotency-key': newKey() },
+          body: JSON.stringify({
+            commandType: 'CreateExpenseCategory',
+            tenantId,
+            legalEntityId,
+            code,
+            name,
+            classification: 'OPERATING',
+          }),
+        });
+        if (!response.ok) {
+          const result: unknown = await response.json().catch(() => null);
+          throw new Error(messageOf(result, 'The usual kinds could not be added.'));
+        }
+      }
+      setNotice('The usual kinds of expense were added.');
+      await refresh();
+    } catch (cause) {
+      setFormError(cause instanceof Error ? cause.message : 'The usual kinds could not be added.');
+      void refresh();
     } finally {
       setBusy(false);
     }
@@ -429,6 +487,8 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       if (!stationId) return setFormError('Choose the station that spent the money.');
       if (!description.trim()) return setFormError('Say what the money was spent on.');
       if (!date) return setFormError('Choose the date the money was spent.');
+      const file = receiptFile;
+      const uploadStation = stationId;
       return send(
         {
           commandType: 'SubmitExpense',
@@ -441,6 +501,32 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           ...(receipt.trim() ? { reference: receipt.trim() } : {}),
         },
         'Expense entered. It now waits for approval.',
+        false,
+        false,
+        file
+          ? async (result) => {
+              const expenseId = (result as { expenseId?: string }).expenseId;
+              if (!expenseId) return null;
+              const form = new FormData();
+              form.set('tenantId', tenantId);
+              form.set('stationId', uploadStation);
+              form.set('expenseId', expenseId);
+              form.set('file', file);
+              try {
+                const uploaded = await fetch('/api/expenses/attachments', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  body: form,
+                });
+                if (!uploaded.ok) {
+                  return 'The receipt photo could not be attached. Open the expense and try again.';
+                }
+                return 'The receipt photo was attached.';
+              } catch {
+                return 'The receipt photo could not be attached. Open the expense and try again.';
+              }
+            }
+          : undefined,
       );
     }
 
@@ -538,7 +624,9 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
         return setFormError(
           paySource === 'BANK'
             ? 'Enter the bank reference so the payment can be found later.'
-            : 'Say who was paid back and how.',
+            : paySource === 'MOBILE_MONEY'
+              ? 'Enter the EcoCash transaction code so the payment can be found later.'
+              : 'Say who was paid back and how.',
         );
       }
       return send(
@@ -779,7 +867,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           <p className={styles.muted}>
             {reference.policy?.stepUpThreshold
               ? `Above ${formatTileMoney(reference.policy.stepUpThreshold)}, the approver confirms their identity again. `
-              : 'No extra identity check by amount. '}
+              : 'No limit is set, so the approver always confirms their identity again, whatever the amount. '}
             {reference.policy?.secondApprovalThreshold
               ? `Above ${formatTileMoney(reference.policy.secondApprovalThreshold)}, a second person must approve.`
               : 'No second approval by amount.'}
@@ -1067,13 +1155,18 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                 <p className={styles.hint}>
                   No kinds yet.{' '}
                   {caps?.manageCategories ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => openSheet({ kind: 'categories' })}
-                    >
-                      Add one
-                    </Button>
+                    <>
+                      <Button variant="secondary" size="sm" onClick={() => void addUsualKinds()}>
+                        Add the usual kinds
+                      </Button>{' '}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openSheet({ kind: 'categories' })}
+                      >
+                        Add one
+                      </Button>
+                    </>
                   ) : (
                     'Ask a manager to add one.'
                   )}
@@ -1144,6 +1237,19 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   maxLength={120}
                   onChange={(event) => setReceipt(event.target.value)}
                   autoComplete="off"
+                />
+              </Field>
+              <Field
+                id="expense-receipt-photo"
+                label="Photo of the receipt"
+                hint="A photo or PDF, up to 10 MB."
+                optional
+              >
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                  capture="environment"
+                  onChange={(event) => setReceiptFile(event.target.files?.[0] ?? null)}
                 />
               </Field>
             </>

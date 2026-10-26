@@ -40,8 +40,8 @@ function configuration(state: { products: Product[]; supervisor: string | null }
   };
 }
 
-async function mockApi(page: Page) {
-  const state = { products: [] as Product[], supervisor: null as string | null };
+async function mockApi(page: Page, products: Product[] = []) {
+  const state = { products, supervisor: null as string | null };
   const commands: Array<Record<string, unknown>> = [];
   await page.route('**/api/setup/overview**', async (route) => {
     await route.fulfill({
@@ -96,19 +96,19 @@ test.describe('Guided station setup', () => {
     await expect(page.getByText('Enter the name of the fuel, for example Diesel.')).toBeVisible();
     expect(commands).toHaveLength(0);
 
+    // Every setup save asks for the identity check first; nothing is sent until it is confirmed.
     await form.getByLabel('Fuel name').fill('Unleaded 95');
     await form.getByRole('button', { name: 'Add fuel type' }).click();
-    await expect(page.getByText('Unleaded 95 was added.')).toBeVisible();
-    // The person never sees or types a code; one is made from the name.
-    expect(commands[0]).toMatchObject({
-      commandType: 'CreateProduct',
-      name: 'Unleaded 95',
-      code: 'UNLEADED95',
-    });
+    await expect(page.getByText('Confirm it is you').first()).toBeVisible();
+    expect(commands).toHaveLength(0);
+  });
+
+  test('opens the price step by itself once a fuel type exists', async ({ page }) => {
+    await mockApi(page, [{ id: 'p1', code: 'UNLEADED95', name: 'Unleaded 95', status: 'ACTIVE' }]);
+    await page.goto('/dev-preview/setup-guide');
     await expect(page.getByText('1 of 6 steps done for Main Station')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Selling prices/ })).toBeEnabled();
-    // Moving on is the person's choice: the confirmation stays until they press Next.
-    await page.getByRole('button', { name: 'Next: Selling prices' }).click();
+    // The first step still to do opens on its own.
     await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeVisible();
   });
 
@@ -121,8 +121,8 @@ test.describe('Guided station setup', () => {
     await expect(page.getByText('Choose who is in charge of this station.')).toBeVisible();
     await form.getByLabel('Tendai Moyo').check();
     await form.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Tendai Moyo is now in charge of this station.')).toBeVisible();
-    expect(commands.at(-1)).toMatchObject({ commandType: 'SetResponsibleSupervisor' });
+    await expect(page.getByText('Confirm it is you').first()).toBeVisible();
+    expect(commands).toHaveLength(0);
   });
 
   for (const width of [320, 390, 768, 1280]) {

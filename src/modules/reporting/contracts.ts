@@ -240,6 +240,8 @@ export type OwnerPosition = Readonly<{
     accountsWithBalance: number;
     accountsTotal: number;
   }>;
+  /** Fuel received but not yet invoiced, at landed cost. Null when some of it has no cost yet. */
+  receivedNotInvoiced?: Readonly<{ value: ReportMoney | null; unpricedLitres: string }>;
 }>;
 
 export type ManagementReport = Readonly<{

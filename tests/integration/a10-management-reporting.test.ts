@@ -742,7 +742,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     ]);
     expect(body.sales.reconciliationIds).toContain(ids.factRecon);
     // Stock at weighted-average cost and the submitted expense waiting for approval.
-    expect(body.ownerPosition).toEqual({
+    expect(body.ownerPosition).toMatchObject({
       stockValue: '169.0000',
       unvaluedStockStreams: 0,
       unpaidExpenses: '0.0000',
@@ -758,6 +758,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
         },
       ],
     });
+    // No bank balance has been recorded, so the position says so rather than showing zero.
+    expect(body.ownerPosition.bankBalance.amount).toBeNull();
 
     const priorBusinessDateResponse = await managementReportGet(
       new Request(
@@ -983,7 +985,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       expensesAwaitingApproval: { count: 1, amount: '2.0000' },
     });
     // The second station of the same tenant holds no stock and has no expenses.
-    expect(await get(ids.scopedStation)).toEqual({
+    expect(await get(ids.scopedStation)).toMatchObject({
       stockValue: '0.0000',
       unvaluedStockStreams: 0,
       unpaidExpenses: '0.0000',

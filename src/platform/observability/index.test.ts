@@ -194,6 +194,19 @@ describe('server observability', () => {
     expect(error).not.toHaveBeenCalled();
   });
 
+  it('logs the Postgres error code hidden under a query wrapper, and nothing else from it', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const postgres = Object.assign(new Error('remaining connection slots are reserved'), {
+      code: '53300',
+    });
+    const wrapped = new Error('Failed query: select secret', { cause: postgres });
+    apiErrorResponse(request({ 'x-request-id': validRequestId }), wrapped);
+
+    const record = JSON.parse(String(error.mock.calls[0]?.[0]));
+    expect(record.sqlState).toBe('53300');
+    expect(JSON.stringify(record)).not.toContain('select secret');
+  });
+
   it('keeps dependency, internal, and unexpected failures at ERROR severity', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.spyOn(console, 'info').mockImplementation(() => undefined);

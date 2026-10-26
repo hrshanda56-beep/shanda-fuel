@@ -79,7 +79,16 @@ async function assertSupplierAndEntity(
 export async function createSupplierInTransaction(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,
-  input: { code: string; legalName: string; registrationReference?: string },
+  input: {
+    code: string;
+    legalName: string;
+    registrationReference?: string | undefined;
+    contactName?: string | null | undefined;
+    contactPhone?: string | null | undefined;
+    contactEmail?: string | null | undefined;
+    defaultCreditDays?: number | null | undefined;
+    creditLimit?: string | null | undefined;
+  },
 ) {
   if (!input.code.trim() || !input.legalName.trim()) {
     throw new AppError('VALIDATION_FAILED', 'Supplier code and legal name are required');
@@ -88,14 +97,59 @@ export async function createSupplierInTransaction(
   await transaction.execute(sql`
     insert into app.suppliers (
       id, tenant_id, code, legal_name, registration_reference, status,
+      contact_name, contact_phone, contact_email, default_credit_days, credit_limit,
       created_by, updated_by
     ) values (
       ${id}, ${context.tenantId}, ${input.code.trim()}, ${input.legalName.trim()},
       ${input.registrationReference?.trim() || null}, 'ACTIVE',
+      ${input.contactName?.trim() || null}, ${input.contactPhone?.trim() || null},
+      ${input.contactEmail?.trim() || null}, ${input.defaultCreditDays ?? null},
+      ${input.creditLimit ?? null},
       ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId}
     )
   `);
   return { supplierId: id, code: input.code.trim(), legalName: input.legalName.trim() };
+}
+
+/** Changes who to contact and the usual credit period. A field left out stays as it was; null clears it. */
+export async function updateSupplierDetailsInTransaction(
+  transaction: SupplierTransaction,
+  context: SupplierCommandContext,
+  input: {
+    supplierId: string;
+    expectedVersion: number;
+    contactName?: string | null | undefined;
+    contactPhone?: string | null | undefined;
+    contactEmail?: string | null | undefined;
+    defaultCreditDays?: number | null | undefined;
+  },
+) {
+  const pick = <T>(value: T | undefined, column: ReturnType<typeof sql.raw>) =>
+    value === undefined ? sql`${column}` : sql`${value}`;
+  const text = (value: string | null | undefined) =>
+    value === undefined ? undefined : value?.trim() || null;
+  const updated = await transaction.execute<{ version: number | string }>(sql`
+    update app.suppliers
+    set contact_name = ${pick(text(input.contactName), sql.raw('contact_name'))},
+        contact_phone = ${pick(text(input.contactPhone), sql.raw('contact_phone'))},
+        contact_email = ${pick(text(input.contactEmail), sql.raw('contact_email'))},
+        default_credit_days = ${pick(input.defaultCreditDays, sql.raw('default_credit_days'))},
+        version = version + 1,
+        updated_by = ${context.authority.membership.membershipId},
+        updated_at = now()
+    where tenant_id = ${context.tenantId}
+      and id = ${input.supplierId}
+      and version = ${input.expectedVersion}
+    returning version
+  `);
+  if (!updated[0]) {
+    const exists = await transaction.execute<{ id: string }>(sql`
+      select id from app.suppliers where tenant_id = ${context.tenantId} and id = ${input.supplierId}
+    `);
+    if (!exists[0]) throw new AppError('NOT_FOUND', 'That supplier was not found');
+    throw new AppError('CONFLICT', 'Someone else changed this supplier. Refresh and try again.');
+  }
+  return { supplierId: input.supplierId, version: Number(updated[0].version) };
 }
 
 /** Sets or clears the most this business wants to owe one supplier. It never blocks a purchase. */
@@ -137,6 +191,7 @@ export async function submitSupplierDocumentInTransaction(
     documentType: SupplierDocumentType;
     referenceNumber: string;
     documentDate: string;
+    stationId?: string | undefined;
     dueDate?: string | undefined;
     paymentTerms?: 'CASH' | 'CREDIT' | undefined;
     creditPeriodDays?: number | undefined;
@@ -148,6 +203,16 @@ export async function submitSupplierDocumentInTransaction(
   },
 ) {
   await assertSupplierAndEntity(transaction, context, input.supplierId);
+  if (input.stationId) {
+    const station = await transaction.execute<{ id: string }>(sql`
+      select id from app.stations
+      where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
+        and id = ${input.stationId}
+    `);
+    if (!station[0]) {
+      throw new AppError('VALIDATION_FAILED', 'That station does not belong to this company.');
+    }
+  }
   const terms = resolveCreditTerms({
     documentType: input.documentType,
     documentDate: input.documentDate,
@@ -184,18 +249,19 @@ export async function submitSupplierDocumentInTransaction(
       totals,
     ),
   );
-  // Reference duplicate control applies to non-reversed documents only (migration 0038), so a
-  // corrected invoice can reuse the reference of one that was reversed.
+  // Reference duplicate control skips reversed (migration 0038) and returned (0074) documents,
+  // so a corrected invoice can reuse the reference of one that was sent back.
   const existing = await transaction.execute<{ id: string }>(sql`
     select id from app.supplier_documents
     where tenant_id = ${context.tenantId} and supplier_id = ${input.supplierId}
-      and reference_number = ${validated.referenceNumber} and state <> 'REVERSED'
+      and reference_number = ${validated.referenceNumber}
+      and state not in ('REVERSED', 'RETURNED')
     limit 1
   `);
   if (existing[0]) {
     throw new AppError(
       'CONFLICT',
-      `This supplier already has a document with reference ${validated.referenceNumber}. Use a different reference, or reverse the earlier document first if it was entered wrongly.`,
+      `This supplier already has a document with reference ${validated.referenceNumber}. Use a different reference, or return or reverse the earlier document first if it was entered wrongly.`,
     );
   }
   const id = randomUUID();
@@ -205,7 +271,7 @@ export async function submitSupplierDocumentInTransaction(
       id, tenant_id, legal_entity_id, supplier_id, document_type,
       reference_number, document_date, due_date, currency, amount,
       net_amount, vat_amount, vat_mode, payment_terms, credit_period_days,
-      state, version, created_by, submitted_by, submitted_at
+      state, version, created_by, submitted_by, submitted_at, station_id
     ) values (
       ${id}, ${context.tenantId}, ${context.legalEntityId}, ${input.supplierId},
       ${validated.documentType}, ${validated.referenceNumber}, ${validated.documentDate},
@@ -213,7 +279,7 @@ export async function submitSupplierDocumentInTransaction(
       ${prepared.totals?.net ?? null}, ${prepared.totals?.vat ?? null},
       ${prepared.totals ? prepared.policy.vatMode : null},
       ${terms.paymentTerms}, ${terms.creditPeriodDays},
-      'SUBMITTED', 0, ${actor}, ${actor}, now()
+      'SUBMITTED', 0, ${actor}, ${actor}, now(), ${input.stationId ?? null}
     )
   `);
   for (const reference of prepared.refs) {
@@ -232,11 +298,11 @@ export async function submitSupplierDocumentInTransaction(
   for (const line of prepared.lines) {
     await transaction.execute(sql`
       insert into app.supplier_document_lines (
-        id, tenant_id, legal_entity_id, supplier_document_id, line_no, product_id, description,
+        id, tenant_id, legal_entity_id, supplier_document_id, line_no, product_id, line_type, description,
         quantity, unit_price, net_amount, vat_rate, vat_amount, gross_amount, delivery_ref_id
       ) values (
         ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${id}, ${line.lineNo},
-        ${line.productId}, ${line.description}, ${line.quantity}, ${line.unitPrice},
+        ${line.productId}, ${line.lineType}, ${line.description}, ${line.quantity}, ${line.unitPrice},
         ${line.netAmount}, ${line.vatRate}, ${line.vatAmount}, ${line.grossAmount},
         ${prepared.lineRefIds.get(line.lineNo) ?? null}
       )
@@ -438,6 +504,46 @@ export async function postSupplierDocumentInTransaction(
     state: 'POSTED' as const,
     version: input.expectedVersion + 1,
     varianceStatus,
+  };
+}
+
+/** Sends a submitted document back before it is posted. Nothing was owed, so no money moves. */
+export async function returnSupplierDocumentInTransaction(
+  transaction: SupplierTransaction,
+  context: SupplierCommandContext,
+  input: { documentId: string; expectedVersion: number; reason: string },
+) {
+  const reason = input.reason.trim();
+  if (!reason) throw new AppError('VALIDATION_FAILED', 'A reason for returning is required');
+  const rows = await transaction.execute<DocumentRow>(sql`
+    select id, tenant_id, legal_entity_id, supplier_id, document_type, reference_number,
+           document_date, due_date, currency, amount, state, version, submitted_by
+    from app.supplier_documents
+    where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
+      and id = ${input.documentId}
+    for update
+  `);
+  const document = rows[0];
+  if (!document) throw new AppError('NOT_FOUND', 'The supplier document was not found');
+  if (Number(document.version) !== input.expectedVersion) {
+    throw new AppError(
+      'CONFLICT',
+      'Someone else changed this supplier document. Refresh and try again.',
+    );
+  }
+  assertSupplierDocumentTransition(document.state as never, 'RETURNED');
+  await transaction.execute(sql`
+    update app.supplier_documents
+    set state = 'RETURNED', returned_by = ${context.authority.membership.membershipId},
+        returned_at = now(), return_reason = ${reason},
+        version = version + 1, updated_at = now()
+    where tenant_id = ${context.tenantId} and id = ${document.id}
+      and version = ${input.expectedVersion}
+  `);
+  return {
+    documentId: document.id,
+    state: 'RETURNED' as const,
+    version: input.expectedVersion + 1,
   };
 }
 

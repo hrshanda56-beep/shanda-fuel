@@ -5,7 +5,7 @@ import { ExactDecimal, type DecimalPolicy } from '../../platform/domain/primitiv
 /**
  * Pure purchasing-policy and invoice-line arithmetic (ADR-018). No tax rate, threshold or
  * tolerance is hard-coded here: every figure comes from the tenant's purchasing policy.
- * Absent configuration is strict (zero tolerance) and VAT-free (mode NONE).
+ * Absent configuration allows 0.5% on litres, nothing on price, and is VAT-free (mode NONE).
  *
  * Rounding rule (documented once, applied everywhere): a derived monetary amount is rounded
  * half-up (a tie moves away from zero) to 4 decimal places, at exactly one named boundary per
@@ -48,10 +48,13 @@ export type ResolvedPurchasingPolicy = PurchasingPolicyValues &
     source: 'DEFAULT' | 'TENANT' | 'SUPPLIER_OVERRIDE';
   }>;
 
-/** Used until a tenant configures a policy: strict, VAT-free, invoices carry lines. */
+/**
+ * Used until a tenant configures a policy: VAT-free, invoices carry lines, 0.5% allowed on litres
+ * (dip and meter readings never agree exactly) and none on price, which is an agreed figure.
+ */
 export const BUILT_IN_PURCHASING_POLICY: PurchasingPolicyValues = {
   quantityToleranceLitres: null,
-  quantityTolerancePercent: null,
+  quantityTolerancePercent: '0.5',
   priceTolerancePercent: null,
   amountTolerance: null,
   overReceiptToleranceLitres: null,
@@ -193,8 +196,14 @@ export function validatePurchasingPolicyValues(input: {
 // Invoice lines and VAT
 // ---------------------------------------------------------------------------------------
 
+/** What an invoice line is for. A line with no type was entered before types existed. */
+export const INVOICE_LINE_TYPES = ['FUEL', 'TRANSPORT', 'OTHER_DIRECT_COST'] as const;
+export type InvoiceLineType = (typeof INVOICE_LINE_TYPES)[number];
+
 export type InvoiceLineInput = Readonly<{
+  /** The fuel on a FUEL line. Transport and other direct costs carry no product. */
   productId?: string | undefined;
+  lineType?: InvoiceLineType | undefined;
   description: string;
   /** Litres or units, at most 3 decimal places. */
   quantity: string;
@@ -217,6 +226,7 @@ export type InvoiceLineInput = Readonly<{
 export type ComputedInvoiceLine = Readonly<{
   lineNo: number;
   productId: string | null;
+  lineType: InvoiceLineType | null;
   description: string;
   quantity: string;
   unitPrice: string;
@@ -251,6 +261,9 @@ export function computeInvoiceLine(
   const label = `Line ${lineNo}`;
   const description = input.description.trim();
   if (!description) bad(`${label} needs a description.`);
+  if (input.lineType && input.lineType !== 'FUEL' && input.productId) {
+    bad(`${label} is not fuel, so it cannot name a fuel type.`);
+  }
   const quantity = parse(input.quantity, LITRES, `${label} quantity`);
   if (!quantity.value.gt(0)) bad(`${label} quantity must be greater than zero.`);
   const unitPrice = parse(input.unitPrice, UNIT_PRICE, `${label} unit price`);
@@ -313,6 +326,7 @@ export function computeInvoiceLine(
   return {
     lineNo,
     productId: input.productId ?? null,
+    lineType: input.lineType ?? null,
     description,
     quantity: quantity.value.toFixed(LITRES.scale),
     unitPrice: unitPrice.value.toFixed(UNIT_PRICE.scale),

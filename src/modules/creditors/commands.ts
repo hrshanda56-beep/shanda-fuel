@@ -11,7 +11,9 @@ import {
 import {
   allocateSupplierPaymentInTransaction,
   createSupplierInTransaction,
+  updateSupplierDetailsInTransaction,
   postSupplierDocumentInTransaction,
+  returnSupplierDocumentInTransaction,
   postSupplierPaymentInTransaction,
   reverseSupplierDocumentInTransaction,
   reverseSupplierPaymentInTransaction,
@@ -20,6 +22,7 @@ import {
   submitSupplierPaymentInTransaction,
 } from './persistence';
 import { setPurchasingPolicyInTransaction } from './purchasing-persistence';
+import { INVOICE_LINE_TYPES } from './purchasing-policy';
 
 const uuid = z.string().uuid();
 const decimal = z
@@ -28,11 +31,33 @@ const decimal = z
   .regex(/^\d+(?:\.\d+)?$/, 'An exact decimal string is required');
 const base = z.object({ tenantId: uuid, legalEntityId: uuid });
 
+const creditLimitText = z
+  .string()
+  .regex(/^\d+(?:\.\d{1,4})?$/, 'An amount with at most four decimals is required');
+
+const supplierDetailFields = {
+  contactName: z.string().trim().max(200).nullable().optional(),
+  contactPhone: z.string().trim().max(60).nullable().optional(),
+  contactEmail: z.string().trim().max(200).nullable().optional(),
+  /** Usual credit period in days; null clears it. */
+  defaultCreditDays: z.number().int().min(0).max(365).nullable().optional(),
+};
+
 const createSupplierSchema = base.extend({
   commandType: z.literal('CreateSupplier'),
   code: z.string().trim().min(1).max(80),
   legalName: z.string().trim().min(1).max(240),
   registrationReference: z.string().trim().max(120).optional(),
+  ...supplierDetailFields,
+  /** The most the business wants to owe this supplier; null/omitted = no limit. */
+  creditLimit: creditLimitText.nullable().optional(),
+});
+
+const updateSupplierDetailsSchema = base.extend({
+  commandType: z.literal('UpdateSupplierDetails'),
+  supplierId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  ...supplierDetailFields,
 });
 
 const setCreditLimitSchema = base.extend({
@@ -40,16 +65,14 @@ const setCreditLimitSchema = base.extend({
   supplierId: uuid,
   expectedVersion: z.number().int().nonnegative(),
   /** Null removes the limit. */
-  creditLimit: z
-    .string()
-    .regex(/^\d+(?:\.\d{1,4})?$/, 'An amount with at most four decimals is required')
-    .nullable(),
+  creditLimit: creditLimitText.nullable(),
 });
 
 const percent = z.string().regex(/^\d+(?:\.\d+)?$/, 'An exact decimal string is required');
 
 const invoiceLineSchema = z.object({
   productId: uuid.optional(),
+  lineType: z.enum(INVOICE_LINE_TYPES).optional(),
   description: z.string().trim().min(1).max(300),
   quantity: decimal,
   unitPrice: decimal,
@@ -67,6 +90,8 @@ const submitDocumentSchema = base.extend({
   documentType: z.enum(['INVOICE', 'CREDIT_NOTE']),
   referenceNumber: z.string().trim().min(1).max(120),
   documentDate: z.string(),
+  /** The station the invoice is for. Optional; must belong to the same company. */
+  stationId: uuid.optional(),
   dueDate: z.string().optional(),
   /** Cash or credit. Omitted = not recorded (older callers); see credit-terms.ts. */
   paymentTerms: z.enum(['CASH', 'CREDIT']).optional(),
@@ -97,6 +122,13 @@ const postDocumentSchema = base.extend({
   expectedVersion: z.number().int().nonnegative(),
   /** Needed only when the purchasing policy requires approval for out-of-tolerance invoices. */
   varianceApprovalReason: z.string().trim().min(1).max(500).optional(),
+});
+
+const returnDocumentSchema = base.extend({
+  commandType: z.literal('ReturnSupplierDocument'),
+  documentId: uuid,
+  expectedVersion: z.number().int().nonnegative(),
+  reason: z.string().trim().min(1).max(500),
 });
 
 const reverseDocumentSchema = base.extend({
@@ -225,6 +257,29 @@ export async function postSupplierDocumentFromRequest(request: Request, body: un
       subjectId: input.documentId,
     },
     execute: (transaction) => postSupplierDocumentInTransaction(transaction, context, input),
+  });
+}
+
+export async function returnSupplierDocumentFromRequest(request: Request, body: unknown) {
+  const input = returnDocumentSchema.parse(body);
+  const context = await resolveSupplierCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+  });
+  return executeSupplierCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'supplier.document.post',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    audit: {
+      actionCode: 'SUPPLIER.DOCUMENT_RETURNED',
+      subjectType: 'SupplierDocument',
+      subjectId: input.documentId,
+      reason: input.reason,
+    },
+    execute: (transaction) => returnSupplierDocumentInTransaction(transaction, context, input),
   });
 }
 
@@ -386,11 +441,35 @@ export async function setSupplierCreditLimitFromRequest(request: Request, body: 
   });
 }
 
+export async function updateSupplierDetailsFromRequest(request: Request, body: unknown) {
+  const input = updateSupplierDetailsSchema.parse(body);
+  const context = await resolveSupplierCommandContext({
+    request,
+    requestedTenantId: input.tenantId,
+    legalEntityId: input.legalEntityId,
+  });
+  return executeSupplierCommand({
+    context,
+    commandType: input.commandType,
+    permissionCode: 'supplier.manage',
+    idempotencyKey: idempotencyKey(request),
+    requestHash: requestHash(input),
+    audit: {
+      actionCode: 'SUPPLIER.DETAILS_UPDATED',
+      subjectType: 'Supplier',
+      subjectId: input.supplierId,
+    },
+    execute: (transaction) => updateSupplierDetailsInTransaction(transaction, context, input),
+  });
+}
+
 export type SupplierCommandName =
+  | 'UpdateSupplierDetails'
   | 'SetSupplierCreditLimit'
   | 'CreateSupplier'
   | 'SubmitSupplierDocument'
   | 'PostSupplierDocument'
+  | 'ReturnSupplierDocument'
   | 'ReverseSupplierDocument'
   | 'SubmitSupplierPayment'
   | 'PostSupplierPayment'
@@ -401,8 +480,10 @@ export type SupplierCommandName =
 export function assertSupplierCommandType(value: unknown): SupplierCommandName {
   if (
     value === 'CreateSupplier' ||
+    value === 'UpdateSupplierDetails' ||
     value === 'SubmitSupplierDocument' ||
     value === 'PostSupplierDocument' ||
+    value === 'ReturnSupplierDocument' ||
     value === 'ReverseSupplierDocument' ||
     value === 'SubmitSupplierPayment' ||
     value === 'PostSupplierPayment' ||

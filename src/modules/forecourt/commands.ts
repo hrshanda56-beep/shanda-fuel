@@ -7,6 +7,7 @@ import { AppError } from '../../platform/errors';
 import { meterSegments } from '../../platform/db/schema/a3';
 import { litres, money, unitPrice } from '../../platform/domain/primitives';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
+import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import {
   executeForecourtCommand,
   type ForecourtCommandContext,
@@ -637,6 +638,8 @@ const closeBusinessDayPayload = z
     stationId: z.string().uuid(),
     businessDayId: z.string().uuid(),
     expectedVersion: z.number().int().nonnegative(),
+    /** Required when the day has no approved reconciliation; kept in the activity log. */
+    reasonWithoutReconciliation: z.string().trim().min(5).max(500).optional(),
   })
   .strict();
 
@@ -668,6 +671,32 @@ export async function closeBusinessDayFromRequest(request: Request, input: unkno
       const row = rows[0];
       if (!row) throw new AppError('NOT_FOUND', 'Business day was not found');
       await assertBusinessDayOperationalCompleteness(transaction, context, payload.businessDayId);
+      // A day with no shifts at all has nothing to account for; closing it would hide that
+      // nobody recorded the day. A day nobody traded is closed by marking its shifts NOT_OPERATED.
+      const recorded = await transaction.execute<{ count: number }>(sql`
+        select count(*)::int as count from app.shifts
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and business_day_id=${payload.businessDayId}
+      `);
+      if (Number(recorded[0]?.count ?? 0) === 0)
+        throw new AppError(
+          'CONFLICT',
+          'This day has no shifts recorded. Record each shift, or mark it as not operated, before closing the day.',
+        );
+      // Closing before the reconciliation is approved is allowed, so a station is not stuck when
+      // the manager is away, but the person closing must say why and the reason is audited.
+      const reconciled = await transaction.execute<{ count: number }>(sql`
+        select count(*)::int as count from app.reconciliations
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and business_day_id=${payload.businessDayId}
+          and state in ('APPROVED','POSTED','LOCKED')
+      `);
+      const hasReconciliation = Number(reconciled[0]?.count ?? 0) > 0;
+      if (!hasReconciliation && !payload.reasonWithoutReconciliation)
+        throw new AppError(
+          'CONFLICT',
+          'This day has no approved reconciliation. Give a reason to close it anyway; the reason is kept in the activity log.',
+        );
       const day = {
         id: row.id,
         tenantId: context.tenantId,
@@ -687,7 +716,12 @@ export async function closeBusinessDayFromRequest(request: Request, input: unkno
         update app.station_business_days set state='CLOSED', closed_at=${now}::timestamptz, version=version+1, updated_at=${now}::timestamptz
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.businessDayId} and version=${payload.expectedVersion + 1}
       `);
-      return { result: { businessDayId: closed.id }, after: closed };
+      return {
+        result: { businessDayId: closed.id },
+        after: hasReconciliation
+          ? closed
+          : { ...closed, closedWithoutReconciliationReason: payload.reasonWithoutReconciliation },
+      };
     },
   });
 }
@@ -2182,6 +2216,21 @@ async function priceContext(request: Request, payload: { tenantId: string; stati
   });
 }
 
+/** True when no other price for this fuel at this station has ever been in use. */
+async function isFirstPriceForProduct(
+  transaction: ForecourtTransaction,
+  input: { tenantId: string; stationId: string; productId: string; priceId: string },
+): Promise<boolean> {
+  const rows = await transaction.execute<{ found: number }>(sql`
+    select 1 as found from app.selling_prices
+    where tenant_id = ${input.tenantId} and station_id = ${input.stationId}
+      and product_id = ${input.productId} and id <> ${input.priceId}
+      and (state in ('ACTIVE', 'SUPERSEDED') or activated_at is not null)
+    limit 1
+  `);
+  return rows.length === 0;
+}
+
 const requestPricePayload = z
   .object({
     commandType: z.literal('RequestPriceChange').optional(),
@@ -2256,6 +2305,12 @@ export async function approvePriceChangeFromRequest(request: Request, input: unk
         priceFromRow(price),
         context.actor,
         await serverNow(transaction),
+        await hasAlternateApprover(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          excludeMembershipId: price.requested_by,
+          permission: 'price.change.approve',
+        }),
       );
       await transaction.execute(sql`
         update app.selling_prices
@@ -2295,20 +2350,33 @@ export async function activatePriceChangeFromRequest(request: Request, input: un
       const price = rows[0];
       if (!price) throw new AppError('NOT_FOUND', 'Selling price was not found');
       const now = await serverNow(transaction);
-      const boundaries = await loadPriceActivationBoundaries(transaction, {
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        productId: price.product_id,
-        priceId: price.id,
-      });
       if (
         price.state !== 'PENDING_STATION_ACTIVATION' &&
         price.state !== 'BOUNDARIES_IN_PROGRESS'
       ) {
         throw new AppError('CONFLICT', `ActivatePriceChange is not allowed from ${price.state}`);
       }
-      if (boundaries.length === 0 || boundaries.some((boundary) => boundary.state !== 'SEALED')) {
-        throw new AppError('CONFLICT', 'All affected persisted meter boundaries must be complete');
+      // A meter boundary pins the old price to the litres sold before a change. The first price
+      // for a fuel at a station has no earlier price to pin, so it needs no meter readings.
+      const firstPrice = await isFirstPriceForProduct(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        productId: price.product_id,
+        priceId: price.id,
+      });
+      if (!firstPrice) {
+        const boundaries = await loadPriceActivationBoundaries(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          productId: price.product_id,
+          priceId: price.id,
+        });
+        if (boundaries.length === 0 || boundaries.some((boundary) => boundary.state !== 'SEALED')) {
+          throw new AppError(
+            'CONFLICT',
+            'All affected persisted meter boundaries must be complete',
+          );
+        }
       }
       const requiresBoundaryPhase = price.state === 'PENDING_STATION_ACTIVATION';
       if (requiresBoundaryPhase) {

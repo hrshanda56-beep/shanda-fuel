@@ -15,15 +15,17 @@ export const readCustomerAgeing: TableReportReader = async (transaction, filters
     account_id: string;
     customer: string;
     account_reference: string;
+    credit_days: number | null;
     id: string;
     business_date: string;
     direction: 'INCREASE' | 'DECREASE';
     amount: string;
   }>(sql`
-    select l.account_id, c.display_name as customer, c.account_reference,
+    select l.account_id, c.display_name as customer, c.account_reference, a.credit_days,
            l.id, l.business_date, l.direction, l.amount::text as amount
     from app.customer_ledger_entries l
     join app.customers c on c.tenant_id = l.tenant_id and c.id = l.customer_id
+    join app.customer_accounts a on a.tenant_id = l.tenant_id and a.id = l.account_id
     where l.tenant_id = ${filters.tenantId}
       and l.account_type = 'CREDIT'
       and l.business_date <= ${filters.toDate}
@@ -31,12 +33,18 @@ export const readCustomerAgeing: TableReportReader = async (transaction, filters
   `);
   const accounts = new Map<
     string,
-    { customer: string; accountReference: string; lines: AgeingLedgerLine[] }
+    {
+      customer: string;
+      accountReference: string;
+      creditDays: number | null;
+      lines: AgeingLedgerLine[];
+    }
   >();
   for (const row of rows) {
     const account = accounts.get(row.account_id) ?? {
       customer: row.customer,
       accountReference: row.account_reference,
+      creditDays: row.credit_days === null ? null : Number(row.credit_days),
       lines: [],
     };
     account.lines.push({

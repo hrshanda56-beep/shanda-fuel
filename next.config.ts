@@ -33,6 +33,14 @@ const nextConfig: NextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(), geolocation=(), microphone=()' },
         ],
       },
+      {
+        // A changed worker must be picked up on the next visit, never served from an old cache.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+        ],
+      },
     ];
   },
 };

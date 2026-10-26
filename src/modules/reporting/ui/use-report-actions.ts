@@ -28,8 +28,11 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   }
 }
 
-function exportQuery(target: ReportActionTarget): string {
+export type ExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+function exportQuery(target: ReportActionTarget, format: ExportFormat): string {
   const params = new URLSearchParams({
+    format,
     report: target.slug,
     period: target.period,
     tenantId: target.tenantId,
@@ -43,7 +46,10 @@ function exportQuery(target: ReportActionTarget): string {
 export function useReportActions() {
   const [status, setStatus] = useState<ActionStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [stepUpFor, setStepUpFor] = useState<ReportActionTarget | null>(null);
+  const [stepUpFor, setStepUpFor] = useState<{
+    target: ReportActionTarget;
+    format: ExportFormat;
+  } | null>(null);
 
   const dismiss = useCallback(() => setStatus(null), []);
 
@@ -93,49 +99,52 @@ export function useReportActions() {
     }
   }, []);
 
-  const exportCsv = useCallback(async (target: ReportActionTarget, afterStepUp = false) => {
-    setBusy(true);
-    setStatus(null);
-    try {
-      const response = await fetch(`/api/reports/export?${exportQuery(target)}`, {
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        const message = await errorMessage(response, 'The export could not be created.');
-        // A missing step-up is recoverable: confirm identity once, then retry the same export.
-        if (!afterStepUp && stepUpIsNeeded(response.status, message)) {
-          setStepUpFor(target);
+  const exportCsv = useCallback(
+    async (target: ReportActionTarget, afterStepUp = false, format: ExportFormat = 'csv') => {
+      setBusy(true);
+      setStatus(null);
+      try {
+        const response = await fetch(`/api/reports/export?${exportQuery(target, format)}`, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          const message = await errorMessage(response, 'The export could not be created.');
+          // A missing step-up is recoverable: confirm identity once, then retry the same export.
+          if (!afterStepUp && stepUpIsNeeded(response.status, message)) {
+            setStepUpFor({ target, format });
+            return;
+          }
+          setStatus({ tone: 'critical', message });
           return;
         }
-        setStatus({ tone: 'critical', message });
-        return;
+        const disposition = response.headers.get('content-disposition') ?? '';
+        const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `${target.slug}.${format}`;
+        const url = URL.createObjectURL(await response.blob());
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        setStatus({ tone: 'positive', message: `Exported ${filename}` });
+        window.dispatchEvent(new Event(REPORT_ACTIVITY_CHANGED));
+      } catch {
+        setStatus({ tone: 'critical', message: 'The export could not be created. Try again.' });
+      } finally {
+        setBusy(false);
       }
-      const disposition = response.headers.get('content-disposition') ?? '';
-      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `${target.slug}.csv`;
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setStatus({ tone: 'positive', message: `Exported ${filename}` });
-      window.dispatchEvent(new Event(REPORT_ACTIVITY_CHANGED));
-    } catch {
-      setStatus({ tone: 'critical', message: 'The export could not be created. Try again.' });
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   const stepUp = stepUpFor
     ? {
-        tenantId: stepUpFor.tenantId,
+        tenantId: stepUpFor.target.tenantId,
         onVerified: () => {
           setStepUpFor(null);
-          void exportCsv(stepUpFor, true);
+          void exportCsv(stepUpFor.target, true, stepUpFor.format);
         },
         onCancel: () => setStepUpFor(null),
       }

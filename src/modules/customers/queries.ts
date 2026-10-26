@@ -59,6 +59,7 @@ export type CustomerAccountSummary = Readonly<{
   ready: boolean;
   currency: string;
   creditLimit: string | null;
+  creditDays: number | null;
   balance: string | null;
   availableBalance: string | null;
   availableCredit: string | null;
@@ -108,6 +109,8 @@ export type CustomerSummary = Readonly<{
 
 export type CustomerAccountsResponse = Readonly<{
   customers: readonly CustomerSummary[];
+  /** What the signed-in person may do across customers, so the page can offer "Add customer" even when there are none. */
+  capabilities: CustomerCapabilities;
   /** Active fuels a prepaid-litres top-up can be for; only filled for a single-customer read. */
   fuelProducts: ReadonlyArray<Readonly<{ id: string; code: string; name: string }>>;
 }>;
@@ -135,6 +138,7 @@ type CustomerAccountSummaryRow = {
   station_scope_configured: boolean | null;
   currency: string | null;
   credit_limit: string | null;
+  credit_days: number | null;
   balance: string | null;
   reserved_amount: string | null;
 };
@@ -227,6 +231,7 @@ function accountSummaryFromRow(
     ready: Boolean(row.account_legal_entity_id && row.station_scope_configured),
     currency: row.currency,
     creditLimit: row.credit_limit,
+    creditDays: row.credit_days === null ? null : Number(row.credit_days),
     balance: row.account_type === 'PREPAID_LITRES' ? null : balance,
     availableBalance:
       row.account_type === 'PREPAID_VALUE'
@@ -361,6 +366,7 @@ export async function getCustomerAccountsFromRequest(
         a.station_scope_configured,
         a.currency,
         a.credit_limit::text,
+        a.credit_days,
         mb.balance,
         ar.reserved_amount
       from app.customers c
@@ -496,7 +502,7 @@ export async function getCustomerAccountsFromRequest(
         ]
       : [];
 
-    return { customers: [...customerMap.values()], fuelProducts };
+    return { customers: [...customerMap.values()], capabilities, fuelProducts };
   });
 }
 

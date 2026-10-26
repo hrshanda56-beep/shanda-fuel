@@ -1,6 +1,7 @@
 import { loadOperationsFacts } from './operations-facts';
 import { loadExtraAlertFacts } from './extra-alert-facts';
 import { loadSignOffFacts } from './sign-off';
+import { loadDocumentApprovalFacts } from './document-approval-facts';
 import { withRequestReadScope } from '../../platform/security/request-read-scope';
 import { requireAuthenticatedActor, type AuthenticatedActorContext } from '../identity';
 import 'server-only';
@@ -50,7 +51,10 @@ async function loadActionCenterFactsUncached(
       request,
       tenantId,
       stationId,
-      (transaction, context) => loadSignOffFacts(transaction, context),
+      async (transaction, context) => ({
+        ...(await loadSignOffFacts(transaction, context)),
+        ...(await loadDocumentApprovalFacts(transaction, context)),
+      }),
       actor,
     ),
   );
@@ -161,7 +165,9 @@ async function loadActionCenterFactsUncached(
   ]);
 
   const sign = await signPromise;
-  const fromSign = <K extends 'reconciliations' | 'revaluations'>(
+  const fromSign = <
+    K extends 'reconciliations' | 'revaluations' | 'prices' | 'orders' | 'invoices',
+  >(
     key: K,
   ): Section<NonNullable<NonNullable<Extract<typeof sign, { status: 'ok' }>['value']>[K]>> => {
     if (sign.status !== 'ok') return sign;
@@ -184,6 +190,9 @@ async function loadActionCenterFactsUncached(
     stationId,
     reconciliations: fromSign('reconciliations'),
     revaluations: fromSign('revaluations'),
+    prices: fromSign('prices'),
+    orders: fromSign('orders'),
+    invoices: fromSign('invoices'),
     cash,
     settlements,
     suppliers,

@@ -8,14 +8,22 @@ import * as schema from './schema';
 
 export type Database = PostgresJsDatabase<typeof schema>;
 
-let pooledClient: Sql | undefined;
-let pooledDatabase: Database | undefined;
+interface PoolState {
+  client?: Sql;
+  database?: Database;
+}
+
+// Next dev re-evaluates this module on HMR and per bundle; module-level state
+// would open a fresh pool each time and exhaust the database's connections.
+const globalPool = globalThis as typeof globalThis & { __shandaDbPool?: PoolState };
+const pool: PoolState =
+  process.env.NODE_ENV === 'production' ? {} : (globalPool.__shandaDbPool ??= {});
 
 export function getDatabase(): Database {
-  if (pooledDatabase) return pooledDatabase;
+  if (pool.database) return pool.database;
 
   const url = assertDatabaseConfigured();
-  pooledClient = postgres(url, {
+  const pooledClient = postgres(url, {
     max: 10,
     prepare: process.env.DATABASE_PREPARED_STATEMENTS === '1',
     onnotice: () => undefined,
@@ -24,8 +32,9 @@ export function getDatabase(): Database {
     process.env.DATABASE_PREPARED_STATEMENTS === '1'
       ? preparedDrizzleClient(pooledClient)
       : pooledClient;
-  pooledDatabase = drizzle(queryClient, { schema });
-  return pooledDatabase;
+  pool.client = pooledClient;
+  pool.database = drizzle(queryClient, { schema });
+  return pool.database;
 }
 
 export async function checkDatabase(): Promise<{ status: 'ok' } | { status: 'unavailable' }> {
@@ -49,7 +58,7 @@ export function requireDatabaseUrlForMigration(): string {
 }
 
 export async function closeDatabase(): Promise<void> {
-  if (pooledClient) await pooledClient.end({ timeout: 1 });
-  pooledClient = undefined;
-  pooledDatabase = undefined;
+  if (pool.client) await pool.client.end({ timeout: 1 });
+  pool.client = undefined;
+  pool.database = undefined;
 }

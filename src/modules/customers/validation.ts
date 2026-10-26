@@ -174,6 +174,8 @@ export const createCustomerAccountSchema = z
     accountType: customerAccountTypeSchema,
     currency,
     creditLimit: decimalText.optional(),
+    /** Usual days to pay (0 to 365). Informational: it never blocks a sale. */
+    creditDays: z.number().int().min(0).max(365).optional(),
     /**
      * Marks the credit account as a staff fuel benefit. The credit limit is then the monthly USD
      * limit (PROPOSED default, awaiting owner sign-off). Changing it later needs the credit-limit
@@ -206,6 +208,13 @@ export const createCustomerAccountSchema = z
         code: 'custom',
         path: ['creditLimit'],
         message: 'Only credit accounts have a credit limit.',
+      });
+    }
+    if (input.creditDays !== undefined && input.accountType !== 'CREDIT') {
+      refinement.addIssue({
+        code: 'custom',
+        path: ['creditDays'],
+        message: 'Only credit accounts have a credit period.',
       });
     }
     if (input.staffBenefit && input.accountType !== 'CREDIT') {

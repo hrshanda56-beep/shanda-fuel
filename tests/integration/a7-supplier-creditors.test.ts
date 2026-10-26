@@ -4,6 +4,7 @@ import postgres, { type Sql } from 'postgres';
 import { POST as supplierCommandPost } from '../../src/app/api/suppliers/commands/route';
 import { GET as supplierSummaryGet } from '../../src/app/api/suppliers/summary/route';
 import { GET as supplierStatementGet } from '../../src/app/api/suppliers/statement/route';
+import { GET as supplierPendingGet } from '../../src/app/api/suppliers/pending/route';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -248,6 +249,242 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         (row: { movementType: string }) => row.movementType === 'PAYMENT_REVERSAL',
       ),
     ).toBe(true);
+  });
+
+  it('keeps an unposted invoice out of what is owed and lists it as waiting to be posted', async () => {
+    const base = { tenantId: ids.tenant, legalEntityId: ids.legal };
+    const created = await json(
+      await command(
+        {
+          ...base,
+          commandType: 'CreateSupplier',
+          code: 'A7-WAIT',
+          legalName: 'A7 Waiting Supplier',
+        },
+        'a7-wait-supplier',
+      ),
+    );
+    const submitted = await json(
+      await command(
+        {
+          ...base,
+          commandType: 'SubmitSupplierDocument',
+          supplierId: created.supplierId,
+          documentType: 'INVOICE',
+          paymentTerms: 'CREDIT',
+          creditPeriodDays: 30,
+          referenceNumber: 'INV-WAIT-001',
+          documentDate: '2099-01-01',
+          dueDate: '2099-01-31',
+          amount: '8800.0000',
+          lines: [{ description: 'A7 waiting fuel', quantity: '1', unitPrice: '8800' }],
+        },
+        'a7-wait-submit',
+      ),
+    );
+    const headers = { ...clerkHeaders(await signedCookie('a7-session-token')) };
+    const query = `tenantId=${ids.tenant}&legalEntityId=${ids.legal}&supplierId=${created.supplierId}`;
+    const summaryOf = async () =>
+      (
+        await json(
+          await supplierSummaryGet(
+            new Request(`http://127.0.0.1:3000/api/suppliers/summary?${query}`, { headers }),
+          ),
+        )
+      )[0];
+    const pendingOf = async () =>
+      (await (
+        await supplierPendingGet(
+          new Request(`http://127.0.0.1:3000/api/suppliers/pending?${query}`, { headers }),
+        )
+      ).json()) as Array<Record<string, any>>;
+
+    // Submitted but not posted: nothing is owed or "not yet due", and it is listed as waiting.
+    expect(await summaryOf()).toMatchObject({ total: '0', current: '0', overdue: '0' });
+    expect(await pendingOf()).toEqual([
+      expect.objectContaining({
+        id: submitted.documentId,
+        referenceNumber: 'INV-WAIT-001',
+        amount: '8800.0000',
+        version: 0,
+      }),
+    ]);
+
+    expect(
+      (
+        await command(
+          {
+            ...base,
+            commandType: 'PostSupplierDocument',
+            documentId: submitted.documentId,
+            expectedVersion: 0,
+          },
+          'a7-wait-post',
+        )
+      ).status,
+    ).toBe(200);
+
+    // Posted: it now counts, on the same basis in both figures, and the waiting list empties.
+    expect(await summaryOf()).toMatchObject({ total: '8800.0000', current: '8800.0000' });
+    expect(await pendingOf()).toEqual([]);
+  });
+
+  it('returns an unposted invoice with a reason and lets its reference be entered again', async () => {
+    const base = { tenantId: ids.tenant, legalEntityId: ids.legal };
+    const created = await json(
+      await command(
+        { ...base, commandType: 'CreateSupplier', code: 'A7-RET', legalName: 'A7 Return Supplier' },
+        'a7-ret-supplier',
+      ),
+    );
+    const invoice = (key: string) =>
+      command(
+        {
+          ...base,
+          commandType: 'SubmitSupplierDocument',
+          supplierId: created.supplierId,
+          documentType: 'INVOICE',
+          paymentTerms: 'CASH',
+          referenceNumber: 'INV-RET-001',
+          documentDate: '2099-01-01',
+          amount: '500.0000',
+          lines: [{ description: 'A7 returned fuel', quantity: '1', unitPrice: '500' }],
+        },
+        key,
+      );
+    const first = await json(await invoice('a7-ret-submit-1'));
+    // The reference is taken while the invoice is waiting.
+    expect((await invoice('a7-ret-submit-dup')).status).toBe(409);
+
+    const returnIt = (reason: string, key: string, version = 0) =>
+      command(
+        {
+          ...base,
+          commandType: 'ReturnSupplierDocument',
+          documentId: first.documentId,
+          expectedVersion: version,
+          reason,
+        },
+        key,
+      );
+    expect((await returnIt('  ', 'a7-ret-blank')).status).toBeGreaterThanOrEqual(400);
+    const returned = await returnIt('Wrong amount on the paper invoice', 'a7-ret-ok');
+    expect(returned.status).toBe(200);
+    expect(await json(returned)).toMatchObject({ state: 'RETURNED', version: 1 });
+
+    const row = (
+      await client.unsafe(
+        'select state, return_reason, returned_by is not null as has_actor from app.supplier_documents where id = $1',
+        [first.documentId],
+      )
+    )[0];
+    expect(row).toMatchObject({
+      state: 'RETURNED',
+      return_reason: 'Wrong amount on the paper invoice',
+      has_actor: true,
+    });
+
+    // Returned is final: it cannot be posted, and the reference is free for the corrected invoice.
+    expect(
+      (
+        await command(
+          {
+            ...base,
+            commandType: 'PostSupplierDocument',
+            documentId: first.documentId,
+            expectedVersion: 1,
+          },
+          'a7-ret-post-after',
+        )
+      ).status,
+    ).toBe(409);
+    expect((await invoice('a7-ret-submit-2')).status).toBe(201);
+  });
+
+  it('records the station and what each invoice line is for', async () => {
+    const base = { tenantId: ids.tenant, legalEntityId: ids.legal };
+    const supplier = await json(
+      await command(
+        {
+          ...base,
+          commandType: 'CreateSupplier',
+          code: 'A7-LT',
+          legalName: 'A7 Line Type Supplier',
+        },
+        'a7-lt-supplier',
+      ),
+    );
+    const invoice = (
+      extra: Record<string, unknown>,
+      lines: Record<string, unknown>[],
+      key: string,
+    ) =>
+      command(
+        {
+          ...base,
+          commandType: 'SubmitSupplierDocument',
+          supplierId: supplier.supplierId,
+          documentType: 'INVOICE',
+          paymentTerms: 'CASH',
+          documentDate: '2099-01-01',
+          amount: '510.0000',
+          lines,
+          ...extra,
+        },
+        key,
+      );
+    const fuelLine = { lineType: 'FUEL', description: 'Diesel', quantity: '100', unitPrice: '4.5' };
+    const haulage = {
+      lineType: 'TRANSPORT',
+      description: 'Haulage',
+      quantity: '1',
+      unitPrice: '60',
+    };
+    const ok = await invoice({ referenceNumber: 'INV-LT-001' }, [fuelLine, haulage], 'a7-lt-1');
+    expect(ok.status).toBe(201);
+    const stored = await client.unsafe(
+      'select line_no, line_type from app.supplier_document_lines where supplier_document_id = $1 order by line_no',
+      [(await json(ok)).documentId],
+    );
+    expect(stored.map((row) => row.line_type)).toEqual(['FUEL', 'TRANSPORT']);
+
+    const stationId = 'a7b00000-0000-4000-8000-000000000061';
+    await client.unsafe(
+      `insert into app.stations (id, tenant_id, legal_entity_id, code, name, status)
+       values ($1, $2, $3, 'A7-LT-ST', 'A7 Line Type Station', 'ACTIVE')`,
+      [stationId, ids.tenant, ids.legal],
+    );
+    const withStation = await invoice(
+      { referenceNumber: 'INV-LT-004', stationId },
+      [fuelLine, haulage],
+      'a7-lt-4',
+    );
+    expect(withStation.status).toBe(201);
+    const [header] = await client.unsafe(
+      'select station_id from app.supplier_documents where id = $1',
+      [(await json(withStation)).documentId],
+    );
+    expect(header?.station_id).toBe(stationId);
+
+    // A station from another company is refused; an unknown line type is refused by the schema.
+    expect(
+      (
+        await invoice(
+          { referenceNumber: 'INV-LT-002', stationId: '00000000-0000-4000-8000-000000000999' },
+          [fuelLine, haulage],
+          'a7-lt-2',
+        )
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
+    expect(
+      (
+        await invoice(
+          { referenceNumber: 'INV-LT-003' },
+          [{ ...haulage, lineType: 'SNACKS' }],
+          'a7-lt-3',
+        )
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
   });
 
   it('sets, reports and clears a supplier credit limit without blocking purchases', async () => {

@@ -15,6 +15,7 @@ import {
   displayState,
   type PurchaseOrderState,
 } from './domain';
+import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import { loadReceiptByLine } from './persistence';
 
 const uuid = z.string().uuid();
@@ -245,8 +246,21 @@ export async function getPurchaseOrderDetailFromRequest(
       where tenant_id = ${context.tenantId} and purchase_order_id = ${input.purchaseOrderId}
       order by revision_no
     `);
+    // Same rule the approve command applies, so the screen can hide a button that would be refused.
+    const me = context.authority.membership.membershipId;
+    const submitter = rows[0].submitted_by ?? rows[0].created_by;
+    const approvalBlockedForYou =
+      rows[0].state === 'SUBMITTED' &&
+      submitter === me &&
+      (await hasAlternateApprover(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        excludeMembershipId: submitter,
+        permission: 'purchase_order.approve',
+      }));
     return {
       ...headerResult(rows[0], lines),
+      approvalBlockedForYou,
       deliveries: [...links].map((row) => ({
         linkId: row.id,
         purchaseOrderLineId: row.purchase_order_line_id,

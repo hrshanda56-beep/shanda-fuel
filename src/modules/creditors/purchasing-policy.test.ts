@@ -19,7 +19,7 @@ const exclusive = { vatMode: 'EXCLUSIVE' as const, defaultVatRate: '15.0000', pr
 const inclusive = { vatMode: 'INCLUSIVE' as const, defaultVatRate: '15.0000', productVatRates: {} };
 
 describe('purchasing policy resolution', () => {
-  it('is strict, VAT-free and line-requiring until a policy is configured', () => {
+  it('allows 0.5% on litres, is VAT-free and line-requiring until a policy is configured', () => {
     const resolved = resolvePurchasingPolicy(null, null);
     expect(resolved).toMatchObject({
       source: 'DEFAULT',
@@ -27,6 +27,7 @@ describe('purchasing policy resolution', () => {
       toleranceAction: 'FLAG',
       requireInvoiceLines: true,
       quantityToleranceLitres: null,
+      quantityTolerancePercent: '0.5',
       priceTolerancePercent: null,
     });
   });
@@ -89,6 +90,47 @@ describe('invoice line arithmetic', () => {
     expect(line.netAmount).toBe('0.0200');
     expect(line.grossAmount).toBe('0.0200');
     expect(line.vatAmount).toBe('0.0000');
+  });
+
+  it('keeps the line type, and refuses a fuel type on a line that is not fuel', () => {
+    const product = '11111111-1111-4111-8111-111111111111';
+    expect(
+      computeInvoiceLine(
+        {
+          lineType: 'FUEL',
+          productId: product,
+          description: 'Diesel',
+          quantity: '1',
+          unitPrice: '2',
+        },
+        1,
+        none,
+      ),
+    ).toMatchObject({ lineType: 'FUEL', productId: product });
+    expect(
+      computeInvoiceLine(
+        { lineType: 'TRANSPORT', description: 'Haulage', quantity: '1', unitPrice: '90' },
+        2,
+        none,
+      ),
+    ).toMatchObject({ lineType: 'TRANSPORT', productId: null });
+    expect(
+      computeInvoiceLine({ description: 'Old line', quantity: '1', unitPrice: '1' }, 3, none)
+        .lineType,
+    ).toBeNull();
+    expect(() =>
+      computeInvoiceLine(
+        {
+          lineType: 'TRANSPORT',
+          productId: product,
+          description: 'x',
+          quantity: '1',
+          unitPrice: '1',
+        },
+        4,
+        none,
+      ),
+    ).toThrow('not fuel');
   });
 
   it('rounds the extension half-up to 4 decimal places at one boundary', () => {

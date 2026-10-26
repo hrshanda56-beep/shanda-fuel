@@ -1080,7 +1080,7 @@ export async function getManagementReportFromRequest(
       readExpenses(transaction, filters),
       readRestatedCogs(transaction, filters),
       readCanonicalRevenue(transaction, filters),
-      readOwnerPosition(transaction, filters),
+      readOwnerPosition(transaction, filters, legalEntityIds),
     ]);
     const profitability = buildProfitabilityReport({
       tenantId: filters.tenantId,

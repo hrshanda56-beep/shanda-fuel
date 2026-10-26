@@ -42,6 +42,8 @@ export const supplierDocumentLines = appSchema.table(
     supplierDocumentId: uuid('supplier_document_id').notNull(),
     lineNo: integer('line_no').notNull(),
     productId: uuid('product_id'),
+    /** FUEL, TRANSPORT or OTHER_DIRECT_COST; null = entered before types (migration 0075). */
+    lineType: text('line_type'),
     description: text('description').notNull(),
     quantity: numeric('quantity', { precision: 18, scale: 3 }).notNull(),
     unitPrice: numeric('unit_price', { precision: 20, scale: 8 }).notNull(),
@@ -61,6 +63,14 @@ export const supplierDocumentLines = appSchema.table(
     ),
     index('supplier_document_lines_document_idx').on(table.tenantId, table.supplierDocumentId),
     check('supplier_document_lines_line_no_ck', sql`${table.lineNo} > 0`),
+    check(
+      'supplier_document_lines_line_type_ck',
+      sql`${table.lineType} is null or ${table.lineType} in ('FUEL','TRANSPORT','OTHER_DIRECT_COST')`,
+    ),
+    check(
+      'supplier_document_lines_line_type_product_ck',
+      sql`${table.lineType} is null or ${table.lineType} = 'FUEL' or ${table.productId} is null`,
+    ),
     check('supplier_document_lines_description_ck', sql`btrim(${table.description}) <> ''`),
     check('supplier_document_lines_quantity_ck', sql`${table.quantity} > 0`),
     check('supplier_document_lines_unit_price_ck', sql`${table.unitPrice} >= 0`),

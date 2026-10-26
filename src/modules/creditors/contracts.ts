@@ -32,8 +32,10 @@ export type SupplierSourceReference = Readonly<{
 
 export type SupplierCommandType =
   | 'CreateSupplier'
+  | 'UpdateSupplierDetails'
   | 'SubmitSupplierDocument'
   | 'PostSupplierDocument'
+  | 'ReturnSupplierDocument'
   | 'ReverseSupplierDocument'
   | 'SubmitSupplierPayment'
   | 'PostSupplierPayment'
@@ -67,6 +69,11 @@ export const SUPPLIER_COMMAND_POLICY: Readonly<Record<SupplierCommandType, Suppl
       requiresApproval: false,
       requiresExpectedVersion: false,
     },
+    UpdateSupplierDetails: {
+      permissionCode: 'supplier.manage',
+      requiresApproval: false,
+      requiresExpectedVersion: true,
+    },
     SubmitSupplierDocument: {
       permissionCode: 'supplier.document.create',
       requiresApproval: false,
@@ -75,6 +82,11 @@ export const SUPPLIER_COMMAND_POLICY: Readonly<Record<SupplierCommandType, Suppl
     PostSupplierDocument: {
       permissionCode: 'supplier.document.post',
       requiresApproval: true,
+      requiresExpectedVersion: true,
+    },
+    ReturnSupplierDocument: {
+      permissionCode: 'supplier.document.post',
+      requiresApproval: false,
       requiresExpectedVersion: true,
     },
     ReverseSupplierDocument: {

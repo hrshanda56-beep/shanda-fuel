@@ -188,7 +188,7 @@ export function PurchaseOrderDetail({
   const primary =
     state === 'DRAFT' && capabilities.createOrders ? (
       <Button onClick={() => setAction('submit')}>Send for approval</Button>
-    ) : state === 'SUBMITTED' && capabilities.approveOrders ? (
+    ) : state === 'SUBMITTED' && capabilities.approveOrders && !order?.approvalBlockedForYou ? (
       <Button onClick={() => setAction('approve')}>Approve order</Button>
     ) : canLink && display !== 'RECEIVED' ? (
       <Button onClick={() => setLinkOpen(true)}>Link a delivery</Button>

@@ -526,17 +526,23 @@ export function requestPriceChange(price: SellingPrice): SellingPrice {
   if (price.state !== 'DRAFT') throw invalidTransition('RequestPriceChange', price.state);
   return { ...price, state: 'PENDING_APPROVAL' };
 }
+/**
+ * The requester may not approve their own price while another approver exists. The caller
+ * supplies whether one does (see platform/security/separation-of-duties); omitting it keeps the
+ * strict rule, so only a caller that has checked can allow a solo owner through.
+ */
 export function approvePriceChange(
   price: SellingPrice,
   actor: TrustedActor,
   serverNow: string,
+  alternateApproverExists = true,
 ): SellingPrice {
   assertTrustedActor(actor);
   if (price.state !== 'PENDING_APPROVAL')
     throw invalidTransition('ApprovePriceChange', price.state);
   if (actor.tenantId !== price.tenantId || actor.stationId !== price.stationId)
     throw new AppError('FORBIDDEN', 'The trusted actor context does not cover this price');
-  if (actor.membershipId === price.requestedBy)
+  if (actor.membershipId === price.requestedBy && alternateApproverExists)
     throw new AppError('FORBIDDEN', 'A price change cannot be approved by its requester');
   assertServerTimestamp(serverNow, 'ApprovePriceChange');
   return {

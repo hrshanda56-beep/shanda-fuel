@@ -25,7 +25,7 @@ export type AlertSettings = Readonly<{
 export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   dueSoonDays: 7,
   posSettlementLagDays: 3,
-  reportGraceDays: 1,
+  reportGraceDays: 0,
   cashShortageMinimum: '0.01',
 };
 
@@ -66,6 +66,24 @@ export function classifyStockVariance(
   return size.lte(limit.mul(2)) ? 'watch' : 'alert';
 }
 
+/**
+ * Starting tolerance for a tank that has none of its own: this percentage of the litres sold
+ * since the dip before the latest one. A watch notice is given beyond it and an alert beyond
+ * twice it (0.5% and 1%). The client adjusts it per tank once real readings exist.
+ */
+export const DEFAULT_TANK_VARIANCE_PERCENT = '0.5';
+
+export function effectiveTankTolerance(
+  toleranceLitres: string | null,
+  soldSincePreviousDipLitres: string | null | undefined,
+): string | null {
+  if (toleranceLitres !== null) return toleranceLitres;
+  if (soldSincePreviousDipLitres == null) return null;
+  const sold = new ExactDecimal(soldSincePreviousDipLitres);
+  if (!sold.value.gt(0)) return null;
+  return sold.value.mul(DEFAULT_TANK_VARIANCE_PERCENT).div(100).toString();
+}
+
 export type TankAlertFacts = Readonly<{
   tankId: string;
   tankCode: string;
@@ -75,6 +93,8 @@ export type TankAlertFacts = Readonly<{
   physicalLitres: string | null;
   varianceAtDipLitres: string | null;
   toleranceLitres: string | null;
+  /** Litres sold since the previous dip (up to the latest); the base for the starting tolerance. */
+  soldSincePreviousDipLitres?: string | null;
   reorderLevelLitres: string | null;
 }>;
 
@@ -83,6 +103,8 @@ export type OperationsFacts = Readonly<{
   today: string;
   /** Business dates with an operated shift but no submitted reconciliation. */
   unsubmittedDates: readonly string[];
+  /** Business dates already closed or locked with no submitted reconciliation. */
+  closedUnreconciledDates?: readonly string[];
   /** Days (newest first) where counted cash was less than expected. Amount is the shortage. */
   cashShortages: readonly { businessDate: string; amount: string }[];
   tanks: readonly TankAlertFacts[];
@@ -139,6 +161,21 @@ export function buildOperationsAlerts(
     });
   }
 
+  const closedUnreconciled = facts.closedUnreconciledDates ?? [];
+  if (closedUnreconciled.length > 0) {
+    out.push({
+      id: 'closed-without-reconciliation',
+      title:
+        closedUnreconciled.length === 1
+          ? `${closedUnreconciled[0]} was closed without a reconciliation`
+          : `${closedUnreconciled.length} days were closed without a reconciliation`,
+      detail:
+        'The reason given when the day was closed is in the activity log. Submit the reconciliation to clear this.',
+      href: `${stationPath}/reconciliations`,
+      tone: 'attention',
+    });
+  }
+
   const minimum = new ExactDecimal(settings.cashShortageMinimum).value;
   const shortages = facts.cashShortages.filter((row) =>
     new ExactDecimal(row.amount).value.gte(minimum),
@@ -163,7 +200,10 @@ export function buildOperationsAlerts(
   }
 
   for (const tank of facts.tanks) {
-    const signal = classifyStockVariance(tank.varianceAtDipLitres, tank.toleranceLitres);
+    const signal = classifyStockVariance(
+      tank.varianceAtDipLitres,
+      effectiveTankTolerance(tank.toleranceLitres, tank.soldSincePreviousDipLitres),
+    );
     if (signal === 'watch' || signal === 'alert') {
       const variance = new ExactDecimal(tank.varianceAtDipLitres!);
       const direction = variance.value.isNegative() ? 'under' : 'over';

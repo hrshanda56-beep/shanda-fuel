@@ -290,3 +290,61 @@ describe('customer credit', () => {
     });
   });
 });
+
+describe('buildActionCenter documents waiting on a person', () => {
+  it('lists a pending price, an order and unposted invoices', () => {
+    const result = buildActionCenter({
+      ...clear,
+      prices: {
+        status: 'ok',
+        value: {
+          rows: [{ id: 'p1', productName: 'Diesel', unitPrice: '1.65', requestedByMe: false }],
+          soleApprover: false,
+        },
+      },
+      orders: {
+        status: 'ok',
+        value: {
+          rows: [{ id: 'o1', orderNumber: 'PO-7', supplierName: 'TEI', submittedByMe: false }],
+          soleApprover: false,
+        },
+      },
+      invoices: {
+        status: 'ok',
+        value: { rows: [{ supplierId: 's1', documentType: 'INVOICE', count: 2 }] },
+      },
+    });
+    expect(result.items.map((item) => [item.area, item.href])).toEqual([
+      ['Approvals', '/settings'],
+      ['Approvals', '/purchasing/o1'],
+      ['Payables', '/suppliers/s1'],
+    ]);
+    expect(result.items[2]?.title).toBe('2 supplier invoices not yet posted');
+  });
+
+  it('tells the requester to wait for someone else unless they are the only approver', () => {
+    const price = (soleApprover: boolean) =>
+      buildActionCenter({
+        ...clear,
+        prices: {
+          status: 'ok',
+          value: {
+            rows: [{ id: 'p1', productName: 'Diesel', unitPrice: '1.65', requestedByMe: true }],
+            soleApprover,
+          },
+        },
+      }).items[0]?.detail;
+    expect(price(false)).toContain('someone else');
+    expect(price(true)).not.toContain('someone else');
+  });
+
+  it('reports a failed check as unavailable, never as nothing waiting', () => {
+    const result = buildActionCenter({
+      ...clear,
+      prices: { status: 'unavailable' },
+      orders: { status: 'restricted' },
+    });
+    expect(result.items).toEqual([]);
+    expect(result.unavailable).toEqual(['Price changes']);
+  });
+});

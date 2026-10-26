@@ -151,7 +151,11 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
           meta={
             account.creditLimit === null
               ? 'No credit limit has been set'
-              : `Credit limit ${money(account.creditLimit, account.currency)}`
+              : `Credit limit ${money(account.creditLimit, account.currency)}${
+                  account.creditDays == null
+                    ? ''
+                    : `. Usually pays within ${account.creditDays} days`
+                }`
           }
         />
       </section>

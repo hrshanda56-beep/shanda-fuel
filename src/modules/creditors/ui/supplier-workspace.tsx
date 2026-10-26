@@ -40,12 +40,22 @@ type CreateSupplierForm = {
   code: string;
   legalName: string;
   registrationReference: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+  creditDays: string;
+  creditLimit: string;
 };
 
 const EMPTY_CREATE_FORM: CreateSupplierForm = {
   code: '',
   legalName: '',
   registrationReference: '',
+  contactName: '',
+  contactPhone: '',
+  contactEmail: '',
+  creditDays: '',
+  creditLimit: '',
 };
 
 type SupplierFilter = 'all' | 'overdue' | 'current';
@@ -293,6 +303,16 @@ export function SupplierWorkspace({
       setCreateError('Supplier code and legal name are required.');
       return;
     }
+    const creditDays = createForm.creditDays.trim();
+    if (creditDays && !/^\d{1,3}$/.test(creditDays)) {
+      setCreateError('Enter the usual credit period as a whole number of days, for example 30.');
+      return;
+    }
+    const creditLimit = createForm.creditLimit.trim().replace(/,/g, '');
+    if (creditLimit && !/^\d+(?:\.\d{1,4})?$/.test(creditLimit)) {
+      setCreateError('Enter the credit limit as an amount, for example 5000.');
+      return;
+    }
 
     setCreating(true);
     setCreateError(null);
@@ -312,6 +332,15 @@ export function SupplierWorkspace({
           code,
           legalName,
           ...(registrationReference ? { registrationReference } : {}),
+          ...(createForm.contactName.trim() ? { contactName: createForm.contactName.trim() } : {}),
+          ...(createForm.contactPhone.trim()
+            ? { contactPhone: createForm.contactPhone.trim() }
+            : {}),
+          ...(createForm.contactEmail.trim()
+            ? { contactEmail: createForm.contactEmail.trim() }
+            : {}),
+          ...(creditDays ? { defaultCreditDays: Number(creditDays) } : {}),
+          ...(creditLimit ? { creditLimit } : {}),
         }),
       });
       const result: unknown = await response.json();
@@ -551,6 +580,74 @@ export function SupplierWorkspace({
                   ...form,
                   registrationReference: event.target.value,
                 }))
+              }
+              autoComplete="off"
+            />
+          </Field>
+          <Field id="supplier-contact-name" label="Contact person" optional>
+            <input
+              id="supplier-contact-name"
+              value={createForm.contactName}
+              maxLength={200}
+              onChange={(event) =>
+                setCreateForm((form) => ({ ...form, contactName: event.target.value }))
+              }
+              autoComplete="off"
+            />
+          </Field>
+          <Field id="supplier-contact-phone" label="Phone number" optional>
+            <input
+              id="supplier-contact-phone"
+              type="tel"
+              value={createForm.contactPhone}
+              maxLength={60}
+              onChange={(event) =>
+                setCreateForm((form) => ({ ...form, contactPhone: event.target.value }))
+              }
+              autoComplete="off"
+            />
+          </Field>
+          <Field id="supplier-contact-email" label="Email" optional>
+            <input
+              id="supplier-contact-email"
+              type="email"
+              value={createForm.contactEmail}
+              maxLength={200}
+              onChange={(event) =>
+                setCreateForm((form) => ({ ...form, contactEmail: event.target.value }))
+              }
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            id="supplier-credit-days"
+            label="Usual credit period (days)"
+            hint="How long this supplier normally gives you to pay. Pre-fills the due date on credit invoices."
+            optional
+          >
+            <input
+              id="supplier-credit-days"
+              inputMode="numeric"
+              value={createForm.creditDays}
+              maxLength={3}
+              onChange={(event) =>
+                setCreateForm((form) => ({ ...form, creditDays: event.target.value }))
+              }
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            id="supplier-create-credit-limit"
+            label="Credit limit (USD)"
+            hint="The most you are willing to owe this supplier. It warns you; it never stops a purchase."
+            optional
+          >
+            <input
+              id="supplier-create-credit-limit"
+              inputMode="decimal"
+              value={createForm.creditLimit}
+              onChange={(event) =>
+                setCreateForm((form) => ({ ...form, creditLimit: event.target.value }))
               }
               autoComplete="off"
             />

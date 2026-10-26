@@ -17,10 +17,14 @@ import type { ConfigurationSetupOverview, SetupOverview } from '../contracts';
 import {
   buildGuidedSteps,
   describeDuration,
+  describePriceState,
+  displayPrice,
   firstOpenStep,
+  friendlyPriceError,
   friendlySetupError,
   hoursToMinutes,
   parsePositiveDecimal,
+  planPriceAdvance,
   progress,
   suggestCode,
   type GuidedStep,
@@ -182,7 +186,7 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
   const [errors, setErrors] = useState<Errors>({});
   const products = activeProducts(ctx.data);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const name = text(new FormData(form), 'name');
@@ -193,17 +197,19 @@ function FuelStep({ ctx }: { ctx: FormContext }) {
       name,
       (ctx.data.products ?? []).map((p) => p.code),
     );
-    const saved = await save(
-      {
-        commandType: 'CreateProduct',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        code,
-        name,
-      },
-      `${name} was added.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await save(
+        {
+          commandType: 'CreateProduct',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          code,
+          name,
+        },
+        `${name} was added.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   return (
@@ -241,8 +247,76 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
   const products = activeProducts(ctx.data);
   const nameOf = (id: string) => products.find((p) => p.id === id)?.name ?? 'Fuel';
   const prices = (ctx.data.prices ?? []).filter((p) => p.state !== 'SUPERSEDED');
+  const advanceKeys = useRef(new Map<string, string>());
+  const [advancing, setAdvancing] = useState<string | null>(null);
+  const [advanceOutcome, setAdvanceOutcome] = useState<Outcome>();
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  /** Runs each step the person may take, one after another, and stops at the first refusal. */
+  function advance(price: (typeof prices)[number]) {
+    const { commands } = planPriceAdvance(price.state, ctx.data.capabilities);
+    if (commands.length === 0) return;
+    ctx.gate(async () => {
+      setAdvancing(price.id);
+      setAdvanceOutcome(undefined);
+      let version = price.version;
+      let last: string | undefined;
+      try {
+        for (const commandType of commands) {
+          const body = {
+            commandType,
+            tenantId: ctx.tenantId,
+            stationId: ctx.stationId,
+            priceId: price.id,
+            expectedVersion: version,
+          };
+          const logical = JSON.stringify(body);
+          const key = advanceKeys.current.get(logical) ?? `guided-setup-${crypto.randomUUID()}`;
+          advanceKeys.current.set(logical, key);
+          const response = await fetch('/api/forecourt/commands', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json', 'idempotency-key': key },
+            body: JSON.stringify(body),
+          });
+          if (!response.ok) {
+            const failure = (await response.json().catch(() => null)) as {
+              message?: string;
+            } | null;
+            const approved = failure?.message ? /meter boundaries/i.test(failure.message) : false;
+            setAdvanceOutcome({
+              kind: approved ? 'success' : 'error',
+              message: friendlyPriceError(response.status, failure?.message),
+            });
+            return;
+          }
+          advanceKeys.current.delete(logical);
+          version += 1;
+          last = commandType;
+        }
+        setAdvanceOutcome({
+          kind: 'success',
+          message:
+            last === 'ActivatePriceChange'
+              ? `The price for ${nameOf(price.productId)} is now in use.`
+              : last === 'ApprovePriceChange'
+                ? 'The price was approved.'
+                : last === 'PreparePriceActivation'
+                  ? 'The price is ready to start.'
+                  : 'The price was sent for approval.',
+        });
+      } catch {
+        setAdvanceOutcome({
+          kind: 'error',
+          message: 'That could not be saved. Check your connection and try again.',
+        });
+      } finally {
+        setAdvancing(null);
+        ctx.refresh();
+      }
+    });
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -254,32 +328,53 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
     };
     setErrors(next);
     if (hasErrors(next) || !price) return;
-    const saved = await save(
-      {
-        commandType: 'DraftPriceChange',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        productId,
-        unitPrice: price,
-        currency: 'USD',
-        effectiveFrom: new Date().toISOString(),
-      },
-      `The price for ${nameOf(productId)} was saved. It starts being used once it is approved.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await save(
+        {
+          commandType: 'DraftPriceChange',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          productId,
+          unitPrice: price,
+          currency: 'USD',
+          effectiveFrom: new Date().toISOString(),
+        },
+        `The price for ${nameOf(productId)} was saved. It starts being used once it is approved.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   return (
     <>
-      <ItemList
-        label="Prices"
-        items={prices.map((p) => ({
-          id: p.id,
-          text: `${nameOf(p.productId)}: ${p.unitPrice} USD per litre (${
-            p.state === 'ACTIVE' ? 'in use' : 'waiting for approval'
-          })`,
-        }))}
-      />
+      {prices.length > 0 ? (
+        <ul className={styles.itemList} aria-label="Prices">
+          {prices.map((p) => {
+            const { label } = planPriceAdvance(p.state, ctx.data.capabilities);
+            return (
+              <li key={p.id}>
+                {`${nameOf(p.productId)}: ${displayPrice(p.unitPrice)} USD per litre (${describePriceState(p.state)})`}
+                {label ? (
+                  <>
+                    {' '}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={advancing === p.id}
+                      disabled={advancing !== null}
+                      onClick={() => advance(p)}
+                    >
+                      {label}
+                    </Button>
+                  </>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      <Message outcome={advanceOutcome} />
       {ctx.data.capabilities.priceRequest ? (
         <form className={styles.form} onSubmit={submit} noValidate aria-label="Set a selling price">
           <Field id="price-product" label="Fuel" error={errors.product} required>
@@ -319,7 +414,7 @@ function TankStep({ ctx }: { ctx: FormContext }) {
   const nameOf = (id: string) => products.find((p) => p.id === id)?.name ?? 'Fuel';
   const tanks = (ctx.data.tanks ?? []).filter((t) => t.status === 'ACTIVE');
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -343,23 +438,25 @@ function TankStep({ ctx }: { ctx: FormContext }) {
     };
     setErrors(next);
     if (hasErrors(next) || !capacity) return;
-    const saved = await save(
-      {
-        commandType: 'CreateTank',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        code: suggestCode(
-          name,
-          (ctx.data.tanks ?? []).map((t) => t.code),
-        ),
-        productId,
-        capacityLitres: capacity,
-        reorderLevelLitres: reorder,
-        acceptableVarianceLitres: difference,
-      },
-      `${name} was added.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await save(
+        {
+          commandType: 'CreateTank',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          code: suggestCode(
+            name,
+            (ctx.data.tanks ?? []).map((t) => t.code),
+          ),
+          productId,
+          capacityLitres: capacity,
+          reorderLevelLitres: reorder,
+          acceptableVarianceLitres: difference,
+        },
+        `${name} was added.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   return (
@@ -435,7 +532,7 @@ function PumpStep({ ctx }: { ctx: FormContext }) {
   const pumpLabel = (p: { number: string; name: string | null }) =>
     p.name ? `Pump ${p.number} (${p.name})` : `Pump ${p.number}`;
 
-  async function addPump(event: FormEvent<HTMLFormElement>) {
+  function addPump(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -444,20 +541,22 @@ function PumpStep({ ctx }: { ctx: FormContext }) {
     const next = { number: number ? undefined : 'Enter the pump number, for example 1.' };
     setPumpErrors(next);
     if (hasErrors(next)) return;
-    const saved = await pumpSaver.save(
-      {
-        commandType: 'CreatePump',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        number,
-        name: name || null,
-      },
-      `Pump ${number} was added. Now add its nozzle.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await pumpSaver.save(
+        {
+          commandType: 'CreatePump',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          number,
+          name: name || null,
+        },
+        `Pump ${number} was added. Now add its nozzle.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
-  async function addNozzle(event: FormEvent<HTMLFormElement>) {
+  function addNozzle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -473,19 +572,21 @@ function PumpStep({ ctx }: { ctx: FormContext }) {
     };
     setNozzleErrors(next);
     if (hasErrors(next)) return;
-    const saved = await nozzleSaver.save(
-      {
-        commandType: 'CreateNozzle',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        pumpId,
-        number,
-        productId,
-        meterSerialNumber: meter,
-      },
-      `Nozzle ${number} was added.`,
-    );
-    if (saved) form.reset();
+    ctx.gate(async () => {
+      const saved = await nozzleSaver.save(
+        {
+          commandType: 'CreateNozzle',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          pumpId,
+          number,
+          productId,
+          meterSerialNumber: meter,
+        },
+        `Nozzle ${number} was added.`,
+      );
+      if (saved) form.reset();
+    });
   }
 
   const canEdit = ctx.data.capabilities.forecourt;
@@ -665,7 +766,7 @@ function SupervisorStep({ ctx }: { ctx: FormContext }) {
   const [choice, setChoice] = useState(ctx.data.responsibleSupervisorMembershipId ?? '');
   const [error, setError] = useState<string>();
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!choice) {
       setError('Choose who is in charge of this station.');
@@ -673,15 +774,17 @@ function SupervisorStep({ ctx }: { ctx: FormContext }) {
     }
     setError(undefined);
     const chosen = supervisors.find((s) => s.membershipId === choice);
-    await save(
-      {
-        commandType: 'SetResponsibleSupervisor',
-        tenantId: ctx.tenantId,
-        stationId: ctx.stationId,
-        membershipId: choice,
-      },
-      `${chosen?.name ?? 'The supervisor'} is now in charge of this station.`,
-    );
+    ctx.gate(async () => {
+      await save(
+        {
+          commandType: 'SetResponsibleSupervisor',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          membershipId: choice,
+        },
+        `${chosen?.name ?? 'The supervisor'} is now in charge of this station.`,
+      );
+    });
   }
 
   if (!ctx.data.capabilities.forecourt) return null;
@@ -876,7 +979,7 @@ function GuideSteps({
       <StepUpDialog
         open={pending !== null}
         tenantId={tenantId}
-        description="Saving a shift needs a fresh identity check. Nothing is saved until you confirm."
+        description="Saving this setup needs a fresh identity check. Nothing is saved until you confirm."
         onCancel={() => setPending(null)}
         onVerified={() => {
           confirmedUntil.current = Date.now() + STEP_UP_REUSE_MS;

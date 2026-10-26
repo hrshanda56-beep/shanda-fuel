@@ -19,6 +19,7 @@ export const SUPPLIER_DOCUMENT_STATES = [
   'PARTIALLY_PAID',
   'PAID',
   'REVERSED',
+  'RETURNED',
 ] as const;
 export type SupplierDocumentState = (typeof SUPPLIER_DOCUMENT_STATES)[number];
 
@@ -252,11 +253,12 @@ const documentTransitions: Readonly<
   Record<SupplierDocumentState, readonly SupplierDocumentState[]>
 > = {
   DRAFT: ['SUBMITTED'],
-  SUBMITTED: ['DRAFT', 'POSTED'],
+  SUBMITTED: ['DRAFT', 'POSTED', 'RETURNED'],
   POSTED: ['PARTIALLY_PAID', 'PAID', 'REVERSED'],
   PARTIALLY_PAID: ['PAID', 'REVERSED'],
   PAID: ['REVERSED'],
   REVERSED: [],
+  RETURNED: [],
 };
 
 export function assertSupplierDocumentTransition(
@@ -301,7 +303,8 @@ export function outstandingPayable(
   document: Pick<SupplierDocument, 'amount' | 'state'>,
   allocatedAmount: Money,
 ): Money {
-  if (document.state === 'REVERSED') return money('0', document.amount.currency);
+  if (document.state === 'REVERSED' || document.state === 'RETURNED')
+    return money('0', document.amount.currency);
   assertSameCurrency(
     document.amount,
     allocatedAmount,
@@ -350,8 +353,11 @@ export function validatePaymentAllocations(input: {
       item.supplierId,
       'Payment and document must belong to the same supplier',
     );
-    if (item.state === 'REVERSED')
-      throw new AppError('CONFLICT', 'A reversed supplier document cannot receive an allocation');
+    if (item.state === 'REVERSED' || item.state === 'RETURNED')
+      throw new AppError(
+        'CONFLICT',
+        'A reversed or returned supplier document cannot receive an allocation',
+      );
     const remaining = outstandingPayable(item, item.allocatedAmount);
     if (remaining.amount.value.isZero())
       throw new AppError(

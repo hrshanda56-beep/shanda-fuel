@@ -5,6 +5,25 @@ import { buildTableReportCsv } from './csv';
 import { findTableReport } from './definitions';
 
 describe('customer ageing report', () => {
+  it('counts late days from the charge date plus the account credit days, 30 when none is set', () => {
+    const lines = [
+      { id: 'a', businessDate: '2026-10-01', direction: 'INCREASE' as const, amount: '10.0000' },
+    ];
+    const rows = buildCustomerAgeingRows(
+      [
+        { customer: 'No days set', accountReference: 'C-1', lines },
+        { customer: 'Seven days', accountReference: 'C-2', creditDays: 7, lines },
+      ],
+      '2026-10-23',
+    );
+    expect(rows.find((row) => row.customer === 'No days set')).toMatchObject({
+      current: '10.0000',
+    });
+    expect(rows.find((row) => row.customer === 'Seven days')).toMatchObject({
+      days1to30: '10.0000',
+    });
+  });
+
   it('is registered as an exportable credit report', () => {
     expect(findTableReport('customer-ageing')).toBe(CUSTOMER_AGEING_REPORT);
     expect(findReport('customer-ageing')).toMatchObject({ category: 'credit', exportable: true });
@@ -16,6 +35,7 @@ describe('customer ageing report', () => {
         {
           customer: 'Zimbabwe Haulage',
           accountReference: 'C-2',
+          creditDays: 0,
           lines: [
             { id: 'a', businessDate: '2026-06-01', direction: 'INCREASE', amount: '500.2500' },
           ],
@@ -23,6 +43,7 @@ describe('customer ageing report', () => {
         {
           customer: 'Paid Up Ltd',
           accountReference: 'C-3',
+          creditDays: 0,
           lines: [
             { id: 'b', businessDate: '2026-09-01', direction: 'INCREASE', amount: '80.0000' },
             { id: 'c', businessDate: '2026-09-02', direction: 'DECREASE', amount: '80.0000' },
@@ -31,6 +52,7 @@ describe('customer ageing report', () => {
         {
           customer: 'Acme Transport',
           accountReference: 'C-1',
+          creditDays: 0,
           lines: [
             { id: 'd', businessDate: '2026-10-20', direction: 'INCREASE', amount: '120.5000' },
             { id: 'e', businessDate: '2026-09-15', direction: 'INCREASE', amount: '10.0000' },

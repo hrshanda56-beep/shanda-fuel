@@ -20,6 +20,9 @@ export const AGEING_BUCKETS = [
   { key: 'over90', label: 'Over 90 days', minDays: 91, maxDays: null },
 ] as const;
 
+/** Days a credit customer has to pay when their account names no period of its own. */
+export const DEFAULT_CUSTOMER_CREDIT_DAYS = 30;
+
 export type AgeingBucketKey = (typeof AGEING_BUCKETS)[number]['key'];
 
 /** One thing that makes the customer owe more (a fuel charge or an upward adjustment). */
@@ -120,8 +123,8 @@ export type AgeingOptions = Readonly<{
   /** The business date the report is "as at". Required: never guessed from the clock. */
   asAt: string;
   /**
-   * Days a charge is allowed before it counts as late. No customer payment terms exist yet, so the
-   * default is 0: a charge is "Current" only on the day it was made. (Open owner question.)
+   * Days a charge is allowed before it counts as late: the account's own credit days, or
+   * `DEFAULT_CUSTOMER_CREDIT_DAYS` when it names none. Left out here, 0: "Current" only on the day.
    */
   termsDays?: number;
   strategy?: AllocationStrategy;

@@ -3,6 +3,7 @@ import {
   DEFAULT_ALERT_SETTINGS,
   buildOperationsAlerts,
   classifyStockVariance,
+  effectiveTankTolerance,
   daysBetween,
   type OperationsFacts,
   type TankAlertFacts,
@@ -50,14 +51,39 @@ describe('classifyStockVariance', () => {
   });
 });
 
+describe('effectiveTankTolerance', () => {
+  it("keeps a tank's own limit", () => {
+    expect(effectiveTankTolerance('50.000', '10000')).toBe('50.000');
+  });
+
+  it('starts at 0.5% of the litres sold since the previous dip, so 1% is the alert line', () => {
+    const tolerance = effectiveTankTolerance(null, '10000');
+    expect(tolerance).toBe('50');
+    expect(classifyStockVariance('50', tolerance)).toBe('ok');
+    expect(classifyStockVariance('51', tolerance)).toBe('watch');
+    expect(classifyStockVariance('101', tolerance)).toBe('alert');
+  });
+
+  it('does not judge a tank with no limit and nothing sold', () => {
+    expect(effectiveTankTolerance(null, null)).toBeNull();
+    expect(effectiveTankTolerance(null, '0')).toBeNull();
+  });
+});
+
 describe('buildOperationsAlerts', () => {
   it('says nothing when everything is in order', () => {
     expect(alerts({ tanks: [tank()] })).toEqual([]);
   });
 
+  it('starts with no grace: an unsubmitted report is late from the next day', () => {
+    expect(DEFAULT_ALERT_SETTINGS.reportGraceDays).toBe(0);
+    expect(alerts({ unsubmittedDates: ['2026-10-21'] })).toHaveLength(1);
+  });
+
   it('flags a late report only after the grace period', () => {
-    expect(alerts({ unsubmittedDates: ['2026-10-21'] })).toEqual([]);
-    const [late] = alerts({ unsubmittedDates: ['2026-10-20'] });
+    const oneDay = { ...DEFAULT_ALERT_SETTINGS, reportGraceDays: 1 };
+    expect(alerts({ unsubmittedDates: ['2026-10-21'] }, oneDay)).toEqual([]);
+    const [late] = alerts({ unsubmittedDates: ['2026-10-20'] }, oneDay);
     expect(late).toMatchObject({
       id: 'reports-late',
       title: 'The report for 2026-10-20 has not been submitted',
@@ -122,5 +148,18 @@ describe('buildOperationsAlerts', () => {
 describe('daysBetween', () => {
   it('counts calendar days across month ends', () => {
     expect(daysBetween('2026-09-29', '2026-10-02')).toBe(3);
+  });
+});
+
+describe('closed without a reconciliation', () => {
+  it('flags a closed day that still has no reconciliation', () => {
+    const [alert] = alerts({ closedUnreconciledDates: ['2026-10-20'] });
+    expect(alert?.id).toBe('closed-without-reconciliation');
+    expect(alert?.title).toContain('2026-10-20');
+    expect(alert?.href).toBe('/stations/st-1/reconciliations');
+  });
+
+  it('says nothing when every closed day has its reconciliation', () => {
+    expect(alerts({ closedUnreconciledDates: [] })).toEqual([]);
   });
 });

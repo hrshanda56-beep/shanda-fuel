@@ -1,8 +1,10 @@
 import 'server-only';
 
+import Decimal from 'decimal.js';
 import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import type { OwnerPosition } from './contracts';
+import { readSupplierExposure } from '../creditors/purchasing-queries';
 import { formatLitres, formatMoney } from './domain';
 
 type PositionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -24,6 +26,7 @@ function stationFilter(alias: string, stationIds: readonly string[]) {
 export async function readOwnerPosition(
   transaction: PositionTransaction,
   filters: { tenantId: string; stationIds: readonly string[] },
+  legalEntityIds: readonly string[] = [],
 ): Promise<OwnerPosition> {
   const rows = await transaction.execute<{
     stock_value: string | null;
@@ -100,7 +103,13 @@ export async function readOwnerPosition(
   const accountsWithBalance = Number(bank?.accounts_with_balance ?? 0);
   const complete =
     accountsTotal > 0 && accountsWithBalance === accountsTotal && bank?.total != null;
+  const receivedNotInvoiced = await readReceivedNotInvoiced(
+    transaction,
+    filters.tenantId,
+    legalEntityIds,
+  );
   return {
+    receivedNotInvoiced,
     stockByStation: stock.map((row) => ({
       stationName: row.station,
       productName: row.product,
@@ -123,11 +132,35 @@ export async function readOwnerPosition(
   };
 }
 
+async function readReceivedNotInvoiced(
+  transaction: PositionTransaction,
+  tenantId: string,
+  legalEntityIds: readonly string[],
+): Promise<NonNullable<OwnerPosition['receivedNotInvoiced']>> {
+  const today = new Date().toISOString().slice(0, 10);
+  let value = new Decimal(0);
+  let unpriced = new Decimal(0);
+  for (const legalEntityId of legalEntityIds) {
+    const exposure = await readSupplierExposure(transaction, {
+      tenantId,
+      legalEntityId,
+      asOf: today,
+    });
+    value = value.add(exposure.totals.unbilledValue);
+    unpriced = unpriced.add(exposure.totals.unpricedUnbilledLitres);
+  }
+  return {
+    value: unpriced.isZero() ? formatMoney(value.toFixed(4)) : null,
+    unpricedLitres: unpriced.toFixed(3),
+  };
+}
+
 export function emptyOwnerPosition(): OwnerPosition {
   return {
     stockValue: '0.0000',
     unvaluedStockStreams: 0,
     unpaidExpenses: '0.0000',
     expensesAwaitingApproval: { count: 0, amount: '0.0000' },
+    receivedNotInvoiced: { value: '0.0000', unpricedLitres: '0.000' },
   };
 }

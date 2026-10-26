@@ -6,14 +6,18 @@
  * customer's oldest unpaid charge first. See `modules/customers/ageing.ts`.
  */
 import { ExactDecimal } from '../../../platform/domain/primitives';
-import { computeAccountAgeing, type AgeingLedgerLine } from '../../customers/ageing';
+import {
+  computeAccountAgeing,
+  DEFAULT_CUSTOMER_CREDIT_DAYS,
+  type AgeingLedgerLine,
+} from '../../customers/ageing';
 import type { TableReportDefinition, TableReportRow } from './definitions';
 
 export const CUSTOMER_AGEING_REPORT: TableReportDefinition = {
   slug: 'customer-ageing',
   title: 'Customer Debtors Ageing',
   description:
-    'Which credit customers owe money and for how long. Payments are counted against the oldest unpaid charge first.',
+    'Which credit customers owe money and for how long past their credit days (30 unless set on the account). Payments are counted against the oldest unpaid charge first.',
   category: 'credit',
   scope: 'organisation',
   emptyMessage: 'No credit customer owes money as at this date.',
@@ -33,6 +37,8 @@ export const CUSTOMER_AGEING_REPORT: TableReportDefinition = {
 export type AgeingAccountInput = Readonly<{
   customer: string;
   accountReference: string;
+  /** Days the customer has to pay; null or left out means the default of 30. */
+  creditDays?: number | null;
   lines: readonly AgeingLedgerLine[];
 }>;
 
@@ -45,7 +51,13 @@ export function buildCustomerAgeingRows(
   asAt: string,
 ): TableReportRow[] {
   return accounts
-    .map((account) => ({ account, ageing: computeAccountAgeing(account.lines, { asAt }) }))
+    .map((account) => ({
+      account,
+      ageing: computeAccountAgeing(account.lines, {
+        asAt,
+        termsDays: account.creditDays ?? DEFAULT_CUSTOMER_CREDIT_DAYS,
+      }),
+    }))
     .filter(({ ageing }) => new ExactDecimal(ageing.totalOwed).value.gt(0))
     .sort((left, right) => {
       const diff = new ExactDecimal(right.ageing.totalOwed).value.cmp(

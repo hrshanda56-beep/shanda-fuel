@@ -31,7 +31,7 @@ export type ExtraAlertSettings = Readonly<{
   deliveryShortageMinimumLitres: string;
   /** How far back dated items are looked for. */
   lookbackDays: number;
-  /** A customer whose oldest unpaid charge is at least this many days old is flagged overdue. */
+  /** Credit days for a customer whose account names none. Past a customer's own days, they are overdue. */
   customerOverdueDays: number;
 }>;
 
@@ -82,6 +82,18 @@ export type ExtraAlertFacts = Readonly<{
         paymentDate: string;
         reference: string;
         amount: string;
+      }[]
+    | null;
+  /**
+   * Open shifts with tanks that have no dip reading when one is due: at the start (30 minutes
+   * after opening) or at the close (from 30 minutes before the shift ends). Null when the person
+   * may not see inventory; absent when the caller does not load it.
+   */
+  dipReminders?:
+    | readonly {
+        shiftId: string;
+        kind: 'OPENING' | 'CLOSING';
+        tankCodes: readonly string[];
       }[]
     | null;
   /** Credit accounts with an unpaid charge. Null when the person may not see customer accounts. */
@@ -210,14 +222,34 @@ export function buildExtraAlerts(
     });
   }
 
+  for (const reminder of facts.dipReminders ?? []) {
+    const tanks = reminder.tankCodes.join(', ');
+    const many = reminder.tankCodes.length > 1;
+    out.push({
+      id: `dip-reminder-${reminder.kind.toLowerCase()}-${reminder.shiftId}`,
+      title:
+        reminder.kind === 'OPENING'
+          ? `Take the opening dip reading on ${tanks}`
+          : `Take the closing dip reading on ${tanks} before the shift ends`,
+      detail:
+        reminder.kind === 'OPENING'
+          ? `The shift has started and ${many ? 'these tanks have' : 'this tank has'} no dip reading yet.`
+          : `The shift ends within 30 minutes (or already has) and ${many ? 'these tanks have' : 'this tank has'} no closing dip reading.`,
+      href: '/inventory',
+      tone: 'attention',
+    });
+  }
+
   const overdue = (facts.customerOverdue ?? []).filter(
-    (row) => daysBetween(row.oldestUnpaidDate, facts.today) >= settings.customerOverdueDays,
+    (row) =>
+      daysBetween(row.oldestUnpaidDate, facts.today) >
+      (row.creditDays ?? settings.customerOverdueDays),
   );
   for (const row of overdue.slice(0, 3)) {
     out.push({
       id: `customer-overdue-${row.accountId}`,
       title: `${row.customerName} owes ${formatUsd(row.owed)}, unpaid since ${row.oldestUnpaidDate}`,
-      detail: `The oldest unpaid charge is ${daysBetween(row.oldestUnpaidDate, facts.today)} days old. Payments clear the oldest charge first.`,
+      detail: `The oldest unpaid charge is ${daysBetween(row.oldestUnpaidDate, facts.today)} days old and this customer has ${row.creditDays ?? settings.customerOverdueDays} days to pay. Payments clear the oldest charge first.`,
       href: `/customers/${encodeURIComponent(row.customerId)}`,
       tone: 'attention',
     });

@@ -535,8 +535,8 @@ export async function createCustomerAccountInTransaction(
   // owner/admin explicitly submits SetCustomerAccountStations.
   const stationScopeConfigured = input.stationScope !== undefined && legalEntityId !== null;
   await transaction.execute(sql`
-    insert into app.customer_accounts (id, tenant_id, customer_id, account_type, currency, credit_limit, legal_entity_id, station_scope, station_scope_configured, created_by, updated_by)
-    values (${accountId}, ${context.tenantId}, ${input.customerId}, ${input.accountType}, ${input.currency}, ${limit}, ${legalEntityId}, ${stationScope}, ${stationScopeConfigured}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
+    insert into app.customer_accounts (id, tenant_id, customer_id, account_type, currency, credit_limit, credit_days, legal_entity_id, station_scope, station_scope_configured, created_by, updated_by)
+    values (${accountId}, ${context.tenantId}, ${input.customerId}, ${input.accountType}, ${input.currency}, ${limit}, ${input.creditDays ?? null}, ${legalEntityId}, ${stationScope}, ${stationScopeConfigured}, ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId})
   `);
   if (stationScope === 'SELECTED' && legalEntityId) {
     await replaceAccountStations(

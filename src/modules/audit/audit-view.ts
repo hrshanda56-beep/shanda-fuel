@@ -100,7 +100,26 @@ export function diffAudit(before: unknown, after: unknown): AuditChange[] {
   return changes.slice(0, MAX_CHANGES);
 }
 
-export function toAuditItem(row: StoredAuditRow): AuditItem {
+/**
+ * "Station Bindura" when the name is known. An identifier is shown only when it is short enough
+ * to be a human reference; a long machine id is left out rather than shown cut off.
+ */
+function subjectLabel(
+  subjectType: string | null,
+  subjectId: string | null,
+  names?: SubjectNames,
+): string | null {
+  if (!subjectType) return null;
+  if (!subjectId) return words(subjectType);
+  const name = names?.get(`${subjectType}:${subjectId}`);
+  if (name) return `${words(subjectType)} ${name}`;
+  return subjectId.length > 24 ? words(subjectType) : `${words(subjectType)} ${subjectId}`;
+}
+
+/** Looked-up names for what an event touched, keyed `<SubjectType>:<id>`. */
+export type SubjectNames = ReadonlyMap<string, string>;
+
+export function toAuditItem(row: StoredAuditRow, names?: SubjectNames): AuditItem {
   const details = isRecord(row.details) ? row.details : {};
   const { area, action } = describeAction(row.eventCode);
   const hasBefore = details.before !== undefined && details.before !== null;
@@ -112,12 +131,7 @@ export function toAuditItem(row: StoredAuditRow): AuditItem {
     who: row.actorName?.trim() || 'Unknown person',
     action,
     area,
-    subject:
-      subjectType && subjectId
-        ? `${words(subjectType)} ${subjectId.length > 24 ? `${subjectId.slice(0, 8)}…` : subjectId}`
-        : subjectType
-          ? words(subjectType)
-          : null,
+    subject: subjectLabel(subjectType, subjectId, names),
     reason: typeof details.reason === 'string' && details.reason.trim() ? details.reason : null,
     changes: diffAudit(details.before, details.after),
     created: !hasBefore,

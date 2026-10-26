@@ -21,9 +21,11 @@ import {
 } from '@/design-system/primitives';
 import { formatLitres, formatStatusLabel } from '@/design-system/formatters';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { AddCustomer } from './add-customer';
 import type {
   CustomerAccount,
   CustomerAccountsResponse,
+  CustomerCapabilities,
   CustomerSummary,
   CustomerTransaction,
 } from './types';
@@ -201,7 +203,11 @@ function initials(name: string): string {
 export function CustomerWorkspace({
   initial,
 }: {
-  initial?: { resolution: ContextResolution; customers: CustomerSummary[] };
+  initial?: {
+    resolution: ContextResolution;
+    customers: CustomerSummary[];
+    capabilities?: CustomerCapabilities;
+  };
 }) {
   const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
@@ -210,6 +216,9 @@ export function CustomerWorkspace({
   const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<CustomerSummary[]>(initial?.customers ?? []);
+  const [capabilities, setCapabilities] = useState<CustomerCapabilities | null>(
+    initial?.capabilities ?? null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -275,6 +284,7 @@ export function CustomerWorkspace({
         throw new Error(getErrorMessage(result, 'Customer accounts could not be loaded'));
       }
       setCustomers((result as CustomerAccountsResponse).customers);
+      setCapabilities((result as CustomerAccountsResponse).capabilities ?? null);
       setHasLoaded(true);
     } catch (cause) {
       if (!signal?.aborted) {
@@ -353,7 +363,22 @@ export function CustomerWorkspace({
       ) : null}
 
       {hasRequiredContext && current ? (
-        <div className="content-span">
+        <div className="content-span customer-toolbar">
+          <AddCustomer
+            tenantId={current.organisationId}
+            legalEntityId={
+              current.legalEntityId ??
+              // With one company in this organisation there is nothing to choose.
+              (() => {
+                const companies =
+                  context?.available?.organisations.find((o) => o.id === current.organisationId)
+                    ?.legalEntities ?? [];
+                return companies.length === 1 ? (companies[0]?.id ?? null) : null;
+              })()
+            }
+            canAdd={capabilities?.manageCustomer ?? false}
+            canOpenAccount={capabilities?.openAccount ?? false}
+          />
           <Link
             className="button button-secondary"
             href={buildContextHref('/customers/account-controls', search, current)}
@@ -419,7 +444,7 @@ export function CustomerWorkspace({
               layout="block"
               icon="users"
               title="No customers yet"
-              message="Customer accounts will appear here once they are set up."
+              message="Use Add customer above to set up the first one."
             />
           ) : null}
           {!loading && !error && customers.length > 0 && filteredCustomers.length === 0 ? (

@@ -151,10 +151,33 @@ export async function getSupplierExposureFromRequest(
     requestedScope: context.scope,
   });
   const asOf = assertDate(input.asOf ?? today());
-  return withTenantTransaction(context.authority.transaction, async (transaction) => {
-    const { deliveries, coverage } = await loadScope(transaction, {
+  return withTenantTransaction(context.authority.transaction, (transaction) =>
+    readSupplierExposure(transaction, {
       tenantId: context.tenantId,
       legalEntityId: context.legalEntityId,
+      supplierId: input.supplierId,
+      state: input.state,
+      asOf,
+    }),
+  );
+}
+
+/** What was received but not yet invoiced, per supplier, inside the caller's tenant transaction. */
+export async function readSupplierExposure(
+  transaction: SupplierTransaction,
+  input: {
+    tenantId: string;
+    legalEntityId: string;
+    supplierId?: string | undefined;
+    state?: CoverageState | undefined;
+    asOf: string;
+  },
+) {
+  const { asOf } = input;
+  {
+    const { deliveries, coverage } = await loadScope(transaction, {
+      tenantId: input.tenantId,
+      legalEntityId: input.legalEntityId,
       supplierId: input.supplierId,
       asOf,
     });
@@ -294,7 +317,7 @@ export async function getSupplierExposureFromRequest(
         unpricedUnbilledLitres: sum((group) => group.unpricedUnbilledLitres, 3),
       },
     };
-  });
+  }
 }
 
 export async function getSupplierVarianceFromRequest(
