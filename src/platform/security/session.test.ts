@@ -86,25 +86,36 @@ describe('session security', () => {
     ).toThrow('step-up');
   });
 
-  it('allows the explicit Clerk no-MFA assertion only for its bound action', () => {
+  it('lets one active Clerk assertion cover every privileged action in its tenant', () => {
     const clerkReverification = {
       ...baseSession,
       strongAuthenticationMethod: 'clerk-reverification' as const,
       stepUpAction: 'LOCK_BUSINESS_DAY',
     };
-    expect(() =>
-      assertStepUp(clerkReverification, 1, now, baseSession.stepUpTenantId!, 'LOCK_BUSINESS_DAY'),
-    ).not.toThrow();
-    expect(() => assertStepUp(clerkReverification, 1, now, baseSession.stepUpTenantId!)).toThrow(
+    for (const action of [undefined, 'LOCK_BUSINESS_DAY', 'APPROVE_RECONCILIATION']) {
+      expect(() =>
+        assertStepUp(clerkReverification, 1, now, baseSession.stepUpTenantId!, action),
+      ).not.toThrow();
+    }
+  });
+
+  it('still needs an assertion at all, and only for its own tenant and lifetime', () => {
+    const noAction = {
+      ...baseSession,
+      strongAuthenticationMethod: 'clerk-reverification' as const,
+      stepUpAction: undefined,
+    };
+    expect(() => assertStepUp(noAction, 1, now, baseSession.stepUpTenantId!)).toThrow('step-up');
+    const bound = { ...noAction, stepUpAction: 'PRIVILEGED_OPERATION' };
+    expect(() => assertStepUp(bound, 1, now, '66666666-6666-4666-8666-666666666666')).toThrow(
       'step-up',
     );
     expect(() =>
       assertStepUp(
-        clerkReverification,
+        { ...bound, stepUpExpiresAt: new Date(now.getTime() - 1) },
         1,
         now,
         baseSession.stepUpTenantId!,
-        'APPROVE_RECONCILIATION',
       ),
     ).toThrow('step-up');
   });

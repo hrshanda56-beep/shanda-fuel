@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   resolveClerkSession: vi.fn(),
   clerkUserHasMfa: vi.fn(),
   hasRecentClerkReverification: vi.fn(),
+  hasRecentClerkSignIn: vi.fn(),
   appendSecurityEvent: vi.fn(),
   withTenantTransaction: vi.fn(async (_context: unknown, callback: (transaction: {}) => unknown) =>
     callback({}),
@@ -20,6 +21,7 @@ vi.mock('../../platform/auth/provider', () => ({
   resolveClerkSession: mocks.resolveClerkSession,
   clerkUserHasMfa: mocks.clerkUserHasMfa,
   hasRecentClerkReverification: mocks.hasRecentClerkReverification,
+  hasRecentClerkSignIn: mocks.hasRecentClerkSignIn,
 }));
 
 vi.mock('../../platform/db', () => ({
@@ -126,6 +128,7 @@ describe('Clerk privileged step-up policy', () => {
     mocks.resolveClerkSession.mockResolvedValue(providerSession());
     mocks.clerkUserHasMfa.mockResolvedValue(false);
     mocks.hasRecentClerkReverification.mockReturnValue(false);
+    mocks.hasRecentClerkSignIn.mockReturnValue(false);
   });
 
   it('requires explicit Clerk reverification and then authorizes an eligible no-MFA Owner', async () => {
@@ -296,6 +299,66 @@ describe('Clerk privileged step-up policy', () => {
       establishStepUp({
         request: request(),
         context: context({ owner: false }),
+        action: CLERK_STEP_UP_ACTION,
+        now,
+      }),
+    ).rejects.toBeInstanceOf(ClerkReverificationRequiredError);
+  });
+
+  it('treats a fresh password sign-in as the step-up, with no challenge', async () => {
+    mocks.hasRecentClerkSignIn.mockReturnValue(true);
+    const result = await establish();
+    expect(result.level).toBe(1);
+    expect(result.setCookie).toContain('shanda-fuel.clerk-step-up=');
+    expect(mocks.hasRecentClerkSignIn).toHaveBeenCalledWith(expect.any(Request), 'strict', 15);
+    expect(new Date(result.expiresAt).getTime()).toBe(now.getTime() + 15 * 60_000);
+  });
+
+  it('uses the configured reuse window', async () => {
+    vi.stubEnv('STEP_UP_REUSE_MINUTES', '5');
+    mocks.hasRecentClerkSignIn.mockReturnValue(true);
+    const result = await establish();
+    expect(mocks.hasRecentClerkSignIn).toHaveBeenCalledWith(expect.any(Request), 'strict', 5);
+    expect(new Date(result.expiresAt).getTime()).toBe(now.getTime() + 5 * 60_000);
+  });
+
+  it('does not ask again in another area while a check is still active', async () => {
+    mocks.hasRecentClerkSignIn.mockReturnValue(true);
+    const first = await establish();
+    const cookie = first.setCookie!.split(';', 1)[0]!;
+    mocks.hasRecentClerkSignIn.mockReturnValue(false);
+    mocks.appendSecurityEvent.mockClear();
+    const second = await establishStepUp({
+      request: request(cookie),
+      context: context(),
+      action: CLERK_DEACTIVATE_STAFF_ACTION,
+      now: new Date(now.getTime() + 60_000),
+    });
+    expect(second.expiresAt).toBe(first.expiresAt);
+    expect(second.setCookie).toBeUndefined();
+    expect(mocks.appendSecurityEvent).not.toHaveBeenCalled();
+    // After it expires the person is asked again.
+    await expect(
+      establishStepUp({
+        request: request(cookie),
+        context: context(),
+        action: CLERK_DEACTIVATE_STAFF_ACTION,
+        now: new Date(now.getTime() + 16 * 60_000),
+      }),
+    ).rejects.toBeInstanceOf(ClerkReverificationRequiredError);
+  });
+
+  it('never reuses a check for another tenant or a different person', async () => {
+    mocks.hasRecentClerkSignIn.mockReturnValue(true);
+    const first = await establish();
+    const cookie = first.setCookie!.split(';', 1)[0]!;
+    mocks.hasRecentClerkSignIn.mockReturnValue(false);
+    await expect(
+      establishStepUp({
+        request: request(cookie),
+        context: context({
+          tenantId: '99999999-9999-4999-8999-999999999999',
+        }),
         action: CLERK_STEP_UP_ACTION,
         now,
       }),

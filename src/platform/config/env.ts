@@ -42,6 +42,8 @@ const envSchema = z
     REQUIRE_LOGIN_MFA: booleanEnvironmentFlag,
     // This is a security invariant, not an operational feature switch.
     REQUIRE_PRIVILEGED_STEP_UP: booleanEnvironmentFlag,
+    // How long one identity check (or a fresh password sign-in) covers every privileged action.
+    STEP_UP_REUSE_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
     R2_ACCOUNT_ID: z
       .string()
       .regex(r2AccountIdPattern, { error: 'R2 account ID must be 32 hexadecimal characters' })

@@ -294,7 +294,7 @@
     "src/modules/setup/ui/payments-panel.tsx": "1016aaa95e3c5b122b2a40735b2a2fa94205c048ac2ba4740245a329764d1278",
     "src/modules/setup/ui/readiness-panel.tsx": "f5b6b27b00488035089e4c3ba0545b9eb4654fb51e4738f93b478a5a1a6e97d1",
     "src/modules/setup/ui/setup.module.css": "d054db68d2e68f5546f91b7731783ac83c8ecc614fc134814089e1138e867e27",
-    "src/modules/setup/ui/step-up-dialog.tsx": "ad16dae1703ea076a8a5987915012f4b856de6fa33a131652c122f7e3f002d99",
+    "src/modules/setup/ui/step-up-dialog.tsx": "1f584f769296923ac478bf71b8b05a13211d2af574d537b5d2454a7169665c51",
     "src/modules/setup/ui/use-setup-overview.ts": "bba2c1517f0588de9c8591c39bf91805256799db34d1e92c3ac1055094b3ce5a"
   }
 }
