@@ -463,6 +463,13 @@
       "when": 1792600080000,
       "tag": "0080_supplier_document_files",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1792600081000,
+      "tag": "0081_expense_payment_method",
+      "breakpoints": true
     }
   ]
 }

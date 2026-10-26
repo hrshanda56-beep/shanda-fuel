@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import type { PermissionCode } from '../../platform/security/permissions';
-import { EXPENSE_CATEGORY_CLASSIFICATIONS, SETTLEMENT_SOURCES } from './domain';
+import {
+  EXPENSE_CATEGORY_CLASSIFICATIONS,
+  EXPENSE_PAYMENT_METHODS,
+  SETTLEMENT_SOURCES,
+} from './domain';
 
 export const EXPENSE_PERMISSION_CODES = [
   'expense.view',
@@ -58,6 +62,8 @@ export const submitExpenseSchema = stationBase
     payee: z.string().trim().max(160).optional(),
     reference: z.string().trim().max(120).optional(),
     amount: decimal,
+    /** Optional: how it was paid. Station cash is taken off the cash available for collection. */
+    paymentMethod: z.enum(EXPENSE_PAYMENT_METHODS).optional(),
   })
   .strict()
   .refine((value) => Boolean(value.shiftId) === Boolean(value.observedAt), {
