@@ -37,3 +37,54 @@ describe('provider settlement domain', () => {
     expect(deriveSettlementState('100.0000', '100.0000', true)).toBe('EXCEPTION');
   });
 });
+
+describe('provider account fees', () => {
+  it('works out the charge from a percentage and a fixed fee, rounded once to four places', async () => {
+    const { computeExpectedFee } = await import('./domain');
+    expect(computeExpectedFee({ grossAmount: '200', feePercent: '1', feeFixed: null })).toBe(
+      '2.0000',
+    );
+    expect(computeExpectedFee({ grossAmount: '200', feePercent: '1.5', feeFixed: '0.10' })).toBe(
+      '3.1000',
+    );
+    expect(computeExpectedFee({ grossAmount: '33.3333', feePercent: '1', feeFixed: null })).toBe(
+      '0.3333',
+    );
+    expect(computeExpectedFee({ grossAmount: '100', feePercent: null, feeFixed: '0.25' })).toBe(
+      '0.2500',
+    );
+    expect(computeExpectedFee({ grossAmount: '100', feePercent: null, feeFixed: null })).toBeNull();
+  });
+
+  it('compares what the provider kept with what it should have', async () => {
+    const { feeDifference } = await import('./domain');
+    const base = { grossAmount: '200', expectedFeeAmount: '2.0000', providerDeductionAmount: null };
+    // Kept 3.50 (reported net 196.50): 1.50 too much.
+    expect(feeDifference({ ...base, providerFeeAmount: null, reportedNetAmount: '196.5' })).toBe(
+      '1.5000',
+    );
+    // Typed fee 2 plus a 0.25 deduction: 0.25 too much.
+    expect(
+      feeDifference({
+        ...base,
+        providerFeeAmount: '2',
+        providerDeductionAmount: '0.25',
+        reportedNetAmount: null,
+      }),
+    ).toBe('0.2500');
+    // Took less than expected: negative.
+    expect(feeDifference({ ...base, providerFeeAmount: '1.5', reportedNetAmount: null })).toBe(
+      '-0.5000',
+    );
+    // Nothing to compare with.
+    expect(feeDifference({ ...base, providerFeeAmount: null, reportedNetAmount: null })).toBeNull();
+    expect(
+      feeDifference({
+        ...base,
+        expectedFeeAmount: null,
+        providerFeeAmount: '2',
+        reportedNetAmount: null,
+      }),
+    ).toBeNull();
+  });
+});

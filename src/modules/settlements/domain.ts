@@ -14,6 +14,10 @@ export type ProviderSettlementSummary = {
   providerDeductionAmount: string | null;
   reportedNetAmount: string | null;
   derivedNetAmount: string | null;
+  /** The charge the account's fee settings say it should have taken. */
+  expectedFeeAmount: string | null;
+  /** Charges actually kept less expected: positive means the provider took more. */
+  feeDifferenceAmount: string | null;
   varianceAmount: string;
   state: ProviderSettlementState;
 };
@@ -57,12 +61,55 @@ export function deriveSettlementState(
   return 'PARTIALLY_MATCHED';
 }
 
+/**
+ * The charge a provider account should take from a settlement: the percentage of the gross plus
+ * the fixed fee, rounded to the cent-and-a-bit the books use (four places). Null when the account
+ * has no fee settings.
+ */
+export function computeExpectedFee(input: {
+  grossAmount: string;
+  feePercent: string | null;
+  feeFixed: string | null;
+}): string | null {
+  if (input.feePercent === null && input.feeFixed === null) return null;
+  const gross = decimal(input.grossAmount).value;
+  const percent = new ExactDecimal(input.feePercent ?? '0').value;
+  const fixed = decimal(input.feeFixed ?? '0').value;
+  const total = gross.mul(percent).div(100).add(fixed);
+  // Rounded once, half-up (the global decimal rule), to the four places money is kept in.
+  return formatSettlementMoney(total.toDecimalPlaces(4).toFixed(4));
+}
+
+/**
+ * What the provider actually kept (fee plus other deductions, or gross less the reported net),
+ * against what it should have kept. Positive means the provider took more than expected.
+ */
+export function feeDifference(input: {
+  grossAmount: string;
+  providerFeeAmount: string | null;
+  providerDeductionAmount: string | null;
+  reportedNetAmount: string | null;
+  expectedFeeAmount: string | null;
+}): string | null {
+  if (input.expectedFeeAmount === null) return null;
+  const gross = decimal(input.grossAmount);
+  let kept: ExactDecimal | null = null;
+  if (input.reportedNetAmount !== null) kept = gross.subtract(decimal(input.reportedNetAmount));
+  else if (input.providerFeeAmount !== null || input.providerDeductionAmount !== null)
+    kept = decimal(input.providerFeeAmount ?? '0').add(
+      decimal(input.providerDeductionAmount ?? '0'),
+    );
+  if (kept === null) return null;
+  return formatSettlementMoney(kept.subtract(decimal(input.expectedFeeAmount)).toString());
+}
+
 export function calculateSettlementSummary(input: {
   grossAmount: string;
   allocatedAmount: string;
   providerFeeAmount: string | null;
   providerDeductionAmount: string | null;
   reportedNetAmount: string | null;
+  expectedFeeAmount?: string | null;
   state: ProviderSettlementState;
 }): ProviderSettlementSummary {
   const gross = decimal(input.grossAmount);
@@ -88,6 +135,15 @@ export function calculateSettlementSummary(input: {
     reportedNetAmount:
       input.reportedNetAmount === null ? null : formatSettlementMoney(input.reportedNetAmount),
     derivedNetAmount: derivedNet ? formatSettlementMoney(derivedNet.toString()) : null,
+    expectedFeeAmount:
+      input.expectedFeeAmount == null ? null : formatSettlementMoney(input.expectedFeeAmount),
+    feeDifferenceAmount: feeDifference({
+      grossAmount: input.grossAmount,
+      providerFeeAmount: input.providerFeeAmount,
+      providerDeductionAmount: input.providerDeductionAmount,
+      reportedNetAmount: input.reportedNetAmount,
+      expectedFeeAmount: input.expectedFeeAmount ?? null,
+    }),
     varianceAmount: formatSettlementMoney(gross.subtract(allocated).toString()),
     state: input.state,
   };

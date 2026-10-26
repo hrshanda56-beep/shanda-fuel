@@ -21,6 +21,10 @@ export type ProviderSettlementSummaryRow = {
   expectedEvidenceAmount: string;
   unmatchedEvidenceAmount: string;
   providerFeeAmount: string | null;
+  /** The charge the account's fee settings say it should have taken; null if none are set. */
+  expectedFeeAmount?: string | null;
+  /** Charges kept less expected: positive means the provider took more than it should. */
+  feeDifferenceAmount?: string | null;
   providerDeductionAmount: string | null;
   reportedNetAmount: string | null;
   varianceAmount: string;

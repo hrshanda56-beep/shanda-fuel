@@ -188,9 +188,12 @@ export async function readPaymentSetup(transaction: SetupTransaction): Promise<{
     display_name: string;
     currency: string;
     status: ProviderAccountRow['status'];
+    fee_percent: string | null;
+    fee_fixed: string | null;
   }>(sql`
     select pa.id, pa.provider_id, pp.name as provider_name, pa.station_id, pa.legal_entity_id,
-           pa.account_reference, pa.display_name, pa.currency, pa.status
+           pa.account_reference, pa.display_name, pa.currency, pa.status,
+           pa.fee_percent::text as fee_percent, pa.fee_fixed::text as fee_fixed
     from app.provider_accounts pa
     join app.payment_providers pp on pp.tenant_id = pa.tenant_id and pp.id = pa.provider_id
     where pa.tenant_id = current_setting('app.tenant_id')::uuid
@@ -228,6 +231,8 @@ export async function readPaymentSetup(transaction: SetupTransaction): Promise<{
       displayName: row.display_name,
       currency: row.currency,
       status: row.status,
+      feePercent: row.fee_percent,
+      feeFixed: row.fee_fixed,
     })),
     bankAccounts: banks.map((row) => ({
       id: row.id,

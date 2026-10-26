@@ -243,7 +243,17 @@ function AccountSection({
       .trim()
       .toUpperCase();
     const station = overview.stationOptions.find((option) => option.id === stationId);
+    const feePercent = String(data.get('feePercent') ?? '').trim();
+    const feeFixed = String(data.get('feeFixed') ?? '').trim();
     const next = {
+      feePercent:
+        feePercent === '' || (/^\d+(?:\.\d{1,4})?$/.test(feePercent) && Number(feePercent) <= 100)
+          ? undefined
+          : 'Enter a percentage from 0 to 100, for example 1.5, or leave it empty.',
+      feeFixed:
+        feeFixed === '' || /^\d+(?:\.\d{1,4})?$/.test(feeFixed)
+          ? undefined
+          : 'Enter an amount, for example 0.10, or leave it empty.',
       providerId: providerId ? undefined : 'Choose a provider.',
       stationId: station ? undefined : 'Choose a station.',
       displayName: displayName ? undefined : 'Enter a name for this account.',
@@ -264,6 +274,8 @@ function AccountSection({
           currency,
           accountStationId: station.id,
           legalEntityId: station.legalEntityId,
+          feePercent: feePercent || null,
+          feeFixed: feeFixed || null,
           metadata: {},
         },
         `${displayName} was added for ${station.name}.`,
@@ -293,6 +305,9 @@ function AccountSection({
                   {account.stationId
                     ? (stationName.get(account.stationId) ?? 'Another station')
                     : 'All stations'}
+                  {account.feePercent || account.feeFixed
+                    ? ` · Charges ${[account.feePercent ? `${Number(account.feePercent)}%` : '', account.feeFixed ? `${Number(account.feeFixed)} each time` : ''].filter(Boolean).join(' + ')}`
+                    : ''}
                 </span>
               </div>
               <StatusBadge tone={account.status === 'ACTIVE' ? 'positive' : 'neutral'}>
@@ -361,6 +376,34 @@ function AccountSection({
               required
             >
               <input id="account-currency" name="currency" autoComplete="off" maxLength={3} />
+            </Field>
+            <Field
+              id="account-fee-percent"
+              label="Charge as a percentage (%)"
+              hint="What the provider keeps from each settlement, for example 1 for EcoCash at 1%. Leave empty if there is none."
+              error={errors.feePercent}
+              optional
+            >
+              <input
+                id="account-fee-percent"
+                name="feePercent"
+                inputMode="decimal"
+                autoComplete="off"
+              />
+            </Field>
+            <Field
+              id="account-fee-fixed"
+              label="Fixed charge each time"
+              hint="A flat amount the provider keeps on top, if any."
+              error={errors.feeFixed}
+              optional
+            >
+              <input
+                id="account-fee-fixed"
+                name="feeFixed"
+                inputMode="decimal"
+                autoComplete="off"
+              />
             </Field>
             <div className={styles.formActions}>
               <Button type="submit" loading={busy}>

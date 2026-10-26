@@ -477,6 +477,13 @@
       "when": 1792600082000,
       "tag": "0082_tank_variance_red",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792600083000,
+      "tag": "0083_provider_account_fees",
+      "breakpoints": true
     }
   ]
 }

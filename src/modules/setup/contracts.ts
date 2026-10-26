@@ -123,6 +123,9 @@ export type ProviderAccountRow = Readonly<{
   displayName: string;
   currency: string;
   status: 'ACTIVE' | 'INACTIVE';
+  /** What the provider charges: a percentage of each settlement and/or a fixed fee. */
+  feePercent?: string | null;
+  feeFixed?: string | null;
 }>;
 export type BankAccountRow = Readonly<{
   id: string;
