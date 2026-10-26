@@ -401,13 +401,11 @@ export type FinancialPosition = Readonly<{
 }>;
 
 /**
- * The owner's financial position: what the business holds or is owed (cash at stations, banked
- * cash, card and mobile payments awaiting settlement, debtors, stock at cost) less what it owes
- * (suppliers, unpaid expenses, prepaid customer balances). The net is shown only when every
- * included figure is known, with a clear positive or negative flag. Liabilities the system does
- * not record (transporters and other creditors) are listed as not recorded and left out of the
- * total. Unlike buildNetPosition, which the existing report screens use, this one includes stock
- * value, banked cash and unpaid expenses.
+ * The owner's financial position: what the business holds or is owed (cash at stations, bank
+ * account balance, card and mobile payments awaiting settlement, debtors, stock at cost) less
+ * what it owes (suppliers, unpaid expenses, prepaid customer balances and approved liabilities).
+ * The net is shown only when every included figure is known. Bank balance is not inferred from
+ * period deposits: it requires a locked opening balance for every active bank account.
  */
 export function buildFinancialPosition(report: ManagementReport): FinancialPosition {
   const { cash, providers, suppliers, customers } = report;
@@ -418,7 +416,16 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
     customers.prepaidValueBalance !== null;
   const held: StatementLine[] = [
     { label: 'Cash at stations, not yet banked', value: cash.collectedButNotBanked },
-    { label: 'Cash banked', value: cash.banked },
+    {
+      label: 'Bank account balance',
+      value: extra?.bankBalance ?? null,
+      note:
+        extra && extra.bankBalance === null
+          ? extra.bankAccountCount === 0
+            ? 'No active bank account is configured.'
+            : `Opening balances entered for ${extra.bankAccountsWithOpening} of ${extra.bankAccountCount} active bank account(s).`
+          : undefined,
+    },
     {
       label: 'Card and mobile payments awaiting settlement',
       value: providers.unmatchedEvidenceAmount,
@@ -440,19 +447,17 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
     { label: 'Expenses not yet paid', value: extra?.unpaidExpenses ?? null },
     { label: 'Prepaid customer balances', value: customers.prepaidValueBalance },
     {
-      label: 'Transporters and other creditors',
-      value: null,
-      note: 'Not recorded in the system, so not in the total.',
+      label: 'Transporters and other approved liabilities',
+      value: extra?.approvedLiabilities ?? null,
     },
   ];
-  const countable = (line: StatementLine) => line.label !== 'Transporters and other creditors';
-  const missing = [...held, ...owed.filter(countable)]
+  const missing = [...held, ...owed]
     .filter((line) => line.value === null)
     .map((line) => line.label);
   const totalHeld = held.some((l) => l.value === null) ? null : sumExact(held.map((l) => l.value));
-  const totalOwed = owed.filter(countable).some((l) => l.value === null)
+  const totalOwed = owed.some((l) => l.value === null)
     ? null
-    : sumExact(owed.filter(countable).map((l) => l.value));
+    : sumExact(owed.map((l) => l.value));
   const net = totalHeld === null || totalOwed === null ? null : subtractExact(totalHeld, totalOwed);
   const flag: PositionFlag =
     net === null
@@ -479,7 +484,7 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
         { lines: [{ label: 'Net position', value: net, kind: 'total' }] },
       ],
       notes: [
-        'Cash banked is the deposits recorded in the chosen dates; it is not a bank statement balance.',
+        'Bank account balance is each locked opening balance plus confirmed deposits after that opening, through the report end date. Withdrawals are not represented by the current bank ledger.',
         'Stock and unpaid expenses are shown as they stand now.',
         ...(customersKnown
           ? []

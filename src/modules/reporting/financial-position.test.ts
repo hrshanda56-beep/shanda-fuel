@@ -16,6 +16,12 @@ const base = (overrides: Record<string, unknown> = {}) =>
       stockValue: '5000.1234',
       unvaluedStockStreams: 0,
       unpaidExpenses: '75.5000',
+      bankBalance: '800.0000',
+      bankOpeningBalance: '800.0000',
+      bankAccountCount: 1,
+      bankAccountsWithOpening: 1,
+      approvedLiabilities: '0.0000',
+      approvedLiabilityRows: [],
       expensesAwaitingApproval: { count: 2, amount: '40.0000' },
     },
     ...overrides,
@@ -25,7 +31,7 @@ const find = (p: ReturnType<typeof buildFinancialPosition>, label: string) =>
   p.statement.groups.flatMap((g) => g.lines).find((l) => l.label === label);
 
 describe('buildFinancialPosition', () => {
-  it('adds stock, banked cash and unpaid expenses exactly and flags a positive position', () => {
+  it('adds stock, bank balance and unpaid expenses exactly and flags a positive position', () => {
     const p = buildFinancialPosition(base());
     expect(p.totalHeld).toBe('7750.8734');
     expect(p.totalOwed).toBe('1075.5');
@@ -55,6 +61,12 @@ describe('buildFinancialPosition', () => {
           stockValue: '0.0000',
           unvaluedStockStreams: 0,
           unpaidExpenses: '0.0000',
+          bankBalance: '0.0000',
+          bankOpeningBalance: '0.0000',
+          bankAccountCount: 1,
+          bankAccountsWithOpening: 1,
+          approvedLiabilities: '0.0000',
+          approvedLiabilityRows: [],
           expensesAwaitingApproval: { count: 0, amount: '0.0000' },
         },
       }),
@@ -69,6 +81,12 @@ describe('buildFinancialPosition', () => {
           stockValue: null,
           unvaluedStockStreams: 2,
           unpaidExpenses: '0.0000',
+          bankBalance: '800.0000',
+          bankOpeningBalance: '800.0000',
+          bankAccountCount: 1,
+          bankAccountsWithOpening: 1,
+          approvedLiabilities: '0.0000',
+          approvedLiabilityRows: [],
           expensesAwaitingApproval: { count: 0, amount: '0.0000' },
         },
       }),
@@ -99,11 +117,43 @@ describe('buildFinancialPosition', () => {
     expect(p.missing).toContain('Expenses not yet paid');
   });
 
-  it('lists unrecorded creditors without counting them', () => {
-    const p = buildFinancialPosition(base());
-    const other = find(p, 'Transporters and other creditors');
-    expect(other?.value).toBeNull();
-    expect(other?.note).toContain('Not recorded');
-    expect(p.missing).not.toContain('Transporters and other creditors');
+  it('includes approved transporter and other liabilities in what the business owes', () => {
+    const p = buildFinancialPosition(
+      base({
+        ownerPosition: {
+          ...base().ownerPosition,
+          approvedLiabilities: '125.2500',
+          approvedLiabilityRows: [
+            {
+              liabilityAccountId: '00000000-0000-0000-0000-000000000001',
+              liabilityKind: 'TRANSPORTER',
+              counterpartyName: 'Road Carrier',
+              stationId: null,
+              balance: '125.2500',
+              dueDate: '2026-11-01',
+            },
+          ],
+        },
+      }),
+    );
+    expect(find(p, 'Transporters and other approved liabilities')?.value).toBe('125.2500');
+    expect(p.totalOwed).toBe('1200.75');
+  });
+
+  it('does not claim a bank balance when an active account has no opening balance', () => {
+    const p = buildFinancialPosition(
+      base({
+        ownerPosition: {
+          ...base().ownerPosition,
+          bankBalance: null,
+          bankOpeningBalance: null,
+          bankAccountCount: 2,
+          bankAccountsWithOpening: 1,
+        },
+      }),
+    );
+    expect(find(p, 'Bank account balance')?.value).toBeNull();
+    expect(find(p, 'Bank account balance')?.note).toContain('1 of 2');
+    expect(p.missing).toContain('Bank account balance');
   });
 });

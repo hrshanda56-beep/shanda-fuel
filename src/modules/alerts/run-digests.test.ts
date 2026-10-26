@@ -7,6 +7,7 @@ const recipient = (n: number): DigestRecipient => ({
   stationId: `s${n}`,
   stationName: `Station ${n}`,
   membershipId: `m${n}`,
+  identityId: `u${n}`,
   email: `p${n}@example.test`,
   name: `Person ${n}`,
 });
@@ -97,5 +98,30 @@ describe('runDigests', () => {
     expect(await runDigests([recipient(1)], base)).toEqual({ sent: 1, skipped: 0, failed: 0 });
     expect(sent).toHaveLength(1);
     expect(onFailure).toHaveBeenCalledWith(expect.anything(), 'record', expect.any(Error));
+  });
+
+  it('does not send when a concurrent run already owns the digest claim', async () => {
+    const { base, sent } = ports({ claim: async () => false });
+    expect(await runDigests([recipient(1)], base)).toEqual({
+      sent: 0,
+      skipped: 1,
+      failed: 0,
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it('releases a claim when the provider fails so the next run can retry', async () => {
+    const released: string[] = [];
+    const { base } = ports({
+      claim: async () => true,
+      releaseClaim: async (_recipient, ids) => {
+        released.push(...ids);
+      },
+      send: async () => {
+        throw new Error('provider down');
+      },
+    });
+    expect(await runDigests([recipient(1)], base)).toEqual({ sent: 0, skipped: 0, failed: 1 });
+    expect(released).toEqual(['a']);
   });
 });

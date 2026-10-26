@@ -1,6 +1,7 @@
 import {
   seedClerkIdentity,
   authenticateClerk,
+  clerkFixturesAvailable,
   establishClerkStepUp,
   clerkSessionStatus,
 } from './clerk-fixtures';
@@ -174,8 +175,16 @@ async function seed(client: Sql) {
 
 test.describe('authenticated Staff lifecycle', () => {
   test.skip(
-    !databaseUrl,
-    'Staff lifecycle E2E requires the disposable PostgreSQL database and Clerk development instance',
+    !databaseUrl ||
+      !clerkFixturesAvailable([
+        ids.owner,
+        ids.administrator,
+        ids.finance,
+        ids.supervisor,
+        ids.attendant,
+        ids.existingJoin,
+      ]),
+    'Staff lifecycle E2E requires the disposable PostgreSQL database and Clerk development fixtures',
   );
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(90_000);
@@ -212,6 +221,7 @@ test.describe('authenticated Staff lifecycle', () => {
     }
     async function invite(name: string, email: string, role: string) {
       await form.locator('input[name="name"]').fill(name);
+      await form.getByLabel('Invite using').selectOption('EMAIL');
       await form.locator('input[name="email"]').fill(email);
       await setSelect('Role', role);
       if (role === 'FINANCE') {
@@ -231,6 +241,8 @@ test.describe('authenticated Staff lifecycle', () => {
       await submitStaffCommandAndWaitForReload(page, () =>
         form.getByRole('button', { name: 'Send invitation' }).click(),
       );
+      // Phone width swaps the section tabs for a dropdown, so go back to desktop first.
+      await page.setViewportSize({ width: 1280, height: 900 });
       await openSettings(page, sessions.owner);
       await page.getByRole('button', { name: 'Staff', exact: true }).click();
       await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
@@ -344,6 +356,95 @@ test.describe('authenticated Staff lifecycle', () => {
         },
       });
       expect(denied.status()).toBe(403);
+    }
+  });
+
+  test('attendant, supervisor and finance role boundaries are denied by the server', async ({
+    page,
+  }) => {
+    const cases = [
+      {
+        token: sessions.attendant,
+        name: 'attendant price change request',
+        body: {
+          commandType: 'RequestPriceChange',
+          tenantId: ids.tenant,
+          stationId: ids.bindura,
+          priceId: 'b26e0000-0000-4000-8000-000000000091',
+          expectedVersion: 0,
+        },
+      },
+      {
+        token: sessions.attendant,
+        name: 'attendant reconciliation approval',
+        body: {
+          commandType: 'ApproveReconciliation',
+          tenantId: ids.tenant,
+          stationId: ids.bindura,
+          revisionId: 'b26e0000-0000-4000-8000-000000000092',
+          expectedVersion: 0,
+        },
+      },
+      {
+        token: sessions.attendant,
+        name: 'attendant expense-category change',
+        body: {
+          commandType: 'CreateExpenseCategory',
+          tenantId: ids.tenant,
+          legalEntityId: ids.legalEntity,
+          code: 'ATTENDANT-DENIED',
+          name: 'Should not be created',
+          classification: 'OPERATING',
+        },
+        url: '/api/expenses/commands',
+      },
+      {
+        token: sessions.supervisor,
+        name: 'supervisor expense-category change',
+        body: {
+          commandType: 'CreateExpenseCategory',
+          tenantId: ids.tenant,
+          legalEntityId: ids.legalEntity,
+          code: 'SUPERVISOR-DENIED',
+          name: 'Should not be created',
+          classification: 'OPERATING',
+        },
+        url: '/api/expenses/commands',
+      },
+      {
+        token: sessions.supervisor,
+        name: 'supervisor reconciliation approval',
+        body: {
+          commandType: 'ApproveReconciliation',
+          tenantId: ids.tenant,
+          stationId: ids.bindura,
+          revisionId: 'b26e0000-0000-4000-8000-000000000093',
+          expectedVersion: 0,
+        },
+      },
+      {
+        token: sessions.finance,
+        name: 'finance price change request',
+        body: {
+          commandType: 'RequestPriceChange',
+          tenantId: ids.tenant,
+          stationId: ids.bindura,
+          priceId: 'b26e0000-0000-4000-8000-000000000094',
+          expectedVersion: 0,
+        },
+      },
+    ] as const;
+
+    for (const item of cases) {
+      await installClerkSession(page.context(), item.token);
+      const response = await page.request.post(
+        'url' in item ? item.url : '/api/forecourt/commands',
+        {
+          headers: { 'idempotency-key': `role-boundary-${item.name.replaceAll(' ', '-')}` },
+          data: item.body,
+        },
+      );
+      expect(response.status(), item.name).toBe(403);
     }
   });
 

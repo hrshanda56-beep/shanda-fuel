@@ -25,6 +25,18 @@ production release readiness.
 
 Expenses backend only (no UI): migration `0035_expenses` plus the bounded follow-up migrations `0039_expense_attachments` and `0040_recurring_cost_adjustments` (forced RLS, append-only approvals, recognition and correction ledger, state/settlement guard triggers, eleven existing `expense.*` permissions), `src/modules/expenses`, `POST /api/expenses/commands` (including append-only recurring recognition adjustments) and `GET /api/expenses/list|summary|reference`. Recognition is separate from settlement; direct inventory cost is refused. Private expense evidence uses the existing R2 path, and management reports consume recognition movements with operating/fixed-cost classification and lineage. Database/R2 integration validation remains environment-gated. Decisions and open accountant/client questions: [`ADR-019`](decisions/ADR-019-expenses-backend.md). Remaining: UI, cash-module disbursement command for expense settlements, business-day/period locking, and tax treatment.
 
+## Recurring fixed-cost automation (item 40) - 2026-10-26
+
+Recurring fixed costs now support whole-company/legal-entity scope as well as station scope. The
+new additive migration `0067_recurring_cost_scope_and_scheduler.sql` preserves nullable
+`station_id` as the company-scope marker, legal-entity foreign keys, forced RLS and append-only
+recognition/movement semantics. `/api/cron/recurring-costs` uses the existing Vercel Cron pattern
+and `CRON_SECRET` to create the current monthly obligation and idempotently catch up daily
+recognition through the station’s authoritative timezone date. No `job_runtime` consumer was
+added. The locked Expenses screen only adds the company/station choice and explains automatic
+recognition. Focused scheduler, cron-auth, expense, reporting and profit tests pass; database
+migration execution remains an explicit operator step.
+
 ## Purchase orders backend - 2026-10-19
 
 Purchase-order part of ADR-018 (backend only, no UI): migration `0036_purchase_orders` (orders, lines, append-only revision snapshots, delivery link table, forced RLS, state/link guard triggers, four `purchase_order.*` permissions), `src/modules/purchasing`, `POST /api/purchasing/commands` (CreatePurchaseOrder, SubmitPurchaseOrder, ApprovePurchaseOrder, AmendPurchaseOrder, CancelPurchaseOrder, ClosePurchaseOrder, LinkDeliveryToPurchaseOrder, UnlinkDeliveryFromPurchaseOrder; idempotency keys, expected versions, signed audit, no step-up) and `GET /api/purchasing/list|detail|reference`. Received state, over-receipt and open litres are derived from confirmed linked deliveries; an order has no accounting effect. Remaining: UI, `supplier.delivery.link` permission swap, tolerance policy on over-receipt (other work item), purchase-order versus invoice price variance read model.

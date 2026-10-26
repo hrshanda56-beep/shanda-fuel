@@ -10,11 +10,12 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { appSchema } from './namespaces';
-import { memberships, stations } from './a1';
+import { legalEntities, memberships, stations } from './a1';
 
 /**
- * Private files (invoices, delivery notes, deposit slips, photos) kept against one record at one
- * station. Append-only: a file is never changed or removed, only added.
+ * Private files (invoices, delivery notes, deposit slips, payment proofs, photos) kept against
+ * one record. Operational records are station-scoped; supplier payments are legal-entity-scoped.
+ * Append-only: a file is never changed or removed, only added.
  */
 export const documents = appSchema.table(
   'documents',
@@ -24,7 +25,7 @@ export const documents = appSchema.table(
       .primaryKey(),
     tenantId: uuid('tenant_id').notNull(),
     legalEntityId: uuid('legal_entity_id').notNull(),
-    stationId: uuid('station_id').notNull(),
+    stationId: uuid('station_id'),
     subjectType: text('subject_type').notNull(),
     subjectId: uuid('subject_id').notNull(),
     kind: text('kind').notNull(),
@@ -47,11 +48,19 @@ export const documents = appSchema.table(
     ),
     check(
       'documents_subject_type_ck',
-      sql`${table.subjectType} in ('FUEL_DELIVERY','BANK_DEPOSIT','CASH_HANDOVER','RECONCILIATION','EXPENSE')`,
+      sql`${table.subjectType} in ('FUEL_DELIVERY','BANK_DEPOSIT','CASH_HANDOVER','RECONCILIATION','EXPENSE','SUPPLIER_PAYMENT')`,
     ),
     check(
       'documents_kind_ck',
-      sql`${table.kind} in ('INVOICE','DELIVERY_NOTE','DEPOSIT_SLIP','RECEIPT','PHOTO','OTHER')`,
+      sql`${table.kind} in ('INVOICE','DELIVERY_NOTE','DEPOSIT_SLIP','PAYMENT_PROOF','RECEIPT','PHOTO','OTHER')`,
+    ),
+    check(
+      'documents_subject_scope_ck',
+      sql`(
+        (${table.subjectType} = 'SUPPLIER_PAYMENT' and ${table.stationId} is null and ${table.kind} = 'PAYMENT_PROOF')
+        or
+        (${table.subjectType} <> 'SUPPLIER_PAYMENT' and ${table.stationId} is not null and ${table.kind} <> 'PAYMENT_PROOF')
+      )`,
     ),
     check('documents_filename_nonempty_ck', sql`btrim(${table.fileName}) <> ''`),
     check(
@@ -67,6 +76,11 @@ export const documents = appSchema.table(
       columns: [table.tenantId, table.legalEntityId, table.stationId],
       foreignColumns: [stations.tenantId, stations.legalEntityId, stations.id],
       name: 'documents_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId],
+      foreignColumns: [legalEntities.tenantId, legalEntities.id],
+      name: 'documents_legal_entity_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.uploadedBy],

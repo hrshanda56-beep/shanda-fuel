@@ -727,7 +727,7 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
   `);
   const mapped = rows.map((row) => ({
     businessDate: row.business_date,
-    stationId: row.station_id,
+    stationId: row.station_id ?? '',
     category: row.category,
     classification: row.classification,
     description: row.description,

@@ -221,6 +221,21 @@ export type OwnerPosition = Readonly<{
   unvaluedStockStreams: number;
   /** Posted expenses and recognised recurring costs not yet paid. */
   unpaidExpenses: ReportMoney;
+  /** Locked bank opening balance plus confirmed deposits after opening, as of toDate. */
+  bankBalance: ReportMoney | null;
+  bankOpeningBalance: ReportMoney | null;
+  bankAccountCount: number;
+  bankAccountsWithOpening: number;
+  /** Approved transporter/other liability ledger, as of toDate. */
+  approvedLiabilities: ReportMoney;
+  approvedLiabilityRows: readonly {
+    liabilityAccountId: string;
+    liabilityKind: 'TRANSPORTER' | 'OTHER';
+    counterpartyName: string;
+    stationId: string | null;
+    balance: ReportMoney;
+    dueDate: string | null;
+  }[];
   /** Submitted expenses waiting for approval. */
   expensesAwaitingApproval: Readonly<{ count: number; amount: ReportMoney }>;
 }>;

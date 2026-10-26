@@ -57,6 +57,8 @@ type HeaderRow = {
   supervisor_id: string | null;
   state: string;
   version: number | string;
+  shift_planned_start_at: Date | string | null;
+  shift_planned_end_at: Date | string | null;
 };
 
 function requestHash(value: unknown): string {
@@ -66,6 +68,28 @@ function requestHash(value: unknown): string {
 function hasPositiveLitres(value: string): boolean {
   const decimalValue = new ExactDecimal(value).value;
   return decimalValue.isPositive() && !decimalValue.isZero();
+}
+
+/**
+ * Shift evidence is only time-bound when the existing shift model supplies a real window.
+ * The half-open interval prevents an event at the next shift's opening boundary from being
+ * silently linked to both shifts.
+ */
+export function isWithinShiftWindow(
+  eventAt: Date | string,
+  plannedStartAt: Date | string,
+  plannedEndAt: Date | string,
+): boolean {
+  const event = new Date(eventAt).getTime();
+  const start = new Date(plannedStartAt).getTime();
+  const end = new Date(plannedEndAt).getTime();
+  return (
+    Number.isFinite(event) &&
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    event >= start &&
+    event < end
+  );
 }
 
 async function serverNow(transaction: ForecourtTransaction): Promise<string> {
@@ -92,10 +116,14 @@ async function loadHeader(
 ): Promise<HeaderRow> {
   const rows = await transaction.execute<HeaderRow>(sql`
     select c.id, c.tenant_id, c.station_id, c.business_day_id, c.shift_id,
-           d.business_date, c.supervisor_id, c.state, c.version
+           d.business_date, c.supervisor_id, c.state, c.version,
+           s.planned_start_at as shift_planned_start_at,
+           s.planned_end_at as shift_planned_end_at
     from app.reconciliations c
     join app.station_business_days d
       on d.tenant_id = c.tenant_id and d.station_id = c.station_id and d.id = c.business_day_id
+    left join app.shifts s
+      on s.tenant_id = c.tenant_id and s.station_id = c.station_id and s.id = c.shift_id
     where c.tenant_id = ${context.tenantId}
       and c.station_id = ${context.stationId}
       and c.id = ${reconciliationId}
@@ -229,7 +257,14 @@ export async function createProductionReconciliationFromRequest(request: Request
   });
 }
 
-const attendantsPayload = basePayload.extend({ attendantIds: z.array(uuid).max(20) });
+export const productionReconciliationAttendantsSchema = basePayload.extend({
+  attendantIds: z
+    .array(uuid)
+    .min(1, 'At least one attendant must be declared')
+    .max(20)
+    .refine((ids) => new Set(ids).size === ids.length, 'An attendant cannot be declared twice'),
+});
+const attendantsPayload = productionReconciliationAttendantsSchema;
 
 export async function saveReconciliationDraftFromRequest(request: Request, input: unknown) {
   const payload = basePayload.parse(input);
@@ -301,6 +336,16 @@ export async function saveReconciliationMeterReadingsFromRequest(request: Reques
     'SaveMeterReadings',
     'reconciliation_meter_readings',
     async (transaction, context) => {
+      const header = await loadHeader(transaction, context, payload.reconciliationId);
+      if (
+        !header.shift_id ||
+        payload.readings.some((reading) => reading.shiftId !== header.shift_id)
+      ) {
+        throw new AppError(
+          'CONFLICT',
+          'Every meter reading must belong to the reconciliation shift',
+        );
+      }
       await replaceRows(
         transaction,
         'reconciliation_meter_readings',
@@ -358,10 +403,18 @@ export const productionReconciliationPaymentSchema = z.object({
   amount: z.string(),
   reference: z.string().optional(),
   note: z.string().optional(),
-  /** Required for CUSTOMER_CREDIT and PREPAID: the customer account the sale is charged to. */
-  customerAccountId: uuid.optional(),
-  /** Required for STAFF_OR_MANAGEMENT_FUEL: who received the fuel. */
-  beneficiaryName: z.string().trim().max(160).optional(),
+  /**
+   * Required for CUSTOMER_CREDIT and PREPAID: the customer account the sale is charged to.
+   * A saved draft is read back with null here, so null means "none", the same as leaving it out.
+   */
+  customerAccountId: uuid.nullish().transform((value) => value ?? undefined),
+  /** Required for STAFF_OR_MANAGEMENT_FUEL: who received the fuel. Null means "none". */
+  beneficiaryName: z
+    .string()
+    .trim()
+    .max(160)
+    .nullish()
+    .transform((value) => value ?? undefined),
 });
 
 type PaymentInput = z.infer<typeof productionReconciliationPaymentSchema>;
@@ -563,30 +616,41 @@ export async function linkReconciliationDeliveriesFromRequest(request: Request, 
         payload.reconciliationId,
         context,
       );
+      const header = await loadHeader(transaction, context, payload.reconciliationId);
       for (const item of payload.deliveries) {
         const rows = await transaction.execute<{
           product_id: string;
           tank_id: string;
           status: string;
           business_date: string;
+          delivered_at: Date | string;
         }>(sql`
-        select d.product_id, a.tank_id, d.status, d.business_date
+        select d.product_id, a.tank_id, d.status, d.business_date, d.delivered_at
         from app.fuel_deliveries d
         join app.fuel_delivery_allocations a on a.tenant_id=d.tenant_id and a.station_id=d.station_id and a.delivery_id=d.id
         where d.tenant_id=${context.tenantId} and d.station_id=${context.stationId} and d.id=${item.deliveryId} and a.id=${item.allocationId}
       `);
         const row = rows[0];
-        const header = await loadHeader(transaction, context, payload.reconciliationId);
+        const hasProvenShiftWindow =
+          header.shift_id !== null &&
+          header.shift_planned_start_at !== null &&
+          header.shift_planned_end_at !== null;
         if (
           !row ||
           row.product_id !== item.productId ||
           row.tank_id !== item.tankId ||
           row.status !== 'CONFIRMED' ||
-          row.business_date !== header.business_date
+          row.business_date !== header.business_date ||
+          (hasProvenShiftWindow &&
+            !isWithinShiftWindow(
+              row.delivered_at,
+              header.shift_planned_start_at!,
+              header.shift_planned_end_at!,
+            ))
         ) {
           throw new AppError(
             'FORBIDDEN',
-            'The delivery allocation is not valid for this reconciliation',
+            'The delivery allocation is not valid for this reconciliation shift',
           );
         }
         await transaction.execute(sql`
@@ -617,19 +681,33 @@ export async function linkReconciliationDipsFromRequest(request: Request, input:
           tank_id: string;
           product_id: string;
           business_date: string;
+          measured_at: Date | string;
         }>(sql`
-        select d.tank_id, t.product_id, d.business_date
+        select d.tank_id, t.product_id, d.business_date, d.measured_at
         from app.tank_dips d join app.tanks t on t.tenant_id=d.tenant_id and t.station_id=d.station_id and t.id=d.tank_id
         where d.tenant_id=${context.tenantId} and d.station_id=${context.stationId} and d.id=${item.dipId}
       `);
         const row = rows[0];
+        const hasProvenShiftWindow =
+          header.shift_id !== null &&
+          header.shift_planned_start_at !== null &&
+          header.shift_planned_end_at !== null;
         if (
           !row ||
           row.tank_id !== item.tankId ||
           row.product_id !== item.productId ||
-          row.business_date !== header.business_date
+          row.business_date !== header.business_date ||
+          (hasProvenShiftWindow &&
+            !isWithinShiftWindow(
+              row.measured_at,
+              header.shift_planned_start_at!,
+              header.shift_planned_end_at!,
+            ))
         )
-          throw new AppError('FORBIDDEN', 'The tank dip is not valid for this reconciliation');
+          throw new AppError(
+            'FORBIDDEN',
+            'The tank dip is not valid for this reconciliation shift',
+          );
         await transaction.execute(sql`
         insert into app.reconciliation_dip_refs (tenant_id, station_id, reconciliation_id, dip_id, tank_id, product_id, entered_by)
         values (${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${item.dipId}, ${item.tankId}, ${item.productId}, ${context.actor.membershipId})
@@ -849,6 +927,26 @@ async function requireExplanations(
     );
 }
 
+async function requireDeclaredAttendants(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  reconciliationId: string,
+): Promise<void> {
+  const rows = await transaction.execute<{ count: number }>(sql`
+    select count(*)::int as count
+    from app.reconciliation_attendants
+    where tenant_id=${context.tenantId}
+      and station_id=${context.stationId}
+      and reconciliation_id=${reconciliationId}
+  `);
+  if (Number(rows[0]?.count ?? 0) < 1) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'At least one attendant must be declared before submitting a reconciliation',
+    );
+  }
+}
+
 const workflowPayload = basePayload;
 export async function submitProductionReconciliationFromRequest(request: Request, input: unknown) {
   return transitionProductionReconciliation(
@@ -913,6 +1011,7 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         );
       }
       const metrics = await loadMetrics(transaction, context, payload.reconciliationId);
+      await requireDeclaredAttendants(transaction, context, payload.reconciliationId);
       await requireExplanations(transaction, context, payload.reconciliationId, metrics);
       const bridgeTable = await transaction.execute<{ installed: boolean }>(sql`
         select to_regclass('app.reconciliation_meter_reading_segments') is not null as installed
@@ -1291,6 +1390,7 @@ async function transitionProductionReconciliation(
             'Only a draft or returned reconciliation can be submitted',
           );
         metrics = await loadMetrics(transaction, context, payload.reconciliationId);
+        await requireDeclaredAttendants(transaction, context, payload.reconciliationId);
         await requireExplanations(transaction, context, payload.reconciliationId, metrics);
       } else if (header.state !== 'SUBMITTED') {
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be returned');

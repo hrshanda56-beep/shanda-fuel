@@ -12,9 +12,11 @@ import { composeDigest, shouldSendDigest } from './digest';
 
 export type DigestRecipient = Readonly<{
   tenantId: string;
+  legalEntityId?: string;
   stationId: string;
   stationName: string;
   membershipId: string;
+  identityId: string;
   email: string;
   name: string | null;
 }>;
@@ -31,6 +33,10 @@ export type DigestPorts = Readonly<{
     itemIds: readonly string[],
     messageId: string,
   ): Promise<void>;
+  /** Atomically claim a digest so concurrent cron invocations cannot send it twice. */
+  claim?(recipient: DigestRecipient, itemIds: readonly string[]): Promise<boolean>;
+  /** Make a failed claim retryable without retaining provider/error details. */
+  releaseClaim?(recipient: DigestRecipient, itemIds: readonly string[]): Promise<void>;
   send(message: {
     to: string;
     subject: string;
@@ -38,7 +44,11 @@ export type DigestPorts = Readonly<{
     html: string;
   }): Promise<{ messageId: string }>;
   appUrl: string;
-  onFailure?(recipient: DigestRecipient, stage: 'load' | 'send' | 'record', error: unknown): void;
+  onFailure?(
+    recipient: DigestRecipient,
+    stage: 'load' | 'claim' | 'send' | 'record',
+    error: unknown,
+  ): void;
 }>;
 
 export type DigestRunResult = Readonly<{
@@ -55,7 +65,9 @@ export async function runDigests(
   let skipped = 0;
   let failed = 0;
   for (const recipient of recipients) {
-    let stage: 'load' | 'send' | 'record' = 'load';
+    let stage: 'load' | 'claim' | 'send' | 'record' = 'load';
+    let claimed = false;
+    let claimedItemIds: readonly string[] = [];
     try {
       const { items, unavailable } = await ports.loadAlerts(recipient);
       const last = await ports.lastSentItemIds(recipient);
@@ -70,6 +82,15 @@ export async function runDigests(
         unavailable,
         appUrl: ports.appUrl,
       });
+      claimedItemIds = digest.itemIds;
+      if (ports.claim) {
+        stage = 'claim';
+        if (!(await ports.claim(recipient, digest.itemIds))) {
+          skipped += 1;
+          continue;
+        }
+        claimed = true;
+      }
       stage = 'send';
       const receipt = await ports.send({
         to: recipient.email,
@@ -82,6 +103,13 @@ export async function runDigests(
       await ports.recordSent(recipient, digest.itemIds, receipt.messageId);
     } catch (error) {
       // A failed record after a successful send still counts as sent: the email went out.
+      if (claimed && stage !== 'record' && ports.releaseClaim) {
+        try {
+          await ports.releaseClaim(recipient, claimedItemIds);
+        } catch (releaseError) {
+          ports.onFailure?.(recipient, 'record', releaseError);
+        }
+      }
       if (stage !== 'record') failed += 1;
       ports.onFailure?.(recipient, stage, error);
     }

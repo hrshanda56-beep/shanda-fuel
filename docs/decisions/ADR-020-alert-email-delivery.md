@@ -1,6 +1,8 @@
-# ADR-020 — Emailing alert digests (PROPOSED, needs security review)
+# ADR-020 — Emailing alert digests (implemented locally; release review pending)
 
-Status: PROPOSED. Not implemented beyond the pure parts. **Do not apply until reviewed.**
+Status: Implemented in the local candidate. The migration has not been applied and no staging or
+production environment has been contacted. Release activation still requires the normal migration,
+provider/DNS and authenticated acceptance gates.
 Source requirement: DEC-044 (alerts by email only; no SMS or push in v1).
 
 ## Context
@@ -24,23 +26,23 @@ application role. Two things a job needs are therefore not available today:
   the email provider passed in. One person's failure never stops the others. Fully unit-tested.
 - `src/platform/email` — the existing Resend sender.
 
-## Proposal (the part that needs review)
+## Implemented boundary
 
 1. **Recipient list through one narrow SECURITY DEFINER function**, owned by the migration
-   owner, with a fixed `search_path`, returning only `(tenant_id, station_id, station_name,
-   membership_id, identity_id, email, display_name)` for **active** memberships that hold
-   organisation-level or station-level access to a station and have opted in. No other
-   cross-organisation read. Execute is granted to the job role only.
+   owner, with a fixed `search_path`, returning only the tenant/legal-entity/station and
+   recipient identity projection for **active** memberships that hold `report.view` and
+   `station.view` access to a station and have opted in. No other cross-organisation read.
+   Execute is granted to `app_runtime` only.
 2. **Read each person's alerts as that person.** For each listed row the job opens a tenant
    transaction for exactly that tenant, membership and identity (the same trusted-context builder
    the web requests use) and loads the alerts with the existing permission-filtered loaders.
    Nobody is emailed anything they could not see in the app. The job never runs a broader query.
-3. **Remember what was sent** in a new tenant-secured table `alert_deliveries`
+3. **Remember what was sent** in a new tenant-secured table `alert_email_deliveries`
    (tenant, membership, station, alert ids, message id, sent at), written inside that same
    per-person transaction. This is what stops repeat emails.
 4. **Opt-in and unsubscribe.** A per-membership switch (default off until the owner turns it on)
    shown under Settings > Reminders; every email says how to turn it off.
-5. **Trigger.** A Vercel cron calling a route protected by a long random `CRON_SECRET` header
+5. **Trigger.** A Vercel cron calling a route protected by the existing long random `CRON_SECRET` header
    (compared in constant time), idempotent per day, with a hard cap on recipients per run.
 6. **Failure handling.** Provider or database failures are logged without addresses or alert
    text; a failure for one person never blocks the rest; a failed record after a sent email is

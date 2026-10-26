@@ -39,6 +39,8 @@ function requireStation(context: ExpenseCommandContext): StationContext {
   return context as StationContext;
 }
 
+type RecurringScopeContext = ExpenseCommandContext;
+
 function actorId(context: ExpenseCommandContext): string {
   return context.authority.membership.membershipId;
 }
@@ -473,7 +475,7 @@ export async function reverseExpenseInTransaction(
 
 type PeriodRow = {
   id: string;
-  station_id: string;
+  station_id: string | null;
   template_id: string;
   category_id: string;
   period_start: string;
@@ -484,14 +486,15 @@ type PeriodRow = {
 
 async function lockPeriod(
   transaction: ExpenseTransaction,
-  context: StationContext,
+  context: RecurringScopeContext,
   periodId: string,
 ): Promise<PeriodRow> {
   const rows = await transaction.execute<PeriodRow>(sql`
     select id, station_id, template_id, category_id, period_start, period_end,
            amount::text as amount, version
     from app.recurring_cost_periods
-    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+    where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
+      and station_id is not distinct from ${context.stationId ?? null}
       and id = ${periodId}
     for update
   `);
@@ -678,7 +681,7 @@ export async function createRecurringCostTemplateInTransaction(
   rawContext: ExpenseCommandContext,
   input: ExpenseCommandInput<'CreateRecurringCostTemplate'>,
 ) {
-  const context = requireStation(rawContext);
+  const context = rawContext;
   const category = await loadCategory(transaction, context, input.categoryId);
   assertCategoryUsableForExpense(category.classification, 'RECURRING_COST');
   assertBusinessDate(input.startDate, 'startDate');
@@ -691,7 +694,8 @@ export async function createRecurringCostTemplateInTransaction(
   const amount = positiveMoney(input.amount).amount.value.toFixed(4);
   const duplicate = await transaction.execute(sql`
     select 1 from app.recurring_cost_templates
-    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+    where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
+      and station_id is not distinct from ${context.stationId ?? null}
       and name = ${input.name}
   `);
   if (duplicate.length > 0) {
@@ -703,7 +707,7 @@ export async function createRecurringCostTemplateInTransaction(
       id, tenant_id, legal_entity_id, station_id, category_id, name, frequency, currency, amount,
       start_date, end_date, created_by
     ) values (
-      ${templateId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+      ${templateId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId ?? null},
       ${input.categoryId}, ${input.name}, 'MONTHLY', 'USD', ${amount}, ${input.startDate},
       ${input.endDate ?? null}, ${actorId(context)}
     )
@@ -716,7 +720,7 @@ export async function generateRecurringCostPeriodInTransaction(
   rawContext: ExpenseCommandContext,
   input: ExpenseCommandInput<'GenerateRecurringCostPeriod'>,
 ) {
-  const context = requireStation(rawContext);
+  const context = rawContext;
   const rows = await transaction.execute<{
     id: string;
     category_id: string;
@@ -727,7 +731,8 @@ export async function generateRecurringCostPeriodInTransaction(
   }>(sql`
     select id, category_id, amount::text as amount, start_date, end_date, status
     from app.recurring_cost_templates
-    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+    where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
+      and station_id is not distinct from ${context.stationId ?? null}
       and id = ${input.templateId}
     for share
   `);
@@ -755,7 +760,7 @@ export async function generateRecurringCostPeriodInTransaction(
       id, tenant_id, legal_entity_id, station_id, template_id, category_id, period_start,
       period_end, currency, amount, generated_by
     ) values (
-      ${periodId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+      ${periodId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId ?? null},
       ${template.id}, ${template.category_id}, ${period.start}, ${period.end}, 'USD',
       ${template.amount}, ${actorId(context)}
     )
@@ -774,7 +779,7 @@ export async function recognizeRecurringCostInTransaction(
   rawContext: ExpenseCommandContext,
   input: ExpenseCommandInput<'RecognizeRecurringCost'>,
 ) {
-  const context = requireStation(rawContext);
+  const context = rawContext;
   const period = await lockPeriod(transaction, context, input.periodId);
   assertBusinessDate(input.recognitionDate, 'recognitionDate');
   assertRecognitionNotFuture(input.recognitionDate);
@@ -797,7 +802,7 @@ export async function recognizeRecurringCostInTransaction(
       id, tenant_id, legal_entity_id, station_id, period_id, recognition_date, currency, amount,
       state, recognized_by
     ) values (
-      ${recognitionId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+      ${recognitionId}, ${context.tenantId}, ${context.legalEntityId}, ${period.station_id},
       ${period.id}, ${input.recognitionDate}, 'USD', ${amount}, 'RECOGNIZED', ${actorId(context)}
     )
   `);
@@ -806,7 +811,7 @@ export async function recognizeRecurringCostInTransaction(
       id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
       source_type, source_id, recognition_date, currency, amount, actor_membership_id
     ) values (
-      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${period.station_id},
       ${period.category_id}, 'FIXED_COST', 'RECOGNITION', 'RECURRING_COST_RECOGNITION',
       ${recognitionId}, ${input.recognitionDate}, 'USD', ${amount}, ${actorId(context)}
     )
@@ -819,7 +824,7 @@ export async function reverseRecurringCostRecognitionInTransaction(
   rawContext: ExpenseCommandContext,
   input: ExpenseCommandInput<'ReverseRecurringCostRecognition'>,
 ) {
-  const context = requireStation(rawContext);
+  const context = rawContext;
   const period = await lockPeriod(transaction, context, input.periodId);
   const rows = await transaction.execute<{ id: string; amount: string; state: string }>(sql`
     select id, amount::text as amount, state
@@ -855,7 +860,7 @@ export async function reverseRecurringCostRecognitionInTransaction(
       source_type, source_id, recognition_date, currency, amount, reversal_of_id,
       actor_membership_id
     ) values (
-      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${period.station_id},
       ${period.category_id}, 'FIXED_COST', 'REVERSAL', 'RECURRING_COST_RECOGNITION',
       ${recognition.id}, ${input.recognitionDate}, 'USD', ${recognition.amount}, ${original[0].id},
       ${actorId(context)}
@@ -874,7 +879,7 @@ export async function adjustRecurringCostRecognitionInTransaction(
   rawContext: ExpenseCommandContext,
   input: ExpenseCommandInput<'AdjustRecurringCostRecognition'>,
 ) {
-  const context = requireStation(rawContext);
+  const context = rawContext;
   const period = await lockPeriod(transaction, context, input.periodId);
   assertBusinessDate(input.recognitionDate, 'recognitionDate');
   assertRecognitionNotFuture(input.recognitionDate);
@@ -919,7 +924,7 @@ export async function adjustRecurringCostRecognitionInTransaction(
         source_type, source_id, recognition_date, currency, amount, reversal_of_id,
         actor_membership_id
       ) values (
-        ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+        ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${period.station_id},
         ${period.category_id}, 'FIXED_COST', 'REVERSAL', 'RECURRING_COST_RECOGNITION',
         ${original.id}, ${input.recognitionDate}, 'USD', ${original.amount},
         ${originalMovement[0].id}, ${actorId(context)}
@@ -932,7 +937,7 @@ export async function adjustRecurringCostRecognitionInTransaction(
       id, tenant_id, legal_entity_id, station_id, period_id, recognition_date, currency, amount,
       state, recognized_by, adjustment_of_id
     ) values (
-      ${correctedId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+      ${correctedId}, ${context.tenantId}, ${context.legalEntityId}, ${period.station_id},
       ${period.id}, ${input.recognitionDate}, 'USD', ${amount}, 'RECOGNIZED',
       ${actorId(context)}, ${original.id}
     )
@@ -942,7 +947,7 @@ export async function adjustRecurringCostRecognitionInTransaction(
       id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
       source_type, source_id, recognition_date, currency, amount, actor_membership_id
     ) values (
-      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
+      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${period.station_id},
       ${period.category_id}, 'FIXED_COST', 'RECOGNITION', 'RECURRING_COST_RECOGNITION',
       ${correctedId}, ${input.recognitionDate}, 'USD', ${amount}, ${actorId(context)}
     )

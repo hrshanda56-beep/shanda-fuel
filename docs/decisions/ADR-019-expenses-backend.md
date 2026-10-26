@@ -19,7 +19,7 @@ Blueprint section 8.5 and Appendix B define the expense area (`SubmitExpense`, `
 7. **Separation of duties.** The submitter cannot approve their own expense while another active approver exists at the station (the shared solo-operator exception used by reconciliation and costing). Each approver decides once. Self-approval is therefore a function of who exists, not a flag.
 8. **Recurring costs.** Template (monthly) -> period obligation (full calendar month, no proration) -> daily recognition -> payment. A period's amount is split exactly: each day gets `amount / days` rounded down to four decimals and the last day takes the remainder, so the schedule always sums to the obligation. Cost cannot be recognized for a future date. A reversed daily recognition is not re-recognizable for the same date; `AdjustRecurringCostRecognition` appends the reversal and a linked corrected recognition instead. Payment of a period is capped at the obligation and never recognizes cost.
 9. **No tax, no period lock.** There are no tax fields and no VAT/withholding logic: amounts are gross USD. Closed business-day / reconciliation locking of expense dates is not implemented; expense dates are only refused when more than one day in the future.
-10. **Scope.** Expense commands are station scoped (`STATION` authorization scope; legal entity derived from the station). Categories and the policy are legal-entity scoped master data. Permissions: `expense.view|submit|approve|post|reverse|payment.record|payment.reverse|manage|policy.manage|recurring.manage|recurring.recognize`. SUPERVISOR receives `view` and `submit` only; FINANCE everything except `policy.manage`; OWNER and ADMINISTRATOR everything.
+10. **Scope.** Manual expense and settlement commands remain station scoped (`STATION` authorization scope; legal entity derived from the station). Categories and the policy are legal-entity scoped master data. Recurring-cost template, period and recognition commands accept either a station scope or legal-entity/company scope; a company-scoped recurring fact has no station attribution. Permissions: `expense.view|submit|approve|post|reverse|payment.record|payment.reverse|manage|policy.manage|recurring.manage|recurring.recognize`. SUPERVISOR receives `view` and `submit` only; FINANCE everything except `policy.manage`; OWNER and ADMINISTRATOR everything.
 11. **Authorization of reads.** `GET /api/expenses/list|summary|reference` require `expense.view` at station or legal-entity scope; PostgreSQL RLS (tenant context plus active membership, forced) backs every table.
 
 ## Alternatives considered
@@ -34,12 +34,31 @@ Cash settlement is by reference until the cash module adds an expense disburseme
 
 ## Affected modules
 
-`src/modules/expenses`, `src/platform/db/schema/expenses.ts`, migrations `0035_expenses.sql`, `0039_expense_attachments.sql`, and `0040_recurring_cost_adjustments.sql` (hand-reviewed security layers after the generated tables, no snapshots, like the other hand-authored deltas), `src/platform/security/permissions.ts`, `/api/expenses/*`.
+`src/modules/expenses`, `src/platform/db/schema/expenses.ts`, migrations `0035_expenses.sql`, `0039_expense_attachments.sql`, `0040_recurring_cost_adjustments.sql`, and `0067_recurring_cost_scope_and_scheduler.sql` (hand-reviewed security layers after the generated tables, no snapshots, like the other hand-authored deltas), `src/platform/security/permissions.ts`, `/api/expenses/*`, and `/api/cron/recurring-costs`.
 
 ## Specification impact
 
 Refines implementation only; no locked requirement changed.
 
+## Item 40 follow-up — 2026-10-26
+
+Recurring fixed-cost templates, monthly periods, daily recognition rows and recognition
+movements may now be scoped either to one station or to the whole legal entity/company. A
+company-scoped row keeps `station_id` null; it is never copied into each station and therefore
+cannot be double-counted in consolidated reporting. Station-specific views show company overhead
+as context but do not attribute it to the station.
+
+The existing Vercel Cron/Next route pattern now calls a protected daily route for automatic
+recognition. The job creates the current month once, catches up missing daily rows, and is
+idempotent under concurrent runs. It uses the existing exact-decimal daily split, appends audit
+events, and leaves manual reversals/corrections untouched. It runs through the existing
+`app_runtime` boundary; the quarantined `job_runtime` role is not activated or granted a new
+consumer.
+
 ## Migration/backward compatibility
 
-Additive. New tables, permission definitions and role grants; no existing object changes. Rollback is dropping the new tables, triggers and permission rows.
+Backward-compatible schema extension. Existing station rows retain their values; the recurring
+scope columns become nullable and legal-entity foreign keys/partial uniqueness are added. The
+scheduled route and function add no new job framework and write only new period, recognition,
+movement and audit facts. Rollback requires a reviewed data-preserving reversal because company
+scope rows cannot be converted to station rows without an allocation decision.

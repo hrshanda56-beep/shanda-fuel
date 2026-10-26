@@ -1,5 +1,13 @@
 # Shanda Fuel — Decision Log
 
+## DEC-046 — The approved screens are locked (proposed as DEC-045 wording)
+
+Date: 2026-10-23. **Status:** ACCEPTED on the owner's behalf, on the explicit instruction of the
+project lead; owner signature pending in `docs/v1-owner-decisions-proposed.md`. The screens
+owner-approved on 2026-10-22 are locked. A file listed in `docs/ui-lock/manifest.json` may change
+only with the owner's approval, recorded in the same change by regenerating the manifest. New
+screens must be written for non-technical users. Guard: `src/platform/ui-lock/ui-lock.test.ts`.
+
 ## DEC-045 — Implementation choices made while building the v1 scope (for review)
 
 Date: 2026-10-21. Made by the implementing agent inside DEC-044, without a separate human
@@ -48,6 +56,10 @@ Date: 2026-10-21. Explicit human instruction. **Status:** ACCEPTED.
   promotes the items listed in PRODUCT_SPEC §16.2 (cash custody and banking
   workflow, approved-fuel accounting, alerts, offline drafts, editable settings,
   richer exports and reports) into scope. **Deferred:** the ShandaHR link.
+- A disabled-by-default ShandaHR adapter boundary may exist for integration
+  planning and contract tests, but it must not contact ShandaHR or accept
+  credentials until a separate owner-approved contract, security, and rollout
+  decision is recorded.
 - **Branch.** All work lands on `codex/clerk-only-auth-20261017` (Clerk is the
   only authentication provider, DEC-043). Other branches are mined for finished
   work only. Nothing merges to `main` or deploys without a separate instruction.

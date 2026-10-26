@@ -105,7 +105,7 @@ export const readStockMovements: TableReportReader = async (transaction, filters
       t.code as tank, p.name as product, ${MOVEMENT_LABELS} as movement_type,
       m.quantity_litres::text as quantity_litres, m.reason
     from app.inventory_movements m
-    join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
+    left join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
     join app.tanks t on t.tenant_id = m.tenant_id and t.station_id = m.station_id and t.id = m.tank_id
     join app.products p on p.tenant_id = m.tenant_id and p.id = m.product_id
     where m.tenant_id = ${filters.tenantId}
@@ -186,13 +186,13 @@ export const readExpensesDetail: TableReportReader = async (transaction, filters
     reference: string | null;
     amount: string;
   }>(sql`
-    select m.recognition_date as business_date, s.name as station, c.name as category,
+    select m.recognition_date as business_date, coalesce(s.name, 'Whole company') as station, c.name as category,
       m.classification,
       coalesce(e.description, t.name, 'Recognised expense') as description,
       e.payee, e.reference,
       coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount
     from app.expense_recognition_movements m
-    join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
+    left join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
     join app.expense_categories c on c.tenant_id = m.tenant_id and c.id = m.category_id
     left join app.expenses e on e.tenant_id = m.tenant_id
       and e.id = m.source_id and m.source_type = 'EXPENSE'

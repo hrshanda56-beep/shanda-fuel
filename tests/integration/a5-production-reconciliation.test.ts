@@ -289,6 +289,13 @@ async function createPopulatedProductionReconciliation(
       `a5-return-create-${reconciliationId}`,
     ),
   );
+  await client.unsafe(`
+    insert into app.reconciliation_attendants
+      (id, tenant_id, station_id, reconciliation_id, attendant_id, assigned_by)
+    values
+      ('${randomUUID()}', '${ids.tenant}', '${ids.station}', '${reconciliationId}',
+       '${ids.attendantMembership}', '${ids.supervisorMembership}')
+  `);
   const openingReading = await nextMeterReading();
   const saleValue = new ExactDecimal(saleLitres).multiply(new ExactDecimal('1.5')).toString();
   const originalClosingReading = new ExactDecimal(openingReading)
@@ -2033,6 +2040,110 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       await readReconciliation(reconciliationId, 'a5-approver-session-token')
     ).json()) as { approvalBlocked?: boolean };
     expect(asOther.approvalBlocked).toBe(false);
+  });
+
+  it('rejects submission when an existing draft has no attendant declaration', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    await client.unsafe(`
+      delete from app.reconciliation_attendants
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}'
+        and reconciliation_id='${reconciliationId}'
+    `);
+
+    const response = await postCommand(
+      { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+      `a5-empty-attendants-submit-${reconciliationId}`,
+    );
+    const body = await response.json();
+    expect(response.status, JSON.stringify(body)).toBe(400);
+    expect(body.error).toBe('VALIDATION_FAILED');
+    expect(body.message).toContain('At least one attendant');
+  });
+
+  it('rejects meter evidence from a different shift before replacing the draft', async () => {
+    const reconciliationId = randomUUID();
+    const { common, openingReading, correctedClosingReading } =
+      await createPopulatedProductionReconciliation(reconciliationId);
+
+    const response = await postCommand(
+      {
+        commandType: 'SaveMeterReadings',
+        ...common,
+        expectedVersion: 5,
+        readings: [
+          {
+            nozzleId: ids.nozzle,
+            productId: ids.product,
+            shiftId: ids.shift,
+            openingReading,
+            closingReading: correctedClosingReading,
+            sellingPriceId: ids.price,
+          },
+        ],
+      },
+      `a5-wrong-shift-reading-${reconciliationId}`,
+    );
+    expect(response.status).toBe(409);
+  });
+
+  it('rejects delivery evidence outside the proven shift window', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    const deliveryId = randomUUID();
+    const allocationId = randomUUID();
+    await client.unsafe(`
+      insert into app.fuel_deliveries
+        (id, tenant_id, station_id, product_id, delivery_note_number, delivered_at, business_date,
+         note_quantity_litres, actual_quantity_litres, shortage_excess_litres, status,
+         recorded_by, confirmed_by, confirmed_at)
+      values
+        ('${deliveryId}', '${ids.tenant}', '${ids.station}', '${ids.product}',
+         '2026-09-22T05:59:59.000Z', '2026-09-22', 50, 50, 0, 'CONFIRMED',
+         '${ids.supervisorMembership}', '${ids.managerMembership}', now());
+      insert into app.fuel_delivery_allocations
+        (id, tenant_id, station_id, delivery_id, tank_id, product_id, quantity_litres)
+      values
+        ('${allocationId}', '${ids.tenant}', '${ids.station}', '${deliveryId}', '${ids.tank}',
+         '${ids.product}', 50)
+    `);
+
+    const response = await postCommand(
+      {
+        commandType: 'LinkDeliveries',
+        ...common,
+        expectedVersion: 5,
+        deliveries: [
+          {
+            deliveryId,
+            allocationId,
+            productId: ids.product,
+            tankId: ids.tank,
+          },
+        ],
+      },
+      `a5-outside-shift-delivery-${reconciliationId}`,
+    );
+    expect(response.status).toBe(403);
+
+    const dipId = randomUUID();
+    await client.unsafe(`
+      insert into app.tank_dips
+        (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
+      values
+        ('${dipId}', '${ids.tenant}', '${ids.station}', '${ids.tank}',
+         '2026-09-22T05:59:59.000Z', '2026-09-22', 1000, '${ids.supervisorMembership}')
+    `);
+    const dipResponse = await postCommand(
+      {
+        commandType: 'LinkTankDips',
+        ...common,
+        expectedVersion: 5,
+        dips: [{ dipId, productId: ids.product, tankId: ids.tank }],
+      },
+      `a5-outside-shift-dip-${reconciliationId}`,
+    );
+    expect(dipResponse.status).toBe(403);
   });
 
   it('lists a waiting reconciliation in the finance action center, flagged for its submitter', async () => {

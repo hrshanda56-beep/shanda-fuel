@@ -48,7 +48,7 @@ function table<Row>(columns: readonly Column<Row>[], rows: readonly Row[]): stri
 
 function stationCodes(report: ManagementReport): (stationId: string) => string {
   const byId = new Map(report.stations.map((station) => [station.stationId, station.code]));
-  return (stationId) => byId.get(stationId) ?? '';
+  return (stationId) => (stationId ? (byId.get(stationId) ?? '') : 'Whole company');
 }
 
 type SalesRow = ManagementReport['sales']['rows'][number];

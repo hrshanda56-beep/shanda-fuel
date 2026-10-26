@@ -7,6 +7,7 @@ export const DOCUMENT_KINDS = [
   { value: 'INVOICE', label: 'Invoice' },
   { value: 'DELIVERY_NOTE', label: 'Delivery note' },
   { value: 'DEPOSIT_SLIP', label: 'Bank deposit slip' },
+  { value: 'PAYMENT_PROOF', label: 'Proof of payment' },
   { value: 'RECEIPT', label: 'Receipt' },
   { value: 'PHOTO', label: 'Photo' },
   { value: 'OTHER', label: 'Other' },
@@ -20,6 +21,8 @@ export const DOCUMENT_SUBJECTS = {
   CASH_HANDOVER: { table: 'cash_handovers', label: 'Cash handover' },
   RECONCILIATION: { table: 'reconciliations', label: 'Daily report' },
   EXPENSE: { table: 'expenses', label: 'Expense' },
+  /** Supplier payments are legal-entity records and therefore have no station scope. */
+  SUPPLIER_PAYMENT: { table: 'supplier_payments', label: 'Supplier payment' },
 } as const;
 
 export type DocumentSubjectType = keyof typeof DOCUMENT_SUBJECTS;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NO_ATTENDANT_LABEL,
   SHARED_SHIFT_LABEL,
+  creditSalesByAuthoritativeSegments,
   creditSalesToAttendants,
   type AttendantShiftSale,
 } from './sales-by-attendant';
@@ -19,7 +20,7 @@ const shift = (
   litres: '10.5',
 });
 
-describe('sales by attendant (sole-attendant rule, awaiting owner confirmation)', () => {
+describe('sales by attendant', () => {
   it('credits a shift to its only attendant and adds exactly', () => {
     const rows = creditSalesToAttendants([
       shift([ann], '0.1'),
@@ -56,5 +57,43 @@ describe('sales by attendant (sole-attendant rule, awaiting owner confirmation)'
     );
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.label === 'Everyone')).toBe(true);
+  });
+
+  it('splits a shared shift by authoritative litres and keeps exact totals', () => {
+    const rows = creditSalesByAuthoritativeSegments([
+      {
+        ...shift([ann, ben], '100'),
+        accounted: '99.9999',
+        litres: '10.000',
+        authoritativeSegments: [
+          { attendantId: 'a', litres: '6.000' },
+          { attendantId: 'b', litres: '4.000' },
+        ],
+      },
+    ]);
+    expect(
+      rows.map((row) => [row.label, row.litres, row.sales, row.accounted, row.shifts]),
+    ).toEqual([
+      ['Ann', '6', '60', '59.9999', 1],
+      ['Ben', '4', '40', '40', 1],
+    ]);
+  });
+
+  it('keeps a truthful shared row when authoritative attribution is incomplete', () => {
+    const rows = creditSalesByAuthoritativeSegments([
+      {
+        ...shift([ann, ben], '100'),
+        authoritativeSegments: [{ attendantId: null, litres: '10.5' }],
+      },
+    ]);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        label: SHARED_SHIFT_LABEL,
+        attendantId: null,
+        litres: '10.5',
+        sales: '100',
+        shifts: 1,
+      }),
+    ]);
   });
 });

@@ -129,7 +129,15 @@ export const reverseExpensePaymentSchema = stationBase.extend({
   reason,
 });
 
-export const createRecurringCostTemplateSchema = stationBase.extend({
+const recurringCostScope = z
+  .object({
+    tenantId: uuid,
+    legalEntityId: uuid,
+    stationId: uuid.optional(),
+  })
+  .strict();
+
+export const createRecurringCostTemplateSchema = recurringCostScope.extend({
   commandType: z.literal('CreateRecurringCostTemplate'),
   categoryId: uuid,
   name: z.string().trim().min(1).max(160),
@@ -138,26 +146,26 @@ export const createRecurringCostTemplateSchema = stationBase.extend({
   endDate: date.optional(),
 });
 
-export const generateRecurringCostPeriodSchema = stationBase.extend({
+export const generateRecurringCostPeriodSchema = recurringCostScope.extend({
   commandType: z.literal('GenerateRecurringCostPeriod'),
   templateId: uuid,
   periodStart: date,
 });
 
-export const recognizeRecurringCostSchema = stationBase.extend({
+export const recognizeRecurringCostSchema = recurringCostScope.extend({
   commandType: z.literal('RecognizeRecurringCost'),
   periodId: uuid,
   recognitionDate: date,
 });
 
-export const reverseRecurringCostRecognitionSchema = stationBase.extend({
+export const reverseRecurringCostRecognitionSchema = recurringCostScope.extend({
   commandType: z.literal('ReverseRecurringCostRecognition'),
   periodId: uuid,
   recognitionDate: date,
   reason,
 });
 
-export const adjustRecurringCostRecognitionSchema = stationBase.extend({
+export const adjustRecurringCostRecognitionSchema = recurringCostScope.extend({
   commandType: z.literal('AdjustRecurringCostRecognition'),
   periodId: uuid,
   recognitionDate: date,

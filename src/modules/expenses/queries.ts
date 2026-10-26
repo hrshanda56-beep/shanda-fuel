@@ -328,7 +328,7 @@ export async function getExpenseReferenceFromRequest(
     `);
     const templates = await transaction.execute<{
       id: string;
-      station_id: string;
+      station_id: string | null;
       category_id: string;
       name: string;
       amount: string;
@@ -339,12 +339,12 @@ export async function getExpenseReferenceFromRequest(
       select id, station_id, category_id, name, amount::text as amount, start_date, end_date, status
       from app.recurring_cost_templates
       where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
-        ${context.stationId ? sql`and station_id = ${context.stationId}` : sql``}
+        ${context.stationId ? sql`and (station_id is null or station_id = ${context.stationId})` : sql``}
       order by name
     `);
     const periods = await transaction.execute<{
       id: string;
-      station_id: string;
+      station_id: string | null;
       template_id: string;
       period_start: string;
       period_end: string;
@@ -361,7 +361,7 @@ export async function getExpenseReferenceFromRequest(
           where p.tenant_id = r.tenant_id and p.recurring_period_id = r.id and p.state = 'RECORDED'), 0)::text as settled
       from app.recurring_cost_periods r
       where r.tenant_id = ${context.tenantId} and r.legal_entity_id = ${context.legalEntityId}
-        ${context.stationId ? sql`and r.station_id = ${context.stationId}` : sql``}
+        ${context.stationId ? sql`and (r.station_id is null or r.station_id = ${context.stationId})` : sql``}
       order by r.period_start desc, r.id
       limit 120
     `);

@@ -49,10 +49,61 @@ APP_ENV=production PG_BIN_DIR=/path/to/pg18/bin \
 unset U
 ```
 
-## Scheduling proposal
+## Nightly scheduling example
 
-Pick one, owner decision (not yet implemented, requires approval of where the
-production credential lives):
+The repository does not install or activate a scheduler. The following
+systemd example is an operator-owned, disabled-by-default template. It keeps
+the database credential in a root-readable libpq passfile or secret-manager
+mount; the credential is never placed in the unit, timer, command arguments,
+or repository. Replace the paths and environment values only in the approved
+backup host.
+
+`/etc/systemd/system/shanda-fuel-nightly-backup.service`:
+
+```ini
+[Unit]
+Description=Shanda Fuel nightly logical backup
+
+[Service]
+Type=oneshot
+User=shanda-backup
+Group=shanda-backup
+Environment=APP_ENV=production
+Environment=PGHOST=approved-direct-db-host
+Environment=PGPORT=5432
+Environment=PGUSER=approved-backup-role
+Environment=PGDATABASE=shanda_fuel
+Environment=PGSSLMODE=verify-full
+Environment=PGPASSFILE=/run/shanda-fuel/pgpass
+Environment=PG_BIN_DIR=/opt/postgresql/18/bin
+ExecStart=/opt/shanda-fuel/scripts/ops/backup-db.sh --env production --confirm-production-backup --output-dir /var/lib/shanda-fuel/backups --retain-days 30
+```
+
+`/etc/systemd/system/shanda-fuel-nightly-backup.timer`:
+
+```ini
+[Unit]
+Description=Run the Shanda Fuel logical backup nightly
+
+[Timer]
+OnCalendar=*-*-* 01:17:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
+```
+
+An operator must review the unit, install it on the approved backup host,
+restrict the passfile to the service account, enable the timer, and verify one
+successful artifact before calling scheduling operational. This documentation
+change does none of those things.
+
+Alternative scheduling remains possible, but it must preserve the same
+properties: a dedicated least-privilege backup role, encrypted separate
+storage, retention, failure alerting, and metadata-only evidence.
+
+### Existing owner decision still required
 
 - **Option A (recommended): scheduled GitHub Actions workflow** on a protected
   `production-backup` environment holding a read-only backup role URL. It runs

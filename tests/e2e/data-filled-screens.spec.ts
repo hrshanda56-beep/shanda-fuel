@@ -76,6 +76,8 @@ test.describe('data-filled screens', () => {
   });
 
   test('Reconciliations lead with exceptions and filter without hiding data', async ({ page }) => {
+    // The context pill fades its text in; without this axe can sample a colour mid-fade.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await mockContext(page, `/stations/${STATION}/reconciliations`);
     await mockOverview(page);
     for (const width of [390, 1440]) {

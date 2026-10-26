@@ -266,7 +266,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     slug: 'sales-by-attendant',
     title: 'Sales by Attendant',
     description:
-      'Approved sales for each attendant. A shift worked by one attendant is credited to them; a shift worked by several is shown as a shared shift. The crediting rule is waiting for the owner to confirm.',
+      'Approved sales for each attendant. Where sealed meter segments support it, shared shifts are split by the litres each attendant handled; otherwise the shift remains shared.',
     category: 'sales',
     scope: 'station',
     emptyMessage: 'No approved shift reports were found for these dates and stations.',

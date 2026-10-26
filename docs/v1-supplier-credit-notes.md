@@ -22,20 +22,18 @@ Branch `codex/v1-supplier-credit`. Migration 0055.
 - **Reminders before the due date** already exist: the Action Center and the alert digest raise
   "due today" and "due in N days" supplier items (N is the organisation's alert setting). No change
   was needed; email stays off pending ADR-020.
+- **Proof of payment upload.** Supplier payment proofs are legal-entity-scoped private documents.
+  `POST /api/suppliers/payments/:paymentId/proof` validates image/PDF/DOCX content and the 10 MB
+  limit, stores the file through the existing private-storage abstraction, and records an append-only
+  audit event. `GET` on the same resource lists proofs; the nested document route returns a short-lived
+  download link. Upload requires `supplier.payment.create`; viewing requires `supplier.creditor.review`.
 
 ## Not built (needs a decision or a locked-file change)
 
-1. **Proof of payment upload.** Not built. Documents are attached to station-owned subjects
-   (`DOCUMENT_SUBJECTS` in `src/modules/documents/catalog.ts`); a supplier payment belongs to the
-   whole business, and `docs/v1-owner-decisions.md` item 6 recommends leaving it out of v1.
-   Ready design if the owner says yes: add subject `SUPPLIER_PAYMENT` with a legal-entity-scoped
-   (not station-scoped) document link table protected by the same tenant + legal entity RLS as
-   `supplier_payments`; permission `supplier.payment.post` to attach, `supplier.creditor.review`
-   to view; kind `RECEIPT`; behind a flag so it is off until the owner answers.
-2. **Supplier default credit period** (`suppliers.default_credit_period_days`) was left out: it
+1. **Supplier default credit period** (`suppliers.default_credit_period_days`) was left out: it
    needs a new command, permission wiring and a locked supplier form. The invoice carries its own
    period, which is enough for the brief.
-3. **Navigation entry and the invoice form fields** need locked files (see below).
+2. **Navigation entry and the invoice form fields** need locked files (see below).
 
 ## Locked-file changes proposed (not applied)
 
@@ -52,4 +50,4 @@ Branch `codex/v1-supplier-credit`. Migration 0055.
 
 - Should a credit purchase without terms be refused outright (today: terms are optional so the
   locked form keeps working, and the due-date requirement applies only when terms are sent)?
-- Proof of payment: leave out of v1 (recommended) or attach at business level.
+- Proof of payment: implemented at legal-entity level by the addendum.

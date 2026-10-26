@@ -133,7 +133,12 @@ export function buildProfitView(report: ManagementReport): ProfitView {
   // Per station: sales and cost are matched on the station that made the sale.
   const revenueByStation = groupBy(revenueSales, (sale) => sale.stationId);
   const costByStation = groupBy(costSales, (sale) => sale.stationId);
-  const expensesByStation = groupBy(report.expenses.rows, (row) => row.stationId);
+  // Company-level overhead remains in the overall expenses total, but is not falsely attributed
+  // to a station in this per-station comparison.
+  const expensesByStation = groupBy(
+    report.expenses.rows.filter((row) => row.stationId),
+    (row) => row.stationId,
+  );
   const stationIds = new Set<string>([
     ...revenueByStation.keys(),
     ...costByStation.keys(),

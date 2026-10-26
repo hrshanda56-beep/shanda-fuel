@@ -18,7 +18,7 @@ const ids = {
 };
 
 function context(
-  roleCode: 'SUPERVISOR' | 'FINANCE' = 'SUPERVISOR',
+  roleCode: 'ATTENDANT' | 'SUPERVISOR' | 'FINANCE' = 'SUPERVISOR',
   authorizedStationId = ids.station,
   sessionOverrides: Partial<SessionRecord> = {},
 ) {
@@ -240,6 +240,36 @@ describe('A3 authoritative command seam', () => {
         subjectId: ids.station,
         ports: ports(calls),
         expectedVersion: 0,
+        execute: async () => ({ result: 'approved' as const }),
+      }),
+    ).rejects.toThrow(/not authorized/);
+  });
+
+  it('keeps operational role boundaries on approval and price commands', async () => {
+    await expect(
+      executeForecourtCommand({
+        context: context('ATTENDANT'),
+        commandType: 'ApproveProductionReconciliation',
+        idempotencyKey: 'role-attendant-approve',
+        requestHash: 'role-attendant-approve-hash',
+        subjectType: 'Reconciliation',
+        subjectId: ids.station,
+        expectedVersion: 0,
+        ports: ports([]),
+        execute: async () => ({ result: 'approved' as const }),
+      }),
+    ).rejects.toThrow(/not authorized/);
+
+    await expect(
+      executeForecourtCommand({
+        context: context('FINANCE'),
+        commandType: 'ApprovePriceChange',
+        idempotencyKey: 'role-finance-price',
+        requestHash: 'role-finance-price-hash',
+        subjectType: 'SellingPrice',
+        subjectId: ids.station,
+        expectedVersion: 0,
+        ports: ports([]),
         execute: async () => ({ result: 'approved' as const }),
       }),
     ).rejects.toThrow(/not authorized/);

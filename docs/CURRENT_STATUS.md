@@ -85,19 +85,21 @@ format, `db:check`, typecheck green):
   handovers) are not queued yet. Queue rules are unit-tested; the offline-to-online flow has not
   been run in a browser.
 
-- Documents (migration 0047): `app.documents`, append-only private files (photo, PDF, DOCX; 10 MB)
-  attached to a fuel delivery, bank deposit, cash handover, daily report or expense at one station.
-  Validated by the same checks as expense receipts, stored under a random private key, opened only
-  through a short-lived link after the viewer's station access is checked, uploads audited. Reusable
+- Documents (migrations 0049/0066): `app.documents`, append-only private files (photo, PDF, DOCX; 10 MB)
+  attached to a fuel delivery, bank deposit, cash handover, daily report or expense at one station,
+  plus legal-entity-scoped supplier payment proofs. Validated by the same checks as expense receipts,
+  stored under a random private key, opened only through a short-lived link after the viewer's
+  authorized scope is checked, uploads audited. Reusable
   `DocumentAttachments` component, shown on new delivery drafts, bank deposit details and the daily report review step. Tested
   against the real database with a fake storage port; real R2 is not exercised locally.
 - Net current position report (Reports > Financial Statements; CSV, PDF and XLSX): cash not yet
   banked + card/mobile payments not yet received + owed by credit customers, less owed to suppliers
   and prepaid customer balances. Shown as unavailable (never zero) for a single station, because
   customer balances are organisation-wide. Stock at cost and unpaid expenses are not included.
-- Alert email, prepared but not enabled: digest wording and send rules plus the per-person run are
-  built and unit-tested without any database change; the cross-organisation recipient list and
-  scheduled trigger are written up in ADR-020 for security review.
+- Alert email delivery is implemented in the local candidate: opt-in per-membership preferences,
+  a narrow role/station-scoped recipient capability, per-recipient authorized alert reads,
+  durable claim/sent records, Resend fail-closed behavior and a CRON_SECRET-protected daily
+  route. Migration 0069 is not applied; no staging or production email/provider check was run.
 - Browser checks (Playwright, sample API answers, no Clerk user needed) for the cash handover card,
   activity log, document attachments and reminder settings, including accessibility and overflow
   checks at 320, 390, 768 and 1280 px. These caught one real mistake (a function passed from a
@@ -106,10 +108,10 @@ format, `db:check`, typecheck green):
 Found already built while checking (not new work): CSV, PDF and XLSX report downloads with step-up,
 and the report activity log. They have not been re-verified in a browser in this pass.
 
-Not yet built: enabling alert email (needs ADR-020 approved), dashboard tiles (left alone: the
+Not yet built: owner-controlled activation UI/provider verification for alert email, dashboard tiles (left alone: the
 owner-approved dashboard already has a needs-attention area), offline queue for screens other than the
-daily report, employee profiles polish, documents on supplier payments (they have no station, so
-need a design choice) and handovers, a Clerk-backed run of the signed-in browser suite.
+daily report, employee profiles polish, documents on supplier payments UI wiring and handovers, a
+Clerk-backed run of the signed-in browser suite.
 
 Open items for the owner: alert thresholds and default tank tolerance are placeholders; email
 delivery needs a security design (a scheduled job must read across organisations); the browser
@@ -1257,3 +1259,18 @@ Rail mode now removes expanded-navigation horizontal padding and reserved scroll
 ### Unified expense integration — 2026-10-19
 
 Unified expense integration is an incomplete isolated candidate based on 186f66d. Separate local database created and incoming 0000–0040 plus 0047/0048 applied with approval. Five focused runtime-role version/correction/API tests pass, including concurrent correction serialization; the full incoming-plus-candidate unit suite passed 171 files / 1,199 tests. TypeScript, focused lint, formatting and diff checks passed. The wider expense suite has unresolved self-approval, recurring-fixture and dependent audit failures. These also reproduce using unchanged incoming test assertions on this test environment; no clean-baseline production-code proof is claimed. Original worktree/local DB preserved. No Neon/production contact, merge, commit, push or deployment. Full refactor conversion and report-submission wiring remain outstanding.
+
+
+### Recurring fixed-cost automation — 2026-10-26
+
+Item 40’s missing backend slice is implemented in the current unpushed worktree. Recurring fixed
+costs can be scoped to a whole legal entity/company (`station_id` null) or one station. Migration
+`0067_recurring_cost_scope_and_scheduler.sql` preserves forced RLS, legal-entity foreign keys and
+append-only recognition/correction/reversal facts. The existing Next/Vercel Cron pattern now
+protects `/api/cron/recurring-costs` with `CRON_SECRET`; each daily run creates the current month
+once, catches up missing daily recognition using the existing exact four-decimal split, and is
+safe to retry concurrently. Manual reversals and corrections are never recreated. Reports retain
+company overhead as “Whole company” and do not falsely attribute it to every station. The locked
+Expenses UI only adds the scope choice and automatic-recognition wording. Focused tests, type
+checking and `drizzle-kit check` pass. No migration was run, and no production operation, push,
+merge or deployment was performed.

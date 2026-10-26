@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
 import { POST as forecourtCommandPost } from '../../src/app/api/forecourt/commands/route';
 import { GET as dailyReportGet } from '../../src/app/api/reports/daily/route';
+import { GET as consolidatedReconciliationGet } from '../../src/app/api/reports/consolidated-reconciliation/route';
 import { GET as managementReportGet } from '../../src/app/api/reports/management/route';
 import { GET as reportActivityGet } from '../../src/app/api/reports/activity/route';
 import { GET as reportExportGet } from '../../src/app/api/reports/export/route';
@@ -1487,6 +1488,30 @@ describe('A10 management reporting PostgreSQL read model', () => {
       ).text();
       expect(csv.trim().split('\r\n').length).toBeGreaterThan(1);
       expect(csv).toContain('135.0000,130.0000,-5.0000');
+    });
+
+    it('returns an authorized consolidated reconciliation model with station totals', async () => {
+      const response = await consolidatedReconciliationGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/consolidated-reconciliation?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, any>;
+      expect(body).toMatchObject({
+        report: 'CONSOLIDATED_RECONCILIATION',
+        scope: 'ALL_AUTHORIZED_STATIONS',
+        stationCount: 1,
+      });
+      expect(body.stationRows).toEqual([
+        expect.objectContaining({ stationId: ids.station, stationCode: 'A10MAIN' }),
+      ]);
+      expect(body.totals.salesValue).toBe(body.stationRows[0].totals.salesValue);
+      expect(body.totals.reconciliationIds).toEqual(body.stationRows[0].totals.reconciliationIds);
+      expect(
+        body.stationRows.some((row: Record<string, unknown>) => row.stationId === ids.otherStation),
+      ).toBe(false);
     });
 
     it('applies station authorisation to the table reports too', async () => {

@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cron/recurring-costs", "schedule": "5 0 * * *" },
+    { "path": "/api/cron/alert-digests", "schedule": "0 5 * * *" }
+  ]
+}

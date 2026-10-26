@@ -294,7 +294,8 @@ export const recurringCostTemplates = appSchema.table(
     id: id(),
     tenantId: tenantId(),
     legalEntityId: uuid('legal_entity_id').notNull(),
-    stationId: uuid('station_id').notNull(),
+    /** Null means the recurring cost belongs to the whole legal entity/company. */
+    stationId: uuid('station_id'),
     categoryId: uuid('category_id').notNull(),
     name: text('name').notNull(),
     frequency: text('frequency').notNull().default('MONTHLY'),
@@ -310,11 +311,12 @@ export const recurringCostTemplates = appSchema.table(
   },
   (table) => [
     unique('recurring_cost_templates_tenant_id_id_uidx').on(table.tenantId, table.id),
-    unique('recurring_cost_templates_tenant_station_name_uidx').on(
-      table.tenantId,
-      table.stationId,
-      table.name,
-    ),
+    uniqueIndex('recurring_cost_templates_tenant_station_name_uidx')
+      .on(table.tenantId, table.stationId, table.name)
+      .where(sql`${table.stationId} is not null`),
+    uniqueIndex('recurring_cost_templates_tenant_legal_entity_name_uidx')
+      .on(table.tenantId, table.legalEntityId, table.name)
+      .where(sql`${table.stationId} is null`),
     check('recurring_cost_templates_name_nonempty_ck', sql`btrim(${table.name}) <> ''`),
     check('recurring_cost_templates_frequency_ck', sql`${table.frequency} = 'MONTHLY'`),
     check('recurring_cost_templates_currency_ck', sql`${table.currency} = 'USD'`),
@@ -328,6 +330,11 @@ export const recurringCostTemplates = appSchema.table(
       columns: [table.tenantId, table.legalEntityId, table.stationId],
       foreignColumns: [stations.tenantId, stations.legalEntityId, stations.id],
       name: 'recurring_cost_templates_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId],
+      foreignColumns: [legalEntities.tenantId, legalEntities.id],
+      name: 'recurring_cost_templates_legal_entity_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.categoryId],
@@ -349,7 +356,7 @@ export const recurringCostPeriods = appSchema.table(
     id: id(),
     tenantId: tenantId(),
     legalEntityId: uuid('legal_entity_id').notNull(),
-    stationId: uuid('station_id').notNull(),
+    stationId: uuid('station_id'),
     templateId: uuid('template_id').notNull(),
     categoryId: uuid('category_id').notNull(),
     periodStart: text('period_start').notNull(),
@@ -382,6 +389,11 @@ export const recurringCostPeriods = appSchema.table(
       name: 'recurring_cost_periods_station_fk',
     }),
     foreignKey({
+      columns: [table.tenantId, table.legalEntityId],
+      foreignColumns: [legalEntities.tenantId, legalEntities.id],
+      name: 'recurring_cost_periods_legal_entity_fk',
+    }),
+    foreignKey({
       columns: [table.tenantId, table.templateId],
       foreignColumns: [recurringCostTemplates.tenantId, recurringCostTemplates.id],
       name: 'recurring_cost_periods_template_fk',
@@ -406,7 +418,7 @@ export const recurringCostRecognitions = appSchema.table(
     id: id(),
     tenantId: tenantId(),
     legalEntityId: uuid('legal_entity_id').notNull(),
-    stationId: uuid('station_id').notNull(),
+    stationId: uuid('station_id'),
     periodId: uuid('period_id').notNull(),
     recognitionDate: text('recognition_date').notNull(),
     currency: text('currency').notNull().default('USD'),
@@ -435,6 +447,11 @@ export const recurringCostRecognitions = appSchema.table(
       columns: [table.tenantId, table.legalEntityId, table.stationId],
       foreignColumns: [stations.tenantId, stations.legalEntityId, stations.id],
       name: 'recurring_cost_recognitions_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId],
+      foreignColumns: [legalEntities.tenantId, legalEntities.id],
+      name: 'recurring_cost_recognitions_legal_entity_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.periodId],
@@ -558,7 +575,7 @@ export const expenseRecognitionMovements = appSchema.table(
     id: id(),
     tenantId: tenantId(),
     legalEntityId: uuid('legal_entity_id').notNull(),
-    stationId: uuid('station_id').notNull(),
+    stationId: uuid('station_id'),
     categoryId: uuid('category_id').notNull(),
     classification: text('classification').notNull(),
     movementType: text('movement_type').notNull(),
@@ -606,6 +623,11 @@ export const expenseRecognitionMovements = appSchema.table(
       columns: [table.tenantId, table.legalEntityId, table.stationId],
       foreignColumns: [stations.tenantId, stations.legalEntityId, stations.id],
       name: 'expense_recognition_movements_station_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.legalEntityId],
+      foreignColumns: [legalEntities.tenantId, legalEntities.id],
+      name: 'expense_recognition_movements_legal_entity_fk',
     }),
     foreignKey({
       columns: [table.tenantId, table.categoryId],

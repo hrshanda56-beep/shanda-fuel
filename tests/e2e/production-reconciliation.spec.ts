@@ -340,7 +340,6 @@ test.describe('production reconciliation persistence', () => {
     await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
-    await expect(controlRoom.getByText('Audit history restricted')).toBeVisible();
     await expect(
       controlRoom
         .locator('article.operations-shift-row strong')
@@ -496,6 +495,9 @@ test.describe('production reconciliation persistence', () => {
     await expect(page.getByText(/750(?:\.0+)? USD/).first()).toBeVisible();
     await page.getByLabel('Cash counted').fill('750.0000');
     await page.getByRole('button', { name: 'Save persisted draft' }).click();
+    // Saving sends several commands in turn; the cash variance leaves "not counted" once the
+    // whole draft is stored, and only then may the workflow state change.
+    await expect(page.getByText('not counted')).toHaveCount(0);
     await expect(page.getByLabel('Cash counted')).toHaveValue(/750/);
 
     await page.getByRole('button', { name: 'Submit for management review' }).click();

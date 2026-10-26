@@ -261,7 +261,7 @@ export const customerLedgerEntries = appSchema.table(
     ),
     check(
       'customer_ledger_entries_source_type_ck',
-      sql`${table.sourceType} in ('A5_RECONCILIATION_CUSTOMER_FUEL','CUSTOMER_PAYMENT','PREPAID_TOPUP','MANUAL_ADJUSTMENT','LEDGER_REVERSAL')`,
+      sql`${table.sourceType} in ('A5_RECONCILIATION_CUSTOMER_FUEL','CUSTOMER_PAYMENT','PREPAID_TOPUP','MANUAL_ADJUSTMENT','OPENING_BALANCE','LEDGER_REVERSAL')`,
     ),
     check(
       'customer_ledger_entries_value_shape_ck',

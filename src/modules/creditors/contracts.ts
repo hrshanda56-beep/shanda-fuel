@@ -23,7 +23,7 @@ export const SUPPLIER_PERMISSION_CODES = [
 export type SupplierPermissionCode = (typeof SUPPLIER_PERMISSION_CODES)[number];
 
 export type SupplierSourceReference = Readonly<{
-  sourceType: 'A4_DELIVERY' | 'SUPPLIER_DOCUMENT' | 'SUPPLIER_PAYMENT';
+  sourceType: 'A4_DELIVERY' | 'SUPPLIER_DOCUMENT' | 'SUPPLIER_PAYMENT' | 'OPENING_BALANCE';
   sourceId: string;
   tenantId: string;
   stationId?: string;

@@ -8,6 +8,7 @@ import {
 } from './contracts';
 
 const tenantId = '11111111-1111-4111-8111-111111111111';
+const legalEntityId = '44444444-4444-4444-8444-444444444444';
 const stationId = '22222222-2222-4222-8222-222222222222';
 const expenseId = '33333333-3333-4333-8333-333333333333';
 
@@ -125,6 +126,34 @@ describe('expense command contracts', () => {
     expect(schema.safeParse({ ...payment, expenseId, recurringPeriodId: expenseId }).success).toBe(
       false,
     );
+  });
+
+  it('accepts recurring costs at company scope without weakening station commands', () => {
+    const common = {
+      tenantId,
+      legalEntityId,
+      commandType: 'CreateRecurringCostTemplate' as const,
+      categoryId: expenseId,
+      name: 'Head office rent',
+      amount: '1250.0000',
+      startDate: '2026-10-01',
+    };
+    expect(EXPENSE_COMMAND_SCHEMAS.CreateRecurringCostTemplate.safeParse(common).success).toBe(
+      true,
+    );
+    expect(
+      EXPENSE_COMMAND_SCHEMAS.CreateRecurringCostTemplate.safeParse({ ...common, stationId })
+        .success,
+    ).toBe(true);
+    expect(
+      EXPENSE_COMMAND_SCHEMAS.GenerateRecurringCostPeriod.safeParse({
+        tenantId,
+        legalEntityId,
+        commandType: 'GenerateRecurringCostPeriod',
+        templateId: expenseId,
+        periodStart: '2026-10-01',
+      }).success,
+    ).toBe(true);
   });
 
   it('keeps reversal commands behind step-up and gives supervisors no approval power', () => {

@@ -8,6 +8,7 @@ import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
 import { createLogger } from '../../platform/logging';
 import { authorize, type PermissionCode } from '../../platform/security/permissions';
+import type { AccessScope } from '../../platform/security/permissions';
 import {
   createR2Storage,
   createPrivateObjectKey,
@@ -55,7 +56,7 @@ type DocumentRow = {
   subject_type: DocumentSubjectType;
   subject_id: string;
   kind: DocumentKind;
-  station_id: string;
+  station_id: string | null;
   legal_entity_id: string;
   file_name: string;
   content_type: string;
@@ -82,7 +83,10 @@ function metadata(row: DocumentRow) {
 }
 
 function authorizeDocument(
-  context: Pick<InventoryCommandContext, 'authority' | 'scope'>,
+  context: {
+    authority: Pick<InventoryCommandContext['authority'], 'authorization'>;
+    scope: AccessScope;
+  },
   permissionCode: PermissionCode,
 ): void {
   authorize({
@@ -126,6 +130,12 @@ function parseUploadFields(formData: FormData) {
         message: issue.message,
       })),
     });
+  }
+  if (result.data.subjectType === 'SUPPLIER_PAYMENT') {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Supplier payment proofs must be uploaded through the supplier payment proof endpoint',
+    );
   }
   return {
     ...result.data,
@@ -311,12 +321,18 @@ export async function createDocumentDownloadFromRequest(
   authorizeDocument(
     {
       authority,
-      scope: {
-        tenantId: input.tenantId,
-        scopeType: 'STATION',
-        legalEntityId: row.legal_entity_id,
-        stationId: row.station_id,
-      },
+      scope: row.station_id
+        ? {
+            tenantId: input.tenantId,
+            scopeType: 'STATION',
+            legalEntityId: row.legal_entity_id,
+            stationId: row.station_id,
+          }
+        : {
+            tenantId: input.tenantId,
+            scopeType: 'LEGAL_ENTITY',
+            legalEntityId: row.legal_entity_id,
+          },
     },
     'document.view',
   );

@@ -13,6 +13,7 @@ describe('document catalog', () => {
     expect(isDocumentKind('invoice')).toBe(false);
     expect(isDocumentKind(undefined)).toBe(false);
     expect(isDocumentSubjectType('FUEL_DELIVERY')).toBe(true);
+    expect(isDocumentSubjectType('SUPPLIER_PAYMENT')).toBe(true);
     expect(isDocumentSubjectType('toString')).toBe(false);
     expect(isDocumentSubjectType('__proto__')).toBe(false);
   });
@@ -25,6 +26,7 @@ describe('document catalog', () => {
 
   it('writes plain labels and sizes', () => {
     expect(documentKindLabel('DEPOSIT_SLIP')).toBe('Bank deposit slip');
+    expect(documentKindLabel('PAYMENT_PROOF')).toBe('Proof of payment');
     expect(documentKindLabel('???')).toBe('Document');
     expect(formatFileSize(512)).toBe('512 B');
     expect(formatFileSize(312 * 1024)).toBe('312 KB');

@@ -2,7 +2,7 @@ import 'server-only';
 
 import { sql, type SQL } from 'drizzle-orm';
 import type { ManagementReportQuery } from '../contracts';
-import { creditSalesToAttendants, type AttendantShiftSale } from '../sales-by-attendant';
+import { creditSalesByAuthoritativeSegments, type AttendantShiftSale } from '../sales-by-attendant';
 import { TABLE_REPORT_ROW_LIMIT } from './definitions';
 import type { TableReportReader } from './read';
 import { PAYMENT_METHOD_OPTIONS } from './narrowing';
@@ -185,6 +185,7 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
     sales: string | null;
     accounted: string | null;
     litres: string;
+    authoritative_segments: { attendantId: string | null; litres: string }[] | null;
   }>(sql`
     select st.name as station,
       coalesce((select json_agg(json_build_object('id', am.id, 'name', coalesce(nullif(u.name, ''), u.email)) order by u.name)
@@ -196,7 +197,8 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
       rev.expected_sales::text as sales, rev.accounted_sales::text as accounted,
       coalesce((select sum(mr.litres_sold) from app.reconciliation_meter_readings mr
         where mr.tenant_id = r.tenant_id and mr.station_id = r.station_id
-          and mr.reconciliation_id = r.id), 0)::text as litres
+          and mr.reconciliation_id = r.id), 0)::text as litres,
+      authoritative.attributions as authoritative_segments
     from app.reconciliations r
     join app.stations st on st.tenant_id = r.tenant_id and st.id = r.station_id
     join app.station_business_days bd
@@ -204,11 +206,22 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
     left join app.shifts sh
       on sh.tenant_id = r.tenant_id and sh.station_id = r.station_id and sh.id = r.shift_id
     join lateral (
-      select v.expected_sales, v.accounted_sales
+      select v.id, v.expected_sales, v.accounted_sales
       from app.reconciliation_revisions v
       where v.tenant_id = r.tenant_id and v.station_id = r.station_id and v.reconciliation_id = r.id
       order by v.revision desc limit 1
     ) rev on true
+    left join lateral (
+      select json_agg(
+        json_build_object('attendantId', m.attendant_id, 'litres', m.litres::text)
+        order by m.segment_start_at, m.id
+      ) as attributions
+      from app.reconciliation_meter_reading_segments b
+      join app.meter_segments m
+        on m.tenant_id = b.tenant_id and m.station_id = b.station_id and m.id = b.meter_segment_id
+      where b.tenant_id = r.tenant_id and b.station_id = r.station_id
+        and b.reconciliation_id = r.id and b.revision_id = rev.id
+    ) authoritative on true
     where r.tenant_id = ${filters.tenantId} and r.state in ('APPROVED', 'POSTED', 'LOCKED')
       and bd.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause}
@@ -221,8 +234,9 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
     sales: row.sales ?? '0',
     accounted: row.accounted ?? '0',
     litres: row.litres,
+    authoritativeSegments: row.authoritative_segments,
   }));
-  return creditSalesToAttendants(shifts).map((row) => ({
+  return creditSalesByAuthoritativeSegments(shifts).map((row) => ({
     station: row.stationName,
     attendant: row.label,
     shifts: String(row.shifts),

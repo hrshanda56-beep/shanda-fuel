@@ -57,7 +57,7 @@ export type ExpenseCapabilities = {
 
 export type RegularCostTemplate = {
   templateId: string;
-  stationId: string;
+  stationId: string | null;
   categoryId: string;
   name: string;
   amount: string;
@@ -68,7 +68,7 @@ export type RegularCostTemplate = {
 
 export type RegularCostPeriod = {
   periodId: string;
-  stationId: string;
+  stationId: string | null;
   templateId: string;
   periodStart: string;
   periodEnd: string;
@@ -130,6 +130,8 @@ type Sheet =
   | { kind: 'limits' }
   | { kind: 'approve' | 'reject' | 'post' | 'reverse' | 'pay'; expense: ExpenseRow }
   | { kind: 'undoPay'; expense: ExpenseRow; payment: Payment };
+
+type RecurringScope = 'STATION' | 'COMPANY';
 
 const PAY_SOURCES = [
   {
@@ -214,6 +216,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState('');
   const [stationId, setStationId] = useState('');
+  const [recurringScope, setRecurringScope] = useState<RecurringScope>('STATION');
   const [reason, setReason] = useState('');
   const [paySource, setPaySource] = useState<'BANK' | 'REIMBURSEMENT'>('BANK');
   const [payRef, setPayRef] = useState('');
@@ -235,7 +238,8 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     const entity = organisation?.legalEntities.find((row) => row.id === current.legalEntityId);
     return (entity?.stations ?? []).map((station) => ({ id: station.id, name: station.name }));
   }, [initial, current]);
-  const stationName = (id: string) => stations.find((station) => station.id === id)?.name ?? '';
+  const stationName = (id: string | null) =>
+    id ? (stations.find((station) => station.id === id)?.name ?? '') : 'Whole company';
 
   const activeCategories = (reference?.categories ?? []).filter(
     (category) => category.status === 'ACTIVE' && category.classification === 'OPERATING',
@@ -353,6 +357,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       setDescription('');
       setDate(month.from);
       setEndDate('');
+      setRecurringScope('STATION');
       setStationId(
         current?.stationId && !current.allStations
           ? current.stationId
@@ -417,6 +422,14 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     return { tenantId, stationId: station };
   }
 
+  function recurringScopePayload(station?: string | null) {
+    return {
+      tenantId,
+      legalEntityId,
+      ...(station ? { stationId: station } : {}),
+    };
+  }
+
   async function submitSheet(event: FormEvent) {
     event.preventDefault();
     if (!sheet) return;
@@ -466,20 +479,22 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       const value = parseAmount(amount);
       if (!description.trim()) return setFormError('Name the cost, for example Rent.');
       if (!categoryId) return setFormError('Choose what kind of expense this is.');
-      if (!stationId) return setFormError('Choose the station that pays this cost.');
+      if (recurringScope === 'STATION' && !stationId) {
+        return setFormError('Choose the station that pays this cost.');
+      }
       if (!value) return setFormError('Enter the monthly amount, for example 450.');
       if (!date) return setFormError('Choose the date it starts.');
       return send(
         {
           commandType: 'CreateRecurringCostTemplate',
-          ...scope(stationId),
+          ...recurringScopePayload(recurringScope === 'STATION' ? stationId : undefined),
           categoryId,
           name: description.trim(),
           amount: value,
           startDate: date,
           ...(endDate ? { endDate } : {}),
         },
-        'Regular cost added. Add each month from the list below.',
+        'Recurring cost added. It will be recognised automatically each month.',
       );
     }
     if (sheet.kind === 'limits') {
@@ -685,19 +700,20 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       {caps?.manageRecurring || (reference.templates ?? []).length > 0 ? (
         <Card as="section" className="panel" aria-labelledby="regular-costs-title">
           <div className="panel-heading">
-            <h2 id="regular-costs-title">Regular costs</h2>
+            <h2 id="regular-costs-title">Recurring costs</h2>
             {caps?.manageRecurring ? (
               <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'regular' })}>
-                Add a regular cost
+                Add a recurring cost
               </Button>
             ) : null}
           </div>
           {(reference.templates ?? []).length === 0 ? (
             <p className={styles.muted}>
-              Costs that repeat each month, like rent, are listed here once added.
+              Costs that repeat each month, like rent, are recognised automatically for the whole
+              company or for one station.
             </p>
           ) : (
-            <ul className={styles.categories} aria-label="Regular costs">
+            <ul className={styles.categories} aria-label="Recurring costs">
               {(reference.templates ?? []).map((template) => {
                 const thisMonth = (reference.periods ?? []).find(
                   (row) => row.templateId === template.templateId && row.periodStart === month.from,
@@ -715,47 +731,10 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                     <span>
                       {template.status !== 'ACTIVE' ? (
                         <StatusBadge tone="neutral">Stopped</StatusBadge>
-                      ) : !thisMonth && caps?.manageRecurring ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'GenerateRecurringCostPeriod',
-                                ...scope(template.stationId),
-                                templateId: template.templateId,
-                                periodStart: month.from,
-                              },
-                              `${monthTitle(month.from)} added for ${template.name}.`,
-                            )
-                          }
-                        >
-                          Add {monthTitle(month.from)}
-                        </Button>
                       ) : thisMonth && counted ? (
-                        <StatusBadge tone="positive">Counted this month</StatusBadge>
-                      ) : thisMonth && caps?.recogniseRecurring ? (
-                        <Button
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'RecognizeRecurringCost',
-                                ...scope(template.stationId),
-                                periodId: thisMonth.periodId,
-                                recognitionDate: today,
-                              },
-                              `${template.name} now counts in this month’s spending.`,
-                            )
-                          }
-                        >
-                          Count in spending
-                        </Button>
+                        <StatusBadge tone="positive">Recognised automatically</StatusBadge>
                       ) : (
-                        <StatusBadge tone="pending">Waiting to be counted</StatusBadge>
+                        <StatusBadge tone="pending">Recognition scheduled</StatusBadge>
                       )}
                     </span>
                   </li>
@@ -1170,16 +1149,32 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   ))}
                 </select>
               </Field>
-              <Field id="regular-station" label="Station" required>
-                <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
-                  <option value="">Choose…</option>
-                  {stations.map((station) => (
-                    <option key={station.id} value={station.id}>
-                      {station.name}
-                    </option>
-                  ))}
+              <Field
+                id="regular-scope"
+                label="Applies to"
+                hint="Choose whether this cost belongs to the whole company or one station."
+                required
+              >
+                <select
+                  value={recurringScope}
+                  onChange={(event) => setRecurringScope(event.target.value as RecurringScope)}
+                >
+                  <option value="STATION">One station</option>
+                  <option value="COMPANY">Whole company</option>
                 </select>
               </Field>
+              {recurringScope === 'STATION' ? (
+                <Field id="regular-station" label="Station" required>
+                  <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
+                    <option value="">Choose…</option>
+                    {stations.map((station) => (
+                      <option key={station.id} value={station.id}>
+                        {station.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
               <div className={styles.pair}>
                 <Field id="regular-amount" label="Each month (USD)" required>
                   <input

@@ -6,6 +6,25 @@ import { readFile } from 'node:fs/promises';
 type ClerkUserFixture = { userId: string; email: string; storageState?: string };
 let setup: Promise<void> | undefined;
 
+/** Return false rather than throwing so an authenticated suite can skip cleanly. */
+export function clerkFixturesAvailable(internalUserIds: readonly string[]): boolean {
+  const secret = process.env.CLERK_TEST_SECRET_KEY ?? process.env.CLERK_SECRET_KEY;
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  if (!secret?.startsWith('sk_test_') || !publishableKey) return false;
+  try {
+    const users = JSON.parse(process.env.E2E_CLERK_USERS ?? '{}') as Record<
+      string,
+      ClerkUserFixture
+    >;
+    return internalUserIds.every((id) => {
+      const user = users[id];
+      return Boolean(user?.userId?.startsWith('user_') && user.email);
+    });
+  } catch {
+    return false;
+  }
+}
+
 /** Existing users in a dedicated Clerk development instance, keyed by app UUID. */
 function fixture(id: string): ClerkUserFixture {
   if (
