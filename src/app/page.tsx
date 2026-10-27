@@ -101,6 +101,12 @@ export default async function OverviewPage({
       ? dashboardScopeFromCurrentContext(access.current)
       : undefined;
 
+  // Quick actions are for people who run shifts. Owners, administrators and finance see
+  // Suppliers in their navigation; supervisors do not, so this follows resolved permissions.
+  const managesBusiness =
+    access.status === 'ready' &&
+    Boolean(access.projection?.some((entry) => entry.key === 'suppliers' && entry.visible));
+
   return (
     <AppShell searchPlacement="header" shellAccess={access}>
       <Suspense
@@ -116,6 +122,7 @@ export default async function OverviewPage({
           tenantId={validatedContext?.tenantId ?? tenantId}
           stationId={validatedContext ? validatedContext.stationId : stationId}
           initialContext={initialContext}
+          showQuickActions={!managesBusiness}
         />
       </Suspense>
     </AppShell>
@@ -127,16 +134,23 @@ async function DashboardContent({
   tenantId,
   stationId,
   initialContext,
+  showQuickActions,
 }: {
   request: Request | null;
   tenantId?: string;
   stationId?: string;
   initialContext?: { tenantId: string; stationId?: string };
+  showQuickActions: boolean;
 }) {
   const scope = tenantId ? { tenantId, stationId } : initialContext;
   if (!request || !scope?.tenantId)
     return (
-      <TodayOverview tenantId={tenantId} stationId={stationId} initialContext={initialContext} />
+      <TodayOverview
+        tenantId={tenantId}
+        stationId={stationId}
+        initialContext={initialContext}
+        showQuickActions={showQuickActions}
+      />
     );
   const window = chartBuckets('30D', businessToday());
   const data = await getDashboardFromRequest(request, {
@@ -150,6 +164,7 @@ async function DashboardContent({
       tenantId={scope.tenantId}
       stationId={scope.stationId}
       initialData={{ ...data, key: `${scope.tenantId}|${scope.stationId ?? ''}|30D` }}
+      showQuickActions={showQuickActions}
     />
   );
 }
