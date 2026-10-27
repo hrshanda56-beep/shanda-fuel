@@ -2142,7 +2142,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     expect(other.row?.submittedByMe).toBe(false);
   });
 
-  it('lets a solo approver approve their own reconciliation when nobody else could', async () => {
+  it('refuses a lone non-owner approving their own reconciliation; only a sole owner may', async () => {
     const reconciliationId = randomUUID();
     const { common } = await createPopulatedProductionReconciliation(reconciliationId);
     await expectOk(
@@ -2157,13 +2157,12 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       where tenant_id='${ids.tenant}' and id <> '${ids.managerMembership}'
     `);
     try {
-      await expectOk(
-        await postCommand(
-          { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
-          `a5-solo-approve-${reconciliationId}`,
-          'a5-manager-session-token',
-        ),
+      const refused = await postCommand(
+        { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+        `a5-solo-approve-${reconciliationId}`,
+        'a5-manager-session-token',
       );
+      expect(refused.status).toBe(403);
     } finally {
       await client.unsafe(`
         update app.memberships set status='ACTIVE'
@@ -2174,7 +2173,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       select state from app.reconciliations
       where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
     `);
-    expect(rows).toEqual([{ state: 'APPROVED' }]);
+    expect(rows).toEqual([{ state: 'SUBMITTED' }]);
   });
 
   it('rejects insufficient-stock approval atomically', async () => {

@@ -164,9 +164,29 @@ describe('Settings read model', () => {
     ).resolves.toMatchObject({ account: { name: 'Ava Operator', email: null } });
   });
 
-  it('rejects an actor without organisation-view permission', async () => {
+  it('gives a station-level supervisor only their own station staff and activity', async () => {
+    const view = await resolveSettings(request, {
+      ...dependencies(resolution, stationOnlyAuthorization),
+      listStationStaff: async () => [{ name: 'Ava Operator', role: 'ATTENDANT' }],
+    });
+    expect(view.stationView).toMatchObject({
+      stationId: ids.station,
+      canViewStaff: true,
+      canViewActivity: true,
+      staff: [{ name: 'Ava Operator', role: 'ATTENDANT' }],
+    });
+    // None of the organisation-wide staff management or access flags come with it.
+    expect(view.staff).toBeUndefined();
+    expect(view.access).toBeUndefined();
+  });
+
+  it('rejects an actor without organisation-view or station-view permission', async () => {
+    const attendant: AuthorizationActor = {
+      ...stationOnlyAuthorization,
+      roleAssignments: [{ ...stationOnlyAuthorization.roleAssignments[0]!, roleCode: 'ATTENDANT' }],
+    };
     await expect(
-      resolveSettings(request, dependencies(resolution, stationOnlyAuthorization)),
+      resolveSettings(request, dependencies(resolution, attendant)),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 

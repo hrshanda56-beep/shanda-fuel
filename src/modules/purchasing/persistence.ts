@@ -297,7 +297,6 @@ export async function approvePurchaseOrderInTransaction(
     tenantId: context.tenantId,
     stationId: context.stationId,
     excludeMembershipId: submitter,
-    permission: 'purchase_order.approve',
   });
   assertApproverAllowed({
     submitterMembershipId: submitter,

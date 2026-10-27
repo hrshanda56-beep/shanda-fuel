@@ -831,7 +831,6 @@ export async function approveInventoryCostRevaluationInTransaction(
       tenantId: input.tenantId,
       stationId: input.stationId,
       excludeMembershipId: input.approvedBy,
-      permission: 'approval.act',
     }))
   ) {
     throw new AppError(

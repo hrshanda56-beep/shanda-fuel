@@ -66,6 +66,7 @@ export const expensePolicies = appSchema.table(
     legalEntityId: uuid('legal_entity_id').notNull(),
     stepUpThreshold: money('step_up_threshold'),
     secondApprovalThreshold: money('second_approval_threshold'),
+    supervisorApprovalLimit: money('supervisor_approval_limit'),
     version: integer('version').notNull().default(0),
     updatedBy: uuid('updated_by').notNull(),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),

@@ -2304,7 +2304,6 @@ export async function approvePriceChangeFromRequest(request: Request, input: unk
           tenantId: context.tenantId,
           stationId: context.stationId,
           excludeMembershipId: price.requested_by,
-          permission: 'price.change.approve',
         }),
       );
       await transaction.execute(sql`

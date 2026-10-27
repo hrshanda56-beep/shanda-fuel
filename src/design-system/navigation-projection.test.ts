@@ -120,6 +120,45 @@ describe('server navigation projection', () => {
     );
   });
 
+  it('keeps profit and finance reports away from a supervisor', () => {
+    const visible = buildNavigationProjection({ actor: actor('SUPERVISOR'), scope })
+      .filter((entry) => entry.visible)
+      .map((entry) => entry.key);
+    for (const hidden of [
+      'profitability',
+      'daily-profit',
+      'financial-position',
+      'finance-home',
+      'suppliers',
+      'payments-due',
+      // Customer accounts are read across the organisation, so a station supervisor is refused.
+      'customers',
+      'staff-benefit',
+    ]) {
+      expect(visible).not.toContain(hidden);
+    }
+    // Operational screens and the station's own read-only Settings stay.
+    expect(visible).toEqual(
+      expect.arrayContaining(['inventory', 'cash', 'expenses', 'reports', 'settings']),
+    );
+  });
+
+  it('still shows owner, administrator and finance their finance reports', () => {
+    for (const role of ['OWNER', 'FINANCE'] as const) {
+      const visible = buildNavigationProjection({ actor: actor(role), scope })
+        .filter((entry) => entry.visible)
+        .map((entry) => entry.key);
+      expect(visible).toEqual(
+        expect.arrayContaining([
+          'profitability',
+          'daily-profit',
+          'financial-position',
+          'customers',
+        ]),
+      );
+    }
+  });
+
   it('routes finance users to the authorized reports workspace without settings access', () => {
     const projection = buildNavigationProjection({ actor: actor('FINANCE'), scope });
     const visible = projection.filter((entry) => entry.visible).map((entry) => entry.key);

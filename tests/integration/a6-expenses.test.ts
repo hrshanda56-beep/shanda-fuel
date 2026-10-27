@@ -457,7 +457,7 @@ describe('A6 expenses PostgreSQL persistence', () => {
     expect(second.json).toMatchObject({ state: 'APPROVED', approvals: 2, version: 2 });
   });
 
-  it('allows a solo approver when nobody else could approve', async () => {
+  it('refuses a lone finance user approving their own expense; only a sole owner may', async () => {
     const created = await command(tokens.financeB, {
       tenantId: ids.tenantB,
       legalEntityId: ids.legalB,
@@ -483,7 +483,7 @@ describe('A6 expenses PostgreSQL persistence', () => {
       expenseId: submitted.json.expenseId,
       expectedVersion: 0,
     });
-    expect(approved.status).toBe(200);
+    expect(approved.status).toBe(403);
   });
 
   it('posts recognition once and keeps settlement separate, exact and capped', async () => {

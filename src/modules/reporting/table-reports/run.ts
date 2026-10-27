@@ -41,7 +41,11 @@ export async function runTableReport(
   const definition = findTableReport(slug);
   const reader = TABLE_REPORT_READERS[slug];
   if (!definition || !reader) throw new AppError('NOT_FOUND', 'That report does not exist');
-  const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
+  const { filters, authority, stations } = await authorizeManagementReportRequest(
+    request,
+    input,
+    definition.audience === 'operational' ? 'report.view' : 'report.finance.view',
+  );
   if (options.requireStepUp) {
     assertStepUp(authority.actor.session, 1, new Date(), filters.tenantId);
   }

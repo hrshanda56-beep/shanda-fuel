@@ -1,5 +1,5 @@
 import type { ContextResolution } from '../context';
-import type { StaffOverview } from '../staff';
+import type { StaffOverview, StationStaffMember } from '../staff';
 
 export type SettingsAccount = Readonly<{
   name: string;
@@ -33,9 +33,23 @@ export type SettingsContext = Readonly<{
   stations?: readonly SettingsStation[];
 }>;
 
+/**
+ * What a station-level reader (a supervisor) gets in place of the organisation Settings: their
+ * own station's staff list and activity log, read only.
+ */
+export type SettingsStationView = Readonly<{
+  stationId: string;
+  stationName: string;
+  canViewStaff: boolean;
+  canViewActivity: boolean;
+  staff: readonly StationStaffMember[];
+}>;
+
 export type SettingsView = Readonly<{
   account: SettingsAccount;
   context: SettingsContext;
+  /** Present instead of the organisation tabs when the person only reads one station. */
+  stationView?: SettingsStationView;
   staff?: StaffOverview;
   access?: Readonly<{
     canViewReadiness: boolean;

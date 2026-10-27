@@ -321,8 +321,10 @@ export async function getExpenseReferenceFromRequest(
       version: number | string;
       step_up_threshold: string | null;
       second_approval_threshold: string | null;
+      supervisor_approval_limit: string | null;
     }>(sql`
-      select version, step_up_threshold::text, second_approval_threshold::text
+      select version, step_up_threshold::text, second_approval_threshold::text,
+        supervisor_approval_limit::text
       from app.expense_policies
       where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
     `);
@@ -371,11 +373,13 @@ export async function getExpenseReferenceFromRequest(
         permissionCode,
         requestedScope: context.scope,
       });
+    const seesRecurring = may('expense.recurring.manage') || may('expense.recurring.recognize');
     return {
       /** What this person may do, so screens can hide actions that would be refused. */
       capabilities: {
         submit: may('expense.submit'),
         approve: may('expense.approve'),
+        approveAnyAmount: may('expense.approve.any_amount'),
         post: may('expense.post'),
         reverse: may('expense.reverse'),
         recordPayment: may('expense.payment.record'),
@@ -397,9 +401,11 @@ export async function getExpenseReferenceFromRequest(
             version: Number(policy[0].version),
             stepUpThreshold: policy[0].step_up_threshold,
             secondApprovalThreshold: policy[0].second_approval_threshold,
+            supervisorApprovalLimit: policy[0].supervisor_approval_limit,
           }
         : null,
-      templates: templates.map((row) => ({
+      // Regular costs belong to whoever manages or counts them; a supervisor never sees them.
+      templates: (seesRecurring ? templates : []).map((row) => ({
         templateId: row.id,
         stationId: row.station_id,
         categoryId: row.category_id,
@@ -409,7 +415,7 @@ export async function getExpenseReferenceFromRequest(
         endDate: row.end_date,
         status: row.status,
       })),
-      periods: periods.map((row) => ({
+      periods: (seesRecurring ? periods : []).map((row) => ({
         periodId: row.id,
         stationId: row.station_id,
         templateId: row.template_id,

@@ -256,7 +256,6 @@ export async function getPurchaseOrderDetailFromRequest(
         tenantId: context.tenantId,
         stationId: context.stationId,
         excludeMembershipId: submitter,
-        permission: 'purchase_order.approve',
       }));
     const approvalBlockedForYou = sentByMe && someoneElseCanApprove;
     // The sender is the only possible approver: allowed, with a reason.
