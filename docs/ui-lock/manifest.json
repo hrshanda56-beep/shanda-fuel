@@ -298,7 +298,7 @@
     "src/modules/settlements/ui/provider-donut.tsx": "7fea7868449908f46aead400f665389f845f2e1b6689bc8bb5e11dc655cf1949",
     "src/modules/settlements/ui/provider-logos.tsx": "9b09a05a7c919262429790007bd9be9b3f467142d0f59190ddc68249a5d9d343",
     "src/modules/settlements/ui/settlement-summary.ts": "2ce183c547cc957a2cfc8d2652b3a7b8eb37ac1137b8ad5affcff120d2e64983",
-    "src/modules/settlements/ui/settlement-workspace.tsx": "7a6522e913947d0031eecdfec9936a7b099427f8abb0259e3df9aec2f3d1c47b",
+    "src/modules/settlements/ui/settlement-workspace.tsx": "a6af31c3d8142c36a9e5706c5737443a3f8379051ba92489ee9399002d839f55",
     "src/modules/setup/ui/alert-settings-panel.tsx": "ff7258d9cc38f56f64e1e5c0551ba20f00ab8874b2c022a5d20ddfd1a9d26309",
     "src/modules/setup/ui/bank-balance-panel.tsx": "8e656c4e5cbf035c4aa5c2dabce6fb1af2434873db4f471e65fb1b36187ae50a",
     "src/modules/setup/ui/guided-setup-panel.tsx": "b13a0fb50f043b6c46adfa5928583112e9f48ee5fe8edd0dae3ed69d3ed3702b",
