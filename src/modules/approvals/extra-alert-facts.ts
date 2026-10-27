@@ -147,6 +147,32 @@ export async function loadExtraAlertFacts(
       }))
     : null;
 
+  const negativeStock = can('inventory.view')
+    ? (
+        await transaction.execute<{
+          tank_id: string;
+          tank_code: string;
+          product: string;
+          litres: string;
+        }>(sql`
+      select t.id as tank_id, t.code as tank_code, p.name as product,
+        sum(m.quantity_litres)::text as litres
+      from app.inventory_movements m
+      join app.tanks t on t.tenant_id = m.tenant_id and t.station_id = m.station_id and t.id = m.tank_id
+      join app.products p on p.tenant_id = m.tenant_id and p.id = m.product_id
+      where m.tenant_id = ${tenantId} and m.station_id = ${stationId}
+      group by t.id, t.code, p.name
+      having sum(m.quantity_litres) < 0
+      order by sum(m.quantity_litres), t.code
+      limit 20`)
+      ).map((row) => ({
+        tankId: row.tank_id,
+        tankCode: row.tank_code,
+        product: row.product,
+        litres: row.litres,
+      }))
+    : null;
+
   const unprovenSupplierPayments = can('supplier.view')
     ? (
         await transaction.execute<{
@@ -308,6 +334,7 @@ export async function loadExtraAlertFacts(
     expenses,
     belowPriceSales,
     shortDeliveries,
+    negativeStock,
     approvedInformationChanges,
     unprovenSupplierPayments,
     dipReminders,

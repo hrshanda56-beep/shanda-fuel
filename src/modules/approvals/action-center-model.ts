@@ -48,6 +48,14 @@ export type ExpenseWaiting = {
   amount: string;
   submittedByMe: boolean;
 };
+export type SupplierPaymentWaiting = {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  paymentReference: string;
+  amount: string;
+  submittedByMe: boolean;
+};
 /** Supplier invoices and credit notes entered but not yet posted, counted per supplier. */
 export type InvoiceWaiting = { supplierId: string; documentType: string; count: number };
 
@@ -61,6 +69,10 @@ export type ActionCenterFacts = {
   orders?: Section<{ rows: readonly OrderWaiting[]; soleApprover: boolean }>;
   invoices?: Section<{ rows: readonly InvoiceWaiting[] }>;
   expenses?: Section<{ rows: readonly ExpenseWaiting[]; soleApprover: boolean }>;
+  supplierPayments?: Section<{
+    rows: readonly SupplierPaymentWaiting[];
+    soleApprover: boolean;
+  }>;
   cash: Section<{ collectedButUnbanked: string; pendingBankConfirmation: string }>;
   settlements: Section<{
     toMatch: number;
@@ -133,6 +145,8 @@ export function classifyCreditUse(balance: string | null, creditLimit: string | 
 }
 
 const isPositive = (value: string) => /^\d+(?:\.\d+)?$/.test(value) && !/^0+(?:\.0+)?$/.test(value);
+const formatActionUsd = (value: string) =>
+  formatUsd(new ExactDecimal(value).value.toDecimalPlaces(2).toFixed(2));
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
 /**
@@ -254,6 +268,23 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
         title: `${row.count} supplier ${plural(row.count, noun, `${noun}s`)} not yet posted`,
         detail: 'Nothing is owed until it is posted. Open the supplier to post it.',
         href: `/suppliers/${encodeURIComponent(row.supplierId)}`,
+        tone: 'attention',
+      });
+    }
+  }
+
+  if (facts.supplierPayments?.status === 'unavailable') unavailable.push('Supplier payments');
+  if (facts.supplierPayments?.status === 'ok') {
+    for (const row of facts.supplierPayments.value.rows) {
+      const blocked = row.submittedByMe && !facts.supplierPayments.value.soleApprover;
+      items.push({
+        id: `supplier-payment-${row.id}`,
+        area: 'Payables',
+        title: `Supplier payment of ${formatActionUsd(row.amount)} is waiting to be posted`,
+        detail: blocked
+          ? 'You submitted this payment, so someone else needs to post it.'
+          : `${row.supplierName} · ${row.paymentReference}. Review and post it.`,
+        href: `/suppliers/${encodeURIComponent(row.supplierId)}/payments`,
         tone: 'attention',
       });
     }

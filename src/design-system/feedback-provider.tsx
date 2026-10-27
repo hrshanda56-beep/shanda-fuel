@@ -246,7 +246,7 @@ function useBusyTracking(
  * validation message under a field) belong to the form.
  */
 export async function refusalMessage(response: Response): Promise<string | null> {
-  if (![403, 409, 422].includes(response.status)) return null;
+  if (![400, 401, 403, 409, 422].includes(response.status)) return null;
   try {
     const body = (await response.clone().json()) as {
       error?: string;
@@ -266,7 +266,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     if (outcome === 'saved' && !OWN_SUCCESS_MESSAGE_PATHS.includes(path)) {
       toastRef.current('success', 'Saved');
     } else if (outcome === 'failed') {
-      toastRef.current('error', 'That did not go through. Check your connection and try again.');
+      toastRef.current(
+        'error',
+        response
+          ? 'Something went wrong on our side. Nothing was changed. Try again.'
+          : 'We could not reach the server. Check your connection and try again.',
+      );
     } else if (outcome === 'rejected' && response) {
       // A refusal or conflict is never silent: say what the server said, in its own words.
       void refusalMessage(response).then((message) => {

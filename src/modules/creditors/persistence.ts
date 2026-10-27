@@ -663,18 +663,28 @@ export async function submitSupplierPaymentInTransaction(
     reference: input.reference,
   });
   const id = randomUUID();
-  await transaction.execute(sql`
-    insert into app.supplier_payments (
-      id, tenant_id, legal_entity_id, supplier_id, payment_date,
-      payment_reference, currency, amount, state, version, created_by,
-      submitted_by, submitted_at
-    ) values (
-      ${id}, ${context.tenantId}, ${context.legalEntityId}, ${input.supplierId},
-      ${validated.paymentDate}, ${validated.reference}, 'USD', ${validated.amount.amount.toString()},
-      'SUBMITTED', 0, ${context.authority.membership.membershipId},
-      ${context.authority.membership.membershipId}, now()
-    )
-  `);
+  try {
+    await transaction.execute(sql`
+      insert into app.supplier_payments (
+        id, tenant_id, legal_entity_id, supplier_id, payment_date,
+        payment_reference, currency, amount, state, version, created_by,
+        submitted_by, submitted_at
+      ) values (
+        ${id}, ${context.tenantId}, ${context.legalEntityId}, ${input.supplierId},
+        ${validated.paymentDate}, ${validated.reference}, 'USD', ${validated.amount.amount.toString()},
+        'SUBMITTED', 0, ${context.authority.membership.membershipId},
+        ${context.authority.membership.membershipId}, now()
+      )
+    `);
+  } catch (error) {
+    if (uniqueViolationOf(error) !== null) {
+      throw new AppError(
+        'CONFLICT',
+        'A payment with this reference already exists for this supplier.',
+      );
+    }
+    throw error;
+  }
   return { paymentId: id, state: 'SUBMITTED' as const, amount: validated.amount.amount.toString() };
 }
 

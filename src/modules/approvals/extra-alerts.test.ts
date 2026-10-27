@@ -55,6 +55,21 @@ describe('extra alerts', () => {
     expect(alerts.map((a) => a.id)).toEqual(['expense-high-e1']);
   });
 
+  it('flags negative book stock as an attention item', () => {
+    const result = run({
+      negativeStock: [
+        { tankId: 'tank-1', tankCode: 'T1', product: 'Diesel 50', litres: '-450.000' },
+      ],
+    });
+    expect(result).toContainEqual(
+      expect.objectContaining({
+        id: 'negative-stock-tank-1',
+        title: 'Negative stock in T1 · Diesel 50',
+        tone: 'attention',
+      }),
+    );
+  });
+
   it('flags sales below the approved price and not at or above it', () => {
     const alerts = run({
       belowPriceSales: [

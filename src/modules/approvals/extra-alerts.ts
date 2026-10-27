@@ -67,6 +67,9 @@ export type ExtraAlertFacts = Readonly<{
         shortLitres: string;
       }[]
     | null;
+  /** Book stock below zero. This is flagged rather than blocking late-dated entries. */
+  negativeStock?:
+    readonly { tankId: string; tankCode: string; product: string; litres: string }[] | null;
   /** Count of changes to approved records in the look-back window. Null when not permitted. */
   approvedInformationChanges: number | null;
   /**
@@ -197,6 +200,25 @@ export function buildExtraAlerts(
       detail: `Received on ${row.businessDate}. Less fuel arrived than the delivery note says.`,
       href: '/inventory',
       tone: 'attention',
+    });
+  }
+
+  for (const row of (facts.negativeStock ?? []).slice(0, 3)) {
+    out.push({
+      id: `negative-stock-${row.tankId}`,
+      title: `Negative stock in ${row.tankCode} · ${row.product}`,
+      detail: `Books are ${formatLitres(row.litres)} below zero. Check the opening balance, deliveries and sales before relying on this tank total.`,
+      href: '/inventory',
+      tone: 'attention',
+    });
+  }
+  if ((facts.negativeStock ?? []).length > 3) {
+    out.push({
+      id: 'negative-stock-more',
+      title: `${(facts.negativeStock ?? []).length - 3} more tanks have negative stock`,
+      detail: 'Open inventory to review the affected tanks.',
+      href: '/inventory',
+      tone: 'info',
     });
   }
 

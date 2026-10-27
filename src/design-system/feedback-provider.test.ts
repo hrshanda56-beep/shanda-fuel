@@ -28,7 +28,9 @@ describe('refusalMessage', () => {
   });
 
   it('ignores other statuses, empty bodies and bodies that are not JSON', async () => {
-    expect(await refusalMessage(respond(400, { message: 'Field is wrong' }))).toBeNull();
+    expect(await refusalMessage(respond(400, { message: 'Field is wrong' }))).toBe(
+      'Field is wrong',
+    );
     expect(await refusalMessage(respond(403, {}))).toBeNull();
     expect(await refusalMessage(new Response('nope', { status: 403 }))).toBeNull();
   });

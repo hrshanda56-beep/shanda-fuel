@@ -39,7 +39,10 @@ export function StepUpDialog(props: DialogProps) {
       }
       size="sm"
     >
-      <ClerkForm {...props} />
+      {/* Remount Clerk's reverification hook on every open. Clerk keeps challenge state in the
+          hook, so retaining the old instance after cancel can turn the next attempt into a plain
+          403 instead of opening the verification UI again. */}
+      <ClerkForm key={open ? 'open' : 'closed'} {...props} />
     </Modal>
   );
 }
@@ -51,8 +54,46 @@ function ClerkForm({
   confirmLabel = 'Confirm and save',
   cancelledMessage = 'The check was cancelled or did not pass. Nothing was saved.',
 }: DialogProps) {
-  const [busy, setBusy] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string>();
+
+  return (
+    <div className={styles.form}>
+      <p className={styles.note}>You will be asked to confirm it&apos;s you.</p>
+      {error ? (
+        <p className={styles.message} role="alert">
+          {error}
+        </p>
+      ) : null}
+      <ReverificationAttempt
+        key={attempt}
+        tenantId={tenantId}
+        onVerified={onVerified}
+        onCancel={onCancel}
+        confirmLabel={confirmLabel}
+        onStarted={() => setError(undefined)}
+        onFailed={() => {
+          setError(cancelledMessage);
+          // A failed code/cancel must get a fresh Clerk hook on the next click too.
+          setAttempt((value) => value + 1);
+        }}
+      />
+    </div>
+  );
+}
+
+function ReverificationAttempt({
+  tenantId,
+  onVerified,
+  onCancel,
+  confirmLabel,
+  onStarted,
+  onFailed,
+}: Pick<DialogProps, 'tenantId' | 'onVerified' | 'onCancel' | 'confirmLabel'> & {
+  onStarted: () => void;
+  onFailed: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
   const submitted = useRef(false);
 
   const reverify = useReverification(async () => {
@@ -73,12 +114,12 @@ function ClerkForm({
     if (submitted.current) return;
     submitted.current = true;
     setBusy(true);
-    setError(undefined);
+    onStarted();
     try {
       await reverify();
       onVerified();
     } catch {
-      setError(cancelledMessage);
+      onFailed();
     } finally {
       submitted.current = false;
       setBusy(false);
@@ -86,21 +127,13 @@ function ClerkForm({
   }
 
   return (
-    <div className={styles.form}>
-      <p className={styles.note}>You will be asked to confirm it’s you.</p>
-      {error ? (
-        <p className={styles.message} role="alert">
-          {error}
-        </p>
-      ) : null}
-      <div className={styles.formActions}>
-        <Button loading={busy} onClick={() => void verify()}>
-          {confirmLabel}
-        </Button>
-        <Button variant="secondary" onClick={onCancel} disabled={busy}>
-          Cancel
-        </Button>
-      </div>
+    <div className={styles.formActions}>
+      <Button loading={busy} onClick={() => void verify()}>
+        {confirmLabel}
+      </Button>
+      <Button variant="secondary" onClick={onCancel} disabled={busy}>
+        Cancel
+      </Button>
     </div>
   );
 }

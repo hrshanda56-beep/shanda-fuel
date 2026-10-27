@@ -322,6 +322,33 @@ describe('buildActionCenter documents waiting on a person', () => {
     expect(result.items[2]?.title).toBe('2 supplier invoices not yet posted');
   });
 
+  it('lists supplier payments waiting to be posted under Payables', () => {
+    const result = buildActionCenter({
+      ...clear,
+      supplierPayments: {
+        status: 'ok',
+        value: {
+          rows: [
+            {
+              id: 'pay-1',
+              supplierId: 's1',
+              supplierName: 'Puma Energy',
+              paymentReference: 'PAY-1',
+              amount: '10000.0000',
+              submittedByMe: false,
+            },
+          ],
+          soleApprover: false,
+        },
+      },
+    });
+    expect(result.items[0]).toMatchObject({
+      area: 'Payables',
+      href: '/suppliers/s1/payments',
+      title: 'Supplier payment of $10,000.00 is waiting to be posted',
+    });
+  });
+
   it('lists an expense waiting for approval under Approvals, with the reason it is blocked', () => {
     const waiting = (submittedByMe: boolean, soleApprover: boolean) =>
       buildActionCenter({

@@ -21,9 +21,20 @@ it('reads each queue once and marks the requester and the sole approver', async 
       expenses: [
         { id: 'e', submitted_by: 'me', description: 'Generator diesel', amount: '20.0000' },
       ],
+      supplierPayments: [
+        {
+          id: 'pay',
+          supplier_id: 's',
+          supplier_name: 'Puma Energy',
+          payment_reference: 'PAY-1',
+          amount: '10000.0000',
+          submitted_by: 'me',
+        },
+      ],
       other_price_approver: false,
       other_order_approver: true,
       other_expense_approver: false,
+      other_payment_approver: false,
     },
   ]);
   const result = await loadDocumentApprovalFacts(
@@ -38,6 +49,17 @@ it('reads each queue once and marks the requester and the sole approver', async 
     { id: 'e', description: 'Generator diesel', amount: '20.0000', submittedByMe: true },
   ]);
   expect(result.expenses?.soleApprover).toBe(true);
+  expect(result.supplierPayments?.rows).toEqual([
+    {
+      id: 'pay',
+      supplierId: 's',
+      supplierName: 'Puma Energy',
+      paymentReference: 'PAY-1',
+      amount: '10000.0000',
+      submittedByMe: true,
+    },
+  ]);
+  expect(result.supplierPayments?.soleApprover).toBe(true);
   expect(execute).toHaveBeenCalledTimes(1);
 });
 it('does not read queues the person cannot act on', async () => {
@@ -45,6 +67,6 @@ it('does not read queues the person cannot act on', async () => {
   const execute = vi.fn();
   expect(
     await loadDocumentApprovalFacts({ execute } as unknown as InventoryTransaction, context),
-  ).toEqual({ prices: null, orders: null, invoices: null, expenses: null });
+  ).toEqual({ prices: null, orders: null, invoices: null, expenses: null, supplierPayments: null });
   expect(execute).not.toHaveBeenCalled();
 });

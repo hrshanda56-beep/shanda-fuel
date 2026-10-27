@@ -320,6 +320,26 @@ describe('Audit fixes (PostgreSQL)', { timeout: 60_000 }, () => {
       });
       expect(bad.status).toBe(400);
     });
+
+    it('returns a conflict with the supplier-specific message for a duplicate payment reference', async () => {
+      const body = {
+        commandType: 'SubmitSupplierPayment',
+        tenantId: ids.tenant,
+        legalEntityId: ids.legal,
+        supplierId: state.supplier,
+        paymentDate: '2026-10-27',
+        amount: '125.50',
+        reference: `PAY-${run}`,
+      };
+      const first = await post(supplierPost, 'owner', `pay-${run}`, body);
+      expect(first.status).toBe(201);
+      const duplicate = await post(supplierPost, 'owner', `pay-duplicate-${run}`, body);
+      expect(duplicate.status).toBe(409);
+      expect(duplicate.body).toMatchObject({
+        error: 'CONFLICT',
+        message: 'A payment with this reference already exists for this supplier.',
+      });
+    });
   });
 
   describe('customers', () => {
