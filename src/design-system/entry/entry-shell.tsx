@@ -5,9 +5,12 @@ import { BrandMark } from '../brand-mark';
 /**
  * Frame for every signed-out / pre-workplace screen. No navigation, no context
  * selector, no product data: a restrained brand panel (desktop only) beside one
- * quiet task area. On phones the panel collapses to a compact brand header.
+ * quiet task area. `wide` suits longer forms. On phones the panel collapses to a compact brand header.
  */
-export function EntryShell({ children }: Readonly<{ children: ReactNode }>) {
+export function EntryShell({
+  children,
+  wide = false,
+}: Readonly<{ children: ReactNode; wide?: boolean }>) {
   return (
     <div className="entry">
       <aside className="entry-brand" aria-label="Shanda Fuel">
@@ -37,7 +40,7 @@ export function EntryShell({ children }: Readonly<{ children: ReactNode }>) {
         </div>
       </aside>
       <main className="entry-main" id="main">
-        <div className="entry-column">
+        <div className={wide ? 'entry-column entry-column-wide' : 'entry-column'}>
           <div className="entry-wordmark entry-wordmark-compact">
             <BrandMark />
             <span>Shanda Fuel</span>

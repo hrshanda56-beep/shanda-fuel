@@ -47,6 +47,8 @@ export const setExpensePolicySchema = z.object({
   legalEntityId: uuid,
   stepUpThreshold: decimal.nullable(),
   secondApprovalThreshold: decimal.nullable(),
+  /** Omit to keep the current limit; null removes it, so a supervisor can approve nothing. */
+  supervisorApprovalLimit: decimal.nullable().optional(),
   /** Omit when creating the first policy; required when changing an existing one. */
   expectedVersion: version.optional(),
 });

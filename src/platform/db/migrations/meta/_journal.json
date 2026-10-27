@@ -484,6 +484,20 @@
       "when": 1792600083000,
       "tag": "0083_provider_account_fees",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792600084000,
+      "tag": "0084_opening_balance_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792600085000,
+      "tag": "0085_supervisor_permissions",
+      "breakpoints": true
     }
   ]
 }

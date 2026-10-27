@@ -70,25 +70,30 @@ const DAY_RUNNING_PERMISSIONS: readonly PermissionCode[] = [
 const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly PermissionCode[]>> =
   {
     'my-shift': [],
-    'finance-home': FINANCE_SIGN_OFF_PERMISSIONS,
+    // A supervisor approves closes too, but that does not make the Finance overview theirs.
+    'finance-home': FINANCE_SIGN_OFF_PERMISSIONS.filter(
+      (permissionCode) => permissionCode !== 'reconciliation.approve',
+    ),
     today: ['business_day.view'],
     'daily-operations': ['business_day.view'],
     reconciliations: ['reconciliation.view'],
     inventory: ['inventory.view'],
     cash: ['cash.collection.view', 'cash.deposit.view'],
     settlements: ['provider.settlement.view'],
-    customers: ['customer.view'],
+    // Customer accounts are read across the organisation, so a station supervisor does not get them.
+    customers: ['customer.payment.record'],
     suppliers: ['supplier.view'],
     purchasing: ['purchase_order.view'],
     expenses: ['expense.view'],
-    profitability: ['report.view'],
-    'daily-profit': ['report.view'],
-    'financial-position': ['report.view'],
+    profitability: ['report.finance.view'],
+    'daily-profit': ['report.finance.view'],
+    'financial-position': ['report.finance.view'],
     'fuel-deliveries': ['inventory.view'],
-    'staff-benefit': ['customer.statement.view'],
+    'staff-benefit': ['customer.payment.record'],
     'payments-due': ['supplier.view'],
     reports: ['report.view'],
-    settings: ['tenant.view'],
+    // A supervisor reaches Settings only for their station's staff list and activity log.
+    settings: ['tenant.view', 'membership.view.station', 'audit.view.station'],
   };
 
 /** Permissions that make up the attendant's own work; none of them is management. */

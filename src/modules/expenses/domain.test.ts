@@ -19,6 +19,7 @@ import {
   validateExpensePolicy,
   validateExpenseSubmission,
   UNCONFIGURED_EXPENSE_POLICY,
+  withinSupervisorLimit,
   EXPENSE_STATES,
 } from './domain';
 
@@ -107,7 +108,11 @@ describe('expense approval policy', () => {
       stepUpThreshold: '250',
       secondApprovalThreshold: '1000',
     });
-    expect(policy).toEqual({ stepUpThreshold: '250.0000', secondApprovalThreshold: '1000.0000' });
+    expect(policy).toEqual({
+      stepUpThreshold: '250.0000',
+      secondApprovalThreshold: '1000.0000',
+      supervisorApprovalLimit: null,
+    });
     expect(expenseRequiresStepUp('249.9999', policy)).toBe(false);
     expect(expenseRequiresStepUp('250.0000', policy)).toBe(true);
     expect(requiredApprovals('999.9999', policy)).toBe(1);
@@ -244,5 +249,32 @@ describe('staff fuel is not an expense category', () => {
       'Bank',
       'Card',
     ]);
+  });
+});
+
+describe('supervisor approval limit', () => {
+  it('allows nothing until the owner sets a limit', () => {
+    expect(withinSupervisorLimit('0.0100', UNCONFIGURED_EXPENSE_POLICY)).toBe(false);
+    expect(
+      withinSupervisorLimit('1', { stepUpThreshold: null, secondApprovalThreshold: null }),
+    ).toBe(false);
+  });
+
+  it('allows an amount up to and including the limit, exactly', () => {
+    const policy = validateExpensePolicy({
+      stepUpThreshold: null,
+      secondApprovalThreshold: null,
+      supervisorApprovalLimit: '100',
+    });
+    expect(policy.supervisorApprovalLimit).toBe('100.0000');
+    expect(withinSupervisorLimit('99.9999', policy)).toBe(true);
+    expect(withinSupervisorLimit('100.0000', policy)).toBe(true);
+    expect(withinSupervisorLimit('100.0001', policy)).toBe(false);
+  });
+
+  it('rejects a negative or over-precise limit', () => {
+    const base = { stepUpThreshold: null, secondApprovalThreshold: null };
+    expect(() => validateExpensePolicy({ ...base, supervisorApprovalLimit: '-1' })).toThrow();
+    expect(() => validateExpensePolicy({ ...base, supervisorApprovalLimit: '1.00001' })).toThrow();
   });
 });

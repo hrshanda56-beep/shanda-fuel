@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export default function JoinPage() {
   return (
-    <EntryShell>
+    <EntryShell wide>
       <ManualActivationForm />
     </EntryShell>
   );

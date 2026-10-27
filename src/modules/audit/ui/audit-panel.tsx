@@ -30,7 +30,10 @@ function when(iso: string): string {
  * A readable history of what people changed: who, when, and the values before and after. It is
  * the signed audit log shown for people; it cannot be edited from here.
  */
-export function AuditPanel({ tenantId }: Readonly<{ tenantId: string }>) {
+export function AuditPanel({
+  tenantId,
+  stationId,
+}: Readonly<{ tenantId: string; stationId?: string }>) {
   const [area, setArea] = useState('');
   const [page, setPage] = useState<Page | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +46,7 @@ export function AuditPanel({ tenantId }: Readonly<{ tenantId: string }>) {
       setError(null);
       try {
         const params = new URLSearchParams({ tenantId, limit: '25' });
+        if (stationId) params.set('stationId', stationId);
         if (area) params.set('area', area);
         if (after) params.set('after', after);
         const response = await fetch(`/api/audit/events?${params}`, {
@@ -68,7 +72,7 @@ export function AuditPanel({ tenantId }: Readonly<{ tenantId: string }>) {
         setLoading(false);
       }
     },
-    [tenantId, area],
+    [tenantId, stationId, area],
   );
 
   useEffect(() => {

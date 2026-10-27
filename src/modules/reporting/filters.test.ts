@@ -73,6 +73,7 @@ describe('report filters', () => {
       { id: B, name: 'Bulawayo' },
     ];
     expect(describeStations([], stations)).toBe('All stations');
+    expect(describeStations([], [stations[0]!])).toBe('Harare Central');
     expect(describeStations([A], stations)).toBe('Harare Central');
     expect(describeStations([A, B], stations)).toBe('2 stations');
   });

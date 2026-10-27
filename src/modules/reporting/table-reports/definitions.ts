@@ -39,6 +39,8 @@ export type TableReportDefinition = Readonly<{
    * choosing stations shows an explanation instead of figures that would not match the choice.
    */
   scope: 'station' | 'organisation';
+  /** `operational` reports need only `report.view`; the rest are finance reports. */
+  audience?: 'operational' | 'finance';
   /** Said on the page when there is nothing to show for the chosen dates. */
   emptyMessage: string;
   columns: readonly TableReportColumn[];
@@ -49,6 +51,7 @@ export type TableReportDefinition = Readonly<{
 export const TABLE_REPORTS: readonly TableReportDefinition[] = [
   {
     slug: 'tank-dip-history',
+    audience: 'operational',
     title: 'Tank Dip History',
     description: 'Every tank dip reading taken, by tank and day.',
     category: 'inventory',
@@ -67,6 +70,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
   },
   {
     slug: 'stock-movements',
+    audience: 'operational',
     title: 'Stock Movement History',
     description: 'Every change to fuel stock: deliveries, sales and adjustments.',
     category: 'inventory',
@@ -86,6 +90,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
   },
   {
     slug: 'delivery-variance',
+    audience: 'operational',
     title: 'Delivery Variance',
     description: 'Litres on the delivery note against litres actually received.',
     category: 'inventory',
@@ -159,6 +164,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
   },
   {
     slug: 'cash-custody',
+    audience: 'operational',
     title: 'Cash Custody & Handovers',
     description: 'Who passed cash to whom, how much was expected, counted and what did not add up.',
     category: 'cash',
@@ -204,6 +210,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
   },
   {
     slug: 'daily-reconciliation',
+    audience: 'operational',
     title: 'Daily Reconciliation',
     description:
       'For each day and shift: who worked, expected sales against what was accounted for.',
@@ -270,6 +277,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
   },
   {
     slug: 'sales-by-attendant',
+    audience: 'operational',
     title: 'Sales by Attendant',
     description:
       'Approved sales for each attendant. A shift worked by one attendant is credited to them; a shift worked by several is shown as a shared shift.',
@@ -288,6 +296,7 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
   },
   {
     slug: 'payment-method-breakdown',
+    audience: 'operational',
     title: 'Payment Method Breakdown',
     description:
       'How approved sales were paid: cash, card, EcoCash, bank transfer, customer credit, prepaid and fuel given to staff, for each station.',

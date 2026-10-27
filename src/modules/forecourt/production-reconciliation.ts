@@ -919,7 +919,6 @@ export async function approveProductionReconciliationFromRequest(request: Reques
           tenantId: context.tenantId,
           stationId: context.stationId,
           excludeMembershipId: context.actor.membershipId,
-          permission: 'reconciliation.approve',
         }))
       ) {
         throw new AppError(
@@ -1451,7 +1450,6 @@ export async function getProductionReconciliationFromRequest(
         tenantId: context.tenantId,
         stationId: context.stationId,
         excludeMembershipId: context.actor.membershipId,
-        permission: 'reconciliation.approve',
       }));
     // Who can be charged at this station, with what they may still spend, so a credit or prepaid
     // row can be entered by name and the person sees the room left before saving.

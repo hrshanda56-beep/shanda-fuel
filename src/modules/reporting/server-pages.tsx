@@ -8,7 +8,7 @@ import { ManagementReportDashboard } from './ui/management-report-dashboard';
 import { QuickLook } from './ui/quick-look';
 import { RecentActivity } from './ui/reports-rail';
 import { ReportList } from './ui/report-list';
-import { getManagementReportFromRequest } from './queries';
+import { canViewFinanceReports, getManagementReportFromRequest } from './queries';
 import { listRecentReportActivity } from './report-events';
 import { parseReportFilters, resolveReportFilters } from './filters';
 import { businessToday, precedingRange, resolvePeriod } from './period';
@@ -102,25 +102,36 @@ export function ServerReportsIndex({ search }: { search: PageSearch }) {
         )
       }
       load={async (request, resolution) =>
-        resolution.current ? { request, tenantId: resolution.current.organisationId } : null
+        resolution.current
+          ? {
+              request,
+              tenantId: resolution.current.organisationId,
+              financeReports: await canViewFinanceReports(
+                request,
+                resolution.current.organisationId,
+              ),
+            }
+          : null
       }
       render={(result) =>
         result ? (
           <div className="reports-stack wide-workspace">
             <div className="reports-layout">
-              <ReportList tenantId={result.tenantId} />
-              <aside className="reports-rail" aria-label="Browse reports">
-                <Suspense fallback={<LoadingState label="Loading figures…" />}>
-                  <QuickFigures
-                    request={result.request}
-                    tenantId={result.tenantId}
-                    search={search}
-                  />
-                </Suspense>
-                <Suspense fallback={<LoadingState label="Loading activity…" />}>
-                  <Activity request={result.request} tenantId={result.tenantId} />
-                </Suspense>
-              </aside>
+              <ReportList tenantId={result.tenantId} financeReports={result.financeReports} />
+              {result.financeReports ? (
+                <aside className="reports-rail" aria-label="Browse reports">
+                  <Suspense fallback={<LoadingState label="Loading figures…" />}>
+                    <QuickFigures
+                      request={result.request}
+                      tenantId={result.tenantId}
+                      search={search}
+                    />
+                  </Suspense>
+                  <Suspense fallback={<LoadingState label="Loading activity…" />}>
+                    <Activity request={result.request} tenantId={result.tenantId} />
+                  </Suspense>
+                </aside>
+              ) : null}
             </div>
           </div>
         ) : (

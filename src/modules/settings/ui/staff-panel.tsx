@@ -705,15 +705,17 @@ export function StaffPanel({
             </button>
           ))}
         </div>
-        <Button
-          type="button"
-          variant="primary"
-          className={styles.staffInviteButton}
-          aria-haspopup="dialog"
-          onClick={() => setInviteOpen(true)}
-        >
-          Invite Staff
-        </Button>
+        {overview.canManage ? (
+          <Button
+            type="button"
+            variant="primary"
+            className={styles.staffInviteButton}
+            aria-haspopup="dialog"
+            onClick={() => setInviteOpen(true)}
+          >
+            Invite Staff
+          </Button>
+        ) : null}
       </div>
 
       <div className={styles.staffResults}>

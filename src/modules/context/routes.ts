@@ -61,6 +61,7 @@ export function contextRoutePolicy(pathname: string | null | undefined): Context
       '/customers',
       '/suppliers',
       '/settings',
+      '/go-live/opening-balances',
     ].includes(path)
   )
     return REPORTING_POLICY;
