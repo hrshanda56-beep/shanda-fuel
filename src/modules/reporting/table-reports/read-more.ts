@@ -102,7 +102,9 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
       select sum(m.quantity_litres) as expected from app.inventory_movements m
       where m.tenant_id = d.tenant_id and m.station_id = d.station_id
         and m.tank_id = d.tank_id and m.product_id = t.product_id
-        and m.effective_at <= d.measured_at
+        -- Inventory recognition is dated by the station business date.  A sale
+        -- approved later still belongs to the business day shown by the dip.
+        and m.business_date <= d.business_date
     ) book on true
     where d.tenant_id = ${filters.tenantId}
       and d.business_date between ${filters.fromDate} and ${filters.toDate}

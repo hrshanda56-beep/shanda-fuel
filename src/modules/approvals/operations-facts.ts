@@ -132,14 +132,14 @@ export async function loadOperationsFacts(
         select sum(m.quantity_litres) as expected from app.inventory_movements m
         where m.tenant_id = t.tenant_id and m.station_id = t.station_id
           and m.tank_id = t.id and m.product_id = t.product_id
-          and m.effective_at <= d.measured_at
+          and m.business_date <= d.business_date
       ) at_dip on true
       left join lateral (
         select -sum(m.quantity_litres) as litres from app.inventory_movements m
         where m.tenant_id = t.tenant_id and m.station_id = t.station_id
           and m.tank_id = t.id and m.product_id = t.product_id
           and m.movement_type = 'SALE'
-          and m.effective_at <= d.measured_at
+          and m.business_date <= d.business_date
           and m.effective_at > coalesce((
             select p.measured_at from app.tank_dips p
             where p.tenant_id = t.tenant_id and p.station_id = t.station_id

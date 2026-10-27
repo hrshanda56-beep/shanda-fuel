@@ -125,7 +125,11 @@ export async function queryTankDetail(input: {
         left join lateral (
           select sum(m.quantity_litres) as book from app.inventory_movements m
           where m.tenant_id = d.tenant_id and m.station_id = d.station_id
-            and m.tank_id = d.tank_id and m.effective_at <= d.measured_at
+            and m.tank_id = d.tank_id
+            -- A movement may be approved after the dip was entered.  Its station
+            -- business date is the accounting date, so a late approval must still
+            -- be included in that day's books.
+            and m.business_date <= d.business_date
         ) b on true
         where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
           and d.tank_id = ${parsed.tankId}
