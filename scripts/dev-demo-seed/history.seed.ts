@@ -384,10 +384,7 @@ async function run(client: Sql) {
       version += 1;
       return body;
     };
-    await save(
-      { commandType: 'SetAttendants', attendantIds: [attendant] },
-      'attendants',
-    );
+    await save({ commandType: 'SetAttendants', attendantIds: [attendant] }, 'attendants');
     await save(
       {
         commandType: 'SaveMeterReadings',
