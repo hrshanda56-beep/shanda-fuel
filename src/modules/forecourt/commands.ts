@@ -1013,26 +1013,30 @@ async function runShiftLifecycleCommand(
             payload.shiftTemplateId,
           );
           shiftTemplateStartTime = template.startTime;
-          if (!shiftTemplateStartTime) {
+          if (station.clockScheduleEnabled && !shiftTemplateStartTime) {
             throw new AppError(
               'VALIDATION_FAILED',
               'The selected shift template must have a scheduled start time',
             );
           }
-          const plannedStart = stationLocalToInstant(
-            `${dayRow.business_date}T${shiftTemplateStartTime.slice(0, 5)}`,
-            station.timezone,
-          );
-          if (!plannedStart) {
-            throw new AppError(
-              'VALIDATION_FAILED',
-              'The selected shift template has an invalid scheduled start time',
+          if (station.clockScheduleEnabled && shiftTemplateStartTime) {
+            const plannedStart = stationLocalToInstant(
+              `${dayRow.business_date}T${shiftTemplateStartTime.slice(0, 5)}`,
+              station.timezone,
             );
+            if (!plannedStart) {
+              throw new AppError(
+                'VALIDATION_FAILED',
+                'The selected shift template has an invalid scheduled start time',
+              );
+            }
+            // The persisted schedule and station timezone are authoritative. A client may
+            // display/send a planned start for convenience, but cannot move the shift by
+            // changing that request value.
+            resolvedPlannedStartAt = plannedStart.toISOString();
           }
-          // The persisted schedule and station timezone are authoritative. A client may
-          // display/send a planned start for convenience, but cannot move the shift by
-          // changing that request value.
-          resolvedPlannedStartAt = plannedStart.toISOString();
+          if (!resolvedPlannedStartAt)
+            throw new AppError('VALIDATION_FAILED', 'Enter when this shift is planned to start');
           resolvedPlannedEndAt = new Date(
             new Date(resolvedPlannedStartAt).getTime() + template.durationMinutes * 60_000,
           ).toISOString();

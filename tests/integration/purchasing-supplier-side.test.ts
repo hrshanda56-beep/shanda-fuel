@@ -1222,7 +1222,7 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
   const strictPolicy = (fields: Json = {}) =>
     setPolicy({ vatMode: 'NONE', requireInvoiceLines: true, toleranceAction: 'FLAG', ...fields });
 
-  it('lists only active suppliers for receiving, authorized by the delivery permission', async () => {
+  it('lists only active suppliers for receiving, authorized by inventory read access', async () => {
     const hidden = await createSupplier('90B0-LISTHIDDEN');
     await client`update app.suppliers set status = 'INACTIVE' where id = ${hidden}`;
     const listUrl = (tenantId: string, stationId: string) =>
@@ -1246,8 +1246,8 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
       expect(rows.map((row) => row.id)).not.toContain(sB); // other tenant
       for (const row of rows) expect(Object.keys(row).sort()).toEqual(['code', 'id', 'name']);
     }
-    // Finance has creditor access but not inventory.delivery.manage, and no session is 401.
-    expect((await get(tokens.finance)).status).toBe(403);
+    // Finance can read the supplier reference list without the delivery write permission.
+    expect((await get(tokens.finance)).status).toBe(200);
     expect((await get(null)).status).toBe(401);
     // A station of another tenant is invisible to this actor.
     expect((await get(tokens.admin, ids.tenantB, ids.stationB)).status).toBeGreaterThanOrEqual(400);

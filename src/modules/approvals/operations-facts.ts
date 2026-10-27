@@ -124,7 +124,7 @@ export async function loadOperationsFacts(
           and m.tank_id = t.id and m.product_id = t.product_id
       ) now_stock on true
       left join lateral (
-        select physical_litres, measured_at from app.tank_dips d
+        select physical_litres, measured_at, business_date from app.tank_dips d
         where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
         order by d.measured_at desc, d.id desc limit 1
       ) d on true

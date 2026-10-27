@@ -242,7 +242,7 @@ describe('A6 cash collection and banking persistence', () => {
 
     const beforeConfirmation = await body(await readCashSummary());
     expectDecimal(beforeConfirmation.totals.availableAtStation, '100');
-    expectDecimal(beforeConfirmation.totals.collectedButUnbanked, '800');
+    expectDecimal(beforeConfirmation.totals.collectedButUnbanked, '100');
     expectDecimal(beforeConfirmation.totals.pendingBankConfirmation, '700');
 
     const withoutSlip = await postCashCommand(

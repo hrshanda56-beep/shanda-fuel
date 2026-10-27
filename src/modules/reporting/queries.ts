@@ -311,7 +311,7 @@ async function readCash(
           and c.business_date between ${filters.fromDate} and ${filters.toDate}
           ${stationClause('c', filters.stationIds)}
       ), period_deposits as (
-        select d.id, d.tenant_id, d.station_id
+        select d.id, d.tenant_id, d.station_id, d.state
         from app.bank_deposits d
         where d.tenant_id = ${filters.tenantId}
           and d.state <> 'REVERSED'
