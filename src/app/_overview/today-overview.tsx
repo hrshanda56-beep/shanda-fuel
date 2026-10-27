@@ -51,7 +51,7 @@ import {
   type TodayOperations,
 } from './today-overview-model';
 
-export type Scope = { tenantId?: string; stationId?: string };
+export type Scope = { tenantId?: string; legalEntityId?: string; stationId?: string };
 
 type Section<T> =
   | { status: 'loading' }
@@ -90,10 +90,20 @@ function useCurrentContext(enabled: boolean): Scope | null {
     })
       .then((response) => (response.ok ? response.json() : null))
       .then(
-        (body: { data?: { current?: { organisationId?: string; stationId?: string } } } | null) => {
+        (
+          body: {
+            data?: {
+              current?: { organisationId?: string; legalEntityId?: string; stationId?: string };
+            };
+          } | null,
+        ) => {
           const current = body?.data?.current;
           if (current?.organisationId) {
-            setScope({ tenantId: current.organisationId, stationId: current.stationId });
+            setScope({
+              tenantId: current.organisationId,
+              legalEntityId: current.legalEntityId,
+              stationId: current.stationId,
+            });
           }
         },
       )
@@ -122,6 +132,7 @@ export function TodayOverview({
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
   const tenantId = urlTenantId ?? resolvedContext?.tenantId;
+  const legalEntityId = resolvedContext?.legalEntityId;
   const stationId = urlTenantId ? urlStationId : resolvedContext?.stationId;
   const [operations, setOperations] = useState<Section<TodayOperations>>(
     initialData?.operations ?? { status: 'loading' },
@@ -231,25 +242,58 @@ export function TodayOverview({
   const customersHref = useMemo(
     () =>
       tenantId
-        ? `/customers?${new URLSearchParams({ tenantId, ...(stationId ? { stationId } : { allStations: 'true' }) })}`
+        ? `/customers?${new URLSearchParams({
+            tenantId,
+            ...(legalEntityId ? { legalEntityId } : {}),
+            ...(stationId ? { stationId } : { allStations: 'true' }),
+          })}`
         : '/customers',
-    [tenantId, stationId],
+    [tenantId, legalEntityId, stationId],
   );
   const reportsHref = useMemo(() => {
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
+    if (legalEntityId) params.set('legalEntityId', legalEntityId);
     if (stationId) params.set('stationId', stationId);
     else params.set('allStations', 'true');
     return `/reports?${params}`;
-  }, [tenantId, stationId]);
+  }, [tenantId, legalEntityId, stationId]);
 
   const dailyHref = useMemo(() => {
     const params = new URLSearchParams();
     if (tenantId) params.set('tenantId', tenantId);
+    if (legalEntityId) params.set('legalEntityId', legalEntityId);
     if (stationId) params.set('stationId', stationId);
     else params.set('allStations', 'true');
     return `/operations/daily?${params}`;
-  }, [tenantId, stationId]);
+  }, [tenantId, legalEntityId, stationId]);
+
+  const inventoryHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (tenantId) params.set('tenantId', tenantId);
+    if (legalEntityId) params.set('legalEntityId', legalEntityId);
+    if (stationId) params.set('stationId', stationId);
+    else params.set('allStations', 'true');
+    return `/inventory?${params}`;
+  }, [tenantId, legalEntityId, stationId]);
+
+  const contextualFinanceTiles = useMemo(
+    () =>
+      finance.status === 'ready'
+        ? finance.data.map((tile) => ({
+            ...tile,
+            href: (() => {
+              const params = new URLSearchParams();
+              if (tenantId) params.set('tenantId', tenantId);
+              if (legalEntityId) params.set('legalEntityId', legalEntityId);
+              if (stationId) params.set('stationId', stationId);
+              else params.set('allStations', 'true');
+              return `${tile.href}?${params}`;
+            })(),
+          }))
+        : [],
+    [finance, tenantId, legalEntityId, stationId],
+  );
 
   if (!tenantId) {
     return (
@@ -376,16 +420,19 @@ export function TodayOverview({
             <SnapshotTiles
               snapshot={snapshot.data}
               daysWithoutReport={
-                daily.status === 'ready' ? countDaysWithoutReport(daily.data.rows) : null
+                daily.status === 'ready'
+                  ? countDaysWithoutReport(daily.data.rows, daily.data.expectedBusinessDays)
+                  : null
               }
               reportsHref={reportsHref}
               dailyHref={dailyHref}
+              inventoryHref={inventoryHref}
             />
           ) : null}
           {/* Money at a glance: only for people allowed to see the management figures. */}
           {finance.status === 'ready' ? (
             <div style={{ marginBlockStart: 'var(--space-6)' }}>
-              <FinanceTiles tiles={finance.data} />
+              <FinanceTiles tiles={contextualFinanceTiles} />
             </div>
           ) : null}
         </section>
@@ -527,7 +574,11 @@ const CASH_VARIANCE_WORDS = {
   over: 'Cash over',
 } as const;
 
-type DailyReport = { filters?: { fromDate?: string }; rows: readonly DailyRow[] };
+type DailyReport = {
+  filters?: { fromDate?: string };
+  expectedBusinessDays?: number;
+  rows: readonly DailyRow[];
+};
 
 type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'none';
 
@@ -591,11 +642,13 @@ function SnapshotTiles({
   daysWithoutReport,
   reportsHref,
   dailyHref,
+  inventoryHref,
 }: {
   snapshot: DashboardSnapshot;
   daysWithoutReport: number | null;
   reportsHref: string;
   dailyHref: string;
+  inventoryHref: string;
 }) {
   const { cash, stockVariance } = snapshot;
   const litres = snapshot.litresByProduct.length
@@ -629,7 +682,7 @@ function SnapshotTiles({
             ? 'No tank has a dip reading yet.'
             : `${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured`
         }
-        href="/inventory"
+        href={inventoryHref}
       />
       <MetricCard
         label="Reports not submitted"

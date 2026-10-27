@@ -143,10 +143,10 @@ test.describe('Cash workspace', () => {
     await expect(page.getByRole('table', { name: 'Station cash collections' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Bank deposits' })).toBeVisible();
     const collection = page.getByRole('row', { name: /COL-001/ });
-    await expect(collection.locator('[data-label="Amount"]')).toHaveText('800.00 USD');
-    await expect(collection.locator('[data-label="Still to bank"]')).toHaveText('800.00 USD');
+    await expect(collection.locator('[data-label="Amount"]')).toHaveText('USD 800.00');
+    await expect(collection.locator('[data-label="Still to bank"]')).toHaveText('USD 800.00');
     const deposit = page.getByRole('row', { name: /DEP-001/ });
-    await expect(deposit).toContainText('100.00 USD');
+    await expect(deposit).toContainText('USD 100.00');
     await expect(deposit).toContainText('On its way to the bank');
 
     // Forms live in a side sheet opened from the action bar.

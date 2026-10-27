@@ -25,6 +25,7 @@ import {
 import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { clientErrorMessage } from '@/platform/errors/client';
 import { calculateDueDate } from '../credit-terms';
 import { previewLandedCost } from '../landed-cost-preview';
 import { DocumentAttachments } from '@/modules/documents/ui/document-attachments';
@@ -193,6 +194,17 @@ function getErrorMessage(result: unknown, fallback: string): string {
   return fallback;
 }
 
+function formatPostedAt(value: string, timeZone: string | undefined): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  if (!timeZone) return value;
+  return date.toLocaleString('en-GB', {
+    timeZone,
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
 function newIdempotencyKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }
@@ -295,6 +307,20 @@ export function SupplierDetailWorkspace({
       organisation?.legalEntities.find((entity) => entity.id === current.legalEntityId)?.name ??
       'Legal entity'
     );
+  }, [context, current]);
+
+  const statementTimezone = useMemo(() => {
+    if (!context || !current) return undefined;
+    const organisation = context.available.organisations.find(
+      (candidate) => candidate.id === current.organisationId,
+    );
+    const legalEntity = organisation?.legalEntities.find(
+      (candidate) => candidate.id === current.legalEntityId,
+    );
+    const station = current.stationId
+      ? legalEntity?.stations.find((candidate) => candidate.id === current.stationId)
+      : legalEntity?.stations[0];
+    return station?.timezone;
   }, [context, current]);
 
   async function loadContext(signal: AbortSignal) {
@@ -438,7 +464,17 @@ export function SupplierDetailWorkspace({
       const result: unknown = await response.json().catch(() => ({}));
       if (!response.ok) {
         const failure = new Error(
-          getErrorMessage(result, 'The supplier command failed'),
+          clientErrorMessage({
+            status: response.status,
+            code:
+              typeof result === 'object' && result !== null && 'error' in result
+                ? typeof (result as { error?: unknown }).error === 'string'
+                  ? (result as { error: string }).error
+                  : undefined
+                : undefined,
+            message: getErrorMessage(result, ''),
+            fallback: 'The supplier command failed',
+          }),
         ) as SupplierCommandFailure;
         failure.status = response.status;
         if (typeof result === 'object' && result !== null && 'error' in result) {
@@ -1100,7 +1136,7 @@ export function SupplierDetailWorkspace({
                         {movementLabel(line.movementType)}
                       </span>
                       <span className="list-cell" data-label="Posted">
-                        {line.postedAt}
+                        {formatPostedAt(line.postedAt, statementTimezone)}
                       </span>
                       <span className="list-cell list-amount" data-label="Amount">
                         {formatTileMoney(line.amount, line.currency)}
@@ -1465,7 +1501,7 @@ export function SupplierDetailWorkspace({
             open={openForm === 'payment'}
             onClose={closeSubmitForm}
             title="Submit payment"
-            description="Record payment evidence for posting review. Allocation is available only after payment posting."
+            description="Enter the amount paid."
             dismissible={!action}
             footer={
               <>
@@ -1508,12 +1544,7 @@ export function SupplierDetailWorkspace({
                   }
                 />
               </Field>
-              <Field
-                id="payment-amount"
-                label="Amount"
-                hint="Enter an exact decimal amount; payment method metadata is not yet supported by the command contract."
-                required
-              >
+              <Field id="payment-amount" label="Amount" hint="Enter the amount paid." required>
                 <input
                   id="payment-amount"
                   inputMode="decimal"

@@ -85,7 +85,11 @@ describe('server-provided dashboard scope', () => {
         stationId: 'station-bindura',
         allStations: false,
       }),
-    ).toEqual({ tenantId: 'tenant-1', stationId: 'station-bindura' });
+    ).toEqual({
+      tenantId: 'tenant-1',
+      legalEntityId: 'legal-entity-1',
+      stationId: 'station-bindura',
+    });
   });
 
   it('does not invent a scope when the server has no current context', () => {

@@ -28,7 +28,9 @@ import {
 import { Icon } from '../../../design-system/icons';
 import { Modal } from '../../../design-system/modal';
 import { TableScrollRegion } from '../../../design-system/table';
+import { formatMoney } from '../../../design-system/formatters';
 import { formatTileMoney } from '../../reporting/format';
+import { clientErrorMessage } from '../../../platform/errors/client';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { bankingStatusForDeposit, cashStatusLabelForCustody } from '../status';
 import { CashHandoverPanel, type HandoverSummary } from './cash-handover-panel';
@@ -86,6 +88,7 @@ function depositLabel(deposit: {
 
 export type CashSummary = {
   stationId: string;
+  stationTimezone?: string;
   currency: string;
   /** Cash open to collect, less cash paid out of the station's own cash since the last collection. */
   cashPosition?: { openToCollect: string; paidOut: string; cashToCollect: string };
@@ -166,6 +169,7 @@ export type CashSummary = {
 
 type RequestFailure = Error & {
   status?: number;
+  code?: string;
   conflict?: boolean;
   /** Names of the form fields the server rejected, when it says which. */
   fields?: string[];
@@ -212,12 +216,19 @@ function normalizeSummary(value: CashSummary): CashSummary {
 }
 
 function requestFailure(response: Response, result: unknown, fallback: string): RequestFailure {
-  const message =
-    typeof result === 'object' && result !== null && 'message' in result
-      ? String((result as { message?: unknown }).message ?? fallback)
-      : fallback;
+  const body =
+    typeof result === 'object' && result !== null
+      ? (result as { message?: unknown; error?: unknown })
+      : {};
+  const message = clientErrorMessage({
+    status: response.status,
+    code: typeof body.error === 'string' ? body.error : undefined,
+    message: typeof body.message === 'string' ? body.message : undefined,
+    fallback,
+  });
   const failure = new Error(message) as RequestFailure;
   failure.status = response.status;
+  if (typeof body.error === 'string') failure.code = body.error;
   failure.conflict = response.status === 409;
   const issues =
     typeof result === 'object' && result !== null && 'issues' in result
@@ -233,16 +244,19 @@ function requestFailure(response: Response, result: unknown, fallback: string): 
   return failure;
 }
 
-// Fixed to the station's timezone so the server and browser always print the same text.
-const STATION_TIME_ZONE = 'Africa/Harare';
-
-function formatWhen(value: string | null | undefined): string {
+// The server supplies the station timezone; never use the viewer's browser timezone.
+function formatWhen(value: string | null | undefined, timeZone?: string): string {
   if (!value) return '—';
-  return new Intl.DateTimeFormat('en-GB', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: STATION_TIME_ZONE,
-  }).format(new Date(value));
+  if (!timeZone) return value;
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone,
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 function formatDay(value: string | null | undefined): string {
@@ -737,7 +751,7 @@ export function CashWorkspace({
   const locationName = (locationId: string) =>
     summary?.locations.find((location) => location.locationId === locationId)?.name ??
     'Unknown location';
-  const plain = (value: string) => (amountsHidden ? `${MASK} USD` : `${value} USD`);
+  const plain = (value: string) => (amountsHidden ? `${MASK} USD` : formatMoney(value));
 
   const canBank =
     capabilities.recordDeposit &&
@@ -877,10 +891,10 @@ export function CashWorkspace({
                   </p>
                   {summary?.cashPosition && Number(summary.cashPosition.paidOut) > 0 ? (
                     <p className="cash-sheet-note" role="note">
-                      USD {summary.cashPosition.paidOut} was paid out of station cash for expenses
-                      since the last collection, so only{' '}
-                      <strong>USD {summary.cashPosition.cashToCollect}</strong> can be collected
-                      now.
+                      {formatMoney(summary.cashPosition.paidOut)} was paid out of station cash for
+                      expenses since the last collection, so only{' '}
+                      <strong>{formatMoney(summary.cashPosition.cashToCollect)}</strong> can be
+                      collected now.
                     </p>
                   ) : null}
                   <Field id="reconciliation-id" label="Shift cash" required>
@@ -1124,7 +1138,7 @@ export function CashWorkspace({
                           label={deposit.depositReference}
                         >
                           <span className="field-hint">
-                            {deposit.amount} USD ·{' '}
+                            {formatMoney(deposit.amount)} ·{' '}
                             {optionLabel(deposit.bankAccountName, 'Bank account')}
                           </span>
                         </Field>
@@ -1270,7 +1284,9 @@ export function CashWorkspace({
                             onClick={() => toggleRow(key)}
                           >
                             <th scope="row">{collection.collectionReference}</th>
-                            <td data-label="Collected">{formatWhen(collection.recordedAt)}</td>
+                            <td data-label="Collected">
+                              {formatWhen(collection.recordedAt, summary?.stationTimezone)}
+                            </td>
                             <td data-label="Amount">{plain(collection.amount)}</td>
                             <td data-label="Still to bank">
                               {plain(collection.collectedButUnbanked)}
@@ -1318,12 +1334,18 @@ export function CashWorkspace({
                                     },
                                     {
                                       label: 'Collected on',
-                                      value: formatWhen(collection.recordedAt),
+                                      value: formatWhen(
+                                        collection.recordedAt,
+                                        summary?.stationTimezone,
+                                      ),
                                     },
                                     {
                                       label: 'Received at the station',
                                       value: collection.receivedAt
-                                        ? formatWhen(collection.receivedAt)
+                                        ? formatWhen(
+                                            collection.receivedAt,
+                                            summary?.stationTimezone,
+                                          )
                                         : 'Not marked as received',
                                     },
                                     {
@@ -1367,7 +1389,10 @@ export function CashWorkspace({
                                             <div key={deposit.depositId}>
                                               {deposit.depositReference} · {plain(deposit.amount)} ·{' '}
                                               {depositLabel(deposit)} ·{' '}
-                                              {formatWhen(deposit.depositedAt)}
+                                              {formatWhen(
+                                                deposit.depositedAt,
+                                                summary?.stationTimezone,
+                                              )}
                                             </div>
                                           ))
                                         : 'Not sent to the bank yet',
@@ -1440,7 +1465,9 @@ export function CashWorkspace({
                           onClick={() => toggleRow(key)}
                         >
                           <th scope="row">{deposit.depositReference}</th>
-                          <td data-label="Deposited">{formatWhen(deposit.depositedAt)}</td>
+                          <td data-label="Deposited">
+                            {formatWhen(deposit.depositedAt, summary?.stationTimezone)}
+                          </td>
                           <td data-label="Account">{deposit.bankAccountName}</td>
                           <td data-label="Amount">{plain(deposit.amount)}</td>
                           <td data-label="Status">
@@ -1481,7 +1508,13 @@ export function CashWorkspace({
                               <DetailList
                                 id={`${key}-details`}
                                 items={[
-                                  { label: 'Deposited on', value: formatWhen(deposit.depositedAt) },
+                                  {
+                                    label: 'Deposited on',
+                                    value: formatWhen(
+                                      deposit.depositedAt,
+                                      summary?.stationTimezone,
+                                    ),
+                                  },
                                   {
                                     label: 'Cash taken from',
                                     value: locationName(deposit.sourceLocationId),
@@ -1498,12 +1531,15 @@ export function CashWorkspace({
                                   },
                                   {
                                     label: 'Bank expected to confirm by',
-                                    value: formatWhen(deposit.expectedConfirmationAt),
+                                    value: formatWhen(
+                                      deposit.expectedConfirmationAt,
+                                      summary?.stationTimezone,
+                                    ),
                                   },
                                   {
                                     label: 'Confirmed on',
                                     value: deposit.confirmedAt
-                                      ? formatWhen(deposit.confirmedAt)
+                                      ? formatWhen(deposit.confirmedAt, summary?.stationTimezone)
                                       : 'Not confirmed yet',
                                   },
                                   { label: 'Amount deposited', value: plain(deposit.amount) },

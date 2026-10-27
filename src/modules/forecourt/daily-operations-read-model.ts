@@ -45,7 +45,13 @@ export type RecordData = {
     deliveryNoteNumber: string;
     actualQuantityLitres: string;
   }>;
-  dips: Array<{ dipId: string; tankId: string; physicalLitres: string }>;
+  dips: Array<{
+    dipId: string;
+    tankId: string;
+    tankCode?: string;
+    measuredAt?: string;
+    physicalLitres: string;
+  }>;
   /** Every active tank at the station, so each one is listed even before it has a dip or a tolerance. */
   tanks: Array<{
     tankId: string;

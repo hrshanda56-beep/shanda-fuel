@@ -1,3 +1,5 @@
+import Decimal from 'decimal.js';
+
 const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/;
 
 export type DateInput = string | Date;
@@ -13,7 +15,11 @@ export function formatDecimal(value: string, suffix = ''): string {
 }
 
 export function formatMoney(value: string, currency = 'USD'): string {
-  return `${currency} ${formatDecimal(value)}`;
+  if (!DECIMAL_PATTERN.test(value.trim())) return '—';
+  return `${currency} ${new Decimal(value.trim()).toDecimalPlaces(2).toFixed(2)}`.replace(
+    /\d+(?=\.\d{2}$)/,
+    (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ','),
+  );
 }
 
 /** Compact USD for dashboards, e.g. "$7,460" or "−$212.40". */
@@ -25,7 +31,11 @@ export function formatUsd(value: string): string {
 }
 
 export function formatLitres(value: string): string {
-  return formatDecimal(value, ' L');
+  if (!DECIMAL_PATTERN.test(value.trim())) return '—';
+  const fixed = new Decimal(value.trim()).toDecimalPlaces(2).toFixed(2);
+  const trimmed = fixed.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
+  const [whole = '', fraction] = trimmed.split('.');
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction ? `.${fraction}` : ''} L`;
 }
 
 export function formatPercentage(value: string): string {

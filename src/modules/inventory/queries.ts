@@ -55,8 +55,8 @@ export type DeliverySupplierOption = Readonly<{ id: string; code: string; name: 
 
 /**
  * Suppliers a delivery may be received from: ACTIVE suppliers of the tenant, id/code/name
- * only. Authorized by inventory.delivery.manage at the station (the permission CreateDelivery
- * uses), so receiving staff need no creditor access. No balances or documents are exposed.
+ * only. This reference read requires inventory.view; CreateDelivery still enforces
+ * inventory.delivery.manage when the delivery is saved. No balances or documents are exposed.
  */
 export async function queryDeliverySuppliers(input: {
   request: Request;
@@ -71,7 +71,11 @@ export async function queryDeliverySuppliers(input: {
     parsed.tenantId,
     parsed.stationId,
     async (transaction, context) => {
-      authorizeInventoryCommand(context, 'inventory.delivery.manage');
+      // Loading the supplier reference list is a read operation.  The delivery command
+      // still enforces inventory.delivery.manage (and its step-up) when the user saves;
+      // requiring that write permission here made the form silently render an empty list
+      // for otherwise authorised inventory viewers.
+      authorizeInventoryCommand(context, 'inventory.view');
       const rows = await transaction.execute<{ id: string; code: string; legal_name: string }>(sql`
         select id, code, legal_name
         from app.suppliers

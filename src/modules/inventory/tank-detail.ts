@@ -96,10 +96,12 @@ export async function queryTankDetail(input: {
           t.acceptable_variance_litres::text as yellow, t.variance_red_litres::text as red,
           coalesce((select sum(m.quantity_litres) from app.inventory_movements m
             where m.tenant_id = t.tenant_id and m.station_id = t.station_id
-              and m.tank_id = t.id and m.product_id = t.product_id), 0)::text as book,
+              and m.tank_id = t.id and m.product_id = t.product_id
+              and m.business_date <= (now() at time zone station.timezone)::date::text), 0)::text as book,
           exists (select 1 from app.tank_calibration_points c
             where c.tenant_id = t.tenant_id and c.tank_id = t.id) as has_chart
         from app.tanks t
+        join app.stations station on station.tenant_id = t.tenant_id and station.id = t.station_id
         join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
         where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
           and t.id = ${parsed.tankId}
@@ -125,7 +127,11 @@ export async function queryTankDetail(input: {
         left join lateral (
           select sum(m.quantity_litres) as book from app.inventory_movements m
           where m.tenant_id = d.tenant_id and m.station_id = d.station_id
-            and m.tank_id = d.tank_id and m.effective_at <= d.measured_at
+            and m.tank_id = d.tank_id
+            -- A movement may be approved after the dip was entered.  Its station
+            -- business date is the accounting date, so a late approval must still
+            -- be included in that day's books.
+            and m.business_date <= d.business_date
         ) b on true
         where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
           and d.tank_id = ${parsed.tankId}

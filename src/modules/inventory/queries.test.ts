@@ -10,7 +10,11 @@ const ids = {
 };
 
 let roleCode: 'ATTENDANT' | 'SUPERVISOR' = 'SUPERVISOR';
-const stock = vi.fn();
+const { stock, readContext, authorizeInventoryCommand } = vi.hoisted(() => ({
+  stock: vi.fn(),
+  readContext: vi.fn(),
+  authorizeInventoryCommand: vi.fn(),
+}));
 
 vi.mock('./application', () => ({
   resolveInventoryCommandContext: async () => {
@@ -43,6 +47,8 @@ vi.mock('./application', () => ({
       },
     };
   },
+  withInventoryReadContext: (...args: unknown[]) => readContext(...args),
+  authorizeInventoryCommand,
 }));
 
 vi.mock('./persistence', () => ({
@@ -50,7 +56,7 @@ vi.mock('./persistence', () => ({
   getTankVariance: vi.fn(),
 }));
 
-import { queryInventoryStock } from './queries';
+import { queryDeliverySuppliers, queryInventoryStock } from './queries';
 
 const input = () => ({
   request: new Request('http://shanda-fuel.local/api/inventory/stock'),
@@ -62,6 +68,8 @@ const input = () => ({
 describe('queryInventoryStock authorization', () => {
   beforeEach(() => {
     stock.mockReset();
+    readContext.mockReset();
+    authorizeInventoryCommand.mockReset();
     stock.mockResolvedValue([{ productId: ids.product }]);
   });
 
@@ -78,5 +86,35 @@ describe('queryInventoryStock authorization', () => {
     roleCode = 'SUPERVISOR';
     await expect(queryInventoryStock(input())).resolves.toEqual([{ productId: ids.product }]);
     expect(stock).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads delivery suppliers with inventory read access, leaving the write gate to the command', async () => {
+    readContext.mockImplementationOnce(
+      async (
+        _request: Request,
+        _tenantId: string,
+        _stationId: string,
+        work: (transaction: unknown, context: unknown) => Promise<unknown>,
+      ) =>
+        work(
+          {
+            execute: vi
+              .fn()
+              .mockResolvedValue([{ id: 'supplier-1', code: 'SUP-1', legal_name: 'Supplier One' }]),
+          },
+          { tenantId: ids.tenant, stationId: ids.station },
+        ),
+    );
+    await expect(
+      queryDeliverySuppliers({
+        request: new Request('http://shanda-fuel.local/api/inventory/suppliers'),
+        tenantId: ids.tenant,
+        stationId: ids.station,
+      }),
+    ).resolves.toEqual([{ id: 'supplier-1', code: 'SUP-1', name: 'Supplier One' }]);
+    expect(authorizeInventoryCommand).toHaveBeenCalledWith(
+      { tenantId: ids.tenant, stationId: ids.station },
+      'inventory.view',
+    );
   });
 });

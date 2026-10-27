@@ -85,15 +85,20 @@ export function customerScopeAvailability(
 export function deriveCashPosition(input: {
   evidence: string;
   collected: string;
+  deposited?: string;
   banked: string;
   variance: string;
 }) {
+  const deposited = input.deposited ?? input.banked;
   return {
     cashEvidence: formatMoney(input.evidence),
     collected: formatMoney(input.collected),
     awaitingCollection: formatMoney(subtractExact(input.evidence, input.collected)),
+    deposited: formatMoney(deposited),
     banked: formatMoney(input.banked),
-    collectedButNotBanked: formatMoney(subtractExact(input.collected, input.banked)),
+    // This is deliberately based on deposits, not confirmations: cash in an
+    // unconfirmed deposit is in transit, not still at the station.
+    collectedButNotBanked: formatMoney(subtractExact(input.collected, deposited)),
     cashVariance: formatMoney(input.variance),
   };
 }

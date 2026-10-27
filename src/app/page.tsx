@@ -120,6 +120,7 @@ export default async function OverviewPage({
               : null
           }
           tenantId={validatedContext?.tenantId ?? tenantId}
+          legalEntityId={validatedContext?.legalEntityId ?? legalEntityId}
           stationId={validatedContext ? validatedContext.stationId : stationId}
           initialContext={initialContext}
           showQuickActions={!managesBusiness}
@@ -132,21 +133,24 @@ export default async function OverviewPage({
 async function DashboardContent({
   request,
   tenantId,
+  legalEntityId,
   stationId,
   initialContext,
   showQuickActions,
 }: {
   request: Request | null;
   tenantId?: string;
+  legalEntityId?: string;
   stationId?: string;
-  initialContext?: { tenantId: string; stationId?: string };
+  initialContext?: { tenantId: string; legalEntityId?: string; stationId?: string };
   showQuickActions: boolean;
 }) {
-  const scope = tenantId ? { tenantId, stationId } : initialContext;
+  const scope = tenantId ? { tenantId, legalEntityId, stationId } : initialContext;
   if (!request || !scope?.tenantId)
     return (
       <TodayOverview
         tenantId={tenantId}
+        legalEntityId={legalEntityId}
         stationId={stationId}
         initialContext={initialContext}
         showQuickActions={showQuickActions}
@@ -162,6 +166,7 @@ async function DashboardContent({
     <TodayOverview
       key={`${scope.tenantId}|${scope.stationId ?? ''}`}
       tenantId={scope.tenantId}
+      legalEntityId={scope.legalEntityId}
       stationId={scope.stationId}
       initialData={{ ...data, key: `${scope.tenantId}|${scope.stationId ?? ''}|30D` }}
       showQuickActions={showQuickActions}

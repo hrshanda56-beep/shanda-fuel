@@ -5,7 +5,7 @@ import type {
 } from '@/modules/forecourt/operations-status';
 import type { CurrentContext } from '@/modules/context/contracts';
 
-export type DashboardScope = { tenantId: string; stationId?: string };
+export type DashboardScope = { tenantId: string; legalEntityId?: string; stationId?: string };
 
 /** Convert only the server-verified current scope into dashboard input. */
 export function dashboardScopeFromCurrentContext(
@@ -14,6 +14,7 @@ export function dashboardScopeFromCurrentContext(
   if (!current) return undefined;
   return {
     tenantId: current.organisationId,
+    ...(current.legalEntityId ? { legalEntityId: current.legalEntityId } : {}),
     ...(current.stationId ? { stationId: current.stationId } : {}),
   };
 }

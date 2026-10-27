@@ -65,6 +65,7 @@ const ids = {
   till: 'd1000000-0000-4000-8000-000000000013',
   safe: 'd1000000-0000-4000-8000-000000000014',
   bank: 'd1000000-0000-4000-8000-000000000015',
+  shiftTemplate: 'd1000000-0000-4000-8000-000000000016',
 };
 
 type Who = 'owner' | 'supervisor' | 'finance';
@@ -152,6 +153,9 @@ async function run(client: Sql) {
     insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
       values ('${ids.day}', '${tenantId}', '${stationId}', '${businessDate}', 'NOT_STARTED');
     update app.station_business_days set state='OPEN', opened_at=now() where id='${ids.day}';
+    insert into app.shift_templates
+      (id, tenant_id, station_id, code, name, start_time, duration_minutes, active, created_by)
+      values ('${ids.shiftTemplate}', '${tenantId}', '${stationId}', 'DAY', 'Day shift', '06:00', 720, true, '${supervisorMembership}');
     update app.selling_prices set state='PENDING_APPROVAL' where id='${ids.price}';
     update app.selling_prices set state='APPROVED', approved_by='${actors.owner.membership_id}', approved_at=now() where id='${ids.price}';
     update app.selling_prices set state='PENDING_STATION_ACTIVATION' where id='${ids.price}';
@@ -227,7 +231,6 @@ async function run(client: Sql) {
     const reconciliationId = randomUUID();
     const shiftId = randomUUID();
     const common = { tenantId, stationId, reconciliationId };
-    const plannedEndAt = new Date(Date.now() + 86_400_000).toISOString();
     await call(
       'forecourt',
       {
@@ -238,7 +241,7 @@ async function run(client: Sql) {
         shiftId,
         expectedVersion: 0,
         plannedStartAt: `${businessDate}T06:00:00.000Z`,
-        plannedEndAt,
+        shiftTemplateId: ids.shiftTemplate,
       },
       `${tag}-shift`,
       'supervisor',

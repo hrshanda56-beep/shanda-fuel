@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 
 import { Icon } from '@/design-system/icons';
 import { Radio, Select } from '@/design-system/forms';
+import { formatMoney } from '@/design-system/formatters';
 import {
   AccessDeniedState,
   Button,
@@ -19,7 +20,6 @@ import {
   buildGuidedSteps,
   describeDuration,
   describePriceState,
-  displayPrice,
   firstOpenStep,
   friendlyPriceError,
   friendlySetupError,
@@ -358,7 +358,7 @@ function PriceStep({ ctx }: { ctx: FormContext }) {
             const { label } = planPriceAdvance(p.state, ctx.data.capabilities);
             return (
               <li key={p.id}>
-                {`${nameOf(p.productId)}: ${displayPrice(p.unitPrice)} USD per litre (${describePriceState(p.state)})`}
+                {`${nameOf(p.productId)}: ${formatMoney(p.unitPrice)} per litre (${describePriceState(p.state)})`}
                 {label ? (
                   <>
                     {' '}

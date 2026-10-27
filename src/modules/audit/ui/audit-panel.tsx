@@ -31,8 +31,15 @@ function splitAction(action: string): { label: string; detail: string } {
     : { label: `${action.slice(0, colon)}:`, detail: action.slice(colon + 2) };
 }
 
-function when(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+function when(iso: string, timeZone: string | undefined): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  if (!timeZone) return date.toISOString();
+  try {
+    return date.toLocaleString('en-GB', { timeZone, dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return date.toISOString();
+  }
 }
 
 /**
@@ -42,7 +49,8 @@ function when(iso: string): string {
 export function AuditPanel({
   tenantId,
   stationId,
-}: Readonly<{ tenantId: string; stationId?: string }>) {
+  timezone,
+}: Readonly<{ tenantId: string; stationId?: string; timezone?: string }>) {
   const [area, setArea] = useState('');
   const [page, setPage] = useState<Page | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -157,7 +165,7 @@ export function AuditPanel({
                       <span className="pg-timeline-dot" aria-hidden="true">
                         •
                       </span>
-                      {when(item.occurredAt)}
+                      {when(item.occurredAt, timezone)}
                     </span>
                   </p>
                   {item.reason ? <p className="pg-timeline-meta">Reason: {item.reason}</p> : null}

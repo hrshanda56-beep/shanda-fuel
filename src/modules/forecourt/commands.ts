@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { meterSegments } from '../../platform/db/schema/a3';
 import { litres, money, unitPrice } from '../../platform/domain/primitives';
-import { deriveBusinessDate } from '../../platform/domain/business-time';
+import { deriveBusinessDate, stationLocalToInstant } from '../../platform/domain/business-time';
 import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import {
   executeForecourtCommand,
@@ -996,16 +996,13 @@ async function runShiftLifecycleCommand(
 
       if (!row) {
         if (commandType !== 'StartShift') throw new AppError('NOT_FOUND', 'Shift was not found');
-        if (!payload.plannedStartAt)
-          throw new AppError(
-            'VALIDATION_FAILED',
-            'StartShift requires plannedStartAt to create the shift',
-          );
         if (payload.shiftTemplateId && payload.plannedEndAt)
           throw new AppError(
             'VALIDATION_FAILED',
-            'Provide either shiftTemplateId or an explicit plannedEndAt, not both',
+            'Choose a shift schedule or enter the planned times, not both',
           );
+        const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+        let resolvedPlannedStartAt = payload.plannedStartAt;
         let resolvedPlannedEndAt: string;
         let shiftTemplateStartTime: string | null = null;
         if (payload.shiftTemplateId) {
@@ -1016,20 +1013,50 @@ async function runShiftLifecycleCommand(
             payload.shiftTemplateId,
           );
           shiftTemplateStartTime = template.startTime;
+          if (station.clockScheduleEnabled && !shiftTemplateStartTime) {
+            throw new AppError(
+              'VALIDATION_FAILED',
+              'The selected shift template must have a scheduled start time',
+            );
+          }
+          if (station.clockScheduleEnabled && shiftTemplateStartTime) {
+            const plannedStart = stationLocalToInstant(
+              `${dayRow.business_date}T${shiftTemplateStartTime.slice(0, 5)}`,
+              station.timezone,
+            );
+            if (!plannedStart) {
+              throw new AppError(
+                'VALIDATION_FAILED',
+                'The selected shift template has an invalid scheduled start time',
+              );
+            }
+            // The persisted schedule and station timezone are authoritative. A client may
+            // display/send a planned start for convenience, but cannot move the shift by
+            // changing that request value.
+            resolvedPlannedStartAt = plannedStart.toISOString();
+          }
+          if (!resolvedPlannedStartAt)
+            throw new AppError('VALIDATION_FAILED', 'Enter when this shift is planned to start');
           resolvedPlannedEndAt = new Date(
-            new Date(payload.plannedStartAt).getTime() + template.durationMinutes * 60_000,
+            new Date(resolvedPlannedStartAt).getTime() + template.durationMinutes * 60_000,
           ).toISOString();
         } else if (payload.plannedEndAt) {
+          if (!resolvedPlannedStartAt)
+            throw new AppError(
+              'VALIDATION_FAILED',
+              'Enter when this shift is planned to start when no schedule is selected',
+            );
           resolvedPlannedEndAt = payload.plannedEndAt;
         } else {
           throw new AppError(
             'VALIDATION_FAILED',
-            'StartShift requires either shiftTemplateId or an explicit plannedEndAt',
+            'Choose a shift schedule or enter the planned start and end times',
           );
         }
-        if (new Date(resolvedPlannedEndAt).getTime() <= new Date(payload.plannedStartAt).getTime())
-          throw new AppError('VALIDATION_FAILED', 'plannedEndAt must be after plannedStartAt');
-        const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+        if (!resolvedPlannedStartAt)
+          throw new AppError('VALIDATION_FAILED', 'Enter when this shift is planned to start');
+        if (new Date(resolvedPlannedEndAt).getTime() <= new Date(resolvedPlannedStartAt).getTime())
+          throw new AppError('VALIDATION_FAILED', 'The shift must end after it starts');
         if (
           station.status === 'ACTIVE' &&
           station.clockScheduleEnabled &&
@@ -1043,7 +1070,7 @@ async function runShiftLifecycleCommand(
         if (
           payload.shiftTemplateId &&
           shiftTemplateStartTime &&
-          stationClockTime(payload.plannedStartAt, station.timezone) !==
+          stationClockTime(resolvedPlannedStartAt, station.timezone) !==
             shiftTemplateStartTime.slice(0, 5)
         ) {
           throw new AppError(
@@ -1051,7 +1078,7 @@ async function runShiftLifecycleCommand(
             'The planned shift time does not match the selected shift schedule.',
           );
         }
-        const derivedBusinessDate = deriveBusinessDate(payload.plannedStartAt, station.timezone);
+        const derivedBusinessDate = deriveBusinessDate(resolvedPlannedStartAt, station.timezone);
         if (derivedBusinessDate !== dayRow.business_date)
           throw new AppError(
             'INVARIANT_VIOLATION',
@@ -1063,7 +1090,7 @@ async function runShiftLifecycleCommand(
               (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, shift_template_id, business_date, version)
             values (
               ${payload.shiftId}, ${context.tenantId}, ${context.stationId}, ${payload.businessDayId},
-              'PLANNED', ${payload.plannedStartAt}::timestamptz, ${resolvedPlannedEndAt}::timestamptz,
+              'PLANNED', ${resolvedPlannedStartAt}::timestamptz, ${resolvedPlannedEndAt}::timestamptz,
               ${payload.shiftTemplateId ?? null}, ${derivedBusinessDate}, 0
             )
           `);
@@ -1077,7 +1104,7 @@ async function runShiftLifecycleCommand(
           id: payload.shiftId,
           business_date: derivedBusinessDate,
           state: 'PLANNED',
-          planned_start_at: payload.plannedStartAt,
+          planned_start_at: resolvedPlannedStartAt,
           planned_end_at: resolvedPlannedEndAt,
           version: 0,
         };

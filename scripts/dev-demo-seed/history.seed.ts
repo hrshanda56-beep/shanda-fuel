@@ -54,6 +54,7 @@ const attendant = 'd1000000-0000-4000-8000-000000000002';
 const till = 'd1000000-0000-4000-8000-000000000013';
 const safe = 'd1000000-0000-4000-8000-000000000014';
 const bank = 'd1000000-0000-4000-8000-000000000015';
+const shiftTemplate = 'd1000000-0000-4000-8000-000000000016';
 // Created here.
 const petrol = {
   product: 'e1000000-0000-4000-8000-000000000003',
@@ -257,8 +258,7 @@ async function run(client: Sql) {
         shiftId,
         expectedVersion: 0,
         plannedStartAt: `${date}T04:00:00.000Z`,
-        // boundaries are stamped with the real clock, so the window must reach past now
-        plannedEndAt: new Date(Date.now() + 86_400_000).toISOString(),
+        shiftTemplateId: shiftTemplate,
       },
       `${tag}-shift`,
       'supervisor',
