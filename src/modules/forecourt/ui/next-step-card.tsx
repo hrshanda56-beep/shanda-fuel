@@ -49,8 +49,8 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
   }, [tenantId, stationId]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
+    const timer = setTimeout(() => void load(), 0);
+    return () => clearTimeout(timer);
   }, [load]);
 
   if (hidden || !overview) return null;

@@ -235,7 +235,7 @@
     "src/modules/forecourt/ui/daily-tank-dips.tsx": "9ff94c57354c59dfa176a514af7f56fa1203aae016eedad395195a7621f27f51",
     "src/modules/forecourt/ui/forecourt-workspace.tsx": "a7216106f89c690a60927f7f6b7c2e736f67aa703d4302afac840f6586ce88f3",
     "src/modules/forecourt/ui/my-shift-workspace.tsx": "25c3ff1ccd6c3d269aef780be3604f2ebe9dd9195500b82ded59c2678ed86c27",
-    "src/modules/forecourt/ui/next-step-card.tsx": "904e376ca693032e7b58502c648d76ae3417b03ce5a20a282599b1006f80aeda",
+    "src/modules/forecourt/ui/next-step-card.tsx": "615f8ec2def79928f850a8f78471bfac7d98bb6baa7576d2f08e31783e043dd1",
     "src/modules/forecourt/ui/next-step.ts": "8ef039cfb4a49307586f446d52f06ba3dc770e9b3b96e23120db8bd4b744b045",
     "src/modules/forecourt/ui/operations-control-room.tsx": "1d522259569e15df5d2ba3286d677734a354dbb9179502a75150b5f89b3ae37b",
     "src/modules/forecourt/ui/operations-labels.ts": "2cbc656e2ccb02c4e2ddc08b05cbd25baf481c9aae8bd1a99cdeecaefbc371c5",
