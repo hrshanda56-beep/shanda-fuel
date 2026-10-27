@@ -724,7 +724,7 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
       coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount,
       coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'EXPENSE'), ARRAY[]::uuid[]) as expense_ids,
       coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'RECURRING_COST_RECOGNITION'), ARRAY[]::uuid[]) as recurring_recognition_ids,
-      max(p.template_id) as template_id,
+      max(p.template_id::text) as template_id,
       coalesce(array_agg(distinct m.source_id order by m.source_id), ARRAY[]::uuid[]) as source_ids,
       coalesce(array_agg(m.id order by m.id), ARRAY[]::uuid[]) as movement_ids,
       coalesce(attachments.attachment_ids, ARRAY[]::uuid[]) as attachment_ids
