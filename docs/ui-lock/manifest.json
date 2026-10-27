@@ -206,7 +206,7 @@
     "src/modules/cash/ui/cash-visuals.tsx": "9af41c3f2d7ec7877484b27c4512eecab71641ad76637ebd1fd0b9fdc278507d",
     "src/modules/cash/ui/cash-workspace.tsx": "0474780d3cc21057ebfd57b30f29ca902b93bfb6fd89b48ff0de8aca136a4887",
     "src/modules/costing/ui/valuation-workspace.tsx": "c14a4e17df98aaed41cd73c34874c93cd1642a8bde30259a6735c9078fa2d3b5",
-    "src/modules/creditors/ui/supplier-detail-workspace.tsx": "77d6e73a5c0077e716a30531e5dca82a815422bbd2e691721d17d6da11404da1",
+    "src/modules/creditors/ui/supplier-detail-workspace.tsx": "efc909308d1758c53b7a230f8274446218212f081d38d929b2bf5a97039b04f6",
     "src/modules/creditors/ui/supplier-due-view.tsx": "ddfdda63ea358a1d3005979ca2ea80ea8a6944cf4ed01b399985e96e35da69b3",
     "src/modules/creditors/ui/supplier-due.module.css": "91b08645b234e4a57f9a9ad80c95e4d448a41791a608254f8a18181faccf4381",
     "src/modules/creditors/ui/supplier-format.ts": "2ef4ad2850d6a0c9bec8ffe7edbccc6260466aeeae044ad77520b5ee80cda6ac",

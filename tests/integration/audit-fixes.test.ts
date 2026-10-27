@@ -17,6 +17,7 @@ const ids = {
   legal: id(),
   otherLegal: id(),
   station: id(),
+  bankAccount: id(),
   otherStation: id(),
   owner: id(),
   attendant: id(),
@@ -88,6 +89,8 @@ describe('Audit fixes (PostgreSQL)', { timeout: 60_000 }, () => {
       insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values
         ('${ids.station}', '${ids.tenant}', '${ids.legal}', 'FX${run}', 'Fixes Station', 'ACTIVE'),
         ('${ids.otherStation}', '${ids.otherTenant}', '${ids.otherLegal}', 'FO${run}', 'Other Station', 'ACTIVE');
+      insert into app.bank_accounts (id, tenant_id, legal_entity_id, name, bank_name, account_reference_masked, currency, status)
+        values ('${ids.bankAccount}', '${ids.tenant}', '${ids.legal}', 'Main account', 'Fixes Bank', '****1234', 'USD', 'ACTIVE');
       insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id) values
         ('${ids.tenant}', '${ids.ownerMembership}', 'OWNER', 'TENANT', null, null),
         ('${ids.tenant}', '${ids.unverifiedMembership}', 'OWNER', 'TENANT', null, null),
@@ -330,9 +333,39 @@ describe('Audit fixes (PostgreSQL)', { timeout: 60_000 }, () => {
         paymentDate: '2026-10-27',
         amount: '125.50',
         reference: `PAY-${run}`,
+        paymentMethod: 'BANK',
+        bankAccountId: ids.bankAccount,
       };
       const first = await post(supplierPost, 'owner', `pay-${run}`, body);
       expect(first.status).toBe(201);
+      expect(first.body).toMatchObject({ paymentMethod: 'BANK', bankAccountId: ids.bankAccount });
+      const [payment] = await client`
+        select payment_method, bank_account_id
+        from app.supplier_payments
+        where tenant_id = ${ids.tenant} and id = ${first.body.paymentId}
+      `;
+      expect(payment).toEqual({ payment_method: 'BANK', bank_account_id: ids.bankAccount });
+
+      const missingBankAccount = await post(supplierPost, 'owner', `pay-missing-bank-${run}`, {
+        ...body,
+        reference: `PAY-MISSING-BANK-${run}`,
+        bankAccountId: undefined,
+      });
+      expect(missingBankAccount.status).toBe(400);
+      expect(missingBankAccount.body).toMatchObject({
+        message: 'Choose the bank account used for this payment.',
+      });
+
+      const bankAccountForCash = await post(supplierPost, 'owner', `pay-cash-bank-${run}`, {
+        ...body,
+        reference: `PAY-CASH-BANK-${run}`,
+        paymentMethod: 'STATION_CASH',
+      });
+      expect(bankAccountForCash.status).toBe(400);
+      expect(bankAccountForCash.body).toMatchObject({
+        message: 'A bank account can only be used with Bank payment.',
+      });
+
       const duplicate = await post(supplierPost, 'owner', `pay-duplicate-${run}`, body);
       expect(duplicate.status).toBe(409);
       expect(duplicate.body).toMatchObject({

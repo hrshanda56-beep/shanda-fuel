@@ -25,6 +25,11 @@ import {
 import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
+import {
+  EXPENSE_PAYMENT_METHODS,
+  EXPENSE_PAYMENT_METHOD_LABELS,
+  type ExpensePaymentMethod,
+} from '@/modules/expenses/domain';
 import { clientErrorMessage } from '@/platform/errors/client';
 import { calculateDueDate } from '../credit-terms';
 import { previewLandedCost } from '../landed-cost-preview';
@@ -61,6 +66,8 @@ type StatementLine = {
   amount: string;
   runningBalance: string;
   currency: string;
+  paymentMethod?: string;
+  bankAccount?: { bankName: string; accountReferenceMasked: string | null };
 };
 
 type PendingDocument = {
@@ -108,6 +115,12 @@ type InvoiceDelivery = {
 type InvoiceChoices = {
   products: { id: string; name: string }[];
   stations: { id: string; name: string }[];
+  bankAccounts: {
+    id: string;
+    name: string;
+    bankName: string;
+    accountReferenceMasked: string;
+  }[];
   /** Confirmed deliveries from this supplier that no posted invoice covers yet. */
   deliveries?: InvoiceDelivery[];
 };
@@ -135,6 +148,8 @@ type PaymentForm = {
   paymentDate: string;
   amount: string;
   reference: string;
+  paymentMethod: ExpensePaymentMethod;
+  bankAccountId: string;
 };
 
 type SupplierCommandFailure = Error & { status?: number; code?: string };
@@ -175,6 +190,8 @@ const EMPTY_PAYMENT_FORM: PaymentForm = {
   paymentDate: '',
   amount: '',
   reference: '',
+  paymentMethod: 'STATION_CASH',
+  bankAccountId: '',
 };
 
 /** Whole days from the credit-period box: a number, null when empty, or 'invalid'. */
@@ -276,6 +293,7 @@ export function SupplierDetailWorkspace({
   const choices: InvoiceChoices = initial?.choices ?? {
     products: [],
     stations: [],
+    bankAccounts: [],
     deliveries: [],
   };
   const [savedDocumentId, setSavedDocumentId] = useState<string | null>(null);
@@ -661,12 +679,18 @@ export function SupplierDetailWorkspace({
       setActionError('Payment date, reference, and an exact decimal amount are required.');
       return;
     }
+    if (form.paymentMethod === 'BANK' && !form.bankAccountId) {
+      setActionError('Choose the bank account used for this payment.');
+      return;
+    }
     const submitted = await submitCommand(
       'SubmitSupplierPayment',
       {
         paymentDate: form.paymentDate,
         amount: form.amount,
         reference: form.reference.trim(),
+        paymentMethod: form.paymentMethod,
+        ...(form.paymentMethod === 'BANK' ? { bankAccountId: form.bankAccountId } : {}),
       },
       'Supplier payment submitted for posting review.',
     );
@@ -1134,6 +1158,14 @@ export function SupplierDetailWorkspace({
                       </span>
                       <span className="list-cell ledger-movement" data-label="Movement">
                         {movementLabel(line.movementType)}
+                        {line.paymentMethod ? (
+                          <small>
+                            {' · '}
+                            {line.paymentMethod === 'BANK' && line.bankAccount
+                              ? `${line.bankAccount.bankName} · ${line.bankAccount.accountReferenceMasked}`
+                              : line.paymentMethod}
+                          </small>
+                        ) : null}
                       </span>
                       <span className="list-cell" data-label="Posted">
                         {formatPostedAt(line.postedAt, statementTimezone)}
@@ -1554,6 +1586,43 @@ export function SupplierDetailWorkspace({
                   }
                 />
               </Field>
+              <Field id="payment-method" label="Payment method" required>
+                <select
+                  id="payment-method"
+                  value={paymentForm.paymentMethod}
+                  onChange={(event) =>
+                    setPaymentForm((form) => ({
+                      ...form,
+                      paymentMethod: event.target.value as ExpensePaymentMethod,
+                      bankAccountId: event.target.value === 'BANK' ? form.bankAccountId : '',
+                    }))
+                  }
+                >
+                  {EXPENSE_PAYMENT_METHODS.map((method) => (
+                    <option key={method} value={method}>
+                      {EXPENSE_PAYMENT_METHOD_LABELS[method]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {paymentForm.paymentMethod === 'BANK' ? (
+                <Field id="payment-bank-account" label="Bank account" required>
+                  <select
+                    id="payment-bank-account"
+                    value={paymentForm.bankAccountId}
+                    onChange={(event) =>
+                      setPaymentForm((form) => ({ ...form, bankAccountId: event.target.value }))
+                    }
+                  >
+                    <option value="">Choose…</option>
+                    {choices.bankAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} · {account.bankName} · {account.accountReferenceMasked}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
             </form>
           </Modal>
 

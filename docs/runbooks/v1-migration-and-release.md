@@ -1,6 +1,6 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-10-26** for branch `halfway` (on top of `main` f4acdf4, not yet merged; the release commit is the merge commit on `main`, recorded in section 7): 65 migrations, 0000 to 0079. `main` itself is at 0077 (63 migrations); `halfway` adds 0078 and 0079. Production's own count is not known from the repository: read it first (section 4, step 2).
+**Updated 2026-10-27** for branch `fix/audit-round-3-20261027` (on top of `main`; not yet merged or applied to production): 72 migrations, 0000 to 0086. Production's own count is not known from the repository: read it first (section 4, step 2).
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -81,8 +81,9 @@ that was reviewed.
 | 0083 | provider_account_fees | Fee percent and fixed fee per payment account; expected fee on settlements | Merged to `main` (PR #167); applied to production 2026-10-27 |
 | 0084 | opening_balance_import | Go-live opening balances: a reviewed, approved, then locked CSV batch (`opening_balance_batches`, `opening_balance_lines`) | Not applied to production. New tables only, with RLS |
 | 0085 | supervisor_permissions | Supervisor role: `report.finance.view`, `expense.approve.any_amount`, station-level staff and activity views, supervisor expense approval limit, `app.station_staff_directory` | Not applied to production. Adds permission rows, one nullable column and one definer function |
+| 0086 | supplier_payment_bank_account | Supplier payment method and optional tenant-scoped bank account for bank payments | Not applied to production. Additive nullable field, validation constraint, foreign key and index |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 71 entries, 0000 to 0085 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 72 entries, 0000 to 0086 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -236,6 +237,7 @@ fe3af7cff3c83ceb2a1b1ecb9672c52b2f695f3afcaf75c83e4e5a1ba6d92d0a  0082_tank_vari
 6fdd01b7a433cf388c2694f4eafcbd16492dde1ca022c538c9dcb86c493cf624  0083_provider_account_fees.sql
 ee6939320c530b4aeace890da6811068855fba3dd43708036c8c279937f6a78a  0084_opening_balance_import.sql
 93d2426c734e68bc0fee2740d74bb123daa4614ccfc66d6d2e64ed22423858ce  0085_supervisor_permissions.sql
+7ab933a267c427733e16952af83d7129db919ed3df5a5f33384926c5fd0e0b42  0086_supplier_payment_bank_account.sql
 ```
 
 ## 7. Release record (copy this and fill it in)

@@ -498,6 +498,13 @@
       "when": 1792600085000,
       "tag": "0085_supervisor_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792600086000,
+      "tag": "0086_supplier_payment_bank_account",
+      "breakpoints": true
     }
   ]
 }
