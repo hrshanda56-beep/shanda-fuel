@@ -200,7 +200,7 @@
     "src/design-system/theme.ts": "7bddf0e1a29ee7f3d9b00c213ea08913e718a394deabced292e902d422f82b10",
     "src/design-system/tokens.ts": "a4f2392659a5f6b97badcfef9c32e9fe0e6a22772870e7e62bf3f5b697b373da",
     "src/modules/alerts/ui/alert-email-panel.tsx": "fda210e77d4a7ce56eb02cc90404418b0c9e75547ef409aa4700869cdd870b45",
-    "src/modules/audit/ui/audit-panel.tsx": "01a0d022f59c69f5135a8824c5d71555c88f84c0c75099d4740569e8db849632",
+    "src/modules/audit/ui/audit-panel.tsx": "d795ccc0a8ac7aebccd82145f7b45d1b50cc86127457af667048638fc681b253",
     "src/modules/cash/ui/cash-handover-panel.tsx": "5516394419c989f90136746355f913aac2a2f283edcd743e38279c4ca7cb2538",
     "src/modules/cash/ui/cash-handover.module.css": "8693c331592a206d540adf23a9535312892e09feee10e025e991e1e0335acb43",
     "src/modules/cash/ui/cash-visuals.tsx": "9af41c3f2d7ec7877484b27c4512eecab71641ad76637ebd1fd0b9fdc278507d",

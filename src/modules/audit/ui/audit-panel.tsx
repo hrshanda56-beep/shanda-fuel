@@ -142,8 +142,15 @@ export function AuditPanel({
                 </span>
                 <div className="pg-timeline-body">
                   <p className="pg-timeline-line">
-                    <span className="pg-timeline-area">{label}</span>
-                    {detail ? <strong>{detail}</strong> : null}
+                    <span>
+                      <span className="pg-timeline-area">{label}</span>
+                      {detail ? (
+                        <>
+                          {' '}
+                          <strong>{detail}</strong>
+                        </>
+                      ) : null}
+                    </span>
                     {item.subject ? <strong>{item.subject}</strong> : null}
                     <span className="pg-timeline-meta">
                       by {item.who}
