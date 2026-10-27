@@ -242,13 +242,24 @@ async function createPostedA5Evidence(customerAccountId: string) {
   );
   await expectForecourtOk(
     await forecourtCommand(
-      { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+      {
+        commandType: 'SetAttendants',
+        ...common,
+        expectedVersion: 5,
+        attendantIds: [ids.membership],
+      },
+      'a8-a5-attendants',
+    ),
+  );
+  await expectForecourtOk(
+    await forecourtCommand(
+      { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
       'a8-a5-submit',
     ),
   );
   await expectForecourtOk(
     await forecourtCommand(
-      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 6 },
+      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 7 },
       'a8-a5-approve',
       'a8-finance-session-token',
     ),
