@@ -197,7 +197,9 @@ function hrefWithContext(path: string, contextHref: string) {
 }
 
 function Status({ status }: { status: string }) {
-  return <StatusBadge tone={tone(status)}>{status}</StatusBadge>;
+  return (
+    <StatusBadge tone={tone(status)}>{status === 'VALUED' ? 'Has a cost' : status}</StatusBadge>
+  );
 }
 
 export function ValuationOverview({
@@ -326,7 +328,7 @@ export function ValuationOverview({
                   <th scope="col">Quantity</th>
                   <th scope="col">Status</th>
                   <th scope="col">Inventory value</th>
-                  <th scope="col">WAC</th>
+                  <th scope="col">Average cost</th>
                   <th scope="col">Action</th>
                 </tr>
               </thead>
@@ -359,7 +361,7 @@ export function ValuationOverview({
                         ? '—'
                         : formatMoney(stream.inventoryValue, stream.currency ?? 'USD')}
                     </td>
-                    <td data-label="WAC">
+                    <td data-label="Average cost">
                       {stream.weightedAverageCost === null
                         ? '—'
                         : `${formatMoney(stream.weightedAverageCost, stream.currency ?? 'USD')}/L`}
@@ -724,7 +726,7 @@ export function ValuationStreamDetail({
                 ? 'Not available while UNVALUED'
                 : `${stream.currency} ${stream.inventoryValue}`}
             </dd>
-            <dt>WAC</dt>
+            <dt>Average cost</dt>
             <dd>
               {stream.weightedAverageCost === null
                 ? 'Not available while UNVALUED'
@@ -1024,7 +1026,7 @@ export function RevaluationDetail({
                 ? 'Not available'
                 : `${data.revaluation.currentStreamProjection.currency} ${data.revaluation.currentStreamProjection.inventoryValue}`}
             </dd>
-            <dt>WAC</dt>
+            <dt>Average cost</dt>
             <dd>
               {data.revaluation.currentStreamProjection.weightedAverageCost === null
                 ? 'Not available'
