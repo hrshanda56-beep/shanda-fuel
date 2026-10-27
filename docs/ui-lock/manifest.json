@@ -182,7 +182,7 @@
     "src/design-system/session-refresh.ts": "7c43bc4cdcc7d620e7968223b309f756544caeed4d67787915169a3c70208e54",
     "src/design-system/shell-preferences.ts": "aa55e58bdc5b8a7ea6b5f9df81b15639bfc60adeb8f85ff4a98ebac9a84303a6",
     "src/design-system/sidebar-tooltip.tsx": "d01df5efdc5782d0879ff056746e0565bf35009968dbfcbda8ea20975b86fe6e",
-    "src/design-system/sign-in-reminder.tsx": "b143bd54464a7e87d3510a203e3eed8596812eeca230b79d5e5172b646708171",
+    "src/design-system/sign-in-reminder.tsx": "f98f5fe7fff67cd4ccffc79934cb3cbfc5283ae977eb0cdafc37556db6e86404",
     "src/design-system/styles/approved-ui.css": "ce0c08af6795262b4c7beafd18c482de415844461b8a7e3bcc066e9f9a46a21e",
     "src/design-system/styles/base.css": "c2605f686c167f36f60b38c269e00963cabe2b6f9c30372ef3067bf9f780ba39",
     "src/design-system/styles/components.css": "bd56ad7eee20eef64530224ebc3ca3c445ab0d1545d783297b4777697dec3fd5",
