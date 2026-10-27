@@ -10,6 +10,7 @@ import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
 import { readOwnerPosition } from './owner-position';
+import { fixedCostAmountForDate, fixedCostIsActiveOnDate } from './fixed-cost-allocation';
 import { buildProfitabilityReport, readCanonicalRevenue, readRestatedCogs } from '../profitability';
 import {
   averageRealizedPrice,
@@ -73,6 +74,17 @@ function legalEntityClause(alias: string, legalEntityIds: readonly string[]) {
   return legalEntityIds.length > 0
     ? sql`and ${sql.raw(`${alias}.legal_entity_id`)} in (${idList(legalEntityIds)})`
     : sql``;
+}
+
+function datesBetween(from: string, to: string): string[] {
+  const result: string[] = [];
+  const cursor = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  while (cursor <= end) {
+    result.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return result;
 }
 
 function approvedReconciliations(filters: ManagementReportQuery) {
@@ -701,6 +713,7 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
     amount: string;
     expense_ids: string[] | null;
     recurring_recognition_ids: string[] | null;
+    template_id: string | null;
     source_ids: string[] | null;
     movement_ids: string[] | null;
     attachment_ids: string[] | null;
@@ -711,6 +724,7 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
       coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount,
       coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'EXPENSE'), ARRAY[]::uuid[]) as expense_ids,
       coalesce(array_agg(distinct m.source_id order by m.source_id) filter (where m.source_type = 'RECURRING_COST_RECOGNITION'), ARRAY[]::uuid[]) as recurring_recognition_ids,
+      max(p.template_id::text) as template_id,
       coalesce(array_agg(distinct m.source_id order by m.source_id), ARRAY[]::uuid[]) as source_ids,
       coalesce(array_agg(m.id order by m.id), ARRAY[]::uuid[]) as movement_ids,
       coalesce(attachments.attachment_ids, ARRAY[]::uuid[]) as attachment_ids
@@ -747,11 +761,65 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
     amount: formatMoney(row.amount),
     expenseIds: uniqueIds(row.expense_ids ?? []),
     recurringRecognitionIds: uniqueIds(row.recurring_recognition_ids ?? []),
+    templateId: row.template_id,
     sourceIds: uniqueIds(row.source_ids ?? []),
     recognitionMovementIds: uniqueIds(row.movement_ids ?? []),
     attachmentIds: uniqueIds(row.attachment_ids ?? []),
     sourceType: row.source_type,
   }));
+  const templates = await transaction.execute<{
+    id: string;
+    station_id: string;
+    category: string;
+    name: string;
+    amount: string;
+    start_date: string;
+    end_date: string | null;
+  }>(sql`
+    select t.id, t.station_id, c.code as category, t.name, t.amount::text,
+      t.start_date, t.end_date
+    from app.recurring_cost_templates t
+    join app.expense_categories c on c.tenant_id = t.tenant_id and c.id = t.category_id
+    where t.tenant_id = ${filters.tenantId}
+      and t.status = 'ACTIVE'
+      and t.start_date <= ${filters.toDate}
+      and (t.end_date is null or t.end_date >= ${filters.fromDate})
+      ${stationClause('t', filters.stationIds)}
+  `);
+  const recognised = new Set(
+    mapped
+      .filter((row) => row.sourceType === 'RECURRING_COST_RECOGNITION' && row.templateId)
+      .map((row) => `${row.stationId}:${row.businessDate}:${row.templateId}`),
+  );
+  for (const template of templates) {
+    const first = template.start_date > filters.fromDate ? template.start_date : filters.fromDate;
+    const last =
+      template.end_date && template.end_date < filters.toDate ? template.end_date : filters.toDate;
+    for (const date of datesBetween(first, last)) {
+      const key = `${template.station_id}:${date}:${template.id}`;
+      if (recognised.has(key)) continue;
+      if (!fixedCostIsActiveOnDate(date, template.start_date, template.end_date)) continue;
+      const amount = fixedCostAmountForDate(template.amount, date);
+      mapped.push({
+        businessDate: date,
+        stationId: template.station_id,
+        category: template.category,
+        classification: 'FIXED_COST',
+        description: `${template.name} (daily allocation)`,
+        payee: null,
+        reference: null,
+        state: 'RECOGNIZED',
+        amount: formatMoney(amount),
+        expenseIds: [],
+        recurringRecognitionIds: [],
+        sourceIds: [],
+        recognitionMovementIds: [],
+        attachmentIds: [],
+        sourceType: 'RECURRING_COST_RECOGNITION',
+        templateId: template.id,
+      });
+    }
+  }
   const totalFor = (classification: ReportExpenseClassification) =>
     formatMoney(
       sumExact(

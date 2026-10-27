@@ -251,16 +251,43 @@ export async function getSupplierDocumentsAwaitingPostingFromRequest(
         and state = 'SUBMITTED'
       order by document_date, created_at, id
     `);
-    return rows.map((row) => ({
-      id: row.id,
-      documentType: row.document_type,
-      referenceNumber: row.reference_number,
-      documentDate: row.document_date,
-      dueDate: row.due_date,
-      amount: row.amount,
-      currency: 'USD' as const,
-      version: Number(row.version),
-    }));
+    const payments = await transaction.execute<{
+      id: string;
+      payment_date: string;
+      payment_reference: string;
+      amount: string;
+      version: number | string;
+    }>(sql`
+      select id, payment_date, payment_reference, amount::text, version
+      from app.supplier_payments
+      where tenant_id = ${context.tenantId}
+        and legal_entity_id = ${context.legalEntityId}
+        and supplier_id = ${input.supplierId}
+        and state = 'SUBMITTED'
+      order by payment_date, created_at, id
+    `);
+    return [
+      ...rows.map((row) => ({
+        kind: 'DOCUMENT' as const,
+        id: row.id,
+        documentType: row.document_type,
+        referenceNumber: row.reference_number,
+        documentDate: row.document_date,
+        dueDate: row.due_date,
+        amount: row.amount,
+        currency: 'USD' as const,
+        version: Number(row.version),
+      })),
+      ...payments.map((row) => ({
+        kind: 'PAYMENT' as const,
+        id: row.id,
+        paymentDate: row.payment_date,
+        referenceNumber: row.payment_reference,
+        amount: row.amount,
+        currency: 'USD' as const,
+        version: Number(row.version),
+      })),
+    ];
   });
 }
 

@@ -1048,7 +1048,7 @@ async function runShiftLifecycleCommand(
         ) {
           throw new AppError(
             'VALIDATION_FAILED',
-            'plannedStartAt does not match the shift template clock time',
+            'The planned shift time does not match the selected shift schedule.',
           );
         }
         const derivedBusinessDate = deriveBusinessDate(payload.plannedStartAt, station.timezone);

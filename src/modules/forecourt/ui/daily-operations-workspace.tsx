@@ -33,6 +33,7 @@ import {
   type StepResult,
 } from '../../../platform/drafts/outbox';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
+import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import { TableScrollRegion } from '../../../design-system/table';
 import Link from 'next/link';
 import { DailyTankDips } from './daily-tank-dips';
@@ -156,6 +157,8 @@ const paymentMethods: readonly PaymentMethod[] = [
   'OTHER_APPROVED',
 ];
 
+const expensePaymentMethods: readonly PaymentMethod[] = ['CASH', 'ECOCASH', 'BANK_TRANSFER', 'POS'];
+
 const methodLabels: Record<PaymentMethod, string> = {
   CASH: 'Cash',
   POS: 'Card (POS)',
@@ -228,9 +231,16 @@ function readingFromContext(
   };
 }
 
-function errorFromResponse(status: number, body: unknown): Error {
+type OperationsFailure = Error & { status?: number; code?: string };
+
+function errorFromResponse(status: number, body: unknown): OperationsFailure {
   const result = body as { error?: string; message?: string };
-  return new Error(mapDailyOperationsError(status, result.error, result.message));
+  const failure = new Error(
+    mapDailyOperationsError(status, result.error, result.message),
+  ) as OperationsFailure;
+  failure.status = status;
+  failure.code = result.error;
+  return failure;
 }
 
 function isZero(value: string | null | undefined): boolean {
@@ -324,6 +334,10 @@ export function DailyOperationsWorkspace({
   const [dirty, setDirty] = useState(false);
   const [step, setStep] = useState(0);
   const [returnReason, setReturnReason] = useState('');
+  const [stepUpRetry, setStepUpRetry] = useState<{
+    values: Record<string, unknown>;
+    savedVersion?: number;
+  } | null>(null);
   const saveJournal = useRef<DraftSaveJournal | undefined>(undefined);
   const [cashSummary, setCashSummary] = useState<
     | {
@@ -682,6 +696,7 @@ export function DailyOperationsWorkspace({
     commandType: string,
     values: Record<string, unknown> = {},
     savedVersion?: number,
+    skipConfirmation = false,
   ) {
     if (!record || (dirty && savedVersion === undefined)) {
       setError('Save the current draft before changing its workflow state.');
@@ -689,10 +704,11 @@ export function DailyOperationsWorkspace({
     }
     if (
       commandType === 'ApproveProductionReconciliation' &&
+      !skipConfirmation &&
       !(await confirm({
         title: 'Approve this production reconciliation?',
         consequence:
-          'The server will post canonical sale evidence and the record cannot be edited afterwards.',
+          'The sales will be recorded and this report will be locked. Mistakes can only be fixed by a reversal.',
         confirmLabel: 'Approve reconciliation',
         tone: 'warning',
       }))
@@ -716,9 +732,18 @@ export function DailyOperationsWorkspace({
           : 'Workflow state updated.',
       );
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The workflow transition failed.';
-      setError(message);
-      if (message.includes('changed elsewhere') || message.includes('locked')) setConflict(true);
+      const failure = cause as OperationsFailure;
+      if (
+        commandType === 'ApproveProductionReconciliation' &&
+        failure.status === 403 &&
+        failure.code === 'STEP_UP_REQUIRED'
+      ) {
+        setStepUpRetry({ values, savedVersion });
+      } else {
+        const message = cause instanceof Error ? cause.message : 'The workflow transition failed.';
+        setError(message);
+        if (message.includes('changed elsewhere') || message.includes('locked')) setConflict(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -877,6 +902,11 @@ export function DailyOperationsWorkspace({
   }
 
   async function submitForReview() {
+    if (attendantIds.length === 0) {
+      setError('Select at least one attendant before submitting this reconciliation.');
+      setStep(0);
+      return;
+    }
     if (!dirty) {
       await transition('SubmitProductionReconciliation');
       return;
@@ -1607,7 +1637,7 @@ export function DailyOperationsWorkspace({
                       );
                     }}
                   >
-                    {paymentMethods.map((method) => (
+                    {expensePaymentMethods.map((method) => (
                       <option key={method} value={method}>
                         {methodLabels[method]}
                       </option>
@@ -1882,8 +1912,7 @@ export function DailyOperationsWorkspace({
             ) : null}
             {state === 'RETURNED' ? (
               <p className="state state-warning" role="status">
-                <strong>Returned:</strong> Correct the evidence and save a new server draft before
-                resubmitting.
+                <strong>Returned:</strong> Fix the figures and save before you submit again.
               </p>
             ) : null}
             {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
@@ -2036,6 +2065,25 @@ export function DailyOperationsWorkspace({
             </Button>
           ) : null}
         </footer>
+        <StepUpDialog
+          open={stepUpRetry !== null}
+          tenantId={context.tenantId}
+          description="Approving this reconciliation needs a fresh identity check. Nothing is posted until you confirm."
+          confirmLabel="Confirm and approve"
+          onCancel={() => setStepUpRetry(null)}
+          onVerified={() => {
+            const retry = stepUpRetry;
+            setStepUpRetry(null);
+            if (retry) {
+              void transition(
+                'ApproveProductionReconciliation',
+                retry.values,
+                retry.savedVersion,
+                true,
+              );
+            }
+          }}
+        />
       </div>
     </div>
   );

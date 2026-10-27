@@ -287,13 +287,16 @@ function TankDipForm({
             />
           </Field>
           <Field id="dip-unit" label="Measured in" required>
-            <input
+            <select
               id="dip-unit"
               value={unit}
               onChange={(event) => setUnit(event.target.value)}
               required
-              maxLength={32}
-            />
+            >
+              <option value="mm">mm</option>
+              <option value="cm">cm</option>
+              <option value="inches">inches</option>
+            </select>
           </Field>
         </>
       )}
@@ -370,13 +373,16 @@ function TankCalibrationForm({
         chart replaces the old one for new dips; dips already recorded keep their litres.
       </p>
       <Field id="chart-unit" label="Readings are in" required>
-        <input
+        <select
           id="chart-unit"
           value={unit}
           onChange={(event) => setUnit(event.target.value)}
           required
-          maxLength={32}
-        />
+        >
+          <option value="mm">mm</option>
+          <option value="cm">cm</option>
+          <option value="inches">inches</option>
+        </select>
       </Field>
       <Field
         id="chart-rows"

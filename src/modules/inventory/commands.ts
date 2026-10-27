@@ -84,13 +84,13 @@ const dipPayload = authorityPayload.extend({
   /** Optional when a dipstick reading is given and the tank has a calibration chart. */
   physicalLitres: decimalText.nullish(),
   rawMeasurement: decimalText.nullish(),
-  measurementUnit: z.string().trim().min(1).max(32).nullish(),
+  measurementUnit: z.enum(['mm', 'cm', 'inches']).nullish(),
   notes: z.string().trim().max(1000).nullish(),
 });
 
 const calibrationPayload = authorityPayload.extend({
   tankId: uuid,
-  measurementUnit: z.string().trim().min(1).max(32),
+  measurementUnit: z.enum(['mm', 'cm', 'inches']),
   points: z
     .array(
       z.object({

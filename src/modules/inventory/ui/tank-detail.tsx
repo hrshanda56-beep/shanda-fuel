@@ -270,12 +270,15 @@ export function TankDetailView({
         {canManage ? (
           <form className="form-stack" onSubmit={saveChart}>
             <Field id="chart-unit" label="Readings are in" required>
-              <input
+              <select
                 id="chart-unit"
                 value={chartUnit}
-                maxLength={32}
                 onChange={(event) => setChartUnit(event.target.value)}
-              />
+              >
+                <option value="mm">mm</option>
+                <option value="cm">cm</option>
+                <option value="inches">inches</option>
+              </select>
             </Field>
             <Field id="chart-file" label="Import a CSV file" optional>
               <input

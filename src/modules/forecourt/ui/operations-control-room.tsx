@@ -14,6 +14,7 @@ import {
 } from '../../../design-system/primitives';
 import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
 import { Select } from '../../../design-system/forms';
+import { stationLocalToInstant } from '@/platform/domain/business-time';
 import { eventLabel, isEarlierOpenDay } from './operations-labels';
 import { NextStepCard } from './next-step-card';
 import { ReconciliationBoard } from './reconciliation-board';
@@ -576,13 +577,29 @@ export function OperationsControlRoom({
                         templates={overview.shiftTemplates ?? []}
                         busy={busy}
                         onOpen={(templateId) => {
+                          const template = (overview.shiftTemplates ?? []).find(
+                            (candidate) => candidate.id === templateId,
+                          );
+                          const plannedStartAt =
+                            template?.startTime && day.date
+                              ? stationLocalToInstant(
+                                  `${day.date}T${template.startTime.slice(0, 5)}`,
+                                  overview.station.timezone,
+                                )?.toISOString()
+                              : undefined;
+                          if (!plannedStartAt) {
+                            setError(
+                              'The selected shift has no valid scheduled start time. Update the shift setup before opening it.',
+                            );
+                            return;
+                          }
                           const values = {
                             tenantId: context.tenantId,
                             stationId: context.stationId,
                             businessDayId: day.id,
                             shiftId: firstShiftId,
                             expectedVersion: 0,
-                            plannedStartAt: new Date().toISOString(),
+                            plannedStartAt,
                             shiftTemplateId: templateId,
                           };
                           void runCommand(
