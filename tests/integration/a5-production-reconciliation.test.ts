@@ -366,6 +366,17 @@ async function createPopulatedProductionReconciliation(
       `a5-return-explanations-${reconciliationId}`,
     ),
   );
+  await expectOk(
+    await postCommand(
+      {
+        commandType: 'SetAttendants',
+        ...common,
+        expectedVersion: 5,
+        attendantIds: [ids.attendantMembership],
+      },
+      `a5-return-attendants-${reconciliationId}`,
+    ),
+  );
   return {
     common,
     shiftId: reconciliationShiftId,
@@ -1364,7 +1375,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
           {
             commandType: 'SubmitProductionReconciliation',
             ...historical.common,
-            expectedVersion: 5,
+            expectedVersion: 6,
           },
           `a5-phase3-historical-submit-${historicalReconciliationId}`,
         ),
@@ -1526,7 +1537,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
           {
             commandType: 'SubmitProductionReconciliation',
             ...blocked.common,
-            expectedVersion: 5,
+            expectedVersion: 6,
           },
           `a5-phase3-blocked-submit-${blockedReconciliationId}`,
         ),
@@ -1973,7 +1984,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         await createPopulatedProductionReconciliation(reconciliationId);
       await expectOk(
         await postCommand(
-          { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+          { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
           `a5-unvalued-submit-${reconciliationId}`,
         ),
       );
@@ -2049,7 +2060,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const { common } = await createPopulatedProductionReconciliation(reconciliationId);
     await expectOk(
       await postCommand(
-        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
         `a5-self-submit-${reconciliationId}`,
         'a5-manager-session-token',
       ),
@@ -2112,7 +2123,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const { common } = await createPopulatedProductionReconciliation(reconciliationId);
     await expectOk(
       await postCommand(
-        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
         `a5-center-submit-${reconciliationId}`,
         'a5-manager-session-token',
       ),
@@ -2147,7 +2158,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const { common } = await createPopulatedProductionReconciliation(reconciliationId);
     await expectOk(
       await postCommand(
-        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
         `a5-solo-submit-${reconciliationId}`,
         'a5-manager-session-token',
       ),
@@ -2184,7 +2195,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     );
     await expectOk(
       await postCommand(
-        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
         `a5-insufficient-submit-${reconciliationId}`,
       ),
     );
@@ -2247,7 +2258,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     );
     await expectOk(
       await postCommand(
-        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
         `a5-revenue-failure-submit-${reconciliationId}`,
       ),
     );
@@ -2330,7 +2341,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
 
     const submitted = await expectOk(
       await postCommand(
-        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
         `a5-return-submit-${reconciliationId}`,
       ),
     );
