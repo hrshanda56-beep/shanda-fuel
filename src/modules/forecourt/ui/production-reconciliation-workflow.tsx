@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConfirm } from '../../../design-system/feedback-provider';
 import { Button, Card, Field, StatusBadge } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
+import { formatMoney } from '../../../design-system/formatters';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 
 export type ProductionReconciliationContext = Readonly<{
@@ -263,7 +264,7 @@ export function ProductionReconciliationWorkflow({
       commandType === 'ApproveProductionReconciliation' &&
       !skipConfirmation &&
       !(await confirm({
-        title: 'Approve this production reconciliation?',
+        title: 'Approve this reconciliation?',
         consequence:
           'The sales will be recorded and this report will be locked. Mistakes can only be fixed by a reversal.',
         confirmLabel: 'Approve reconciliation',
@@ -390,7 +391,7 @@ export function ProductionReconciliationWorkflow({
                       {reading.litresSold}
                     </td>
                     <td data-label="Sales" className="numeric">
-                      {reading.salesValue} USD
+                      {formatMoney(reading.salesValue)}
                     </td>
                   </tr>
                 ))}
@@ -404,19 +405,23 @@ export function ProductionReconciliationWorkflow({
           <dl className="operational-summary">
             <div>
               <dt>Expected sales</dt>
-              <dd className="numeric">{record.totals.expectedSales} USD</dd>
+              <dd className="numeric">{formatMoney(record.totals.expectedSales)}</dd>
             </div>
             <div>
               <dt>Accounted sales</dt>
-              <dd className="numeric">{record.totals.accountedSales} USD</dd>
+              <dd className="numeric">{formatMoney(record.totals.accountedSales)}</dd>
             </div>
             <div>
               <dt>Sales variance</dt>
-              <dd className="numeric">{record.totals.salesVariance} USD</dd>
+              <dd className="numeric">{formatMoney(record.totals.salesVariance)}</dd>
             </div>
             <div>
               <dt>Cash variance</dt>
-              <dd className="numeric">{record.totals.cashVariance ?? 'not counted'} USD</dd>
+              <dd className="numeric">
+                {record.totals.cashVariance === null
+                  ? 'Not counted'
+                  : formatMoney(record.totals.cashVariance)}
+              </dd>
             </div>
           </dl>
         </Card>

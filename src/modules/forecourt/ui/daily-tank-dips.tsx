@@ -148,14 +148,14 @@ export function DailyTankDips({
                   </th>
                   <td data-label="Fuel">{tank.productName}</td>
                   <td data-label="Dip on this sheet" className="numeric">
-                    {dip ? `${formatLitres(dip.physicalLitres)} L` : 'No dip yet'}
+                    {dip ? formatLitres(dip.physicalLitres) : 'No dip yet'}
                   </td>
                   <td data-label="Compared with the books">
                     {dip && variance !== null ? (
                       <>
                         <span className="numeric">
                           {Number(variance) > 0 ? '+' : ''}
-                          {formatLitres(variance)} L
+                          {formatLitres(variance)}
                         </span>{' '}
                       </>
                     ) : null}

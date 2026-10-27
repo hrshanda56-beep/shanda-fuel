@@ -706,7 +706,7 @@ export function DailyOperationsWorkspace({
       commandType === 'ApproveProductionReconciliation' &&
       !skipConfirmation &&
       !(await confirm({
-        title: 'Approve this production reconciliation?',
+        title: 'Approve this reconciliation?',
         consequence:
           'The sales will be recorded and this report will be locked. Mistakes can only be fixed by a reversal.',
         confirmLabel: 'Approve reconciliation',
@@ -1814,7 +1814,12 @@ export function DailyOperationsWorkspace({
                     {record.dips.map((dip) => (
                       <tr key={dip.dipId}>
                         <td data-label="Evidence">Tank dip</td>
-                        <td data-label="Reference">{dip.tankId}</td>
+                        <td data-label="Reference">
+                          {dip.tankCode ?? dip.tankId}
+                          {dip.measuredAt
+                            ? ` · ${formatTimeInTimeZone(dip.measuredAt, operation.station.timezone)}`
+                            : ''}
+                        </td>
                         <td data-label="Quantity" className="numeric">
                           {formatLitres(dip.physicalLitres)}
                         </td>
@@ -1965,7 +1970,7 @@ export function DailyOperationsWorkspace({
                     onClick={() => void transition('ApproveProductionReconciliation')}
                     disabled={busy}
                   >
-                    Approve production reconciliation
+                    Approve reconciliation
                   </Button>
                 </>
               ) : null}

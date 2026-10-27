@@ -1,5 +1,6 @@
 import type { StatusTone } from '../../../design-system/primitives';
 import { mapA12OperatorError } from '../../costing/operator-errors';
+import { clientErrorMessage } from '../../../platform/errors/client';
 
 export type DailyOperationsState =
   'DRAFT' | 'RETURNED' | 'SUBMITTED' | 'PENDING_APPROVAL' | 'APPROVED' | 'LOCKED' | string;
@@ -42,9 +43,14 @@ export function mapDailyOperationsError(
     return 'Check the meter readings: closing cannot be below opening.';
   }
   if (message?.includes('Variance explanations are required')) {
-    return 'Add an explanation for each non-zero variance before submitting.';
+    return message;
   }
   if (message?.includes('price')) return 'The selling price is unavailable or no longer active.';
   if (message?.includes('payment')) return 'Check the payment evidence and try again.';
-  return message ?? 'The station workspace could not complete that action. Try again.';
+  return clientErrorMessage({
+    status,
+    code,
+    message,
+    fallback: 'The station workspace could not complete that action. Try again.',
+  });
 }
