@@ -288,7 +288,7 @@
     "src/modules/settings/ui/sign-out-button.tsx": "455f864b68cc1f8c4faac44e38a8627c9527f21d6836568f01fc07a7f40e49e0",
     "src/modules/settings/ui/staff-filter.ts": "a81e6f5615b6759355714e5be80bdf3be4deea7671cfb848d9fce738c96705bd",
     "src/modules/settings/ui/staff-invitation-message.ts": "444d5d87f1ade4c25e5aa03e1dd6357b6833fa35f82e33d2957c74832eed4650",
-    "src/modules/settings/ui/staff-panel.tsx": "4c4b0ac80f8ea2869b0083b5023487fc12e57bdb975df818e3c6c18d001eea7c",
+    "src/modules/settings/ui/staff-panel.tsx": "f97f3adc7a55bd9ddfed72086425546276c3d01ba6a81c265d4e2d5438fb9987",
     "src/modules/settings/ui/staff-step-up-diagnostics.ts": "4085ad33fd43f0dbb4eaaa5cfb39851219d1907d709c365e020c07a2195e4339",
     "src/modules/settings/ui/structure-forms.tsx": "6e922c31c5383c0790c486864203d22853e1e6f59c52841ba408a24ac0092f77",
     "src/modules/settlements/ui/provider-donut.tsx": "7fea7868449908f46aead400f665389f845f2e1b6689bc8bb5e11dc655cf1949",
