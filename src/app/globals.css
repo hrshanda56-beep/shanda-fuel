@@ -786,7 +786,7 @@ a.operations-attention-row:hover {
 
 .tank-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr));
   gap: var(--space-3);
   margin: var(--space-4) 0 0;
   padding: 0;
@@ -877,14 +877,15 @@ a.operations-attention-row:hover {
 
 .tank-card-head {
   display: flex;
+  flex-wrap: wrap;
   min-height: 1.75rem;
   min-width: 0;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
 }
 
 .tank-card-code {
+  flex: 1 1 100%;
   min-width: 0;
   font-size: var(--font-size-md);
   font-weight: 700;
@@ -1204,7 +1205,6 @@ a.operations-attention-row:hover {
 .operations-summary dd,
 .summary-strip dd,
 .today-hero-title,
-.tank-card-code,
 .tank-card-product,
 .provider-donut-name,
 .reconciliation-row-main {
@@ -5423,6 +5423,8 @@ h3,
 }
 .profit-hero[data-tone='missing'] {
   color: var(--text-secondary);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
 }
 .profit-split {
   display: grid;

@@ -52,6 +52,7 @@ export default async function EntryStatesPage({
           options={stations(isLong)}
           allStationsOptions={[{ organisationId: 'o', organisationName: 'T.E.I Oils' }]}
           defaultAllStationsOrganisationId="o"
+          defaultStationId={stations(isLong)[0]!.stationId}
         />
       ) : state === 'no-workplace' ? (
         <NoWorkplace />

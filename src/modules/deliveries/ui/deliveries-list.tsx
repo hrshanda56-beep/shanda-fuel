@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { PageHeader } from '@/design-system/layout';
 import { Notice } from '@/design-system/feedback';
 import { Checkbox } from '@/design-system/forms';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
@@ -54,12 +53,11 @@ export function DeliveriesList({
   const { deliveries } = initialData;
   const [recording, setRecording] = useState(false);
   return (
-    <div className="stack-lg">
-      <PageHeader
-        eyebrow={context.stationName}
-        title="Fuel deliveries"
-        description="Open a delivery to record its truck compartments, seals, water test and what the driver confirmed."
-      />
+    <div className="pg">
+      <p className="pg-intro">
+        Open a delivery to record its truck compartments, seals, water test and what the driver
+        confirmed.
+      </p>
       {recording ? (
         <RecordDelivery
           tenantId={context.tenantId}
@@ -67,7 +65,7 @@ export function DeliveriesList({
           tanks={initialData.tanks}
         />
       ) : (
-        <div>
+        <div className="pg-actions">
           <Button type="button" onClick={() => setRecording(true)}>
             Record delivery
           </Button>
@@ -149,7 +147,7 @@ export function DeliveriesList({
           </table>
         </TableScrollRegion>
       )}
-      <Card className="form-panel">
+      <Card className="pg-card">
         <h2>Water test rule</h2>
         <p className="table-secondary">
           Only an owner can change this. It applies to every station in the organisation.

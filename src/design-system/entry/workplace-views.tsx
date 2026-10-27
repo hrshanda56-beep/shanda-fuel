@@ -8,22 +8,23 @@ import { Button } from '../primitives';
 
 import type { AllStationsOption, WorkplaceOption } from './entry-logic';
 
-const ALL_STATIONS_COUNTDOWN_SECONDS = 10;
+const DEFAULT_STATION_COUNTDOWN_SECONDS = 10;
 
 /** Several accessible stations: one tap on a whole row picks it. */
 export function WorkplacePicker({
   options,
   allStationsOptions,
-  defaultAllStationsOrganisationId,
+  defaultStationId,
 }: {
   options: readonly WorkplaceOption[];
   allStationsOptions: readonly AllStationsOption[];
   defaultAllStationsOrganisationId: string;
+  defaultStationId: string;
 }) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string>();
   const [failed, setFailed] = useState(false);
-  const [secondsRemaining, setSecondsRemaining] = useState(ALL_STATIONS_COUNTDOWN_SECONDS);
+  const [secondsRemaining, setSecondsRemaining] = useState(DEFAULT_STATION_COUNTDOWN_SECONDS);
   const pendingRef = useRef(false);
   const selectionStartedRef = useRef(false);
 
@@ -55,7 +56,7 @@ export function WorkplacePicker({
           }),
         });
         if (!response.ok) throw new Error('context');
-        router.push('/');
+        router.push('/?welcome=1');
       } catch {
         setFailed(true);
         setPendingId(undefined);
@@ -64,6 +65,8 @@ export function WorkplacePicker({
     },
     [router],
   );
+
+  const defaultStation = options.find((option) => option.stationId === defaultStationId);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -75,16 +78,18 @@ export function WorkplacePicker({
 
   useEffect(() => {
     if (secondsRemaining !== 0 || selectionStartedRef.current) return;
-    void choose({
-      organisationId: defaultAllStationsOrganisationId,
-      allStations: true,
-      pendingId: 'all',
-    });
-  }, [choose, secondsRemaining, defaultAllStationsOrganisationId]);
-
-  const defaultOrganisation = allStationsOptions.find(
-    (option) => option.organisationId === defaultAllStationsOrganisationId,
-  );
+    if (!defaultStation) return;
+    const timer = window.setTimeout(() => {
+      void choose({
+        organisationId: defaultStation.organisationId,
+        legalEntityId: defaultStation.legalEntityId,
+        stationId: defaultStation.stationId,
+        allStations: false,
+        pendingId: defaultStation.stationId,
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [choose, secondsRemaining, defaultStation]);
 
   return (
     <section aria-labelledby="entry-title">
@@ -95,10 +100,41 @@ export function WorkplacePicker({
             ? 'Choose an option to try again.'
             : pendingId
               ? 'Opening your dashboard…'
-              : `Showing all stations${defaultOrganisation ? ` in ${defaultOrganisation.organisationName}` : ''} in ${secondsRemaining} seconds unless you choose a station.`}
+              : `Opening ${defaultStation?.stationName ?? 'your station'} in ${secondsRemaining} seconds unless you choose another.`}
         </p>
       </header>
       <ul className="entry-choices">
+        {[...options]
+          .sort(
+            (x, y) =>
+              Number(y.stationId === defaultStationId) - Number(x.stationId === defaultStationId),
+          )
+          .map((option) => (
+            <li key={option.stationId}>
+              <button
+                type="button"
+                className="entry-choice"
+                disabled={pendingId !== undefined}
+                aria-busy={pendingId === option.stationId || undefined}
+                onClick={() =>
+                  void choose({
+                    organisationId: option.organisationId,
+                    legalEntityId: option.legalEntityId,
+                    stationId: option.stationId,
+                    allStations: false,
+                    pendingId: option.stationId,
+                  })
+                }
+              >
+                <span className="entry-choice-name">{option.stationName}</span>
+                {option.stationId === defaultStationId ? (
+                  <span className="entry-choice-detail">Opening automatically</span>
+                ) : option.detail ? (
+                  <span className="entry-choice-detail">{option.detail}</span>
+                ) : null}
+              </button>
+            </li>
+          ))}
         {allStationsOptions.map((option) => (
           <li key={`all:${option.organisationId}`}>
             <button
@@ -118,28 +154,6 @@ export function WorkplacePicker({
               {allStationsOptions.length > 1 ? (
                 <span className="entry-choice-detail">{option.organisationName}</span>
               ) : null}
-            </button>
-          </li>
-        ))}
-        {options.map((option) => (
-          <li key={option.stationId}>
-            <button
-              type="button"
-              className="entry-choice"
-              disabled={pendingId !== undefined}
-              aria-busy={pendingId === option.stationId || undefined}
-              onClick={() =>
-                void choose({
-                  organisationId: option.organisationId,
-                  legalEntityId: option.legalEntityId,
-                  stationId: option.stationId,
-                  allStations: false,
-                  pendingId: option.stationId,
-                })
-              }
-            >
-              <span className="entry-choice-name">{option.stationName}</span>
-              {option.detail ? <span className="entry-choice-detail">{option.detail}</span> : null}
             </button>
           </li>
         ))}

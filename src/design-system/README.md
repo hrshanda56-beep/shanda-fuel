@@ -38,6 +38,15 @@ exercises it through `next dev`, which Playwright uses locally and in CI.
 | `route-states.tsx`               | `RouteLoading`, `RouteError`, `RouteNotFound` (whole-page states inside the shell)                                                                                                                                                                |
 | `formatters.ts`                  | Presentation-only money, litre, ratio, percentage, date, status labels                                                                                                                                                                            |
 
+## Page patterns
+
+`styles/patterns.css` is the single answer to "how is an ordinary screen laid out":
+`.pg` (page stack), `.pg-intro`, `.pg-stats` / `.pg-stat`, `.pg-card`, `.pg-list` /
+`.pg-list-item` / `.pg-details`, `.pg-form` / `.pg-form-grid`, `.pg-actions`. Compose these
+instead of writing page CSS. Never put `overflow-wrap: anywhere` on a flex or grid child (it
+lets the item collapse to one character per line), never repeat the page title the top bar
+already shows, and never leave bullets on a record list. `patterns.test.ts` guards the file.
+
 Stylesheets are imported once, in order, from `src/app/layout.tsx`:
 tokens → base → components → shell → `src/app/globals.css` (module layouts only).
 

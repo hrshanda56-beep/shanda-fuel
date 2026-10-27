@@ -1,0 +1,285 @@
+/*
+ * Page patterns. The one place that says how an ordinary screen is laid out:
+ * a stack of cards, an intro line, a row of key figures, a list of records, a
+ * short form. New and reworked screens compose these classes instead of
+ * writing their own spacing, card or list styles.
+ *
+ * Rules (also in src/design-system/README.md):
+ *  - Semantic tokens only. No colour literals, no fixed pixel widths.
+ *  - Never use `overflow-wrap: anywhere` on a flex or grid child; it lets the
+ *    item shrink to one character. Use `overflow-wrap: break-word` instead.
+ *  - Lists that are not prose have no bullets (`.pg-list`).
+ *  - A screen does not repeat the page title; the top bar already shows it.
+ */
+
+.pg {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  min-width: 0;
+}
+
+.pg > * {
+  min-width: 0;
+}
+
+/* The line under the page title that says what this screen is for. */
+.pg-intro {
+  max-width: var(--measure, 46rem);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal, 1.5);
+}
+
+/* A row of key figures. Wraps to as many columns as fit, never overflows. */
+.pg-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-stat {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+}
+
+.pg-stat[data-tone='warning'] {
+  border-color: var(--tone-warning-border);
+}
+
+.pg-stat-label,
+.pg-stat-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pg-stat-value {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: break-word;
+}
+
+/* A titled card section. */
+.pg-card {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-5);
+}
+
+.pg-card > h2,
+.pg-card > h3,
+.pg-card-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pg-card > p {
+  margin: 0;
+}
+
+/* A row of buttons or badges. */
+.pg-actions,
+.pg-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Records: one bordered card per item, no bullets, quiet detail text. */
+.pg-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-list-item {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+}
+
+.pg-list-item > p {
+  margin: 0;
+}
+
+.pg-list-title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.pg-list-meta {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pg-list-item > button,
+.pg-list-item > .button {
+  justify-self: start;
+}
+
+/* Label and value pairs under a record. */
+.pg-details {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--border-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.pg-details dt {
+  color: var(--text-secondary);
+}
+
+.pg-details dd {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 30rem) {
+  .pg-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A short form: fields in a grid, narrow enough to read, one save button. */
+.pg-form {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 44rem;
+}
+
+.pg-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-4) var(--space-5);
+}
+
+.pg-form-grid > * {
+  min-width: 0;
+}
+
+.pg-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pg-details > div {
+  display: contents;
+}
+
+/* A timeline: a round mark, one line of "what happened by whom, when", quiet detail under it. */
+.pg-timeline {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-timeline-item {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.pg-timeline-mark {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--tone-info-bg);
+  color: var(--tone-info-text);
+}
+
+.pg-timeline-mark[data-kind='created'] {
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-text);
+}
+
+.pg-timeline-mark .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.pg-timeline-body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.pg-timeline-body > p {
+  margin: 0;
+}
+
+.pg-timeline-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  font-size: var(--font-size-md);
+}
+
+.pg-timeline-line strong {
+  font-weight: var(--font-weight-semibold);
+}
+
+.pg-timeline-meta {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pg-timeline-dot {
+  margin-inline: var(--space-2);
+}
+
+.pg-timeline-body > button {
+  justify-self: start;
+  padding-inline: 0;
+}
+
+/* A filter above a list: a standard control width, never the full row. */
+.pg-filter {
+  width: 100%;
+  max-width: 20rem;
+}
+
+/* The "You are working at …" reminder shown once after signing in. */
+.sign-in-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--tone-info-border);
+  border-radius: var(--radius-lg);
+  background: var(--tone-info-bg);
+  color: var(--tone-info-text);
+}
+
+.sign-in-reminder p {
+  flex: 1 1 14rem;
+  margin: 0;
+}
