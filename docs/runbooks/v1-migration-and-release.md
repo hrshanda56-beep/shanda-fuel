@@ -73,12 +73,12 @@ that was reviewed.
 | 0075 | supplier_document_returned | A submitted supplier invoice or credit note can be returned before posting | Adds a RETURNED state |
 | 0076 | supplier_invoice_station_and_line_type | Optional station on a supplier invoice and a type on each line (nullable) |  |
 | 0077 | expense_payment_mobile_money | Mobile money added to the expense payment sources | Replaces a check constraint |
-| 0078 | price_changeover | Price overlap rule covers ACTIVE prices only; an ACTIVE price may have its end date set once | Merged to `main` (PR #166); not applied to production. Replaces a constraint on `selling_prices` and the shared trigger function `reject_authoritative_forecourt_mutation` |
-| 0079 | delivery_no_po_reason | Reason a fuel delivery has no purchase order (`no_po_reason`, `no_po_note`) | Merged to `main` (PR #166); not applied to production. Confirming a delivery now needs a PO link or a reason |
-| 0080 | supplier_document_files | Files can be attached to a supplier invoice (`SUPPLIER_DOCUMENT` document subject) | In PR #167 (`fix/pilot-readiness`); not applied to production |
-| 0081 | expense_payment_method | How an expense was paid (`payment_method`) | In PR #167 (`fix/pilot-readiness`); not applied to production |
-| 0082 | tank_variance_red | Red variance limit per tank (`variance_red_litres`) | In PR #167 (`fix/pilot-readiness`); not applied to production |
-| 0083 | provider_account_fees | Fee percent and fixed fee per payment account; expected fee on settlements | In PR #167 (`fix/pilot-readiness`); not applied to production |
+| 0078 | price_changeover | Price overlap rule covers ACTIVE prices only; an ACTIVE price may have its end date set once | Merged to `main` (PR #166); applied to production. Replaces a constraint on `selling_prices` and the shared trigger function `reject_authoritative_forecourt_mutation` |
+| 0079 | delivery_no_po_reason | Reason a fuel delivery has no purchase order (`no_po_reason`, `no_po_note`) | Merged to `main` (PR #166); applied to production. Confirming a delivery now needs a PO link or a reason |
+| 0080 | supplier_document_files | Files can be attached to a supplier invoice (`SUPPLIER_DOCUMENT` document subject) | Merged to `main` (PR #167); applied to production 2026-10-27 |
+| 0081 | expense_payment_method | How an expense was paid (`payment_method`) | Merged to `main` (PR #167); applied to production 2026-10-27 |
+| 0082 | tank_variance_red | Red variance limit per tank (`variance_red_litres`) | Merged to `main` (PR #167); applied to production 2026-10-27 |
+| 0083 | provider_account_fees | Fee percent and fixed fee per payment account; expected fee on settlements | Merged to `main` (PR #167); applied to production 2026-10-27 |
 | 0084 | opening_balance_import | Go-live opening balances: a reviewed, approved, then locked CSV batch (`opening_balance_batches`, `opening_balance_lines`) | Not applied to production. New tables only, with RLS |
 | 0085 | supervisor_permissions | Supervisor role: `report.finance.view`, `expense.approve.any_amount`, station-level staff and activity views, supervisor expense approval limit, `app.station_staff_directory` | Not applied to production. Adds permission rows, one nullable column and one definer function |
 
@@ -236,10 +236,6 @@ fe3af7cff3c83ceb2a1b1ecb9672c52b2f695f3afcaf75c83e4e5a1ba6d92d0a  0082_tank_vari
 6fdd01b7a433cf388c2694f4eafcbd16492dde1ca022c538c9dcb86c493cf624  0083_provider_account_fees.sql
 ee6939320c530b4aeace890da6811068855fba3dd43708036c8c279937f6a78a  0084_opening_balance_import.sql
 93d2426c734e68bc0fee2740d74bb123daa4614ccfc66d6d2e64ed22423858ce  0085_supervisor_permissions.sql
-dd7dd2a5c489f521727baf18f46c4366cde7ef6827e6fccbd095227125f2cce1  0080_supplier_document_files.sql
-7e08999d2012fd7ab4d665f8abd7e378b1f9f604445706e12b033ad69e930839  0081_expense_payment_method.sql
-fe3af7cff3c83ceb2a1b1ecb9672c52b2f695f3afcaf75c83e4e5a1ba6d92d0a  0082_tank_variance_red.sql
-6fdd01b7a433cf388c2694f4eafcbd16492dde1ca022c538c9dcb86c493cf624  0083_provider_account_fees.sql
 ```
 
 ## 7. Release record (copy this and fill it in)
@@ -258,4 +254,26 @@ Skipped suites and why:
 Smoke test passed (time, who):
 Reopened to staff (time):
 Problems found:
+```
+
+### Record: migrations 0080 to 0083 (2026-10-27)
+
+Migrations only. The application deploy, smoke test and reopening are still to be recorded.
+
+```
+Migration date:                2026-10-27
+Migrations commit (full SHA):  20f39271250cc5d58866ce0aa8a887d47599c50d (clean worktree, hashes checked against section 6)
+Operator:                      Project owner (hidden-prompt DATABASE_DIRECT_URL, cleared afterwards)
+Production migration count before: 65 (last applied 1792600079000)   after: 69 (last applied 1792600083000)
+Last migration tag after:      0083_provider_account_fees
+Restore point identifier:      (operator to fill in: Neon branch name)
+Verified after: five new columns present; RLS enabled and forced on documents, expenses, tanks,
+  provider_accounts, provider_settlements; app_runtime owns no objects in schema app.
+Merged to main:                PR #167 at 90e905909f5ec606fd5100be0c6e9ff36bb9dbfa
+                               PR #168 at 0568f20bf50780aa4e4adfad2cc0dcb147025bab (head of main)
+Application release commit:    (to fill in when Vercel deploys)
+Vercel deployment ID:          (to fill in; Vercel deployments were rate limited at merge time)
+Smoke test passed (time, who): (to fill in)
+Reopened to staff (time):      (to fill in)
+Problems found:                none during the migration
 ```
