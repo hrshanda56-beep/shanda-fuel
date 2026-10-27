@@ -255,6 +255,17 @@ async function run(client: Sql) {
       `${tag}-create`,
       'supervisor',
     );
+    await call(
+      'forecourt',
+      {
+        commandType: 'SetAttendants',
+        ...common,
+        expectedVersion: 0,
+        attendantIds: [ids.attendant],
+      },
+      `${tag}-attendants`,
+      'supervisor',
+    );
     const [shift] = await client<
       { version: number }[]
     >`select version from app.shifts where tenant_id=${tenantId} and id=${shiftId}`;
@@ -319,7 +330,7 @@ async function run(client: Sql) {
       {
         commandType: 'SaveMeterReadings',
         ...common,
-        expectedVersion: 0,
+        expectedVersion: 1,
         readings: [
           {
             nozzleId: ids.nozzle,
@@ -336,31 +347,31 @@ async function run(client: Sql) {
     );
     await call(
       'forecourt',
-      { commandType: 'SavePaymentAllocations', ...common, expectedVersion: 1, payments },
+      { commandType: 'SavePaymentAllocations', ...common, expectedVersion: 2, payments },
       `${tag}-payments`,
       'supervisor',
     );
     await call(
       'forecourt',
-      { commandType: 'SaveExpenses', ...common, expectedVersion: 2, expenses: [] },
+      { commandType: 'SaveExpenses', ...common, expectedVersion: 3, expenses: [] },
       `${tag}-expenses`,
       'supervisor',
     );
     await call(
       'forecourt',
-      { commandType: 'SaveCashDeclaration', ...common, expectedVersion: 3, countedCash: counted },
+      { commandType: 'SaveCashDeclaration', ...common, expectedVersion: 4, countedCash: counted },
       `${tag}-cash`,
       'supervisor',
     );
     await call(
       'forecourt',
-      { commandType: 'SaveVarianceExplanations', ...common, expectedVersion: 4, explanations: {} },
+      { commandType: 'SaveVarianceExplanations', ...common, expectedVersion: 5, explanations: {} },
       `${tag}-explanations`,
       'supervisor',
     );
     await call(
       'forecourt',
-      { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 5 },
+      { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
       `${tag}-submit`,
       'supervisor',
     );
@@ -385,7 +396,7 @@ async function run(client: Sql) {
   );
   await call(
     'forecourt',
-    { commandType: 'ApproveProductionReconciliation', ...approved.common, expectedVersion: 6 },
+    { commandType: 'ApproveProductionReconciliation', ...approved.common, expectedVersion: 7 },
     'approved-approve',
     'owner',
   );

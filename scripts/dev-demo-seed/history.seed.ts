@@ -385,6 +385,10 @@ async function run(client: Sql) {
       return body;
     };
     await save(
+      { commandType: 'SetAttendants', attendantIds: [attendant] },
+      'attendants',
+    );
+    await save(
       {
         commandType: 'SaveMeterReadings',
         readings: readings.map((r) => ({
