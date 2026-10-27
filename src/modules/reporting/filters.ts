@@ -78,7 +78,10 @@ export function describeStations(
   selected: readonly string[],
   stations: readonly { id: string; name: string }[],
 ): string {
-  if (selected.length === 0) return 'All stations';
+  if (selected.length === 0) {
+    // With only one station to choose from, "all" is that station.
+    return stations.length === 1 ? stations[0]!.name : 'All stations';
+  }
   if (selected.length === 1) {
     return stations.find((station) => station.id === selected[0])?.name ?? '1 station';
   }

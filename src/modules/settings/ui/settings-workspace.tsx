@@ -42,6 +42,14 @@ const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'account', label: 'Account', icon: 'users' },
 ];
 
+const ROLE_LABELS: Readonly<Record<string, string>> = {
+  OWNER: 'Owner',
+  ADMINISTRATOR: 'Administrator',
+  FINANCE: 'Finance',
+  SUPERVISOR: 'Supervisor',
+  ATTENDANT: 'Attendant',
+};
+
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
@@ -221,6 +229,37 @@ export function SettingsStations({
   );
 }
 
+/** A station's people, read only: name and role, nothing about access. */
+function StationStaffList({
+  stationName,
+  staff,
+}: {
+  stationName: string;
+  staff: NonNullable<SettingsView['stationView']>['staff'];
+}) {
+  return (
+    <Section headingId="station-staff" title={`Staff at ${stationName}`}>
+      {staff.length > 0 ? (
+        <ul
+          className={styles.staffList}
+          style={{ listStyle: 'none', margin: 0, padding: 0 }}
+          aria-label={`Staff at ${stationName}`}
+        >
+          {staff.map((person) => (
+            <li key={`${person.name}-${person.role}`} className={styles.staffRow}>
+              <strong>{person.name}</strong>
+              <span>{ROLE_LABELS[person.role] ?? person.role}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.note}>Nobody is assigned to this station yet.</p>
+      )}
+      <p className={styles.note}>This list is read only. A manager changes who works here.</p>
+    </Section>
+  );
+}
+
 export function SettingsWorkspace({
   view,
   initialTab,
@@ -252,20 +291,26 @@ export function SettingsWorkspace({
     );
   }
 
+  const stationView = view.stationView;
   const visibleTabs = TABS.filter((item) =>
-    item.value === 'staff'
-      ? Boolean(view.staff?.canManage)
-      : item.value === 'alerts'
-        ? Boolean(view.access?.canManageAlerts)
-        : item.value === 'activity'
-          ? Boolean(view.access?.canViewAudit)
-          : item.value === 'readiness' || item.value === 'setup'
-            ? Boolean(view.access?.canViewReadiness)
-            : item.value === 'payments'
-              ? Boolean(view.access?.canViewPayments)
-              : true,
+    stationView
+      ? item.value === 'account' ||
+        (item.value === 'staff' && stationView.canViewStaff) ||
+        (item.value === 'activity' && stationView.canViewActivity)
+      : item.value === 'staff'
+        ? Boolean(view.staff?.canManage)
+        : item.value === 'alerts'
+          ? Boolean(view.access?.canManageAlerts)
+          : item.value === 'activity'
+            ? Boolean(view.access?.canViewAudit)
+            : item.value === 'readiness' || item.value === 'setup'
+              ? Boolean(view.access?.canViewReadiness)
+              : item.value === 'payments'
+                ? Boolean(view.access?.canViewPayments)
+                : true,
   );
   const active = visibleTabs.find((item) => item.value === tab) ?? visibleTabs[0]!;
+  const shown = active.value;
   const { selectedStation, legalEntities } = view.context;
 
   return (
@@ -304,20 +349,20 @@ export function SettingsWorkspace({
         <div className={styles.content}>
           <header className={styles.contentHeader}>
             <h2 className={styles.contentTitle}>{active.label}</h2>
-            {tab === 'organisation' ||
-            (tab === 'companies' && !view.access?.canManageCompanies) ||
-            (tab === 'stations' && !view.access?.canManageStations) ? (
+            {shown === 'organisation' ||
+            (shown === 'companies' && !view.access?.canManageCompanies) ||
+            (shown === 'stations' && !view.access?.canManageStations) ? (
               <p className={styles.note}>These details are read-only on this screen.</p>
             ) : null}
           </header>
 
-          {tab === 'organisation' ? (
+          {shown === 'organisation' ? (
             <Section headingId="organisation" title="Organisation details">
               <Fields items={[{ label: 'Name', value: organisation.name }]} />
             </Section>
           ) : null}
 
-          {tab === 'companies' ? (
+          {shown === 'companies' ? (
             <Section headingId="companies" title="Companies">
               {view.access?.canManageCompanies ? <AddCompany tenantId={organisation.id} /> : null}
               {legalEntities.length > 0 ? (
@@ -340,7 +385,7 @@ export function SettingsWorkspace({
             </Section>
           ) : null}
 
-          {tab === 'stations' ? (
+          {shown === 'stations' ? (
             <SettingsStations
               context={view.context}
               tenantId={organisation.id}
@@ -348,13 +393,17 @@ export function SettingsWorkspace({
             />
           ) : null}
 
-          {tab === 'setup' && view.access?.canViewReadiness ? <GuidedSetupPanel /> : null}
+          {shown === 'setup' && view.access?.canViewReadiness ? <GuidedSetupPanel /> : null}
 
-          {tab === 'readiness' && view.access?.canViewReadiness ? <ReadinessPanel /> : null}
+          {shown === 'readiness' && view.access?.canViewReadiness ? <ReadinessPanel /> : null}
 
-          {tab === 'payments' && view.access?.canViewPayments ? <PaymentsPanel /> : null}
+          {shown === 'payments' && view.access?.canViewPayments ? <PaymentsPanel /> : null}
 
-          {tab === 'staff' && view.staff?.canManage ? (
+          {shown === 'staff' && stationView ? (
+            <StationStaffList stationName={stationView.stationName} staff={stationView.staff} />
+          ) : null}
+
+          {shown === 'staff' && !stationView && view.staff?.canManage ? (
             <StaffPanel
               tenantId={organisation.id}
               overview={view.staff}
@@ -362,15 +411,19 @@ export function SettingsWorkspace({
             />
           ) : null}
 
-          {tab === 'alerts' && view.access?.canManageAlerts ? (
+          {shown === 'alerts' && view.access?.canManageAlerts ? (
             <AlertSettingsPanel tenantId={organisation.id} stationId={selectedStation?.id} />
           ) : null}
 
-          {tab === 'activity' && view.access?.canViewAudit ? (
+          {shown === 'activity' && stationView ? (
+            <AuditPanel tenantId={organisation.id} stationId={stationView.stationId} />
+          ) : null}
+
+          {shown === 'activity' && !stationView && view.access?.canViewAudit ? (
             <AuditPanel tenantId={organisation.id} />
           ) : null}
 
-          {tab === 'account' ? <AccountPanel view={view} /> : null}
+          {shown === 'account' ? <AccountPanel view={view} /> : null}
         </div>
       </div>
     </PageContainer>

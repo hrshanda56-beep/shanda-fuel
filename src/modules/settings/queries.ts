@@ -13,12 +13,13 @@ import { resolveCurrentContext } from '../context/server';
 import { readAuthenticatedAccount } from '../identity/account';
 import { AppError } from '../../platform/errors';
 import { authorize } from '../../platform/security';
+import { isPermissionGranted } from '../../platform/security/permissions';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
-import { resolveStaffOverview } from '../staff';
+import { listStationStaff, resolveStaffOverview } from '../staff';
 
 import { resolveSetupAccess } from '../setup/readiness-queries';
 
-import type { SettingsAccount, SettingsView } from './contracts';
+import type { SettingsAccount, SettingsStationView, SettingsView } from './contracts';
 
 const sessionSchema = z.object({
   user: z.object({
@@ -48,6 +49,7 @@ export type SettingsDependencies = Readonly<{
     requestedTenantId: string;
     now?: Date;
   }) => Promise<TenantExecutionContext>;
+  listStationStaff?: typeof listStationStaff;
   now?: Date;
 }>;
 
@@ -156,6 +158,43 @@ export function buildSettingsView(
   };
 }
 
+/** The read-only station view for someone who may see one station's staff or activity. */
+async function resolveStationView(
+  authority: TenantExecutionContext,
+  resolution: ContextResolution,
+  now: Date | undefined,
+  readStaff: typeof listStationStaff,
+): Promise<SettingsStationView | null> {
+  const current = resolution.current;
+  if (!current?.stationId) return null;
+  const organisation = findOrganisation(resolution.available, current.organisationId);
+  const match = organisation ? findStation(organisation, current.stationId) : undefined;
+  if (!organisation || !match) return null;
+  const scope = {
+    tenantId: organisation.id,
+    scopeType: 'STATION' as const,
+    legalEntityId: match.legalEntity.id,
+    stationId: match.station.id,
+  };
+  const may = (permissionCode: 'membership.view.station' | 'audit.view.station') =>
+    isPermissionGranted({
+      actor: authority.authorization,
+      permissionCode,
+      requestedScope: scope,
+      now,
+    });
+  const canViewStaff = may('membership.view.station');
+  const canViewActivity = may('audit.view.station');
+  if (!canViewStaff && !canViewActivity) return null;
+  return {
+    stationId: match.station.id,
+    stationName: match.station.name,
+    canViewStaff,
+    canViewActivity,
+    staff: canViewStaff ? await readStaff(authority, match.station.id) : [],
+  };
+}
+
 /** Resolve real account and authorised organisation hierarchy for Settings. */
 export async function resolveSettings(
   request: Request,
@@ -171,15 +210,31 @@ export async function resolveSettings(
       requestedTenantId: resolution.current.organisationId,
       now: dependencies.now,
     });
-    authorize({
+    const tenantScope = {
+      tenantId: resolution.current.organisationId,
+      scopeType: 'TENANT' as const,
+    };
+    const organisationReader = isPermissionGranted({
       actor: authority.authorization,
       permissionCode: 'tenant.view',
-      requestedScope: {
-        tenantId: resolution.current.organisationId,
-        scopeType: 'TENANT',
-      },
+      requestedScope: tenantScope,
       now: dependencies.now,
     });
+    if (!organisationReader) {
+      const stationView = await resolveStationView(
+        authority,
+        resolution,
+        dependencies.now,
+        dependencies.listStationStaff ?? listStationStaff,
+      );
+      if (stationView) return { ...buildSettingsView(account, resolution), stationView };
+      authorize({
+        actor: authority.authorization,
+        permissionCode: 'tenant.view',
+        requestedScope: tenantScope,
+        now: dependencies.now,
+      });
+    }
     const staff = await resolveStaffOverview(authority, { now: dependencies.now });
     return {
       ...buildSettingsView(account, resolution, staff),

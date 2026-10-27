@@ -127,7 +127,7 @@ describe('expense command contracts', () => {
     );
   });
 
-  it('keeps reversal commands behind step-up and gives supervisors no approval power', () => {
+  it('keeps reversal commands behind step-up and limits supervisors to the owner approval limit', () => {
     for (const type of [
       'ReverseExpense',
       'ReverseExpensePayment',
@@ -138,7 +138,13 @@ describe('expense command contracts', () => {
       expect(EXPENSE_COMMAND_POLICY[type].alwaysStepUp).toBe(true);
     }
     expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).toContain('expense.submit');
-    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('expense.approve');
+    // Supervisors approve small expenses (DEC-0xx); only these roles approve any amount.
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).toContain('expense.approve');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('expense.approve.any_amount');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('expense.policy.manage');
+    for (const role of ['OWNER', 'ADMINISTRATOR', 'FINANCE'] as const) {
+      expect(DEFAULT_ROLE_PERMISSIONS[role]).toContain('expense.approve.any_amount');
+    }
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('expense.policy.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT.some((code) => code.startsWith('expense.'))).toBe(
       false,

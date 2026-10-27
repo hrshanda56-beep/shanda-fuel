@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
-import { authorize } from '../../platform/security/permissions';
+import { DEFAULT_ROLE_PERMISSIONS, authorize } from '../../platform/security/permissions';
 import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
@@ -120,16 +120,23 @@ async function selectedStations(
   return rows.map((row) => ({ id: row.id, legalEntityId: row.legal_entity_id }));
 }
 
+/**
+ * Operational figures (sales, daily operations, the operational table reports) need `report.view`;
+ * profit, financial position and the finance reports need `report.finance.view`.
+ */
+export type ReportPermission = 'report.view' | 'report.finance.view';
+
 /** Every requested station must be authorised; one failure rejects the whole request. */
 function authorizeStations(
   actor: Parameters<typeof authorize>[0]['actor'],
   filters: ManagementReportQuery,
   stations: readonly { id: string; legalEntityId: string }[],
+  permissionCode: ReportPermission = 'report.finance.view',
 ) {
   if (stations.length === 0) {
     authorize({
       actor,
-      permissionCode: 'report.view',
+      permissionCode,
       requestedScope: { tenantId: filters.tenantId, scopeType: 'TENANT' as const },
     });
     return;
@@ -137,7 +144,7 @@ function authorizeStations(
   for (const station of stations) {
     authorize({
       actor,
-      permissionCode: 'report.view',
+      permissionCode,
       requestedScope: {
         tenantId: filters.tenantId,
         scopeType: 'STATION' as const,
@@ -1014,16 +1021,36 @@ async function reportingStations(
     selectedStations(transaction, filters),
   );
 }
-export async function authorizeManagementReportRequest(request: Request, input: unknown) {
+/**
+ * Whether this person holds finance-report access anywhere in the organisation, so the Reports
+ * page can leave finance reports out of the list. It only shapes the page; every report
+ * request authorises again.
+ */
+export async function canViewFinanceReports(request: Request, tenantId: string): Promise<boolean> {
+  const authority = await resolveTenantExecutionContext({ request, requestedTenantId: tenantId });
+  return authority.authorization.roleAssignments.some((assignment) =>
+    DEFAULT_ROLE_PERMISSIONS[assignment.roleCode].includes('report.finance.view'),
+  );
+}
+
+export async function authorizeManagementReportRequest(
+  request: Request,
+  input: unknown,
+  permissionCode: ReportPermission = 'report.finance.view',
+) {
   const filters = parseManagementReportQuery(input);
   const read = await reportingAuthority(request, filters);
   const stations = await reportingStations(read, filters);
-  authorizeStations(read.authority.authorization, filters, stations);
+  authorizeStations(read.authority.authorization, filters, stations, permissionCode);
   return { filters, authority: read.authority, stations };
 }
 
 export async function getDashboardSalesFromRequest(request: Request, input: unknown) {
-  const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
+  const { filters, authority, stations } = await authorizeManagementReportRequest(
+    request,
+    input,
+    'report.view',
+  );
   const single = stations.length === 1 ? stations[0] : undefined;
   const context = single
     ? createTrustedTenantTransactionContext({
@@ -1136,13 +1163,14 @@ export async function getDailyOperationsFromRequest(
   const stations =
     process.env.CONSOLIDATED_CONTEXT_READS === '1' ? await reportingStations(read, filters) : null;
   const authority = read.authority;
-  if (stations) authorizeStations(authority.authorization, filters, stations);
+  if (stations) authorizeStations(authority.authorization, filters, stations, 'report.view');
   return withTenantTransaction(authority.transaction, async (transaction) => {
     if (!stations)
       authorizeStations(
         authority.authorization,
         filters,
         await selectedStations(transaction, filters),
+        'report.view',
       );
     return {
       report: 'DAILY_OPERATIONS' as const,

@@ -51,6 +51,8 @@ import {
 export type ExpenseCapabilities = {
   submit: boolean;
   approve: boolean;
+  /** False for a supervisor, who may only approve up to the owner's limit. */
+  approveAnyAmount: boolean;
   post: boolean;
   reverse: boolean;
   recordPayment: boolean;
@@ -87,6 +89,7 @@ export type ExpensePolicyView = {
   version: number;
   stepUpThreshold: string | null;
   secondApprovalThreshold: string | null;
+  supervisorApprovalLimit: string | null;
 };
 
 export type ExpenseCategory = {
@@ -246,6 +249,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [endDate, setEndDate] = useState('');
   const [approvalLimit, setApprovalLimit] = useState('');
   const [secondLimit, setSecondLimit] = useState('');
+  const [supervisorLimit, setSupervisorLimit] = useState('');
 
   const current = initial?.resolution.current ?? null;
   const caps = reference?.capabilities;
@@ -395,6 +399,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     if (next.kind === 'limits') {
       setApprovalLimit(reference?.policy?.stepUpThreshold ?? '');
       setSecondLimit(reference?.policy?.secondApprovalThreshold ?? '');
+      setSupervisorLimit(reference?.policy?.supervisorApprovalLimit ?? '');
     }
     setSheet(next);
   }
@@ -590,6 +595,10 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       if (secondLimit.trim() !== '' && !second) {
         return setFormError('Enter the second limit as an amount, or leave it empty for none.');
       }
+      const supervisor = supervisorLimit.trim() === '' ? null : parseAmount(supervisorLimit);
+      if (supervisorLimit.trim() !== '' && !supervisor) {
+        return setFormError('Enter the supervisor limit as an amount, or leave it empty for none.');
+      }
       return send(
         {
           commandType: 'SetExpensePolicy',
@@ -597,6 +606,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           legalEntityId,
           stepUpThreshold: first,
           secondApprovalThreshold: second,
+          supervisorApprovalLimit: supervisor,
           ...(reference?.policy ? { expectedVersion: reference.policy.version } : {}),
         },
         'Approval limits saved.',
@@ -883,7 +893,10 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               : 'No limit is set, so the approver always confirms their identity again, whatever the amount. '}
             {reference.policy?.secondApprovalThreshold
               ? `Above ${formatTileMoney(reference.policy.secondApprovalThreshold)}, a second person must approve.`
-              : 'No second approval by amount.'}
+              : 'No second approval by amount.'}{' '}
+            {reference.policy?.supervisorApprovalLimit
+              ? `A supervisor can approve up to ${formatTileMoney(reference.policy.supervisorApprovalLimit)}.`
+              : 'A supervisor cannot approve expenses yet.'}
           </p>
         </Card>
       ) : null}
@@ -1056,7 +1069,8 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               {visible.map((row) => {
                 const status = statusView(row);
                 const open = openId === row.expenseId;
-                const quick = quickAction(row, caps);
+                const rowCaps = capsForRow(row, caps, reference?.policy ?? null);
+                const quick = quickAction(row, rowCaps);
                 return (
                   <li key={row.expenseId} className={styles.item}>
                     <div className={styles.rowWrap}>
@@ -1105,7 +1119,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                       <div id={`expense-${row.expenseId}`} className={styles.detail}>
                         <ExpenseDetail
                           row={row}
-                          caps={caps}
+                          caps={rowCaps}
                           payments={details[row.expenseId]}
                           error={detailError}
                           stationLabel={stations.length > 1 ? stationName(row.stationId) : ''}
@@ -1373,6 +1387,20 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   autoComplete="off"
                 />
               </Field>
+              <Field
+                id="limit-supervisor"
+                label="A supervisor can approve up to (USD)"
+                hint="Anything above this goes to finance or the owner. Leave empty and supervisors cannot approve expenses."
+                optional
+              >
+                <input
+                  inputMode="decimal"
+                  value={supervisorLimit}
+                  onChange={(event) => setSupervisorLimit(event.target.value)}
+                  placeholder="None"
+                  autoComplete="off"
+                />
+              </Field>
             </>
           ) : null}
 
@@ -1512,6 +1540,18 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   );
 }
 
+/** Someone limited to the supervisor limit cannot approve an expense above it. */
+function capsForRow(
+  row: ExpenseRow,
+  caps: ExpenseCapabilities | undefined,
+  policy: ExpensePolicyView | null,
+): ExpenseCapabilities | undefined {
+  if (!caps || !caps.approve || caps.approveAnyAmount) return caps;
+  const limit = policy?.supervisorApprovalLimit;
+  const within = limit != null && Number(row.amount) <= Number(limit);
+  return within ? caps : { ...caps, approve: false };
+}
+
 function quickAction(
   row: ExpenseRow,
   caps: ExpenseCapabilities | undefined,
@@ -1636,7 +1676,7 @@ function ExpenseDetail({
         { kind: 'approve', label: 'Approve' },
         { kind: 'reject', label: 'Reject', variant: 'secondary' },
       );
-    } else needs = 'This is waiting for a manager to approve it.';
+    } else needs = 'This is waiting for someone with a higher approval limit.';
   }
   if (row.state === 'APPROVED') {
     if (caps?.post) buttons.push({ kind: 'post', label: 'Record expense' });

@@ -291,3 +291,22 @@ export async function resolveStaffOverview(
   });
   return { canManage: canInvite, canInviteOwner, ...result };
 }
+
+export type StationStaffMember = Readonly<{ name: string; role: RoleCode }>;
+
+/**
+ * The people assigned to one station, for a station-level reader. Name and role only: no email,
+ * staff number or access details. The database function checks the caller's own permission.
+ */
+export async function listStationStaff(
+  authority: TenantExecutionContext,
+  stationId: string,
+): Promise<readonly StationStaffMember[]> {
+  const tenantId = authority.membership.tenantId;
+  const rows = await withTenantTransaction(authority.transaction, (transaction) =>
+    transaction.execute<{ display_name: string; role_code: RoleCode }>(sql`
+      select display_name, role_code from app.station_staff_directory(${tenantId}::uuid, ${stationId}::uuid)
+    `),
+  );
+  return rows.map((row) => ({ name: row.display_name, role: row.role_code }));
+}

@@ -35,12 +35,11 @@ export async function loadSignOffFacts(
   where tenant_id=${context.tenantId} and station_id=${context.stationId} and status='REQUESTED'
   order by requested_at,id`
     : empty;
-  const alternate = (permission: string) =>
+  const alternate = () =>
     alternateApproverQuery({
       tenantId: context.tenantId,
       stationId: context.stationId,
       excludeMembershipId: me,
-      permission,
     });
   const rows = await transaction.execute<{
     reconciliations: {
@@ -57,8 +56,8 @@ export async function loadSignOffFacts(
  with reconciliations as (${reconciliations}),revaluations as (${revaluations})
  select coalesce((select json_agg(reconciliations) from reconciliations),'[]'::json) as reconciliations,
  coalesce((select json_agg(revaluations) from revaluations),'[]'::json) as revaluations,
- exists(${canReconcile ? alternate('reconciliation.approve') : empty}) as other_reconciler,
- exists(${canRevalue ? alternate('approval.act') : empty}) as other_revaluer
+ exists(${canReconcile ? alternate() : empty}) as other_reconciler,
+ exists(${canRevalue ? alternate() : empty}) as other_revaluer
  `);
   const row = rows[0];
   if (!row) throw new AppError('INVARIANT_VIOLATION', 'Finance sign-off facts were not returned');

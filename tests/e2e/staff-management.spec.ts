@@ -339,7 +339,15 @@ test.describe('authenticated Staff lifecycle', () => {
 
     for (const token of [sessions.finance, sessions.supervisor, sessions.attendant]) {
       await openSettings(page, token);
-      await expect(page.getByRole('button', { name: 'Staff', exact: true })).toHaveCount(0);
+      if (token === sessions.supervisor) {
+        // A supervisor sees their station's staff list read-only: no invite or edit controls.
+        await page.getByRole('button', { name: 'Staff', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Invite Staff', exact: true })).toHaveCount(
+          0,
+        );
+      } else {
+        await expect(page.getByRole('button', { name: 'Staff', exact: true })).toHaveCount(0);
+      }
       const denied = await page.request.post('/api/staff/commands', {
         data: {
           tenantId: ids.tenant,

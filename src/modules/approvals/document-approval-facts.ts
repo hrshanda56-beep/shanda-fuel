@@ -29,12 +29,11 @@ export async function loadDocumentApprovalFacts(
   }
 
   const empty = sql`select null as unavailable where false`;
-  const alternate = (permission: string) =>
+  const alternate = () =>
     alternateApproverQuery({
       tenantId: context.tenantId,
       stationId: context.stationId,
       excludeMembershipId: me,
-      permission,
     });
   const prices = canPrice
     ? sql`
@@ -99,9 +98,9 @@ export async function loadDocumentApprovalFacts(
  coalesce((select json_agg(orders) from orders),'[]'::json) as orders,
  coalesce((select json_agg(invoices) from invoices),'[]'::json) as invoices,
  coalesce((select json_agg(expenses) from expenses),'[]'::json) as expenses,
- exists(${canPrice ? alternate('price.change.approve') : empty}) as other_price_approver,
- exists(${canOrder ? alternate('purchase_order.approve') : empty}) as other_order_approver,
- exists(${canExpense ? alternate('expense.approve') : empty}) as other_expense_approver
+ exists(${canPrice ? alternate() : empty}) as other_price_approver,
+ exists(${canOrder ? alternate() : empty}) as other_order_approver,
+ exists(${canExpense ? alternate() : empty}) as other_expense_approver
  `);
   const row = rows[0];
   if (!row) throw new AppError('INVARIANT_VIOLATION', 'Approval facts were not returned');

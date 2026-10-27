@@ -208,6 +208,33 @@ describe('audit viewer', () => {
     expect((await read(STATION_ADMIN)).status).toBe(403);
   });
 
+  it('lets a supervisor read only their own station’s events', async () => {
+    const otherStation = 'a9d00000-0000-4000-8000-000000000022';
+    await client.unsafe(`
+      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status, timezone) values
+        ('${otherStation}', '${ids.tenant}', '${ids.legal}', 'A9DS2', 'Audit Station Two', 'ACTIVE', 'Africa/Harare')
+        on conflict (id) do nothing;
+      insert into platform.security_events (tenant_id, membership_id, actor_id, event_code, request_id, details, key_id, signature)
+        values
+        ('${ids.tenant}', '${ids.adminMembership}', '${ids.adminActor}', 'SUPSCOPE.HERE', gen_random_uuid(),
+          jsonb_build_object('metadata', jsonb_build_object('stationId', '${ids.station}')), 'test', 'sig-a9d-sup-1'),
+        ('${ids.tenant}', '${ids.adminMembership}', '${ids.adminActor}', 'SUPSCOPE.ELSEWHERE', gen_random_uuid(),
+          jsonb_build_object('metadata', jsonb_build_object('stationId', '${otherStation}')), 'test', 'sig-a9d-sup-2'),
+        ('${ids.tenant}', '${ids.adminMembership}', '${ids.adminActor}', 'SUPSCOPE.NOSTATION', gen_random_uuid(),
+          '{}'::jsonb, 'test', 'sig-a9d-sup-3');
+    `);
+    const own = await read(SUPERVISOR, { stationId: ids.station, area: 'SUPSCOPE' });
+    expect(own.status).toBe(200);
+    expect(own.body.items).toHaveLength(1);
+    expect(own.body.items[0].action).toMatch(/here/i);
+    // Another station, or no station at all, is refused.
+    expect((await read(SUPERVISOR, { stationId: otherStation })).status).toBe(403);
+    expect((await read(SUPERVISOR)).status).toBe(403);
+    // The organisation-level reader still sees everything.
+    const all = await read(ADMIN, { area: 'SUPSCOPE' });
+    expect(all.body.items).toHaveLength(3);
+  });
+
   it('never returns another organisation’s history', async () => {
     const { status } = await read(ADMIN, {}, ids.otherTenant);
     expect([403, 404]).toContain(status);

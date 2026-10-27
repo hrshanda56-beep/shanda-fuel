@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo } from 'react';
 import { Dropdown } from '../../../design-system/dropdown';
-import { REPORT_CATALOG, REPORT_CATEGORIES, reportsInCategory } from '../catalog';
+import { REPORT_CATEGORIES, reportsFor, reportsInCategory } from '../catalog';
 import { categoryHref, parseCategoryParam } from '../rail';
 import { applyReportFilters, parseReportFilters, type ReportFilters } from '../filters';
 import { ReportFilterBar } from './report-filter-bar';
@@ -30,7 +30,7 @@ export function ReportsFilters({ tenantId }: { tenantId: string }) {
 }
 
 /** Narrows the report list to one category. Sits beside the station picker as a Filters button. */
-export function ReportCategoryFilter() {
+export function ReportCategoryFilter({ financeReports = true }: { financeReports?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -46,10 +46,10 @@ export function ReportCategoryFilter() {
       triggerLabel={activeLabel ? `Filters: ${activeLabel}` : 'Filters'}
       value={active ?? ''}
       options={[
-        { value: '', label: `All Reports (${REPORT_CATALOG.length})` },
+        { value: '', label: `All Reports (${reportsFor(financeReports).length})` },
         ...REPORT_CATEGORIES.map((category) => ({
           value: category.id,
-          label: `${category.label} (${reportsInCategory(category.id).length})`,
+          label: `${category.label} (${reportsInCategory(category.id, financeReports).length})`,
         })),
       ]}
       onValueChange={(value) => {

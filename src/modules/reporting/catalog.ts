@@ -22,6 +22,8 @@ export type ReportDefinition = Readonly<{
   category: ReportCategoryId;
   /** True when the report has a browser-downloadable CSV layout. */
   exportable: boolean;
+  /** Operational reports need only `report.view`; finance reports need `report.finance.view`. */
+  audience: 'operational' | 'finance';
 }>;
 
 const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
@@ -31,6 +33,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'Revenue, cost of sales, expenses and the operating result.',
     category: 'statements',
     exportable: true,
+    audience: 'finance',
   },
   {
     slug: 'cash-movement',
@@ -38,6 +41,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'Cash collected, banked and settled, and what is still outstanding.',
     category: 'statements',
     exportable: true,
+    audience: 'finance',
   },
   {
     slug: 'net-position',
@@ -45,6 +49,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'What the business holds or is owed, less what it owes.',
     category: 'statements',
     exportable: true,
+    audience: 'finance',
   },
   {
     slug: 'sales',
@@ -52,6 +57,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'Approved sales by payment method and product, with variance.',
     category: 'sales',
     exportable: true,
+    audience: 'finance',
   },
   {
     slug: 'cash',
@@ -59,6 +65,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'Cash evidence, collections and deposits, and what is still held.',
     category: 'cash',
     exportable: true,
+    audience: 'finance',
   },
   {
     slug: 'providers',
@@ -66,6 +73,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'Provider evidence against settlements received.',
     category: 'payments',
     exportable: true,
+    audience: 'finance',
   },
   {
     slug: 'commercial',
@@ -73,6 +81,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'Supplier balances and customer credit drawn, by station.',
     category: 'credit',
     exportable: true,
+    audience: 'finance',
   },
   {
     slug: 'inventory',
@@ -80,18 +89,20 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     description: 'Stock on hand, deliveries received and dip variance.',
     category: 'inventory',
     exportable: true,
+    audience: 'finance',
   },
 ];
 
 /** The management-overview views first, then the plain table reports. */
 export const REPORT_CATALOG: readonly ReportDefinition[] = [
   ...MANAGEMENT_REPORTS,
-  ...TABLE_REPORTS.map(({ slug, title, description, category }) => ({
+  ...TABLE_REPORTS.map(({ slug, title, description, category, audience }) => ({
     slug,
     title,
     description,
     category,
     exportable: true,
+    audience: audience ?? 'finance',
   })),
 ];
 
@@ -103,6 +114,16 @@ export function categoryLabel(id: ReportCategoryId): string {
   return REPORT_CATEGORIES.find((category) => category.id === id)?.label ?? id;
 }
 
-export function reportsInCategory(id: ReportCategoryId): readonly ReportDefinition[] {
-  return REPORT_CATALOG.filter((report) => report.category === id);
+/** The reports a person may open: finance reports only for someone with the finance permission. */
+export function reportsFor(financeReports: boolean): readonly ReportDefinition[] {
+  return financeReports
+    ? REPORT_CATALOG
+    : REPORT_CATALOG.filter((report) => report.audience === 'operational');
+}
+
+export function reportsInCategory(
+  id: ReportCategoryId,
+  financeReports = true,
+): readonly ReportDefinition[] {
+  return reportsFor(financeReports).filter((report) => report.category === id);
 }

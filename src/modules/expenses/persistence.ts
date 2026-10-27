@@ -3,8 +3,13 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
-import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
-import { assertStepUp, type ExpenseCommandContext, type ExpenseTransaction } from './application';
+import { soleOwnerMayApproveOwn } from '../../platform/security/separation-of-duties';
+import {
+  assertStepUp,
+  holdsExpensePermission,
+  type ExpenseCommandContext,
+  type ExpenseTransaction,
+} from './application';
 import type { ExpenseCommandInput } from './contracts';
 import {
   assertApproverAllowed,
@@ -16,6 +21,7 @@ import {
   assertSettlementReference,
   assertSettlementWithinOutstanding,
   expenseRequiresStepUp,
+  withinSupervisorLimit,
   isStaffFuelCategory,
   monthPeriod,
   outstandingAmount,
@@ -62,8 +68,10 @@ export async function loadExpensePolicy(
   const rows = await transaction.execute<{
     step_up_threshold: string | null;
     second_approval_threshold: string | null;
+    supervisor_approval_limit: string | null;
   }>(sql`
-    select step_up_threshold::text, second_approval_threshold::text
+    select step_up_threshold::text, second_approval_threshold::text,
+      supervisor_approval_limit::text
     from app.expense_policies
     where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
   `);
@@ -72,6 +80,7 @@ export async function loadExpensePolicy(
   return {
     stepUpThreshold: row.step_up_threshold,
     secondApprovalThreshold: row.second_approval_threshold,
+    supervisorApprovalLimit: row.supervisor_approval_limit,
   };
 }
 
@@ -187,16 +196,24 @@ export async function setExpensePolicyInTransaction(
   context: ExpenseCommandContext,
   input: ExpenseCommandInput<'SetExpensePolicy'>,
 ) {
-  const policy = validateExpensePolicy({
-    stepUpThreshold: input.stepUpThreshold,
-    secondApprovalThreshold: input.secondApprovalThreshold,
-  });
-  const rows = await transaction.execute<{ id: string; version: number | string }>(sql`
-    select id, version from app.expense_policies
+  const rows = await transaction.execute<{
+    id: string;
+    version: number | string;
+    supervisor_approval_limit: string | null;
+  }>(sql`
+    select id, version, supervisor_approval_limit::text from app.expense_policies
     where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
     for update
   `);
   const current = rows[0];
+  const policy = validateExpensePolicy({
+    stepUpThreshold: input.stepUpThreshold,
+    secondApprovalThreshold: input.secondApprovalThreshold,
+    supervisorApprovalLimit:
+      input.supervisorApprovalLimit === undefined
+        ? (current?.supervisor_approval_limit ?? null)
+        : input.supervisorApprovalLimit,
+  });
   if (current) {
     if (input.expectedVersion === undefined) {
       throw new AppError('CONFLICT', 'An expense policy exists; send its expected version');
@@ -206,6 +223,7 @@ export async function setExpensePolicyInTransaction(
       update app.expense_policies
       set step_up_threshold = ${policy.stepUpThreshold},
           second_approval_threshold = ${policy.secondApprovalThreshold},
+          supervisor_approval_limit = ${policy.supervisorApprovalLimit},
           version = version + 1, updated_by = ${actorId(context)}, updated_at = now()
       where tenant_id = ${context.tenantId} and id = ${current.id}
     `);
@@ -217,10 +235,11 @@ export async function setExpensePolicyInTransaction(
   const policyId = randomUUID();
   const inserted = await transaction.execute(sql`
     insert into app.expense_policies (
-      id, tenant_id, legal_entity_id, step_up_threshold, second_approval_threshold, updated_by
+      id, tenant_id, legal_entity_id, step_up_threshold, second_approval_threshold,
+      supervisor_approval_limit, updated_by
     ) values (
       ${policyId}, ${context.tenantId}, ${context.legalEntityId}, ${policy.stepUpThreshold},
-      ${policy.secondApprovalThreshold}, ${actorId(context)}
+      ${policy.secondApprovalThreshold}, ${policy.supervisorApprovalLimit}, ${actorId(context)}
     )
     on conflict (tenant_id, legal_entity_id) do nothing
     returning id
@@ -315,6 +334,16 @@ export async function approveExpenseInTransaction(
   assertVersion(expense.version, input.expectedVersion, 'expense');
   assertExpenseTransition(expense.state, 'APPROVED');
   const policy = await loadExpensePolicy(transaction, context);
+  // Owner, administrator and finance approve any amount; a supervisor only up to the owner's limit.
+  if (
+    !holdsExpensePermission(context, 'expense.approve.any_amount') &&
+    !withinSupervisorLimit(expense.amount, policy)
+  ) {
+    throw new AppError(
+      'FORBIDDEN',
+      'This expense is above your approval limit. Someone in finance or the owner must approve it.',
+    );
+  }
   if (expenseRequiresStepUp(expense.amount, policy)) {
     assertStepUp(context, 'Approving an expense at this amount');
   }
@@ -322,12 +351,16 @@ export async function approveExpenseInTransaction(
     select actor_membership_id from app.expense_approvals
     where tenant_id = ${context.tenantId} and expense_id = ${expense.id}
   `);
-  const alternateApproverExists = await hasAlternateApprover(transaction, {
-    tenantId: context.tenantId,
-    stationId: context.stationId,
-    excludeMembershipId: expense.submitted_by,
-    permission: 'expense.approve',
-  });
+  // Only a sole owner may approve their own expense; supervisors never count as the other approver.
+  const ownApproval = expense.submitted_by === actorId(context);
+  const alternateApproverExists = !(
+    ownApproval &&
+    (await soleOwnerMayApproveOwn(transaction, {
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      membershipId: expense.submitted_by,
+    }))
+  );
   assertApproverAllowed({
     submitterMembershipId: expense.submitted_by,
     approverMembershipId: actorId(context),

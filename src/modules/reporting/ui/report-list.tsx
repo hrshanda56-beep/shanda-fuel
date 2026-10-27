@@ -12,18 +12,26 @@ import { ReportCategoryFilter, ReportsFilters } from './reports-filters';
 import { ReportActionMenu } from './report-action-menu';
 import { ReportActionStatus } from './report-action-status';
 import { useReportActions, type ExportFormat, type ReportActionTarget } from './use-report-actions';
-import { REPORT_CATALOG, categoryLabel, type ReportDefinition } from '../catalog';
+import { categoryLabel, reportsFor, type ReportDefinition } from '../catalog';
 import { applyReportFilters, parseReportFilters, resolveReportFilters } from '../filters';
 import { REPORT_PERIODS, REPORT_PERIOD_LABELS, businessToday, type ReportPeriod } from '../period';
 
 type RowPeriod = { period: ReportPeriod; customFrom: string; customTo: string };
 
 /** One row per report type. Each row has its own period; stations come from the page filters. */
-export function ReportList({ tenantId }: { tenantId: string }) {
+export function ReportList({
+  tenantId,
+  financeReports = true,
+}: {
+  tenantId: string;
+  financeReports?: boolean;
+}) {
   const searchParams = useSearchParams();
   const actions = useReportActions();
   const category = parseCategoryParam(searchParams.get('category'));
-  const reports = REPORT_CATALOG.filter((report) => !category || report.category === category);
+  const reports = reportsFor(financeReports).filter(
+    (report) => !category || report.category === category,
+  );
   const pageFilters = useMemo(() => parseReportFilters(searchParams), [searchParams]);
   const [overrides, setOverrides] = useState<Record<string, RowPeriod>>({});
 
@@ -38,7 +46,7 @@ export function ReportList({ tenantId }: { tenantId: string }) {
         </div>
         <div className="report-heading-tools">
           <ReportsFilters tenantId={tenantId} />
-          <ReportCategoryFilter />
+          <ReportCategoryFilter financeReports={financeReports} />
         </div>
       </div>
       <ReportActionStatus

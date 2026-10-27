@@ -3,7 +3,8 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { withTenantTransaction } from '../../platform/db/transaction';
-import { authorize } from '../../platform/security/permissions';
+import { authorize, isPermissionGranted } from '../../platform/security/permissions';
+import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
 import { toAuditItem, type AuditItem, type SubjectNames } from './audit-view';
 
@@ -20,6 +21,8 @@ const querySchema = z.object({
     .regex(/^[0-9T:.\-+Z]+\|[0-9a-f-]{36}$/i)
     .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  /** Only events recorded against this station; required for a station-level reader. */
+  stationId: z.string().uuid().optional(),
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -207,7 +210,8 @@ export type AuditPage = Readonly<{ items: readonly AuditItem[]; next: string | n
 
 /**
  * The organisation's signed audit log, newest first. Needs the audit permission at organisation
- * level, so a person who can see one station cannot read the whole organisation's history.
+ * level. A station-level reader (a supervisor) must name a station, sees only events recorded
+ * against it, and so cannot read the whole organisation's history.
  */
 export async function listAuditEventsFromRequest(
   request: Request,
@@ -218,11 +222,41 @@ export async function listAuditEventsFromRequest(
     request,
     requestedTenantId: input.tenantId,
   });
-  authorize({
+  const tenantScope = { tenantId: input.tenantId, scopeType: 'TENANT' as const };
+  const organisationWide = isPermissionGranted({
     actor: authority.authorization,
     permissionCode: 'audit.view',
-    requestedScope: { tenantId: input.tenantId, scopeType: 'TENANT' },
+    requestedScope: tenantScope,
   });
+  if (!organisationWide) {
+    if (!input.stationId) {
+      authorize({
+        actor: authority.authorization,
+        permissionCode: 'audit.view',
+        requestedScope: tenantScope,
+      });
+    } else {
+      const stationId = input.stationId;
+      const stations = await withTenantTransaction(authority.transaction, (transaction) =>
+        transaction.execute<{ legal_entity_id: string }>(sql`
+          select legal_entity_id from app.stations
+          where tenant_id = ${input.tenantId} and id = ${stationId}
+        `),
+      );
+      const station = stations[0];
+      if (!station) throw new AppError('FORBIDDEN', 'You cannot see the activity of that station');
+      authorize({
+        actor: authority.authorization,
+        permissionCode: 'audit.view.station',
+        requestedScope: {
+          tenantId: input.tenantId,
+          scopeType: 'STATION',
+          legalEntityId: station.legal_entity_id,
+          stationId,
+        },
+      });
+    }
+  }
   const [afterAt, afterId] = input.after ? input.after.split('|') : [];
   const { rows, names, valueNames } = await withTenantTransaction(
     authority.transaction,
@@ -241,6 +275,7 @@ export async function listAuditEventsFromRequest(
       left join app.users u on u.id = m.identity_id
       where e.tenant_id = ${input.tenantId}
         ${input.area ? sql`and e.event_code like ${`${input.area}.%`}` : sql``}
+        ${input.stationId ? sql`and e.details->'metadata'->>'stationId' = ${input.stationId}` : sql``}
         ${
           afterAt && afterId
             ? sql`and (e.occurred_at, e.id) < (${afterAt}::timestamptz, ${afterId}::uuid)`

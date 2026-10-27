@@ -92,6 +92,8 @@ export function positiveMoney(value: string, field = 'amount'): Money {
 export type ExpensePolicy = Readonly<{
   stepUpThreshold: string | null;
   secondApprovalThreshold: string | null;
+  /** Largest expense a supervisor may approve alone. Absent means a supervisor may approve none. */
+  supervisorApprovalLimit?: string | null;
 }>;
 
 /** No configured policy is the most restrictive policy: every approval needs step-up. */
@@ -124,10 +126,28 @@ export function validateExpensePolicy(input: ExpensePolicy): ExpensePolicy {
       'secondApprovalThreshold cannot be lower than stepUpThreshold',
     );
   }
+  const supervisorLimit =
+    input.supervisorApprovalLimit === null || input.supervisorApprovalLimit === undefined
+      ? null
+      : new ExactDecimal(input.supervisorApprovalLimit);
+  if (supervisorLimit && supervisorLimit.value.decimalPlaces() > 4) {
+    throw new AppError('VALIDATION_FAILED', 'supervisorApprovalLimit allows at most 4 decimals');
+  }
+  if (supervisorLimit && supervisorLimit.value.lt(0)) {
+    throw new AppError('VALIDATION_FAILED', 'supervisorApprovalLimit cannot be negative');
+  }
   return {
     stepUpThreshold: stepUp ? stepUp.value.toFixed(4) : null,
     secondApprovalThreshold: second ? second.value.toFixed(4) : null,
+    supervisorApprovalLimit: supervisorLimit ? supervisorLimit.value.toFixed(4) : null,
   };
+}
+
+/** A supervisor may approve alone only up to the owner's limit; with no limit set, nothing. */
+export function withinSupervisorLimit(amount: string, policy: ExpensePolicy): boolean {
+  const limit = policy.supervisorApprovalLimit;
+  if (limit === null || limit === undefined) return false;
+  return new Decimal(amount).lte(new Decimal(limit));
 }
 
 /** Step-up is required at or above the threshold, and always when no threshold is configured. */
@@ -200,8 +220,8 @@ export function assertCategoryUsableForExpense(
 }
 
 /**
- * The submitter may not approve their own expense unless no one else could. The caller supplies
- * whether another active approver exists for the station.
+ * The submitter may not approve their own expense, except a sole owner. The caller passes false
+ * for alternateApproverExists only in that case.
  */
 export function assertApproverAllowed(input: {
   submitterMembershipId: string;
@@ -215,7 +235,7 @@ export function assertApproverAllowed(input: {
   if (input.submitterMembershipId === input.approverMembershipId && input.alternateApproverExists) {
     throw new AppError(
       'FORBIDDEN',
-      'An expense cannot be approved by the person who submitted it while another approver exists',
+      'An expense cannot be approved by the person who submitted it. Another approver, or the owner, must approve it.',
     );
   }
 }
