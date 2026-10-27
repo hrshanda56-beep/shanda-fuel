@@ -862,7 +862,7 @@ export function SettlementWorkspace({
                         </span>
                         <span>
                           <strong>{row.providerName}</strong>
-                          <small>{row.batchReference ?? row.settlementReference}</small>
+                          <small>{row.settlementReference}</small>
                         </span>
                       </span>
                       <span className="list-cell" data-label="Settled">
@@ -915,6 +915,12 @@ export function SettlementWorkspace({
                           <dt>Account</dt>
                           <dd>{row.accountReference}</dd>
                         </div>
+                        {row.batchReference ? (
+                          <div>
+                            <dt>Batch reference</dt>
+                            <dd>{row.batchReference}</dd>
+                          </div>
+                        ) : null}
                         <div>
                           <dt>Transaction date</dt>
                           <dd>{row.transactionDate}</dd>
