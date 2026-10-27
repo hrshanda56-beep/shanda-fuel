@@ -113,23 +113,30 @@ type AvailableTree = Readonly<{
 
 export type WorkplacePlan =
   | { kind: 'none' }
-  | { kind: 'continue' }
+  | {
+      kind: 'continue';
+      /** The only station this person can use, so it is selected for them. */
+      station?: { organisationId: string; legalEntityId: string; stationId: string };
+    }
   | {
       kind: 'choose';
       options: readonly WorkplaceOption[];
       allStationsOptions: readonly AllStationsOption[];
       defaultAllStationsOrganisationId: string;
+      /** Selected for them unless they choose another: the last one used, else the first. */
+      defaultStationId: string;
     };
 
 /**
  * Decide the post-sign-in step from the already-authorised context tree.
  * - no organisation at all: a human access state, never an empty dashboard
- * - at most one station: continue
- * - several stations: ask where they are working
+ * - one station: continue, with that station selected
+ * - several stations: ask where they are working; the last used station is the default
  */
 export function planWorkplaceEntry(
   available: AvailableTree,
   rememberedOrganisationId?: string,
+  rememberedStationId?: string,
 ): WorkplacePlan {
   if (available.organisations.length === 0) return { kind: 'none' };
 
@@ -138,7 +145,18 @@ export function planWorkplaceEntry(
       legalEntity.stations.map((station) => ({ organisation, legalEntity, station })),
     ),
   );
-  if (flat.length <= 1) return { kind: 'continue' };
+  if (flat.length === 1) {
+    const only = flat[0]!;
+    return {
+      kind: 'continue',
+      station: {
+        organisationId: only.organisation.id,
+        legalEntityId: only.legalEntity.id,
+        stationId: only.station.id,
+      },
+    };
+  }
+  if (flat.length === 0) return { kind: 'continue' };
 
   const nameCounts = new Map<string, number>();
   for (const { station } of flat) {
@@ -176,5 +194,8 @@ export function planWorkplaceEntry(
     options,
     allStationsOptions,
     defaultAllStationsOrganisationId,
+    defaultStationId: (
+      options.find((option) => option.stationId === rememberedStationId) ?? options[0]!
+    ).stationId,
   };
 }

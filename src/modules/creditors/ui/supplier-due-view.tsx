@@ -81,14 +81,14 @@ export function SupplierDueView({
   const listed = data.groups.filter((group) => group.count > 0);
 
   return (
-    <div className={styles.stack}>
-      <p className={styles.intro}>
+    <div className="pg">
+      <p className="pg-intro">
         What you owe suppliers, grouped by when payment is due. Figures are as at{' '}
         {readableDate(data.asOf)} and only count what is still unpaid. Cash purchases are not listed
         because they are paid when bought.
       </p>
 
-      <div className={styles.summary} role="list" aria-label="Amounts due">
+      <div className="pg-stats" role="list" aria-label="Amounts due">
         {SUMMARY_BUCKETS.map((bucket) => {
           const group = groups.get(bucket);
           const count = group?.count ?? 0;
@@ -97,12 +97,12 @@ export function SupplierDueView({
               key={bucket}
               as="div"
               role="listitem"
-              className={styles.summaryCard}
+              className="pg-stat"
               data-tone={bucket === 'OVERDUE' && count > 0 ? 'warning' : undefined}
             >
-              <p className={styles.summaryLabel}>{DUE_BUCKET_LABELS[bucket]}</p>
-              <p className={styles.summaryValue}>{formatTileMoney(group?.total ?? '0')}</p>
-              <p className={styles.summaryNote}>
+              <p className="pg-stat-label">{DUE_BUCKET_LABELS[bucket]}</p>
+              <p className="pg-stat-value">{formatTileMoney(group?.total ?? '0')}</p>
+              <p className="pg-stat-note">
                 {count === 0 ? 'Nothing' : plural(count, 'invoice', 'invoices')}
               </p>
             </Card>

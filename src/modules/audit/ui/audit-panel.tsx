@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { Select } from '@/design-system/forms';
+import { Icon } from '@/design-system/icons';
 import { Button, EmptyState, ErrorState, Field, LoadingState } from '@/design-system/primitives';
 
 import type { AuditItem } from '../audit-view';
@@ -21,6 +22,14 @@ const AREAS = [
   { value: 'SETUP', label: 'Station setup' },
   { value: 'REPORT', label: 'Reports' },
 ];
+
+/** "Cash: submit cash handover" becomes the area ("Cash") and what happened ("submit cash handover"). */
+function splitAction(action: string): { label: string; detail: string } {
+  const colon = action.indexOf(': ');
+  return colon < 0
+    ? { label: action, detail: '' }
+    : { label: `${action.slice(0, colon)}:`, detail: action.slice(colon + 2) };
+}
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -80,26 +89,28 @@ export function AuditPanel({
   }, [load]);
 
   return (
-    <section aria-labelledby="audit-title" className="stack">
+    <section aria-labelledby="audit-title" className="pg">
       <h3 id="audit-title" className="sr-only">
         Activity log
       </h3>
-      <p>
+      <p className="pg-intro">
         Every change people make is recorded here, with who made it and when. This list can only be
         read, never changed.
       </p>
-      <Field id="audit-area" label="Show">
-        <Select
-          id="audit-area"
-          value={area}
-          onChange={(event) => {
-            setPage(null);
-            setOpen(null);
-            setArea(event.target.value);
-          }}
-          options={AREAS}
-        />
-      </Field>
+      <div className="pg-filter">
+        <Field id="audit-area" label="Show">
+          <Select
+            id="audit-area"
+            value={area}
+            onChange={(event) => {
+              setPage(null);
+              setOpen(null);
+              setArea(event.target.value);
+            }}
+            options={AREAS}
+          />
+        </Field>
+      </div>
 
       {error ? (
         <ErrorState
@@ -116,58 +127,74 @@ export function AuditPanel({
       ) : null}
 
       {page && page.items.length > 0 ? (
-        <ul className="stack" aria-label="Recent changes">
+        <ol className="pg-timeline" aria-label="Recent changes">
           {page.items.map((item) => {
             const expanded = open === item.id;
+            const { label, detail } = splitAction(item.action);
             return (
-              <li key={item.id} className="card">
-                <p>
-                  <strong>{item.action}</strong>
-                </p>
-                <p>
-                  {item.who} · {when(item.occurredAt)}
-                  {item.subject ? ` · ${item.subject}` : ''}
-                </p>
-                {item.reason ? <p>Reason: {item.reason}</p> : null}
-                {item.changes.length > 0 ? (
-                  <>
-                    <Button
-                      variant="quiet"
-                      aria-expanded={expanded}
-                      onClick={() => setOpen(expanded ? null : item.id)}
-                    >
-                      {expanded
-                        ? 'Hide the details'
-                        : item.created
-                          ? 'What was recorded'
-                          : 'What changed'}
-                    </Button>
-                    {expanded ? (
-                      <dl>
-                        {item.changes.map((change) => (
-                          <div key={change.field}>
-                            <dt>{change.field}</dt>
-                            <dd>
-                              {item.created ? (
-                                (change.after ?? 'Empty')
-                              ) : (
-                                <>
-                                  <span>{change.before ?? 'Empty'}</span>
-                                  {' → '}
-                                  <strong>{change.after ?? 'Empty'}</strong>
-                                </>
-                              )}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    ) : null}
-                  </>
-                ) : null}
+              <li key={item.id} className="pg-timeline-item">
+                <span
+                  className="pg-timeline-mark"
+                  data-kind={item.created ? 'created' : 'changed'}
+                  aria-hidden="true"
+                >
+                  <Icon name={item.created ? 'check' : 'tag'} />
+                </span>
+                <div className="pg-timeline-body">
+                  <p className="pg-timeline-line">
+                    <span className="pg-timeline-area">{label}</span>
+                    {detail ? <strong>{detail}</strong> : null}
+                    {item.subject ? <strong>{item.subject}</strong> : null}
+                    <span className="pg-timeline-meta">
+                      by {item.who}
+                      <span className="pg-timeline-dot" aria-hidden="true">
+                        •
+                      </span>
+                      {when(item.occurredAt)}
+                    </span>
+                  </p>
+                  {item.reason ? <p className="pg-timeline-meta">Reason: {item.reason}</p> : null}
+                  {item.changes.length > 0 ? (
+                    <>
+                      <Button
+                        variant="quiet"
+                        size="sm"
+                        aria-expanded={expanded}
+                        onClick={() => setOpen(expanded ? null : item.id)}
+                      >
+                        {expanded
+                          ? 'Hide the details'
+                          : item.created
+                            ? 'What was recorded'
+                            : 'What changed'}
+                      </Button>
+                      {expanded ? (
+                        <dl className="pg-details">
+                          {item.changes.map((change) => (
+                            <div key={change.field}>
+                              <dt>{change.field}</dt>
+                              <dd>
+                                {item.created ? (
+                                  (change.after ?? 'Empty')
+                                ) : (
+                                  <>
+                                    <span>{change.before ?? 'Empty'}</span>
+                                    {' → '}
+                                    <strong>{change.after ?? 'Empty'}</strong>
+                                  </>
+                                )}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
               </li>
             );
           })}
-        </ul>
+        </ol>
       ) : null}
 
       {page?.next ? (

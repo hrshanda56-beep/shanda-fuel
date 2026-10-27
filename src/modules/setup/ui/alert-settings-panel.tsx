@@ -128,11 +128,11 @@ export function AlertSettingsPanel({
   const editable = loaded.canManage && Boolean(stationId);
 
   return (
-    <section aria-labelledby="alert-settings-title" className="stack">
+    <section aria-labelledby="alert-settings-title" className="pg">
       <h3 id="alert-settings-title" className="sr-only">
         Reminders
       </h3>
-      <p>
+      <p className="pg-intro">
         Choose when the system should remind you. Reminders appear on the Finance page. They never
         stop anyone from working.
         {loaded.version === null
@@ -148,62 +148,66 @@ export function AlertSettingsPanel({
       {saved ? (
         <SuccessState title="Saved" message="Reminders will use these numbers from now on." />
       ) : null}
-      <form onSubmit={save} className="stack">
-        <Field
-          id="alert-due-soon"
-          label="Warn about supplier invoices due within (days)"
-          hint="Invoices falling due in this many days show as “due soon”."
-        >
-          <input
+      <form onSubmit={save} className="pg-form">
+        <div className="pg-form-grid">
+          <Field
             id="alert-due-soon"
-            value={dueSoon}
-            onChange={(e) => setDueSoon(e.target.value)}
-            inputMode="numeric"
-            disabled={!editable}
-          />
-        </Field>
-        <Field
-          id="alert-pos-lag"
-          label="Card and mobile payments are late after (days)"
-          hint="If a card or mobile payment has not been matched to a payout by then, it is flagged."
-        >
-          <input
+            label="Warn about supplier invoices due within (days)"
+            hint="Invoices falling due in this many days show as “due soon”."
+          >
+            <input
+              id="alert-due-soon"
+              value={dueSoon}
+              onChange={(e) => setDueSoon(e.target.value)}
+              inputMode="numeric"
+              disabled={!editable}
+            />
+          </Field>
+          <Field
             id="alert-pos-lag"
-            value={posLag}
-            onChange={(e) => setPosLag(e.target.value)}
-            inputMode="numeric"
-            disabled={!editable}
-          />
-        </Field>
-        <Field
-          id="alert-grace"
-          label="A daily report is late after (days)"
-          hint="0 flags a report the day after the day worked; larger numbers allow more time."
-        >
-          <input
+            label="Card and mobile payments are late after (days)"
+            hint="If a card or mobile payment has not been matched to a payout by then, it is flagged."
+          >
+            <input
+              id="alert-pos-lag"
+              value={posLag}
+              onChange={(e) => setPosLag(e.target.value)}
+              inputMode="numeric"
+              disabled={!editable}
+            />
+          </Field>
+          <Field
             id="alert-grace"
-            value={grace}
-            onChange={(e) => setGrace(e.target.value)}
-            inputMode="numeric"
-            disabled={!editable}
-          />
-        </Field>
-        <Field
-          id="alert-cash-minimum"
-          label="Ignore cash shortages smaller than (USD)"
-          hint="Tiny differences are not worth a reminder."
-        >
-          <input
+            label="A daily report is late after (days)"
+            hint="0 flags a report the day after the day worked; larger numbers allow more time."
+          >
+            <input
+              id="alert-grace"
+              value={grace}
+              onChange={(e) => setGrace(e.target.value)}
+              inputMode="numeric"
+              disabled={!editable}
+            />
+          </Field>
+          <Field
             id="alert-cash-minimum"
-            value={minimum}
-            onChange={(e) => setMinimum(e.target.value)}
-            inputMode="decimal"
-            disabled={!editable}
-          />
-        </Field>
-        <Button type="submit" loading={busy} disabled={!editable}>
-          Save reminders
-        </Button>
+            label="Ignore cash shortages smaller than (USD)"
+            hint="Tiny differences are not worth a reminder."
+          >
+            <input
+              id="alert-cash-minimum"
+              value={minimum}
+              onChange={(e) => setMinimum(e.target.value)}
+              inputMode="decimal"
+              disabled={!editable}
+            />
+          </Field>
+        </div>
+        <div className="pg-form-actions">
+          <Button type="submit" loading={busy} disabled={!editable}>
+            Save reminders
+          </Button>
+        </div>
       </form>
     </section>
   );

@@ -19,6 +19,7 @@ import {
 import { AccountSignOutItem, type AccountAuthProvider } from './account-sign-out';
 import { WorkInProgressDialog } from './dialogs';
 import { ContextSelector } from './context-selector';
+import { SignInReminder } from './sign-in-reminder';
 import { useLocationSearch } from './location-search';
 import { NeedsAttention, WipBadge, type AttentionItem } from './feedback';
 import { SidebarTooltip } from './sidebar-tooltip';
@@ -445,6 +446,7 @@ export function AppShell({
                   ) : null}
                 </div>
               ) : null}
+              <SignInReminder station={contextLabel?.station} onChange={openContextSelector} />
               {children}
             </main>
           </div>

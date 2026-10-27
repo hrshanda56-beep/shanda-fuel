@@ -27,23 +27,33 @@ export default async function WorkplacePage() {
     const resolution = await resolveCurrentContext(request);
     const remembered = readPersistedContext(request).selection;
     let rememberedOrganisationId: string | undefined;
+    let rememberedStationId: string | undefined;
     if (remembered) {
       try {
         const validatedRemembered = await validateRequestedContext(request, remembered, {
           pathname: '/',
         });
         rememberedOrganisationId = validatedRemembered.organisationId;
+        rememberedStationId = validatedRemembered.stationId;
       } catch {
         rememberedOrganisationId = undefined;
       }
     }
-    plan = planWorkplaceEntry(resolution.available, rememberedOrganisationId);
+    plan = planWorkplaceEntry(resolution.available, rememberedOrganisationId, rememberedStationId);
   } catch (error) {
     if (error instanceof AppError && error.code === 'UNAUTHENTICATED') redirect('/login');
     throw error;
   }
 
-  if (plan.kind === 'continue') redirect('/');
+  if (plan.kind === 'continue') {
+    const query = new URLSearchParams({ welcome: '1' });
+    if (plan.station) {
+      query.set('organisationId', plan.station.organisationId);
+      query.set('legalEntityId', plan.station.legalEntityId);
+      query.set('stationId', plan.station.stationId);
+    }
+    redirect(`/?${query}`);
+  }
 
   return (
     <EntryShell>
@@ -54,6 +64,7 @@ export default async function WorkplacePage() {
           options={plan.options}
           allStationsOptions={plan.allStationsOptions}
           defaultAllStationsOrganisationId={plan.defaultAllStationsOrganisationId}
+          defaultStationId={plan.defaultStationId}
         />
       )}
     </EntryShell>

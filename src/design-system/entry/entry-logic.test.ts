@@ -84,7 +84,10 @@ describe('planWorkplaceEntry', () => {
     const available = tree([
       { id: 'o', name: 'Org', entities: [['l', 'LE', [['s1', 'Bindura']]]] },
     ]);
-    expect(planWorkplaceEntry(available)).toEqual({ kind: 'continue' });
+    expect(planWorkplaceEntry(available)).toEqual({
+      kind: 'continue',
+      station: { organisationId: 'o', legalEntityId: 'l', stationId: 's1' },
+    });
   });
 
   it('continues when an organisation has no stations yet (onboarding)', () => {
@@ -116,8 +119,13 @@ describe('planWorkplaceEntry', () => {
       expect(plan.options.every((o) => o.detail === undefined)).toBe(true);
       expect(plan.allStationsOptions).toEqual([{ organisationId: 'o', organisationName: 'Org' }]);
       expect(plan.defaultAllStationsOrganisationId).toBe('o');
+      expect(plan.defaultStationId).toBe('s1');
     }
     expect(planWorkplaceEntry(available, 'o').kind).toBe('choose');
+    const remembered = planWorkplaceEntry(available, 'o', 's2');
+    expect(remembered.kind === 'choose' && remembered.defaultStationId).toBe('s2');
+    const stale = planWorkplaceEntry(available, 'o', 'gone');
+    expect(stale.kind === 'choose' && stale.defaultStationId).toBe('s1');
   });
 
   it('adds detail only where names would be ambiguous or organisations differ', () => {
