@@ -1,6 +1,7 @@
 import type { ManagementReport } from './contracts';
-import { addExact, exact, subtractExact } from './domain';
+import { addExact, exact } from './domain';
 import { approvedFuelBenefit, buildFinancialPosition } from './statements';
+import { operatingProfit } from './operating-profit';
 
 export type FinanceTile = Readonly<{
   id:
@@ -31,16 +32,12 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
   const position = buildFinancialPosition(report);
   const customersKnown = report.customers.availability === 'AVAILABLE';
   // Same arithmetic as the profit statement's "Net operating result", so the tile ties to it.
-  const operating =
-    report.grossMargin === null
-      ? null
-      : subtractExact(
-          report.grossMargin,
-          addExact(
-            addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
-            approvedFuelBenefit(report),
-          ),
-        );
+  const operating = operatingProfit(
+    report.grossMargin,
+    report.expenses.total ??
+      addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
+    approvedFuelBenefit(report),
+  );
   const costMissing = report.grossMargin === null;
   // With nothing sold there is no cost to be missing, so say that instead.
   const salesValue = report.sales?.salesValue;
@@ -79,7 +76,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
     {
       id: 'cashAtStations',
       label: 'Cash at stations',
-      value: report.cash.collectedButNotBanked,
+      value: report.cash.atStation ?? report.cash.collectedButNotBanked,
       href: '/financial-position',
     },
     {

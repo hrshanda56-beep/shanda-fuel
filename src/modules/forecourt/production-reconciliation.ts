@@ -26,6 +26,7 @@ import { resolveForecourtCommandContext } from './application';
 import { authorize } from '../../platform/security/permissions';
 import { deriveSegmentSaleAllocations } from './segment-sale-chronology';
 import { postCanonicalSaleRevenueInTransaction } from '../revenue';
+import { expectedClosingStock } from '../inventory/expected-closing-stock';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -802,20 +803,30 @@ async function loadMetrics(
     tank_id: string;
     product_id: string;
     physical: string;
-    expected: string;
+    opening: string;
+    deliveries: string;
+    adjustments: string;
     sold: string;
   }>(sql`
     select r.tank_id, r.product_id, d.physical_litres as physical,
-      coalesce((select sum(m.quantity_litres) from app.inventory_movements m where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id), 0) as expected,
-      -- Sale movements are posted on approval, so once approved they are already inside "expected".
-      case when exists (
-        select 1 from app.reconciliations rec
-        where rec.tenant_id=r.tenant_id and rec.station_id=r.station_id and rec.id=r.reconciliation_id
-          and rec.state in ('APPROVED','POSTED','LOCKED'))
-      then 0
-      else coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.reconciliation_id=r.reconciliation_id and m.product_id=r.product_id), 0)
-      end as sold
-    from app.reconciliation_dip_refs r join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id
+      coalesce((select sum(m.quantity_litres) from app.inventory_movements m
+        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id
+          and m.business_date <= bd.business_date and m.movement_type = 'OPENING_BALANCE'), 0) as opening,
+      coalesce((select sum(m.quantity_litres) from app.inventory_movements m
+        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id
+          and m.business_date <= bd.business_date and m.movement_type in ('DELIVERY', 'TRANSFER_IN')), 0) as deliveries,
+      coalesce((select sum(m.quantity_litres) from app.inventory_movements m
+        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id
+          and m.business_date <= bd.business_date and m.movement_type in ('POSITIVE_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT', 'TRANSFER_OUT')), 0) as adjustments,
+      coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m
+        join app.reconciliations rec2 on rec2.tenant_id=m.tenant_id and rec2.station_id=m.station_id and rec2.id=m.reconciliation_id
+        join app.station_business_days sale_bd on sale_bd.tenant_id=rec2.tenant_id and sale_bd.station_id=rec2.station_id and sale_bd.id=rec2.business_day_id
+        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.product_id=r.product_id
+          and sale_bd.business_date <= bd.business_date), 0) as sold
+    from app.reconciliation_dip_refs r
+    join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id
+    join app.reconciliations rec on rec.tenant_id=r.tenant_id and rec.station_id=r.station_id and rec.id=r.reconciliation_id
+    join app.station_business_days bd on bd.tenant_id=rec.tenant_id and bd.station_id=rec.station_id and bd.id=rec.business_day_id
     where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${reconciliationId}
   `);
   const stockVariance: Record<string, string> = {};
@@ -828,8 +839,14 @@ async function loadMetrics(
         'CONFLICT',
         'A reconciliation sale requires an explicit pump-to-tank mapping when a product has multiple active tanks',
       );
+    const expected = expectedClosingStock({
+      openingLitres: row.opening,
+      deliveriesLitres: row.deliveries,
+      litresSold: row.sold,
+      approvedAdjustmentsLitres: row.adjustments,
+    });
     stockVariance[row.tank_id] = new ExactDecimal(row.physical)
-      .subtract(new ExactDecimal(row.expected).subtract(new ExactDecimal(row.sold)))
+      .subtract(new ExactDecimal(expected))
       .quantize({ name: 'Litres', precision: 18, scale: 3 })
       .toString();
   }

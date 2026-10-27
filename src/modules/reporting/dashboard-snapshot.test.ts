@@ -59,4 +59,13 @@ describe('countDaysWithoutReport', () => {
       ]),
     ).toBe(2);
   });
+
+  it('counts every active station day through yesterday when the report query supplies the calendar', () => {
+    expect(
+      countDaysWithoutReport(
+        [{ reportDate: '2026-10-26', stationId: 'a', reconciliationIds: ['r1'] }],
+        3,
+      ),
+    ).toBe(2);
+  });
 });

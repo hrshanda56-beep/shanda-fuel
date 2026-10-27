@@ -552,6 +552,7 @@ export async function getCashStationSummaryInTransaction(
     amount: string;
     state: string;
     current_location_id: string;
+    location_type: string;
     version: number | string;
     business_date: string;
     recorded_at: string | Date;
@@ -629,7 +630,7 @@ export async function getCashStationSummaryInTransaction(
   };
   const rowsQuery = sql`
     select c.id, c.collection_reference, c.source_location_id, c.amount::text, c.state,
-           c.current_location_id, c.version, c.business_date,
+           c.current_location_id, l.location_type, c.version, c.business_date,
            c.recorded_at, c.received_at,
            coalesce(sum(case when d.state <> 'REVERSED' then a.amount else 0 end), 0)::text as allocated_amount,
            coalesce(sum(case when d.state = 'CONFIRMED' then a.amount else 0 end), 0)::text as confirmed_amount
@@ -638,11 +639,13 @@ export async function getCashStationSummaryInTransaction(
       on a.tenant_id = c.tenant_id and a.station_id = c.station_id and a.collection_id = c.id
     left join app.bank_deposits d
       on d.tenant_id = a.tenant_id and d.station_id = a.station_id and d.id = a.deposit_id
+    join app.cash_locations l
+      on l.tenant_id = c.tenant_id and l.station_id = c.station_id and l.id = c.current_location_id
     where c.tenant_id = ${context.tenantId}
       and c.station_id = ${context.stationId}
       and c.state <> 'REVERSED'
     group by c.id, c.collection_reference, c.source_location_id, c.amount, c.state,
-             c.current_location_id, c.version, c.business_date, c.recorded_at, c.received_at
+             c.current_location_id, l.location_type, c.version, c.business_date, c.recorded_at, c.received_at
     order by c.recorded_at, c.id
   `;
   const locationsQuery = sql`
@@ -824,6 +827,7 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
   const iso = (value: string | Date | null) => (value ? new Date(value).toISOString() : null);
 
   let availableAtStation = new ExactDecimal('0');
+  let heldByManagement = new ExactDecimal('0');
   let collectedButUnbanked = new ExactDecimal('0');
   let pendingBankConfirmation = new ExactDecimal('0');
   const collections = rows.map((row) => {
@@ -836,7 +840,13 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
     // remain in this bucket.
     const unbanked = decimal(remainingCashAmount(row.amount, row.allocated_amount));
     const pending = allocated.subtract(confirmed);
-    availableAtStation = availableAtStation.add(available);
+    const locationType = row.location_type ?? 'STATION_SAFE';
+    const atStation = ['STATION_TILL', 'STATION_SAFE'].includes(locationType)
+      ? available
+      : new ExactDecimal('0');
+    const held = locationType === 'COLLECTOR' ? available : new ExactDecimal('0');
+    availableAtStation = availableAtStation.add(atStation);
+    heldByManagement = heldByManagement.add(held);
     collectedButUnbanked = collectedButUnbanked.add(unbanked);
     pendingBankConfirmation = pendingBankConfirmation.add(pending);
     const custodyState = confirmed.equals(amount)
@@ -845,7 +855,7 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
         ? 'IN_TRANSIT'
         : allocated.value.gt(0)
           ? 'PARTIALLY_DEPOSITED'
-          : row.state === 'RECEIVED'
+          : locationType === 'COLLECTOR'
             ? 'RECEIVED'
             : 'AT_STATION';
     return {
@@ -854,7 +864,7 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
       amount: amount.toString(),
       allocatedAmount: allocated.toString(),
       confirmedAmount: confirmed.toString(),
-      availableAtStation: available.toString(),
+      availableAtStation: atStation.toString(),
       collectedButUnbanked: unbanked.toString(),
       pendingBankConfirmation: pending.toString(),
       state: row.state,
@@ -862,6 +872,7 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
       statusLabel: cashStatusLabelForCustody(custodyState),
       sourceLocationId: row.source_location_id,
       currentLocationId: row.current_location_id,
+      locationType: row.location_type,
       version: Number(row.version),
       businessDate: row.business_date,
       recordedAt: new Date(row.recorded_at).toISOString(),
@@ -941,6 +952,7 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
     cashPosition: cashPositionFrom(cashPositionRows[0]),
     totals: {
       availableAtStation: availableAtStation.toString(),
+      heldByManagement: heldByManagement.toString(),
       collectedButUnbanked: collectedButUnbanked.toString(),
       pendingBankConfirmation: pendingBankConfirmation.toString(),
     },

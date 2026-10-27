@@ -300,12 +300,19 @@ async function readCash(
       collected: string;
       deposited: string;
       banked: string;
+      at_station: string;
+      held_by_management: string;
+      in_transit: string;
       collection_ids: string[] | null;
       deposit_ids: string[] | null;
     }>(sql`
       with period_collections as (
-        select c.id, c.amount
+        select c.id, c.station_id, c.amount, c.current_location_id, l.location_type
         from app.cash_collections c
+        join app.cash_locations l
+          on l.tenant_id = c.tenant_id
+         and l.station_id = c.station_id
+         and l.id = c.current_location_id
         where c.tenant_id = ${filters.tenantId}
           and c.state <> 'REVERSED'
           and c.business_date between ${filters.fromDate} and ${filters.toDate}
@@ -318,18 +325,40 @@ async function readCash(
           and d.deposited_at >= (${filters.fromDate}::date at time zone 'UTC')
           and d.deposited_at < ((${filters.toDate}::date + interval '1 day') at time zone 'UTC')
           ${stationClause('d', filters.stationIds)}
+      ), allocation_totals as (
+        select c.id,
+          coalesce(sum(a.amount) filter (where d.state <> 'REVERSED'), 0)::text as allocated,
+          coalesce(sum(a.amount) filter (where d.state = 'CONFIRMED'), 0)::text as banked
+        from period_collections c
+        left join app.bank_deposit_allocations a
+          on a.tenant_id = ${filters.tenantId}
+         and a.station_id = c.station_id
+         and a.collection_id = c.id
+        left join app.bank_deposits d
+          on d.tenant_id = a.tenant_id
+         and d.station_id = a.station_id
+         and d.id = a.deposit_id
+         and exists (select 1 from period_deposits pd where pd.id = d.id)
+        group by c.id
+      ), period_deposit_totals as (
+        select
+          coalesce(sum(a.amount) filter (where pd.state <> 'REVERSED'), 0)::text as deposited,
+          coalesce(sum(a.amount) filter (where pd.state = 'CONFIRMED'), 0)::text as banked
+        from period_deposits pd
+        join app.bank_deposit_allocations a
+          on a.tenant_id = pd.tenant_id
+         and a.station_id = pd.station_id
+         and a.deposit_id = pd.id
       )
       select
         (select coalesce(sum(amount), 0)::text from period_collections) as collected,
-        (select coalesce(sum(a.amount), 0)::text
-         from period_deposits d
-         join app.bank_deposit_allocations a
-           on a.tenant_id = d.tenant_id and a.station_id = d.station_id and a.deposit_id = d.id) as deposited,
-        (select coalesce(sum(a.amount), 0)::text
-         from period_deposits d
-         join app.bank_deposit_allocations a
-           on a.tenant_id = d.tenant_id and a.station_id = d.station_id and a.deposit_id = d.id
-          and d.state = 'CONFIRMED') as banked,
+        (select deposited from period_deposit_totals) as deposited,
+        (select banked from period_deposit_totals) as banked,
+        (select coalesce(sum(greatest(c.amount - a.allocated::numeric, 0)) filter (where c.location_type in ('STATION_TILL', 'STATION_SAFE')), 0)::text
+         from period_collections c join allocation_totals a on a.id = c.id) as at_station,
+        (select coalesce(sum(greatest(c.amount - a.allocated::numeric, 0)) filter (where c.location_type = 'COLLECTOR'), 0)::text
+         from period_collections c join allocation_totals a on a.id = c.id) as held_by_management,
+        (select coalesce(sum(greatest(allocated::numeric - banked::numeric, 0)), 0)::text from allocation_totals) as in_transit,
         (select coalesce(array_agg(id order by id), ARRAY[]::uuid[]) from period_collections) as collection_ids,
         (select coalesce(array_agg(id order by id), ARRAY[]::uuid[]) from period_deposits) as deposit_ids
     `),
@@ -339,6 +368,9 @@ async function readCash(
     collected: '0',
     deposited: '0',
     banked: '0',
+    at_station: '0',
+    held_by_management: '0',
+    in_transit: '0',
     collection_ids: [],
     deposit_ids: [],
   };
@@ -348,6 +380,9 @@ async function readCash(
       collected: collectionRow.collected,
       deposited: collectionRow.deposited,
       banked: collectionRow.banked,
+      atStation: collectionRow.at_station,
+      heldByManagement: collectionRow.held_by_management,
+      inTransit: collectionRow.in_transit,
       variance: evidenceRow.variance,
     }),
     collectionIds: uniqueIds(collectionRow.collection_ids ?? []),

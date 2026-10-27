@@ -88,6 +88,9 @@ export function deriveCashPosition(input: {
   deposited?: string;
   banked: string;
   variance: string;
+  atStation?: string;
+  heldByManagement?: string;
+  inTransit?: string;
 }) {
   const deposited = input.deposited ?? input.banked;
   return {
@@ -99,6 +102,11 @@ export function deriveCashPosition(input: {
     // This is deliberately based on deposits, not confirmations: cash in an
     // unconfirmed deposit is in transit, not still at the station.
     collectedButNotBanked: formatMoney(subtractExact(input.collected, deposited)),
+    ...(input.atStation !== undefined ? { atStation: formatMoney(input.atStation) } : {}),
+    ...(input.heldByManagement !== undefined
+      ? { heldByManagement: formatMoney(input.heldByManagement) }
+      : {}),
+    ...(input.inTransit !== undefined ? { inTransit: formatMoney(input.inTransit) } : {}),
     cashVariance: formatMoney(input.variance),
   };
 }

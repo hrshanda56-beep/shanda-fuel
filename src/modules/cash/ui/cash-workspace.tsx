@@ -94,6 +94,7 @@ export type CashSummary = {
   cashPosition?: { openToCollect: string; paidOut: string; cashToCollect: string };
   totals: {
     availableAtStation: string;
+    heldByManagement?: string;
     collectedButUnbanked: string;
     pendingBankConfirmation: string;
   };
@@ -110,6 +111,7 @@ export type CashSummary = {
     custodyState: string;
     sourceLocationId: string;
     currentLocationId: string;
+    locationType?: string;
     version: number;
     businessDate?: string;
     recordedAt?: string;
@@ -295,8 +297,8 @@ function displayState(value: string): string {
 type SummaryCollection = CashSummary['collections'][number];
 
 /**
- * Where the collected cash is. The three parts never overlap, so they add up to
- * everything collected: blue at the station, yellow waiting for the bank, green banked.
+ * Where the collected cash is. The parts never overlap, so they add up to everything collected:
+ * station, management-held, waiting for the bank, and banked.
  */
 const POSITIONS: ReadonlyArray<{
   key: string;
@@ -305,6 +307,15 @@ const POSITIONS: ReadonlyArray<{
   tone: number;
   includes: (collection: SummaryCollection) => boolean;
 }> = [
+  {
+    key: 'management',
+    label: 'Held by management',
+    detail: 'Received by management, not yet banked',
+    tone: 3,
+    includes: (c) =>
+      (c.locationType ? c.locationType === 'COLLECTOR' : c.state === 'RECEIVED') &&
+      isPositive(c.collectedButUnbanked),
+  },
   {
     key: 'at-station',
     label: 'At the station',
@@ -651,6 +662,7 @@ export function CashWorkspace({
   const collectionsList = summary?.collections ?? [];
   const positionTotals: Record<string, string> = {
     'at-station': summary?.totals.availableAtStation ?? '0',
+    management: summary?.totals.heldByManagement ?? '0',
     pending: summary?.totals.pendingBankConfirmation ?? '0',
     banked: sumDecimals(collectionsList.map((collection) => collection.confirmedAmount)),
   };
