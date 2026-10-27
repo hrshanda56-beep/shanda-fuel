@@ -1566,7 +1566,7 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         where tenant_id='${ids.tenant}' and station_id='${ids.station}'
           and id='${blockedReconciliationId}'
       `);
-      expect(blockedState).toEqual([{ state: 'SUBMITTED', version: 6 }]);
+      expect(blockedState).toEqual([{ state: 'SUBMITTED', version: 7 }]);
       const failedSaleEvidence = await client.unsafe<
         {
           movements: string;
