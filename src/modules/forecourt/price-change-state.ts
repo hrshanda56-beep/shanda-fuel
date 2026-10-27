@@ -19,6 +19,8 @@ export type PriceChangeNozzle = {
   lastReading: string | null;
   /** The pump meter was already read for the change that is under way. */
   done: boolean;
+  /** The old-price reading is already saved for the change under way, so it is not taken again. */
+  closed: boolean;
 };
 
 export type PriceChange = {
