@@ -79,8 +79,9 @@ that was reviewed.
 | 0081 | expense_payment_method | How an expense was paid (`payment_method`) | In PR #167 (`fix/pilot-readiness`); not applied to production |
 | 0082 | tank_variance_red | Red variance limit per tank (`variance_red_litres`) | In PR #167 (`fix/pilot-readiness`); not applied to production |
 | 0083 | provider_account_fees | Fee percent and fixed fee per payment account; expected fee on settlements | In PR #167 (`fix/pilot-readiness`); not applied to production |
+| 0084 | opening_balance_import | Go-live opening balances: a reviewed, approved, then locked CSV batch (`opening_balance_batches`, `opening_balance_lines`) | Not applied to production. New tables only, with RLS |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 69 entries, 0000 to 0083 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 70 entries, 0000 to 0084 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -232,6 +233,7 @@ dd7dd2a5c489f521727baf18f46c4366cde7ef6827e6fccbd095227125f2cce1  0080_supplier_
 7e08999d2012fd7ab4d665f8abd7e378b1f9f604445706e12b033ad69e930839  0081_expense_payment_method.sql
 fe3af7cff3c83ceb2a1b1ecb9672c52b2f695f3afcaf75c83e4e5a1ba6d92d0a  0082_tank_variance_red.sql
 6fdd01b7a433cf388c2694f4eafcbd16492dde1ca022c538c9dcb86c493cf624  0083_provider_account_fees.sql
+ee6939320c530b4aeace890da6811068855fba3dd43708036c8c279937f6a78a  0084_opening_balance_import.sql
 dd7dd2a5c489f521727baf18f46c4366cde7ef6827e6fccbd095227125f2cce1  0080_supplier_document_files.sql
 7e08999d2012fd7ab4d665f8abd7e378b1f9f604445706e12b033ad69e930839  0081_expense_payment_method.sql
 fe3af7cff3c83ceb2a1b1ecb9672c52b2f695f3afcaf75c83e4e5a1ba6d92d0a  0082_tank_variance_red.sql
