@@ -124,7 +124,7 @@ async function selectedStations(
     from app.stations
     where tenant_id = ${filters.tenantId}
       and id in (${idList(filters.stationIds)})
-      and status = 'ACTIVE'
+      and status in ('ACTIVE', 'ONBOARDING')
   `);
   if (rows.length !== filters.stationIds.length) {
     throw new AppError('NOT_FOUND', 'A requested reporting station was not found');
@@ -175,7 +175,7 @@ async function listStations(
     select id, code, name
     from app.stations
     where tenant_id = ${filters.tenantId}
-      and status = 'ACTIVE'
+      and status in ('ACTIVE', 'ONBOARDING')
       ${filters.stationIds.length > 0 ? sql`and id in (${idList(filters.stationIds)})` : sql``}
     order by code, id
   `);
@@ -298,6 +298,7 @@ async function readCash(
     `),
     transaction.execute<{
       collected: string;
+      deposited: string;
       banked: string;
       collection_ids: string[] | null;
       deposit_ids: string[] | null;
@@ -313,7 +314,7 @@ async function readCash(
         select d.id, d.tenant_id, d.station_id
         from app.bank_deposits d
         where d.tenant_id = ${filters.tenantId}
-          and d.state = 'CONFIRMED'
+          and d.state <> 'REVERSED'
           and d.deposited_at >= (${filters.fromDate}::date at time zone 'UTC')
           and d.deposited_at < ((${filters.toDate}::date + interval '1 day') at time zone 'UTC')
           ${stationClause('d', filters.stationIds)}
@@ -323,7 +324,12 @@ async function readCash(
         (select coalesce(sum(a.amount), 0)::text
          from period_deposits d
          join app.bank_deposit_allocations a
-           on a.tenant_id = d.tenant_id and a.station_id = d.station_id and a.deposit_id = d.id) as banked,
+           on a.tenant_id = d.tenant_id and a.station_id = d.station_id and a.deposit_id = d.id) as deposited,
+        (select coalesce(sum(a.amount), 0)::text
+         from period_deposits d
+         join app.bank_deposit_allocations a
+           on a.tenant_id = d.tenant_id and a.station_id = d.station_id and a.deposit_id = d.id
+          and d.state = 'CONFIRMED') as banked,
         (select coalesce(array_agg(id order by id), ARRAY[]::uuid[]) from period_collections) as collection_ids,
         (select coalesce(array_agg(id order by id), ARRAY[]::uuid[]) from period_deposits) as deposit_ids
     `),
@@ -331,6 +337,7 @@ async function readCash(
   const evidenceRow = evidence[0] ?? { evidence: '0', variance: '0' };
   const collectionRow = collections[0] ?? {
     collected: '0',
+    deposited: '0',
     banked: '0',
     collection_ids: [],
     deposit_ids: [],
@@ -339,6 +346,7 @@ async function readCash(
     ...deriveCashPosition({
       evidence: evidenceRow.evidence,
       collected: collectionRow.collected,
+      deposited: collectionRow.deposited,
       banked: collectionRow.banked,
       variance: evidenceRow.variance,
     }),
@@ -838,7 +846,7 @@ async function readExpenses(transaction: ReportingTransaction, filters: Manageme
 async function readDaily(
   transaction: ReportingTransaction,
   filters: ManagementReportQuery,
-): Promise<readonly DailyOperationsRow[]> {
+): Promise<{ rows: readonly DailyOperationsRow[]; expectedBusinessDays: number }> {
   const base = approvedReconciliations(filters);
   const rows = await transaction.execute<{
     report_date: string;
@@ -948,7 +956,7 @@ async function readDaily(
         case when count(distinct d.tank_id) = max(st.tank_count)
           then sum(d.physical_litres - coalesce((select sum(m.quantity_litres) from app.inventory_movements m
           where m.tenant_id = d.tenant_id and m.station_id = d.station_id and m.tank_id = d.tank_id
-            and m.effective_at <= d.measured_at), 0))::text
+            and m.business_date <= d.business_date), 0))::text
           else null end as inventory_variance
       from app.tank_dips d
       join app.tanks t on t.tenant_id = d.tenant_id and t.station_id = d.station_id
@@ -1006,41 +1014,64 @@ async function readDaily(
     group by a.business_date, a.station_id, p.method
     order by a.business_date, a.station_id, p.method
   `);
-  return rows.map((row) => ({
-    reportDate: row.report_date,
-    stationId: row.station_id,
-    stationCode: row.station_code,
-    litresSold: formatLitres(row.litres),
-    salesValue: formatMoney(row.sales_value),
-    paymentBreakdown: paymentsByDate
-      .filter(
-        (payment) =>
-          payment.business_date === row.report_date && payment.station_id === row.station_id,
-      )
-      .map((payment) => ({
-        method: payment.method,
-        amount: formatMoney(payment.amount),
-        evidenceIds: uniqueIds(payment.ids ?? []),
-      })),
-    cashDeclared: formatMoney(row.cash_declared),
-    cashVariance: formatMoney(row.cash_variance),
-    collectedCash: formatMoney(row.collected),
-    bankedCash: formatMoney(row.banked),
-    providerEvidence: formatMoney(row.provider_evidence),
-    providerSettledAmount: formatMoney(row.provider_settled),
-    providerOutstandingAmount: formatMoney(row.provider_outstanding),
-    recordedExpenses: formatMoney(row.expenses),
-    inventoryVariance:
-      row.inventory_variance === null ? null : formatLitres(row.inventory_variance),
-    deliveryLitres: formatLitres(row.deliveries),
-    customerCreditEvidence: formatMoney(row.credit_evidence),
-    prepaidEvidence: formatMoney(row.prepaid_evidence),
-    reconciliationIds: uniqueIds(row.reconciliation_ids ?? []),
-    collectionIds: uniqueIds(row.collection_ids ?? []),
-    depositIds: uniqueIds(row.deposit_ids ?? []),
-    settlementIds: uniqueIds(row.settlement_ids ?? []),
-    deliveryIds: uniqueIds(row.delivery_ids ?? []),
-  }));
+  const expected = await transaction.execute<{ expected_business_days: number }>(sql`
+    with station_start as (
+      select s.id,
+        greatest(
+          ${filters.fromDate}::date,
+          coalesce(
+            (select min(business_date)::date from app.station_business_days bd
+             where bd.tenant_id = s.tenant_id and bd.station_id = s.id),
+            (s.created_at at time zone s.timezone)::date
+          )
+        ) as from_date,
+        least(${filters.toDate}::date, (clock_timestamp() at time zone s.timezone)::date) as to_date
+      from app.stations s
+      where s.tenant_id = ${filters.tenantId}
+        and s.status in ('ACTIVE', 'ONBOARDING')
+        ${stationClause('s', filters.stationIds)}
+    )
+    select coalesce(sum(greatest(0, (to_date - from_date) + 1)), 0)::int as expected_business_days
+    from station_start
+  `);
+  return {
+    expectedBusinessDays: Number(expected[0]?.expected_business_days ?? 0),
+    rows: rows.map((row) => ({
+      reportDate: row.report_date,
+      stationId: row.station_id,
+      stationCode: row.station_code,
+      litresSold: formatLitres(row.litres),
+      salesValue: formatMoney(row.sales_value),
+      paymentBreakdown: paymentsByDate
+        .filter(
+          (payment) =>
+            payment.business_date === row.report_date && payment.station_id === row.station_id,
+        )
+        .map((payment) => ({
+          method: payment.method,
+          amount: formatMoney(payment.amount),
+          evidenceIds: uniqueIds(payment.ids ?? []),
+        })),
+      cashDeclared: formatMoney(row.cash_declared),
+      cashVariance: formatMoney(row.cash_variance),
+      collectedCash: formatMoney(row.collected),
+      bankedCash: formatMoney(row.banked),
+      providerEvidence: formatMoney(row.provider_evidence),
+      providerSettledAmount: formatMoney(row.provider_settled),
+      providerOutstandingAmount: formatMoney(row.provider_outstanding),
+      recordedExpenses: formatMoney(row.expenses),
+      inventoryVariance:
+        row.inventory_variance === null ? null : formatLitres(row.inventory_variance),
+      deliveryLitres: formatLitres(row.deliveries),
+      customerCreditEvidence: formatMoney(row.credit_evidence),
+      prepaidEvidence: formatMoney(row.prepaid_evidence),
+      reconciliationIds: uniqueIds(row.reconciliation_ids ?? []),
+      collectionIds: uniqueIds(row.collection_ids ?? []),
+      depositIds: uniqueIds(row.deposit_ids ?? []),
+      settlementIds: uniqueIds(row.settlement_ids ?? []),
+      deliveryIds: uniqueIds(row.delivery_ids ?? []),
+    })),
+  };
 }
 
 const dateBasis: ReportDateBasis = {
@@ -1224,6 +1255,7 @@ export async function getDailyOperationsFromRequest(
   state: 'POSTED';
   filters: ManagementReport['filters'];
   dateBasis: ReportDateBasis;
+  expectedBusinessDays: number;
   rows: readonly DailyOperationsRow[];
 }> {
   const filters = parseManagementReportQuery(input);
@@ -1250,7 +1282,7 @@ export async function getDailyOperationsFromRequest(
         toDate: filters.toDate,
       },
       dateBasis,
-      rows: await readDaily(transaction, filters),
+      ...(await readDaily(transaction, filters)),
     };
   });
 }

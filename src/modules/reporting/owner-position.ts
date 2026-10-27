@@ -43,20 +43,13 @@ export async function readOwnerPosition(
       (select count(*) from app.inventory_cost_stream_state s
         where s.tenant_id = ${filters.tenantId} ${stationFilter('s', filters.stationIds)}
           and s.valuation_status <> 'VALUED' and s.quantity_litres > 0) as unvalued_streams,
-      (
-        coalesce((select sum(e.amount - coalesce((select sum(p.amount) from app.expense_payments p
-            where p.tenant_id = e.tenant_id and p.expense_id = e.id and p.state = 'RECORDED'), 0))
-          from app.expenses e
-          where e.tenant_id = ${filters.tenantId} and e.state = 'POSTED' ${stationFilter('e', filters.stationIds)}), 0)
-        +
-        coalesce((select sum(greatest(
-            coalesce((select sum(x.amount) from app.recurring_cost_recognitions x
-              where x.tenant_id = r.tenant_id and x.period_id = r.id and x.state = 'RECOGNIZED'), 0)
-            - coalesce((select sum(p.amount) from app.expense_payments p
-              where p.tenant_id = r.tenant_id and p.recurring_period_id = r.id and p.state = 'RECORDED'), 0), 0))
-          from app.recurring_cost_periods r
-          where r.tenant_id = ${filters.tenantId} ${stationFilter('r', filters.stationIds)}), 0)
-      )::text as unpaid_expenses,
+      -- Keep this bucket aligned with the Expenses list: posted manual expenses
+      -- still outstanding. Recurring-cost recognition is shown separately in
+      -- the report and submitted expenses belong in awaiting approval.
+      coalesce((select sum(e.amount - coalesce((select sum(p.amount) from app.expense_payments p
+          where p.tenant_id = e.tenant_id and p.expense_id = e.id and p.state = 'RECORDED'), 0))
+        from app.expenses e
+        where e.tenant_id = ${filters.tenantId} and e.state = 'POSTED' ${stationFilter('e', filters.stationIds)}), 0)::text as unpaid_expenses,
       (select count(*) from app.expenses e
         where e.tenant_id = ${filters.tenantId} and e.state = 'SUBMITTED' ${stationFilter('e', filters.stationIds)}) as awaiting_count,
       coalesce((select sum(e.amount) from app.expenses e

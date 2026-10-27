@@ -228,13 +228,13 @@ export function ManagementReportDashboard({
               <MetricCard
                 label="Cash collected"
                 value={formatTileMoney(report.cash.collected)}
-                meta={`${formatTileMoney(report.cash.collectedButNotBanked)} not yet banked`}
+                meta={`${formatTileMoney(report.cash.collectedButNotBanked)} at stations`}
                 href={detailHref('cash')}
               />
               <MetricCard
-                label="Provider settlements outstanding"
-                value={formatTileMoney(report.providers.unallocatedProviderAmount)}
-                meta="Unallocated"
+                label="Settlements to receive"
+                value={formatTileMoney(report.providers.unmatchedEvidenceAmount)}
+                meta="From approved payments"
                 href={detailHref('providers')}
               />
               <MetricCard

@@ -45,7 +45,16 @@ export function buildDashboardSnapshot(report: ManagementReport): DashboardSnaps
  */
 export function countDaysWithoutReport(
   rows: readonly { reportDate: string; stationId: string; reconciliationIds?: readonly string[] }[],
+  expectedBusinessDays?: number,
 ): number {
+  const approvedDays = new Set(
+    rows
+      .filter((row) => (row.reconciliationIds ?? []).length > 0)
+      .map((row) => `${row.stationId}|${row.reportDate}`),
+  ).size;
+  if (expectedBusinessDays !== undefined) {
+    return Math.max(0, expectedBusinessDays - approvedDays);
+  }
   return new Set(
     rows
       .filter((row) => (row.reconciliationIds ?? []).length === 0)

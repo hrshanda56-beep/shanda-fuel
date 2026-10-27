@@ -4,7 +4,7 @@ import { formatReportLitres, formatTileLitres, formatTileMoney } from './format'
 describe('formatReportLitres', () => {
   it('distinguishes unavailable measurements from measured zero', () => {
     expect(formatReportLitres(null)).toBe('Unavailable');
-    expect(formatReportLitres('0.000')).toBe('0.000 L');
+    expect(formatReportLitres('0.000')).toBe('0 L');
   });
 });
 
