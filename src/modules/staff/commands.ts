@@ -40,7 +40,7 @@ import {
 } from './domain';
 import type { StaffInvitationScope } from './contracts';
 import { buildInvitationEmail } from './invitation-email';
-import { clerkUsernameForStaffNumber } from '@/platform/auth/staff-username';
+import { clerkUsernameForStaffNumber } from '../../platform/auth/staff-username';
 
 type StaffTransaction = Parameters<Parameters<ReturnType<typeof getDatabase>['transaction']>[0]>[0];
 
