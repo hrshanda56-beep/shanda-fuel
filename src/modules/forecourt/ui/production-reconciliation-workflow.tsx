@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConfirm } from '../../../design-system/feedback-provider';
 import { Button, Card, Field, StatusBadge } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
+import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 
 export type ProductionReconciliationContext = Readonly<{
   tenantId: string;
@@ -66,6 +67,12 @@ type RecordData = {
 };
 
 type CommandResult = { version?: number; state?: string };
+type CommandFailure = Error & { status?: number; code?: string };
+
+type StepUpRetry = {
+  commandType: string;
+  extra: Record<string, unknown>;
+};
 
 function tone(state: string): 'locked' | 'warning' | 'pending' | 'informational' {
   if (state === 'APPROVED' || state === 'LOCKED') return 'locked';
@@ -94,6 +101,7 @@ export function ProductionReconciliationWorkflow({
   const [cashCounted, setCashCounted] = useState('');
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
+  const [stepUpRetry, setStepUpRetry] = useState<StepUpRetry | null>(null);
 
   const endpoint = useMemo(
     () =>
@@ -149,8 +157,18 @@ export function ProductionReconciliationWorkflow({
       },
       body: JSON.stringify({ commandType, ...values }),
     });
-    const body = (await response.json()) as CommandResult & { message?: string };
-    if (!response.ok) throw new Error(body.message ?? 'The command could not be completed');
+    const body = (await response.json().catch(() => ({}))) as CommandResult & {
+      message?: string;
+      error?: string;
+    };
+    if (!response.ok) {
+      const failure = new Error(
+        body.message ?? body.error ?? 'The command could not be completed',
+      ) as CommandFailure;
+      failure.status = response.status;
+      failure.code = body.error;
+      throw failure;
+    }
     return body;
   }
 
@@ -231,7 +249,11 @@ export function ProductionReconciliationWorkflow({
     }
   }
 
-  async function transition(commandType: string, extra: Record<string, unknown> = {}) {
+  async function transition(
+    commandType: string,
+    extra: Record<string, unknown> = {},
+    skipConfirmation = false,
+  ) {
     if (!record) return;
     if (dirty) {
       setError('Save the current draft before changing its workflow state.');
@@ -239,10 +261,11 @@ export function ProductionReconciliationWorkflow({
     }
     if (
       commandType === 'ApproveProductionReconciliation' &&
+      !skipConfirmation &&
       !(await confirm({
         title: 'Approve this production reconciliation?',
         consequence:
-          'The server will post canonical sale evidence and the record cannot be edited afterwards.',
+          'The sales will be recorded and this report will be locked. Mistakes can only be fixed by a reversal.',
         confirmLabel: 'Approve reconciliation',
         tone: 'warning',
       }))
@@ -260,7 +283,16 @@ export function ProductionReconciliationWorkflow({
       });
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The workflow transition failed');
+      const failure = caught as CommandFailure;
+      if (
+        commandType === 'ApproveProductionReconciliation' &&
+        failure.status === 403 &&
+        failure.code === 'STEP_UP_REQUIRED'
+      ) {
+        setStepUpRetry({ commandType, extra });
+      } else {
+        setError(caught instanceof Error ? caught.message : 'The workflow transition failed');
+      }
     } finally {
       setBusy(false);
     }
@@ -271,7 +303,7 @@ export function ProductionReconciliationWorkflow({
   if (!record) {
     return (
       <Card as="section" className="panel" aria-labelledby="production-create-title">
-        <p className="eyebrow">Production reconciliation</p>
+        <p className="eyebrow">Reconciliation</p>
         <h1 id="production-create-title">Create shift reconciliation</h1>
         <p>
           This draft will be stored against the selected tenant, station, business day, and shift.
@@ -289,10 +321,10 @@ export function ProductionReconciliationWorkflow({
   }
 
   return (
-    <div className="reconciliation-workflow" aria-label="Production daily reconciliation workflow">
+    <div className="reconciliation-workflow" aria-label="Daily reconciliation workflow">
       <div className="page-header">
         <div>
-          <p className="eyebrow">Production daily reconciliation</p>
+          <p className="eyebrow">Daily reconciliation</p>
           <h1>Shift reconciliation · {record.business_date}</h1>
           <p className="lede">
             All totals are recomputed on the server from persisted meter, payment, cash, delivery,
@@ -460,7 +492,7 @@ export function ProductionReconciliationWorkflow({
                   onClick={() => void transition('ApproveProductionReconciliation')}
                   disabled={busy}
                 >
-                  Approve production reconciliation
+                  Approve reconciliation
                 </Button>
               )}
             </>
@@ -493,6 +525,18 @@ export function ProductionReconciliationWorkflow({
           </p>
         ) : null}
       </Card>
+      <StepUpDialog
+        open={stepUpRetry !== null}
+        tenantId={context.tenantId}
+        description="Approving this reconciliation needs a fresh identity check. Nothing is posted until you confirm."
+        confirmLabel="Confirm and approve"
+        onCancel={() => setStepUpRetry(null)}
+        onVerified={() => {
+          const retry = stepUpRetry;
+          setStepUpRetry(null);
+          if (retry) void transition(retry.commandType, retry.extra, true);
+        }}
+      />
     </div>
   );
 }

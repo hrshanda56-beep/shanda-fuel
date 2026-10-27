@@ -1305,6 +1305,19 @@ async function transitionProductionReconciliation(
             'Only a draft or returned reconciliation can be submitted',
           );
         metrics = await loadMetrics(transaction, context, payload.reconciliationId);
+        const attendants = await transaction.execute<{ count: number }>(sql`
+          select count(*)::int as count
+          from app.reconciliation_attendants
+          where tenant_id=${context.tenantId}
+            and station_id=${context.stationId}
+            and reconciliation_id=${payload.reconciliationId}
+        `);
+        if (Number(attendants[0]?.count ?? 0) === 0) {
+          throw new AppError(
+            'VALIDATION_FAILED',
+            'Select at least one attendant before submitting this reconciliation.',
+          );
+        }
         await requireExplanations(transaction, context, payload.reconciliationId, metrics);
       } else if (header.state !== 'SUBMITTED') {
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be returned');

@@ -28,6 +28,7 @@ import { formatTileMoney } from '@/modules/reporting/format';
 import { calculateDueDate } from '../credit-terms';
 import { previewLandedCost } from '../landed-cost-preview';
 import { DocumentAttachments } from '@/modules/documents/ui/document-attachments';
+import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import { initials, isOverdue, movementLabel, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
@@ -62,6 +63,7 @@ type StatementLine = {
 };
 
 type PendingDocument = {
+  kind: 'DOCUMENT';
   id: string;
   documentType: string;
   referenceNumber: string;
@@ -71,6 +73,16 @@ type PendingDocument = {
   currency: string;
   version: number;
 };
+type PendingPayment = {
+  kind: 'PAYMENT';
+  id: string;
+  paymentDate: string;
+  referenceNumber: string;
+  amount: string;
+  currency: string;
+  version: number;
+};
+type PendingItem = PendingDocument | PendingPayment;
 
 type LineType = 'FUEL' | 'TRANSPORT' | 'OTHER_DIRECT_COST';
 type LineForm = {
@@ -122,6 +134,20 @@ type PaymentForm = {
   paymentDate: string;
   amount: string;
   reference: string;
+};
+
+type SupplierCommandFailure = Error & { status?: number; code?: string };
+type SupplierStepUpRetry = {
+  commandType:
+    | 'SubmitSupplierDocument'
+    | 'SubmitSupplierPayment'
+    | 'PostSupplierPayment'
+    | 'PostSupplierDocument'
+    | 'ReturnSupplierDocument'
+    | 'SetSupplierCreditLimit'
+    | 'UpdateSupplierDetails';
+  body: Record<string, unknown>;
+  successMessage: string;
 };
 
 const SUPPLIER_ROUTE_POLICY = contextRoutePolicy('/suppliers/:supplierId');
@@ -199,7 +225,7 @@ export function SupplierDetailWorkspace({
     resolution: ContextResolution;
     supplier: SupplierSummary | null;
     statement: StatementLine[];
-    pending?: PendingDocument[];
+    pending?: PendingItem[];
     choices?: InvoiceChoices;
   };
 }) {
@@ -211,7 +237,7 @@ export function SupplierDetailWorkspace({
   const [contextError, setContextError] = useState<string | null>(null);
   const [supplier, setSupplier] = useState<SupplierSummary | null>(initial?.supplier ?? null);
   const [statement, setStatement] = useState<StatementLine[]>(initial?.statement ?? []);
-  const [pending, setPending] = useState<PendingDocument[]>(initial?.pending ?? []);
+  const [pending, setPending] = useState<PendingItem[]>(initial?.pending ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentForm, setDocumentForm] = useState<DocumentForm>(EMPTY_DOCUMENT_FORM);
@@ -244,6 +270,7 @@ export function SupplierDetailWorkspace({
   const [savedStationId, setSavedStationId] = useState('');
   const [returning, setReturning] = useState<PendingDocument | null>(null);
   const [returnReason, setReturnReason] = useState('');
+  const [stepUpRetry, setStepUpRetry] = useState<SupplierStepUpRetry | null>(null);
   const [contactForm, setContactForm] = useState<{
     name: string;
     phone: string;
@@ -347,9 +374,7 @@ export function SupplierDetailWorkspace({
       setStatement(statementResult as StatementLine[]);
       // A failed list must not hide the rest of the page; it shows as nothing waiting.
       setPending(
-        pendingResponse.ok && Array.isArray(pendingResult)
-          ? (pendingResult as PendingDocument[])
-          : [],
+        pendingResponse.ok && Array.isArray(pendingResult) ? (pendingResult as PendingItem[]) : [],
       );
     } catch (cause) {
       if (!signal?.aborted) {
@@ -381,12 +406,14 @@ export function SupplierDetailWorkspace({
     commandType:
       | 'SubmitSupplierDocument'
       | 'SubmitSupplierPayment'
+      | 'PostSupplierPayment'
       | 'PostSupplierDocument'
       | 'ReturnSupplierDocument'
       | 'SetSupplierCreditLimit'
       | 'UpdateSupplierDetails',
     body: Record<string, unknown>,
     successMessage: string,
+    isStepUpRetry = false,
   ): Promise<boolean> {
     if (!current?.legalEntityId) return false;
     setAction(commandType);
@@ -408,8 +435,22 @@ export function SupplierDetailWorkspace({
           ...body,
         }),
       });
-      const result: unknown = await response.json();
-      if (!response.ok) throw new Error(getErrorMessage(result, 'The supplier command failed'));
+      const result: unknown = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const failure = new Error(
+          getErrorMessage(result, 'The supplier command failed'),
+        ) as SupplierCommandFailure;
+        failure.status = response.status;
+        if (typeof result === 'object' && result !== null && 'error' in result) {
+          const code = (result as { error?: unknown }).error;
+          if (typeof code === 'string') failure.code = code;
+        }
+        if (failure.status === 403 && failure.code === 'STEP_UP_REQUIRED' && !isStepUpRetry) {
+          setStepUpRetry({ commandType, body, successMessage });
+          return false;
+        }
+        throw failure;
+      }
       if (
         commandType === 'SubmitSupplierDocument' &&
         typeof result === 'object' &&
@@ -701,6 +742,7 @@ export function SupplierDetailWorkspace({
                   <dd>
                     {formatTileMoney(
                       pending
+                        .filter((item): item is PendingDocument => item.kind === 'DOCUMENT')
                         .reduce(
                           (sum, item) =>
                             item.documentType === 'CREDIT_NOTE'
@@ -883,45 +925,77 @@ export function SupplierDetailWorkspace({
                 supplier&apos;s paper invoice, then post it.
               </p>
               <ul className="list-rows" aria-label="Supplier documents waiting to be posted">
-                {pending.map((document) => (
-                  <li key={document.id} className="list-row ledger-row">
-                    <span className="list-cell ledger-movement" data-label="Document">
-                      {document.documentType === 'CREDIT_NOTE' ? 'Credit note' : 'Invoice'}{' '}
-                      {document.referenceNumber}
-                    </span>
-                    <span className="list-cell" data-label="Dated">
-                      {document.documentDate}
-                      {document.dueDate ? `, due ${document.dueDate}` : ''}
-                    </span>
-                    <span className="list-cell list-amount" data-label="Amount">
-                      {formatTileMoney(document.amount, document.currency)}
-                    </span>
-                    <span className="list-cell" data-label="">
-                      <Button
-                        variant="secondary"
-                        loading={action === 'PostSupplierDocument'}
-                        disabled={action !== null}
-                        onClick={() =>
-                          void submitCommand(
-                            'PostSupplierDocument',
-                            { documentId: document.id, expectedVersion: document.version },
-                            `${document.referenceNumber} was posted.`,
-                          )
-                        }
-                      >
-                        Post
-                      </Button>{' '}
-                      <Button
-                        variant="secondary"
-                        disabled={action !== null}
-                        onClick={() => {
-                          setReturnReason('');
-                          setReturning(document);
-                        }}
-                      >
-                        Return
-                      </Button>
-                    </span>
+                {pending.map((item) => (
+                  <li key={item.id} className="list-row ledger-row">
+                    {item.kind === 'PAYMENT' ? (
+                      <>
+                        <span className="list-cell ledger-movement" data-label="Payment">
+                          Payment {item.referenceNumber}
+                        </span>
+                        <span className="list-cell" data-label="Dated">
+                          {item.paymentDate}
+                        </span>
+                        <span className="list-cell list-amount" data-label="Amount">
+                          {formatTileMoney(item.amount, item.currency)}
+                        </span>
+                        <span className="list-cell" data-label="">
+                          <Button
+                            variant="secondary"
+                            loading={action === 'PostSupplierPayment'}
+                            disabled={action !== null}
+                            onClick={() =>
+                              void submitCommand(
+                                'PostSupplierPayment',
+                                { paymentId: item.id, expectedVersion: item.version },
+                                `${item.referenceNumber} was posted.`,
+                              )
+                            }
+                          >
+                            Post payment
+                          </Button>
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="list-cell ledger-movement" data-label="Document">
+                          {item.documentType === 'CREDIT_NOTE' ? 'Credit note' : 'Invoice'}{' '}
+                          {item.referenceNumber}
+                        </span>
+                        <span className="list-cell" data-label="Dated">
+                          {item.documentDate}
+                          {item.dueDate ? `, due ${item.dueDate}` : ''}
+                        </span>
+                        <span className="list-cell list-amount" data-label="Amount">
+                          {formatTileMoney(item.amount, item.currency)}
+                        </span>
+                        <span className="list-cell" data-label="">
+                          <Button
+                            variant="secondary"
+                            loading={action === 'PostSupplierDocument'}
+                            disabled={action !== null}
+                            onClick={() =>
+                              void submitCommand(
+                                'PostSupplierDocument',
+                                { documentId: item.id, expectedVersion: item.version },
+                                `${item.referenceNumber} was posted.`,
+                              )
+                            }
+                          >
+                            Post
+                          </Button>{' '}
+                          <Button
+                            variant="secondary"
+                            disabled={action !== null}
+                            onClick={() => {
+                              setReturnReason('');
+                              setReturning(item);
+                            }}
+                          >
+                            Return
+                          </Button>
+                        </span>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1005,7 +1079,7 @@ export function SupplierDetailWorkspace({
                 layout="block"
                 icon="receipt"
                 title="No posted movements"
-                message="Submitted documents and payments appear here only after they are posted."
+                message="Submitted documents and payments waiting for posting appear here."
               />
             ) : (
               <div className="list-table ledger-table">
@@ -1451,6 +1525,21 @@ export function SupplierDetailWorkspace({
               </Field>
             </form>
           </Modal>
+
+          <StepUpDialog
+            open={stepUpRetry !== null}
+            tenantId={current.organisationId}
+            description="Posting this supplier action needs a fresh identity check. Nothing is saved until you confirm."
+            confirmLabel="Confirm and retry"
+            onCancel={() => setStepUpRetry(null)}
+            onVerified={() => {
+              const retry = stepUpRetry;
+              setStepUpRetry(null);
+              if (retry) {
+                void submitCommand(retry.commandType, retry.body, retry.successMessage, true);
+              }
+            }}
+          />
         </>
       ) : null}
     </div>

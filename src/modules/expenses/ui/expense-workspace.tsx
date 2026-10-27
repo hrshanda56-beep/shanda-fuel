@@ -15,6 +15,7 @@ import {
 } from '@/design-system/primitives';
 import { Icon } from '@/design-system/icons';
 import { Modal } from '@/design-system/modal';
+import { Checkbox } from '@/design-system/forms';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import {
@@ -181,13 +182,21 @@ function messageOf(result: unknown, fallback: string): string {
 }
 
 const USUAL_EXPENSE_KINDS = [
-  'Generator',
-  'Data and airtime',
-  'Cleaning',
-  'Repairs',
-  'Transport',
-  'Stationery',
-  'Other',
+  { name: 'Rent', classification: 'FIXED_COST' },
+  { name: 'Salaries', classification: 'FIXED_COST' },
+  { name: 'Security', classification: 'FIXED_COST' },
+  { name: 'Electricity', classification: 'FIXED_COST' },
+  { name: 'Internet', classification: 'FIXED_COST' },
+  { name: 'Insurance', classification: 'FIXED_COST' },
+  { name: 'Licences', classification: 'FIXED_COST' },
+  { name: 'Generator', classification: 'OPERATING' },
+  { name: 'Data and airtime', classification: 'OPERATING' },
+  { name: 'Cleaning', classification: 'OPERATING' },
+  { name: 'Repairs', classification: 'OPERATING' },
+  { name: 'Transport', classification: 'OPERATING' },
+  { name: 'Stationery', classification: 'OPERATING' },
+  { name: 'EcoCash charges', classification: 'OPERATING' },
+  { name: 'Other', classification: 'OPERATING' },
 ] as const;
 
 export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
@@ -246,6 +255,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [paySource, setPaySource] = useState<'BANK' | 'MOBILE_MONEY' | 'REIMBURSEMENT'>('BANK');
   const [payRef, setPayRef] = useState('');
   const [newCategory, setNewCategory] = useState('');
+  const [newCategoryFixed, setNewCategoryFixed] = useState(false);
   const [endDate, setEndDate] = useState('');
   const [approvalLimit, setApprovalLimit] = useState('');
   const [secondLimit, setSecondLimit] = useState('');
@@ -272,6 +282,9 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       category.classification === 'OPERATING' &&
       // Staff fuel goes through the staff benefit account, not through this form.
       !isStaffFuelCategory(category),
+  );
+  const activeRecurringCategories = (reference?.categories ?? []).filter(
+    (category) => category.status === 'ACTIVE' && category.classification === 'FIXED_COST',
   );
 
   function scopeParams(): URLSearchParams {
@@ -381,7 +394,10 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       setPaySource('BANK');
       setPayRef('');
     }
-    if (next.kind === 'categories') setNewCategory('');
+    if (next.kind === 'categories') {
+      setNewCategory('');
+      setNewCategoryFixed(false);
+    }
     if (next.kind === 'regular') {
       setCategoryId(activeCategories.length === 1 ? (activeCategories[0]?.categoryId ?? '') : '');
       setAmount('');
@@ -457,8 +473,8 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     setBusy(true);
     setFormError(null);
     try {
-      for (const name of USUAL_EXPENSE_KINDS) {
-        const code = categoryCodeFromName(name);
+      for (const kind of USUAL_EXPENSE_KINDS) {
+        const code = categoryCodeFromName(kind.name);
         if (!code) continue;
         const response = await fetch('/api/expenses/commands', {
           method: 'POST',
@@ -469,8 +485,8 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             tenantId,
             legalEntityId,
             code,
-            name,
-            classification: 'OPERATING',
+            name: kind.name,
+            classification: kind.classification,
           }),
         });
         if (!response.ok) {
@@ -559,7 +575,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           legalEntityId,
           code,
           name,
-          classification: 'OPERATING',
+          classification: newCategoryFixed ? 'FIXED_COST' : 'OPERATING',
         },
         `Category “${name}” added.`,
         true,
@@ -1313,7 +1329,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               <Field id="regular-category" label="Kind of expense" required>
                 <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
                   <option value="">Choose…</option>
-                  {activeCategories.map((category) => (
+                  {activeRecurringCategories.map((category) => (
                     <option key={category.categoryId} value={category.categoryId}>
                       {category.name}
                     </option>
@@ -1438,6 +1454,12 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   autoComplete="off"
                 />
               </Field>
+              <Checkbox
+                checked={newCategoryFixed}
+                onChange={(event) => setNewCategoryFixed(event.target.checked)}
+                label="Fixed monthly cost"
+                hint="Use this kind for costs such as rent, salaries or insurance."
+              />
               <div>
                 <Button type="submit" loading={busy}>
                   Add
