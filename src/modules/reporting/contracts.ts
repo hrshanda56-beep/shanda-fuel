@@ -109,6 +109,8 @@ export type CashPosition = Readonly<{
   cashEvidence: ReportMoney;
   collected: ReportMoney;
   awaitingCollection: ReportMoney;
+  /** Amount placed into a bank deposit, including deposits awaiting confirmation. */
+  deposited?: ReportMoney;
   banked: ReportMoney;
   collectedButNotBanked: ReportMoney;
   cashVariance: ReportMoney;

@@ -52,6 +52,7 @@ it('loads all cash sections in one exchange and preserves exact arithmetic', asy
       ],
       bankAccounts: [],
       handovers: [],
+      stationTimezone: 'Africa/Harare',
     },
   ]);
   const result = await getCashStationSummaryInTransaction(
@@ -61,7 +62,7 @@ it('loads all cash sections in one exchange and preserves exact arithmetic', asy
   expect(execute).toHaveBeenCalledTimes(1);
   expect(result.totals).toMatchObject({
     availableAtStation: '60.15',
-    collectedButUnbanked: '90.2',
+    collectedButUnbanked: '60.15',
     pendingBankConfirmation: '30.05',
   });
   expect(result.collections[0]).toMatchObject({

@@ -14,6 +14,7 @@ const selection = {
   organisationId: 'tenant',
   legalEntityId: 'entity',
   stationId: 'station',
+  stationTimezone: 'Africa/Harare',
   allStations: false,
 };
 
@@ -21,6 +22,7 @@ const summary: CashSummary = {
   handovers: [],
   currentMembershipId: 'me',
   stationId: 'station',
+  stationTimezone: 'Africa/Harare',
   currency: 'USD',
   totals: {
     availableAtStation: '200.00',

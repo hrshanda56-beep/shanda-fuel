@@ -780,6 +780,7 @@ export async function getCashStationSummaryInTransaction(
     bankAccounts: BankAccountsRow[];
     handovers: HandoverSummaryRow[];
     cashPosition: CashPositionRow[];
+    stationTimezone: string | null;
   }>(sql`
     with rows_rows as (${rowsQuery}),
 locations_rows as (${locationsQuery}),
@@ -789,7 +790,12 @@ depositLinks_rows as (${depositLinksQuery}),
 shiftLinks_rows as (${shiftLinksQuery}),
 bankAccounts_rows as (${bankAccountsQuery}),
 handovers_rows as (${handoversQuery}),
-cashPosition_rows as (${stationCashPositionQuery(context)})
+cashPosition_rows as (${stationCashPositionQuery(context)}),
+station_rows as (
+  select timezone from app.stations
+  where tenant_id = ${context.tenantId} and id = ${context.stationId}
+  limit 1
+)
     select coalesce((select json_agg(rows_rows) from rows_rows), '[]'::json) as "rows",
 coalesce((select json_agg(locations_rows) from locations_rows), '[]'::json) as "locations",
 coalesce((select json_agg(reconciliationSources_rows) from reconciliationSources_rows), '[]'::json) as "reconciliationSources",
@@ -798,7 +804,8 @@ coalesce((select json_agg(depositLinks_rows) from depositLinks_rows), '[]'::json
 coalesce((select json_agg(shiftLinks_rows) from shiftLinks_rows), '[]'::json) as "shiftLinks",
 coalesce((select json_agg(bankAccounts_rows) from bankAccounts_rows), '[]'::json) as "bankAccounts",
 coalesce((select json_agg(handovers_rows) from handovers_rows), '[]'::json) as "handovers",
-coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json) as "cashPosition"
+coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json) as "cashPosition",
+(select timezone from station_rows) as "stationTimezone"
   `);
   const snapshot = sections[0];
   if (!snapshot) throw new AppError('INVARIANT_VIOLATION', 'Cash summary was not returned');
@@ -812,6 +819,7 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
     bankAccounts,
     handovers,
     cashPosition: cashPositionRows = [],
+    stationTimezone,
   } = snapshot;
   const iso = (value: string | Date | null) => (value ? new Date(value).toISOString() : null);
 
@@ -823,7 +831,10 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
     const allocated = decimal(row.allocated_amount);
     const confirmed = decimal(row.confirmed_amount);
     const available = decimal(remainingCashAmount(row.amount, row.allocated_amount));
-    const unbanked = decimal(remainingCashAmount(row.amount, row.confirmed_amount));
+    // "Still to bank" is the part not allocated to any deposit.  A deposit that
+    // is awaiting bank confirmation is no longer at the station, so it must not
+    // remain in this bucket.
+    const unbanked = decimal(remainingCashAmount(row.amount, row.allocated_amount));
     const pending = allocated.subtract(confirmed);
     availableAtStation = availableAtStation.add(available);
     collectedButUnbanked = collectedButUnbanked.add(unbanked);
@@ -925,6 +936,7 @@ coalesce((select json_agg(cashPosition_rows) from cashPosition_rows), '[]'::json
 
   return {
     stationId: context.stationId,
+    stationTimezone: stationTimezone ?? undefined,
     currency: 'USD',
     cashPosition: cashPositionFrom(cashPositionRows[0]),
     totals: {

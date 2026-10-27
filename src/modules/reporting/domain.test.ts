@@ -44,9 +44,26 @@ describe('management reporting exact arithmetic', () => {
       cashEvidence: '100.0000',
       collected: '80.0000',
       awaitingCollection: '20.0000',
+      deposited: '50.0000',
       banked: '50.0000',
       collectedButNotBanked: '30.0000',
       cashVariance: '-2.0000',
+    });
+  });
+
+  it('keeps deposits awaiting confirmation out of cash still at stations', () => {
+    expect(
+      deriveCashPosition({
+        evidence: '100.00',
+        collected: '80.00',
+        deposited: '60.00',
+        banked: '20.00',
+        variance: '0.00',
+      }),
+    ).toMatchObject({
+      deposited: '60.0000',
+      banked: '20.0000',
+      collectedButNotBanked: '20.0000',
     });
   });
 
