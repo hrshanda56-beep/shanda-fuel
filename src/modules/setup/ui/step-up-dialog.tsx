@@ -87,7 +87,7 @@ function ClerkForm({
 
   return (
     <div className={styles.form}>
-      <p className={styles.note}>You will be asked to reverify your password.</p>
+      <p className={styles.note}>You will be asked to confirm it’s you.</p>
       {error ? (
         <p className={styles.message} role="alert">
           {error}

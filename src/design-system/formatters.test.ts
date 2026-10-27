@@ -18,7 +18,7 @@ describe('presentation formatters', () => {
     expect(formatUsd('7460')).toBe('$7,460');
     expect(formatUsd('-212.40')).toBe('−$212.40');
     expect(formatUsd('abc')).toBe('—');
-    expect(formatLitres('1050.375')).toBe('1,050.375 L');
+    expect(formatLitres('1050.375')).toBe('1,050.38 L');
     expect(formatPercentage('4.25')).toBe('4.25%');
   });
 

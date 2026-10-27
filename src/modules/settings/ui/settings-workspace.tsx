@@ -416,11 +416,15 @@ export function SettingsWorkspace({
           ) : null}
 
           {shown === 'activity' && stationView ? (
-            <AuditPanel tenantId={organisation.id} stationId={stationView.stationId} />
+            <AuditPanel
+              tenantId={organisation.id}
+              stationId={stationView.stationId}
+              timezone={selectedStation?.timezone}
+            />
           ) : null}
 
           {shown === 'activity' && !stationView && view.access?.canViewAudit ? (
-            <AuditPanel tenantId={organisation.id} />
+            <AuditPanel tenantId={organisation.id} timezone={selectedStation?.timezone} />
           ) : null}
 
           {shown === 'account' ? <AccountPanel view={view} /> : null}

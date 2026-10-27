@@ -862,7 +862,7 @@ export function SettlementWorkspace({
                         </span>
                         <span>
                           <strong>{row.providerName}</strong>
-                          <small>{row.settlementReference}</small>
+                          <small>{row.batchReference ?? row.settlementReference}</small>
                         </span>
                       </span>
                       <span className="list-cell" data-label="Settled">

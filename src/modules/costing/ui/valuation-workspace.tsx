@@ -16,6 +16,7 @@ import {
 } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import { formatLitres, formatMoney } from '@/design-system/formatters';
 import { TankOverview, type InventoryReport } from '@/modules/inventory/ui/tank-overview';
 import {
   InventoryOperationalActions,
@@ -270,7 +271,7 @@ export function ValuationOverview({
       ) : null}
       <div className="page-heading">
         <div>
-          <p>Cost streams and their valuation.</p>
+          <p>Stock value by tank.</p>
         </div>
         <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
           Refresh
@@ -279,15 +280,15 @@ export function ValuationOverview({
       {success ? <SuccessState title="Workflow updated" message={success} /> : null}
       <section className="metric-grid" aria-label="Valuation summary">
         <MetricCard
-          label="Streams"
+          label="Tanks with a value"
           value={data.streams.length}
-          meta="Persisted cost projections"
+          meta="Stock value by tank"
           href="#cost-streams"
         />
         <MetricCard
           label="Unvalued"
           value={unvalued.length}
-          meta="May block sale-cost posting"
+          meta="Needs a cost before sales can be costed"
           tone={unvalued.length > 0 ? 'critical' : 'default'}
           href="#cost-streams"
         />
@@ -312,8 +313,8 @@ export function ValuationOverview({
         <Card className="panel table-card" id="cost-streams">
           <div className="section-heading">
             <div>
-              <h2>Cost streams</h2>
-              <p>Value and WAC are read from the persisted projection.</p>
+              <h2>Stock value by tank</h2>
+              <p>Average cost per litre is worked out from deliveries.</p>
             </div>
           </div>
           <TableScrollRegion label="Inventory valuation streams">
@@ -344,7 +345,7 @@ export function ValuationOverview({
                       </Link>
                       <span className="table-secondary">{stream.product.code}</span>
                     </th>
-                    <td data-label="Quantity">{stream.quantityLitres} L</td>
+                    <td data-label="Quantity">{formatLitres(stream.quantityLitres)}</td>
                     <td data-label="Status">
                       <Status status={stream.valuationStatus} />
                       {stream.hasActiveRevaluation ? (
@@ -356,12 +357,12 @@ export function ValuationOverview({
                     <td data-label="Inventory value">
                       {stream.inventoryValue === null
                         ? '—'
-                        : `${stream.currency} ${stream.inventoryValue}`}
+                        : formatMoney(stream.inventoryValue, stream.currency ?? 'USD')}
                     </td>
                     <td data-label="WAC">
                       {stream.weightedAverageCost === null
                         ? '—'
-                        : `${stream.currency} ${stream.weightedAverageCost}/L`}
+                        : `${formatMoney(stream.weightedAverageCost, stream.currency ?? 'USD')}/L`}
                     </td>
                     <td className="cell-action">
                       <Link
@@ -373,7 +374,7 @@ export function ValuationOverview({
                         tabIndex={-1}
                         aria-hidden="true"
                       >
-                        Review stream
+                        View details
                       </Link>
                     </td>
                   </tr>
@@ -387,7 +388,7 @@ export function ValuationOverview({
         <div className="section-heading">
           <div>
             <h2>Revaluation history</h2>
-            <p>Every transition retains its actor, timestamp, and persisted evidence.</p>
+            <p>Every change keeps who made it and when.</p>
           </div>
         </div>
         {data.revaluations.length === 0 ? (

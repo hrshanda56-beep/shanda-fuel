@@ -8,6 +8,7 @@ import { Notice } from '@/design-system/feedback';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
 import { Button, Card, EmptyState, Field, StatusBadge } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
+import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StockSignal } from '../../approvals/operations-alerts';
 import { parseCalibrationText } from '../calibration';
 import type { TankDetail } from '../tank-detail';
@@ -75,9 +76,14 @@ export function TankDetailView({
   const [message, setMessage] = useState<{ tone: 'positive' | 'critical'; text: string } | null>(
     null,
   );
+  const [stepUpRetry, setStepUpRetry] = useState<'limits' | 'chart' | null>(null);
 
   async function saveLimits(event: FormEvent) {
     event.preventDefault();
+    await saveLimitsRequest();
+  }
+
+  async function saveLimitsRequest() {
     setMessage(null);
     const yellowText = yellow.trim();
     const redText = red.trim();
@@ -116,7 +122,14 @@ export function TankDetailView({
           varianceRedLitres: redText || null,
         }),
       });
-      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      const body = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        code?: string;
+      };
+      if (response.status === 403 && body.code === 'STEP_UP_REQUIRED') {
+        setStepUpRetry('limits');
+        return;
+      }
       if (!response.ok) throw new Error(body.message ?? 'The limits could not be saved.');
       setMessage({ tone: 'positive', text: 'The limits were saved.' });
       router.refresh();
@@ -138,6 +151,10 @@ export function TankDetailView({
 
   async function saveChart(event: FormEvent) {
     event.preventDefault();
+    await saveChartRequest();
+  }
+
+  async function saveChartRequest() {
     setChartMessage(null);
     setChartSaving(true);
     try {
@@ -154,7 +171,14 @@ export function TankDetailView({
           points,
         }),
       });
-      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      const body = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        code?: string;
+      };
+      if (response.status === 403 && body.code === 'STEP_UP_REQUIRED') {
+        setStepUpRetry('chart');
+        return;
+      }
       if (!response.ok) throw new Error(body.message ?? 'The chart could not be saved.');
       setChartMessage({
         tone: 'positive',
@@ -177,7 +201,7 @@ export function TankDetailView({
       <PageHeader
         eyebrow={`${context.stationName} · ${tank.productName}`}
         title={`Tank ${tank.code}`}
-        description={`Holds ${formatLitres(tank.capacityLitres)} L. The books say ${formatLitres(tank.bookLitres)} L is in it now.`}
+        description={`Holds ${formatLitres(tank.capacityLitres)}. The books say ${formatLitres(tank.bookLitres)} is in it now.`}
         actions={
           <>
             <Link className="button button-quiet" href={streamHref}>
@@ -220,12 +244,12 @@ export function TankDetailView({
           </form>
         ) : (
           <p>
-            Yellow above {tank.yellowLitres ? `${formatLitres(tank.yellowLitres)} L` : 'not set'}.
-            Red above{' '}
+            Yellow above {tank.yellowLitres ? formatLitres(tank.yellowLitres) : 'not set'}. Red
+            above{' '}
             {tank.redLitres
-              ? `${formatLitres(tank.redLitres)} L`
+              ? formatLitres(tank.redLitres)
               : tank.yellowLitres
-                ? `${formatLitres(String(Number(tank.yellowLitres) * 2))} L (twice yellow)`
+                ? `${formatLitres(String(Number(tank.yellowLitres) * 2))} (twice yellow)`
                 : 'not set'}
             .
           </p>
@@ -339,13 +363,13 @@ export function TankDetailView({
                       ) : null}
                     </th>
                     <td data-label="Measured" className="numeric">
-                      {formatLitres(dip.physicalLitres)} L
+                      {formatLitres(dip.physicalLitres)}
                     </td>
                     <td data-label="Books said" className="numeric">
-                      {formatLitres(dip.bookLitres)} L
+                      {formatLitres(dip.bookLitres)}
                     </td>
                     <td data-label="Difference" className="numeric">
-                      {signed(dip.varianceLitres)} L
+                      {signed(dip.varianceLitres)}
                     </td>
                     <td data-label="Result">
                       <StatusBadge tone={SIGNAL[dip.signal].tone}>
@@ -391,7 +415,7 @@ export function TankDetailView({
                       {MOVEMENT_LABELS[movement.movementType] ?? movement.movementType}
                     </td>
                     <td data-label="Litres" className="numeric">
-                      {signed(movement.quantityLitres)} L
+                      {signed(movement.quantityLitres)}
                     </td>
                   </tr>
                 ))}
@@ -400,6 +424,20 @@ export function TankDetailView({
           </TableScrollRegion>
         )}
       </Card>
+
+      <StepUpDialog
+        open={stepUpRetry !== null}
+        tenantId={context.tenantId}
+        description="Saving this tank setting needs a fresh identity check. Nothing is saved until you confirm."
+        confirmLabel="Confirm and save"
+        onCancel={() => setStepUpRetry(null)}
+        onVerified={() => {
+          const retry = stepUpRetry;
+          setStepUpRetry(null);
+          if (retry === 'limits') void saveLimitsRequest();
+          if (retry === 'chart') void saveChartRequest();
+        }}
+      />
     </div>
   );
 }
