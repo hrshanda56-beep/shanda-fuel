@@ -9,9 +9,13 @@
   --entry-green-soft: #7cc2ab;
   --entry-icon: var(--entry-green-deep);
 
+  /* The frame is exactly one screen tall: the brand panel never moves and only
+   * the task area scrolls, and only when its content cannot fit. */
   display: grid;
-  min-height: 100vh;
-  min-height: 100dvh;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background-color: var(--bg-canvas);
 }
 
@@ -31,13 +35,17 @@
 
 .entry-main {
   display: grid;
-  place-items: center;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--page-block) var(--page-gutter);
 }
 
 .entry-column {
   display: grid;
+  align-self: center;
+  justify-self: center;
+  margin-block: auto;
   width: min(100%, 26rem);
   min-width: 0;
   gap: var(--space-6);
@@ -46,6 +54,38 @@
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
   box-shadow: var(--shadow-xs);
+}
+
+.entry-column-wide {
+  width: min(100%, 36rem);
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-8);
+}
+
+.entry-column-wide .entry-heading {
+  margin-bottom: var(--space-2);
+}
+
+.entry-column-wide .entry-form {
+  gap: var(--space-4);
+}
+
+.entry-column-wide .entry-footnote {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+/* Two fields per row where there is room; one column on phones. */
+.entry-form-pair {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 36rem) {
+  .entry-form-pair {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 30rem) {
@@ -294,7 +334,7 @@ button.entry-link {
 @media (max-width: 63.99rem) {
   .entry {
     position: relative;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
     background: linear-gradient(160deg, #0a3d33 0%, #072a24 55%, #101514 100%);
     color: #f1f6f4;

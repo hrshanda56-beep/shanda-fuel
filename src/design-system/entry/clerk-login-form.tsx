@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useRef, useState, type FormEvent } from 'react';
 
+import { clerkIdentifierForSignIn } from '@/platform/auth/staff-username';
 import { Button, Field } from '../primitives';
 import { PasswordField } from './password-field';
 import { safePostSignInPath } from './entry-logic';
@@ -30,7 +31,10 @@ export function ClerkLoginForm({ next, invited = false }: { next?: string; invit
     const password = String(form.get('password') ?? '');
     let activatingSession = false;
     try {
-      const result = await signIn.create({ identifier, password });
+      const result = await signIn.create({
+        identifier: clerkIdentifierForSignIn(identifier),
+        password,
+      });
       if (result.status !== 'complete' || !result.createdSessionId) {
         setVerificationRequired(true);
         return;

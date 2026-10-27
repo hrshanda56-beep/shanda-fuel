@@ -6,6 +6,7 @@ import { useSignIn } from '@clerk/nextjs/legacy';
 import { SignIn } from '@clerk/nextjs';
 import { useRef, useState, type FormEvent } from 'react';
 
+import { clerkUsernameForStaffNumber } from '@/platform/auth/staff-username';
 import { Button, Field } from '../primitives';
 import { PASSWORD_REQUIREMENTS, validateNewPassword, type NewPasswordIssues } from './entry-logic';
 import { PasswordField } from './password-field';
@@ -61,9 +62,9 @@ export function ManualActivationForm() {
       try {
         if (!isLoaded || !signIn) throw new Error('Sign-in unavailable');
         const result = await signIn.create({
-          identifier: String(form.get('staffNumber') ?? '')
-            .trim()
-            .toUpperCase(),
+          identifier: clerkUsernameForStaffNumber(
+            String(form.get('staffNumber') ?? '').toUpperCase(),
+          ),
           password,
         });
         if (result.status !== 'complete' || !result.createdSessionId) {
@@ -109,37 +110,41 @@ export function ManualActivationForm() {
         </p>
       </header>
       <form className="entry-form" onSubmit={submit} noValidate>
-        <Field id="staff-number" label="Staff Number" required>
-          <input id="staff-number" name="staffNumber" autoComplete="username" required />
-        </Field>
-        <Field id="activation-code" label="Activation Code" required>
-          <input
-            id="activation-code"
-            name="activationCode"
-            autoComplete="one-time-code"
-            placeholder="7K3M-9R2X"
-            autoCapitalize="characters"
-            spellCheck={false}
-            required
-          />
-        </Field>
-        <Field
-          id="activation-password"
-          label="Create password"
-          hint={PASSWORD_REQUIREMENTS.join('. ')}
-          error={issues.password}
-          required
-        >
-          <PasswordField
+        <div className="entry-form-pair">
+          <Field id="staff-number" label="Staff Number" required>
+            <input id="staff-number" name="staffNumber" autoComplete="username" required />
+          </Field>
+          <Field id="activation-code" label="Activation Code" required>
+            <input
+              id="activation-code"
+              name="activationCode"
+              autoComplete="one-time-code"
+              placeholder="7K3M-9R2X"
+              autoCapitalize="characters"
+              spellCheck={false}
+              required
+            />
+          </Field>
+        </div>
+        <div className="entry-form-pair">
+          <Field
             id="activation-password"
-            name="password"
-            autoComplete="new-password"
-            ref={passwordRef}
-          />
-        </Field>
-        <Field id="activation-confirm" label="Confirm password" error={issues.confirm} required>
-          <PasswordField id="activation-confirm" name="confirm" autoComplete="new-password" />
-        </Field>
+            label="Create password"
+            hint={PASSWORD_REQUIREMENTS.join('. ')}
+            error={issues.password}
+            required
+          >
+            <PasswordField
+              id="activation-password"
+              name="password"
+              autoComplete="new-password"
+              ref={passwordRef}
+            />
+          </Field>
+          <Field id="activation-confirm" label="Confirm password" error={issues.confirm} required>
+            <PasswordField id="activation-confirm" name="confirm" autoComplete="new-password" />
+          </Field>
+        </div>
         {error ? (
           <p className="entry-alert" role="alert">
             {error}
