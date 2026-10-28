@@ -8,7 +8,8 @@
  */
 import type { ReportDefinition } from './catalog';
 import type { ManagementReport } from './contracts';
-import { addExact, subtractExact } from './domain';
+import { approvedFuelBenefit } from './statements';
+import { operatingProfit } from './operating-profit';
 
 type Cell = string | number | null | undefined;
 type Column<Row> = Readonly<{
@@ -143,6 +144,7 @@ function commercialRows(report: ManagementReport, code: (id: string) => string):
 }
 
 function profitLossRows(report: ManagementReport, code: (id: string) => string): ProfitLossRow[] {
+  const fuelBenefit = approvedFuelBenefit(report);
   const rows: ProfitLossRow[] = [
     {
       section: 'SUMMARY',
@@ -221,6 +223,21 @@ function profitLossRows(report: ManagementReport, code: (id: string) => string):
     },
     {
       section: 'SUMMARY',
+      label: 'Staff and management fuel',
+      businessDate: null,
+      stationCode: '',
+      category: null,
+      productCode: null,
+      productName: null,
+      litres: null,
+      revenue: null,
+      cost: fuelBenefit,
+      profit: null,
+      status: 'APPROVED',
+      sourceIds: null,
+    },
+    {
+      section: 'SUMMARY',
       label: 'Net operating result',
       businessDate: null,
       stationCode: '',
@@ -230,13 +247,7 @@ function profitLossRows(report: ManagementReport, code: (id: string) => string):
       litres: null,
       revenue: null,
       cost: null,
-      profit:
-        report.grossMargin === null
-          ? null
-          : subtractExact(
-              report.grossMargin,
-              addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
-            ),
+      profit: operatingProfit(report.grossMargin, report.expenses.total, fuelBenefit),
       status: report.grossMargin === null ? 'UNAVAILABLE' : 'COMPLETE',
       sourceIds: null,
     },

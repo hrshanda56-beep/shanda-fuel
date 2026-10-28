@@ -40,6 +40,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   OTHER: 'Other',
 };
 
+export const EXPENSE_BASIS_NOTE =
+  'Expenses are approved or recognized by expense date; pending and rejected expenses are excluded.';
+
 function categoryLabel(category: string): string {
   const known = CATEGORY_LABELS[category];
   if (known) return known;
@@ -94,6 +97,7 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
   const notes = [
     'Revenue is recognised revenue and cost of sales is restated landed cost, both from approved records.',
     'Operating expenses and fixed costs are recognised separately. Depreciation, tax and financing costs are not included.',
+    EXPENSE_BASIS_NOTE,
   ];
   if (hasApprovedFuel(report)) {
     notes.push(
@@ -681,7 +685,7 @@ export function buildIncomeStatement(
     },
   ];
 
-  const notes: string[] = [];
+  const notes: string[] = [EXPENSE_BASIS_NOTE];
   if (current.costing.unvaluedSaleCount > 0) {
     notes.push(
       `${current.costing.unvaluedSaleCount} of ${current.costing.saleCount} sales have no cost yet, so gross profit and the result are not shown.`,
