@@ -1,6 +1,9 @@
 export type RecordData = {
   state: string;
   version: number;
+  approvalBlocked?: boolean;
+  requiresApproverNote?: boolean;
+  approvalNote: string | null;
   business_date: string;
   /** Customer accounts that may be charged at this station, with what they may still spend. */
   customerAccounts: Array<{

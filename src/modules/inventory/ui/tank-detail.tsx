@@ -82,14 +82,20 @@ export function TankDetailView({
   const [voidingDipId, setVoidingDipId] = useState<string | null>(null);
 
   async function voidDip(dipId: string) {
-    const reason = window.prompt('Why is this dip being voided? Use at least five characters.')?.trim();
+    const reason = window
+      .prompt('Why is this dip being voided? Use at least five characters.')
+      ?.trim();
     if (!reason || reason.length < 5) return;
-    if (!(await confirm({
-      title: 'Void this tank dip?',
-      consequence: 'This removes the dip from stock calculations. It cannot be undone, and a dip attached to a delivery or reconciliation will be refused.',
-      confirmLabel: 'Void tank dip',
-      tone: 'warning',
-    }))) return;
+    if (
+      !(await confirm({
+        title: 'Void this tank dip?',
+        consequence:
+          'This removes the dip from stock calculations. It cannot be undone, and a dip attached to a delivery or reconciliation will be refused.',
+        confirmLabel: 'Void tank dip',
+        tone: 'warning',
+      }))
+    )
+      return;
     setVoidingDipId(dipId);
     setMessage(null);
     try {
@@ -106,10 +112,16 @@ export function TankDetailView({
       });
       const body = (await response.json().catch(() => ({}))) as { message?: string };
       if (!response.ok) throw new Error(body.message ?? 'The dip could not be voided.');
-      setMessage({ tone: 'positive', text: 'The dip was voided and removed from stock calculations.' });
+      setMessage({
+        tone: 'positive',
+        text: 'The dip was voided and removed from stock calculations.',
+      });
       router.refresh();
     } catch (error) {
-      setMessage({ tone: 'critical', text: error instanceof Error ? error.message : 'The dip could not be voided.' });
+      setMessage({
+        tone: 'critical',
+        text: error instanceof Error ? error.message : 'The dip could not be voided.',
+      });
     } finally {
       setVoidingDipId(null);
     }

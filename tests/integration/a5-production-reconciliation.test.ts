@@ -219,6 +219,7 @@ type CommandResponse = {
     cashVariance: string | null;
     stockVariance: Record<string, string>;
   };
+  details?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -540,6 +541,62 @@ describe('A5 production daily reconciliation persistence and approval', () => {
 
   afterAll(async () => {
     await client?.end();
+  });
+
+  it('returns the existing reconciliation when two drafts target the same shift', async () => {
+    const reconciliationShiftId = randomUUID();
+    const firstReconciliationId = randomUUID();
+    const secondReconciliationId = randomUUID();
+    await expectOk(
+      await postCommand(
+        {
+          commandType: 'StartShift',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          businessDayId: ids.day,
+          shiftId: reconciliationShiftId,
+          expectedVersion: 0,
+          plannedStartAt: '2026-09-22T06:00:00.000Z',
+          plannedEndAt: '2026-09-23T06:00:00.000Z',
+        },
+        `a5-duplicate-shift-${reconciliationShiftId}`,
+      ),
+    );
+    const common = {
+      tenantId: ids.tenant,
+      stationId: ids.station,
+      businessDayId: ids.day,
+      shiftId: reconciliationShiftId,
+      expectedVersion: 0,
+    };
+    await expectOk(
+      await postCommand(
+        {
+          commandType: 'CreateProductionReconciliation',
+          ...common,
+          reconciliationId: firstReconciliationId,
+        },
+        `a5-duplicate-first-${firstReconciliationId}`,
+      ),
+    );
+    const second = await postCommand(
+      {
+        commandType: 'CreateProductionReconciliation',
+        ...common,
+        reconciliationId: secondReconciliationId,
+      },
+      `a5-duplicate-second-${secondReconciliationId}`,
+    );
+    const body = (await second.json()) as CommandResponse;
+    expect(second.status).toBe(409);
+    expect(body.error).toBe('RECONCILIATION_ALREADY_EXISTS');
+    expect(body.details).toMatchObject({ existingReconciliationId: firstReconciliationId });
+    const rows = await client.unsafe<{ count: string }[]>(`
+      select count(*)::text as count
+      from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and shift_id='${reconciliationShiftId}'
+    `);
+    expect(rows[0]?.count).toBe('1');
   });
 
   it('creates, reloads, submits, concurrently approves, retries, and chronologically posts A4 sales', async () => {
@@ -2085,6 +2142,81 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       await readReconciliation(reconciliationId, 'a5-approver-session-token')
     ).json()) as { approvalBlocked?: boolean };
     expect(asOther.approvalBlocked).toBe(false);
+  });
+
+  it('requires the approving manager to supply the note for a red stock variance', async () => {
+    const reconciliationId = randomUUID();
+    const { common } = await createPopulatedProductionReconciliation(reconciliationId);
+    const dip = await postInventoryCommand(
+      {
+        commandType: 'RecordTankDip',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        tankId: ids.tank,
+        measuredAt: '2026-09-22T10:00:00.000Z',
+        physicalLitres: '0.000',
+      },
+      `a5-red-dip-${reconciliationId}`,
+    );
+    const dipBody = await expectOk(dip);
+    await expectOk(
+      await postCommand(
+        {
+          commandType: 'LinkTankDips',
+          ...common,
+          expectedVersion: 6,
+          dips: [{ dipId: dipBody.dipId, tankId: ids.tank, productId: ids.product }],
+        },
+        `a5-red-link-dip-${reconciliationId}`,
+      ),
+    );
+    await expectOk(
+      await postCommand(
+        {
+          commandType: 'SaveVarianceExplanations',
+          ...common,
+          expectedVersion: 7,
+          explanations: { STOCK: 'The dip was recorded before the late stock count.' },
+        },
+        `a5-red-explanation-${reconciliationId}`,
+      ),
+    );
+    await expectOk(
+      await postCommand(
+        { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 8 },
+        `a5-red-submit-${reconciliationId}`,
+      ),
+    );
+    const withoutNote = await postCommand(
+      { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 9 },
+      `a5-red-approve-without-note-${reconciliationId}`,
+      'a5-manager-session-token',
+    );
+    expect(withoutNote.status).toBe(400);
+    const withNote = await expectOk(
+      await postCommand(
+        {
+          commandType: 'ApproveProductionReconciliation',
+          ...common,
+          expectedVersion: 9,
+          approvalNote: 'Management accepts the red variance pending a recount.',
+        },
+        `a5-red-approve-with-note-${reconciliationId}`,
+        'a5-manager-session-token',
+      ),
+    );
+    expect(withNote.state).toBe('APPROVED');
+    const stored = await client.unsafe<{ approval_note: string | null; approved_by: string }[]>(`
+      select approval_note, approved_by
+      from app.reconciliations
+      where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${reconciliationId}'
+    `);
+    expect(stored).toEqual([
+      {
+        approval_note: 'Management accepts the red variance pending a recount.',
+        approved_by: ids.managerMembership,
+      },
+    ]);
   });
 
   it('builds the one-page daily report from the saved reconciliation', async () => {

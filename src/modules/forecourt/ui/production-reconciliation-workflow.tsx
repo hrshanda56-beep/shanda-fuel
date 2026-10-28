@@ -6,6 +6,7 @@ import { Button, Card, Field, StatusBadge } from '../../../design-system/primiti
 import { TableScrollRegion } from '../../../design-system/table';
 import { formatMoney } from '../../../design-system/formatters';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import { missingReconciliationEvidence } from './production-reconciliation-state';
 
 export type ProductionReconciliationContext = Readonly<{
   tenantId: string;
@@ -244,10 +245,9 @@ export function ProductionReconciliationWorkflow({
       await update('SaveVarianceExplanations', {
         explanations: Object.fromEntries(
           Object.entries(explanations).filter(
-            ([category, value]) => category !== 'APPROVER_NOTE' && value.trim(),
+            ([category, value]) => ['SALES', 'CASH', 'STOCK'].includes(category) && value.trim(),
           ),
         ),
-        approvalNote: explanations.APPROVER_NOTE?.trim() || undefined,
       });
       setDirty(false);
       await load();
@@ -288,6 +288,9 @@ export function ProductionReconciliationWorkflow({
         stationId: context.stationId,
         reconciliationId: context.reconciliationId,
         expectedVersion: record.version,
+        ...(commandType === 'ApproveProductionReconciliation'
+          ? { approvalNote: explanations.APPROVER_NOTE?.trim() || undefined }
+          : {}),
         ...extra,
       });
       await load();
@@ -308,6 +311,18 @@ export function ProductionReconciliationWorkflow({
   }
 
   const editable = record?.state === 'DRAFT' || record?.state === 'RETURNED';
+  const missingEvidence = record
+    ? missingReconciliationEvidence({
+        attendantsCount: record.attendants.length,
+        salesVariance: record.totals.salesVariance,
+        cashVariance: record.totals.cashVariance,
+        stockVariance: record.totals.stockVariance,
+        requiresApproverNote: Boolean(
+          record.requiresApproverNote && role === 'MANAGEMENT' && record.state === 'SUBMITTED',
+        ),
+        explanations,
+      })
+    : [];
   if (loading) return <p role="status">Loading reconciliation…</p>;
   if (!record) {
     return (
@@ -503,10 +518,9 @@ export function ProductionReconciliationWorkflow({
                 rows={2}
                 value={explanations.APPROVER_NOTE ?? ''}
                 onChange={(event) => {
-                  setDirty(true);
                   setExplanations((current) => ({ ...current, APPROVER_NOTE: event.target.value }));
                 }}
-                disabled={!editable}
+                disabled={!(role === 'MANAGEMENT' && record.state === 'SUBMITTED')}
               />
             </Field>
           ) : null}
@@ -525,7 +539,7 @@ export function ProductionReconciliationWorkflow({
             <Button
               variant="primary"
               onClick={() => void transition('SubmitProductionReconciliation')}
-              disabled={busy}
+              disabled={busy || missingEvidence.length > 0}
             >
               Submit for management review
             </Button>
@@ -545,7 +559,7 @@ export function ProductionReconciliationWorkflow({
                 <Button
                   variant="primary"
                   onClick={() => void transition('ApproveProductionReconciliation')}
-                  disabled={busy}
+                  disabled={busy || missingEvidence.length > 0}
                 >
                   Approve reconciliation
                 </Button>
@@ -553,6 +567,11 @@ export function ProductionReconciliationWorkflow({
             </>
           ) : null}
         </div>
+        {missingEvidence.length > 0 && (editable || record.state === 'SUBMITTED') ? (
+          <p className="state" role="status">
+            Before this workflow step can continue, add: {missingEvidence.join(', ')}.
+          </p>
+        ) : null}
         {role === 'MANAGEMENT' && record.state === 'SUBMITTED' && record.approvalBlocked ? (
           <p className="state" role="status">
             You submitted this day, so someone else needs to approve it.

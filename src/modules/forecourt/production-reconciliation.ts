@@ -227,31 +227,52 @@ export async function createProductionReconciliationFromRequest(request: Request
           },
         );
       }
-      try {
-        await transaction.execute(sql`
+      const created = await transaction.execute<{ id: string }>(sql`
           insert into app.reconciliations
             (id, tenant_id, station_id, business_day_id, shift_id, supervisor_id, created_by, state)
           values
             (${payload.reconciliationId}, ${context.tenantId}, ${context.stationId}, ${payload.businessDayId},
              ${payload.shiftId}, ${context.actor.membershipId}, ${context.actor.membershipId}, 'DRAFT')
+          on conflict (tenant_id, station_id, shift_id) do nothing
+          returning id
+      `);
+      if (!created[0]) {
+        const concurrent = await transaction.execute<{
+          id: string;
+          state: string;
+          version: number | string;
+        }>(sql`
+          select id, state, version
+          from app.reconciliations
+          where tenant_id = ${context.tenantId}
+            and station_id = ${context.stationId}
+            and shift_id = ${payload.shiftId}
+          for update
         `);
-        await transaction.execute(sql`
+        if (!concurrent[0]) {
+          throw new AppError(
+            'CONFLICT',
+            'The reconciliation could not be created; refresh and try again.',
+          );
+        }
+        throw new AppError(
+          'RECONCILIATION_ALREADY_EXISTS',
+          'A reconciliation already exists for this shift. Open the existing reconciliation instead.',
+          {
+            existingReconciliationId: concurrent[0].id,
+            existingState: concurrent[0].state,
+            existingVersion: Number(concurrent[0].version),
+          },
+        );
+      }
+      await transaction.execute(sql`
           insert into app.reconciliation_revisions
             (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales,
              variance, currency, variance_classification, source_segment_ids, source_shift_ids)
           values
             (${randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, 1, 'READY',
              0, 0, 0, 'USD', 'INFORMATIONAL', '[]'::jsonb, ${JSON.stringify([payload.shiftId])}::jsonb)
-        `);
-      } catch (error) {
-        if (isUniqueViolation(error)) {
-          throw new AppError(
-            'RECONCILIATION_ALREADY_EXISTS',
-            'A reconciliation already exists for this shift. Refresh and open it instead.',
-          );
-        }
-        throw error;
-      }
+      `);
       return {
         result: {
           reconciliationId: payload.reconciliationId,
@@ -733,7 +754,6 @@ const explanationsPayload = basePayload.extend({
         }
       }
     }),
-  approvalNote: z.string().trim().max(2000).nullish(),
 });
 export async function saveReconciliationExplanationsFromRequest(request: Request, input: unknown) {
   const payload = explanationsPayload.parse(input);
@@ -757,7 +777,7 @@ export async function saveReconciliationExplanationsFromRequest(request: Request
       }
       await transaction.execute(sql`
         update app.reconciliations
-        set approval_note=${payload.approvalNote ?? null}, updated_at=now()
+        set approval_note=null, updated_at=now()
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId}
       `);
       return { explanationCount: Object.keys(payload.explanations).length };
@@ -896,7 +916,9 @@ async function loadMetrics(
       .quantize({ name: 'Litres', precision: 18, scale: 3 })
       .toString();
     stockVariance[row.tank_id] = variance;
-    const redLimit = row.red ?? (row.yellow ? new ExactDecimal(row.yellow).multiply(new ExactDecimal('2')).toString() : null);
+    const redLimit =
+      row.red ??
+      (row.yellow ? new ExactDecimal(row.yellow).multiply(new ExactDecimal('2')).toString() : null);
     if (redLimit && new ExactDecimal(variance).value.abs().gt(new ExactDecimal(redLimit).value)) {
       redVariance = true;
     }
@@ -904,7 +926,16 @@ async function loadMetrics(
   const salesVariance = payments
     .subtract(sales)
     .quantize({ name: 'Money', precision: 20, scale: 4 });
-  return { sales, payments, salesVariance, cash, cashExpenses, cashVariance, stockVariance, redVariance };
+  return {
+    sales,
+    payments,
+    salesVariance,
+    cash,
+    cashExpenses,
+    cashVariance,
+    stockVariance,
+    redVariance,
+  };
 }
 
 async function requireExplanations(
@@ -912,28 +943,22 @@ async function requireExplanations(
   context: ForecourtCommandContext,
   reconciliationId: string,
   metrics: Awaited<ReturnType<typeof loadMetrics>>,
+  options: { requireApproverNote?: boolean; approvalNote?: string } = {},
 ): Promise<void> {
   const required = new Set<string>();
   if (!metrics.salesVariance.value.isZero()) required.add('SALES');
   if (metrics.cashVariance && !metrics.cashVariance.value.isZero()) required.add('CASH');
   if (Object.values(metrics.stockVariance).some((value) => !new ExactDecimal(value).value.isZero()))
     required.add('STOCK');
-  if (metrics.redVariance) required.add('APPROVER_NOTE');
-  if (required.size === 0) return;
+  if (required.size === 0 && !(metrics.redVariance && options.requireApproverNote)) return;
   const rows = await transaction.execute<{ category: string; explanation: string }>(sql`
     select category, explanation from app.reconciliation_variance_explanations
     where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId}
   `);
   const provided = new Set(rows.filter((row) => row.explanation.trim()).map((row) => row.category));
   const missing = [...required].filter((category) => !provided.has(category));
-  if (metrics.redVariance) {
-    const notes = await transaction.execute<{ approval_note: string | null }>(sql`
-      select approval_note
-      from app.reconciliations
-      where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${reconciliationId}
-    `);
-    if (!notes[0]?.approval_note?.trim()) missing.push('APPROVER_NOTE');
-  }
+  if (metrics.redVariance && options.requireApproverNote && !options.approvalNote?.trim())
+    missing.push('APPROVER_NOTE');
   if (missing.length)
     throw new AppError(
       'VALIDATION_FAILED',
@@ -942,6 +967,9 @@ async function requireExplanations(
 }
 
 const workflowPayload = basePayload;
+const approvalPayload = workflowPayload.extend({
+  approvalNote: z.string().trim().min(1).max(2000).optional(),
+});
 export async function submitProductionReconciliationFromRequest(request: Request, input: unknown) {
   return transitionProductionReconciliation(
     request,
@@ -963,7 +991,7 @@ export async function returnProductionReconciliationFromRequest(request: Request
 }
 
 export async function approveProductionReconciliationFromRequest(request: Request, input: unknown) {
-  const payload = workflowPayload.parse(input);
+  const payload = approvalPayload.parse(input);
   const key = request.headers.get('idempotency-key')?.trim();
   if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
   const context = await contextFor(request, payload);
@@ -1004,7 +1032,10 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         );
       }
       const metrics = await loadMetrics(transaction, context, payload.reconciliationId);
-      await requireExplanations(transaction, context, payload.reconciliationId, metrics);
+      await requireExplanations(transaction, context, payload.reconciliationId, metrics, {
+        requireApproverNote: true,
+        approvalNote: payload.approvalNote,
+      });
       const submittedSnapshot = await transaction.execute<{
         expected_sales: string;
         accounted_sales: string;
@@ -1026,7 +1057,8 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         (!new ExactDecimal(snapshot.expected_sales).value.eq(metrics.sales.value) ||
           !new ExactDecimal(snapshot.accounted_sales).value.eq(metrics.payments.value) ||
           !new ExactDecimal(snapshot.variance).value.eq(metrics.salesVariance.value) ||
-          (snapshot.metric_snapshot !== null && snapshot.metric_snapshot !== metricSnapshot(metrics)))
+          (snapshot.metric_snapshot !== null &&
+            snapshot.metric_snapshot !== metricSnapshot(metrics)))
       ) {
         throw new AppError(
           'CONFLICT',
@@ -1349,7 +1381,10 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       }
       const now = await serverNow(transaction);
       const updated = await transaction.execute<{ version: number }>(sql`
-        update app.reconciliations set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, version=version+1, updated_at=${now}::timestamptz
+        update app.reconciliations
+        set state='APPROVED', approval_note=${payload.approvalNote ?? null},
+            approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz,
+            version=version+1, updated_at=${now}::timestamptz
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} and state='SUBMITTED'
         returning version
       `);
@@ -1430,7 +1465,7 @@ async function transitionProductionReconciliation(
       const now = await serverNow(transaction);
       const update =
         nextState === 'SUBMITTED'
-          ? sql`update app.reconciliations set state='SUBMITTED', submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, returned_by=null, returned_at=null, return_reason=null, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`
+          ? sql`update app.reconciliations set state='SUBMITTED', approval_note=null, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, returned_by=null, returned_at=null, return_reason=null, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`
           : sql`update app.reconciliations set state='RETURNED', returned_by=${context.actor.membershipId}, returned_at=${now}::timestamptz, return_reason=${reason}, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`;
       const updated = await transaction.execute<{ version: number }>(update);
       if (!updated[0]) throw new AppError('CONFLICT', 'The reconciliation state became stale');
@@ -1623,13 +1658,4 @@ async function withQueryTransaction<T>(
   work: (transaction: ForecourtTransaction) => Promise<T>,
 ): Promise<T> {
   return withTenantTransaction(context.authority.transaction, work);
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === '23505'
-  );
 }

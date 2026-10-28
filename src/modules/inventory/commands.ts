@@ -473,7 +473,10 @@ async function dipLitres(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   tankId: string,
-  payload: Pick<z.infer<typeof dipPayload>, 'rawMeasurement' | 'measurementUnit' | 'physicalLitres'>,
+  payload: Pick<
+    z.infer<typeof dipPayload>,
+    'rawMeasurement' | 'measurementUnit' | 'physicalLitres'
+  >,
 ): Promise<string> {
   if (payload.rawMeasurement && payload.measurementUnit) {
     const chart = await currentCalibration(transaction, context, tankId, payload.measurementUnit);
@@ -730,12 +733,14 @@ async function insertDelivery(
     payload.postDeliveryDip?.measuredAt,
   );
   const dipTankId = sortedAllocations[0]?.tankId;
-  const preDeliveryDip = payload.preDeliveryDip && dipTankId
-    ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.preDeliveryDip)
-    : null;
-  const postDeliveryDip = payload.postDeliveryDip && dipTankId
-    ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.postDeliveryDip)
-    : null;
+  const preDeliveryDip =
+    payload.preDeliveryDip && dipTankId
+      ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.preDeliveryDip)
+      : null;
+  const postDeliveryDip =
+    payload.postDeliveryDip && dipTankId
+      ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.postDeliveryDip)
+      : null;
   const deliveryId = randomUUID();
   const noteQuantity = litres(payload.noteQuantityLitres);
   const shortageExcess = calculateDeliveryShortageExcess(

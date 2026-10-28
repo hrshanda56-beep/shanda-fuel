@@ -323,6 +323,7 @@ export function DailyOperationsWorkspace({
     initialData?.record?.attendants.map((row) => row.attendantId) ?? [],
   );
   const [cashCounted, setCashCounted] = useState(initialData?.record?.cash?.countedCash ?? '');
+  const [approvalNote, setApprovalNote] = useState(initialData?.record?.approvalNote ?? '');
   const [explanations, setExplanations] = useState<Record<string, string>>(
     Object.fromEntries(
       initialData?.record?.explanations.map((row) => [row.category, row.explanation]) ?? [],
@@ -376,6 +377,7 @@ export function DailyOperationsWorkspace({
         setExpenses([]);
         setAttendantIds([]);
         setCashCounted('');
+        setApprovalNote('');
         setExplanations({});
         return;
       }
@@ -389,6 +391,7 @@ export function DailyOperationsWorkspace({
       setExpenses(next.expenses.map(expenseFromRecord));
       setAttendantIds(next.attendants.map((attendant) => attendant.attendantId));
       setCashCounted(next.cash?.countedCash ?? '');
+      setApprovalNote(next.approvalNote ?? '');
       setExplanations(
         Object.fromEntries(next.explanations.map((item) => [item.category, item.explanation])),
       );
@@ -935,6 +938,8 @@ export function DailyOperationsWorkspace({
   const requiresStockExplanation = record
     ? Object.values(record.totals.stockVariance).some((value) => !isZero(value))
     : false;
+  const requiresApproverNote =
+    role === 'MANAGEMENT' && state === 'SUBMITTED' && Boolean(record?.requiresApproverNote);
 
   const checklist = record
     ? [
@@ -1934,6 +1939,23 @@ export function DailyOperationsWorkspace({
               </p>
             ) : null}
             {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
+              requiresApproverNote ? (
+                <Field
+                  id="management-approval-note"
+                  label="Approver note for red variance"
+                  hint="Record why this red variance is accepted or what follow-up is required."
+                  required
+                >
+                  <textarea
+                    id="management-approval-note"
+                    rows={3}
+                    value={approvalNote}
+                    onChange={(event) => setApprovalNote(event.target.value)}
+                  />
+                </Field>
+              ) : null
+            ) : null}
+            {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
               <Field
                 id="management-return-reason"
                 label="Return reason"
@@ -1980,8 +2002,12 @@ export function DailyOperationsWorkspace({
                   </Button>
                   <Button
                     variant="primary"
-                    onClick={() => void transition('ApproveProductionReconciliation')}
-                    disabled={busy}
+                    onClick={() =>
+                      void transition('ApproveProductionReconciliation', {
+                        approvalNote: approvalNote.trim() || undefined,
+                      })
+                    }
+                    disabled={busy || (requiresApproverNote && !approvalNote.trim())}
                   >
                     Approve reconciliation
                   </Button>

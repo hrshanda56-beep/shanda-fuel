@@ -724,6 +724,7 @@ export const reconciliations = appSchema.table(
     returnReason: text('return_reason'),
     approvedBy: uuid('approved_by'),
     approvedAt: utcTimestamp('approved_at'),
+    approvalNote: text('approval_note'),
     state: text('state').notNull().default('DRAFT'),
     version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
