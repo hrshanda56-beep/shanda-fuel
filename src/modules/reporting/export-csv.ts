@@ -8,7 +8,7 @@
  */
 import type { ReportDefinition } from './catalog';
 import type { ManagementReport } from './contracts';
-import { approvedFuelBenefit } from './statements';
+import { approvedFuelBenefit, recognizedOperatingExpenseTotal } from './statements';
 import { operatingProfit } from './operating-profit';
 
 type Cell = string | number | null | undefined;
@@ -247,7 +247,11 @@ function profitLossRows(report: ManagementReport, code: (id: string) => string):
       litres: null,
       revenue: null,
       cost: null,
-      profit: operatingProfit(report.grossMargin, report.expenses.total, fuelBenefit),
+      profit: operatingProfit(
+        report.grossMargin,
+        recognizedOperatingExpenseTotal(report),
+        fuelBenefit,
+      ),
       status: report.grossMargin === null ? 'UNAVAILABLE' : 'COMPLETE',
       sourceIds: null,
     },

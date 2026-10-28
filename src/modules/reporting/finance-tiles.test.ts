@@ -11,6 +11,8 @@ const report = (over: Record<string, unknown> = {}) =>
     expenses: {
       operatingTotal: '10.0000',
       fixedCostTotal: '20.0000',
+      directInventoryCostTotal: '999.0000',
+      total: '1029.0000',
       rows: [
         { businessDate: '2026-10-01', classification: 'OPERATING', amount: '10.0000' },
         { businessDate: '2026-10-01', classification: 'FIXED_COST', amount: '20.0000' },

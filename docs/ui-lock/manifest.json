@@ -259,7 +259,7 @@
     "src/modules/owner/ui/financial-position-workspace.tsx": "8388ecf3b434fe0929b9a438c3270b445d82831588d93df6f7b8700a30dddcf8",
     "src/modules/owner/ui/owner-period-bar.tsx": "36e98105ea23d68fad26fbfb0cb331bfc47c012d910717c0135b66f2d445a499",
     "src/modules/profitability/ui/profit-links.ts": "ce7869067bd9bb4de4180778a7af4653d769d323deadc28e6677c38612b4ce4d",
-    "src/modules/profitability/ui/profit-model.ts": "40c4d68353380d96cda2654311bf236b83cfc67d4e97645d538dded882bf6008",
+    "src/modules/profitability/ui/profit-model.ts": "4bf21cc576fa7b2913c3b2ac0256df5fd5b4f50f4a025ca0a129652da04b4452",
     "src/modules/profitability/ui/profit-workspace.tsx": "0e2a4fa49c3d9e565331c8790285b7c01cef10763ffed7ede065a1563d42106f",
     "src/modules/purchasing/ui/checks-panel.tsx": "f853f6f7c5e59992b3f48502f4e0286672ad76c78fb6a4b649558e15f6300a4f",
     "src/modules/purchasing/ui/exposure-panel.tsx": "7cc6e618ff240a8ca5d56b264800b4cca9ba6ee6a31e53ac1fab88de4764afa8",

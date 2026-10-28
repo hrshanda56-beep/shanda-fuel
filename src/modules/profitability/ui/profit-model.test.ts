@@ -22,9 +22,28 @@ function report(overrides: {
   costingStatus: string;
   restated: string | null;
   unvalued?: number;
-  expenses?: { stationId: string; amount: string }[];
+  expenses?: {
+    stationId: string;
+    amount: string;
+    classification?: 'OPERATING' | 'FIXED_COST' | 'DIRECT_INVENTORY_COST';
+  }[];
 }): ManagementReport {
   const expenseRows = overrides.expenses ?? [];
+  const total = expenseRows.reduce((t, r) => t + Number(r.amount), 0).toFixed(2);
+  const operatingTotal = expenseRows
+    .filter(
+      (r) => r.classification !== 'DIRECT_INVENTORY_COST' && r.classification !== 'FIXED_COST',
+    )
+    .reduce((t, r) => t + Number(r.amount), 0)
+    .toFixed(2);
+  const fixedCostTotal = expenseRows
+    .filter((r) => r.classification === 'FIXED_COST')
+    .reduce((t, r) => t + Number(r.amount), 0)
+    .toFixed(2);
+  const directInventoryCostTotal = expenseRows
+    .filter((r) => r.classification === 'DIRECT_INVENTORY_COST')
+    .reduce((t, r) => t + Number(r.amount), 0)
+    .toFixed(2);
   return {
     stations: [
       { stationId: S1, code: 'A', name: 'Avondale' },
@@ -37,7 +56,10 @@ function report(overrides: {
       ],
     },
     expenses: {
-      total: expenseRows.reduce((t, r) => t + Number(r.amount), 0).toFixed(2),
+      total,
+      operatingTotal,
+      fixedCostTotal,
+      directInventoryCostTotal,
       rows: expenseRows,
     },
     revenue: {
@@ -122,6 +144,23 @@ describe('buildProfitView', () => {
     );
     expect(view.profit).toBe('-20');
     expect(view.headline).toMatch(/loss/);
+  });
+
+  it('does not subtract direct inventory cost a second time from profit', () => {
+    const view = buildProfitView(
+      report({
+        revenue: [revenueSale(S1, '100.0000', '50')],
+        cost: [costSale(S1, '60.0000')],
+        costingStatus: 'COMPLETE',
+        restated: '60.0000',
+        expenses: [
+          { stationId: S1, amount: '10.00', classification: 'OPERATING' },
+          { stationId: S1, amount: '90.00', classification: 'DIRECT_INVENTORY_COST' },
+        ],
+      }),
+    );
+    expect(view.profit).toBe('30');
+    expect(view.stations.find((station) => station.name === 'Avondale')?.profit).toBe('30');
   });
 
   it('groups sales by fuel without inventing a cost', () => {

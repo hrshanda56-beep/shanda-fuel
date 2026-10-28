@@ -65,11 +65,14 @@ function hasApprovedFuel(report: ManagementReport): boolean {
   return exact(approvedFuelBenefit(report)).value.gt(0);
 }
 
-function recognizedOperatingExpenses(report: ManagementReport): string {
-  return addExact(
-    addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
-    approvedFuelBenefit(report),
-  );
+/** Recognized operating and fixed expenses; direct inventory cost is already in cost of sales. */
+export function recognizedOperatingExpenseTotal(report: ManagementReport): string {
+  return addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal);
+}
+
+/** The expense basis used by profit statements, including the approved-fuel benefit cost. */
+export function recognizedOperatingExpenses(report: ManagementReport): string {
+  return addExact(recognizedOperatingExpenseTotal(report), approvedFuelBenefit(report));
 }
 
 /** Recorded expenses summed by category, largest first. */
@@ -92,7 +95,11 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
   const revenue = report.revenue.recognizedRevenue;
   const cogs = report.costing.restatedCogs;
   const gross = report.grossMargin;
-  const net = operatingProfit(gross, report.expenses.total, approvedFuelBenefit(report));
+  const net = operatingProfit(
+    gross,
+    recognizedOperatingExpenseTotal(report),
+    approvedFuelBenefit(report),
+  );
   const margin = gross === null ? null : ratioPercentage(gross, revenue);
   const notes = [
     'Revenue is recognised revenue and cost of sales is restated landed cost, both from approved records.',
@@ -546,8 +553,12 @@ export type QuickFigure = Readonly<{
 /** The handful of figures an owner looks at first, each linked to the report behind it. */
 export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
   const gross = report.grossMargin;
-  const totalExpenses = addExact(report.expenses.total, approvedFuelBenefit(report));
-  const net = operatingProfit(gross, report.expenses.total, approvedFuelBenefit(report));
+  const totalExpenses = recognizedOperatingExpenses(report);
+  const net = operatingProfit(
+    gross,
+    recognizedOperatingExpenseTotal(report),
+    approvedFuelBenefit(report),
+  );
   return [
     { id: 'sales', label: 'Total Sales', value: report.sales.salesValue, slug: 'sales' },
     { id: 'gross', label: 'Gross Profit', value: gross, slug: 'profit-loss' },

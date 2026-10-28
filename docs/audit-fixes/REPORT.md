@@ -10,7 +10,7 @@ Status: P0 fixes implemented; broader P1–P4 audit scope remains for review.
 - **B3** — submission and approval recompute variances; missing explanations block both paths, red stock variance requires a fresh approver note in the approval payload, approval detects changed-after-submit metrics, and return requires a reason. Both reconciliation review surfaces enforce the same evidence gates.
 - **C8 wording** — the setup guide now explicitly says “Shift templates,” so reusable setup patterns are not confused with operated shifts.
 - **C7 local-draft display** — the reconciliation’s unsaved-draft timestamp now uses the station timezone rather than the viewer’s browser timezone.
-- **C2 partial consistency** — profit/loss exports now use the same approved-fuel benefit deduction as the dashboard and income statement, and profit screens state the expense inclusion rule.
+- **C2/C6 partial consistency** — profit, tile, statement, and profit/loss export calculations now share one recognized operating-expense basis: approved/recognized operating and fixed expenses, excluding direct inventory cost already represented in cost of sales. Profit screens state the expense inclusion rule.
 
 ## Files and behavior
 
@@ -23,7 +23,7 @@ Security, tenant scoping, Clerk authentication, RLS, production data, and approv
 - `pnpm typecheck` — PASS
 - `pnpm lint` — PASS
 - `pnpm db:check` — PASS
-- `pnpm test:unit` — PASS, 245 files / 1,723 tests
+- `pnpm test:unit` — PASS, 245 files / 1,724 tests
 - `pnpm build` — PASS, Next.js production build with 116 generated pages
 - UI-lock manifest check — covered by the full unit run after updating the manifest
 - Focused Prettier check on changed files — PASS
