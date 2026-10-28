@@ -31,7 +31,8 @@ export function ServerDailyOperations({
           stationId: current.stationId,
         });
         const operationContext = await getDailyOperationsContextFromRequest(request, input);
-        const reconciliationId = context.reconciliationId ?? operationContext.reconciliationId ?? undefined;
+        const reconciliationId =
+          context.reconciliationId ?? operationContext.reconciliationId ?? undefined;
         const record = reconciliationId
           ? getProductionReconciliationFromRequest(request, {
               ...input,

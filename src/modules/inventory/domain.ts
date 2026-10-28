@@ -74,10 +74,16 @@ export function validateDeliveryDipWindow(
 ): void {
   const delivered = new Date(deliveredAt).getTime();
   if (beforeMeasuredAt && new Date(beforeMeasuredAt).getTime() > delivered) {
-    throw new AppError('VALIDATION_FAILED', 'The before-delivery dip must be at or before delivery time.');
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The before-delivery dip must be at or before delivery time.',
+    );
   }
   if (afterMeasuredAt && new Date(afterMeasuredAt).getTime() < delivered) {
-    throw new AppError('VALIDATION_FAILED', 'The after-delivery dip must be at or after delivery time.');
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The after-delivery dip must be at or after delivery time.',
+    );
   }
 }
 

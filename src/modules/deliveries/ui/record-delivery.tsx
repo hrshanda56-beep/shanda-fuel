@@ -203,7 +203,9 @@ export function RecordDelivery({
       [key: string]: unknown;
     } | null;
     if (!response.ok) {
-      const error = new Error(body?.message ?? 'That step could not be saved. Try again.') as Error & {
+      const error = new Error(
+        body?.message ?? 'That step could not be saved. Try again.',
+      ) as Error & {
         code?: string;
         status?: number;
         details?: Record<string, unknown>;

@@ -52,7 +52,11 @@ describe('inventory domain', () => {
       validateDeliveryDipWindow('2026-10-28T08:00:00+02:00', '2026-10-28T08:01:00+02:00'),
     ).toThrow('before-delivery');
     expect(() =>
-      validateDeliveryDipWindow('2026-10-28T08:00:00+02:00', undefined, '2026-10-28T07:59:00+02:00'),
+      validateDeliveryDipWindow(
+        '2026-10-28T08:00:00+02:00',
+        undefined,
+        '2026-10-28T07:59:00+02:00',
+      ),
     ).toThrow('after-delivery');
   });
 });
