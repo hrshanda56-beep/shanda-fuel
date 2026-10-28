@@ -1117,6 +1117,7 @@ export function GlobalSearchButton({ compact = false }: { compact?: boolean }) {
       aria-keyshortcuts="Meta+K Control+K"
       onClick={() => shell?.openSearch()}
     >
+      <span className="visually-hidden">Search pages</span>
       <span>Search pages</span>
       <kbd aria-hidden="true">{shortcut}</kbd>
       <Icon name="search" size="md" />
