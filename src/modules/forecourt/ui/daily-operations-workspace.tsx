@@ -40,6 +40,7 @@ import { DailyTankDips } from './daily-tank-dips';
 import { sumDecimals } from '../../cash/ui/cash-visuals';
 import {
   formatBusinessDate,
+  formatDateTimeInTimeZone,
   formatLitres,
   formatMoney,
   formatStatusLabel,
@@ -1117,8 +1118,9 @@ export function DailyOperationsWorkspace({
       {restorable && editable ? (
         <div className="state" role="status" aria-live="polite">
           <p>
-            You have entries from {new Date(restorable.savedAt).toLocaleString()} that were never
-            saved to the server. They are only on this device.
+            You have entries from{' '}
+            {formatDateTimeInTimeZone(new Date(restorable.savedAt), operation.station.timezone)}{' '}
+            that were never saved to the server. They are only on this device.
           </p>
           <Button onClick={restoreLocalDraft}>Bring them back</Button>{' '}
           <Button variant="quiet" onClick={discardLocalDraft}>

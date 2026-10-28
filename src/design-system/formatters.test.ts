@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatBusinessDate,
+  formatDateTimeInTimeZone,
   formatDecimal,
   formatLitres,
   formatMoney,
@@ -66,6 +67,12 @@ describe('presentation formatters', () => {
 
   it('formats an instant in the known station timezone', () => {
     expect(formatTimeInTimeZone('2026-01-15T17:05:00.000Z', 'America/New_York')).toBe('12:05');
+  });
+
+  it('formats date and time in the station timezone, not the viewer timezone', () => {
+    expect(formatDateTimeInTimeZone('2026-09-23T06:00:00.000Z', 'Africa/Harare')).toBe(
+      '23 Sept 2026, 08:00',
+    );
   });
 
   it('shows an unavailable marker when the station timezone is missing', () => {

@@ -103,6 +103,26 @@ export function formatTimeInTimeZone(
   }
 }
 
+/** Format an instant with both date and time in the authoritative station timezone. */
+export function formatDateTimeInTimeZone(
+  value: DateInput,
+  timeZone: string | null | undefined,
+  locale = 'en-GB',
+): string {
+  const date = toDate(value);
+  if (!date || !timeZone?.trim()) return '—';
+
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone,
+    }).format(date);
+  } catch {
+    return '—';
+  }
+}
+
 export function formatStatusLabel(value: string): string {
   return value
     .trim()

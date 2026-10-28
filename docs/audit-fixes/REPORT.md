@@ -9,6 +9,7 @@ Status: P0 fixes implemented; broader P1–P4 audit scope remains for review.
 - **B2** — delivery plus optional before/after dips now uses one `CreateDelivery` transaction; the UI handles step-up and retries the same idempotent command after verification. Added audited tank-dip voiding with reason and calculation exclusion.
 - **B3** — submission and approval recompute variances; missing explanations block both paths, red stock variance requires a fresh approver note in the approval payload, approval detects changed-after-submit metrics, and return requires a reason. Both reconciliation review surfaces enforce the same evidence gates.
 - **C8 wording** — the setup guide now explicitly says “Shift templates,” so reusable setup patterns are not confused with operated shifts.
+- **C7 local-draft display** — the reconciliation’s unsaved-draft timestamp now uses the station timezone rather than the viewer’s browser timezone.
 
 ## Files and behavior
 
@@ -21,7 +22,7 @@ Security, tenant scoping, Clerk authentication, RLS, production data, and approv
 - `pnpm typecheck` — PASS
 - `pnpm lint` — PASS
 - `pnpm db:check` — PASS
-- `pnpm test:unit` — PASS, 245 files / 1,721 tests
+- `pnpm test:unit` — PASS, 245 files / 1,723 tests
 - `pnpm build` — PASS, Next.js production build with 116 generated pages
 - UI-lock manifest check — covered by the full unit run after updating the manifest
 - Focused Prettier check on changed files — PASS
