@@ -200,7 +200,9 @@ export function TankOverview({
                         >
                           Estimated
                         </span>
-                      ) : null}
+                      ) : (
+                        <StatusBadge tone="informational">Last dip</StatusBadge>
+                      )}
                     </span>
                   </Link>
                 </li>

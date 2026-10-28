@@ -147,10 +147,10 @@ export async function recordCashCollectionFromRequest(request: Request, body: un
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'CashCollection',
     subjectId: input.collectionReference,
-    execute: async (transaction) => ({
-      result: await recordCashCollectionInTransaction(transaction, context, input),
-      after: { collectionReference: input.collectionReference },
-    }),
+    execute: async (transaction) => {
+      const result = await recordCashCollectionInTransaction(transaction, context, input);
+      return { result, after: result };
+    },
   });
 }
 
@@ -169,10 +169,10 @@ export async function receiveCashCollectionFromRequest(request: Request, body: u
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'CashCollection',
     subjectId: input.collectionId,
-    execute: async (transaction) => ({
-      result: await receiveCashCollectionInTransaction(transaction, context, input),
-      after: { collectionId: input.collectionId, expectedVersion: input.expectedVersion },
-    }),
+    execute: async (transaction) => {
+      const result = await receiveCashCollectionInTransaction(transaction, context, input);
+      return { result, after: result };
+    },
   });
 }
 
@@ -191,10 +191,10 @@ export async function createBankDepositFromRequest(request: Request, body: unkno
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'BankDeposit',
     subjectId: input.depositReference,
-    execute: async (transaction) => ({
-      result: await createBankDepositInTransaction(transaction, context, input),
-      after: { depositReference: input.depositReference },
-    }),
+    execute: async (transaction) => {
+      const result = await createBankDepositInTransaction(transaction, context, input);
+      return { result, after: result };
+    },
   });
 }
 
@@ -213,10 +213,10 @@ export async function confirmBankDepositFromRequest(request: Request, body: unkn
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'BankDeposit',
     subjectId: input.depositId,
-    execute: async (transaction) => ({
-      result: await confirmBankDepositInTransaction(transaction, context, input),
-      after: { depositId: input.depositId, expectedVersion: input.expectedVersion },
-    }),
+    execute: async (transaction) => {
+      const result = await confirmBankDepositInTransaction(transaction, context, input);
+      return { result, after: { ...result, bankReference: input.bankReference } };
+    },
   });
 }
 
@@ -232,10 +232,17 @@ export async function submitCashHandoverFromRequest(request: Request, body: unkn
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'CashHandover',
     subjectId: `${input.fromLocationId}:${input.toLocationId}`,
-    execute: async (transaction) => ({
-      result: await submitCashHandoverInTransaction(transaction, context, input),
-      after: { expectedAmount: input.expectedAmount, countedAmount: input.countedAmount },
-    }),
+    execute: async (transaction) => {
+      const result = await submitCashHandoverInTransaction(transaction, context, input);
+      return {
+        result,
+        after: {
+          ...result,
+          expectedAmount: input.expectedAmount,
+          countedAmount: input.countedAmount,
+        },
+      };
+    },
   });
 }
 
@@ -251,10 +258,10 @@ export async function acceptCashHandoverFromRequest(request: Request, body: unkn
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'CashHandover',
     subjectId: input.handoverId,
-    execute: async (transaction) => ({
-      result: await acceptCashHandoverInTransaction(transaction, context, input),
-      after: { handoverId: input.handoverId, expectedVersion: input.expectedVersion },
-    }),
+    execute: async (transaction) => {
+      const result = await acceptCashHandoverInTransaction(transaction, context, input);
+      return { result, after: result };
+    },
   });
 }
 
@@ -270,10 +277,10 @@ export async function resolveCashHandoverFromRequest(request: Request, body: unk
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'CashHandover',
     subjectId: input.handoverId,
-    execute: async (transaction) => ({
-      result: await resolveCashHandoverInTransaction(transaction, context, input),
-      after: { handoverId: input.handoverId, resolutionNote: input.resolutionNote },
-    }),
+    execute: async (transaction) => {
+      const result = await resolveCashHandoverInTransaction(transaction, context, input);
+      return { result, after: { ...result, resolutionNote: input.resolutionNote } };
+    },
   });
 }
 
@@ -294,13 +301,13 @@ export async function cancelCashHandoverFromRequest(request: Request, body: unkn
     requestHash: canonicalRequestHash(input, selection),
     subjectType: 'CashHandover',
     subjectId: input.handoverId,
-    execute: async (transaction) => ({
-      result: await cancelCashHandoverInTransaction(transaction, context, {
+    execute: async (transaction) => {
+      const result = await cancelCashHandoverInTransaction(transaction, context, {
         ...input,
         canActForOthers,
-      }),
-      after: { handoverId: input.handoverId },
-    }),
+      });
+      return { result, after: result };
+    },
   });
 }
 

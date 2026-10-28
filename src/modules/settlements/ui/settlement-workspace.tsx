@@ -76,6 +76,18 @@ function isPositiveDecimal(value: string): boolean {
     .some((digit) => digit !== '0');
 }
 
+function displaySettlementReference(
+  row: Pick<
+    ProviderSettlementSummaryRow,
+    'settlementReference' | 'providerName' | 'settlementDate'
+  >,
+): string {
+  const reference = row.settlementReference.trim();
+  return reference && !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(reference)
+    ? reference
+    : `${row.providerName} · ${row.settlementDate}`;
+}
+
 function toScaled(value: string): bigint {
   const [whole = '0', fraction = ''] = value.trim().split('.');
   return BigInt(whole + fraction.padEnd(4, '0').slice(0, 4));
@@ -862,7 +874,7 @@ export function SettlementWorkspace({
                         </span>
                         <span>
                           <strong>{row.providerName}</strong>
-                          <small>{row.settlementReference}</small>
+                          <small>{displaySettlementReference(row)}</small>
                         </span>
                       </span>
                       <span className="list-cell" data-label="Settled">
@@ -904,7 +916,7 @@ export function SettlementWorkspace({
                         className="settlement-toggle"
                         aria-expanded={open}
                         aria-controls={detailsId}
-                        aria-label={`${open ? 'Hide' : 'Show'} details for ${row.settlementReference}`}
+                        aria-label={`${open ? 'Hide' : 'Show'} details for ${displaySettlementReference(row)}`}
                       >
                         <Icon name="chevron-down" />
                       </button>

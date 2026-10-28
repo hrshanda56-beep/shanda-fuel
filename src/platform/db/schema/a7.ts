@@ -16,6 +16,7 @@ import {
 import { appSchema } from './namespaces';
 import { legalEntities, memberships, stations, tenants } from './a1';
 import { fuelDeliveryAllocations, fuelDeliveries } from './a4';
+import { bankAccounts } from './a6';
 
 const id = () =>
   uuid('id')
@@ -283,6 +284,7 @@ export const supplierPayments = appSchema.table(
     paymentDate: text('payment_date').notNull(),
     paymentReference: text('payment_reference').notNull(),
     paymentMethod: text('payment_method'),
+    bankAccountId: uuid('bank_account_id'),
     externalReference: text('external_reference'),
     currency: text('currency').notNull().default('USD'),
     amount: moneyColumn('amount').notNull(),
@@ -312,6 +314,10 @@ export const supplierPayments = appSchema.table(
       table.state,
     ),
     check('supplier_payments_reference_nonempty_ck', sql`btrim(${table.paymentReference}) <> ''`),
+    check(
+      'supplier_payments_payment_method_ck',
+      sql`${table.paymentMethod} is null or ${table.paymentMethod} in ('STATION_CASH','ECOCASH','BANK','CARD')`,
+    ),
     check('supplier_payments_currency_ck', sql`${table.currency} = 'USD'`),
     check('supplier_payments_amount_positive_ck', sql`${table.amount} > 0`),
     check(
@@ -355,6 +361,11 @@ export const supplierPayments = appSchema.table(
       columns: [table.tenantId, table.reversedBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'supplier_payments_reversed_by_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.bankAccountId],
+      foreignColumns: [bankAccounts.tenantId, bankAccounts.id],
+      name: 'supplier_payments_bank_account_fk',
     }),
   ],
 );

@@ -216,7 +216,7 @@ export function DailyProfitWorkspace({ initial }: { initial: DailyProfitInitial 
                             {formatBusinessDate(day.date)}
                             <span className="profit-row-note">
                               {day.fuels
-                                .map((f) => `${f.productName} ${moneyOrUnavailable(f.grossProfit)}`)
+                                .map((f) => `${f.productName} ${moneyOrUnavailable(f.sales)}`)
                                 .join(' · ') || 'No sales'}
                             </span>
                           </th>

@@ -6,8 +6,9 @@ import { alternateApproverQuery } from '../../platform/security/separation-of-du
 import { AppError } from '../../platform/errors';
 
 /**
- * Prices, purchase orders and supplier invoices that are waiting on a person. Each queue is read
- * only when the person holds the permission to act on it, so a restricted queue is `null`.
+ * Prices, purchase orders, supplier invoices and supplier payments that are waiting on a person.
+ * Each queue is read only when the person holds the permission to act on it, so a restricted queue
+ * is `null`.
  */
 export async function loadDocumentApprovalFacts(
   transaction: InventoryTransaction,
@@ -23,9 +24,10 @@ export async function loadDocumentApprovalFacts(
   const canPrice = may('price.change.approve');
   const canOrder = may('purchase_order.approve');
   const canPost = may('supplier.document.post');
+  const canPostPayment = may('supplier.payment.post');
   const canExpense = may('expense.approve');
-  if (!canPrice && !canOrder && !canPost && !canExpense) {
-    return { prices: null, orders: null, invoices: null, expenses: null };
+  if (!canPrice && !canOrder && !canPost && !canPostPayment && !canExpense) {
+    return { prices: null, orders: null, invoices: null, expenses: null, supplierPayments: null };
   }
 
   const empty = sql`select null as unavailable where false`;
@@ -68,6 +70,16 @@ export async function loadDocumentApprovalFacts(
     and e.state='SUBMITTED'
   order by e.created_at,e.id`
     : empty;
+  const supplierPayments = canPostPayment
+    ? sql`
+  select p.id, p.supplier_id, s.legal_name as supplier_name, p.payment_reference,
+         p.amount::text as amount, p.submitted_by
+  from app.supplier_payments p
+  join app.suppliers s on s.tenant_id=p.tenant_id and s.id=p.supplier_id
+  where p.tenant_id=${context.tenantId} and p.legal_entity_id=${context.legalEntityId}
+    and p.state='SUBMITTED'
+  order by p.payment_date,p.created_at,p.id`
+    : empty;
 
   const rows = await transaction.execute<{
     prices: {
@@ -89,18 +101,29 @@ export async function loadDocumentApprovalFacts(
       description: string;
       amount: string;
     }[];
+    supplierPayments: {
+      id: string;
+      supplier_id: string;
+      supplier_name: string;
+      payment_reference: string;
+      amount: string;
+      submitted_by: string | null;
+    }[];
     other_price_approver: boolean;
     other_order_approver: boolean;
     other_expense_approver: boolean;
+    other_payment_approver: boolean;
   }>(sql`
- with prices as (${prices}),orders as (${orders}),invoices as (${invoices}),expenses as (${expenses})
+ with prices as (${prices}),orders as (${orders}),invoices as (${invoices}),expenses as (${expenses}),supplier_payments as (${supplierPayments})
  select coalesce((select json_agg(prices) from prices),'[]'::json) as prices,
  coalesce((select json_agg(orders) from orders),'[]'::json) as orders,
  coalesce((select json_agg(invoices) from invoices),'[]'::json) as invoices,
  coalesce((select json_agg(expenses) from expenses),'[]'::json) as expenses,
+ coalesce((select json_agg(supplier_payments) from supplier_payments),'[]'::json) as "supplierPayments",
  exists(${canPrice ? alternate() : empty}) as other_price_approver,
  exists(${canOrder ? alternate() : empty}) as other_order_approver,
  exists(${canExpense ? alternate() : empty}) as other_expense_approver
+ ,exists(${canPostPayment ? alternate() : empty}) as other_payment_approver
  `);
   const row = rows[0];
   if (!row) throw new AppError('INVARIANT_VIOLATION', 'Approval facts were not returned');
@@ -145,6 +168,19 @@ export async function loadDocumentApprovalFacts(
             documentType: i.document_type,
             count: i.count,
           })),
+        }
+      : null,
+    supplierPayments: canPostPayment
+      ? {
+          rows: row.supplierPayments.map((p) => ({
+            id: p.id,
+            supplierId: p.supplier_id,
+            supplierName: p.supplier_name,
+            paymentReference: p.payment_reference,
+            amount: p.amount,
+            submittedByMe: p.submitted_by === me,
+          })),
+          soleApprover: !row.other_payment_approver,
         }
       : null,
   };

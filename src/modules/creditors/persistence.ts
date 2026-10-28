@@ -650,9 +650,37 @@ export async function reverseSupplierDocumentInTransaction(
 export async function submitSupplierPaymentInTransaction(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,
-  input: { supplierId: string; paymentDate: string; amount: string; reference: string },
+  input: {
+    supplierId: string;
+    paymentDate: string;
+    amount: string;
+    reference: string;
+    paymentMethod?: 'STATION_CASH' | 'ECOCASH' | 'BANK' | 'CARD';
+    bankAccountId?: string;
+  },
 ) {
   await assertSupplierAndEntity(transaction, context, input.supplierId);
+  if (input.paymentMethod === 'BANK' && !input.bankAccountId) {
+    throw new AppError('VALIDATION_FAILED', 'Choose the bank account used for this payment.');
+  }
+  if (input.paymentMethod !== 'BANK' && input.bankAccountId) {
+    throw new AppError('VALIDATION_FAILED', 'A bank account can only be used with Bank payment.');
+  }
+  if (input.bankAccountId) {
+    const bankAccounts = await transaction.execute<{ id: string }>(sql`
+      select id
+      from app.bank_accounts
+      where tenant_id = ${context.tenantId}
+        and legal_entity_id = ${context.legalEntityId}
+        and id = ${input.bankAccountId}
+        and status = 'ACTIVE'
+        and currency = 'USD'
+      limit 1
+    `);
+    if (!bankAccounts[0]) {
+      throw new AppError('NOT_FOUND', 'That bank account is no longer available.');
+    }
+  }
   const validated = validateSupplierPayment({
     tenantId: context.tenantId,
     legalEntityId: context.legalEntityId,
@@ -663,19 +691,36 @@ export async function submitSupplierPaymentInTransaction(
     reference: input.reference,
   });
   const id = randomUUID();
-  await transaction.execute(sql`
-    insert into app.supplier_payments (
-      id, tenant_id, legal_entity_id, supplier_id, payment_date,
-      payment_reference, currency, amount, state, version, created_by,
-      submitted_by, submitted_at
-    ) values (
-      ${id}, ${context.tenantId}, ${context.legalEntityId}, ${input.supplierId},
-      ${validated.paymentDate}, ${validated.reference}, 'USD', ${validated.amount.amount.toString()},
-      'SUBMITTED', 0, ${context.authority.membership.membershipId},
-      ${context.authority.membership.membershipId}, now()
-    )
-  `);
-  return { paymentId: id, state: 'SUBMITTED' as const, amount: validated.amount.amount.toString() };
+  try {
+    await transaction.execute(sql`
+      insert into app.supplier_payments (
+        id, tenant_id, legal_entity_id, supplier_id, payment_date,
+        payment_reference, payment_method, bank_account_id, currency, amount, state, version, created_by,
+        submitted_by, submitted_at
+      ) values (
+        ${id}, ${context.tenantId}, ${context.legalEntityId}, ${input.supplierId},
+        ${validated.paymentDate}, ${validated.reference}, ${input.paymentMethod ?? null},
+        ${input.bankAccountId ?? null}, 'USD', ${validated.amount.amount.toString()},
+        'SUBMITTED', 0, ${context.authority.membership.membershipId},
+        ${context.authority.membership.membershipId}, now()
+      )
+    `);
+  } catch (error) {
+    if (uniqueViolationOf(error) !== null) {
+      throw new AppError(
+        'CONFLICT',
+        'A payment with this reference already exists for this supplier.',
+      );
+    }
+    throw error;
+  }
+  return {
+    paymentId: id,
+    state: 'SUBMITTED' as const,
+    amount: validated.amount.amount.toString(),
+    paymentMethod: input.paymentMethod ?? null,
+    bankAccountId: input.bankAccountId ?? null,
+  };
 }
 
 export async function postSupplierPaymentInTransaction(

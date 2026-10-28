@@ -1,6 +1,8 @@
 import { exact, ratioPercentage, subtractExact, sumExact } from '../../reporting/domain';
 import { formatTileMoney } from '../../reporting/format';
 import type { ManagementReport } from '../../reporting/contracts';
+import { approvedFuelBenefit } from '../../reporting/statements';
+import { operatingProfit } from '../../reporting/operating-profit';
 
 /**
  * Plain-language view of the profit figures for one period. Pure: it reshapes
@@ -109,7 +111,7 @@ export function buildProfitView(report: ManagementReport): ProfitView {
       ? subtractExact(sales, fuelCost)
       : null;
   const expenses = report.expenses.total;
-  const profit = grossProfit !== null ? subtractExact(grossProfit, expenses) : null;
+  const profit = operatingProfit(grossProfit, expenses, approvedFuelBenefit(report));
   const litres = sumExact(revenueSales.map((sale) => sale.quantityLitres));
 
   const headline =

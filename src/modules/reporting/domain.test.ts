@@ -67,6 +67,30 @@ describe('management reporting exact arithmetic', () => {
     });
   });
 
+  it('keeps classified cash buckets equal to total collections', () => {
+    const position = deriveCashPosition({
+      evidence: '100.00',
+      collected: '100.00',
+      deposited: '30.00',
+      banked: '20.00',
+      atStation: '60.00',
+      heldByManagement: '10.00',
+      inTransit: '10.00',
+      variance: '0.00',
+    });
+
+    expect(
+      formatMoney(
+        sumExact([
+          position.atStation,
+          position.heldByManagement,
+          position.inTransit,
+          position.banked,
+        ]),
+      ),
+    ).toBe(position.collected);
+  });
+
   it('marks station-scoped customer balances unavailable instead of zero', () => {
     expect(customerScopeAvailability()).toBe('AVAILABLE');
     expect(customerScopeAvailability(['station-1', 'station-2'])).toBe(

@@ -69,7 +69,7 @@ const petrol = {
 
 const DIESEL_PRICE = 1.5;
 const PETROL_PRICE = 1.65;
-const skipDates = new Set(['2026-10-16']); // already seeded by the Finance demo
+const skipDates = new Set(['2026-10-26']); // yesterday is seeded by the Finance demo
 const firstDate = '2026-10-01';
 const lastDate = '2026-10-24';
 

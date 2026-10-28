@@ -6,6 +6,8 @@ import { AppError } from '../../platform/errors';
 import { isPermissionGranted } from '../../platform/security/permissions';
 import { classifyStockVariance, type StockSignal } from '../approvals/operations-alerts';
 import { withInventoryReadContext } from './application';
+import { expectedClosingStock } from './expected-closing-stock';
+import { ExactDecimal } from '../../platform/domain/primitives';
 
 const scopeInput = z.object({
   tenantId: z.string().uuid(),
@@ -117,15 +119,35 @@ export async function queryTankDetail(input: {
         unit: string | null;
         book: string;
         variance: string;
+        opening: string;
+        deliveries: string;
+        adjustments: string;
+        sold: string;
         notes: string | null;
       }>(sql`
         select d.id, d.measured_at, d.business_date, d.physical_litres::text as physical,
           d.raw_measurement::text as raw, d.measurement_unit as unit,
-          coalesce(b.book, 0)::text as book,
-          (d.physical_litres - coalesce(b.book, 0))::text as variance, d.notes
+          coalesce(b.opening, 0)::text as opening,
+          coalesce(b.deliveries, 0)::text as deliveries,
+          coalesce(b.adjustments, 0)::text as adjustments,
+          coalesce(b.sold, 0)::text as sold,
+          (d.physical_litres - (coalesce(b.opening, 0) + coalesce(b.deliveries, 0) + coalesce(b.adjustments, 0) - coalesce(b.sold, 0)))::text as variance,
+          (coalesce(b.opening, 0) + coalesce(b.deliveries, 0) + coalesce(b.adjustments, 0) - coalesce(b.sold, 0))::text as book,
+          d.notes
         from app.tank_dips d
+        join app.tanks t on t.tenant_id=d.tenant_id and t.station_id=d.station_id and t.id=d.tank_id
         left join lateral (
-          select sum(m.quantity_litres) as book from app.inventory_movements m
+          select
+            sum(m.quantity_litres) filter (where m.movement_type = 'OPENING_BALANCE') as opening,
+            sum(m.quantity_litres) filter (where m.movement_type in ('DELIVERY', 'TRANSFER_IN')) as deliveries,
+            sum(m.quantity_litres) filter (where m.movement_type in ('POSITIVE_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT', 'TRANSFER_OUT')) as adjustments,
+            (select sum(mr.litres_sold)
+             from app.reconciliation_meter_readings mr
+             join app.reconciliations rec on rec.tenant_id=mr.tenant_id and rec.station_id=mr.station_id and rec.id=mr.reconciliation_id
+             join app.station_business_days sale_bd on sale_bd.tenant_id=rec.tenant_id and sale_bd.station_id=rec.station_id and sale_bd.id=rec.business_day_id
+             where mr.tenant_id=d.tenant_id and mr.station_id=d.station_id and mr.product_id=t.product_id
+               and sale_bd.business_date <= d.business_date) as sold
+          from app.inventory_movements m
           where m.tenant_id = d.tenant_id and m.station_id = d.station_id
             and m.tank_id = d.tank_id
             -- A movement may be approved after the dip was entered.  Its station
@@ -197,18 +219,30 @@ export async function queryTankDetail(input: {
               rows: chartRows.map((row) => ({ measurement: row.measurement, litres: row.litres })),
             }
           : null,
-        dips: dips.map((row) => ({
-          id: row.id,
-          measuredAt: new Date(row.measured_at).toISOString(),
-          businessDate: row.business_date,
-          physicalLitres: row.physical,
-          rawMeasurement: row.raw,
-          measurementUnit: row.unit,
-          bookLitres: row.book,
-          varianceLitres: row.variance,
-          signal: classifyStockVariance(row.variance, tank.yellow, tank.red),
-          notes: row.notes,
-        })),
+        dips: dips.map((row) => {
+          const book = expectedClosingStock({
+            openingLitres: row.opening,
+            deliveriesLitres: row.deliveries,
+            litresSold: row.sold,
+            approvedAdjustmentsLitres: row.adjustments,
+          });
+          const variance = new ExactDecimal(row.physical)
+            .subtract(new ExactDecimal(book))
+            .quantize({ name: 'Litres', precision: 18, scale: 3 })
+            .toString();
+          return {
+            id: row.id,
+            measuredAt: new Date(row.measured_at).toISOString(),
+            businessDate: row.business_date,
+            physicalLitres: row.physical,
+            rawMeasurement: row.raw,
+            measurementUnit: row.unit,
+            bookLitres: book,
+            varianceLitres: variance,
+            signal: classifyStockVariance(variance, tank.yellow, tank.red),
+            notes: row.notes,
+          };
+        }),
         movements: movements.map((row) => ({
           id: row.id,
           effectiveAt: new Date(row.effective_at).toISOString(),

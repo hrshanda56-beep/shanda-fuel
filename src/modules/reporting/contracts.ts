@@ -113,6 +113,12 @@ export type CashPosition = Readonly<{
   deposited?: ReportMoney;
   banked: ReportMoney;
   collectedButNotBanked: ReportMoney;
+  /** The unbanked remainder physically in station till/safe locations. */
+  atStation?: ReportMoney;
+  /** The unbanked remainder received into a management/collector location. */
+  heldByManagement?: ReportMoney;
+  /** Deposited cash whose bank confirmation is still outstanding. */
+  inTransit?: ReportMoney;
   cashVariance: ReportMoney;
   collectionIds: readonly string[];
   depositIds: readonly string[];

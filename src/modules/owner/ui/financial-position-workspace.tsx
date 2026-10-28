@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 import { Card, EmptyState, ErrorState, StatusBadge } from '@/design-system/primitives';
+import { formatLitres } from '@/design-system/formatters';
 import { moneyOrUnavailable } from '@/modules/profitability/ui/profit-model';
 import type { ManagementReport } from '@/modules/reporting/contracts';
 import { buildFinancialPosition, type PositionFlag } from '@/modules/reporting/statements';
@@ -150,7 +151,7 @@ export function FinancialPositionWorkspace({ initial }: { initial: FinancialPosi
                       >
                         <dt>
                           {row.stationName} · {row.productName}
-                          <span className="profit-row-note">{row.litres} litres</span>
+                          <span className="profit-row-note">{formatLitres(row.litres)}</span>
                         </dt>
                         <dd>{moneyOrUnavailable(row.value)}</dd>
                       </div>

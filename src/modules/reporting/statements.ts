@@ -6,6 +6,7 @@
  */
 import type { ManagementReport } from './contracts';
 import { addExact, exact, ratioPercentage, subtractExact, sumExact } from './domain';
+import { operatingProfit } from './operating-profit';
 
 export type StatementUnit = 'money' | 'litres';
 
@@ -88,8 +89,7 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
   const revenue = report.revenue.recognizedRevenue;
   const cogs = report.costing.restatedCogs;
   const gross = report.grossMargin;
-  const operatingExpenses = recognizedOperatingExpenses(report);
-  const net = gross === null ? null : subtractExact(gross, operatingExpenses);
+  const net = operatingProfit(gross, report.expenses.total, approvedFuelBenefit(report));
   const margin = gross === null ? null : ratioPercentage(gross, revenue);
   const notes = [
     'Revenue is recognised revenue and cost of sales is restated landed cost, both from approved records.',
@@ -434,8 +434,13 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
               ? `Type in the bank statement balance in Settings (${bank.accountsWithBalance} of ${bank.accountsTotal} accounts so far) to use it instead of recorded deposits.`
               : undefined,
         };
+  const atStation = cash.atStation ?? cash.collectedButNotBanked;
+  const heldByManagement = cash.heldByManagement ?? '0';
+  const inTransit = cash.inTransit ?? '0';
   const held: StatementLine[] = [
-    { label: 'Cash at stations, not yet banked', value: cash.collectedButNotBanked },
+    { label: 'Cash at stations, not yet banked', value: atStation },
+    { label: 'Cash held by management', value: heldByManagement },
+    { label: 'Cash deposited, awaiting confirmation', value: inTransit },
     bankLine,
     {
       label: 'Card and mobile payments awaiting settlement',
@@ -538,7 +543,7 @@ export type QuickFigure = Readonly<{
 export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
   const gross = report.grossMargin;
   const totalExpenses = addExact(report.expenses.total, approvedFuelBenefit(report));
-  const net = gross === null ? null : subtractExact(gross, totalExpenses);
+  const net = operatingProfit(gross, report.expenses.total, approvedFuelBenefit(report));
   return [
     { id: 'sales', label: 'Total Sales', value: report.sales.salesValue, slug: 'sales' },
     { id: 'gross', label: 'Gross Profit', value: gross, slug: 'profit-loss' },
@@ -573,7 +578,10 @@ export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
     {
       id: 'settlements',
       label: 'Settlements to Receive',
-      value: report.providers.unallocatedProviderAmount,
+      // One definition everywhere: approved POS/EcoCash evidence not yet allocated to a
+      // provider settlement. `unallocatedProviderAmount` is the opposite queue (payouts waiting
+      // to be matched), so it is not the amount the business is still due to receive.
+      value: report.providers.unmatchedEvidenceAmount,
       slug: 'providers',
     },
   ];

@@ -1,5 +1,21 @@
 # Shanda Fuel — Current Status
 
+## Audit round 3 hardening follow-up — 2026-10-27
+
+Branch `fix/audit-round-3-20261027` remains isolated from `main` and has not been merged, deployed,
+or used against production. The cash command audit payloads now record the persisted result as the
+after-state, including created bank-deposit fields. Supplier payments now capture an optional payment
+method and, for bank payments, an active legal-entity bank account (migration `0086`). Validation
+rejects missing or mismatched bank-account selections, and supplier statements expose the recorded
+method/account without exposing unmasked account data.
+
+Focused integration validation passed on a fresh disposable PostgreSQL database: 2 files, 12 tests.
+The final full integration suite also passed sequentially on a fresh disposable PostgreSQL database:
+52 files, 372 tests passed; 7 opt-in files and 45 tests intentionally skipped.
+Browser Clerk/E2E replay remains unavailable in this worktree because no dedicated Clerk test
+configuration is present. Vercel preview checks for two auxiliary projects remain account-gated by
+`build-rate-limit`; this is external CI capacity, not a local application result.
+
 ## Pilot-blocker audit work — 2026-10-26 (branch `halfway`, brought level with `main` f4acdf4, uncommitted)
 
 Checked against the 2026-10-25 platform audit. Production was not contacted; nothing was committed,

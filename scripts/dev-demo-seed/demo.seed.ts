@@ -48,7 +48,9 @@ const paths = {
   supplier: 'suppliers',
 } as const;
 
-const businessDate = '2026-10-16';
+// Keep the local fixture aligned with the audit date: yesterday is a complete closed day and
+// today is inserted below as a fresh day that an owner can open.
+const businessDate = '2026-10-26';
 const ids = {
   attendantUser: 'd1000000-0000-4000-8000-000000000001',
   attendant: 'd1000000-0000-4000-8000-000000000002',
@@ -164,9 +166,9 @@ async function run(client: Sql) {
     insert into app.tanks (id, tenant_id, station_id, code, product_id, capacity_litres, reorder_level_litres, acceptable_variance_litres, status, created_by, updated_by)
       values ('${ids.tank}', '${tenantId}', '${stationId}', 'T1', '${ids.product}', 50000, 2000, 50, 'ACTIVE', '${supervisorMembership}', '${supervisorMembership}');
     insert into app.inventory_movements (id, tenant_id, station_id, tank_id, product_id, movement_type, quantity_litres, effective_at, business_date, source_type, source_id, actor_membership_id)
-      values ('${ids.opening}', '${tenantId}', '${stationId}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', 20000, '2026-10-16T05:00:00Z', '${businessDate}', 'CUTOVER', '${ids.opening}', '${supervisorMembership}');
+      values ('${ids.opening}', '${tenantId}', '${stationId}', '${ids.tank}', '${ids.product}', 'OPENING_BALANCE', 20000, '${businessDate}T05:00:00Z', '${businessDate}', 'CUTOVER', '${ids.opening}', '${supervisorMembership}');
     insert into app.tank_dips (id, tenant_id, station_id, tank_id, measured_at, business_date, physical_litres, recorded_by)
-      values ('${ids.dip}', '${tenantId}', '${stationId}', '${ids.tank}', '2026-10-16T23:00:00Z', '${businessDate}', 18000, '${supervisorMembership}');
+      values ('${ids.dip}', '${tenantId}', '${stationId}', '${ids.tank}', '${businessDate}T23:00:00Z', '${businessDate}', 18000, '${supervisorMembership}');
     insert into app.cash_locations (id, tenant_id, station_id, code, name, location_type) values
       ('${ids.till}', '${tenantId}', '${stationId}', 'TILL', 'Station till', 'STATION_TILL'),
       ('${ids.safe}', '${tenantId}', '${stationId}', 'SAFE', 'Station safe', 'STATION_SAFE');
@@ -246,7 +248,7 @@ async function run(client: Sql) {
       `${tag}-shift`,
       'supervisor',
     );
-    await call(
+    const created = await call(
       'forecourt',
       {
         commandType: 'CreateProductionReconciliation',
@@ -258,6 +260,13 @@ async function run(client: Sql) {
       `${tag}-create`,
       'supervisor',
     );
+    const [revision] = await client<{ id: string }[]>`
+      select id from app.reconciliation_revisions
+      where tenant_id = ${tenantId} and station_id = ${stationId} and reconciliation_id = ${reconciliationId}
+      order by revision desc, id desc limit 1`;
+    if (!revision)
+      throw new Error(`No reconciliation revision was created for ${reconciliationId}`);
+    const revisionId = revision.id;
     await call(
       'forecourt',
       {
@@ -378,7 +387,7 @@ async function run(client: Sql) {
       `${tag}-submit`,
       'supervisor',
     );
-    return { common, reconciliationId };
+    return { common, reconciliationId, revisionId, shiftId };
   }
 
   const money = (litres: number) => (litres * 1.5).toFixed(2);
@@ -784,4 +793,86 @@ async function run(client: Sql) {
     },
     'salary-payment',
   );
+
+  // Finish the seeded day through the same workflow commands a real station uses. This leaves
+  // yesterday approved and closed, while the next business day remains available to open.
+  await call(
+    'forecourt',
+    {
+      commandType: 'CloseMeters',
+      tenantId,
+      stationId,
+      businessDayId: ids.day,
+      shiftId: approved.shiftId,
+      expectedVersion: 1,
+    },
+    'approved-close-meters',
+    'supervisor',
+  );
+  await call(
+    'forecourt',
+    {
+      commandType: 'CompleteShift',
+      tenantId,
+      stationId,
+      businessDayId: ids.day,
+      shiftId: approved.shiftId,
+      expectedVersion: 2,
+    },
+    'approved-complete-shift',
+    'supervisor',
+  );
+  await call(
+    'forecourt',
+    {
+      commandType: 'PostReconciliation',
+      tenantId,
+      stationId,
+      revisionId: approved.revisionId,
+      expectedVersion: 8,
+    },
+    'approved-post',
+    'owner',
+  );
+  await call(
+    'forecourt',
+    {
+      commandType: 'LockReconciliation',
+      tenantId,
+      stationId,
+      revisionId: approved.revisionId,
+      expectedVersion: 9,
+    },
+    'approved-lock-reconciliation',
+    'owner',
+  );
+  await call(
+    'forecourt',
+    {
+      commandType: 'CloseBusinessDay',
+      tenantId,
+      stationId,
+      businessDayId: ids.day,
+      expectedVersion: 0,
+    },
+    'approved-close-day',
+    'owner',
+  );
+  await call(
+    'forecourt',
+    {
+      commandType: 'LockBusinessDay',
+      tenantId,
+      stationId,
+      businessDayId: ids.day,
+      expectedVersion: 2,
+    },
+    'approved-lock-day',
+    'owner',
+  );
+
+  await client`
+    insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+    values ('${randomUUID()}', '${tenantId}', '${stationId}', '2026-10-27', 'NOT_STARTED')
+  `;
 }

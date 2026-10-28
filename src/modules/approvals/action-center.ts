@@ -166,7 +166,8 @@ async function loadActionCenterFactsUncached(
 
   const sign = await signPromise;
   const fromSign = <
-    K extends 'reconciliations' | 'revaluations' | 'prices' | 'orders' | 'invoices',
+    K extends
+      'reconciliations' | 'revaluations' | 'prices' | 'orders' | 'invoices' | 'supplierPayments',
   >(
     key: K,
   ): Section<NonNullable<NonNullable<Extract<typeof sign, { status: 'ok' }>['value']>[K]>> => {
@@ -193,6 +194,7 @@ async function loadActionCenterFactsUncached(
     prices: fromSign('prices'),
     orders: fromSign('orders'),
     invoices: fromSign('invoices'),
+    supplierPayments: fromSign('supplierPayments'),
     cash,
     settlements,
     suppliers,

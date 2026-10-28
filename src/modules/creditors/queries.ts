@@ -38,10 +38,13 @@ type StatementRow = {
   running_balance: string;
   proof_count: string | number;
   source_type: string;
+  payment_method: string | null;
+  bank_name: string | null;
+  account_reference_masked: string | null;
 };
 
 function signedAmountSql() {
-  return sql`case when movement_type in ('INVOICE', 'PAYMENT_REVERSAL') then amount else -amount end`;
+  return sql`case when m.movement_type in ('INVOICE', 'PAYMENT_REVERSAL') then m.amount else -m.amount end`;
 }
 
 export async function getSupplierSummaryFromRequest(
@@ -187,10 +190,17 @@ export async function getSupplierStatementFromRequest(
           rows between unbounded preceding and current row
         )::text as running_balance,
         m.source_type,
+        p.payment_method,
+        ba.bank_name,
+        ba.account_reference_masked,
         (select count(*) from app.documents d
           where d.tenant_id = m.tenant_id and d.subject_type = 'SUPPLIER_PAYMENT'
             and d.subject_id = m.source_id and m.source_type = 'SUPPLIER_PAYMENT') as proof_count
       from app.supplier_account_movements m
+      left join app.supplier_payments p
+        on p.tenant_id = m.tenant_id and p.id = m.source_id and m.source_type = 'SUPPLIER_PAYMENT'
+      left join app.bank_accounts ba
+        on ba.tenant_id = p.tenant_id and ba.id = p.bank_account_id
       where m.tenant_id = ${context.tenantId}
         and m.legal_entity_id = ${context.legalEntityId}
         and m.supplier_id = ${input.supplierId}
@@ -210,6 +220,15 @@ export async function getSupplierStatementFromRequest(
         currency: 'USD' as const,
         proofCount,
         needsProof: proofCount === null ? false : paymentNeedsProofFlag(row.amount, proofCount),
+        ...(row.payment_method ? { paymentMethod: row.payment_method } : {}),
+        ...(row.bank_name
+          ? {
+              bankAccount: {
+                bankName: row.bank_name,
+                accountReferenceMasked: row.account_reference_masked,
+              },
+            }
+          : {}),
       };
     });
   });
@@ -322,6 +341,20 @@ export async function getSupplierInvoiceChoicesFromRequest(
       where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
       order by name
     `);
+    const bankAccounts = await transaction.execute<{
+      id: string;
+      name: string;
+      bank_name: string;
+      account_reference_masked: string;
+    }>(sql`
+      select id, name, bank_name, account_reference_masked
+      from app.bank_accounts
+      where tenant_id = ${context.tenantId}
+        and legal_entity_id = ${context.legalEntityId}
+        and status = 'ACTIVE'
+        and currency = 'USD'
+      order by name, id
+    `);
     const deliveries = input.supplierId
       ? await transaction.execute<{
           id: string;
@@ -351,6 +384,12 @@ export async function getSupplierInvoiceChoicesFromRequest(
     return {
       products: products.map((row) => ({ id: row.id, name: row.name })),
       stations: stations.map((row) => ({ id: row.id, name: row.name })),
+      bankAccounts: bankAccounts.map((row) => ({
+        id: row.id,
+        name: row.name,
+        bankName: row.bank_name,
+        accountReferenceMasked: row.account_reference_masked,
+      })),
       deliveries: deliveries.map((row) => ({
         id: row.id,
         stationId: row.station_id,

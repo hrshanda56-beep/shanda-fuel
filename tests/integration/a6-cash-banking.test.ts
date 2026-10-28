@@ -233,6 +233,28 @@ describe('A6 cash collection and banking persistence', () => {
     expect(deposit.status).toBe(201);
     expectDecimal(depositBody.amount, '700');
 
+    const depositAudit = await client<
+      {
+        amount: string;
+        allocationCount: string;
+        depositReference: string;
+      }[]
+    >`
+      select
+        details->'after'->>'amount' as amount,
+        details->'after'->>'allocationCount' as "allocationCount",
+        details->'after'->>'depositReference' as "depositReference"
+      from platform.security_events
+      where tenant_id = ${ids.tenant}
+        and event_code = 'CASH.CreateBankDeposit'
+        and details->'after'->>'depositId' = ${depositBody.depositId}
+      order by occurred_at desc
+      limit 1
+    `;
+    expect(depositAudit).toEqual([
+      { amount: '700', allocationCount: '2', depositReference: 'A6-DEP-001' },
+    ]);
+
     const depositRetry = await postCashCommand(
       depositInput,
       'a6-deposit-1',

@@ -599,7 +599,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           startDate: date,
           ...(endDate ? { endDate } : {}),
         },
-        'Regular cost added. It is shared across every day automatically.',
+        'Regular cost added. It is spread across every day automatically.',
       );
     }
     if (sheet.kind === 'limits') {

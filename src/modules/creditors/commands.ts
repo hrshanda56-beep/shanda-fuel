@@ -23,6 +23,7 @@ import {
 } from './persistence';
 import { setPurchasingPolicyInTransaction } from './purchasing-persistence';
 import { INVOICE_LINE_TYPES } from './purchasing-policy';
+import { EXPENSE_PAYMENT_METHODS } from '../expenses/domain';
 
 const uuid = z.string().uuid();
 const decimal = z
@@ -144,6 +145,8 @@ const submitPaymentSchema = base.extend({
   paymentDate: z.string(),
   amount: decimal,
   reference: z.string().trim().min(1).max(120),
+  paymentMethod: z.enum(EXPENSE_PAYMENT_METHODS).optional(),
+  bankAccountId: uuid.optional(),
 });
 
 const postPaymentSchema = base.extend({

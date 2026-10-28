@@ -5,6 +5,7 @@ import {
   type CurrencyCode,
   type Money,
 } from '../../platform/domain/primitives';
+import type { ExpensePaymentMethod } from '../expenses/domain';
 
 export const SUPPLIER_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 export type SupplierStatus = (typeof SUPPLIER_STATUSES)[number];
@@ -73,6 +74,8 @@ export type SupplierPayment = Readonly<{
   paymentDate: string;
   amount: Money;
   reference: string;
+  paymentMethod?: ExpensePaymentMethod;
+  bankAccountId?: string;
   state: SupplierPaymentState;
 }>;
 
@@ -117,6 +120,8 @@ export type SupplierPaymentInput = Readonly<{
   currency: CurrencyCode;
   amount: string;
   reference: string;
+  paymentMethod?: ExpensePaymentMethod;
+  bankAccountId?: string;
 }>;
 
 function requiredText(value: string, field: string): string {
