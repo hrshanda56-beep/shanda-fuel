@@ -1119,7 +1119,7 @@ export function GlobalSearchButton({ compact = false }: { compact?: boolean }) {
       onClick={() => shell?.openSearch()}
     >
       <span>Search pages</span>
-      <kbd>{shortcut}</kbd>
+      <kbd aria-hidden="true">{shortcut}</kbd>
       <Icon name="search" size="md" />
     </button>
   );
