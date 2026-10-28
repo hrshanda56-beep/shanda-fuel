@@ -1482,6 +1482,17 @@ async function transitionProductionReconciliation(
                  ${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'},
              ${metricSnapshot(metrics!)}, coalesce(
                    (
+                     select source_segment_ids
+                     from app.reconciliation_revisions latest
+                     where latest.tenant_id=${context.tenantId}
+                       and latest.station_id=${context.stationId}
+                       and latest.reconciliation_id=${payload.reconciliationId}
+                     order by latest.revision desc
+                     limit 1
+                   ),
+                   '[]'::jsonb
+                 ), coalesce(
+                   (
                      select source_shift_ids
                      from app.reconciliation_revisions latest
                      where latest.tenant_id=${context.tenantId}
