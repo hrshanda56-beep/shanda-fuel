@@ -125,7 +125,7 @@ export async function loadOperationsFacts(
       ) now_stock on true
       left join lateral (
         select physical_litres, measured_at, business_date from app.tank_dips d
-        where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
+        where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id and d.voided_at is null
         order by d.measured_at desc, d.id desc limit 1
       ) d on true
       left join lateral (
@@ -143,7 +143,7 @@ export async function loadOperationsFacts(
           and m.effective_at > coalesce((
             select p.measured_at from app.tank_dips p
             where p.tenant_id = t.tenant_id and p.station_id = t.station_id
-              and p.tank_id = t.id and p.measured_at < d.measured_at
+              and p.tank_id = t.id and p.voided_at is null and p.measured_at < d.measured_at
             order by p.measured_at desc, p.id desc limit 1), '-infinity'::timestamptz)
       ) sold on true
       where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}

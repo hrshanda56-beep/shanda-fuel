@@ -297,6 +297,7 @@ export async function getInventoryValuationReadModel(
         left join lateral (
           select physical_litres from app.tank_dips d
           where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
+            and d.voided_at is null
             and d.measured_at < (((now() at time zone ${context.stationTimezone})::date + 1)::timestamp
               at time zone ${context.stationTimezone})
           order by d.measured_at desc, d.id desc limit 1

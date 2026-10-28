@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, ErrorState, Field, SuccessState } from '@/design-system/primitives';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
+import { StepUpDialog } from '../../setup/ui/step-up-dialog';
 import type { DeliveryTank } from '../queries';
 import {
   clearDraft,
@@ -22,7 +23,7 @@ export const NO_PO_REASONS = [
   { value: 'OTHER', label: 'No purchase order: another reason' },
 ] as const;
 
-type Failure = { message: string };
+type Failure = { message: string; code?: string; status?: number };
 /** What is typed so far, kept on this device so a dropped connection does not lose it. */
 type DeliveryDraft = {
   supplierId: string;
@@ -42,8 +43,6 @@ type DeliveryDraft = {
   noPoNote: string;
 };
 type Progress = {
-  dipBeforeId?: string;
-  dipAfterId?: string;
   deliveryId?: string;
   compartments?: boolean;
   waterTest?: boolean;
@@ -100,6 +99,7 @@ export function RecordDelivery({
   const [failure, setFailure] = useState<Failure | null>(null);
   const [deliveryId, setDeliveryId] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
 
   const tank = tanks.find((item) => item.id === tankId);
   const difference = shortageOrExcess(noteLitres, receivedLitres);
@@ -197,17 +197,27 @@ export function RecordDelivery({
       body: JSON.stringify({ ...command, tenantId, stationId }),
     });
     const body = (await response.json().catch(() => null)) as {
+      error?: string;
       message?: string;
+      details?: Record<string, unknown>;
       [key: string]: unknown;
     } | null;
     if (!response.ok) {
-      throw new Error(body?.message ?? 'That step could not be saved. Nothing else was changed.');
+      const error = new Error(body?.message ?? 'That step could not be saved. Try again.') as Error & {
+        code?: string;
+        status?: number;
+        details?: Record<string, unknown>;
+      };
+      error.code = body?.error;
+      error.status = response.status;
+      error.details = body?.details;
+      throw error;
     }
     return body ?? {};
   }
 
-  async function record(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function record(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     setFailure(null);
     if (sumProblem) {
       setFailure({ message: sumProblem });
@@ -218,26 +228,6 @@ export function RecordDelivery({
     const at = new Date(deliveredAt);
     const before = new Date(at.getTime() - 60_000);
     try {
-      if (dipBefore.trim() && !state.dipBeforeId) {
-        const result = await post('/api/inventory/commands', 'dip-before', {
-          commandType: 'RecordTankDip',
-          tankId,
-          measuredAt: before.toISOString(),
-          physicalLitres: dipBefore.trim(),
-          notes: 'Dip before delivery',
-        });
-        state.dipBeforeId = String(result.dipId);
-      }
-      if (dipAfter.trim() && !state.dipAfterId) {
-        const result = await post('/api/inventory/commands', 'dip-after', {
-          commandType: 'RecordTankDip',
-          tankId,
-          measuredAt: at.toISOString(),
-          physicalLitres: dipAfter.trim(),
-          notes: 'Dip after delivery',
-        });
-        state.dipAfterId = String(result.dipId);
-      }
       if (!state.deliveryId) {
         const result = await post('/api/inventory/commands', 'create', {
           commandType: 'CreateDelivery',
@@ -251,8 +241,24 @@ export function RecordDelivery({
           ...(transporter.trim() ? { transporter: transporter.trim() } : {}),
           ...(driver.trim() ? { driver: driver.trim() } : {}),
           ...(truck.trim() ? { truckRegistration: truck.trim() } : {}),
-          ...(state.dipBeforeId ? { preDeliveryDipId: state.dipBeforeId } : {}),
-          ...(state.dipAfterId ? { postDeliveryDipId: state.dipAfterId } : {}),
+          ...(dipBefore.trim()
+            ? {
+                preDeliveryDip: {
+                  measuredAt: before.toISOString(),
+                  physicalLitres: dipBefore.trim(),
+                  notes: 'Dip before delivery',
+                },
+              }
+            : {}),
+          ...(dipAfter.trim()
+            ? {
+                postDeliveryDip: {
+                  measuredAt: at.toISOString(),
+                  physicalLitres: dipAfter.trim(),
+                  notes: 'Dip after delivery',
+                },
+              }
+            : {}),
           ...(noPo ? { noPoReason: noPo } : {}),
           ...(noPo === 'OTHER' && noPoNote.trim() ? { noPoNote: noPoNote.trim() } : {}),
         });
@@ -301,6 +307,11 @@ export function RecordDelivery({
       }
       router.refresh();
     } catch (caught) {
+      const error = caught as Failure;
+      if (error.code === 'STEP_UP_REQUIRED') {
+        setStepUpOpen(true);
+        return;
+      }
       setFailure({
         message:
           caught instanceof Error ? caught.message : 'The delivery could not be saved. Try again.',
@@ -611,6 +622,18 @@ export function RecordDelivery({
           </Button>
         ) : null}
       </form>
+
+      <StepUpDialog
+        open={stepUpOpen}
+        tenantId={tenantId}
+        description="Recording this delivery needs a fresh identity check. Nothing is saved until you confirm."
+        confirmLabel="Confirm and save"
+        onCancel={() => setStepUpOpen(false)}
+        onVerified={() => {
+          setStepUpOpen(false);
+          void record();
+        }}
+      />
 
       {recorded && !confirmed ? (
         <div className="callout callout-warning">

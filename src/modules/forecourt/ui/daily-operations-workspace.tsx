@@ -83,6 +83,7 @@ type OperationsContext = {
   station: { id: string; code: string; name: string; timezone: string };
   organisation: { id: string; name: string };
   businessDay: { id: string; date: string; state: string; version: number };
+  reconciliationId?: string | null;
   shift: {
     id: string;
     state: string;
@@ -234,12 +235,13 @@ function readingFromContext(
 type OperationsFailure = Error & { status?: number; code?: string };
 
 function errorFromResponse(status: number, body: unknown): OperationsFailure {
-  const result = body as { error?: string; message?: string };
+  const result = body as { error?: string; message?: string; details?: Record<string, unknown> };
   const failure = new Error(
     mapDailyOperationsError(status, result.error, result.message),
   ) as OperationsFailure;
   failure.status = status;
   failure.code = result.error;
+  Object.assign(failure, { details: result.details });
   return failure;
 }
 
@@ -527,6 +529,17 @@ export function DailyOperationsWorkspace({
       await load();
       setNotice('Ready. Start with the team on shift.');
     } catch (cause) {
+      const failure = cause as OperationsFailure & {
+        details?: { existingReconciliationId?: unknown };
+      };
+      const existingId = failure.details?.existingReconciliationId;
+      if (failure.code === 'RECONCILIATION_ALREADY_EXISTS' && typeof existingId === 'string') {
+        setActiveReconciliationId(existingId);
+        const url = new URL(window.location.href);
+        url.searchParams.set('reconciliationId', existingId);
+        window.location.assign(url.toString());
+        return;
+      }
       setError(cause instanceof Error ? cause.message : 'The draft could not be created.');
     } finally {
       setBusy(false);

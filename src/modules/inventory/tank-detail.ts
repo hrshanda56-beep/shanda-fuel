@@ -157,6 +157,7 @@ export async function queryTankDetail(input: {
         ) b on true
         where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
           and d.tank_id = ${parsed.tankId}
+          and d.voided_at is null
         order by d.measured_at desc, d.id desc
         limit 60
       `);

@@ -5,6 +5,7 @@ export {
   calculateTankStockVariance,
   deriveExpectedTankStock,
   requireAdjustmentReason,
+  validateDeliveryDipWindow,
   validateDeliveryAllocations,
   validateMovementQuantity,
 } from './domain';
@@ -23,6 +24,7 @@ export {
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  voidTankDipFromRequest,
   setTankCalibrationFromRequest,
   requestInventoryCostRevaluationFromRequest,
 } from './commands';

@@ -66,6 +66,21 @@ export function calculateDeliveryShortageExcess(
   return actual.subtract(note).toString();
 }
 
+/** Before/after delivery dips must bracket the delivery they describe. */
+export function validateDeliveryDipWindow(
+  deliveredAt: string,
+  beforeMeasuredAt?: string,
+  afterMeasuredAt?: string,
+): void {
+  const delivered = new Date(deliveredAt).getTime();
+  if (beforeMeasuredAt && new Date(beforeMeasuredAt).getTime() > delivered) {
+    throw new AppError('VALIDATION_FAILED', 'The before-delivery dip must be at or before delivery time.');
+  }
+  if (afterMeasuredAt && new Date(afterMeasuredAt).getTime() < delivered) {
+    throw new AppError('VALIDATION_FAILED', 'The after-delivery dip must be at or after delivery time.');
+  }
+}
+
 export function validateDeliveryAllocations(
   actualQuantityLitres: string,
   allocations: readonly string[],

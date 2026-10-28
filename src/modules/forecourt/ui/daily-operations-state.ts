@@ -33,6 +33,9 @@ export function mapDailyOperationsError(
   if (status === 401) return 'Your session has expired. Sign in again to continue.';
   if (status === 403) return 'You do not have permission for this station action.';
   if (status === 404) return 'This station-day workspace is no longer available.';
+  if (code === 'RECONCILIATION_ALREADY_EXISTS') {
+    return 'A reconciliation already exists for this shift. Open the existing reconciliation instead.';
+  }
   if (status === 409 || code === 'IDEMPOTENCY_CONFLICT') {
     return 'This workspace changed elsewhere or is already locked. Refresh before trying again.';
   }

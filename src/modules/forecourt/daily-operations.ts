@@ -32,6 +32,7 @@ type DailyOperationsContext = {
   station: { id: string; code: string; name: string; timezone: string };
   organisation: { id: string; name: string };
   businessDay: { id: string; date: string; state: string; version: number };
+  reconciliationId: string | null;
   shift: {
     id: string;
     state: string;
@@ -206,6 +207,18 @@ async function loadDailyOperationsContext(
       state: day.state,
       version: Number(day.version),
     },
+    reconciliationId:
+      (
+        await transaction.execute<{ id: string }>(sql`
+          select id
+          from app.reconciliations
+          where tenant_id = ${context.tenantId}
+            and station_id = ${input.stationId}
+            and shift_id = ${input.shiftId}
+          order by id
+          limit 1
+        `)
+      )[0]?.id ?? null,
     shift: {
       id: shift.id,
       state: shift.state,

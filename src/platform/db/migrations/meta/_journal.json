@@ -505,6 +505,13 @@
       "when": 1792600086000,
       "tag": "0086_supplier_payment_bank_account",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792600087000,
+      "tag": "0087_reconciliation_approver_notes",
+      "breakpoints": true
     }
   ]
 }

@@ -307,6 +307,7 @@ export const sellingPrices = appSchema.table(
     requestedBy: uuid('requested_by').notNull(),
     approvedBy: uuid('approved_by'),
     approvedAt: utcTimestamp('approved_at'),
+    approvalNote: text('approval_note'),
     activatedAt: utcTimestamp('activated_at'),
     version: integer('version').notNull().default(0),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
