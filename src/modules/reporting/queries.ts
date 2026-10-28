@@ -675,6 +675,7 @@ async function readInventory(
       select distinct on (station_id, tank_id) station_id, tank_id, physical_litres::text as physical
       from app.tank_dips
       where tenant_id = ${filters.tenantId}
+        and voided_at is null
         and measured_at < (${filters.toDate}::date + interval '1 day')
       order by station_id, tank_id, measured_at desc, id desc
     ), deliveries as (
@@ -998,6 +999,7 @@ async function readDaily(
         and t.id = d.tank_id and t.status <> 'RETIRED'
       join station_tanks st on st.station_id = d.station_id
       where d.tenant_id = ${filters.tenantId}
+        and d.voided_at is null
         and d.business_date between ${filters.fromDate} and ${filters.toDate}
       group by d.station_id, d.business_date
     ), keys as (

@@ -62,7 +62,7 @@ export const readTankDipHistory: TableReportReader = async (transaction, filters
     join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
     join app.tanks t on t.tenant_id = d.tenant_id and t.station_id = d.station_id and t.id = d.tank_id
     join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
-    where d.tenant_id = ${filters.tenantId}
+    where d.tenant_id = ${filters.tenantId} and d.voided_at is null
       and d.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('d', filters.stationIds)}
       ${equalsClause('t.product_id', filters.productId)}

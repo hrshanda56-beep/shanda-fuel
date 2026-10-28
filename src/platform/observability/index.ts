@@ -17,6 +17,7 @@ export type ErrorClassification =
   | 'validation'
   | 'unauthenticated'
   | 'forbidden'
+  | 'reconciliation_already_exists'
   | 'not_found'
   | 'conflict'
   | 'invariant'
@@ -124,6 +125,7 @@ export function classifyError(error: unknown): ErrorClassification {
       UNAUTHENTICATED: 'unauthenticated',
       FORBIDDEN: 'forbidden',
       STEP_UP_REQUIRED: 'forbidden',
+      RECONCILIATION_ALREADY_EXISTS: 'reconciliation_already_exists',
       NOT_FOUND: 'not_found',
       CONFLICT: 'conflict',
       INVARIANT_VIOLATION: 'invariant',

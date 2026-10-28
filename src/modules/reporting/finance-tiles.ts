@@ -1,6 +1,10 @@
 import type { ManagementReport } from './contracts';
-import { addExact, exact } from './domain';
-import { approvedFuelBenefit, buildFinancialPosition } from './statements';
+import { exact } from './domain';
+import {
+  approvedFuelBenefit,
+  buildFinancialPosition,
+  recognizedOperatingExpenseTotal,
+} from './statements';
 import { operatingProfit } from './operating-profit';
 
 export type FinanceTile = Readonly<{
@@ -34,8 +38,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
   // Same arithmetic as the profit statement's "Net operating result", so the tile ties to it.
   const operating = operatingProfit(
     report.grossMargin,
-    report.expenses.total ??
-      addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
+    recognizedOperatingExpenseTotal(report),
     approvedFuelBenefit(report),
   );
   const costMissing = report.grossMargin === null;

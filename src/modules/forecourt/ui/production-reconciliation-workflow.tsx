@@ -6,6 +6,7 @@ import { Button, Card, Field, StatusBadge } from '../../../design-system/primiti
 import { TableScrollRegion } from '../../../design-system/table';
 import { formatMoney } from '../../../design-system/formatters';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import { missingReconciliationEvidence } from './production-reconciliation-state';
 
 export type ProductionReconciliationContext = Readonly<{
   tenantId: string;
@@ -20,6 +21,7 @@ type RecordData = {
   version: number;
   /** The signed-in person submitted this day and someone else can approve it. */
   approvalBlocked?: boolean;
+  requiresApproverNote?: boolean;
   business_date: string;
   attendants: Array<{ attendantId: string }>;
   readings: Array<{
@@ -58,6 +60,7 @@ type RecordData = {
   dips: Array<{ dipId: string; tankId: string; physicalLitres: string }>;
   cash: { countedCash: string; netExpectedCash: string; cashVariance: string } | null;
   explanations: Array<{ category: string; explanation: string }>;
+  approvalNote: string | null;
   totals: {
     expectedSales: string;
     accountedSales: string;
@@ -123,7 +126,10 @@ export function ProductionReconciliationWorkflow({
       setRecord(body);
       setCashCounted(body.cash?.countedCash ?? '');
       setExplanations(
-        Object.fromEntries(body.explanations.map((item) => [item.category, item.explanation])),
+        Object.fromEntries([
+          ...body.explanations.map((item) => [item.category, item.explanation]),
+          ...(body.approvalNote ? [['APPROVER_NOTE', body.approvalNote]] : []),
+        ]),
       );
       setDirty(false);
       setError(undefined);
@@ -238,7 +244,9 @@ export function ProductionReconciliationWorkflow({
       if (cashCounted.trim()) await update('SaveCashDeclaration', { countedCash: cashCounted });
       await update('SaveVarianceExplanations', {
         explanations: Object.fromEntries(
-          Object.entries(explanations).filter(([, value]) => value.trim()),
+          Object.entries(explanations).filter(
+            ([category, value]) => ['SALES', 'CASH', 'STOCK'].includes(category) && value.trim(),
+          ),
         ),
       });
       setDirty(false);
@@ -280,6 +288,9 @@ export function ProductionReconciliationWorkflow({
         stationId: context.stationId,
         reconciliationId: context.reconciliationId,
         expectedVersion: record.version,
+        ...(commandType === 'ApproveProductionReconciliation'
+          ? { approvalNote: explanations.APPROVER_NOTE?.trim() || undefined }
+          : {}),
         ...extra,
       });
       await load();
@@ -300,6 +311,18 @@ export function ProductionReconciliationWorkflow({
   }
 
   const editable = record?.state === 'DRAFT' || record?.state === 'RETURNED';
+  const missingEvidence = record
+    ? missingReconciliationEvidence({
+        attendantsCount: record.attendants.length,
+        salesVariance: record.totals.salesVariance,
+        cashVariance: record.totals.cashVariance,
+        stockVariance: record.totals.stockVariance,
+        requiresApproverNote: Boolean(
+          record.requiresApproverNote && role === 'MANAGEMENT' && record.state === 'SUBMITTED',
+        ),
+        explanations,
+      })
+    : [];
   if (loading) return <p role="status">Loading reconciliation…</p>;
   if (!record) {
     return (
@@ -445,13 +468,13 @@ export function ProductionReconciliationWorkflow({
             />
           </Field>
           <Field
-            id="production-explanation"
-            label="Variance explanation"
-            hint="Use a category-specific explanation when a server-derived variance is non-zero."
+            id="production-explanation-sales"
+            label="Sales variance explanation"
+            hint="Explain any difference between meter sales and payment allocations."
           >
             <textarea
-              id="production-explanation"
-              rows={3}
+              id="production-explanation-sales"
+              rows={2}
               value={explanations.SALES ?? ''}
               onChange={(event) => {
                 setDirty(true);
@@ -460,6 +483,47 @@ export function ProductionReconciliationWorkflow({
               disabled={!editable}
             />
           </Field>
+          <Field id="production-explanation-cash" label="Cash variance explanation">
+            <textarea
+              id="production-explanation-cash"
+              rows={2}
+              value={explanations.CASH ?? ''}
+              onChange={(event) => {
+                setDirty(true);
+                setExplanations((current) => ({ ...current, CASH: event.target.value }));
+              }}
+              disabled={!editable}
+            />
+          </Field>
+          <Field id="production-explanation-stock" label="Stock variance explanation">
+            <textarea
+              id="production-explanation-stock"
+              rows={2}
+              value={explanations.STOCK ?? ''}
+              onChange={(event) => {
+                setDirty(true);
+                setExplanations((current) => ({ ...current, STOCK: event.target.value }));
+              }}
+              disabled={!editable}
+            />
+          </Field>
+          {record.requiresApproverNote ? (
+            <Field
+              id="production-approver-note"
+              label="Approver note for red variance"
+              hint="Management must record why this red variance is accepted or what follow-up is required."
+            >
+              <textarea
+                id="production-approver-note"
+                rows={2}
+                value={explanations.APPROVER_NOTE ?? ''}
+                onChange={(event) => {
+                  setExplanations((current) => ({ ...current, APPROVER_NOTE: event.target.value }));
+                }}
+                disabled={!(role === 'MANAGEMENT' && record.state === 'SUBMITTED')}
+              />
+            </Field>
+          ) : null}
         </Card>
       </div>
       <Card as="section" className="panel" aria-labelledby="production-review-title">
@@ -475,7 +539,7 @@ export function ProductionReconciliationWorkflow({
             <Button
               variant="primary"
               onClick={() => void transition('SubmitProductionReconciliation')}
-              disabled={busy}
+              disabled={busy || missingEvidence.length > 0}
             >
               Submit for management review
             </Button>
@@ -487,7 +551,7 @@ export function ProductionReconciliationWorkflow({
                 onClick={() =>
                   void transition('ReturnProductionReconciliation', { reason: returnReason })
                 }
-                disabled={busy || !returnReason.trim()}
+                disabled={busy || returnReason.trim().length < 5}
               >
                 Return for correction
               </Button>
@@ -495,7 +559,7 @@ export function ProductionReconciliationWorkflow({
                 <Button
                   variant="primary"
                   onClick={() => void transition('ApproveProductionReconciliation')}
-                  disabled={busy}
+                  disabled={busy || missingEvidence.length > 0}
                 >
                   Approve reconciliation
                 </Button>
@@ -503,6 +567,11 @@ export function ProductionReconciliationWorkflow({
             </>
           ) : null}
         </div>
+        {missingEvidence.length > 0 && (editable || record.state === 'SUBMITTED') ? (
+          <p className="state" role="status">
+            Before this workflow step can continue, add: {missingEvidence.join(', ')}.
+          </p>
+        ) : null}
         {role === 'MANAGEMENT' && record.state === 'SUBMITTED' && record.approvalBlocked ? (
           <p className="state" role="status">
             You submitted this day, so someone else needs to approve it.
@@ -513,6 +582,8 @@ export function ProductionReconciliationWorkflow({
             <textarea
               id="production-return-reason"
               rows={2}
+              minLength={5}
+              required
               value={returnReason}
               onChange={(event) => setReturnReason(event.target.value)}
             />

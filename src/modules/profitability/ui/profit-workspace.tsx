@@ -8,6 +8,7 @@ import { Button, Card, EmptyState, ErrorState, StatusBadge } from '@/design-syst
 import { buildContextHref } from '@/modules/context/routes';
 import type { ContextSelection } from '@/modules/context/contracts';
 import type { ManagementReport } from '@/modules/reporting/contracts';
+import { EXPENSE_BASIS_NOTE } from '@/modules/reporting/statements';
 import {
   applyReportFilters,
   parseReportFilters,
@@ -354,6 +355,7 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
                 {moneyOrUnavailable(view.profit)}
               </p>
               <p className="profit-headline">{view.headline}</p>
+              <p className="profit-footnote">{EXPENSE_BASIS_NOTE}</p>
               <SalesSplit view={view} />
               {view.explanation ? (
                 <p className="profit-explain" role="status">

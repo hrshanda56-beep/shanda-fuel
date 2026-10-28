@@ -5,6 +5,7 @@ import {
   calculateTankStockVariance,
   deriveExpectedTankStock,
   requireAdjustmentReason,
+  validateDeliveryDipWindow,
   validateDeliveryAllocations,
   validateMovementQuantity,
 } from './domain';
@@ -37,5 +38,25 @@ describe('inventory domain', () => {
 
   it('calculates delivery shortage/excess as actual minus note quantity', () => {
     expect(calculateDeliveryShortageExcess('10000', '9995.5')).toBe('-4.5');
+  });
+
+  it('requires delivery dips to bracket the delivery timestamp', () => {
+    expect(() =>
+      validateDeliveryDipWindow(
+        '2026-10-28T08:00:00+02:00',
+        '2026-10-28T07:59:00+02:00',
+        '2026-10-28T08:01:00+02:00',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      validateDeliveryDipWindow('2026-10-28T08:00:00+02:00', '2026-10-28T08:01:00+02:00'),
+    ).toThrow('before-delivery');
+    expect(() =>
+      validateDeliveryDipWindow(
+        '2026-10-28T08:00:00+02:00',
+        undefined,
+        '2026-10-28T07:59:00+02:00',
+      ),
+    ).toThrow('after-delivery');
   });
 });

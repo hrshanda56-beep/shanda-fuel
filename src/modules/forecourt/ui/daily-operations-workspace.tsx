@@ -40,6 +40,7 @@ import { DailyTankDips } from './daily-tank-dips';
 import { sumDecimals } from '../../cash/ui/cash-visuals';
 import {
   formatBusinessDate,
+  formatDateTimeInTimeZone,
   formatLitres,
   formatMoney,
   formatStatusLabel,
@@ -83,6 +84,7 @@ type OperationsContext = {
   station: { id: string; code: string; name: string; timezone: string };
   organisation: { id: string; name: string };
   businessDay: { id: string; date: string; state: string; version: number };
+  reconciliationId?: string | null;
   shift: {
     id: string;
     state: string;
@@ -234,12 +236,13 @@ function readingFromContext(
 type OperationsFailure = Error & { status?: number; code?: string };
 
 function errorFromResponse(status: number, body: unknown): OperationsFailure {
-  const result = body as { error?: string; message?: string };
+  const result = body as { error?: string; message?: string; details?: Record<string, unknown> };
   const failure = new Error(
     mapDailyOperationsError(status, result.error, result.message),
   ) as OperationsFailure;
   failure.status = status;
   failure.code = result.error;
+  Object.assign(failure, { details: result.details });
   return failure;
 }
 
@@ -321,6 +324,7 @@ export function DailyOperationsWorkspace({
     initialData?.record?.attendants.map((row) => row.attendantId) ?? [],
   );
   const [cashCounted, setCashCounted] = useState(initialData?.record?.cash?.countedCash ?? '');
+  const [approvalNote, setApprovalNote] = useState(initialData?.record?.approvalNote ?? '');
   const [explanations, setExplanations] = useState<Record<string, string>>(
     Object.fromEntries(
       initialData?.record?.explanations.map((row) => [row.category, row.explanation]) ?? [],
@@ -374,6 +378,7 @@ export function DailyOperationsWorkspace({
         setExpenses([]);
         setAttendantIds([]);
         setCashCounted('');
+        setApprovalNote('');
         setExplanations({});
         return;
       }
@@ -387,6 +392,7 @@ export function DailyOperationsWorkspace({
       setExpenses(next.expenses.map(expenseFromRecord));
       setAttendantIds(next.attendants.map((attendant) => attendant.attendantId));
       setCashCounted(next.cash?.countedCash ?? '');
+      setApprovalNote(next.approvalNote ?? '');
       setExplanations(
         Object.fromEntries(next.explanations.map((item) => [item.category, item.explanation])),
       );
@@ -527,6 +533,17 @@ export function DailyOperationsWorkspace({
       await load();
       setNotice('Ready. Start with the team on shift.');
     } catch (cause) {
+      const failure = cause as OperationsFailure & {
+        details?: { existingReconciliationId?: unknown };
+      };
+      const existingId = failure.details?.existingReconciliationId;
+      if (failure.code === 'RECONCILIATION_ALREADY_EXISTS' && typeof existingId === 'string') {
+        setActiveReconciliationId(existingId);
+        const url = new URL(window.location.href);
+        url.searchParams.set('reconciliationId', existingId);
+        window.location.assign(url.toString());
+        return;
+      }
       setError(cause instanceof Error ? cause.message : 'The draft could not be created.');
     } finally {
       setBusy(false);
@@ -922,6 +939,8 @@ export function DailyOperationsWorkspace({
   const requiresStockExplanation = record
     ? Object.values(record.totals.stockVariance).some((value) => !isZero(value))
     : false;
+  const requiresApproverNote =
+    role === 'MANAGEMENT' && state === 'SUBMITTED' && Boolean(record?.requiresApproverNote);
 
   const checklist = record
     ? [
@@ -1099,8 +1118,9 @@ export function DailyOperationsWorkspace({
       {restorable && editable ? (
         <div className="state" role="status" aria-live="polite">
           <p>
-            You have entries from {new Date(restorable.savedAt).toLocaleString()} that were never
-            saved to the server. They are only on this device.
+            You have entries from{' '}
+            {formatDateTimeInTimeZone(new Date(restorable.savedAt), operation.station.timezone)}{' '}
+            that were never saved to the server. They are only on this device.
           </p>
           <Button onClick={restoreLocalDraft}>Bring them back</Button>{' '}
           <Button variant="quiet" onClick={discardLocalDraft}>
@@ -1921,6 +1941,23 @@ export function DailyOperationsWorkspace({
               </p>
             ) : null}
             {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
+              requiresApproverNote ? (
+                <Field
+                  id="management-approval-note"
+                  label="Approver note for red variance"
+                  hint="Record why this red variance is accepted or what follow-up is required."
+                  required
+                >
+                  <textarea
+                    id="management-approval-note"
+                    rows={3}
+                    value={approvalNote}
+                    onChange={(event) => setApprovalNote(event.target.value)}
+                  />
+                </Field>
+              ) : null
+            ) : null}
+            {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
               <Field
                 id="management-return-reason"
                 label="Return reason"
@@ -1967,8 +2004,12 @@ export function DailyOperationsWorkspace({
                   </Button>
                   <Button
                     variant="primary"
-                    onClick={() => void transition('ApproveProductionReconciliation')}
-                    disabled={busy}
+                    onClick={() =>
+                      void transition('ApproveProductionReconciliation', {
+                        approvalNote: approvalNote.trim() || undefined,
+                      })
+                    }
+                    disabled={busy || (requiresApproverNote && !approvalNote.trim())}
                   >
                     Approve reconciliation
                   </Button>

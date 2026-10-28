@@ -30,17 +30,20 @@ export function ServerDailyOperations({
           tenantId: current.organisationId,
           stationId: current.stationId,
         });
-        const record = context.reconciliationId
+        const operationContext = await getDailyOperationsContextFromRequest(request, input);
+        const reconciliationId =
+          context.reconciliationId ?? operationContext.reconciliationId ?? undefined;
+        const record = reconciliationId
           ? getProductionReconciliationFromRequest(request, {
               ...input,
-              reconciliationId: context.reconciliationId,
+              reconciliationId,
             }).catch((error) => {
               if (error instanceof AppError && error.code === 'NOT_FOUND') return null;
               throw error;
             })
           : Promise.resolve(null);
         const [operation, reconciliation, cash, settlements] = await Promise.all([
-          getDailyOperationsContextFromRequest(request, input),
+          Promise.resolve(operationContext),
           record,
           getCashStationSummaryFromRequest(request, { selection: current })
             .then((row) => row.totals)
@@ -57,6 +60,9 @@ export function ServerDailyOperations({
               ...context,
               tenantId: resolution.current!.organisationId,
               stationId: resolution.current!.stationId!,
+              ...(data.operation.reconciliationId
+                ? { reconciliationId: data.operation.reconciliationId }
+                : {}),
             }}
             initialData={data}
           />

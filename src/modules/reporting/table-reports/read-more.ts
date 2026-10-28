@@ -106,7 +106,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
         -- approved later still belongs to the business day shown by the dip.
         and m.business_date <= d.business_date
     ) book on true
-    where d.tenant_id = ${filters.tenantId}
+    where d.tenant_id = ${filters.tenantId} and d.voided_at is null
       and d.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('d', filters.stationIds)}
       ${equalsClause('t.product_id::text', filters.productId)}
@@ -130,7 +130,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
       ${equalsClause('t.product_id::text', filters.productId)}
       and not exists (
         select 1 from app.tank_dips d
-        where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
+        where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id and d.voided_at is null
           and d.business_date between ${filters.fromDate} and ${filters.toDate})
     order by s.name, t.code
   `);

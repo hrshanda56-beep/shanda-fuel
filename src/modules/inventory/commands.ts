@@ -21,6 +21,7 @@ import {
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
   requireAdjustmentReason,
+  validateDeliveryDipWindow,
   validateDeliveryAllocations,
 } from './domain';
 import {
@@ -88,6 +89,14 @@ const dipPayload = authorityPayload.extend({
   notes: z.string().trim().max(1000).nullish(),
 });
 
+const deliveryDipPayload = z.object({
+  measuredAt: instant,
+  physicalLitres: decimalText.nullish(),
+  rawMeasurement: decimalText.nullish(),
+  measurementUnit: z.enum(['mm', 'cm', 'inches']).nullish(),
+  notes: z.string().trim().max(1000).nullish(),
+});
+
 const calibrationPayload = authorityPayload.extend({
   tankId: uuid,
   measurementUnit: z.enum(['mm', 'cm', 'inches']),
@@ -129,6 +138,8 @@ const deliveryPayload = authorityPayload
     sealReference: z.string().trim().max(80).nullish(),
     preDeliveryDipId: uuid.nullish(),
     postDeliveryDipId: uuid.nullish(),
+    preDeliveryDip: deliveryDipPayload.nullish(),
+    postDeliveryDip: deliveryDipPayload.nullish(),
     unitLandedCost: z
       .string()
       .regex(/^\d+(?:\.\d{1,8})?$/)
@@ -147,6 +158,10 @@ const deliveryPayload = authorityPayload
   });
 
 const confirmDeliveryPayload = authorityPayload.extend({ deliveryId: uuid });
+const voidTankDipPayload = authorityPayload.extend({
+  dipId: uuid,
+  reason: z.string().trim().min(5).max(500),
+});
 const correctDeliverySupplierPayload = authorityPayload.extend({
   deliveryId: uuid,
   supplierId: uuid,
@@ -458,7 +473,10 @@ async function dipLitres(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   tankId: string,
-  payload: z.infer<typeof dipPayload>,
+  payload: Pick<
+    z.infer<typeof dipPayload>,
+    'rawMeasurement' | 'measurementUnit' | 'physicalLitres'
+  >,
 ): Promise<string> {
   if (payload.rawMeasurement && payload.measurementUnit) {
     const chart = await currentCalibration(transaction, context, tankId, payload.measurementUnit);
@@ -473,6 +491,43 @@ async function dipLitres(
     );
   }
   return litres(payload.physicalLitres).toString();
+}
+
+async function insertTankDipInTransaction(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  tankId: string,
+  payload: z.infer<typeof deliveryDipPayload>,
+): Promise<{ dipId: string; tankId: string; physicalLitres: string }> {
+  if ((payload.rawMeasurement === undefined) !== (payload.measurementUnit === undefined)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Raw dip measurement and unit must be supplied together',
+    );
+  }
+  const tank = await loadTankForUpdate(transaction, {
+    tenantId: context.tenantId,
+    stationId: context.stationId,
+    tankId,
+  });
+  if (tank.status === 'RETIRED') throw new AppError('CONFLICT', 'Retired tanks cannot be dipped');
+  const physicalLitres = await dipLitres(transaction, context, tank.id, payload);
+  assertWithinTankCapacity(physicalLitres, tank.capacityLitres);
+  const dipId = randomUUID();
+  await transaction.insert(tankDips).values({
+    id: dipId,
+    tenantId: context.tenantId,
+    stationId: context.stationId,
+    tankId: tank.id,
+    measuredAt: new Date(payload.measuredAt),
+    businessDate: deriveBusinessDate(payload.measuredAt, context.stationTimezone),
+    physicalLitres,
+    rawMeasurement: payload.rawMeasurement ? litres(payload.rawMeasurement).toString() : null,
+    measurementUnit: payload.measurementUnit ?? null,
+    recordedBy: context.authority.membership.membershipId,
+    notes: payload.notes ?? null,
+  });
+  return { dipId, tankId: tank.id, physicalLitres };
 }
 
 export async function setTankCalibrationFromRequest(request: Request, input: unknown) {
@@ -543,30 +598,68 @@ export async function recordTankDipFromRequest(request: Request, input: unknown)
       subjectId: (result) => (result as { dipId: string }).dipId,
     },
     execute: async (transaction) => {
-      const tank = await loadTankForUpdate(transaction, {
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        tankId: payload.tankId,
-      });
-      if (tank.status === 'RETIRED')
-        throw new AppError('CONFLICT', 'Retired tanks cannot be dipped');
-      const physicalLitres = await dipLitres(transaction, context, tank.id, payload);
-      assertWithinTankCapacity(physicalLitres, tank.capacityLitres);
-      const dipId = randomUUID();
-      await transaction.insert(tankDips).values({
-        id: dipId,
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        tankId: tank.id,
-        measuredAt: new Date(payload.measuredAt),
-        businessDate: deriveBusinessDate(payload.measuredAt, context.stationTimezone),
-        physicalLitres,
-        rawMeasurement: payload.rawMeasurement ? litres(payload.rawMeasurement).toString() : null,
-        measurementUnit: payload.measurementUnit ?? null,
-        recordedBy: context.authority.membership.membershipId,
-        notes: payload.notes ?? null,
-      });
-      return { dipId, tankId: tank.id, physicalLitres };
+      return insertTankDipInTransaction(transaction, context, payload.tankId, payload);
+    },
+  });
+}
+
+export async function voidTankDipFromRequest(request: Request, input: unknown) {
+  const payload = voidTankDipPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'VoidTankDip',
+    permissionCode: 'inventory.dip.record',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_DIP_VOIDED',
+      subjectType: 'TankDip',
+      subjectId: payload.dipId,
+      reason: payload.reason,
+    },
+    execute: async (transaction) => {
+      const dips = await transaction.execute<{ id: string; voided_at: Date | string | null }>(sql`
+        select id, voided_at
+        from app.tank_dips
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.dipId}
+        for update
+      `);
+      const dip = dips[0];
+      if (!dip) throw new AppError('NOT_FOUND', 'That tank dip was not found');
+      if (dip.voided_at) throw new AppError('CONFLICT', 'That tank dip has already been voided');
+      const deliveryRefs = await transaction.execute<{ id: string }>(sql`
+        select id
+        from app.fuel_deliveries
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and (pre_delivery_dip_id=${payload.dipId} or post_delivery_dip_id=${payload.dipId})
+        limit 1
+      `);
+      if (deliveryRefs[0]) {
+        throw new AppError(
+          'CONFLICT',
+          'This dip is attached to a delivery and cannot be voided. Correct the delivery instead.',
+        );
+      }
+      const reconciliationRefs = await transaction.execute<{ id: string }>(sql`
+        select id
+        from app.reconciliation_dip_refs
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and dip_id=${payload.dipId}
+        limit 1
+      `);
+      if (reconciliationRefs[0]) {
+        throw new AppError(
+          'CONFLICT',
+          'This dip is attached to a reconciliation and cannot be voided. Remove that link first.',
+        );
+      }
+      await transaction.execute(sql`
+        update app.tank_dips
+        set voided_at=now(), voided_by=${context.authority.membership.membershipId}, void_reason=${payload.reason}
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.dipId} and voided_at is null
+      `);
+      return { dipId: payload.dipId, voided: true };
     },
   });
 }
@@ -597,7 +690,12 @@ async function insertDelivery(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   payload: z.infer<typeof deliveryPayload>,
-): Promise<{ deliveryId: string; allocationIds: readonly string[] }> {
+): Promise<{
+  deliveryId: string;
+  allocationIds: readonly string[];
+  preDeliveryDipId: string | null;
+  postDeliveryDipId: string | null;
+}> {
   await assertProductBelongsToTenant(transaction, context.tenantId, payload.productId);
   await assertActiveSupplier(transaction, context.tenantId, payload.supplierId);
   validateDeliveryAllocations(
@@ -623,6 +721,26 @@ async function insertDelivery(
     if (tank.status === 'RETIRED')
       throw new AppError('CONFLICT', 'Retired tanks cannot receive deliveries');
   }
+  if ((payload.preDeliveryDip || payload.postDeliveryDip) && sortedAllocations.length !== 1) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Before and after dips can only be recorded when the delivery is allocated to one tank.',
+    );
+  }
+  validateDeliveryDipWindow(
+    payload.deliveredAt,
+    payload.preDeliveryDip?.measuredAt,
+    payload.postDeliveryDip?.measuredAt,
+  );
+  const dipTankId = sortedAllocations[0]?.tankId;
+  const preDeliveryDip =
+    payload.preDeliveryDip && dipTankId
+      ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.preDeliveryDip)
+      : null;
+  const postDeliveryDip =
+    payload.postDeliveryDip && dipTankId
+      ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.postDeliveryDip)
+      : null;
   const deliveryId = randomUUID();
   const noteQuantity = litres(payload.noteQuantityLitres);
   const shortageExcess = calculateDeliveryShortageExcess(
@@ -646,8 +764,8 @@ async function insertDelivery(
     driver: payload.driver ?? null,
     truckRegistration: payload.truckRegistration ?? null,
     sealReference: payload.sealReference ?? null,
-    preDeliveryDipId: payload.preDeliveryDipId ?? null,
-    postDeliveryDipId: payload.postDeliveryDipId ?? null,
+    preDeliveryDipId: preDeliveryDip?.dipId ?? payload.preDeliveryDipId ?? null,
+    postDeliveryDipId: postDeliveryDip?.dipId ?? payload.postDeliveryDipId ?? null,
     status: 'DRAFT',
     noPoReason: payload.noPoReason ?? null,
     noPoNote: payload.noPoReason ? payload.noPoNote || null : null,
@@ -669,7 +787,12 @@ async function insertDelivery(
       quantityLitres: litres(allocation.quantityLitres).toString(),
     });
   }
-  return { deliveryId, allocationIds };
+  return {
+    deliveryId,
+    allocationIds,
+    preDeliveryDipId: preDeliveryDip?.dipId ?? payload.preDeliveryDipId ?? null,
+    postDeliveryDipId: postDeliveryDip?.dipId ?? payload.postDeliveryDipId ?? null,
+  };
 }
 
 export async function createDeliveryFromRequest(request: Request, input: unknown) {

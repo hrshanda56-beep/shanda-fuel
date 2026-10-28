@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
+import { useConfirm } from '@/design-system/feedback-provider';
 import { PageHeader } from '@/design-system/layout';
 import { Notice } from '@/design-system/feedback';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
@@ -62,6 +63,7 @@ export function TankDetailView({
   initialData: TankDetail;
 }>) {
   const router = useRouter();
+  const confirm = useConfirm();
   const { tank, dips, movements, canManage, stationTimezone, chart } = initialData;
   const [chartUnit, setChartUnit] = useState(chart?.unit ?? 'mm');
   const [chartText, setChartText] = useState('');
@@ -77,6 +79,53 @@ export function TankDetailView({
     null,
   );
   const [stepUpRetry, setStepUpRetry] = useState<'limits' | 'chart' | null>(null);
+  const [voidingDipId, setVoidingDipId] = useState<string | null>(null);
+
+  async function voidDip(dipId: string) {
+    const reason = window
+      .prompt('Why is this dip being voided? Use at least five characters.')
+      ?.trim();
+    if (!reason || reason.length < 5) return;
+    if (
+      !(await confirm({
+        title: 'Void this tank dip?',
+        consequence:
+          'This removes the dip from stock calculations. It cannot be undone, and a dip attached to a delivery or reconciliation will be refused.',
+        confirmLabel: 'Void tank dip',
+        tone: 'warning',
+      }))
+    )
+      return;
+    setVoidingDipId(dipId);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/inventory/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify({
+          commandType: 'VoidTankDip',
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          dipId,
+          reason,
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!response.ok) throw new Error(body.message ?? 'The dip could not be voided.');
+      setMessage({
+        tone: 'positive',
+        text: 'The dip was voided and removed from stock calculations.',
+      });
+      router.refresh();
+    } catch (error) {
+      setMessage({
+        tone: 'critical',
+        text: error instanceof Error ? error.message : 'The dip could not be voided.',
+      });
+    } finally {
+      setVoidingDipId(null);
+    }
+  }
 
   async function saveLimits(event: FormEvent) {
     event.preventDefault();
@@ -375,6 +424,16 @@ export function TankDetailView({
                       <StatusBadge tone={SIGNAL[dip.signal].tone}>
                         {SIGNAL[dip.signal].label}
                       </StatusBadge>
+                      {canManage ? (
+                        <Button
+                          type="button"
+                          variant="quiet"
+                          loading={voidingDipId === dip.id}
+                          onClick={() => void voidDip(dip.id)}
+                        >
+                          Void
+                        </Button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
