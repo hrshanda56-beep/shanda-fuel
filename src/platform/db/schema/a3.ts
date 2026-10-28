@@ -796,6 +796,7 @@ export const reconciliationRevisions = appSchema.table(
     currency: text('currency').notNull().default('USD'),
     varianceClassification: text('variance_classification').notNull(),
     varianceExplanation: text('variance_explanation'),
+    metricSnapshot: text('metric_snapshot'),
     declarations: jsonb('declarations')
       .notNull()
       .default(sql`'[]'::jsonb`),

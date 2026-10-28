@@ -1042,7 +1042,7 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         variance: string;
         metric_snapshot: string | null;
       }>(sql`
-        select expected_sales, accounted_sales, variance, declarations->>'metricSnapshot' as metric_snapshot
+        select expected_sales, accounted_sales, variance, metric_snapshot
         from app.reconciliation_revisions
         where tenant_id=${context.tenantId}
           and station_id=${context.stationId}
@@ -1053,12 +1053,12 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       `);
       const snapshot = submittedSnapshot[0];
       if (
-        snapshot &&
+        snapshot?.metric_snapshot !== null &&
+        snapshot?.metric_snapshot !== undefined &&
         (!new ExactDecimal(snapshot.expected_sales).value.eq(metrics.sales.value) ||
           !new ExactDecimal(snapshot.accounted_sales).value.eq(metrics.payments.value) ||
           !new ExactDecimal(snapshot.variance).value.eq(metrics.salesVariance.value) ||
-          (snapshot.metric_snapshot !== null &&
-            snapshot.metric_snapshot !== metricSnapshot(metrics)))
+          snapshot.metric_snapshot !== metricSnapshot(metrics))
       ) {
         throw new AppError(
           'CONFLICT',
@@ -1474,13 +1474,13 @@ async function transitionProductionReconciliation(
         await transaction.execute(sql`
           insert into app.reconciliation_revisions
             (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales,
-             accounted_sales, variance, currency, variance_classification, source_segment_ids,
+             accounted_sales, variance, currency, variance_classification, metric_snapshot, source_segment_ids,
              source_shift_ids)
           select ${revisionId}, tenant_id, station_id, reconciliation_id, coalesce(max(revision), 0) + 1,
                  'READY', ${metrics!.sales.toString()}, ${metrics!.payments.toString()},
                  ${metrics!.salesVariance.toString()}, 'USD',
                  ${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'},
-             ${JSON.stringify({ metricSnapshot: metricSnapshot(metrics!) })}::jsonb, coalesce(
+             ${metricSnapshot(metrics!)}, coalesce(
                    (
                      select source_shift_ids
                      from app.reconciliation_revisions latest
@@ -1499,7 +1499,7 @@ async function transitionProductionReconciliation(
         `);
         await transaction.execute(sql`
           update app.reconciliation_revisions
-          set state='SUBMITTED', declarations=${JSON.stringify({ metricSnapshot: metricSnapshot(metrics!) })}::jsonb, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
+          set state='SUBMITTED', metric_snapshot=${metricSnapshot(metrics!)}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
           where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${revisionId}
         `);
         await transaction.execute(sql`
@@ -1510,7 +1510,7 @@ async function transitionProductionReconciliation(
       } else {
         if (nextState === 'SUBMITTED') {
           await transaction.execute(sql`
-            update app.reconciliation_revisions set state='SUBMITTED', declarations=${JSON.stringify({ metricSnapshot: metricSnapshot(metrics!) })}::jsonb, expected_sales=${metrics!.sales.toString()}, accounted_sales=${metrics!.payments.toString()}, variance=${metrics!.salesVariance.toString()}, variance_classification=${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
+            update app.reconciliation_revisions set state='SUBMITTED', metric_snapshot=${metricSnapshot(metrics!)}, expected_sales=${metrics!.sales.toString()}, accounted_sales=${metrics!.payments.toString()}, variance=${metrics!.salesVariance.toString()}, variance_classification=${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
             where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='READY'
           `);
           await transaction.execute(sql`
