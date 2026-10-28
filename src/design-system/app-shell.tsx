@@ -1114,7 +1114,7 @@ export function GlobalSearchButton({ compact = false }: { compact?: boolean }) {
       type="button"
       className={`global-search ${compact ? 'global-search-compact' : ''}`.trim()}
       aria-haspopup="dialog"
-      aria-label="Search pages"
+      aria-label={`Search pages ${shortcut}`}
       aria-keyshortcuts="Meta+K Control+K"
       onClick={() => shell?.openSearch()}
     >
