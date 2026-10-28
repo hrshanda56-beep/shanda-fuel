@@ -135,6 +135,13 @@ describe('buildGuidedSteps', () => {
     expect(done).toMatchObject({ status: 'done', summary: 'Tendai' });
   });
 
+  it('distinguishes reusable shift templates from operated shifts', () => {
+    const step = byId(buildGuidedSteps(base), 'shifts');
+    expect(step.title).toBe('Shift templates');
+    expect(step.purpose).toContain('reusable patterns');
+    expect(step.summary).toBe('No shift templates added yet.');
+  });
+
   it('does not let a person without permission add anything', () => {
     const steps = buildGuidedSteps({
       ...base,

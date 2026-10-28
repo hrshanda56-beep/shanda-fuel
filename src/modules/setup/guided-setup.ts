@@ -141,10 +141,11 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
 
   const shiftStep: GuidedStep = {
     id: 'shifts',
-    title: 'Shifts',
-    purpose: 'When each shift starts and how long it runs.',
+    title: 'Shift templates',
+    purpose: 'The reusable patterns used to plan each operating shift.',
     status: shifts.length > 0 ? 'done' : 'todo',
-    summary: shifts.length > 0 ? shifts.map((s) => s.name).join(', ') : 'No shifts added yet.',
+    summary:
+      shifts.length > 0 ? shifts.map((s) => s.name).join(', ') : 'No shift templates added yet.',
     canEdit: caps.shiftTemplates,
   };
 
