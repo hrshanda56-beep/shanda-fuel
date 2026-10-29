@@ -132,6 +132,12 @@ export function isFinanceWorkspaceActor({ actor, scope }: NavigationProjectionIn
   return FINANCE_SIGN_OFF_PERMISSIONS.some(granted) && !DAY_RUNNING_PERMISSIONS.some(granted);
 }
 
+/**
+ * Pages whose server check is organisation-wide. A station-scoped role (a supervisor) must be
+ * judged at that same scope here, or the menu offers a page that only answers "Access Restricted".
+ */
+const TENANT_WIDE_NAVIGATION_KEYS: ReadonlySet<NavigationKey> = new Set(['purchasing']);
+
 export function buildNavigationProjection({
   actor,
   scope,
@@ -145,7 +151,13 @@ export function buildNavigationProjection({
     const visible =
       !(key === 'today' && financeWorkspace) &&
       NAVIGATION_PERMISSION_CANDIDATES[key].some((permissionCode) =>
-        isPermissionGranted({ actor, permissionCode, requestedScope: scope }),
+        isPermissionGranted({
+          actor,
+          permissionCode,
+          requestedScope: TENANT_WIDE_NAVIGATION_KEYS.has(key)
+            ? { tenantId: scope.tenantId, scopeType: 'TENANT' }
+            : scope,
+        }),
       );
     return key === 'finance-home' && financeWorkspace
       ? { key, visible, enabled: visible, home: true }
