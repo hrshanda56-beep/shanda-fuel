@@ -15,6 +15,17 @@ the earliest `PRICE_CHANGE` meter reading recorded for that change. All pumps ar
 price first, then for the new one; activation is refused if any pump was read after that instant.
 Per-pump meter segments keep each pump's litres exact. Finance at TEI Oils has not yet confirmed this.
 
+## DEC-050 — Local development signs in without Clerk (PROPOSED, project lead chose this in chat, 2026-10-29)
+
+Local development uses a disposable local database and never contacts Clerk. A
+local-only switch (`DEV_AUTH_BYPASS=1`) lets a developer pick an already-provisioned
+identity at `/dev-login`. It is not a second auth provider: the identity is still
+resolved through `app.resolve_auth_identity`, and DEC-043 (Clerk alone in every
+deployed environment) is unchanged. The switch is off unless `APP_ENV` is local,
+`NODE_ENV` is not production, no Vercel/CI variable is set, and the database URLs
+are loopback. Unit tests cover every refusal case. Production and preview builds
+ignore it.
+
 ## DEC-049 — A price's requester may approve it when no one else could
 
 Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the project lead.

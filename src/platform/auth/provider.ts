@@ -9,6 +9,7 @@ import { getDatabase } from '../db';
 import { AppError } from '../errors';
 import { readClerkStepUpAssertion } from './clerk-step-up';
 import { clerkCredentialName } from './credential-name';
+import { isLocalDevBypassEnabled, readDevBypassCookie } from './dev-bypass';
 import { memoizeRequestRead } from '../security/request-read-scope';
 
 export type AuthProviderName = 'CLERK';
@@ -44,7 +45,38 @@ export type ClerkSessionRevocationResult = {
 const CLERK_STEP_UP_MAX_AGE_MINUTES = 10;
 const identityRead = Symbol('clerk-internal-identity');
 
+/**
+ * Local-only (see dev-bypass.ts): act as an already-provisioned identity chosen
+ * at /dev-login. The identity is still resolved through the same reviewed
+ * database function, so an unknown id is rejected exactly like a Clerk one.
+ */
+async function resolveDevBypassSession(request: Request): Promise<ProviderSession | null> {
+  const devUserId = readDevBypassCookie(request.headers.get('cookie'));
+  if (!devUserId) return null;
+  const rows = await getDatabase().execute<{ internal_user_id: string }>(
+    sql`select internal_user_id from app.resolve_auth_identity('CLERK', ${devUserId})`,
+  );
+  const internalUserId = rows[0]?.internal_user_id;
+  if (!internalUserId) return null;
+  const now = Date.now();
+  const expiresAt = new Date(now + 10 * 60_000);
+  return {
+    provider: 'CLERK',
+    providerUserId: devUserId,
+    internalUserId,
+    providerSessionId: `dev-bypass-${devUserId}`,
+    expiresAt,
+    strongAuthenticatedAt: new Date(now),
+    strongAuthenticationExpiresAt: expiresAt,
+    strongAuthenticationVerified: true,
+    strongAuthenticationMethod: 'clerk-reverification',
+    stepUpLevel: 1,
+    stepUpExpiresAt: expiresAt,
+  };
+}
+
 export async function resolveClerkSession(request: Request): Promise<ProviderSession | null> {
+  if (isLocalDevBypassEnabled()) return resolveDevBypassSession(request);
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
   markReadTiming('identity.clerk.headers.ready');
   if (!auth.isAuthenticated || !auth.userId || !auth.sessionId) return null;
