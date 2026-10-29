@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { createQa1ScenarioContext, QA1_TIMES, type Qa1ScenarioContext } from './qa1/fixture';
 import { createApprovedSale, customer } from './qa1/commands';
@@ -82,9 +83,14 @@ describe('Customer and beneficiary on reconciliation payments', { timeout: 120_0
   });
   afterAll(async () => client?.end());
 
-  const sale = (ctx: Qa1ScenarioContext, key: string, payments: Array<Record<string, string>>) =>
+  const sale = (
+    ctx: Qa1ScenarioContext,
+    key: string,
+    payments: Array<Record<string, string>>,
+    saleLitres = '30.000',
+  ) =>
     createApprovedSale(client, ctx, key, {
-      saleLitres: '30.000',
+      saleLitres,
       payments: payments as never,
       post: true,
       completeShiftAfter: true,
@@ -150,6 +156,14 @@ describe('Customer and beneficiary on reconciliation payments', { timeout: 120_0
       { method: string; customer_account_id: string | null; beneficiary_name: string | null }[]
     >`select method, customer_account_id, beneficiary_name from app.reconciliation_payments
       where reconciliation_id = ${posted.reconciliationId} order by method`;
+    // The signed audit record of the approval says what state the reconciliation was in before.
+    const approvals = await client<{ before_state: string; after_state: string }[]>`
+      select details->'before'->>'state' as before_state, details->'after'->>'state' as after_state
+      from platform.security_events
+      where tenant_id = ${ctx.tenantId} and details->>'subjectId' = ${posted.reconciliationId}
+        and details->'after'->>'state' = 'APPROVED'
+    `;
+    expect(approvals).toEqual([{ before_state: 'PENDING_APPROVAL', after_state: 'APPROVED' }]);
     expect(stored).toEqual([
       { method: 'CUSTOMER_CREDIT', customer_account_id: creditId, beneficiary_name: null },
       { method: 'PREPAID', customer_account_id: prepaidId, beneficiary_name: null },
@@ -159,5 +173,78 @@ describe('Customer and beneficiary on reconciliation payments', { timeout: 120_0
         beneficiary_name: 'Tendai Moyo',
       },
     ]);
+  });
+
+  /** Another day's reconciliation that is not yet in the customer ledger. */
+  async function pendingSale(
+    ctx: Qa1ScenarioContext,
+    method: 'CUSTOMER_CREDIT' | 'PREPAID',
+    accountId: string,
+    amount: string,
+  ) {
+    const dayId = randomUUID();
+    const reconciliationId = randomUUID();
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${dayId}', '${ctx.tenantId}', '${ctx.stationId}', '2026-09-28', 'NOT_STARTED');
+      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
+        values ('${reconciliationId}', '${ctx.tenantId}', '${ctx.stationId}', '${dayId}', 'DRAFT');
+      insert into app.reconciliation_payments
+        (id, tenant_id, station_id, reconciliation_id, method, amount, customer_account_id, entered_by)
+        values ('${randomUUID()}', '${ctx.tenantId}', '${ctx.stationId}', '${reconciliationId}',
+          '${method}', ${amount}, '${accountId}', '${ctx.actors.admin.membershipId}');
+    `);
+  }
+
+  it('counts credit sales still waiting in other reconciliations against the limit', async () => {
+    const ctx = await createQa1ScenarioContext(client, 'payref-g');
+    const { creditId } = await accountsFor(ctx, '100.0000');
+    await pendingSale(ctx, 'CUSTOMER_CREDIT', creditId, '60.0000');
+    await expect(
+      sale(ctx, 'payref-g1', [
+        { method: 'CUSTOMER_CREDIT', amount: '60.0000', customerAccountId: creditId },
+      ]),
+    ).rejects.toThrow(/over their credit limit/);
+  });
+
+  it('refuses an account that is switched off or not allowed at this station', async () => {
+    const ctx = await createQa1ScenarioContext(client, 'payref-k');
+    const { creditId } = await accountsFor(ctx);
+    await client.unsafe(
+      `update app.customer_accounts set station_scope = 'SELECTED' where id = '${creditId}'`,
+    );
+    await expect(
+      sale(ctx, 'payref-k1', [
+        { method: 'CUSTOMER_CREDIT', amount: '10.0000', customerAccountId: creditId },
+      ]),
+    ).rejects.toThrow(/not allowed to buy on account at this station/);
+    const ctxOff = await createQa1ScenarioContext(client, 'payref-l');
+    const off = await accountsFor(ctxOff);
+    await client.unsafe(
+      `update app.customer_accounts set status = 'SUSPENDED' where id = '${off.creditId}'`,
+    );
+    await expect(
+      sale(ctxOff, 'payref-l1', [
+        { method: 'CUSTOMER_CREDIT', amount: '10.0000', customerAccountId: off.creditId },
+      ]),
+    ).rejects.toThrow(/is not active, so cannot be charged/);
+  });
+
+  it('refuses a closing meter reading below the opening reading on the server', async () => {
+    const ctx = await createQa1ScenarioContext(client, 'payref-j');
+    await expect(
+      sale(ctx, 'payref-j1', [{ method: 'CASH', amount: '10.0000' }], '-5.000'),
+    ).rejects.toThrow(/lower closing reading requires reset, replacement, or correction/);
+  });
+
+  it('counts prepaid sales still waiting in other reconciliations against the balance', async () => {
+    const ctx = await createQa1ScenarioContext(client, 'payref-i');
+    const { prepaidId } = await accountsFor(ctx);
+    await pendingSale(ctx, 'PREPAID', prepaidId, '30.0000');
+    await expect(
+      sale(ctx, 'payref-i1', [
+        { method: 'PREPAID', amount: '20.0000', customerAccountId: prepaidId },
+      ]),
+    ).rejects.toThrow(/does not have enough prepaid money/);
   });
 });

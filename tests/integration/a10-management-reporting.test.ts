@@ -1341,6 +1341,30 @@ describe('A10 management reporting PostgreSQL read model', () => {
       expect(scopedItems[0]?.detail).toContain('A10 Scoped Station');
     });
 
+    it('refuses report activity to someone who cannot view reports', async () => {
+      const actorId = 'a10b0000-0000-4000-8000-0000000000a1';
+      const membershipId = 'a10b0000-0000-4000-8000-0000000000a2';
+      const sessionId = 'a10b0000-0000-4000-8000-0000000000a3';
+      const token = 'a10-attendant-only-session-token';
+      await client.unsafe(`
+        insert into app.users (id, name, email) values
+          ('${actorId}', 'A10 Attendant', 'a10-attendant@example.test') on conflict (id) do nothing;
+        insert into app.memberships (id, tenant_id, identity_id, status)
+          values ('${membershipId}', '${ids.tenant}', '${actorId}', 'ACTIVE') on conflict (id) do nothing;
+        insert into app.membership_role_assignments
+          (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+        values ('${ids.tenant}', '${membershipId}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
+        on conflict do nothing;
+      `);
+      await seedClerkSession(client, sessionId, token, actorId, true);
+      const response = await reportActivityGet(
+        new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
+          headers: { ...clerkHeaders(await signedCookie(token)) },
+        }),
+      );
+      expect(response.status).toBe(403);
+    });
+
     it('stops honouring a copied link once the permission is revoked', async () => {
       const body = {
         report: 'sales',

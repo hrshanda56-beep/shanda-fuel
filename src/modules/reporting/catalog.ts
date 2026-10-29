@@ -20,7 +20,7 @@ export type ReportDefinition = Readonly<{
   title: string;
   description: string;
   category: ReportCategoryId;
-  /** True when the report has a browser-downloadable CSV layout. */
+  /** True when the report can be downloaded as CSV, PDF or XLSX. */
   exportable: boolean;
   /** Operational reports need only `report.view`; finance reports need `report.finance.view`. */
   audience: 'operational' | 'finance';

@@ -15,7 +15,7 @@ import {
   tankDips,
 } from '../../platform/db/schema/a4';
 import { litresForReading, normaliseCalibrationChart } from './calibration';
-import { buildLandedCost } from './landed-cost';
+import { assertLandedCostPairMatchesLitres, buildLandedCost } from './landed-cost';
 import { assertWaterTestAllowsConfirmation } from '../deliveries/persistence';
 import {
   assertWithinTankCapacity,
@@ -741,6 +741,12 @@ async function insertDelivery(
     payload.postDeliveryDip && dipTankId
       ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.postDeliveryDip)
       : null;
+  assertLandedCostPairMatchesLitres({
+    unitLandedCost: payload.unitLandedCost,
+    totalLandedCost: payload.totalLandedCost,
+    currency: payload.currency,
+    actualLitres: actual.toString(),
+  });
   const deliveryId = randomUUID();
   const noteQuantity = litres(payload.noteQuantityLitres);
   const shortageExcess = calculateDeliveryShortageExcess(
