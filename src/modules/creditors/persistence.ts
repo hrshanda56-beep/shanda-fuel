@@ -60,6 +60,31 @@ function decimal(value: string): ExactDecimal {
   return new ExactDecimal(value);
 }
 
+/** The state a supplier document is in before a command changes it, for the audit record. */
+export async function readSupplierDocumentBeforeChange(
+  transaction: SupplierTransaction,
+  tenantId: string,
+  documentId: string,
+): Promise<{ state: string } | undefined> {
+  const rows = await transaction.execute<{ state: string }>(sql`
+    select state from app.supplier_documents where tenant_id = ${tenantId} and id = ${documentId}
+  `);
+  return rows[0] ? { state: rows[0].state } : undefined;
+}
+
+/** A supplier's credit limit before it is changed, for the audit record. */
+export async function readSupplierCreditLimitBeforeChange(
+  transaction: SupplierTransaction,
+  tenantId: string,
+  supplierId: string,
+): Promise<{ creditLimit: string | null } | undefined> {
+  const rows = await transaction.execute<{ credit_limit: string | null }>(sql`
+    select credit_limit::text as credit_limit from app.suppliers
+    where tenant_id = ${tenantId} and id = ${supplierId}
+  `);
+  return rows[0] ? { creditLimit: rows[0].credit_limit } : undefined;
+}
+
 async function assertSupplierAndEntity(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,

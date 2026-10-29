@@ -519,6 +519,13 @@
       "when": 1793200088000,
       "tag": "0088_reconciliation_metric_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793200089000,
+      "tag": "0089_hardening_guards",
+      "breakpoints": true
     }
   ]
 }

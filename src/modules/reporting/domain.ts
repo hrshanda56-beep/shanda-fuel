@@ -1,5 +1,22 @@
 import { DECIMAL_POLICIES, ExactDecimal } from '../../platform/domain/primitives';
 
+/**
+ * The calendar date "today" is for a company that runs stations in these time zones: the latest
+ * local date among them, so nothing delivered locally today is left out. A time zone that is not
+ * recognised is ignored; with none left the date is the server's UTC date.
+ */
+export function latestStationLocalDate(now: Date, timeZones: readonly string[]): string {
+  const dates: string[] = [];
+  for (const timeZone of timeZones) {
+    try {
+      dates.push(new Intl.DateTimeFormat('en-CA', { timeZone }).format(now));
+    } catch {
+      // Not a real time zone name; skip it.
+    }
+  }
+  return dates.length > 0 ? dates.sort().at(-1)! : now.toISOString().slice(0, 10);
+}
+
 export function exact(value: string | null | undefined): ExactDecimal {
   return new ExactDecimal(value ?? '0');
 }

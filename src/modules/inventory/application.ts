@@ -163,6 +163,8 @@ type InventoryAudit = Readonly<{
   subjectType: string;
   subjectId: string | ((result: unknown) => string);
   before?: unknown;
+  /** Reads what the subject looked like before this command changes it. */
+  readBefore?: (transaction: InventoryTransaction) => Promise<unknown>;
   after?: unknown;
   reason?: string;
   metadata?: Record<string, unknown>;
@@ -257,6 +259,9 @@ export async function executeInventoryCommand<T>(input: {
         requestHash: input.requestHash,
       },
       async () => {
+        const before = input.audit.readBefore
+          ? await input.audit.readBefore(transaction)
+          : input.audit.before;
         const result = await input.execute(transaction);
         const auditKey = getAuditSigningKey();
         await appendSecurityEvent(
@@ -274,7 +279,7 @@ export async function executeInventoryCommand<T>(input: {
                 : input.audit.subjectId,
             requestId: input.context.requestId,
             occurredAt: new Date().toISOString(),
-            before: input.audit.before,
+            before,
             after: result ?? input.audit.after,
             reason: input.audit.reason,
             metadata: {

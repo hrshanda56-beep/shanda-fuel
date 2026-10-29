@@ -108,6 +108,13 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         )
       ).status,
     ).toBe(200);
+    const posting = await client<{ before_state: string; after_state: string }[]>`
+      select details->'before'->>'state' as before_state, details->'after'->>'state' as after_state
+      from platform.security_events
+      where tenant_id = ${ids.tenant} and details->>'subjectId' = ${document.documentId}
+        and event_code = 'SUPPLIER.DOCUMENT_POSTED'
+    `;
+    expect(posting).toEqual([{ before_state: 'SUBMITTED', after_state: 'POSTED' }]);
 
     const submittedPayment = await command(
       {
@@ -555,5 +562,139 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
     );
     expect(cleared.status).toBe(200);
     expect((await readRow()).creditLimit.status).toBe('none');
+
+    // The signed audit record keeps the limit as it was before each change.
+    const limitChanges = await client<{ before_limit: string | null; after_version: number }[]>`
+      select details->'before'->>'creditLimit' as before_limit,
+             (details->'after'->>'version')::int as after_version
+      from platform.security_events
+      where tenant_id = ${ids.tenant} and details->>'subjectId' = ${created.supplierId}
+        and event_code = 'SUPPLIER.CREDIT_LIMIT_SET'
+      order by occurred_at
+    `;
+    expect(limitChanges.map((row) => row.before_limit)).toEqual([null, '1000.0000']);
+  });
+
+  it('does not let another tenant act on this tenant’s supplier', async () => {
+    const other = {
+      tenant: 'a7b00000-0000-4000-8000-0000000000a1',
+      legal: 'a7b00000-0000-4000-8000-0000000000a2',
+      actor: 'a7b00000-0000-4000-8000-0000000000a3',
+      membership: 'a7b00000-0000-4000-8000-0000000000a4',
+      session: 'a7b00000-0000-4000-8000-0000000000a5',
+    };
+    await client.unsafe(`
+      insert into app.tenants (id, name, slug) values ('${other.tenant}', 'A7 Other Tenant', 'a7-other-tenant') on conflict (id) do nothing;
+      insert into app.users (id, name, email) values ('${other.actor}', 'A7 Other Finance', 'a7-other-finance@example.test') on conflict (id) do nothing;
+      insert into app.memberships (id, tenant_id, identity_id, status) values ('${other.membership}', '${other.tenant}', '${other.actor}', 'ACTIVE') on conflict (id) do nothing;
+      insert into app.legal_entities (id, tenant_id, legal_name) values ('${other.legal}', '${other.tenant}', 'A7 Other Legal') on conflict (id) do nothing;
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id)
+        values ('${other.tenant}', '${other.membership}', 'FINANCE', 'LEGAL_ENTITY', '${other.legal}') on conflict do nothing;
+    `);
+    await seedClerkSession(client, other.session, 'a7-other-session-token', other.actor, true);
+    await seedActiveStepUp(client, other.session, other.tenant);
+
+    const owner = { tenantId: ids.tenant, legalEntityId: ids.legal };
+    const created = await command(
+      { ...owner, commandType: 'CreateSupplier', code: 'A7-ISO-1', legalName: 'A7 Isolated' },
+      'a7-iso-create',
+    );
+    expect(created.status).toBe(201);
+    const supplierId = (await json(created)).supplierId as string;
+
+    const asOther = async (input: Record<string, unknown>, key: string) =>
+      supplierCommandPost(
+        new Request('http://127.0.0.1:3000/api/suppliers/commands', {
+          method: 'POST',
+          headers: {
+            ...clerkHeaders('a7-other-session-token'),
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+    const invoice = {
+      commandType: 'SubmitSupplierDocument',
+      supplierId,
+      documentType: 'INVOICE',
+      paymentTerms: 'CASH',
+      referenceNumber: 'INV-ISO-1',
+      documentDate: '2026-09-24',
+      amount: '10.0000',
+      lines: [{ description: 'Isolation', quantity: '1', unitPrice: '10' }],
+    };
+
+    // Naming the owner's tenant is refused: the caller has no membership there.
+    const intoOwnerTenant = await asOther({ ...owner, ...invoice }, 'a7-iso-1');
+    expect(intoOwnerTenant.status).toBeGreaterThanOrEqual(400);
+    expect(intoOwnerTenant.status).toBeLessThan(500);
+
+    // Using their own tenant but the owner's supplier id cannot find that supplier.
+    const withForeignSupplier = await asOther(
+      { tenantId: other.tenant, legalEntityId: other.legal, ...invoice },
+      'a7-iso-2',
+    );
+    expect(withForeignSupplier.status).toBeGreaterThanOrEqual(400);
+    expect(withForeignSupplier.status).toBeLessThan(500);
+
+    const [row] = await client.unsafe(
+      `select count(*)::int as n from app.supplier_documents where supplier_id = '${supplierId}'`,
+    );
+    expect(row?.n).toBe(0);
+  });
+
+  it('refuses a repeated invoice or payment reference for one supplier but allows it for another', async () => {
+    const base = { tenantId: ids.tenant, legalEntityId: ids.legal };
+    const supplierOf = async (code: string) => {
+      const created = await command(
+        { ...base, commandType: 'CreateSupplier', code, legalName: `${code} Supplier` },
+        `a7-dup-create-${code}`,
+      );
+      expect(created.status).toBe(201);
+      return (await json(created)).supplierId as string;
+    };
+    const invoice = (supplierId: string, key: string) =>
+      command(
+        {
+          ...base,
+          commandType: 'SubmitSupplierDocument',
+          supplierId,
+          documentType: 'INVOICE',
+          paymentTerms: 'CASH',
+          referenceNumber: 'INV-DUP-1',
+          documentDate: '2026-09-24',
+          amount: '10.0000',
+          lines: [{ description: 'Dup check', quantity: '1', unitPrice: '10' }],
+        },
+        key,
+      );
+    const pay = (supplierId: string, key: string) =>
+      command(
+        {
+          ...base,
+          commandType: 'SubmitSupplierPayment',
+          supplierId,
+          paymentDate: '2026-09-24',
+          reference: 'PAY-DUP-1',
+          amount: '5.0000',
+        },
+        key,
+      );
+
+    const first = await supplierOf('A7-DUP-A');
+    const second = await supplierOf('A7-DUP-B');
+
+    expect((await invoice(first, 'a7-dup-inv-1')).status).toBe(201);
+    const repeatedInvoice = await invoice(first, 'a7-dup-inv-2');
+    expect(repeatedInvoice.status).toBeGreaterThanOrEqual(400);
+    expect(repeatedInvoice.status).toBeLessThan(500);
+    expect((await invoice(second, 'a7-dup-inv-3')).status).toBe(201);
+
+    expect((await pay(first, 'a7-dup-pay-1')).status).toBe(201);
+    const repeatedPayment = await pay(first, 'a7-dup-pay-2');
+    expect(repeatedPayment.status).toBeGreaterThanOrEqual(400);
+    expect(repeatedPayment.status).toBeLessThan(500);
+    expect((await pay(second, 'a7-dup-pay-3')).status).toBe(201);
   });
 });

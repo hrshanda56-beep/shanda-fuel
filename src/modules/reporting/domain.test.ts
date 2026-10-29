@@ -5,6 +5,7 @@ import {
   deriveCashPosition,
   formatLitres,
   formatMoney,
+  latestStationLocalDate,
   normalizeStationIds,
   sumObservedExact,
   sumExact,
@@ -107,5 +108,30 @@ describe('station scope normalisation', () => {
   it('treats no stations as every station', () => {
     expect(normalizeStationIds(undefined, undefined)).toEqual([]);
     expect(normalizeStationIds(undefined, [])).toEqual([]);
+  });
+});
+
+describe('latestStationLocalDate', () => {
+  const lateEveningUtc = new Date('2026-10-29T23:30:00Z');
+
+  it('uses the station local date, which can be ahead of UTC', () => {
+    expect(latestStationLocalDate(lateEveningUtc, ['Africa/Harare'])).toBe('2026-10-30');
+  });
+
+  it('uses the latest date when stations are in different time zones', () => {
+    expect(latestStationLocalDate(lateEveningUtc, ['America/New_York', 'Africa/Harare'])).toBe(
+      '2026-10-30',
+    );
+  });
+
+  it('can be behind UTC too', () => {
+    expect(latestStationLocalDate(new Date('2026-10-30T01:00:00Z'), ['America/Los_Angeles'])).toBe(
+      '2026-10-29',
+    );
+  });
+
+  it('skips unknown time zones and falls back to UTC when none are usable', () => {
+    expect(latestStationLocalDate(lateEveningUtc, ['Mars/Olympus'])).toBe('2026-10-29');
+    expect(latestStationLocalDate(lateEveningUtc, [])).toBe('2026-10-29');
   });
 });

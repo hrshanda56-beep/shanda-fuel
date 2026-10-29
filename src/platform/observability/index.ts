@@ -249,6 +249,18 @@ export function apiErrorResponse(
     );
   }
 
+  // A reference, number or code that is already taken is the person's to change, not a server fault.
+  if (sqlState(error) === '23505') {
+    return responseWithHeaders(
+      {
+        error: 'CONFLICT',
+        message: 'That reference, number or code is already in use. Check it and try again.',
+      },
+      409,
+      options.headers,
+    );
+  }
+
   return responseWithHeaders(
     options.unknownBody ?? {
       error: 'INTERNAL_ERROR',
