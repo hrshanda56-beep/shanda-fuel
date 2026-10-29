@@ -16,6 +16,7 @@ import { formatBusinessDate, formatStatusLabel } from '../../../design-system/fo
 import { Select } from '../../../design-system/forms';
 import { stationLocalToInstant } from '@/platform/domain/business-time';
 import { eventLabel, isEarlierOpenDay } from './operations-labels';
+import { dailyOperationsLinkFix } from './daily-operations-state';
 import { NextStepCard } from './next-step-card';
 import { ReconciliationBoard } from './reconciliation-board';
 
@@ -347,6 +348,15 @@ export function OperationsControlRoom({
     );
   }
 
+  function fixLinkFor(message: string) {
+    const fix = dailyOperationsLinkFix(message);
+    return fix ? (
+      <Link className="button button-primary" href={fix.href}>
+        {fix.label}
+      </Link>
+    ) : undefined;
+  }
+
   function commandErrorMessage(caught: unknown, commandType: string) {
     if (
       caught instanceof Error &&
@@ -419,7 +429,10 @@ export function OperationsControlRoom({
       <ErrorState
         title="Operations unavailable"
         message={error}
-        action={<Button onClick={() => void load()}>Retry</Button>}
+        action={fixLinkFor(error) ?? <Button onClick={() => void load()}>Retry</Button>}
+        secondaryAction={
+          fixLinkFor(error) ? <Button onClick={() => void load()}>Retry</Button> : undefined
+        }
       />
     );
   if (!overview) return null;
@@ -486,7 +499,10 @@ export function OperationsControlRoom({
         <ErrorState
           title="Action needs attention"
           message={error}
-          action={<Button onClick={() => void load()}>Refresh</Button>}
+          action={fixLinkFor(error) ?? <Button onClick={() => void load()}>Refresh</Button>}
+          secondaryAction={
+            fixLinkFor(error) ? <Button onClick={() => void load()}>Refresh</Button> : undefined
+          }
         />
       ) : null}
       {conflict ? (

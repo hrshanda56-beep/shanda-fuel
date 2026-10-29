@@ -47,10 +47,11 @@ import {
   formatTimeInTimeZone,
 } from '../../../design-system/formatters';
 import {
+  dailyOperationsProblem,
   dailyOperationsStatusLabel,
   dailyOperationsStatusTone,
   isEditableDailyOperationsState,
-  mapDailyOperationsError,
+  type DailyOperationsFix,
 } from './daily-operations-state';
 import {
   createDraftSaveAttemptId,
@@ -233,13 +234,21 @@ function readingFromContext(
   };
 }
 
-type OperationsFailure = Error & { status?: number; code?: string };
+type OperationsFailure = Error & { status?: number; code?: string; fix?: DailyOperationsFix };
+
+/** The button that goes with a shown error, kept with its message so it never outlives it. */
+type ErrorFix = { message: string; fix: DailyOperationsFix };
+
+function errorFixFor(message: string, cause: unknown): ErrorFix | undefined {
+  const fix = (cause as OperationsFailure | undefined)?.fix;
+  return fix ? { message, fix } : undefined;
+}
 
 function errorFromResponse(status: number, body: unknown): OperationsFailure {
   const result = body as { error?: string; message?: string; details?: Record<string, unknown> };
-  const failure = new Error(
-    mapDailyOperationsError(status, result.error, result.message),
-  ) as OperationsFailure;
+  const problem = dailyOperationsProblem(status, result.error, result.message);
+  const failure = new Error(problem.message) as OperationsFailure;
+  failure.fix = problem.fix;
   failure.status = status;
   failure.code = result.error;
   Object.assign(failure, { details: result.details });
@@ -333,6 +342,7 @@ export function DailyOperationsWorkspace({
   const [loading, setLoading] = useState(!initialData);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [errorFix, setErrorFix] = useState<ErrorFix>();
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [dirty, setDirty] = useState(false);
@@ -438,9 +448,10 @@ export function DailyOperationsWorkspace({
       setRecord(nextRecord);
       syncDraft(nextRecord, nextOperation);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'The operations workspace could not be loaded.',
-      );
+      const message =
+        cause instanceof Error ? cause.message : 'The operations workspace could not be loaded.';
+      setError(message);
+      setErrorFix(errorFixFor(message, cause));
     } finally {
       setLoading(false);
     }
@@ -544,7 +555,9 @@ export function DailyOperationsWorkspace({
         window.location.assign(url.toString());
         return;
       }
-      setError(cause instanceof Error ? cause.message : 'The draft could not be created.');
+      const message = cause instanceof Error ? cause.message : 'The draft could not be created.';
+      setError(message);
+      setErrorFix(errorFixFor(message, cause));
     } finally {
       setBusy(false);
     }
@@ -555,7 +568,17 @@ export function DailyOperationsWorkspace({
     savedForLater.current = false;
     if (!record || !operation) return null;
     if (readings.some((reading) => !reading.sellingPriceId)) {
-      setError('A current active selling price is required for every meter row before saving.');
+      const message =
+        'A current active selling price is required for every meter row before saving.';
+      setError(message);
+      setErrorFix({
+        message,
+        fix: {
+          kind: 'link',
+          label: 'Set the selling price',
+          href: '/operations/daily/price-change',
+        },
+      });
       return null;
     }
     setBusy(true);
@@ -674,6 +697,7 @@ export function DailyOperationsWorkspace({
       }
       const message = cause instanceof Error ? cause.message : 'The draft could not be saved.';
       setError(message);
+      setErrorFix(errorFixFor(message, cause));
       if (message.includes('changed elsewhere') || message.includes('locked')) setConflict(true);
       saveJournal.current = undefined;
       await load();
@@ -703,7 +727,9 @@ export function DailyOperationsWorkspace({
       await load();
       setNotice('Shift started.');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The shift could not be opened.');
+      const message = cause instanceof Error ? cause.message : 'The shift could not be opened.';
+      setError(message);
+      setErrorFix(errorFixFor(message, cause));
     } finally {
       setBusy(false);
     }
@@ -759,6 +785,7 @@ export function DailyOperationsWorkspace({
       } else {
         const message = cause instanceof Error ? cause.message : 'The workflow transition failed.';
         setError(message);
+        setErrorFix(errorFixFor(message, cause));
         if (message.includes('changed elsewhere') || message.includes('locked')) setConflict(true);
       }
     } finally {
@@ -918,6 +945,27 @@ export function DailyOperationsWorkspace({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // The way to put the shown problem right: a link to the page that fixes it, or a jump to the
+  // step of this workspace where it can be corrected.
+  const errorAction = errorFix && errorFix.message === error ? errorFix.fix : undefined;
+  const errorFixButton = errorAction ? (
+    errorAction.kind === 'link' ? (
+      <Link className="button button-primary" href={errorAction.href}>
+        {errorAction.label}
+      </Link>
+    ) : (
+      <Button
+        onClick={() => {
+          setError(undefined);
+          setStep(errorAction.step);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      >
+        {errorAction.label}
+      </Button>
+    )
+  ) : undefined;
+
   async function submitForReview() {
     if (attendantIds.length === 0) {
       setError('Select at least one attendant before submitting this reconciliation.');
@@ -976,7 +1024,10 @@ export function DailyOperationsWorkspace({
       <ErrorState
         title="Operations unavailable"
         message={error}
-        action={<Button onClick={() => void load()}>Retry</Button>}
+        action={errorFixButton ?? <Button onClick={() => void load()}>Retry</Button>}
+        secondaryAction={
+          errorFixButton ? <Button onClick={() => void load()}>Retry</Button> : undefined
+        }
       />
     );
   }
@@ -997,7 +1048,13 @@ export function DailyOperationsWorkspace({
           </StatusBadge>
         </div>
         {error ? (
-          <ErrorState message={error} action={<Button onClick={() => void load()}>Retry</Button>} />
+          <ErrorState
+            message={error}
+            action={errorFixButton ?? <Button onClick={() => void load()}>Retry</Button>}
+            secondaryAction={
+              errorFixButton ? <Button onClick={() => void load()}>Retry</Button> : undefined
+            }
+          />
         ) : null}
         <p className="muted-small">
           Got the supervisor&apos;s WhatsApp message?{' '}
@@ -1076,7 +1133,10 @@ export function DailyOperationsWorkspace({
             <ErrorState
               title={conflict ? 'Refresh required' : 'Something needs attention'}
               message={error}
-              action={<Button onClick={() => void load()}>Refresh</Button>}
+              action={errorFixButton ?? <Button onClick={() => void load()}>Refresh</Button>}
+              secondaryAction={
+                errorFixButton ? <Button onClick={() => void load()}>Refresh</Button> : undefined
+              }
             />
           ) : null}
           {notice ? (
