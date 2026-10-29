@@ -120,6 +120,34 @@ describe('server navigation projection', () => {
     );
   });
 
+  it('hides organisation-wide pages from a station-scoped supervisor', () => {
+    const stationSupervisor: AuthorizationActor = {
+      ...actor('SUPERVISOR'),
+      roleAssignments: [
+        {
+          tenantId: 'tenant-a',
+          roleCode: 'SUPERVISOR',
+          scopeType: 'STATION',
+          legalEntityId: 'entity-a',
+          stationId: 'station-a',
+        },
+      ],
+    };
+    const visible = buildNavigationProjection({
+      actor: stationSupervisor,
+      scope: {
+        tenantId: 'tenant-a',
+        scopeType: 'STATION',
+        legalEntityId: 'entity-a',
+        stationId: 'station-a',
+      },
+    })
+      .filter((entry) => entry.visible)
+      .map((entry) => entry.key);
+    expect(visible).toContain('today');
+    expect(visible).not.toContain('purchasing');
+  });
+
   it('keeps profit and finance reports away from a supervisor', () => {
     const visible = buildNavigationProjection({ actor: actor('SUPERVISOR'), scope })
       .filter((entry) => entry.visible)
