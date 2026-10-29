@@ -104,4 +104,21 @@ describe('context selection contract', () => {
       ids.legalEntityB,
     );
   });
+
+  it('starts a station-level person on their station, not on all stations', () => {
+    const stationLevel: AvailableContext = {
+      organisations: [
+        {
+          ...available.organisations[0]!,
+          legalEntities: [{ ...available.organisations[0]!.legalEntities[0]!, stationsOnly: true }],
+        },
+      ],
+    };
+    expect(defaultContextSelection(stationLevel, contextRoutePolicy('/'))).toEqual({
+      organisationId: ids.organisation,
+      legalEntityId: ids.legalEntityA,
+      stationId: ids.stationA,
+      allStations: false,
+    });
+  });
 });

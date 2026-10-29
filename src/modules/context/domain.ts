@@ -95,7 +95,9 @@ export function defaultContextSelection(
   const legalEntity = organisation.legalEntities[0];
   if (policy.legalEntity === 'required' && !legalEntity) return null;
 
-  if (policy.allStationsAllowed) {
+  // A station-level person has no permissions across all stations, so starting there
+  // would leave their navigation and page empty. Start on their own station instead.
+  if (policy.allStationsAllowed && !legalEntity?.stationsOnly) {
     return {
       organisationId: organisation.id,
       ...(policy.legalEntity === 'required' && legalEntity
