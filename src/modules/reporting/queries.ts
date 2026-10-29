@@ -64,9 +64,9 @@ function idList(ids: readonly string[]) {
   );
 }
 
-function stationClause(alias: string, stationIds: readonly string[]) {
+function stationClause(alias: string, stationIds: readonly string[], column = 'station_id') {
   return stationIds.length > 0
-    ? sql`and ${sql.raw(`${alias}.station_id`)} in (${idList(stationIds)})`
+    ? sql`and ${sql.raw(`${alias}.${column}`)} in (${idList(stationIds)})`
     : sql``;
 }
 
@@ -136,7 +136,7 @@ async function selectedStations(
  * Operational figures (sales, daily operations, the operational table reports) need `report.view`;
  * profit, financial position and the finance reports need `report.finance.view`.
  */
-export type ReportPermission = 'report.view' | 'report.finance.view';
+export type ReportPermission = 'report.view' | 'report.finance.view' | 'report.export';
 
 /** Every requested station must be authorised; one failure rejects the whole request. */
 function authorizeStations(
@@ -1066,7 +1066,7 @@ async function readDaily(
       from app.stations s
       where s.tenant_id = ${filters.tenantId}
         and s.status in ('ACTIVE', 'ONBOARDING')
-        ${stationClause('s', filters.stationIds)}
+        ${stationClause('s', filters.stationIds, 'id')}
     )
     select coalesce(sum(greatest(0, (to_date - from_date) + 1)), 0)::int as expected_business_days
     from station_start
@@ -1169,15 +1169,28 @@ export async function canViewFinanceReports(request: Request, tenantId: string):
   );
 }
 
+/** Whether the person may download reports, so screens can leave the download options out. */
+export async function canExportReports(request: Request, tenantId: string): Promise<boolean> {
+  const authority = await resolveTenantExecutionContext({ request, requestedTenantId: tenantId });
+  return authority.authorization.roleAssignments.some((assignment) =>
+    DEFAULT_ROLE_PERMISSIONS[assignment.roleCode].includes('report.export'),
+  );
+}
+
 export async function authorizeManagementReportRequest(
   request: Request,
   input: unknown,
   permissionCode: ReportPermission = 'report.finance.view',
+  /** A download also needs this permission, on top of the one that lets the report be read. */
+  alsoRequire?: ReportPermission,
 ) {
   const filters = parseManagementReportQuery(input);
   const read = await reportingAuthority(request, filters);
   const stations = await reportingStations(read, filters);
   authorizeStations(read.authority.authorization, filters, stations, permissionCode);
+  if (alsoRequire) {
+    authorizeStations(read.authority.authorization, filters, stations, alsoRequire);
+  }
   return { filters, authority: read.authority, stations };
 }
 
@@ -1205,7 +1218,12 @@ export async function getManagementReportFromRequest(
   input: unknown,
   options: { requireStepUp?: boolean } = {},
 ): Promise<ManagementReport> {
-  const { filters, authority, stations } = await authorizeManagementReportRequest(request, input);
+  const { filters, authority, stations } = await authorizeManagementReportRequest(
+    request,
+    input,
+    'report.finance.view',
+    options.requireStepUp ? 'report.export' : undefined,
+  );
   // Exports leave the application, so they need a fresh step-up for this tenant.
   if (options.requireStepUp) {
     assertStepUp(authority.actor.session, 1, new Date(), filters.tenantId);

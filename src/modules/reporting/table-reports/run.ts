@@ -45,6 +45,7 @@ export async function runTableReport(
     request,
     input,
     definition.audience === 'operational' ? 'report.view' : 'report.finance.view',
+    options.requireStepUp ? 'report.export' : undefined,
   );
   if (options.requireStepUp) {
     assertStepUp(authority.actor.session, 1, new Date(), filters.tenantId);

@@ -6,6 +6,7 @@ import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { parseReportFilters, resolveReportFilters } from '../filters';
 import { businessToday } from '../period';
 import { findTableReport } from './definitions';
+import { canExportReports } from '../queries';
 import { runTableReport } from './run';
 import { TableReportTable } from './ui/table-report-table';
 import { TableReportFilteredToolbar } from './ui/table-report-filtered-toolbar';
@@ -42,7 +43,8 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
         const params = toParams(search);
         const filters = parseReportFilters(params);
         const range = resolveReportFilters(filters, businessToday());
-        if (!range) return { tenantId, filters, range: null, result: null };
+        const canExport = await canExportReports(request, tenantId);
+        if (!range) return { tenantId, filters, range: null, result: null, canExport };
         const result = await runTableReport(
           request,
           slug,
@@ -54,7 +56,7 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
           },
           { withFilterOptions: true },
         );
-        return { tenantId, filters, range, result };
+        return { tenantId, filters, range, result, canExport };
       }}
       render={(data) =>
         data && definition ? (
@@ -75,6 +77,7 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
                   toDate={data.range.toDate}
                   filterKeys={definition.filters ?? []}
                   filterOptions={data.result?.filterOptions ?? {}}
+                  canExport={data.canExport}
                 />
                 {data.result?.notice ? (
                   <p className="field-hint" role="status">

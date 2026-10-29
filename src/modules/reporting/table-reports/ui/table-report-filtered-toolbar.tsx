@@ -39,6 +39,7 @@ export function TableReportFilteredToolbar({
   toDate,
   filterKeys,
   filterOptions,
+  canExport,
 }: {
   tenantId: string;
   slug: string;
@@ -48,6 +49,8 @@ export function TableReportFilteredToolbar({
   /** The extra filters this report understands. */
   filterKeys: readonly TableReportFilterKey[];
   filterOptions: FilterOptions;
+  /** Leaves the download buttons out for someone who may read the report but not take it out. */
+  canExport: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -147,22 +150,24 @@ export function TableReportFilteredToolbar({
           />
         </label>
       ))}
-      <div
-        className="table-report-downloads"
-        style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}
-      >
-        {(Object.keys(FORMAT_LABELS) as Format[]).map((format) => (
-          <Button
-            key={format}
-            variant={format === 'xlsx' ? 'primary' : 'secondary'}
-            loading={busy === format}
-            disabled={busy !== null}
-            onClick={() => void download(format)}
-          >
-            {FORMAT_LABELS[format]}
-          </Button>
-        ))}
-      </div>
+      {canExport ? (
+        <div
+          className="table-report-downloads"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}
+        >
+          {(Object.keys(FORMAT_LABELS) as Format[]).map((format) => (
+            <Button
+              key={format}
+              variant={format === 'xlsx' ? 'primary' : 'secondary'}
+              loading={busy === format}
+              disabled={busy !== null}
+              onClick={() => void download(format)}
+            >
+              {FORMAT_LABELS[format]}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <ReportActionStatus
         status={status}
         onDismiss={() => setStatus(null)}

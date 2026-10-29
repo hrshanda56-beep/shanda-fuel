@@ -927,6 +927,17 @@ describe('A10 management reporting PostgreSQL read model', () => {
         ?.inventoryVariance,
     ).toBeNull();
     expect(dailyBody.rows.every((row: Record<string, any>) => !('businessDate' in row))).toBe(true);
+
+    // Narrowing to one station must still load (the expected-days query filters stations by id).
+    const stationDaily = await dailyReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&stationIds=${ids.station}&fromDate=2026-09-20&toDate=2026-09-22`,
+        { headers: { ...clerkHeaders(await signedCookie()) } },
+      ),
+    );
+    expect(stationDaily.status).toBe(200);
+    const stationDailyBody = (await stationDaily.json()) as Record<string, any>;
+    expect(stationDailyBody.expectedBusinessDays).toBeGreaterThan(0);
   });
 
   it('returns an explicit unavailable customer scope for a station-filtered report', async () => {
