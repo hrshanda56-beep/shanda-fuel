@@ -433,6 +433,19 @@ describe('A6 expenses PostgreSQL persistence', () => {
     ).toBe(409);
   });
 
+  it('records the state an expense was in before approval and posting', async () => {
+    const { expenseId } = await approvedAndPosted('12.0000');
+    const rows = await client<{ before_state: string | null; after_state: string | null }[]>`
+      select details->'before'->>'state' as before_state, details->'after'->>'state' as after_state
+      from platform.security_events
+      where details->>'subjectId' = ${expenseId}
+        and details->'before'->>'state' is not null
+      order by occurred_at
+    `;
+    expect(rows.map((row) => row.before_state)).toEqual(['SUBMITTED', 'APPROVED']);
+    expect(rows.map((row) => row.after_state)).toEqual(['APPROVED', 'POSTED']);
+  });
+
   it('requires two distinct approvers above the second-approval threshold', async () => {
     const big = await submit('1500.0000');
     expect(big.json.requiredApprovals).toBe(2);

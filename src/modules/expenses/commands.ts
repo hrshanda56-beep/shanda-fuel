@@ -27,6 +27,7 @@ import {
   rejectExpenseInTransaction,
   reverseExpenseInTransaction,
   reverseExpensePaymentInTransaction,
+  readExpenseBeforeChange,
   reverseRecurringCostRecognitionInTransaction,
   setExpensePolicyInTransaction,
   submitExpenseInTransaction,
@@ -161,6 +162,14 @@ const HANDLERS: { [K in ExpenseCommandType]: Handler<K> } = {
   },
 };
 
+const EXISTING_EXPENSE_COMMANDS = new Set<ExpenseCommandType>([
+  'CorrectExpenseFacts',
+  'ApproveExpense',
+  'RejectExpense',
+  'PostExpense',
+  'ReverseExpense',
+]);
+
 /** Validate, authorize, and execute one named expense command with idempotency and audit. */
 export async function executeExpenseCommandFromRequest(
   request: Request,
@@ -202,6 +211,15 @@ export async function executeExpenseCommandFromRequest(
       subjectType: handler.subjectType,
       subjectId: (value) => handler.subjectId(input as never, value),
       reason: handler.reason?.(input as never),
+      // Commands that change an existing expense record the state it was in.
+      before: EXISTING_EXPENSE_COMMANDS.has(commandType)
+        ? (transaction) =>
+            readExpenseBeforeChange(
+              transaction,
+              input.tenantId,
+              (input as unknown as { expenseId: string }).expenseId,
+            )
+        : undefined,
     },
     execute: (transaction) => handler.run(transaction, context, input as never),
   });

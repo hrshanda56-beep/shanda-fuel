@@ -80,7 +80,7 @@ Decisions I made inside that instruction, each small and reversible. Please conf
 | D4 | Not a defect. Approval already requires each reading to match the sealed segment chain (`segment-sale-chronology.ts`, unit tested). |
 | D5 | Water test is an owner switch, default off, by design. Deposit slip is now also enforced by a database trigger (migration 0089). |
 | D6 | Fixed. The "received not invoiced" date uses each company's station time zones, latest local date (`latestStationLocalDate`, unit tested). |
-| D7 | Partly done. Audit rows now carry "before" for reconciliation approve, submit and return, cash receive and bank-deposit confirm. Other commands still record "after" only. |
+| D7 | Mostly done. Audit rows now carry "before" for reconciliation approve, submit and return, cash receive and bank-deposit confirm. Expense approve, reject, post, reverse and correct; supplier document post, return and reverse; supplier credit limit; tank status and variance limits; delivery confirm now carry it too (tests in a6-expenses, a7, a12). Other commands (price change, meter reset, customer and staff changes) still record "after" only. |
 | D8 | Shift business date was already guarded. Added migration 0089 triggers: meter boundaries are append-only (price change link excepted) and shifts cannot move station, day or date. Approved reconciliation headers still allow the `version` column to change, on purpose. |
 | D9 | `/api/reports/activity` now needs report view permission at some scope. `/api/context` is left alone: it lists only what the signed-in person may already select. |
 | D10 | Left. Float use is display only (chart heights, comparisons); nothing stored is computed from it. |

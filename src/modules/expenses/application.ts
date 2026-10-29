@@ -236,6 +236,8 @@ export async function executeExpenseCommand<T>(input: {
     subjectId: string | ((result: T) => string);
     reason?: string;
     metadata?: Record<string, unknown>;
+    /** Reads what the subject looked like before this command changes it. */
+    before?: (transaction: ExpenseTransaction) => Promise<unknown>;
   };
   execute: (transaction: ExpenseTransaction) => Promise<T>;
 }): Promise<T> {
@@ -255,6 +257,7 @@ export async function executeExpenseCommand<T>(input: {
         requestHash: input.requestHash,
       },
       async () => {
+        const before = input.audit.before ? await input.audit.before(transaction) : undefined;
         const result = await input.execute(transaction);
         await appendSecurityEvent(
           {
@@ -271,6 +274,7 @@ export async function executeExpenseCommand<T>(input: {
                 : input.audit.subjectId,
             requestId: input.context.requestId,
             occurredAt: new Date().toISOString(),
+            before,
             after: result,
             reason: input.audit.reason,
             metadata: {

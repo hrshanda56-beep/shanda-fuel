@@ -108,6 +108,13 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
         )
       ).status,
     ).toBe(200);
+    const posting = await client<{ before_state: string; after_state: string }[]>`
+      select details->'before'->>'state' as before_state, details->'after'->>'state' as after_state
+      from platform.security_events
+      where tenant_id = ${ids.tenant} and details->>'subjectId' = ${document.documentId}
+        and event_code = 'SUPPLIER.DOCUMENT_POSTED'
+    `;
+    expect(posting).toEqual([{ before_state: 'SUBMITTED', after_state: 'POSTED' }]);
 
     const submittedPayment = await command(
       {
@@ -555,6 +562,17 @@ describe('A7 supplier creditors PostgreSQL persistence', () => {
     );
     expect(cleared.status).toBe(200);
     expect((await readRow()).creditLimit.status).toBe('none');
+
+    // The signed audit record keeps the limit as it was before each change.
+    const limitChanges = await client<{ before_limit: string | null; after_version: number }[]>`
+      select details->'before'->>'creditLimit' as before_limit,
+             (details->'after'->>'version')::int as after_version
+      from platform.security_events
+      where tenant_id = ${ids.tenant} and details->>'subjectId' = ${created.supplierId}
+        and event_code = 'SUPPLIER.CREDIT_LIMIT_SET'
+      order by occurred_at
+    `;
+    expect(limitChanges.map((row) => row.before_limit)).toEqual([null, '1000.0000']);
   });
 
   it('does not let another tenant act on this tenant’s supplier', async () => {

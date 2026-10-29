@@ -20,6 +20,8 @@ import {
   setSupplierCreditLimitInTransaction,
   submitSupplierDocumentInTransaction,
   submitSupplierPaymentInTransaction,
+  readSupplierCreditLimitBeforeChange,
+  readSupplierDocumentBeforeChange,
 } from './persistence';
 import { setPurchasingPolicyInTransaction } from './purchasing-persistence';
 import { INVOICE_LINE_TYPES } from './purchasing-policy';
@@ -258,6 +260,8 @@ export async function postSupplierDocumentFromRequest(request: Request, body: un
       actionCode: 'SUPPLIER.DOCUMENT_POSTED',
       subjectType: 'SupplierDocument',
       subjectId: input.documentId,
+      readBefore: (transaction) =>
+        readSupplierDocumentBeforeChange(transaction, context.tenantId, input.documentId),
     },
     execute: (transaction) => postSupplierDocumentInTransaction(transaction, context, input),
   });
@@ -280,6 +284,8 @@ export async function returnSupplierDocumentFromRequest(request: Request, body: 
       actionCode: 'SUPPLIER.DOCUMENT_RETURNED',
       subjectType: 'SupplierDocument',
       subjectId: input.documentId,
+      readBefore: (transaction) =>
+        readSupplierDocumentBeforeChange(transaction, context.tenantId, input.documentId),
       reason: input.reason,
     },
     execute: (transaction) => returnSupplierDocumentInTransaction(transaction, context, input),
@@ -303,6 +309,8 @@ export async function reverseSupplierDocumentFromRequest(request: Request, body:
       actionCode: 'SUPPLIER.DOCUMENT_REVERSED',
       subjectType: 'SupplierDocument',
       subjectId: input.documentId,
+      readBefore: (transaction) =>
+        readSupplierDocumentBeforeChange(transaction, context.tenantId, input.documentId),
       reason: input.reason,
     },
     execute: (transaction) => reverseSupplierDocumentInTransaction(transaction, context, input),
@@ -439,6 +447,8 @@ export async function setSupplierCreditLimitFromRequest(request: Request, body: 
       actionCode: 'SUPPLIER.CREDIT_LIMIT_SET',
       subjectType: 'Supplier',
       subjectId: input.supplierId,
+      readBefore: (transaction) =>
+        readSupplierCreditLimitBeforeChange(transaction, context.tenantId, input.supplierId),
     },
     execute: (transaction) => setSupplierCreditLimitInTransaction(transaction, context, input),
   });
