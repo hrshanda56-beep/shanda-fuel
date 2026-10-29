@@ -122,6 +122,18 @@ type ExpenseRow = {
   submitted_by: string;
 };
 
+/** The state an expense is in before a command changes it, for the audit record. */
+export async function readExpenseBeforeChange(
+  transaction: ExpenseTransaction,
+  tenantId: string,
+  expenseId: string,
+): Promise<{ state: string } | undefined> {
+  const rows = await transaction.execute<{ state: string }>(sql`
+    select state from app.expenses where tenant_id = ${tenantId} and id = ${expenseId}
+  `);
+  return rows[0] ? { state: rows[0].state } : undefined;
+}
+
 async function lockExpense(
   transaction: ExpenseTransaction,
   context: StationContext,

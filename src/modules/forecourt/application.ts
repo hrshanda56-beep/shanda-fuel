@@ -600,7 +600,7 @@ export type ForecourtCommandInput<T> = Readonly<{
   expectedVersionSubjectId?: string;
   execute: (
     transaction: ForecourtTransaction,
-  ) => Promise<{ result: T; event?: ForecourtEvent; after?: unknown }>;
+  ) => Promise<{ result: T; event?: ForecourtEvent; before?: unknown; after?: unknown }>;
 }>;
 
 /** The complete authoritative command unit. */
@@ -663,7 +663,7 @@ export async function executeForecourtCommand<T>(input: ForecourtCommandInput<T>
           commandType: input.commandType,
           subjectType: input.subjectType,
           subjectId: input.subjectId,
-          before: input.before,
+          before: outcome.before ?? input.before,
           after: outcome.after,
           reason: input.reason,
           auditMetadata: input.auditMetadata,

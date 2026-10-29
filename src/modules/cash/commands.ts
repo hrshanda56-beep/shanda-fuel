@@ -10,6 +10,8 @@ import {
   cancelCashHandoverInTransaction,
   confirmBankDepositInTransaction,
   createBankDepositInTransaction,
+  readCollectionBeforeChange,
+  readDepositBeforeChange,
   receiveCashCollectionInTransaction,
   recordCashCollectionInTransaction,
   resolveCashHandoverInTransaction,
@@ -170,8 +172,9 @@ export async function receiveCashCollectionFromRequest(request: Request, body: u
     subjectType: 'CashCollection',
     subjectId: input.collectionId,
     execute: async (transaction) => {
+      const before = await readCollectionBeforeChange(transaction, context, input.collectionId);
       const result = await receiveCashCollectionInTransaction(transaction, context, input);
-      return { result, after: result };
+      return { result, before, after: result };
     },
   });
 }
@@ -214,8 +217,9 @@ export async function confirmBankDepositFromRequest(request: Request, body: unkn
     subjectType: 'BankDeposit',
     subjectId: input.depositId,
     execute: async (transaction) => {
+      const before = await readDepositBeforeChange(transaction, context, input.depositId);
       const result = await confirmBankDepositInTransaction(transaction, context, input);
-      return { result, after: { ...result, bankReference: input.bankReference } };
+      return { result, before, after: { ...result, bankReference: input.bankReference } };
     },
   });
 }

@@ -443,6 +443,7 @@ type AccountRow = {
   station_scope: string;
   allowed: boolean;
   balance: string;
+  pending: string;
 };
 
 /**
@@ -455,6 +456,7 @@ async function assertPaymentReferences(
   transaction: ForecourtTransaction,
   context: ForecourtCommandContext,
   payments: readonly PaymentInput[],
+  reconciliationId: string,
 ): Promise<void> {
   const totals = new Map<string, { method: 'CUSTOMER_CREDIT' | 'PREPAID'; amount: ExactDecimal }>();
   for (const item of payments) {
@@ -494,7 +496,22 @@ async function assertPaymentReferences(
           select sum(case when l.direction = 'INCREASE' then l.amount else -l.amount end)
           from app.customer_ledger_entries l
           where l.tenant_id = a.tenant_id and l.account_id = a.id
-        ), 0)::text as balance
+        ), 0)::text as balance,
+        -- Sales of this kind that sit in other reconciliations and are not in the ledger yet.
+        coalesce((
+          select sum(p.amount)
+          from app.reconciliation_payments p
+          join app.reconciliations r
+            on r.tenant_id = p.tenant_id and r.station_id = p.station_id and r.id = p.reconciliation_id
+          where p.tenant_id = a.tenant_id and p.customer_account_id = a.id
+            and p.method = ${method}
+            and r.id <> ${reconciliationId} and r.state <> 'REJECTED'
+            and not exists (
+              select 1 from app.customer_ledger_entries l
+              where l.tenant_id = p.tenant_id and l.source_type = 'A5_RECONCILIATION_CUSTOMER_FUEL'
+                and l.source_id = p.id
+            )
+        ), 0)::text as pending
       from app.customer_accounts a
       join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id
       where a.tenant_id = ${context.tenantId} and a.id = ${accountId}
@@ -521,7 +538,11 @@ async function assertPaymentReferences(
         `${account.display_name} is not allowed to buy on account at this station.`,
       );
     }
-    const balance = new ExactDecimal(account.balance);
+    const pending = new ExactDecimal(account.pending);
+    // Credit owed grows with waiting sales; prepaid money available shrinks with them.
+    const balance = new ExactDecimal(account.balance).add(
+      method === 'CUSTOMER_CREDIT' ? pending : new ExactDecimal('0').subtract(pending),
+    );
     if (method === 'CUSTOMER_CREDIT') {
       const limit = new ExactDecimal(account.credit_limit ?? '0');
       if (!limit.value.gt(0)) {
@@ -559,7 +580,12 @@ export async function saveReconciliationPaymentsFromRequest(request: Request, in
         if (money(item.amount).amount.value.isNegative())
           throw new AppError('VALIDATION_FAILED', 'Payment amounts cannot be negative');
       }
-      await assertPaymentReferences(transaction, context, payload.payments);
+      await assertPaymentReferences(
+        transaction,
+        context,
+        payload.payments,
+        payload.reconciliationId,
+      );
       await replaceRows(transaction, 'reconciliation_payments', payload.reconciliationId, context);
       for (const item of payload.payments) {
         const amount = money(item.amount).amount;
@@ -1409,6 +1435,7 @@ export async function approveProductionReconciliationFromRequest(request: Reques
           version: Number(updated[0].version),
           saleMovementIds,
         },
+        before: { state: 'PENDING_APPROVAL' },
         after: { state: 'APPROVED', saleMovementIds },
       };
     },
@@ -1541,6 +1568,7 @@ async function transitionProductionReconciliation(
           state: nextState,
           version: Number(updated[0].version),
         },
+        before: { state: header.state },
         after: { state: nextState, reason: reason ?? null },
       };
     },

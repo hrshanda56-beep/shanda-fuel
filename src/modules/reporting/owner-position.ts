@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import type { OwnerPosition } from './contracts';
 import { readSupplierExposure } from '../creditors/purchasing-queries';
-import { formatLitres, formatMoney } from './domain';
+import { formatLitres, formatMoney, latestStationLocalDate } from './domain';
 
 type PositionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -130,10 +130,17 @@ async function readReceivedNotInvoiced(
   tenantId: string,
   legalEntityIds: readonly string[],
 ): Promise<NonNullable<OwnerPosition['receivedNotInvoiced']>> {
-  const today = new Date().toISOString().slice(0, 10);
   let value = new Decimal(0);
   let unpriced = new Decimal(0);
   for (const legalEntityId of legalEntityIds) {
+    const zones = await transaction.execute<{ timezone: string | null }>(sql`
+      select distinct timezone from app.stations
+      where tenant_id = ${tenantId} and legal_entity_id = ${legalEntityId}
+    `);
+    const today = latestStationLocalDate(
+      new Date(),
+      zones.flatMap((row) => (row.timezone ? [row.timezone] : [])),
+    );
     const exposure = await readSupplierExposure(transaction, {
       tenantId,
       legalEntityId,

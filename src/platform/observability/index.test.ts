@@ -207,6 +207,22 @@ describe('server observability', () => {
     expect(JSON.stringify(record)).not.toContain('select secret');
   });
 
+  it('answers a duplicate-value database error with a 409 and no database detail', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const duplicate = Object.assign(new Error('duplicate key value violates "secret_idx"'), {
+      code: '23505',
+    });
+    const response = apiErrorResponse(
+      request({ 'x-request-id': validRequestId }),
+      new Error('Failed query: insert into app.things', { cause: duplicate }),
+    );
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain('CONFLICT');
+    expect(body).not.toMatch(/secret_idx|app\.things/);
+  });
+
   it('keeps dependency, internal, and unexpected failures at ERROR severity', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.spyOn(console, 'info').mockImplementation(() => undefined);

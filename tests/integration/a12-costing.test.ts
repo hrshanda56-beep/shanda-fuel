@@ -636,6 +636,15 @@ describe('A12.4 PostgreSQL late-cost revaluation workflow', () => {
       'a122-phase2-confirm-delivery-1',
     );
     expect(confirmedDelivery.status).toBe(200);
+    const confirmations = await client<{ before_status: string; after_status: string }[]>`
+      select details->'before'->>'status' as before_status,
+             details->'after'->>'status' as after_status
+      from platform.security_events
+      where tenant_id = ${ids.tenant}
+        and details->>'subjectId' = ${createdDeliveryBody.deliveryId}
+        and event_code = 'INVENTORY.DELIVERY_CONFIRMED'
+    `;
+    expect(confirmations).toEqual([{ before_status: 'DRAFT', after_status: 'CONFIRMED' }]);
     const firstAllocationId = createdDeliveryBody.allocationIds[0]!;
     const unvaluedAfterConfirmation = await client.unsafe<
       {

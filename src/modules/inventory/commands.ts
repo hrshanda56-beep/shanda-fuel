@@ -15,7 +15,7 @@ import {
   tankDips,
 } from '../../platform/db/schema/a4';
 import { litresForReading, normaliseCalibrationChart } from './calibration';
-import { buildLandedCost } from './landed-cost';
+import { assertLandedCostPairMatchesLitres, buildLandedCost } from './landed-cost';
 import { assertWaterTestAllowsConfirmation } from '../deliveries/persistence';
 import {
   assertWithinTankCapacity,
@@ -354,6 +354,18 @@ export async function setTankVarianceLimitsFromRequest(request: Request, input: 
       actionCode: 'INVENTORY.TANK_VARIANCE_LIMITS_SET',
       subjectType: 'Tank',
       subjectId: payload.tankId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          acceptable: string | null;
+          red: string | null;
+        }>(sql`
+          select acceptable_variance_litres::text as acceptable, variance_red_litres::text as red
+          from app.tanks where tenant_id = ${context.tenantId} and id = ${payload.tankId}
+        `);
+        return rows[0]
+          ? { acceptableVarianceLitres: rows[0].acceptable, varianceRedLitres: rows[0].red }
+          : undefined;
+      },
     },
     execute: async (transaction) => {
       const tank = await loadTankForUpdate(transaction, {
@@ -404,6 +416,13 @@ export async function deactivateTankFromRequest(request: Request, input: unknown
       actionCode: 'INVENTORY.TANK_STATUS_CHANGED',
       subjectType: 'Tank',
       subjectId: payload.tankId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.tanks
+          where tenant_id = ${context.tenantId} and id = ${payload.tankId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
     },
     execute: async (transaction) => {
       const tank = await loadTankForUpdate(transaction, {
@@ -741,6 +760,12 @@ async function insertDelivery(
     payload.postDeliveryDip && dipTankId
       ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.postDeliveryDip)
       : null;
+  assertLandedCostPairMatchesLitres({
+    unitLandedCost: payload.unitLandedCost,
+    totalLandedCost: payload.totalLandedCost,
+    currency: payload.currency,
+    actualLitres: actual.toString(),
+  });
   const deliveryId = randomUUID();
   const noteQuantity = litres(payload.noteQuantityLitres);
   const shortageExcess = calculateDeliveryShortageExcess(
@@ -828,6 +853,13 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
       actionCode: 'INVENTORY.DELIVERY_CONFIRMED',
       subjectType: 'FuelDelivery',
       subjectId: payload.deliveryId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.fuel_deliveries
+          where tenant_id = ${context.tenantId} and id = ${payload.deliveryId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
     },
     execute: async (transaction) => {
       const deliveries = await transaction

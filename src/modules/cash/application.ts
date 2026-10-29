@@ -88,7 +88,9 @@ export async function executeCashCommand<T>(input: {
   subjectType: string;
   subjectId: string;
   before?: unknown;
-  execute: (transaction: ForecourtTransaction) => Promise<{ result: T; after?: unknown }>;
+  execute: (
+    transaction: ForecourtTransaction,
+  ) => Promise<{ result: T; before?: unknown; after?: unknown }>;
 }): Promise<T> {
   if (!input.idempotencyKey.trim() || !input.requestHash.trim()) {
     throw new AppError(
@@ -116,7 +118,7 @@ export async function executeCashCommand<T>(input: {
           commandType: input.commandType,
           subjectType: input.subjectType,
           subjectId: input.subjectId,
-          before: input.before,
+          before: outcome.before ?? input.before,
           after: outcome.after,
           provenance: {
             actorId: input.context.actor.actorId,
