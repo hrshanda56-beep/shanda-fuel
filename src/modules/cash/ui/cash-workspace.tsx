@@ -524,6 +524,9 @@ export function CashWorkspace({
         (candidate) => candidate.depositId === String(data.get('depositId')),
       );
       payload.expectedVersion = deposit?.version ?? -1;
+      // Blank optional fields are left out rather than sent empty.
+      if (!String(payload.bankDate ?? '').trim()) delete payload.bankDate;
+      if (!String(payload.differenceReason ?? '').trim()) delete payload.differenceReason;
     }
 
     const signature = JSON.stringify(payload);
@@ -1169,6 +1172,34 @@ export function CashWorkspace({
                         >
                           <input id={`bank-reference-${deposit.depositId}`} name="bankReference" />
                         </Field>
+                        <Field
+                          id={`bank-date-${deposit.depositId}`}
+                          label="Date on the bank statement"
+                          hint="The date the bank shows for this deposit."
+                        >
+                          <input
+                            id={`bank-date-${deposit.depositId}`}
+                            name="bankDate"
+                            type="date"
+                            max={new Date().toISOString().slice(0, 10)}
+                          />
+                        </Field>
+                        <Field
+                          id={`difference-reason-${deposit.depositId}`}
+                          label="Why the amount is different"
+                          hint="Only needed when the bank shows a different amount from the deposit."
+                        >
+                          <input
+                            id={`difference-reason-${deposit.depositId}`}
+                            name="differenceReason"
+                            maxLength={500}
+                          />
+                        </Field>
+                        <p className="cash-sheet-note">
+                          The deposit slip must be attached before the bank can confirm it. Once
+                          confirmed, the cash shows as Banked, or Banked with difference when the
+                          amounts do not match.
+                        </p>
                         <Button type="submit" variant="secondary" loading={busy}>
                           Confirm deposit
                         </Button>

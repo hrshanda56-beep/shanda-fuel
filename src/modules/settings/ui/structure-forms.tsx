@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
+import { useToast } from '@/design-system/feedback-provider';
 import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
@@ -21,6 +22,7 @@ const COMMON_ZONES = [
 /** Sends one settings command. A retry of the same form keeps its key, so it never saves twice. */
 function useSettingsCommand(tenantId: string, onSaved: () => void) {
   const router = useRouter();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Changing the business structure needs a fresh identity check; the form waits while it runs.
@@ -50,6 +52,7 @@ function useSettingsCommand(tenantId: string, onSaved: () => void) {
         throw new Error(message);
       }
       attempt.current = null;
+      toast.success('Saved. Your change is now in effect.');
       onSaved();
       router.refresh();
       return true;

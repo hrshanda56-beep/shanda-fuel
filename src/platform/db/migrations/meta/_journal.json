@@ -526,6 +526,41 @@
       "when": 1793200089000,
       "tag": "0089_hardening_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793200090000,
+      "tag": "0090_station_attendants",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793200091000,
+      "tag": "0091_other_station_attendants",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793200092000,
+      "tag": "0092_shift_no_duplicates_or_overlap",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1793200093000,
+      "tag": "0093_deposit_confirmation_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1793200094000,
+      "tag": "0094_extra_roles",
+      "breakpoints": true
     }
   ]
 }

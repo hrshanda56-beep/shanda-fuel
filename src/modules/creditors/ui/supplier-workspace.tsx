@@ -19,12 +19,13 @@ import {
   ErrorState,
   Field,
   LoadingState,
+  StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
-import { initials, isOverdue, overduePercent } from './supplier-format';
+import { creditLimitCells, initials, isOverdue, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
   supplierId: string;
@@ -34,6 +35,7 @@ type SupplierSummary = {
   overdue: string;
   total: string;
   asOf?: string;
+  creditLimit?: { status: string; limit: string | null; available: string | null };
 };
 
 type CreateSupplierForm = {
@@ -482,6 +484,8 @@ export function SupplierWorkspace({
                 <span>Not Yet Due</span>
                 <span>Overdue</span>
                 <span>Total</span>
+                <span>Credit Limit</span>
+                <span>Available Credit</span>
                 <span />
               </div>
               <ul className="list-rows" aria-label="Supplier balances">
@@ -492,6 +496,7 @@ export function SupplierWorkspace({
                     supplierSelection,
                   );
                   const late = isOverdue(row);
+                  const credit = creditLimitCells(row.creditLimit);
                   return (
                     <li key={row.supplierId} className="list-item">
                       <Link className="list-row" href={href}>
@@ -524,6 +529,19 @@ export function SupplierWorkspace({
                         </span>
                         <span className="list-cell list-amount" data-label="Total">
                           {formatTileMoney(row.total)}
+                        </span>
+                        <span className="list-cell list-amount" data-label="Credit limit">
+                          {credit.limit}
+                        </span>
+                        <span
+                          className="list-cell list-amount"
+                          data-label="Available credit"
+                          data-tone={credit.over ? 'warning' : undefined}
+                        >
+                          {credit.over ? (
+                            <StatusBadge tone="critical">Over limit</StatusBadge>
+                          ) : null}{' '}
+                          {credit.available}
                         </span>
                       </Link>
                       <SupplierRowMenu row={row} href={href} />

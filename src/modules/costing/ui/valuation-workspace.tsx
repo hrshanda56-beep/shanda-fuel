@@ -133,14 +133,14 @@ function knownError(error: string, message: string) {
     return {
       title: 'Valuation is blocking this operation',
       message:
-        'The stream has no usable authoritative cost. Open the affected valuation stream, resolve its source movement, then retry.',
+        'This tank has no usable cost yet. Open the tank’s stock cost page, add the missing cost, then try again.',
     };
   }
   if (message.includes('already has a revaluation workflow')) {
     return {
       title: 'A revaluation already exists',
       message:
-        'This source movement is already covered by a revaluation workflow. Refresh the stream before trying again.',
+        'This source movement is already covered by a revaluation workflow. Refresh the page before trying again.',
     };
   }
   if (message.includes('Only a requested')) {
@@ -241,7 +241,7 @@ export function ValuationOverview({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load, initialData]);
-  if (loading) return <LoadingState label="Loading valuation streams" />;
+  if (loading) return <LoadingState label="Loading stock costs" />;
   if (error?.code === 'FORBIDDEN')
     return <AccessDeniedState message="You don’t have access to stock value for this station." />;
   if (error) {
@@ -308,8 +308,8 @@ export function ValuationOverview({
       {data.streams.length === 0 ? (
         <EmptyState
           layout="block"
-          title="No valuation streams yet"
-          message="Streams appear once this station has inventory movements."
+          title="No stock costs yet"
+          message="A cost appears for each tank once this station has fuel movements."
         />
       ) : (
         <Card className="panel table-card" id="cost-streams">
@@ -319,9 +319,9 @@ export function ValuationOverview({
               <p>Average cost per litre is worked out from deliveries.</p>
             </div>
           </div>
-          <TableScrollRegion label="Inventory valuation streams">
+          <TableScrollRegion label="Stock cost by tank">
             <table className="data-table">
-              <caption className="visually-hidden">Inventory valuation streams</caption>
+              <caption className="visually-hidden">Stock cost by tank</caption>
               <thead>
                 <tr>
                   <th scope="col">Tank / product</th>
@@ -632,7 +632,7 @@ export function ValuationStreamDetail({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load, initialData]);
-  if (loading) return <LoadingState label="Loading valuation stream" />;
+  if (loading) return <LoadingState label="Loading stock cost" />;
   if (error?.code === 'FORBIDDEN') return <AccessDeniedState />;
   if (error) {
     const mapped = knownError(error.code, error.message);
@@ -652,8 +652,8 @@ export function ValuationStreamDetail({
   if (!data || !stream)
     return (
       <EmptyState
-        title="Stream not found"
-        message="This stream may not belong to the selected station or may not have a persisted projection."
+        title="Stock cost not found"
+        message="This tank may belong to another station, or it has no stock movements yet. Check the station selected at the top, then try again."
       />
     );
   return (
@@ -663,12 +663,12 @@ export function ValuationStreamDetail({
           <Link className="back-link" href={contextHref}>
             ← Inventory valuation
           </Link>
-          <span className="eyebrow">Cost stream explanation</span>
+          <span className="eyebrow">How this cost is worked out</span>
           <h1>
             {stream.tank.code} · {stream.product.name}
           </h1>
           <p>
-            {stream.product.code} · projection version {stream.projectionVersion}
+            {stream.product.code} · cost updated {stream.projectionVersion} times
           </p>
         </div>
         <RequestRevaluationDialog
@@ -692,8 +692,7 @@ export function ValuationStreamDetail({
             )}
           </div>
           <p>
-            {stream.blockingReason ??
-              'The persisted valuation has an authoritative cost basis for this stream.'}
+            {stream.blockingReason ?? 'This tank has a recorded cost, so its stock can be valued.'}
           </p>
         </div>
         {stream.valuationStatus === 'UNVALUED' && stream.sourceMovementRequiringCost ? (
@@ -753,11 +752,11 @@ export function ValuationStreamDetail({
               </Link>
             </p>
           ) : (
-            <p>No active revaluation workflow for this stream.</p>
+            <p>No cost change is in progress for this tank.</p>
           )}
           <p className="muted-small">
-            Daily reconciliation approval can remain blocked while this stream is UNVALUED. Resolve
-            the source cost, then retry the blocked operation.
+            Approving a shift report can stay blocked while this tank has no cost. Resolve the
+            source cost, then retry the blocked operation.
           </p>
         </Card>
       </div>
@@ -770,14 +769,14 @@ export function ValuationStreamDetail({
         onRefresh={load}
       />
       <Card className="panel table-card">
-        <h2>Revaluation history for this stream</h2>
+        <h2>Cost changes for this tank</h2>
         {data.revaluations.length === 0 ? (
           <EmptyState
             title="No revaluation history"
-            message="No request, approval, or posting evidence exists for this stream."
+            message="No cost change has been requested, approved or posted for this tank."
           />
         ) : (
-          <TableScrollRegion label="Revaluation history for this stream">
+          <TableScrollRegion label="Cost changes for this tank">
             <table className="data-table">
               <thead>
                 <tr>
@@ -1004,9 +1003,9 @@ export function RevaluationDetail({
       </Card>
       <div className="valuation-detail-grid">
         <Card className="panel">
-          <h2>Current stream projection</h2>
+          <h2>Current stock cost</h2>
           <p className="muted-small">
-            Read from the current persisted stream state. Later movements or revaluations may have
+            Read from the tank’s stock cost as it is now. Later movements or revaluations may have
             changed it; no historical post-revaluation snapshot is kept.
           </p>
           <dl className="detail-list">

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useConfirm } from '../../../design-system/feedback-provider';
+import { useConfirm, useToast } from '../../../design-system/feedback-provider';
+import { TRANSITION_SUCCESS } from './transition-messages';
 import { Button, Card, Field, StatusBadge } from '../../../design-system/primitives';
 import { TableScrollRegion } from '../../../design-system/table';
 import { formatMoney } from '../../../design-system/formatters';
@@ -21,6 +22,8 @@ type RecordData = {
   version: number;
   /** The signed-in person submitted this day and someone else can approve it. */
   approvalBlocked?: boolean;
+  canApprove?: boolean;
+  canReturn?: boolean;
   requiresApproverNote?: boolean;
   business_date: string;
   attendants: Array<{ attendantId: string }>;
@@ -97,6 +100,7 @@ export function ProductionReconciliationWorkflow({
   role?: 'SUPERVISOR' | 'MANAGEMENT';
 }) {
   const confirm = useConfirm();
+  const toast = useToast();
   const [record, setRecord] = useState<RecordData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -294,6 +298,8 @@ export function ProductionReconciliationWorkflow({
         ...extra,
       });
       await load();
+      toast.success(TRANSITION_SUCCESS[commandType] ?? 'Workflow state updated.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (caught) {
       const failure = caught as CommandFailure;
       if (
@@ -546,16 +552,18 @@ export function ProductionReconciliationWorkflow({
           ) : null}
           {role === 'MANAGEMENT' && record.state === 'SUBMITTED' ? (
             <>
-              <Button
-                variant="danger"
-                onClick={() =>
-                  void transition('ReturnProductionReconciliation', { reason: returnReason })
-                }
-                disabled={busy || returnReason.trim().length < 5}
-              >
-                Return for correction
-              </Button>
-              {record.approvalBlocked ? null : (
+              {record.canReturn === true ? (
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    void transition('ReturnProductionReconciliation', { reason: returnReason })
+                  }
+                  disabled={busy || returnReason.trim().length < 5}
+                >
+                  Return for correction
+                </Button>
+              ) : null}
+              {record.canApprove !== true || record.approvalBlocked ? null : (
                 <Button
                   variant="primary"
                   onClick={() => void transition('ApproveProductionReconciliation')}
@@ -577,7 +585,7 @@ export function ProductionReconciliationWorkflow({
             You submitted this day, so someone else needs to approve it.
           </p>
         ) : null}
-        {role === 'MANAGEMENT' && record.state === 'SUBMITTED' ? (
+        {role === 'MANAGEMENT' && record.state === 'SUBMITTED' && record.canReturn === true ? (
           <Field id="production-return-reason" label="Return reason">
             <textarea
               id="production-return-reason"

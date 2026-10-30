@@ -721,6 +721,108 @@ input[type='radio']:focus-visible {
   text-align: right;
 }
 
+.doc-attach {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.doc-attach-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.doc-attach-head h4 {
+  margin: 0;
+}
+
+.doc-attach ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Kind, file and Add sit on one row on wide screens and stack on phones. */
+.doc-attach-form {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 22rem) auto;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.doc-attach-error {
+  grid-column: 1 / -1;
+}
+
+/* The file picker is drawn as a field of the same height as the dropdown and the Add button. */
+.doc-attach-file {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height-md);
+  padding: 0 var(--space-1-5);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.doc-attach-file:hover {
+  border-color: var(--text-tertiary);
+}
+
+.doc-attach-file:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.doc-attach-file::file-selector-button {
+  margin-right: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.doc-attach-file:hover::file-selector-button {
+  background: var(--border-subtle);
+}
+
+@media (max-width: 40rem) {
+  .doc-attach-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.numeric-input-wrap.has-action input {
+  padding-right: 6.5rem;
+}
+
+.numeric-input-action {
+  position: absolute;
+  top: 50%;
+  right: 0.375rem;
+  display: flex;
+  transform: translateY(-50%);
+}
+
+.numeric-input-action .button {
+  min-height: 2rem;
+  padding-block: 0;
+}
+
 .numeric-unit {
   position: absolute;
   top: 50%;

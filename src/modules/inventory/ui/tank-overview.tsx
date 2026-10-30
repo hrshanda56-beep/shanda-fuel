@@ -15,6 +15,7 @@ import {
 import { formatTileLitres } from '../../reporting/format';
 import { classifyStockVariance } from '../../approvals/operations-alerts';
 import { TankDrum } from './tank-drum';
+import { placeholderTankCount } from './tank-detail-model';
 import { fuelKind, tankLabel, tankLevel, tanksForStation } from './tank-overview-model';
 
 import type { InventoryReport } from '../tank-read-model';
@@ -208,6 +209,17 @@ export function TankOverview({
                 </li>
               );
             })}
+            {Array.from({ length: placeholderTankCount(tanks.length) }, (_, index) => (
+              <li key={`ghost-${index}`}>
+                <Link
+                  href={`/settings?tab=setup${contextQuery ? `&${contextQuery}` : ''}`}
+                  className="tank-card-ghost"
+                >
+                  <strong>Add a tank</strong>
+                  <span>Set up another tank for this station</span>
+                </Link>
+              </li>
+            ))}
           </ul>
         </>
       ) : null}

@@ -108,7 +108,16 @@ export async function loadOperationsFacts(
       select t.id as tank_id, t.code as tank_code, p.name as product_name,
         coalesce(now_stock.expected, 0)::text as expected,
         d.physical_litres::text as physical,
-        (d.physical_litres - coalesce(at_dip.expected, 0))::text as variance,
+        -- A day's sales reach the books when its report is approved. Until then the dip is ahead of
+        -- the books by that day's sales, which is a report waiting, not a leak, so it is not compared.
+        case when exists (
+          select 1 from app.reconciliations r
+          join app.station_business_days bd
+            on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
+          where r.tenant_id = t.tenant_id and r.station_id = t.station_id
+            and r.state = 'SUBMITTED' and bd.business_date <= d.business_date
+        ) then null
+        else (d.physical_litres - coalesce(at_dip.expected, 0))::text end as variance,
         t.acceptable_variance_litres::text as tolerance,
         t.variance_red_litres::text as red,
         sold.litres::text as sold,

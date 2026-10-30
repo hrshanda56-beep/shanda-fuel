@@ -251,6 +251,13 @@ describe('A11 daily operations composition read', () => {
     });
   });
 
+  it('lists the station attendants for a supervisor, by name only, and none for another station', async () => {
+    const own = await dailyOperationsGet(await signedRequest(ids.tenant, ids.station));
+    const body = (await own.json()) as { attendants?: Array<Record<string, unknown>> };
+    expect(own.status).toBe(200);
+    expect(body.attendants).toEqual([{ id: ids.attendantMembership, name: 'A11 Attendant' }]);
+  });
+
   it('rejects cross-tenant, outside-station, and non-view actors', async () => {
     const crossTenant = await dailyOperationsGet(await signedRequest(ids.otherTenant, ids.station));
     const outsideStation = await dailyOperationsGet(
@@ -384,6 +391,12 @@ describe('A11 daily operations composition read', () => {
       CompleteShift: { canExecute: true },
     });
     expect(supervisorBody.reconciliations.map((item) => item.id)).toContain(ids.overviewRecon);
+    // Nothing is offered for approval until it has been submitted.
+    expect(
+      (supervisorBody.reconciliations as Array<{ id: string; youMayApprove?: boolean }>).find(
+        (item) => item.id === ids.overviewRecon,
+      )?.youMayApprove,
+    ).toBe(false);
     expect(supervisorBody).not.toHaveProperty('timeline');
     expect(supervisorBody.visibility).not.toHaveProperty('auditTimeline');
     expect(attendantResponse.status).toBe(200);

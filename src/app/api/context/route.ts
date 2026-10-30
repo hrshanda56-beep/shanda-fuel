@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import {
   clearPersistedContext,
+  readPersistedContext,
   writePersistedContext,
   type ContextCookieWriter,
 } from '@/modules/context/server';
@@ -35,6 +36,16 @@ const postSchema = z.object({
   selection: selectionSchema,
 });
 
+function selectionsMatch(saved: ContextSelection | undefined, next: ContextSelection): boolean {
+  return (
+    saved !== undefined &&
+    saved.organisationId === next.organisationId &&
+    saved.allStations === next.allStations &&
+    (saved.stationId ?? null) === (next.stationId ?? null) &&
+    (saved.legalEntityId ?? null) === (next.legalEntityId ?? null)
+  );
+}
+
 function json(body: unknown, status = 200): Response {
   return NextResponse.json(body, {
     status,
@@ -46,15 +57,23 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
   try {
     const url = new URL(request.url);
     const pathname = url.searchParams.get('pathname');
-    const resolution = await resolveCurrentContext(request, {
-      route: readContextRoute(
-        pathname && pathname.startsWith('/') ? pathname : '/',
-        url.searchParams,
-      ),
-    });
+    const route = readContextRoute(
+      pathname && pathname.startsWith('/') ? pathname : '/',
+      url.searchParams,
+    );
+    const resolution = await resolveCurrentContext(request, { route });
     const response = json({ data: resolution });
     if (resolution.persistedContextInvalid) {
       clearPersistedContext(response as unknown as ContextCookieWriter);
+    }
+    // A station or "all stations" named in the address is a choice: save it, so the next link
+    // that carries no context resolves to the same place instead of the first station.
+    if (
+      resolution.current &&
+      (route.hasExplicitStation || route.hasExplicitAllStations) &&
+      !selectionsMatch(readPersistedContext(request).selection, resolution.current)
+    ) {
+      writePersistedContext(response as unknown as ContextCookieWriter, resolution.current);
     }
     return response;
   } catch (error) {

@@ -904,6 +904,23 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(depositDateBody.cash.collected).toBe('0.0000');
     expect(depositDateBody.cash.banked).toBe('40.0000');
 
+    // B4: where the cash is as at the end date does not depend on the dates chosen. The 60
+    // collected on 20 Sep is 20 in the safe and 40 banked, even when only 22 Sep is viewed, and
+    // each amount is in exactly one place, so the places add up to everything collected.
+    const custody = depositDateBody.cash.custody as Record<string, string>;
+    expect(custody).toMatchObject({
+      atStation: '20.0000',
+      withCollector: '0.0000',
+      heldByManagement: '0.0000',
+      awaitingBank: '0.0000',
+      banked: '40.0000',
+      total: '60.0000',
+    });
+    const places = ['atStation', 'withCollector', 'heldByManagement', 'awaitingBank', 'banked'].map(
+      (key) => Number(custody[key]),
+    );
+    expect(places.reduce((sum, value) => sum + value, 0)).toBe(Number(custody.total));
+
     const dailyResponse = await dailyReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
@@ -938,6 +955,15 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(stationDaily.status).toBe(200);
     const stationDailyBody = (await stationDaily.json()) as Record<string, any>;
     expect(stationDailyBody.expectedBusinessDays).toBeGreaterThan(0);
+
+    // A2: gap days are found even outside the requested 20 to 22 Sep range. The only
+    // reconciliation is on 20 Sep, so 21 Sep onward is missing and 20 Sep is not.
+    const missing = (stationDailyBody.missingReportDays as Record<string, any>[])
+      .filter((day) => day.stationId === ids.station)
+      .map((day) => day.businessDate);
+    expect(missing).toContain('2026-09-23');
+    expect(missing).toContain('2026-09-21');
+    expect(missing).not.toContain('2026-09-20');
   });
 
   it('returns an explicit unavailable customer scope for a station-filtered report', async () => {

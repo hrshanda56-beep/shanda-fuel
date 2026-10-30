@@ -1,3 +1,6 @@
+import { stationLocalToInstant } from '../../../platform/domain/business-time';
+import { shiftOpensAt } from '../shift-schedule';
+
 export type StepOverview = Readonly<{
   currentBusinessDate: string;
   station: Readonly<{ timezone: string }>;
@@ -9,9 +12,23 @@ export type StepOverview = Readonly<{
       plannedStartAt: string;
       plannedEndAt: string;
       version: number;
+      /** The scheduled shift this one was opened from, when it came from one. */
+      shiftTemplateId?: string | null;
     }>
   >;
-  reconciliations: ReadonlyArray<Readonly<{ id: string; shiftId: string | null; state: string }>>;
+  /** The station's scheduled shifts (for example Day and Night). */
+  shiftTemplates?: ReadonlyArray<
+    Readonly<{ id: string; name: string; startTime: string | null; durationMinutes: number }>
+  >;
+  reconciliations: ReadonlyArray<
+    Readonly<{
+      id: string;
+      shiftId: string | null;
+      state: string;
+      /** Whether this person may approve it; the server applies the same rule as the approve command. */
+      youMayApprove?: boolean;
+    }>
+  >;
   actions: Readonly<
     Record<
       'OpenBusinessDay' | 'CloseBusinessDay' | 'StartShift' | 'CloseMeters' | 'CompleteShift',
@@ -22,14 +39,14 @@ export type StepOverview = Readonly<{
 
 export type StepContext = Readonly<{ tenantId: string; stationId: string }>;
 
-/** Where the person is in the day: open the day, start a shift, enter figures, close the shift, close the day. */
-export const TRAIL = [
-  'Open day',
-  'Start shift',
-  'Enter figures',
-  'Close shift',
-  'Close day',
-] as const;
+/** Where the person is in the day: start a shift (which opens the day), enter figures, close the shift, close the day. */
+export const TRAIL = ['Start shift', 'Enter figures', 'Close shift', 'Close day'] as const;
+
+export type PrecedingCommand = Readonly<{
+  commandType: string;
+  values: Record<string, unknown>;
+  subjectId: string;
+}>;
 
 export type NextStep = Readonly<{
   /** Position in TRAIL, or null when nothing is left to do. */
@@ -45,12 +62,20 @@ export type NextStep = Readonly<{
         subjectId: string;
         /** Asked before running; omitted for routine, clearly named actions. */
         confirm?: string;
+        /** Ask for a reason (and send it as this field) before running. */
+        askReason?: { field: string; question: string };
+        /** Runs first, and only this action is shown: opening the day is part of starting its first shift. */
+        before?: PrecedingCommand;
       }>
     | Readonly<{ kind: 'link'; label: string; href: string }>
-    /** No shift exists yet: StartShift creates one from a start time and a length. */
-    | Readonly<{ kind: 'newShift'; label: string; values: Record<string, unknown> }>
     | null;
 }>;
+
+function stationClock(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone }).format(
+    instant,
+  );
+}
 
 function timeRange(start: string, end: string, timeZone: string): string {
   const formatter = new Intl.DateTimeFormat('en-GB', {
@@ -61,19 +86,145 @@ function timeRange(start: string, end: string, timeZone: string): string {
   return `${formatter.format(new Date(start))} – ${formatter.format(new Date(end))}`;
 }
 
-function newShiftAction(
-  base: Record<string, string>,
-  businessDayId: string,
-  newId: () => string,
-): StepAction {
+/** Shifts always come from the station's schedule; the person is never asked for a time or length. */
+const NO_SCHEDULE: NextStep = {
+  stage: 0,
+  title: 'No shift schedule',
+  detail: 'Ask a manager to set up the station’s shifts.',
+  action: null,
+};
+
+const WAITING = new Set(['SUBMITTED', 'PENDING_APPROVAL']);
+
+/** Asked before the shift is closed; the first sentence is the question, the rest what happens. */
+const CLOSE_SHIFT_CONFIRM =
+  'Close this shift? The pump readings you entered become the official meter records for the shift, and the shift is finished. This cannot be undone from here.';
+
+/**
+ * "Close Shift": close the meters, then complete the shift. Closing the meters raises the shift's
+ * version by one, so the second command expects that.
+ */
+function closeShiftAction(
+  shift: StepOverview['shifts'][number],
+  shiftValues: (shift: StepOverview['shifts'][number]) => Record<string, unknown>,
+): Extract<StepAction, { kind: 'command' }> {
   return {
-    kind: 'newShift',
-    label: 'Start a shift',
-    values: { ...base, businessDayId, shiftId: newId(), expectedVersion: 0 },
+    kind: 'command',
+    label: 'Close Shift',
+    commandType: 'CompleteShift',
+    values: { ...shiftValues(shift), expectedVersion: shift.version + 1 },
+    subjectId: shift.id,
+    confirm: CLOSE_SHIFT_CONFIRM,
+    before: {
+      commandType: 'CloseMeters',
+      values: shiftValues(shift),
+      subjectId: shift.id,
+    },
   };
 }
 
-const WAITING = new Set(['SUBMITTED', 'PENDING_APPROVAL']);
+/** "Day" and "Day shift" both read as "Day shift", never "Day shift shift". */
+function shiftName(name: string): string {
+  const trimmed = name.trim();
+  return /\bshift$/i.test(trimmed) ? trimmed : `${trimmed} shift`;
+}
+
+/** The button and heading wording: "Open Night Shift". */
+function openShiftLabel(name: string): string {
+  const words = shiftName(name).replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return `Open ${words}`;
+}
+
+type DueShift = Readonly<{
+  id: string;
+  name: string;
+  startTime: string;
+  startsAt: Date;
+  /** False until the early-start window opens. */
+  openNow: boolean;
+}>;
+
+/**
+ * The scheduled shift to open next: among those not yet opened today, the latest one whose
+ * window is open, otherwise the earliest still to come. Null when the station has no scheduled
+ * shifts or all of them have been opened.
+ */
+function dueShift(overview: StepOverview, dayDate: string, now: Date): DueShift | null {
+  const used = new Set(overview.shifts.map((shift) => shift.shiftTemplateId).filter(Boolean));
+  const candidates = (overview.shiftTemplates ?? []).flatMap((template) => {
+    if (used.has(template.id) || !template.startTime) return [];
+    const startsAt = stationLocalToInstant(
+      `${dayDate}T${template.startTime.slice(0, 5)}`,
+      overview.station.timezone,
+    );
+    if (!startsAt) return [];
+    return [
+      {
+        id: template.id,
+        name: template.name,
+        startTime: template.startTime.slice(0, 5),
+        startsAt,
+        openNow: now.getTime() >= shiftOpensAt(startsAt).getTime(),
+      },
+    ];
+  });
+  candidates.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  const open = candidates.filter((candidate) => candidate.openNow);
+  return open[open.length - 1] ?? candidates[0] ?? null;
+}
+
+function openShiftAction(
+  base: Record<string, string>,
+  businessDayId: string,
+  due: DueShift,
+  newId: () => string,
+): Extract<StepAction, { kind: 'command' }> {
+  const shiftId = newId();
+  return {
+    kind: 'command',
+    label: openShiftLabel(due.name),
+    commandType: 'StartShift',
+    values: {
+      ...base,
+      businessDayId,
+      shiftId,
+      expectedVersion: 0,
+      plannedStartAt: due.startsAt.toISOString(),
+      shiftTemplateId: due.id,
+    },
+    subjectId: shiftId,
+  };
+}
+
+/**
+ * Starting the first shift of a day also opens the day, so the person never presses a separate
+ * "Open day". Returns null when the person cannot start a shift (or cannot open the day).
+ */
+function firstShiftOfDay(
+  overview: StepOverview,
+  base: Record<string, string>,
+  newId: () => string,
+  now: Date,
+): { due: DueShift | null; action: StepAction | null } | null {
+  const { actions } = overview;
+  const day = overview.selectedBusinessDay;
+  if (!actions.StartShift.canExecute || !actions.OpenBusinessDay.canExecute) return null;
+  const businessDayId = day?.id ?? newId();
+  const before: PrecedingCommand = {
+    commandType: 'OpenBusinessDay',
+    values: { ...base, businessDayId, expectedVersion: day?.version ?? 0 },
+    subjectId: businessDayId,
+  };
+  const due = dueShift(overview, day?.date ?? overview.currentBusinessDate, now);
+  if (due) {
+    return {
+      due,
+      action: due.openNow ? { ...openShiftAction(base, businessDayId, due, newId), before } : null,
+    };
+  }
+  // No scheduled shift: the person is never asked for a time or length, so there is nothing to offer.
+  return { due: null, action: null };
+}
 
 /**
  * The single thing a supervisor should do next, worked out only from states the
@@ -84,18 +235,38 @@ export function nextStep(
   overview: StepOverview,
   context: StepContext,
   newId: () => string,
+  now: Date = new Date(),
 ): NextStep {
   const { actions } = overview;
   const day = overview.selectedBusinessDay;
   const base = { tenantId: context.tenantId, stationId: context.stationId };
 
   if (!day || day.state === 'NOT_STARTED') {
+    const first = firstShiftOfDay(overview, base, newId, now);
+    if (first?.due && !first.action) {
+      return {
+        stage: 0,
+        title: `Waiting for the ${shiftName(first.due.name)}`,
+        detail: `Opens at ${stationClock(shiftOpensAt(first.due.startsAt), overview.station.timezone)}.`,
+        action: null,
+      };
+    }
+    if (first?.action && first.due) {
+      return {
+        stage: 0,
+        title: openShiftLabel(first.due.name),
+        detail: 'This also opens the business day.',
+        action: first.action,
+      };
+    }
+    if (first && !first.due) return NO_SCHEDULE;
     if (actions.OpenBusinessDay.canExecute) {
+      // Able to open the day but not to start a shift: open it so whoever starts the shift can.
       const businessDayId = day?.id ?? newId();
       return {
         stage: 0,
         title: 'Open today’s business day',
-        detail: 'Do this first. Shifts and figures are recorded against the day.',
+        detail: 'Shifts are recorded against the day.',
         action: {
           kind: 'command',
           label: 'Open business day',
@@ -108,16 +279,62 @@ export function nextStep(
     return {
       stage: 0,
       title: 'Waiting for the day to be opened',
-      detail: 'Ask a manager to open today’s business day.',
+      detail: 'Ask a manager to open the day.',
       action: null,
     };
   }
 
   if (day.state !== 'OPEN') {
+    // The day is shut, but its figures still need a manager's approval before they are final.
+    const waiting = overview.reconciliations.filter((item) => WAITING.has(item.state));
+    // Only what this person may approve is offered to them; the server works that out.
+    const mine = waiting.filter((item) => item.youMayApprove === true);
+    const first = mine[0];
+    if (first) {
+      const params = new URLSearchParams({ ...base, businessDayId: day.id });
+      if (first.shiftId) params.set('shiftId', first.shiftId);
+      return {
+        stage: null,
+        title: 'Today is closed. Approve the figures',
+        detail:
+          mine.length === 1
+            ? 'One shift is waiting for approval.'
+            : `${mine.length} shifts are waiting for approval.`,
+        action: {
+          kind: 'link',
+          label:
+            mine.length === 1
+              ? 'Review the figures'
+              : `Review the figures (${mine.length} waiting)`,
+          href: `/operations/reconciliations/${first.id}/review?${params.toString()}`,
+        },
+      };
+    }
+    if (waiting.length > 0) {
+      return {
+        stage: null,
+        title: 'Today is closed. Waiting for approval',
+        detail: 'Nothing more for you to do.',
+        action: null,
+      };
+    }
+    const approved = overview.reconciliations.find((item) => item.state === 'APPROVED');
+    if (approved) {
+      return {
+        stage: null,
+        title: 'Today is closed and approved',
+        detail: 'The daily report is ready.',
+        action: {
+          kind: 'link',
+          label: 'Open the daily report',
+          href: `/operations/reconciliations/${approved.id}/report?${new URLSearchParams(base).toString()}`,
+        },
+      };
+    }
     return {
       stage: null,
       title: 'Today is closed',
-      detail: 'Nothing more to do for this business day.',
+      detail: 'Nothing more to do.',
       action: null,
     };
   }
@@ -145,7 +362,7 @@ export function nextStep(
     const reconciliation = reconciliationOf(shift.id);
     if (reconciliation?.state === 'RETURNED') {
       return {
-        stage: 2,
+        stage: 1,
         title: 'Fix and resubmit the figures',
         detail: `The ${timeRange(shift.plannedStartAt, shift.plannedEndAt, timezone)} shift was sent back for changes.`,
         action: {
@@ -163,9 +380,9 @@ export function nextStep(
     const reconciliation = reconciliationOf(open.id);
     if (!reconciliation || reconciliation.state === 'DRAFT') {
       return {
-        stage: 2,
+        stage: 1,
         title: reconciliation ? 'Continue entering the figures' : 'Enter the shift figures',
-        detail: `Pump readings, payments, expenses and cash for the ${range} shift.`,
+        detail: `Pump readings, payments, expenses and cash.`,
         action: {
           kind: 'link',
           label: reconciliation ? 'Continue' : 'Start entering figures',
@@ -174,26 +391,36 @@ export function nextStep(
       };
     }
     if (actions.CloseMeters.canExecute) {
+      const detail = WAITING.has(reconciliation.state)
+        ? `Figures are with a manager. Close the shift after the last sale.`
+        : `Figures are in. Close the shift after the last sale.`;
+      // One button for the person: the meters are closed, then the shift is completed.
+      if (actions.CompleteShift.canExecute) {
+        return {
+          stage: 2,
+          title: 'Close the shift',
+          detail,
+          action: closeShiftAction(open, shiftValues),
+        };
+      }
       return {
-        stage: 3,
-        title: 'Close the shift meters',
-        detail: WAITING.has(reconciliation.state)
-          ? `Figures for the ${range} shift are with a manager for review. Close the meters to finish the shift.`
-          : `Figures for the ${range} shift are in. Close the meters to finish the shift.`,
+        stage: 2,
+        title: 'Close the shift',
+        detail,
         action: {
           kind: 'command',
-          label: 'Close meters',
+          label: 'Close Shift',
           commandType: 'CloseMeters',
           values: shiftValues(open),
           subjectId: open.id,
-          confirm: 'Close meters for this shift? Meter readings must already be complete.',
+          confirm: CLOSE_SHIFT_CONFIRM,
         },
       };
     }
     return {
-      stage: 3,
+      stage: 2,
       title: 'Waiting for the shift to be closed',
-      detail: 'A manager closes the meters for this shift.',
+      detail: 'A manager closes this shift.',
       action: null,
     };
   }
@@ -201,16 +428,16 @@ export function nextStep(
   const meterClosed = shifts.find((shift) => shift.state === 'METER_CLOSED');
   if (meterClosed && actions.CompleteShift.canExecute) {
     return {
-      stage: 3,
-      title: 'Complete the shift',
-      detail: `Meters are closed for the ${timeRange(meterClosed.plannedStartAt, meterClosed.plannedEndAt, timezone)} shift.`,
+      stage: 2,
+      title: 'Close the shift',
+      detail: 'One more step finishes it.',
       action: {
         kind: 'command',
-        label: 'Complete shift',
+        label: 'Close Shift',
         commandType: 'CompleteShift',
         values: shiftValues(meterClosed),
         subjectId: meterClosed.id,
-        confirm: 'Complete this shift? This records the close boundary as complete.',
+        confirm: CLOSE_SHIFT_CONFIRM,
       },
     };
   }
@@ -220,9 +447,9 @@ export function nextStep(
     const range = timeRange(planned.plannedStartAt, planned.plannedEndAt, timezone);
     if (actions.StartShift.canExecute) {
       return {
-        stage: 1,
+        stage: 0,
         title: `Start the ${range} shift`,
-        detail: 'Do this when the shift begins, before the first sale.',
+        detail: 'Start it before the first sale.',
         action: {
           kind: 'command',
           label: 'Start shift',
@@ -237,44 +464,79 @@ export function nextStep(
       };
     }
     return {
-      stage: 1,
+      stage: 0,
       title: 'Waiting for the shift to start',
-      detail: 'You do not have permission to start this shift.',
+      detail: 'You cannot start this shift.',
       action: null,
     };
   }
 
   const allDone = shifts.length > 0 && shifts.every((shift) => shift.state === 'COMPLETED');
+  const due = actions.StartShift.canExecute ? dueShift(overview, day.date, now) : null;
+  // Closing before any figures are approved is allowed, but the person must say why.
+  const approvedFigures = overview.reconciliations.some((item) =>
+    ['APPROVED', 'POSTED', 'LOCKED'].includes(item.state),
+  );
+  const closeDay: Extract<StepAction, { kind: 'command' }> = {
+    kind: 'command',
+    label: 'Close business day',
+    commandType: 'CloseBusinessDay',
+    values: { ...base, businessDayId: day.id, expectedVersion: day.version },
+    subjectId: day.id,
+    confirm: 'Close the business day? No more shifts can be opened for it afterwards.',
+    ...(approvedFigures
+      ? {}
+      : {
+          askReason: {
+            field: 'reasonWithoutReconciliation',
+            question:
+              'No figures are approved yet. Why is the day being closed now? The reason is kept in the activity log.',
+          },
+        }),
+  };
+  if (allDone && due?.openNow) {
+    return {
+      stage: 0,
+      title: openShiftLabel(due.name),
+      detail: `Due at ${due.startTime}. No more shifts today? Close the day instead.`,
+      action: openShiftAction(base, day.id, due, newId),
+    };
+  }
+  if (allDone && due && actions.CloseBusinessDay.canExecute) {
+    return {
+      stage: 3,
+      title: `Next: the ${shiftName(due.name)} at ${due.startTime}`,
+      detail: `Opens at ${stationClock(shiftOpensAt(due.startsAt), overview.station.timezone)}. Close the day only if no more shifts will run.`,
+      action: closeDay,
+    };
+  }
   if (allDone && actions.CloseBusinessDay.canExecute) {
     return {
-      stage: 4,
+      stage: 3,
       title: 'Close the business day',
-      detail: 'Every shift is complete. Close the day to finish.',
-      action: {
-        kind: 'command',
-        label: 'Close business day',
-        commandType: 'CloseBusinessDay',
-        values: { ...base, businessDayId: day.id, expectedVersion: day.version },
-        subjectId: day.id,
-        confirm: 'Close this business day? Every operated shift must have complete meter readings.',
-      },
+      detail: 'Every shift is complete.',
+      action: closeDay,
     };
   }
 
   if (shifts.length === 0) {
     if (actions.StartShift.canExecute) {
-      return {
-        stage: 1,
-        title: 'Start today’s shift',
-        detail:
-          'Choose when the shift starts and how long it runs. You can then enter the figures.',
-        action: newShiftAction(base, day.id, newId),
-      };
+      if (due) {
+        return {
+          stage: 0,
+          title: due.openNow ? openShiftLabel(due.name) : `Waiting for the ${shiftName(due.name)}`,
+          detail: due.openNow
+            ? 'Start it before the first sale.'
+            : `Opens at ${stationClock(shiftOpensAt(due.startsAt), overview.station.timezone)}.`,
+          action: due.openNow ? openShiftAction(base, day.id, due, newId) : null,
+        };
+      }
+      return NO_SCHEDULE;
     }
     return {
-      stage: 1,
+      stage: 0,
       title: 'No shift has been started',
-      detail: 'You do not have permission to start a shift. Ask a manager.',
+      detail: 'Ask a manager to start one.',
       action: null,
     };
   }
@@ -282,7 +544,7 @@ export function nextStep(
   return {
     stage: null,
     title: 'You are all caught up',
-    detail: 'Nothing needs you right now.',
+    detail: 'Nothing to do right now.',
     action: null,
   };
 }
@@ -294,23 +556,15 @@ export function trailActions(
   overview: StepOverview,
   context: StepContext,
   newId: () => string,
+  now: Date = new Date(),
 ): ReadonlyArray<StepAction | null> {
   const { actions } = overview;
   const day = overview.selectedBusinessDay;
   const base = { tenantId: context.tenantId, stationId: context.stationId };
-  const none: Array<StepAction | null> = [null, null, null, null, null];
+  const none: Array<StepAction | null> = [null, null, null, null];
 
   if (!day || day.state === 'NOT_STARTED') {
-    if (actions.OpenBusinessDay.canExecute) {
-      const businessDayId = day?.id ?? newId();
-      none[0] = {
-        kind: 'command',
-        label: 'Open business day',
-        commandType: 'OpenBusinessDay',
-        values: { ...base, businessDayId, expectedVersion: day?.version ?? 0 },
-        subjectId: businessDayId,
-      };
-    }
+    none[0] = firstShiftOfDay(overview, base, newId, now)?.action ?? null;
     return none;
   }
   if (day.state !== 'OPEN') return none;
@@ -329,7 +583,7 @@ export function trailActions(
 
   const planned = shifts.find((shift) => shift.state === 'PLANNED');
   if (planned && actions.StartShift.canExecute) {
-    none[1] = {
+    none[0] = {
       kind: 'command',
       label: 'Start shift',
       commandType: 'StartShift',
@@ -342,8 +596,9 @@ export function trailActions(
     };
   }
 
-  if (shifts.length === 0 && actions.StartShift.canExecute) {
-    none[1] = newShiftAction(base, day.id, newId);
+  if (actions.StartShift.canExecute && !planned) {
+    const due = dueShift(overview, day.date, now);
+    if (due?.openNow) none[0] = openShiftAction(base, day.id, due, newId);
   }
 
   const open = shifts.find((shift) => shift.state === 'OPEN');
@@ -351,32 +606,34 @@ export function trailActions(
     const reconciliation = reconciliationOf(open.id);
     const params = new URLSearchParams({ ...base, businessDayId: day.id, shiftId: open.id });
     if (reconciliation) params.set('reconciliationId', reconciliation.id);
-    none[2] = {
+    none[1] = {
       kind: 'link',
       label: 'Enter figures',
       href: `/operations/daily?${params.toString()}`,
     };
     if (reconciliation && reconciliation.state !== 'DRAFT' && actions.CloseMeters.canExecute) {
-      none[3] = {
-        kind: 'command',
-        label: 'Close meters',
-        commandType: 'CloseMeters',
-        values: shiftValues(open),
-        subjectId: open.id,
-        confirm: 'Close meters for this shift? Meter readings must already be complete.',
-      };
+      none[2] = actions.CompleteShift.canExecute
+        ? closeShiftAction(open, shiftValues)
+        : {
+            kind: 'command',
+            label: 'Close Shift',
+            commandType: 'CloseMeters',
+            values: shiftValues(open),
+            subjectId: open.id,
+            confirm: CLOSE_SHIFT_CONFIRM,
+          };
     }
   }
 
   const meterClosed = shifts.find((shift) => shift.state === 'METER_CLOSED');
   if (meterClosed && actions.CompleteShift.canExecute) {
-    none[3] = {
+    none[2] = {
       kind: 'command',
-      label: 'Complete shift',
+      label: 'Close Shift',
       commandType: 'CompleteShift',
       values: shiftValues(meterClosed),
       subjectId: meterClosed.id,
-      confirm: 'Complete this shift? This records the close boundary as complete.',
+      confirm: CLOSE_SHIFT_CONFIRM,
     };
   }
 
@@ -385,7 +642,7 @@ export function trailActions(
     shifts.every((shift) => shift.state === 'COMPLETED') &&
     actions.CloseBusinessDay.canExecute
   ) {
-    none[4] = {
+    none[3] = {
       kind: 'command',
       label: 'Close business day',
       commandType: 'CloseBusinessDay',

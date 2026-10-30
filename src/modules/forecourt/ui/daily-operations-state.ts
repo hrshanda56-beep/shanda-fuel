@@ -1,9 +1,86 @@
 import type { StatusTone } from '../../../design-system/primitives';
 import { mapA12OperatorError } from '../../costing/operator-errors';
 import { clientErrorMessage } from '../../../platform/errors/client';
+import { sumDecimals } from '../../cash/ui/cash-visuals';
 
 export type DailyOperationsState =
   'DRAFT' | 'RETURNED' | 'SUBMITTED' | 'PENDING_APPROVAL' | 'APPROVED' | 'LOCKED' | string;
+
+const DECIMAL_TEXT = /^\d+(?:\.\d+)?$/;
+
+/**
+ * Litres sold as the closing reading is typed: closing minus opening, in exact decimals. Null
+ * until both readings are numbers; negative when the closing is below the opening (the screen
+ * says so). The saved figure comes from the server and replaces this after a save.
+ */
+export function liveLitresSold(opening: string, closing: string): string | null {
+  const open = opening.trim();
+  const close = closing.trim();
+  if (!DECIMAL_TEXT.test(open) || !DECIMAL_TEXT.test(close)) return null;
+  return sumDecimals([close, `-${open}`]);
+}
+
+export type LiveCashFigures = Readonly<{
+  expected: string;
+  paidOut: string;
+  net: string;
+  difference: string | null;
+}>;
+
+/**
+ * The cash figures as the person types: cash taken on the Payments step, less cash paid out on the
+ * Expenses step, against the cash counted. Rows without a number are left out; the difference waits
+ * until the count is a number. The saved figures come from the server and replace these on Next.
+ */
+export function liveCashFigures(
+  payments: ReadonlyArray<{ method: string; amount: string }>,
+  expenses: ReadonlyArray<{ paymentMethod: string; amount: string }>,
+  counted: string,
+): LiveCashFigures {
+  const amounts = (rows: ReadonlyArray<string>) =>
+    rows.map((value) => value.trim()).filter((value) => DECIMAL_TEXT.test(value));
+  const expected = sumDecimals(
+    amounts(payments.filter((item) => item.method === 'CASH').map((item) => item.amount)),
+  );
+  const paidOut = sumDecimals(
+    amounts(expenses.filter((item) => item.paymentMethod === 'CASH').map((item) => item.amount)),
+  );
+  const net = sumDecimals([expected, `-${paidOut}`]);
+  const count = counted.trim();
+  return {
+    expected,
+    paidOut,
+    net,
+    difference: DECIMAL_TEXT.test(count) ? sumDecimals([count, `-${net}`]) : null,
+  };
+}
+
+/** What each step of the shift workspace is called, for the person entering it. */
+const ENTRY_TITLES = [
+  'Who is on shift?',
+  'Pump readings',
+  'How customers paid',
+  'Expenses',
+  'Count the cash',
+  'Tank dips and deliveries',
+  'Check and submit',
+] as const;
+
+/** The same steps as management sees them: a review of a submitted shift, never a form. */
+const REVIEW_TITLES = [
+  'Review: who worked this shift',
+  'Review: pump readings',
+  'Review: how customers paid',
+  'Review: expenses',
+  'Review: the cash count',
+  'Review: tank dips and deliveries',
+  'Approve or send back',
+] as const;
+
+export function stepTitle(step: number, reviewing: boolean): string {
+  const titles = reviewing ? REVIEW_TITLES : ENTRY_TITLES;
+  return titles[step] ?? titles[0];
+}
 
 export function isEditableDailyOperationsState(state: DailyOperationsState | undefined): boolean {
   return state === 'DRAFT' || state === 'RETURNED';
@@ -41,7 +118,7 @@ const step = (label: string, index: number): DailyOperationsFix => ({
  * What went wrong, in plain words, and where to go to put it right. A reason the server gave that
  * the person can act on is kept and matched before the generic wording for the HTTP status, so a
  * credit limit is never reported as "changed elsewhere". The step numbers are those of the
- * workspace: 0 team, 1 pumps, 2 payments, 3 expenses, 4 cash, 5 submit.
+ * workspace: 0 team, 1 pumps, 2 payments, 3 expenses, 4 cash, 5 tank dips, 6 submit.
  */
 export function dailyOperationsProblem(
   status: number,
@@ -59,6 +136,38 @@ export function dailyOperationsProblem(
       fix: link('Open reconciliations', '/operations/reconciliations'),
     };
   }
+  if (/operated shift must be completed|shift is not finished yet/i.test(text)) {
+    return {
+      message:
+        'A shift is not finished yet. Close the meters and complete every shift in the list below, or mark a shift as not operated, then close the day.',
+    };
+  }
+  // The server states why the shift cannot be closed, and what to do, in its own words.
+  if (/^This shift cannot be closed yet/i.test(text)) return { message: text };
+  if (/sealed meter segments|meter-close boundary/i.test(text)) {
+    return {
+      message:
+        'This shift cannot be closed yet because no pump readings have been submitted for it. Open the shift figures, enter the pump readings and submit them, then press Close Shift again. Nothing was changed.',
+    };
+  }
+  if (/meter-unavailable exception/i.test(text)) {
+    return {
+      message:
+        'A pump meter was reported unavailable for this shift and the problem is still open. Resolve it first, then press Close Shift again.',
+    };
+  }
+  if (/no matching sealed meter-segment evidence/i.test(text)) {
+    return {
+      message:
+        'This shift has not been closed yet, so there is nothing to approve. Ask the supervisor to press Close Shift on the shift, then approve again.',
+    };
+  }
+  if (/sealed meter segment does not match/i.test(text)) {
+    return {
+      message:
+        'The pump readings were changed after this shift was closed, so they no longer match the closed meters. Nothing was approved. Ask the owner or support to correct the closed meters.',
+    };
+  }
   if (/cannot approve it/i.test(text)) {
     return {
       message:
@@ -72,7 +181,10 @@ export function dailyOperationsProblem(
     };
   }
   if (/variance explanations are required/i.test(text)) {
-    return { message: text, fix: step('Go to the explanations', 5) };
+    return { message: text, fix: step('Go to the explanations', 6) };
+  }
+  if (/has no dip reading for this shift|have no dip reading for this shift/i.test(text)) {
+    return { message: text, fix: step('Go to tank dips', 5) };
   }
   if (/select at least one attendant/i.test(text)) {
     return { message: text, fix: step('Choose the team', 0) };

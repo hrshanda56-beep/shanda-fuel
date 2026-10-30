@@ -2,7 +2,7 @@
 import type { RecordData } from '../daily-operations-read-model';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConfirm } from '../../../design-system/feedback-provider';
+import { useConfirm, useToast } from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -37,6 +37,8 @@ import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import { TableScrollRegion } from '../../../design-system/table';
 import Link from 'next/link';
 import { DailyTankDips } from './daily-tank-dips';
+import { OpeningReadingsEntry } from './opening-readings-entry';
+import { TRANSITION_SUCCESS } from './transition-messages';
 import { sumDecimals } from '../../cash/ui/cash-visuals';
 import {
   formatBusinessDate,
@@ -45,12 +47,16 @@ import {
   formatMoney,
   formatStatusLabel,
   formatTimeInTimeZone,
+  moneyInputValue,
 } from '../../../design-system/formatters';
 import {
   dailyOperationsProblem,
   dailyOperationsStatusLabel,
   dailyOperationsStatusTone,
   isEditableDailyOperationsState,
+  liveCashFigures,
+  liveLitresSold,
+  stepTitle,
   type DailyOperationsFix,
 } from './daily-operations-state';
 import {
@@ -94,7 +100,8 @@ type OperationsContext = {
     plannedEndAt: string;
     version: number;
   };
-  attendants: Array<{ id: string; name: string; email: string }>;
+  attendants: Array<{ id: string; name: string }>;
+  otherAttendants?: Array<{ id: string; name: string; stationName: string }>;
   availableReadings: AvailableReading[];
 };
 
@@ -176,16 +183,7 @@ const methodLabels: Record<PaymentMethod, string> = {
 /** The ways customers usually pay; one tap adds a line for each. */
 const quickPayments: readonly PaymentMethod[] = ['CASH', 'ECOCASH', 'POS'];
 
-const STEPS = ['Team', 'Pumps', 'Payments', 'Expenses', 'Cash', 'Submit'] as const;
-
-const STEP_TITLES = [
-  'Who is on shift?',
-  'Pump readings',
-  'How customers paid',
-  'Expenses',
-  'Count the cash',
-  'Check and submit',
-] as const;
+const STEPS = ['Team', 'Pumps', 'Payments', 'Expenses', 'Cash', 'Tank dips', 'Submit'] as const;
 
 function newRowKey(): string {
   return crypto.randomUUID();
@@ -196,7 +194,7 @@ function paymentFromRecord(payment: RecordData['payments'][number]): Payment & {
     rowKey: payment.id || newRowKey(),
     id: payment.id,
     method: payment.method as PaymentMethod,
-    amount: payment.amount,
+    amount: moneyInputValue(payment.amount),
     reference: payment.reference ?? '',
     note: payment.note ?? '',
     customerAccountId: payment.customerAccountId ?? '',
@@ -210,11 +208,29 @@ function expenseFromRecord(expense: RecordData['expenses'][number]): Expense & {
     id: expense.id,
     category: expense.category,
     description: expense.description,
-    amount: expense.amount,
+    amount: moneyInputValue(expense.amount),
     paymentMethod: expense.paymentMethod as PaymentMethod,
     personPaid: expense.personPaid ?? '',
     reference: expense.reference ?? '',
   };
+}
+
+/** Who was saved on the shift; before anything is saved, every attendant set up for the station. */
+function startingAttendants(
+  record: RecordData | null,
+  operation: Pick<OperationsContext, 'attendants'>,
+): string[] {
+  if (record?.attendants.length) return record.attendants.map((row) => row.attendantId);
+  if (record && !isEditableDailyOperationsState(record.state)) return [];
+  return operation.attendants.map((attendant) => attendant.id);
+}
+
+/**
+ * A closing reading equal to the opening means the pump sold nothing. A reading saved when the
+ * shift opened starts exactly there, so only pumps that did sell need their closing changed.
+ */
+function readingFromRecord(reading: Reading & { id: string }): Reading & { rowKey: string } {
+  return { ...reading, rowKey: reading.id };
 }
 
 function readingFromContext(
@@ -309,6 +325,7 @@ export function DailyOperationsWorkspace({
   role?: 'SUPERVISOR' | 'MANAGEMENT';
 }) {
   const confirm = useConfirm();
+  const toast = useToast();
   const [activeReconciliationId, setActiveReconciliationId] = useState(context.reconciliationId);
   const [operation, setOperation] = useState<OperationsContext | null>(
     initialData?.operation ?? null,
@@ -317,7 +334,7 @@ export function DailyOperationsWorkspace({
   const [readings, setReadings] = useState<Array<Reading & { rowKey: string }>>(
     initialData
       ? initialData.record?.readings.length
-        ? initialData.record.readings.map((reading) => ({ ...reading, rowKey: reading.id }))
+        ? initialData.record.readings.map(readingFromRecord)
         : initialData.operation.availableReadings.map((reading) =>
             readingFromContext(reading, context.shiftId),
           )
@@ -329,10 +346,14 @@ export function DailyOperationsWorkspace({
   const [expenses, setExpenses] = useState<Array<Expense & { rowKey: string }>>(
     initialData?.record?.expenses.map(expenseFromRecord) ?? [],
   );
-  const [attendantIds, setAttendantIds] = useState<string[]>(
-    initialData?.record?.attendants.map((row) => row.attendantId) ?? [],
+  // Until the supervisor has saved who worked, everyone set up for the station starts ticked;
+  // they untick whoever was absent. Nothing is recorded until the draft is saved.
+  const [attendantIds, setAttendantIds] = useState<string[]>(() =>
+    initialData ? startingAttendants(initialData.record, initialData.operation) : [],
   );
-  const [cashCounted, setCashCounted] = useState(initialData?.record?.cash?.countedCash ?? '');
+  const [cashCounted, setCashCounted] = useState(
+    moneyInputValue(initialData?.record?.cash?.countedCash ?? ''),
+  );
   const [approvalNote, setApprovalNote] = useState(initialData?.record?.approvalNote ?? '');
   const [explanations, setExplanations] = useState<Record<string, string>>(
     Object.fromEntries(
@@ -345,25 +366,41 @@ export function DailyOperationsWorkspace({
   const [errorFix, setErrorFix] = useState<ErrorFix>();
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState<string>();
-  const [dirty, setDirty] = useState(false);
+  const [correctingOpening, setCorrectingOpening] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [dirty, setDirty] = useState(
+    () =>
+      Boolean(initialData) &&
+      !initialData?.record?.attendants.length &&
+      startingAttendants(initialData?.record ?? null, initialData!.operation).length > 0,
+  );
   const [step, setStep] = useState(0);
+  // A refresh keeps the person on the step they were on: it is kept in the address, not just in memory.
+  const stepRestored = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = Number(new URL(window.location.href).searchParams.get('step'));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read once after load; the server cannot know the address
+    if (Number.isInteger(saved) && saved > 0 && saved < STEPS.length) setStep(saved);
+  }, []);
+  useEffect(() => {
+    // The first run is the initial render, before the saved step has been applied.
+    if (!stepRestored.current) {
+      stepRestored.current = true;
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (step > 0) url.searchParams.set('step', String(step));
+    else url.searchParams.delete('step');
+    if (url.href !== window.location.href)
+      window.history.replaceState(window.history.state, '', url);
+  }, [step]);
   const [returnReason, setReturnReason] = useState('');
   const [stepUpRetry, setStepUpRetry] = useState<{
     values: Record<string, unknown>;
     savedVersion?: number;
   } | null>(null);
   const saveJournal = useRef<DraftSaveJournal | undefined>(undefined);
-  const [cashSummary, setCashSummary] = useState<
-    | {
-        availableAtStation: string;
-        collectedButUnbanked: string;
-        pendingBankConfirmation: string;
-      }
-    | undefined
-  >(initialData?.cash);
-  const [settlementSummary, setSettlementSummary] = useState<
-    Array<{ providerName: string; state: string; unallocatedProviderAmount: string }>
-  >(initialData?.settlements ?? []);
 
   const contextQuery = useMemo(
     () =>
@@ -386,27 +423,30 @@ export function DailyOperationsWorkspace({
         );
         setPayments([]);
         setExpenses([]);
-        setAttendantIds([]);
+        const everyone = startingAttendants(null, nextOperation);
+        setAttendantIds(everyone);
+        setDirty(everyone.length > 0);
         setCashCounted('');
         setApprovalNote('');
         setExplanations({});
         return;
       }
       const nextReadings = next.readings.length
-        ? next.readings.map((reading) => ({ ...reading, rowKey: reading.id }))
+        ? next.readings.map(readingFromRecord)
         : nextOperation.availableReadings.map((reading) =>
             readingFromContext(reading, context.shiftId),
           );
       setReadings(nextReadings);
       setPayments(next.payments.map(paymentFromRecord));
       setExpenses(next.expenses.map(expenseFromRecord));
-      setAttendantIds(next.attendants.map((attendant) => attendant.attendantId));
-      setCashCounted(next.cash?.countedCash ?? '');
+      const saved = startingAttendants(next, nextOperation);
+      setAttendantIds(saved);
+      setCashCounted(moneyInputValue(next.cash?.countedCash ?? ''));
       setApprovalNote(next.approvalNote ?? '');
       setExplanations(
         Object.fromEntries(next.explanations.map((item) => [item.category, item.explanation])),
       );
-      setDirty(false);
+      setDirty(!next.attendants.length && saved.length > 0);
     },
     [context.shiftId],
   );
@@ -473,34 +513,6 @@ export function DailyOperationsWorkspace({
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
   }, [dirty]);
 
-  useEffect(() => {
-    if (!operation || operation === initialData?.operation) return;
-    const controller = new AbortController();
-    void Promise.all([
-      fetch(
-        `/api/cash/summary?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
-        {
-          cache: 'no-store',
-          signal: controller.signal,
-        },
-      ).then(async (response) => (response.ok ? response.json() : null)),
-      fetch(
-        `/api/settlements/summary?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
-        {
-          cache: 'no-store',
-          signal: controller.signal,
-        },
-      ).then(async (response) => (response.ok ? response.json() : [])),
-    ])
-      .then(([cash, settlements]) => {
-        if (controller.signal.aborted) return;
-        setCashSummary(cash?.totals);
-        setSettlementSummary(Array.isArray(settlements) ? settlements : []);
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [context.stationId, context.tenantId, operation, initialData]);
-
   async function sendCommand(
     commandType: string,
     values: Record<string, unknown>,
@@ -542,7 +554,6 @@ export function DailyOperationsWorkspace({
       url.searchParams.set('reconciliationId', reconciliationId);
       window.history.replaceState({}, '', url);
       await load();
-      setNotice('Ready. Start with the team on shift.');
     } catch (cause) {
       const failure = cause as OperationsFailure & {
         details?: { existingReconciliationId?: unknown };
@@ -563,10 +574,29 @@ export function DailyOperationsWorkspace({
     }
   }
 
+  // Arriving at a running shift with no figures yet goes straight to entering them: the person
+  // never has to press a "begin" button. A failed attempt shows its error and leaves the button.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStarted.current || loading || record || !operation || error) return;
+    if (operation.shift.state !== 'OPEN' || typeof window === 'undefined') return;
+    const timer = window.setTimeout(() => {
+      autoStarted.current = true;
+      void createDraft();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  });
+
   /** Saves the draft; resolves to the new revision version, or null when nothing was saved. */
-  async function saveDraft(): Promise<number | null> {
+  async function saveDraft(announce = false): Promise<number | null> {
     savedForLater.current = false;
     if (!record || !operation) return null;
+    if (correctingOpening && correctionReason.trim().length < 5) {
+      setError(
+        'Say why the opening reading is being corrected (at least 5 characters). Nothing was saved.',
+      );
+      return null;
+    }
     if (readings.some((reading) => !reading.sellingPriceId)) {
       const message =
         'A current active selling price is required for every meter row before saving.';
@@ -598,6 +628,7 @@ export function DailyOperationsWorkspace({
             {
               commandType: 'SaveMeterReadings',
               values: {
+                ...(correctingOpening ? { openingCorrectionReason: correctionReason.trim() } : {}),
                 readings: readings.map(
                   ({
                     rowKey: _rowKey,
@@ -606,7 +637,11 @@ export function DailyOperationsWorkspace({
                     litresSold: _litresSold,
                     salesValue: _salesValue,
                     ...reading
-                  }) => reading,
+                  }) => ({
+                    ...reading,
+                    // Not entered yet means still equal to the opening; never an empty number.
+                    closingReading: reading.closingReading.trim() || reading.openingReading,
+                  }),
                 ),
               },
             },
@@ -681,6 +716,7 @@ export function DailyOperationsWorkspace({
       setDirty(false);
       clearLocalDraft(draftKey);
       setNotice('Draft saved to the server.');
+      if (announce) toast.success('Saved. Your figures are stored and nothing has been sent yet.');
       await load();
       return journal.version;
     } catch (cause) {
@@ -726,6 +762,7 @@ export function DailyOperationsWorkspace({
       });
       await load();
       setNotice('Shift started.');
+      toast.success('Shift started. You can now enter the figures.');
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The shift could not be opened.';
       setError(message);
@@ -769,11 +806,10 @@ export function DailyOperationsWorkspace({
         ...values,
       });
       await load();
-      setNotice(
-        commandType === 'ApproveProductionReconciliation'
-          ? 'Reconciliation approved and locked.'
-          : 'Workflow state updated.',
-      );
+      const done = TRANSITION_SUCCESS[commandType] ?? 'Workflow state updated.';
+      setNotice(done);
+      toast.success(done);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (cause) {
       const failure = cause as OperationsFailure;
       if (
@@ -937,6 +973,15 @@ export function DailyOperationsWorkspace({
   const savedForLater = useRef(false);
 
   async function goToStep(next: number) {
+    if (
+      step === 1 &&
+      next > 1 &&
+      editable &&
+      readings.some((reading) => !reading.closingReading.trim())
+    ) {
+      setError('Enter the closing reading for every pump before you continue.');
+      return;
+    }
     if (dirty && editable) {
       const saved = await saveDraft();
       if (saved === null && !savedForLater.current) return;
@@ -981,14 +1026,25 @@ export function DailyOperationsWorkspace({
   }
 
   const editable = isEditableDailyOperationsState(record?.state);
+  const visitingAttendants = operation?.otherAttendants ?? [];
+  const visitorSelected = visitingAttendants.some((attendant) =>
+    attendantIds.includes(attendant.id),
+  );
+  const liveCash = liveCashFigures(payments, expenses, cashCounted);
   const state = record?.state ?? 'NOT_STARTED';
   const requiresSalesExplanation = record ? !isZero(record.totals.salesVariance) : false;
   const requiresCashExplanation = record ? !isZero(record.totals.cashVariance) : false;
   const requiresStockExplanation = record
     ? Object.values(record.totals.stockVariance).some((value) => !isZero(value))
     : false;
-  const requiresApproverNote =
-    role === 'MANAGEMENT' && state === 'SUBMITTED' && Boolean(record?.requiresApproverNote);
+  // A button is shown only when the server says this person may use it: a supervisor never sees
+  // Return, and the person who submitted never sees Approve.
+  const inReview = role === 'MANAGEMENT' && state === 'SUBMITTED';
+  const mayReturn = inReview && record?.canReturn === true;
+  const mayApprove = inReview && record?.canApprove === true && !record.approvalBlocked;
+  const approvalWaitsForSomeoneElse =
+    inReview && record?.canApprove === true && Boolean(record.approvalBlocked);
+  const requiresApproverNote = mayApprove && Boolean(record?.requiresApproverNote);
 
   const checklist = record
     ? [
@@ -1106,14 +1162,48 @@ export function DailyOperationsWorkspace({
     );
   }
 
+  // A shift that has just opened asks for its opening readings first, and nothing else.
+  if (
+    record &&
+    editable &&
+    record.readings.length === 0 &&
+    operation.shift.state === 'OPEN' &&
+    activeReconciliationId
+  ) {
+    return (
+      <OpeningReadingsEntry
+        tenantId={context.tenantId}
+        stationId={context.stationId}
+        shiftId={context.shiftId}
+        reconciliationId={activeReconciliationId}
+        version={record.version}
+        pumps={operation.availableReadings.map((reading) => ({
+          nozzleId: reading.nozzleId,
+          pumpNumber: reading.pumpNumber,
+          nozzleNumber: reading.nozzleNumber,
+          productId: reading.productId,
+          productName: reading.productName,
+          sellingPriceId: reading.sellingPriceId,
+          previousReading: reading.previousReading,
+        }))}
+      />
+    );
+  }
+
   return (
     <div className="daily-operations-workspace" aria-label="Daily station operations workspace">
+      <a
+        className="back-link"
+        href={`/operations/daily?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`}
+      >
+        ← Back to today
+      </a>
       <header className="entry-head">
         <div>
           <p className="eyebrow">
             {operation.station.name} · {formatBusinessDate(record.business_date)}
           </p>
-          <h2>{STEP_TITLES[step]}</h2>
+          <h2>{stepTitle(step, role === 'MANAGEMENT')}</h2>
         </div>
         <div className="workspace-status">
           <StatusBadge tone={dailyOperationsStatusTone(state)}>
@@ -1236,10 +1326,14 @@ export function DailyOperationsWorkspace({
             aria-labelledby="operations-shift-title"
           >
             <SectionHeading
-              eyebrow="Step 1 of 6"
+              eyebrow="Step 1 of 7"
               title="Shift details"
               headingId="operations-shift-title"
-              detail="Tick everyone who worked this shift."
+              detail={
+                role === 'MANAGEMENT'
+                  ? 'The people recorded on this shift.'
+                  : 'Tick everyone who worked this shift.'
+              }
             />
             <div className="context-grid">
               <div>
@@ -1282,12 +1376,38 @@ export function DailyOperationsWorkspace({
                       />
                       <span>
                         <strong>{attendant.name}</strong>
-                        <small>{attendant.email}</small>
                       </span>
                     </label>
                   ))}
                 </div>
               )}
+              {visitingAttendants.length > 0 ? (
+                <details className="attendant-visitors" open={visitorSelected}>
+                  <summary>Someone from another station covering today?</summary>
+                  <div className="choice-grid">
+                    {visitingAttendants.map((attendant) => (
+                      <label className="choice-card" key={attendant.id}>
+                        <input
+                          type="checkbox"
+                          checked={attendantIds.includes(attendant.id)}
+                          onChange={(event) => {
+                            setDirty(true);
+                            setAttendantIds((current) =>
+                              event.target.checked
+                                ? [...current, attendant.id]
+                                : current.filter((id) => id !== attendant.id),
+                            );
+                          }}
+                        />
+                        <span>
+                          <strong>{attendant.name}</strong>
+                          <span className="metric-meta"> Usually at {attendant.stationName}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </fieldset>
           </Card>
         ) : null}
@@ -1300,10 +1420,10 @@ export function DailyOperationsWorkspace({
             aria-labelledby="operations-meters-title"
           >
             <SectionHeading
-              eyebrow="Step 2 of 6"
+              eyebrow="Step 2 of 7"
               title="Pump readings"
               headingId="operations-meters-title"
-              detail="Enter the closing reading for every pump. The opening reading is filled in from the last shift."
+              detail="Enter the closing reading for every pump. The opening readings were recorded when the shift opened."
             />
             {readings.length === 0 ? (
               <EmptyState
@@ -1312,6 +1432,38 @@ export function DailyOperationsWorkspace({
               />
             ) : (
               <div className="meter-list">
+                {editable && record?.canCorrectOpening ? (
+                  correctingOpening ? (
+                    <div className="form-grid">
+                      <Field
+                        id="opening-correction-reason"
+                        label="Why is the opening being corrected?"
+                        hint="Kept in the audit trail with your name and the old reading."
+                        required
+                      >
+                        <input
+                          id="opening-correction-reason"
+                          value={correctionReason}
+                          onChange={(event) => setCorrectionReason(event.target.value)}
+                        />
+                      </Field>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setCorrectingOpening(false);
+                          setCorrectionReason('');
+                          setReadings(record.readings.map(readingFromRecord));
+                        }}
+                      >
+                        Cancel correction
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button variant="secondary" onClick={() => setCorrectingOpening(true)}>
+                      Correct an opening reading
+                    </Button>
+                  )
+                ) : null}
                 {[...readings]
                   .sort((a, b) => {
                     const key = (id: string) => {
@@ -1326,6 +1478,12 @@ export function DailyOperationsWorkspace({
                     const contextReading = operation.availableReadings.find(
                       (item) => item.nozzleId === reading.nozzleId,
                     );
+                    const liveLitres = liveLitresSold(
+                      reading.openingReading,
+                      reading.closingReading,
+                    );
+                    const belowOpening = liveLitres?.startsWith('-') ?? false;
+                    const litresShown = belowOpening ? null : (liveLitres ?? reading.litresSold);
                     return (
                       <article className="meter-card" key={reading.rowKey}>
                         <div className="meter-card-heading">
@@ -1344,7 +1502,9 @@ export function DailyOperationsWorkspace({
                               {formatMoney(reading.salesValue)}
                             </StatusBadge>
                           ) : (
-                            <StatusBadge tone="neutral">Enter closing</StatusBadge>
+                            <StatusBadge tone="neutral">
+                              {litresShown ? 'Value shown after saving' : 'Enter closing'}
+                            </StatusBadge>
                           )}
                         </div>
                         <div className="form-grid">
@@ -1357,13 +1517,27 @@ export function DailyOperationsWorkspace({
                               setReadings((current) =>
                                 current.map((item) =>
                                   item.rowKey === reading.rowKey
-                                    ? { ...item, openingReading: event.target.value }
+                                    ? {
+                                        ...item,
+                                        openingReading: event.target.value,
+                                        // A pump that sold nothing keeps closing level with its opening.
+                                        closingReading:
+                                          Number(item.closingReading) ===
+                                          Number(item.openingReading)
+                                            ? event.target.value
+                                            : item.closingReading,
+                                      }
                                     : item,
                                 ),
                               );
                             }}
                             unit="L"
-                            disabled={!editable}
+                            disabled={!correctingOpening}
+                            hint={
+                              correctingOpening
+                                ? 'Correcting the recorded opening'
+                                : 'Recorded when the shift opened'
+                            }
                           />
                           <NumericInput
                             id={`closing-${reading.rowKey}`}
@@ -1381,11 +1555,16 @@ export function DailyOperationsWorkspace({
                             }}
                             unit="L"
                             disabled={!editable}
+                            hint={
+                              Number(reading.closingReading) === Number(reading.openingReading)
+                                ? 'Same as opening: nothing sold'
+                                : undefined
+                            }
                           />
                           <div className="derived-value">
                             <span className="metric-label">Litres sold</span>
                             <strong className="numeric">
-                              {reading.litresSold ? formatLitres(reading.litresSold) : '—'}
+                              {litresShown ? formatLitres(litresShown) : '—'}
                             </strong>
                             <span className="metric-meta">
                               Price{' '}
@@ -1393,6 +1572,12 @@ export function DailyOperationsWorkspace({
                             </span>
                           </div>
                         </div>
+                        {belowOpening ? (
+                          <p className="field-error" role="alert">
+                            The closing reading is lower than the opening reading. Check both
+                            numbers.
+                          </p>
+                        ) : null}
                         {!reading.sellingPriceId ? (
                           <p className="field-error" role="alert">
                             No selling price is set for this fuel. Ask your manager before
@@ -1415,7 +1600,7 @@ export function DailyOperationsWorkspace({
             aria-labelledby="operations-evidence-title"
           >
             <SectionHeading
-              eyebrow="Step 3 of 6"
+              eyebrow="Step 3 of 7"
               title="How customers paid"
               headingId="operations-evidence-title"
               detail="Add a line for each way customers paid this shift. The total should match the expected sales."
@@ -1639,7 +1824,7 @@ export function DailyOperationsWorkspace({
             aria-labelledby="operations-expenses-title"
           >
             <SectionHeading
-              eyebrow="Step 4 of 6"
+              eyebrow="Step 4 of 7"
               title="Expenses"
               headingId="operations-expenses-title"
               detail="Add anything paid out during the shift. Skip this step if there were none."
@@ -1740,27 +1925,29 @@ export function DailyOperationsWorkspace({
                 ) : null}
               </div>
             ))}
-            <Button
-              variant="secondary"
-              disabled={!editable}
-              onClick={() => {
-                setDirty(true);
-                setExpenses((current) => [
-                  ...current,
-                  {
-                    rowKey: newRowKey(),
-                    category: '',
-                    description: '',
-                    amount: '',
-                    paymentMethod: 'CASH',
-                    personPaid: '',
-                    reference: '',
-                  },
-                ]);
-              }}
-            >
-              Add an expense
-            </Button>
+            {role === 'MANAGEMENT' ? null : (
+              <Button
+                variant="secondary"
+                disabled={!editable}
+                onClick={() => {
+                  setDirty(true);
+                  setExpenses((current) => [
+                    ...current,
+                    {
+                      rowKey: newRowKey(),
+                      category: '',
+                      description: '',
+                      amount: '',
+                      paymentMethod: 'CASH',
+                      personPaid: '',
+                      reference: '',
+                    },
+                  ]);
+                }}
+              >
+                Add an expense
+              </Button>
+            )}
             {expenses.length > 0 ? (
               <p className="entry-sum">
                 Entered so far
@@ -1780,7 +1967,7 @@ export function DailyOperationsWorkspace({
             aria-labelledby="operations-cash-title"
           >
             <SectionHeading
-              eyebrow="Step 5 of 6"
+              eyebrow="Step 5 of 7"
               title="Count the cash"
               headingId="operations-cash-title"
               detail="Count the cash you are holding and enter the total."
@@ -1789,7 +1976,7 @@ export function DailyOperationsWorkspace({
               <NumericInput
                 id="cash-counted"
                 label="Cash counted"
-                hint="The expected amount and any difference appear after you press Next."
+                hint="The figures beside it update as you type."
                 value={cashCounted}
                 onChange={(event) => {
                   setDirty(true);
@@ -1801,26 +1988,22 @@ export function DailyOperationsWorkspace({
               <dl className="operational-summary compact-summary">
                 <div>
                   <dt>Cash we expected</dt>
-                  <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.expectedPhysicalCash) : 'Not counted'}
-                  </dd>
+                  <dd className="numeric">{formatMoney(liveCash.expected)}</dd>
                 </div>
                 <div>
                   <dt>Paid out in cash</dt>
-                  <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.cashPaidExpenses) : '—'}
-                  </dd>
+                  <dd className="numeric">{formatMoney(liveCash.paidOut)}</dd>
                 </div>
                 <div>
                   <dt>Expected after payouts</dt>
-                  <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.netExpectedCash) : 'Not counted'}
-                  </dd>
+                  <dd className="numeric">{formatMoney(liveCash.net)}</dd>
                 </div>
                 <div>
-                  <dt>Difference</dt>
+                  <dt>Cash difference</dt>
                   <dd className="numeric">
-                    {record.cash ? formatMoney(record.cash.cashVariance) : 'Not counted'}
+                    {liveCash.difference === null
+                      ? 'Enter the cash counted'
+                      : formatMoney(liveCash.difference)}
                   </dd>
                 </div>
               </dl>
@@ -1840,11 +2023,20 @@ export function DailyOperationsWorkspace({
             aria-labelledby="operations-inventory-title"
           >
             <SectionHeading
-              eyebrow="Step 6 of 6"
-              title="Stock this shift"
+              eyebrow="Step 6 of 7"
+              title="Tank dips and deliveries"
               headingId="operations-inventory-title"
-              detail="Deliveries and tank dips recorded for this shift."
+              detail="Dip every tank. The last shift of the day cannot be submitted until each tank has a reading. A green result matches the books, yellow needs an explanation, red is urgent."
             />
+            <p className="muted-small">
+              Fuel delivered during this shift?{' '}
+              <Link
+                href={`/inventory/deliveries?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+              >
+                Record a delivery
+              </Link>
+              .
+            </p>
             <div className="context-grid">
               <div>
                 <span className="metric-label">Deliveries</span>
@@ -1917,7 +2109,7 @@ export function DailyOperationsWorkspace({
           </Card>
         ) : null}
 
-        {step === 5 ? (
+        {step === 6 ? (
           <Card
             as="section"
             className="card panel cash-panel"
@@ -2000,7 +2192,18 @@ export function DailyOperationsWorkspace({
                 <strong>Returned:</strong> Fix the figures and save before you submit again.
               </p>
             ) : null}
-            {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
+            {approvalWaitsForSomeoneElse ? (
+              <p className="state state-warning" role="status">
+                <strong>Waiting for someone else:</strong> You submitted these figures, so another
+                person who can approve must approve them.
+              </p>
+            ) : null}
+            {inReview && !mayApprove && !mayReturn && !approvalWaitsForSomeoneElse ? (
+              <p className="state" role="status">
+                These figures are waiting for the owner or an administrator to review.
+              </p>
+            ) : null}
+            {inReview ? (
               requiresApproverNote ? (
                 <Field
                   id="management-approval-note"
@@ -2017,7 +2220,7 @@ export function DailyOperationsWorkspace({
                 </Field>
               ) : null
             ) : null}
-            {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
+            {mayReturn ? (
               <Field
                 id="management-return-reason"
                 label="Return reason"
@@ -2035,7 +2238,7 @@ export function DailyOperationsWorkspace({
             <div className="form-actions">
               <Button
                 variant="secondary"
-                onClick={() => void saveDraft()}
+                onClick={() => void saveDraft(true)}
                 disabled={!editable || !dirty}
                 loading={busy}
               >
@@ -2046,113 +2249,41 @@ export function DailyOperationsWorkspace({
                   Submit for review
                 </Button>
               ) : null}
-              {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
+              {mayReturn || mayApprove ? (
                 <>
-                  <Button
-                    variant="danger"
-                    onClick={() => {
-                      const reason = returnReason.trim();
-                      if (!reason) {
-                        setError('Enter a return reason before sending this reconciliation back.');
-                        return;
+                  {mayReturn ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        const reason = returnReason.trim();
+                        if (!reason) {
+                          setError(
+                            'Enter a return reason before sending this reconciliation back.',
+                          );
+                          return;
+                        }
+                        void transition('ReturnProductionReconciliation', { reason });
+                      }}
+                      disabled={busy || !returnReason.trim()}
+                    >
+                      Return for correction
+                    </Button>
+                  ) : null}
+                  {mayApprove ? (
+                    <Button
+                      variant="primary"
+                      onClick={() =>
+                        void transition('ApproveProductionReconciliation', {
+                          approvalNote: approvalNote.trim() || undefined,
+                        })
                       }
-                      void transition('ReturnProductionReconciliation', { reason });
-                    }}
-                    disabled={busy || !returnReason.trim()}
-                  >
-                    Return for correction
-                  </Button>
-                  <Button
-                    variant="primary"
-                    onClick={() =>
-                      void transition('ApproveProductionReconciliation', {
-                        approvalNote: approvalNote.trim() || undefined,
-                      })
-                    }
-                    disabled={busy || (requiresApproverNote && !approvalNote.trim())}
-                  >
-                    Approve reconciliation
-                  </Button>
+                      disabled={busy || (requiresApproverNote && !approvalNote.trim())}
+                    >
+                      Approve reconciliation
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
-            </div>
-          </Card>
-        ) : null}
-
-        {step === 5 ? (
-          <Card
-            as="section"
-            className="card panel cash-panel"
-            aria-labelledby="operations-downstream-title"
-          >
-            <SectionHeading
-              eyebrow="After you submit"
-              title="Cash and card follow-up"
-              headingId="operations-downstream-title"
-            />
-            <dl className="summary-list">
-              <div>
-                <dt>Cash collected but not banked</dt>
-                <dd>
-                  {cashSummary ? formatMoney(cashSummary.collectedButUnbanked) : 'Unavailable'}
-                </dd>
-              </div>
-              <div>
-                <dt>Waiting for bank confirmation</dt>
-                <dd>
-                  {cashSummary ? formatMoney(cashSummary.pendingBankConfirmation) : 'Unavailable'}
-                </dd>
-              </div>
-              <div>
-                <dt>Provider settlements</dt>
-                <dd>{settlementSummary.length || 'Unavailable'}</dd>
-              </div>
-            </dl>
-            <div className="inline-links">
-              <a className="text-link" href={`/stations/${context.stationId}/cash`}>
-                Open cash
-              </a>
-              <a className="text-link" href={`/stations/${context.stationId}/settlements`}>
-                Open settlements
-              </a>
-              {role === 'MANAGEMENT' ? (
-                <a
-                  className="text-link"
-                  href={`/reports?tenantId=${encodeURIComponent(context.tenantId)}`}
-                >
-                  Open reports
-                </a>
-              ) : null}
-            </div>
-          </Card>
-        ) : null}
-
-        {step === STEPS.length - 1 && activeReconciliationId ? (
-          <Card as="section" className="panel" aria-labelledby="operations-links-title">
-            <SectionHeading
-              eyebrow="Management"
-              title="Continue the control trail"
-              headingId="operations-links-title"
-            />
-            <div className="inline-links">
-              <a
-                className="button button-secondary"
-                href={`/reports?tenantId=${encodeURIComponent(context.tenantId)}`}
-              >
-                Open management reporting
-              </a>
-              <a
-                className="text-link"
-                href={`/operations/reconciliations/${activeReconciliationId}/review?${contextQuery.toString()}`}
-              >
-                Open review route
-              </a>
-              <a
-                className="text-link"
-                href={`/operations/reconciliations/${activeReconciliationId}/report?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
-              >
-                Daily report
-              </a>
             </div>
           </Card>
         ) : null}

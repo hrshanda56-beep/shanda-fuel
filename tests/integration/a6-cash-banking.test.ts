@@ -288,6 +288,36 @@ describe('A6 cash collection and banking persistence', () => {
         'slip.pdf', 'application/pdf', 1000, '${'a'.repeat(64)}', '${ids.managerMembership}')
     `);
 
+    // B5: a different amount needs a reason, and the bank date cannot be in the future.
+    const differentNoReason = await postCashCommand(
+      {
+        commandType: 'ConfirmBankDeposit',
+        context: stationContext,
+        depositId: depositBody.depositId,
+        expectedVersion: 0,
+        confirmedAmount: '690.00',
+        bankReference: 'BANK-A6-001',
+      },
+      'a6-confirm-different-no-reason',
+      'a6-manager-session-token',
+    );
+    expect(differentNoReason.status).toBe(400);
+    expect(JSON.stringify(await differentNoReason.json())).toContain('Write why');
+    const futureDate = await postCashCommand(
+      {
+        commandType: 'ConfirmBankDeposit',
+        context: stationContext,
+        depositId: depositBody.depositId,
+        expectedVersion: 0,
+        confirmedAmount: '700.00',
+        bankReference: 'BANK-A6-001',
+        bankDate: '2099-01-01',
+      },
+      'a6-confirm-future-date',
+      'a6-manager-session-token',
+    );
+    expect(futureDate.status).toBe(400);
+
     const confirmed = await postCashCommand(
       {
         commandType: 'ConfirmBankDeposit',
@@ -296,6 +326,7 @@ describe('A6 cash collection and banking persistence', () => {
         expectedVersion: 0,
         confirmedAmount: '700.00',
         bankReference: 'BANK-A6-001',
+        bankDate: '2026-10-28',
       },
       'a6-confirm-1',
       'a6-manager-session-token',
@@ -310,6 +341,7 @@ describe('A6 cash collection and banking persistence', () => {
         expectedVersion: 0,
         confirmedAmount: '700.00',
         bankReference: 'BANK-A6-001',
+        bankDate: '2026-10-28',
       },
       'a6-confirm-1',
       'a6-manager-session-token',

@@ -1,5 +1,7 @@
 import Decimal from 'decimal.js';
 
+import { allocateFixedCosts } from '../../reporting/fixed-cost-allocation';
+
 /** Plain-language wording and pure helpers for the Expenses page. No React, no network. */
 
 export type ExpenseRow = {
@@ -218,6 +220,35 @@ export function categoryShares(
 
 export function sumAmounts(values: readonly string[]): string {
   return values.reduce((sum, value) => sum.add(new Decimal(value)), new Decimal(0)).toFixed(4);
+}
+
+/**
+ * What a regular cost has counted so far this month, by the one allocation rule every screen
+ * shares (monthly amount ÷ days in the month, per active day, from its start date). Nobody has to
+ * add the month: a cost counts from the day it starts. A stopped cost counts nothing here.
+ */
+export function regularCostSoFar(
+  template: { amount: string; startDate: string; endDate: string | null; status: string },
+  month: { from: string; to: string },
+  today: string,
+): { amount: string; days: number } {
+  if (template.status !== 'ACTIVE') return { amount: '0.0000', days: 0 };
+  const through = today < month.to ? today : month.to;
+  const days = allocateFixedCosts(
+    [
+      {
+        id: 'regular-cost',
+        stationId: 'station',
+        amount: template.amount,
+        startDate: template.startDate,
+        endDate: template.endDate,
+      },
+    ],
+    new Set(),
+    month.from,
+    through,
+  );
+  return { amount: sumAmounts(days.map((day) => day.amount)), days: days.length };
 }
 
 export function isStepUpMessage(message: string): boolean {

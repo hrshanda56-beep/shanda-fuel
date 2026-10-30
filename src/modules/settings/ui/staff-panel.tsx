@@ -34,10 +34,13 @@ const ROLE_LABELS: Record<Role, string> = {
   FINANCE: 'Finance',
   SUPERVISOR: 'Supervisor',
   ATTENDANT: 'Attendant',
+  AUDITOR: 'Auditor (read only)',
+  AREA_MANAGER: 'Area manager',
+  CASH_COLLECTOR: 'Cash collector',
 };
 
 function defaultScope(role: Role) {
-  return role === 'OWNER' || role === 'ADMINISTRATOR'
+  return role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'AUDITOR'
     ? 'TENANT'
     : role === 'FINANCE'
       ? 'LEGAL_ENTITY'

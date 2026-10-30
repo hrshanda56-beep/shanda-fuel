@@ -439,17 +439,20 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
         }
       : {
           label: 'Cash banked',
-          value: cash.banked,
+          value: cash.custody?.banked ?? cash.banked,
           note:
             bank && bank.accountsTotal > 0
               ? `Type in the bank statement balance in Settings (${bank.accountsWithBalance} of ${bank.accountsTotal} accounts so far) to use it instead of recorded deposits.`
               : undefined,
         };
-  const atStation = cash.atStation ?? cash.collectedButNotBanked;
-  const heldByManagement = cash.heldByManagement ?? '0';
-  const inTransit = cash.inTransit ?? '0';
+  // Each collected amount is in exactly one of these places (B4), as at the end date.
+  const atStation = cash.custody?.atStation ?? cash.atStation ?? cash.collectedButNotBanked;
+  const withCollector = cash.custody?.withCollector ?? '0';
+  const heldByManagement = cash.custody?.heldByManagement ?? cash.heldByManagement ?? '0';
+  const inTransit = cash.custody?.awaitingBank ?? cash.inTransit ?? '0';
   const held: StatementLine[] = [
     { label: 'Cash at stations, not yet banked', value: atStation },
+    { label: 'Cash with a collector', value: withCollector },
     { label: 'Cash held by management', value: heldByManagement },
     { label: 'Cash deposited, awaiting confirmation', value: inTransit },
     bankLine,

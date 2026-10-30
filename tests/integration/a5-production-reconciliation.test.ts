@@ -255,6 +255,9 @@ async function nextMeterReading(): Promise<string> {
 async function createPopulatedProductionReconciliation(
   reconciliationId: string,
   saleLitres = '500',
+  // False reproduces the real flow: only the shift workspace's readings are saved, and the meter
+  // records are sealed later, when the shift is closed.
+  sealSegments = true,
 ) {
   const reconciliationShiftId = randomUUID();
   const shiftClock = await client.unsafe<{ now: Date }[]>(`select clock_timestamp() as now`);
@@ -307,12 +310,14 @@ async function createPopulatedProductionReconciliation(
     .add(new ExactDecimal(saleLitres))
     .add(new ExactDecimal('1'))
     .toString();
-  const sealed = await createSealedSegments(
-    reconciliationShiftId,
-    [openingReading, originalClosingReading, correctedClosingReading],
-    `a5-return-${reconciliationId}`,
-    startedShift[0]!.version,
-  );
+  const sealed = sealSegments
+    ? await createSealedSegments(
+        reconciliationShiftId,
+        [openingReading, originalClosingReading, correctedClosingReading],
+        `a5-return-${reconciliationId}`,
+        startedShift[0]!.version,
+      )
+    : { openingReading, closingReading: correctedClosingReading, segmentIds: [] as string[] };
   await expectOk(
     await postCommand(
       {
@@ -2142,6 +2147,21 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       await readReconciliation(reconciliationId, 'a5-approver-session-token')
     ).json()) as { approvalBlocked?: boolean };
     expect(asOther.approvalBlocked).toBe(false);
+    // The page also learns what each person may do, so no refused button is ever shown.
+    const flags = async (token: string) =>
+      (await (await readReconciliation(reconciliationId, token)).json()) as {
+        canApprove?: boolean;
+        canReturn?: boolean;
+      };
+    expect(await flags('a5-approver-session-token')).toMatchObject({
+      canApprove: true,
+      canReturn: true,
+    });
+    // A supervisor can approve (decision of 2026-10-27) but can never return for correction.
+    expect(await flags('a5-supervisor-session-token')).toMatchObject({
+      canApprove: true,
+      canReturn: false,
+    });
   });
 
   it('requires the approving manager to supply the note for a red stock variance', async () => {
@@ -2853,6 +2873,260 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         and details->'after'->>'reconciliationId'='${reconciliationId}'
     `);
     expect(auditRows[0]?.count).toBe('2');
+  });
+
+  describe('closing a shift from the figures entered in the workspace', () => {
+    async function shiftRow(shiftId: string) {
+      const rows = await client.unsafe<{ state: string; version: number }[]>(`
+        select state, version from app.shifts
+        where tenant_id='${ids.tenant}' and station_id='${ids.station}' and id='${shiftId}'
+      `);
+      return rows[0]!;
+    }
+
+    async function meterRecordCounts(shiftId: string) {
+      const rows = await client.unsafe<{ segments: string; boundaries: string }[]>(`
+        select
+          (select count(*) from app.meter_segments where tenant_id='${ids.tenant}' and shift_id='${shiftId}')::text as segments,
+          (select count(*) from app.meter_boundaries where tenant_id='${ids.tenant}' and shift_id='${shiftId}')::text as boundaries
+      `);
+      return rows[0]!;
+    }
+
+    async function closeMeters(shiftId: string, key: string) {
+      return postCommand(
+        {
+          commandType: 'CloseMeters',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          businessDayId: ids.day,
+          shiftId,
+          expectedVersion: (await shiftRow(shiftId)).version,
+        },
+        key,
+      );
+    }
+
+    async function submitFigures(common: { reconciliationId: string }, key: string) {
+      await expectOk(
+        await postCommand(
+          { commandType: 'SubmitProductionReconciliation', ...common, expectedVersion: 6 },
+          key,
+        ),
+      );
+    }
+
+    it('seals the saved readings when the meters are closed, so the shift can finish and be approved', async () => {
+      const reconciliationId = randomUUID();
+      const { common, shiftId, openingReading } = await createPopulatedProductionReconciliation(
+        reconciliationId,
+        '10',
+        false,
+      );
+      await submitFigures(common, `a5-close-submit-${reconciliationId}`);
+      expect(await meterRecordCounts(shiftId)).toEqual({ segments: '0', boundaries: '0' });
+
+      // Nothing has sealed the meters yet, so approval has nothing to stand on.
+      const tooEarly = await postCommand(
+        { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 7 },
+        `a5-close-early-approve-${reconciliationId}`,
+        'a5-manager-session-token',
+      );
+      expect(tooEarly.status).toBe(409);
+      expect(JSON.stringify(await tooEarly.json())).toContain('sealed meter-segment evidence');
+
+      const before = await shiftRow(shiftId);
+      await expectOk(await closeMeters(shiftId, `a5-close-meters-${reconciliationId}`));
+      const closed = await shiftRow(shiftId);
+      expect(closed).toEqual({ state: 'METER_CLOSED', version: before.version + 1 });
+
+      const sealed = await client.unsafe<
+        {
+          opening_reading: string;
+          closing_reading: string;
+          litres: string;
+          unit_price: string;
+          state: string;
+          attendant_id: string;
+          opening_reason: string;
+          closing_reason: string;
+        }[]
+      >(`
+        select s.opening_reading, s.closing_reading, s.litres, s.unit_price, s.state, s.attendant_id,
+          ob.reason as opening_reason, cb.reason as closing_reason
+        from app.meter_segments s
+        join app.meter_boundaries ob on ob.tenant_id=s.tenant_id and ob.id=s.opening_boundary_id
+        join app.meter_boundaries cb on cb.tenant_id=s.tenant_id and cb.id=s.closing_boundary_id
+        where s.tenant_id='${ids.tenant}' and s.shift_id='${shiftId}'
+      `);
+      expect(sealed).toHaveLength(1);
+      expect(sealed[0]).toMatchObject({
+        state: 'SEALED',
+        opening_reason: 'SHIFT_OPEN',
+        closing_reason: 'SHIFT_CLOSE',
+        attendant_id: ids.supervisorMembership,
+      });
+      expectDecimalEqual(sealed[0]!.opening_reading, openingReading);
+      expectDecimalEqual(
+        sealed[0]!.closing_reading,
+        new ExactDecimal(openingReading).add(new ExactDecimal('10')).toString(),
+      );
+      expectDecimalEqual(sealed[0]!.litres, '10');
+      expectDecimalEqual(sealed[0]!.unit_price, '1.5');
+
+      // The second step is expected at the next version: this is what the Close Shift button sends.
+      await expectOk(
+        await postCommand(
+          {
+            commandType: 'CompleteShift',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            businessDayId: ids.day,
+            shiftId,
+            expectedVersion: closed.version,
+          },
+          `a5-close-complete-${reconciliationId}`,
+        ),
+      );
+      expect((await shiftRow(shiftId)).state).toBe('COMPLETED');
+
+      const approved = await expectOk(
+        await postCommand(
+          { commandType: 'ApproveProductionReconciliation', ...common, expectedVersion: 7 },
+          `a5-close-approve-${reconciliationId}`,
+          'a5-manager-session-token',
+        ),
+      );
+      expect(approved.state).toBe('APPROVED');
+      expect(approved.saleMovementIds).toHaveLength(1);
+
+      // The next shift on the same pump opens where this one closed and seals just as cleanly.
+      const nextReconciliationId = randomUUID();
+      const next = await createPopulatedProductionReconciliation(nextReconciliationId, '5', false);
+      expectDecimalEqual(
+        next.openingReading,
+        new ExactDecimal(openingReading).add(new ExactDecimal('10')).toString(),
+      );
+      await submitFigures(next.common, `a5-close-next-submit-${nextReconciliationId}`);
+      await expectOk(await closeMeters(next.shiftId, `a5-close-next-${nextReconciliationId}`));
+      expect(await meterRecordCounts(next.shiftId)).toEqual({ segments: '1', boundaries: '2' });
+    });
+
+    it('refuses, with a plain reason, to change an opening reading once it has been recorded', async () => {
+      const reconciliationId = randomUUID();
+      const { common, shiftId, openingReading } = await createPopulatedProductionReconciliation(
+        reconciliationId,
+        '10',
+        false,
+      );
+      const wrongOpening = new ExactDecimal(openingReading).add(new ExactDecimal('3')).toString();
+      const response = await postCommand(
+        {
+          commandType: 'SaveMeterReadings',
+          ...common,
+          expectedVersion: 6,
+          readings: [
+            {
+              nozzleId: ids.nozzle,
+              productId: ids.product,
+              shiftId,
+              openingReading: wrongOpening,
+              closingReading: new ExactDecimal(wrongOpening).add(new ExactDecimal('10')).toString(),
+              sellingPriceId: ids.price,
+            },
+          ],
+        },
+        `a5-close-wrong-readings-${reconciliationId}`,
+      );
+      expect(response.status).toBe(409);
+      expect(JSON.stringify(await response.json())).toContain(
+        'opening readings were recorded when the shift opened',
+      );
+      // Nothing changed: the recorded opening reading is still the one the shift opened with.
+      const rows = await client.unsafe<{ opening_reading: string }[]>(
+        `select opening_reading from app.reconciliation_meter_readings where reconciliation_id = '${reconciliationId}'`,
+      );
+      expectDecimalEqual(rows[0]!.opening_reading, openingReading);
+      expect((await shiftRow(shiftId)).state).toBe('OPEN');
+    });
+
+    it('lets an administrator correct a recorded opening reading, but only with a reason', async () => {
+      const reconciliationId = randomUUID();
+      const { common, shiftId, openingReading } = await createPopulatedProductionReconciliation(
+        reconciliationId,
+        '10',
+        false,
+      );
+      const corrected = new ExactDecimal(openingReading).add(new ExactDecimal('3')).toString();
+      const body = (reason?: string) => ({
+        commandType: 'SaveMeterReadings',
+        ...common,
+        expectedVersion: 6,
+        ...(reason ? { openingCorrectionReason: reason } : {}),
+        readings: [
+          {
+            nozzleId: ids.nozzle,
+            productId: ids.product,
+            shiftId,
+            openingReading: corrected,
+            closingReading: new ExactDecimal(corrected).add(new ExactDecimal('10')).toString(),
+            sellingPriceId: ids.price,
+          },
+        ],
+      });
+      const noReason = await postCommand(
+        body(),
+        `a5-open-fix-noreason-${reconciliationId}`,
+        'a5-manager-session-token',
+      );
+      expect(noReason.status).toBe(400);
+      expect(JSON.stringify(await noReason.json())).toContain('Say why the opening reading');
+      const done = await postCommand(
+        body('Attendant read the wrong meter'),
+        `a5-open-fix-ok-${reconciliationId}`,
+        'a5-manager-session-token',
+      );
+      await expectOk(done);
+      const rows = await client.unsafe<{ opening_reading: string }[]>(
+        `select opening_reading from app.reconciliation_meter_readings where reconciliation_id = '${reconciliationId}'`,
+      );
+      expectDecimalEqual(rows[0]!.opening_reading, corrected);
+    });
+
+    it('leaves a shift that already has sealed meter records exactly as it was', async () => {
+      const reconciliationId = randomUUID();
+      const { common, shiftId, segmentIds } =
+        await createPopulatedProductionReconciliation(reconciliationId);
+      await submitFigures(common, `a5-close-sealed-submit-${reconciliationId}`);
+      const before = await meterRecordCounts(shiftId);
+      expect(before.segments).toBe(String(segmentIds.length));
+      await expectOk(await closeMeters(shiftId, `a5-close-sealed-${reconciliationId}`));
+      expect(await meterRecordCounts(shiftId)).toEqual(before);
+    });
+
+    it('does nothing for a shift with no submitted figures, so the existing rule still stops it', async () => {
+      const shiftId = randomUUID();
+      await expectOk(
+        await postCommand(
+          {
+            commandType: 'StartShift',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            businessDayId: ids.day,
+            shiftId,
+            expectedVersion: 0,
+            plannedStartAt: '2026-09-22T06:00:00.000Z',
+            plannedEndAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+          },
+          `a5-close-none-start-${shiftId}`,
+        ),
+      );
+      const response = await closeMeters(shiftId, `a5-close-none-${shiftId}`);
+      expect(response.status).toBe(409);
+      expect(JSON.stringify(await response.json())).toContain('sealed meter segments');
+      expect((await shiftRow(shiftId)).state).toBe('OPEN');
+      expect(await meterRecordCounts(shiftId)).toEqual({ segments: '0', boundaries: '0' });
+    });
   });
 
   it('keeps identical cost retries idempotent after sales and rejects new late receipt cost atomically', async () => {

@@ -42,8 +42,11 @@ export type DailyProfitInput = Readonly<{
   sales: readonly DailyProfitSale[];
   costs: readonly DailyProfitCost[];
   expenses: readonly DailyProfitExpense[];
-  /** Fuel given to staff and management (DEC-044), known for the period only, not by day. */
-  fuelBenefit?: string;
+  /**
+   * Fuel given to staff and management (DEC-044), at selling price, on the day it was issued.
+   * It is a cost on that day, so every day row and the period total follow one rule.
+   */
+  fuelBenefitByDate?: readonly Readonly<{ businessDate: string; amount: string }>[];
 }>;
 
 /** One fuel on one day, or one fuel over the whole period. */
@@ -68,7 +71,12 @@ export type CombinedProfitLine = Readonly<{
   grossProfitPerLitre: string | null;
   expenses: string;
   fixedCosts: string;
-  /** Gross profit minus expenses minus fixed costs; null when gross profit is unknown. */
+  /** Fuel given to staff and management, counted as a cost (DEC-044). */
+  fuelBenefit: string;
+  /**
+   * Gross profit minus expenses, fixed costs and staff fuel; null when gross profit is unknown.
+   * The one operating-profit figure: the dashboard and every report use this rule.
+   */
   operatingProfit: string | null;
 }>;
 
@@ -82,9 +90,9 @@ export type DailyProfitSummary = Readonly<{
   days: readonly DailyProfitDay[];
   fuels: readonly FuelProfitLine[];
   combined: CombinedProfitLine;
-  /** Fuel given to staff and management, taken off the period result only. */
+  /** Fuel given to staff and management over the period: the sum of the days. */
   fuelBenefit: string;
-  /** Period operating profit after the fuel benefit; null when gross profit is unknown. */
+  /** Same as `combined.operatingProfit`: after staff fuel, null when gross profit is unknown. */
   operatingProfitAfterBenefit: string | null;
 }>;
 
@@ -118,6 +126,7 @@ function fuelLine(
 function combine(
   fuels: readonly FuelProfitLine[],
   expenses: readonly DailyProfitExpense[],
+  fuelBenefit: string,
 ): CombinedProfitLine {
   const litres = formatLitres(sumExact(fuels.map((fuel) => fuel.litres)));
   const sales = formatMoney(sumExact(fuels.map((fuel) => fuel.sales)));
@@ -138,8 +147,13 @@ function combine(
     grossProfitPerLitre: gross === null ? null : averageRealizedPrice(litres, gross),
     expenses: operating,
     fixedCosts: fixed,
+    fuelBenefit,
     operatingProfit:
-      gross === null ? null : formatMoney(subtractExact(subtractExact(gross, operating), fixed)),
+      gross === null
+        ? null
+        : formatMoney(
+            subtractExact(subtractExact(subtractExact(gross, operating), fixed), fuelBenefit),
+          ),
   };
 }
 
@@ -180,11 +194,17 @@ function groupFuels(
 /** Daily and period operating profit. Days are the dates that have a sale, a cost or an expense. */
 export function buildDailyProfit(input: DailyProfitInput): DailyProfitSummary {
   const expenses = input.expenses.filter((e) => e.classification !== 'DIRECT_INVENTORY_COST');
+  const benefits = input.fuelBenefitByDate ?? [];
+  const benefitOn = (date: string) =>
+    formatMoney(
+      sumExact(benefits.filter((row) => row.businessDate === date).map((row) => row.amount)),
+    );
   const dates = [
     ...new Set([
       ...input.sales.map((s) => s.businessDate),
       ...input.costs.map((c) => c.businessDate),
       ...expenses.map((e) => e.businessDate),
+      ...benefits.map((row) => row.businessDate),
     ]),
   ].sort();
   const days = dates.map((date) => {
@@ -198,21 +218,20 @@ export function buildDailyProfit(input: DailyProfitInput): DailyProfitSummary {
       combined: combine(
         fuels,
         expenses.filter((e) => e.businessDate === date),
+        benefitOn(date),
       ),
     };
   });
   const fuels = groupFuels(input.sales, input.costs);
-  const combined = combine(fuels, expenses);
-  const fuelBenefit = formatMoney(input.fuelBenefit ?? '0');
+  // The period is the sum of its days: staff fuel is never applied to the total on its own.
+  const fuelBenefit = formatMoney(sumExact(days.map((day) => day.combined.fuelBenefit)));
+  const combined = combine(fuels, expenses, fuelBenefit);
   return {
     days,
     fuels,
     combined,
     fuelBenefit,
-    operatingProfitAfterBenefit:
-      combined.operatingProfit === null
-        ? null
-        : formatMoney(subtractExact(combined.operatingProfit, fuelBenefit)),
+    operatingProfitAfterBenefit: combined.operatingProfit,
   };
 }
 

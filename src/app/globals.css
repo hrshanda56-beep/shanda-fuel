@@ -335,6 +335,23 @@
   gap: var(--space-5);
 }
 
+.operations-layout-wide {
+  grid-column: 1 / -1;
+}
+
+/* Shifts and Day Controls share one row: both cards stretch to the taller one. */
+@media (min-width: 64rem) {
+  .operations-control-room .operations-layout {
+    align-items: stretch;
+  }
+
+  .operations-control-room .operations-layout > .operations-layout-main,
+  .operations-control-room .operations-layout > .operations-layout-side {
+    grid-auto-rows: 1fr;
+    align-content: stretch;
+  }
+}
+
 .operations-attention {
   display: grid;
   gap: var(--space-2);
@@ -2323,7 +2340,7 @@ h3,
 /* Supplier balances: money columns of equal width, numbers right-aligned. */
 .supplier-table .list-head,
 .supplier-table .list-row {
-  grid-template-columns: minmax(12rem, 2fr) minmax(8rem, 1.1fr) repeat(3, minmax(6rem, 1fr)) 2.5rem;
+  grid-template-columns: minmax(12rem, 2fr) minmax(8rem, 1.1fr) repeat(5, minmax(6rem, 1fr)) 2.5rem;
 }
 
 .supplier-table .list-row::after {
@@ -2798,29 +2815,29 @@ h3,
 .settlement-list .list-head,
 .settlement-row {
   grid-template-columns:
-    minmax(11rem, 2fr) minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(8rem, 1.3fr)
+    minmax(11rem, 2fr) minmax(6rem, 1fr) repeat(3, minmax(5.5rem, 0.9fr)) minmax(8rem, 1.3fr)
     minmax(6.5rem, 1fr) minmax(7rem, 1fr) 2rem;
-  column-gap: var(--space-6);
+  column-gap: var(--space-4);
 }
 
-/* Breathing room between the money column and the progress bar beside it. */
+/* Breathing room between the money columns and the progress bar beside them. */
 .settlement-row .list-amount,
-.settlement-list .list-head span:nth-child(3) {
-  padding-right: var(--space-4);
+.settlement-list .list-head span:nth-child(n + 3):nth-child(-n + 5) {
+  padding-right: var(--space-2);
 }
 
-.settlement-list .list-head span:nth-child(4),
+.settlement-list .list-head span:nth-child(6),
 .settlement-row .list-status {
   padding-left: var(--space-2);
 }
 
-.settlement-list .list-head span:nth-child(6),
+.settlement-list .list-head span:nth-child(8),
 .settlement-row [data-label='Action'] {
   justify-items: center;
   text-align: center;
 }
 
-.settlement-list .list-head span:nth-child(3) {
+.settlement-list .list-head span:nth-child(n + 3):nth-child(-n + 5) {
   text-align: right;
 }
 
@@ -2934,6 +2951,29 @@ h3,
 
 /* Daily Operations and Reconciliations: one calm header card, four position
    tiles, an attention banner, then the work. Same language as Cash and Banking. */
+.ops-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 64rem) {
+  .ops-top:has(.next-step) {
+    grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr);
+    align-items: stretch;
+  }
+
+  .ops-top > .ops-hero,
+  .ops-top > .next-step {
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .ops-top > .next-step {
+    align-content: center;
+  }
+}
+
 .ops-hero {
   display: flex;
   flex-wrap: wrap;
@@ -5607,4 +5647,265 @@ h3,
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
+}
+
+/* Tank page: headline card, three figures, tabs and timelines. */
+.tank-hero {
+  --tank-hero-tone: var(--accent);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--tank-hero-tone) 7%, var(--bg-surface)),
+    var(--bg-surface) 60%
+  );
+  box-shadow: var(--shadow-sm);
+}
+
+.tank-hero[data-tone='warning'] {
+  --tank-hero-tone: var(--tone-warning-fg);
+}
+
+.tank-hero[data-tone='critical'] {
+  --tank-hero-tone: var(--tone-critical-fg);
+}
+
+.tank-hero-main {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.tank-hero-side {
+  display: grid;
+  align-content: space-between;
+  justify-items: end;
+  gap: var(--space-3);
+}
+
+.tank-hero-stats {
+  display: flex;
+  gap: var(--space-5);
+  margin: 0;
+}
+
+.tank-hero-stats dt {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.tank-hero-stats dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+
+.tank-hero-diff dd {
+  color: var(--tank-hero-tone);
+}
+
+.tank-hero-label,
+.tank-hero-note {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.tank-hero-figure {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+}
+
+.tank-hero-figure strong {
+  color: var(--text-primary);
+  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.tank-bar {
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+}
+
+.tank-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tank-hero-tone);
+  transition: width var(--duration-slow) var(--ease-out);
+}
+
+.tank-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  overflow-x: auto;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.tank-tabs button {
+  min-height: 2.5rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.tank-tabs button[aria-selected='true'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.tank-timeline {
+  display: grid;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tank-timeline > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.tank-timeline > li:first-child {
+  border-top: 0;
+}
+
+.tank-timeline > li > div:first-child {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.tank-timeline-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tank-movement-side {
+  display: grid;
+  justify-items: end;
+}
+
+.tank-movement-side strong[data-direction='in'] {
+  color: var(--tone-positive-text);
+}
+
+.tank-movement-side strong[data-direction='out'] {
+  color: var(--tone-critical-text);
+}
+
+/* An empty slot in the tank row: quiet, and a way in to adding a tank. */
+.tank-card-ghost {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  gap: var(--space-1);
+  min-height: 12rem;
+  padding: var(--space-4);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
+  color: var(--text-secondary);
+  text-align: center;
+  text-decoration: none;
+  transition: var(--transition-colors);
+}
+
+.tank-card-ghost strong {
+  color: var(--text-primary);
+}
+
+.tank-card-ghost:hover,
+.tank-card-ghost:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+@media (max-width: 40rem) {
+  .tank-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .tank-hero-side {
+    justify-items: stretch;
+  }
+
+  .tank-tabs {
+    width: 100%;
+  }
+}
+
+.tank-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+
+@media (max-width: 60rem) {
+  .tank-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dashboard period control: the buttons reuse .today-periods; this lays out the custom dates. */
+.today-period-control {
+  display: grid;
+  gap: var(--space-3);
+  margin-block: var(--space-2) var(--space-3);
+}
+
+.today-period-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.today-period-custom label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.today-period-custom input {
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.today-period-custom p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--tone-critical-text);
 }

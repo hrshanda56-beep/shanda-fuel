@@ -225,10 +225,10 @@ describe('operations alerts in the action center', () => {
     expect(result.items.find((item) => item.id === 'suppliers-due-today')).toMatchObject({
       area: 'Payables',
       tone: 'attention',
-      title: '$250.0000 falls due to suppliers today',
+      title: '$250.00 falls due to suppliers today',
     });
     expect(result.items.find((item) => item.id === 'suppliers-due-soon')?.title).toBe(
-      '$900.0000 falls due to suppliers in the next 7 days',
+      '$900.00 falls due to suppliers in the next 7 days',
     );
   });
 

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Notice } from '@/design-system/feedback';
+import { useToast } from '@/design-system/feedback-provider';
 import { Checkbox } from '@/design-system/forms';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
 import { Button, Card, EmptyState, StatusBadge } from '@/design-system/primitives';
@@ -20,6 +21,7 @@ export function DeliveriesList({
   contextQuery: string;
   initialData: DeliveryList;
 }) {
+  const toast = useToast();
   const [required, setRequired] = useState(initialData.waterTestRequired);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -43,6 +45,11 @@ export function DeliveriesList({
         throw new Error(body.message || 'Only an owner can change this.');
       }
       setRequired(next);
+      toast.success(
+        next
+          ? 'Saved. A water test is now required.'
+          : 'Saved. A water test is no longer required.',
+      );
     } catch (error) {
       setProblem(error instanceof Error ? error.message : 'That could not be saved.');
     } finally {

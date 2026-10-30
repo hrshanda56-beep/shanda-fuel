@@ -41,6 +41,7 @@ import {
   monthTitle,
   parseAmount,
   periodRange,
+  regularCostSoFar,
   statusView,
   sumAmounts,
   todayInBusinessTime,
@@ -821,15 +822,14 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           </div>
           {(reference.templates ?? []).length === 0 ? (
             <p className={styles.muted}>
-              Costs that repeat each month, like rent, are listed here once added.
+              Costs that repeat each month, like rent, are listed here once added. They count
+              automatically from the day they start, a share each day, and are kept apart from what
+              was spent.
             </p>
           ) : (
             <ul className={styles.categories} aria-label="Regular costs">
               {(reference.templates ?? []).map((template) => {
-                const thisMonth = (reference.periods ?? []).find(
-                  (row) => row.templateId === template.templateId && row.periodStart === month.from,
-                );
-                const counted = thisMonth ? Number(thisMonth.recognizedAmount) > 0 : false;
+                const soFar = regularCostSoFar(template, month, today);
                 return (
                   <li key={template.templateId} className={styles.categoryRow}>
                     <span className={styles.categoryName}>
@@ -842,47 +842,14 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                     <span>
                       {template.status !== 'ACTIVE' ? (
                         <StatusBadge tone="neutral">Stopped</StatusBadge>
-                      ) : !thisMonth && caps?.manageRecurring ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'GenerateRecurringCostPeriod',
-                                ...scope(template.stationId),
-                                templateId: template.templateId,
-                                periodStart: month.from,
-                              },
-                              `${monthTitle(month.from)} added for ${template.name}.`,
-                            )
-                          }
-                        >
-                          Add {monthTitle(month.from)}
-                        </Button>
-                      ) : thisMonth && counted ? (
-                        <StatusBadge tone="positive">Counted this month</StatusBadge>
-                      ) : thisMonth && caps?.recogniseRecurring ? (
-                        <Button
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'RecognizeRecurringCost',
-                                ...scope(template.stationId),
-                                periodId: thisMonth.periodId,
-                                recognitionDate: today,
-                              },
-                              `${template.name} now counts in this month’s spending.`,
-                            )
-                          }
-                        >
-                          Count in spending
-                        </Button>
+                      ) : soFar.days > 0 ? (
+                        <StatusBadge tone="positive">
+                          {formatTileMoney(soFar.amount)} so far this month
+                        </StatusBadge>
                       ) : (
-                        <StatusBadge tone="pending">Waiting to be counted</StatusBadge>
+                        <StatusBadge tone="pending">
+                          Starts {formatFriendlyDate(template.startDate)}
+                        </StatusBadge>
                       )}
                     </span>
                   </li>

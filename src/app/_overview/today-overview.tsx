@@ -3,6 +3,7 @@ import { useContextFetch } from '@/modules/context/client-context';
 import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { formatBusinessDate } from '@/design-system/formatters';
@@ -11,7 +12,7 @@ import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primi
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
 
-import { businessToday } from '@/modules/reporting/period';
+import { businessToday, isValidDateOnly } from '@/modules/reporting/period';
 import { addExact } from '@/modules/reporting/domain';
 import { formatTileLitres, formatTileMoney } from '@/modules/reporting/format';
 
@@ -35,11 +36,16 @@ import {
 } from './dashboard-figures';
 import { FinanceTiles } from '@/modules/owner/ui/finance-tiles';
 import type { FinanceTile } from '@/modules/reporting/finance-tiles';
-import {
-  countDaysWithoutReport,
-  type DashboardSnapshot,
-} from '@/modules/reporting/dashboard-snapshot';
+import type { DashboardSnapshot } from '@/modules/reporting/dashboard-snapshot';
 
+import {
+  asAtLabel,
+  DASHBOARD_PERIODS,
+  DASHBOARD_PERIOD_LABELS,
+  resolveDashboardPeriod,
+  type DashboardPeriod,
+  type ResolvedDashboardPeriod,
+} from './dashboard-period';
 import { PerformanceChart } from './performance-chart';
 import {
   approvalLabel,
@@ -151,6 +157,15 @@ export function TodayOverview({
   );
   const [attempt, setAttempt] = useState(0);
 
+  // One period for every period figure; the server read the records for exactly this window.
+  const period = useMemo(
+    () => initialData?.period ?? resolveDashboardPeriod({}, businessToday()),
+    [initialData],
+  );
+  const [asAt] = useState(() =>
+    asAtLabel(initialData?.asOf ? new Date(initialData.asOf) : new Date()),
+  );
+
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   const [range, setRange] = useState<ChartRange>('30D');
@@ -174,11 +189,13 @@ export function TodayOverview({
       setOperations({ status: 'loading' });
       setFinance({ status: 'loading' });
     }, 0);
-    const initialWindow = chartBuckets('30D', businessToday());
+    const chartWindow = chartBuckets('30D', businessToday());
     const params = new URLSearchParams({
       tenantId,
-      fromDate: initialWindow.fromDate,
-      toDate: initialWindow.toDate,
+      fromDate: period.fromDate,
+      toDate: period.toDate,
+      chartFromDate: chartWindow.fromDate,
+      chartToDate: chartWindow.toDate,
     });
     if (stationId) params.set('stationId', stationId);
     load<{
@@ -212,7 +229,7 @@ export function TodayOverview({
       window.clearTimeout(reset);
       controller.abort();
     };
-  }, [tenantId, stationId, attempt, initialData]);
+  }, [tenantId, stationId, attempt, initialData, period]);
 
   useEffect(() => {
     if (
@@ -361,12 +378,13 @@ export function TodayOverview({
           aria-labelledby="today-figures-heading"
         >
           <h2 id="today-figures-heading">Key figures</h2>
+          <PeriodControl period={period} />
           <p className="today-figures-note">
-            {stationId ? '' : 'All stations · '}Approved figures for{' '}
-            {daily.status === 'ready' && daily.data.filters?.fromDate
-              ? formatBusinessDate(daily.data.filters.fromDate)
-              : 'today'}
-            .
+            {stationId ? '' : 'All stations · '}Approved figures for {period.phrase}
+            {period.fromDate !== period.toDate
+              ? ` (${formatBusinessDate(period.fromDate)} to ${formatBusinessDate(period.toDate)})`
+              : ` (${formatBusinessDate(period.fromDate)})`}
+            . Stock, cash held and what is owed are shown as they stand now.
           </p>
           <dl
             className="today-figures"
@@ -380,7 +398,7 @@ export function TodayOverview({
             }
           >
             <Figure
-              label="Sales today"
+              label={`Sales ${period.phrase}`}
               href={reportsHref}
               icon="dollar"
               state={figureState}
@@ -420,19 +438,23 @@ export function TodayOverview({
             <SnapshotTiles
               snapshot={snapshot.data}
               daysWithoutReport={
-                daily.status === 'ready'
-                  ? countDaysWithoutReport(daily.data.rows, daily.data.expectedBusinessDays)
-                  : null
+                daily.status === 'ready' ? (daily.data.missingReportDays ?? null) : null
               }
               reportsHref={reportsHref}
               dailyHref={dailyHref}
               inventoryHref={inventoryHref}
+              periodPhrase={period.phrase}
+              asAt={asAt}
             />
           ) : null}
           {/* Money at a glance: only for people allowed to see the management figures. */}
           {finance.status === 'ready' ? (
             <div style={{ marginBlockStart: 'var(--space-6)' }}>
-              <FinanceTiles tiles={contextualFinanceTiles} />
+              <FinanceTiles
+                tiles={contextualFinanceTiles}
+                periodPhrase={period.phrase}
+                asAt={asAt}
+              />
             </div>
           ) : null}
         </section>
@@ -500,7 +522,7 @@ export function TodayOverview({
             <h2 id="today-stats-heading">
               Sales performance <span className="today-stats-sub">Litres</span>
             </h2>
-            <div className="today-periods" role="group" aria-label="Period">
+            <div className="today-periods" role="group" aria-label="Chart range">
               {CHART_RANGES.map((option) => (
                 <button
                   key={option}
@@ -576,7 +598,7 @@ const CASH_VARIANCE_WORDS = {
 
 type DailyReport = {
   filters?: { fromDate?: string };
-  expectedBusinessDays?: number;
+  missingReportDays?: readonly { stationId: string; businessDate: string }[];
   rows: readonly DailyRow[];
 };
 
@@ -637,34 +659,123 @@ function Figure({
   );
 }
 
+/**
+ * Chooses the one period every period figure follows. The choice lives in the page address, so the
+ * server reads the right records and the page can be shared or refreshed without losing it.
+ */
+function PeriodControl({ period }: { period: ResolvedDashboardPeriod }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
+  const [from, setFrom] = useState(period.fromDate);
+  const [to, setTo] = useState(period.toDate);
+  const [custom, setCustom] = useState(period.period === 'custom');
+  const [problem, setProblem] = useState<string | null>(null);
+
+  function go(next: DashboardPeriod, range?: { from: string; to: string }) {
+    const params = new URLSearchParams(search?.toString() ?? '');
+    params.set('period', next);
+    if (next === 'custom' && range) {
+      params.set('fromDate', range.from);
+      params.set('toDate', range.to);
+    } else {
+      params.delete('fromDate');
+      params.delete('toDate');
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  function applyCustom() {
+    if (!isValidDateOnly(from) || !isValidDateOnly(to) || from > to) {
+      setProblem('Choose a start date that is not after the end date.');
+      return;
+    }
+    setProblem(null);
+    go('custom', { from, to });
+  }
+
+  return (
+    <div className="today-period-control">
+      <div className="today-periods" role="group" aria-label="Period for the key figures">
+        {DASHBOARD_PERIODS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            className="today-period"
+            aria-pressed={period.period === option}
+            data-active={period.period === option || undefined}
+            onClick={() => {
+              if (option === 'custom') {
+                setCustom(true);
+                return;
+              }
+              setCustom(false);
+              setProblem(null);
+              go(option);
+            }}
+          >
+            {DASHBOARD_PERIOD_LABELS[option]}
+          </button>
+        ))}
+      </div>
+      {custom ? (
+        <div className="today-period-custom">
+          <label>
+            From
+            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+          </label>
+          <label>
+            To
+            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+          </label>
+          <Button variant="secondary" size="sm" onClick={applyCustom}>
+            Show these dates
+          </Button>
+          {problem ? <p role="alert">{problem}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SnapshotTiles({
   snapshot,
   daysWithoutReport,
   reportsHref,
   dailyHref,
   inventoryHref,
+  periodPhrase,
+  asAt,
 }: {
   snapshot: DashboardSnapshot;
-  daysWithoutReport: number | null;
+  daysWithoutReport: readonly { stationId: string; businessDate: string }[] | null;
   reportsHref: string;
   dailyHref: string;
   inventoryHref: string;
+  /** The chosen period in words, for the tiles that are totals over it. */
+  periodPhrase: string;
+  /** "As at 14:05", for the tiles that are a position right now. */
+  asAt: string;
 }) {
   const { cash, stockVariance } = snapshot;
   const litres = snapshot.litresByProduct.length
     ? snapshot.litresByProduct
         .map((row) => `${row.productName} ${formatTileLitres(row.litres)}`)
         .join(' · ')
-    : 'No fuel sold yet';
+    : '';
   return (
     <section
       className="metric-grid"
       aria-label="Litres, cash and stock"
       style={{ marginBlockStart: 'var(--space-6)' }}
     >
-      <MetricCard label="Litres sold by fuel" value={litres} href={reportsHref} />
       <MetricCard
-        label="Cash expected"
+        label={`Litres sold by fuel, ${periodPhrase}`}
+        value={snapshot.litresByProduct.length ? litres : `No fuel sold ${periodPhrase}`}
+        href={reportsHref}
+      />
+      <MetricCard
+        label={`Cash expected, ${periodPhrase}`}
         value={formatTileMoney(cash.expected)}
         meta={`Collected ${formatTileMoney(cash.collected)} · ${
           varianceTone(cash.difference) === 'none'
@@ -677,22 +788,26 @@ function SnapshotTiles({
       <MetricCard
         label="Stock variance"
         value={stockVariance.litres === null ? 'Not available' : signedLitres(stockVariance.litres)}
-        meta={
+        meta={`${asAt} · ${
           stockVariance.litres === null
-            ? 'No tank has a dip reading yet.'
+            ? 'No tank has a dip reading for the last day yet.'
             : `${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured`
-        }
+        }`}
         href={inventoryHref}
       />
       <MetricCard
         label="Reports not submitted"
-        value={daysWithoutReport === null ? 'Not available' : String(daysWithoutReport)}
+        value={daysWithoutReport === null ? 'Not available' : String(daysWithoutReport.length)}
         meta={
-          daysWithoutReport === 0
-            ? 'Every day has a report.'
-            : 'Days with activity but no approved report'
+          daysWithoutReport === null
+            ? undefined
+            : `${asAt} · ${
+                daysWithoutReport.length === 0
+                  ? 'Every day has a report.'
+                  : `Oldest missing: ${formatBusinessDate(daysWithoutReport.map((day) => day.businessDate).sort()[0]!)}`
+              }`
         }
-        tone={daysWithoutReport ? 'critical' : 'default'}
+        tone={daysWithoutReport?.length ? 'critical' : 'default'}
         href={dailyHref}
       />
     </section>
@@ -796,6 +911,9 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
 
 export type DashboardInitialData = {
   key: string;
+  /** The period the figures were read for, and when they were read. */
+  period: ResolvedDashboardPeriod;
+  asOf: string;
   daily: Section<DailyReport>;
   customers: Section<{ customers: readonly { status: string }[] }>;
   operations: Section<TodayOperations> | null;

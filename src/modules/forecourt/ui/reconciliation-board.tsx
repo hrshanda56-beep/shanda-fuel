@@ -490,7 +490,7 @@ export function ReconciliationBoard({
     {
       key: 'review',
       label: 'In review',
-      detail: 'Waiting for a supervisor',
+      detail: 'Waiting for management approval',
       tone: 2,
       count: counts.review,
     },

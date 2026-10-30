@@ -9,6 +9,7 @@ import {
   matchesFilter,
   matchesSearch,
   monthRange,
+  regularCostSoFar,
   monthTitle,
   parseAmount,
   periodRange,
@@ -139,5 +140,41 @@ describe('friendlyError', () => {
   it('recognises step-up requests', () => {
     expect(isStepUpMessage('Reverse requires a recent strong-authentication step-up')).toBe(true);
     expect(isStepUpMessage('Amount is wrong')).toBe(false);
+  });
+});
+
+describe('regularCostSoFar (B6)', () => {
+  const rent = {
+    amount: '3100.0000',
+    startDate: '2026-10-01',
+    endDate: null,
+    status: 'ACTIVE',
+  };
+  const month = { from: '2026-10-01', to: '2026-10-31' };
+
+  it('counts each day from the start date up to today, with no month to add', () => {
+    expect(regularCostSoFar(rent, month, '2026-10-10')).toEqual({ amount: '1000.0000', days: 10 });
+  });
+
+  it('counts only from a start date that falls inside the month', () => {
+    expect(regularCostSoFar({ ...rent, startDate: '2026-10-25' }, month, '2026-10-29')).toEqual({
+      amount: '500.0000',
+      days: 5,
+    });
+  });
+
+  it('stops at the end date, and counts nothing for a stopped cost or one not started', () => {
+    expect(regularCostSoFar({ ...rent, endDate: '2026-10-04' }, month, '2026-10-29')).toEqual({
+      amount: '400.0000',
+      days: 4,
+    });
+    expect(regularCostSoFar({ ...rent, status: 'INACTIVE' }, month, '2026-10-29').days).toBe(0);
+    expect(regularCostSoFar({ ...rent, startDate: '2026-11-02' }, month, '2026-10-29').days).toBe(
+      0,
+    );
+  });
+
+  it('adds up to the whole monthly amount on the last day of the month', () => {
+    expect(regularCostSoFar(rent, month, '2026-10-31')).toEqual({ amount: '3100.0000', days: 31 });
   });
 });

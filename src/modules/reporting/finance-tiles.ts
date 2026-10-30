@@ -28,6 +28,11 @@ export type FinanceTile = Readonly<{
   count?: number;
   /** The page that explains the figure. */
   href: string;
+  /**
+   * `period`: a total over the period chosen on the dashboard. `as-at`: a position right now
+   * (stock, cash held, what is owed), which does not change with the period.
+   */
+  basis: 'period' | 'as-at';
 }>;
 
 /** The finance tiles for the dashboard, each from a figure the report already carries. */
@@ -53,6 +58,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
   return [
     {
       id: 'grossProfit',
+      basis: 'period',
       label: 'Gross profit',
       value: report.grossMargin,
       unavailableReason: profitReason,
@@ -60,6 +66,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
     },
     {
       id: 'operatingProfit',
+      basis: 'period',
       label: 'Operating profit',
       value: operating,
       unavailableReason: profitReason,
@@ -67,6 +74,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
     },
     {
       id: 'stockValue',
+      basis: 'as-at',
       label: 'Fuel stock value',
       value: own?.stockValue ?? null,
       unavailableReason: own
@@ -78,24 +86,31 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
     },
     {
       id: 'cashAtStations',
+      basis: 'as-at',
       label: 'Cash at stations',
-      value: report.cash.atStation ?? report.cash.collectedButNotBanked,
+      value:
+        report.cash.custody?.atStation ??
+        report.cash.atStation ??
+        report.cash.collectedButNotBanked,
       href: '/financial-position',
     },
     {
       id: 'cashBanked',
+      basis: 'period',
       label: 'Cash banked',
       value: report.cash.banked,
       href: '/financial-position',
     },
     {
       id: 'posAwaiting',
+      basis: 'as-at',
       label: 'Card and mobile payments awaiting settlement',
       value: report.providers.unmatchedEvidenceAmount,
       href: '/financial-position',
     },
     {
       id: 'debtors',
+      basis: 'as-at',
       label: 'Owed by customers',
       value: report.customers.receivableBalance,
       unavailableReason: customersKnown
@@ -105,12 +120,14 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
     },
     {
       id: 'creditors',
+      basis: 'as-at',
       label: 'Owed to suppliers',
       value: report.suppliers.outstandingBalance,
       href: '/financial-position',
     },
     {
       id: 'netPosition',
+      basis: 'as-at',
       label: 'Net position',
       value: position.net,
       unavailableReason:
@@ -123,6 +140,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
     },
     {
       id: 'expensesAwaitingApproval',
+      basis: 'as-at',
       label: 'Expenses awaiting approval',
       value: own?.expensesAwaitingApproval.amount ?? null,
       count: own?.expensesAwaitingApproval.count,

@@ -6,7 +6,67 @@ import {
   dailyOperationsProblem,
   dailyOperationsLinkFix,
   mapDailyOperationsError,
+  liveLitresSold,
+  liveCashFigures,
+  stepTitle,
 } from './daily-operations-state';
+
+describe('liveLitresSold', () => {
+  it('is closing minus opening, exactly', () => {
+    expect(liveLitresSold('65000', '100000')).toBe('35000.00');
+    expect(liveLitresSold('100.125', '100.5')).toBe('0.375');
+  });
+
+  it('waits until both readings are numbers', () => {
+    expect(liveLitresSold('65000', '')).toBeNull();
+    expect(liveLitresSold('', '100')).toBeNull();
+    expect(liveLitresSold('65000', '10x')).toBeNull();
+  });
+
+  it('goes negative when the closing is below the opening', () => {
+    expect(liveLitresSold('500', '400')).toBe('-100.00');
+  });
+});
+
+describe('liveCashFigures', () => {
+  const payments = [
+    { method: 'CASH', amount: '40000.00' },
+    { method: 'CASH', amount: '5000' },
+    { method: 'CARD', amount: '9000.00' },
+    { method: 'CASH', amount: '' },
+  ];
+  const expenses = [
+    { paymentMethod: 'CASH', amount: '1000.50' },
+    { paymentMethod: 'BANK', amount: '700.00' },
+  ];
+
+  it('adds only cash payments, takes off only cash paid out, and compares to the count', () => {
+    expect(liveCashFigures(payments, expenses, '50000')).toEqual({
+      expected: '45000.00',
+      paidOut: '1000.50',
+      net: '43999.50',
+      difference: '6000.50',
+    });
+  });
+
+  it('waits for the count before showing a difference', () => {
+    expect(liveCashFigures(payments, expenses, '').difference).toBeNull();
+    expect(liveCashFigures(payments, expenses, 'abc').difference).toBeNull();
+  });
+
+  it('shows zeros when nothing has been entered', () => {
+    expect(liveCashFigures([], [], '0')).toEqual({
+      expected: '0.00',
+      paidOut: '0.00',
+      net: '0.00',
+      difference: '0.00',
+    });
+  });
+
+  it('is negative when less cash was counted than expected', () => {
+    expect(liveCashFigures(payments, [], '44000').difference).toBe('-1000.00');
+  });
+});
 
 describe('daily operations state mapping', () => {
   it('keeps returned revisions editable and approved revisions locked', () => {
@@ -77,7 +137,14 @@ describe('daily operations problems', () => {
     ).toEqual({ kind: 'step', label: 'Go to pump readings', step: 1 });
     expect(
       problem(400, 'VALIDATION_FAILED', 'Variance explanations are required for: cash, fuel').fix,
-    ).toEqual({ kind: 'step', label: 'Go to the explanations', step: 5 });
+    ).toEqual({ kind: 'step', label: 'Go to the explanations', step: 6 });
+    expect(
+      problem(
+        422,
+        'VALIDATION_FAILED',
+        'Tank T1 has no dip reading for this shift. Record a dip for it on the Tank dips step, then submit.',
+      ).fix,
+    ).toEqual({ kind: 'step', label: 'Go to tank dips', step: 5 });
     expect(
       problem(
         400,
@@ -131,8 +198,74 @@ describe('daily operations problems', () => {
     ).toEqual({ kind: 'link', label: 'Open inventory valuation', href: '/inventory/valuation' });
   });
 
+  it('explains an open shift in plain words instead of calling it a stale state', () => {
+    const result = problem(
+      409,
+      'CONFLICT',
+      'Every operated shift must be completed with authoritative sealed meter-close evidence, or explicitly marked NOT_OPERATED',
+    );
+    expect(result.message).toContain('Close the meters');
+    expect(result.message).not.toMatch(/sealed|NOT_OPERATED|changed elsewhere/);
+  });
+
+  it('says in plain words what to do when no pump readings were submitted', () => {
+    const result = problem(
+      409,
+      'CONFLICT',
+      'Every operated shift requires sealed meter segments and an authoritative terminal meter-close boundary for each participating nozzle',
+    );
+    expect(result.message).toContain('Close Shift again');
+    expect(result.message).toContain('submit');
+    expect(result.message).not.toMatch(/segment|nozzle|boundary|changed elsewhere/i);
+  });
+
+  it('keeps the reason the server gives for a shift that cannot be closed', () => {
+    const reason =
+      'This shift cannot be closed yet: the opening reading for pump 1 nozzle 1 (900) is not where that meter last closed (1000). Correct the opening reading on the Pump readings step, then press Close Shift again.';
+    const result = problem(409, 'CONFLICT', reason);
+    expect(result.message).toBe(reason);
+    expect(result.message).not.toContain('changed elsewhere');
+  });
+
+  it('tells a manager to have the shift closed first when approval finds no closed meters', () => {
+    const result = problem(
+      409,
+      'CONFLICT',
+      'The reconciliation reading has no matching sealed meter-segment evidence',
+    );
+    expect(result.message).toContain('Close Shift');
+    expect(result.message).not.toMatch(/segment|evidence|changed elsewhere/i);
+  });
+
+  it('says the readings changed after the shift was closed when approval finds a mismatch', () => {
+    const result = problem(
+      409,
+      'CONFLICT',
+      'The last sealed meter segment does not match the reconciliation closing reading',
+    );
+    expect(result.message).toContain('changed after this shift was closed');
+    expect(result.message).not.toMatch(/segment|changed elsewhere/i);
+  });
+
   it('adds no button when refreshing is the only remedy', () => {
     expect(problem(409, 'CONFLICT', 'stale').fix).toBeUndefined();
+  });
+});
+
+describe('stepTitle: the review says what it is (C1)', () => {
+  it('keeps the supervisor’s titles for the person entering the figures', () => {
+    expect(stepTitle(0, false)).toBe('Who is on shift?');
+    expect(stepTitle(6, false)).toBe('Check and submit');
+  });
+
+  it('gives management a review, not a form to fill in', () => {
+    expect(stepTitle(0, true)).toBe('Review: who worked this shift');
+    expect(stepTitle(1, true)).toBe('Review: pump readings');
+    expect(stepTitle(5, true)).toBe('Review: tank dips and deliveries');
+    expect(stepTitle(6, true)).toBe('Approve or send back');
+    for (let step = 0; step < 7; step += 1) {
+      expect(stepTitle(step, true)).not.toMatch(/submit|tick|add an/i);
+    }
   });
 });
 
