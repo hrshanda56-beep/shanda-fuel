@@ -29,13 +29,15 @@ type Props = Readonly<{
   stationId: string;
   /** Called after a command succeeds, so the page around the card can refresh too. */
   onChanged?: () => void;
+  /** Sits inside another card (the dashboard's Daily operations) instead of being a card of its own. */
+  embedded?: boolean;
 }>;
 
 /**
  * "Quick actions": one clear thing to do, with a button that does it. It reads the
  * same overview as the Daily Operations page and sends the same named commands.
  */
-export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
+export function NextStepCard({ tenantId, stationId, onChanged, embedded = false }: Props) {
   const confirm = useConfirm();
   const router = useRouter();
   const [overview, setOverview] = useState<StepOverview | null>(null);
@@ -165,18 +167,26 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
 
   return (
     <section
-      className="next-step"
+      className={embedded ? 'next-step next-step--embedded' : 'next-step'}
       aria-labelledby="next-step-title"
       data-done={step.stage === null || undefined}
     >
-      <p className="eyebrow">Quick actions</p>
+      {embedded ? (
+        step.stage === null ? null : (
+          <p className="next-step-count">
+            Step {step.stage + 1} of {TRAIL.length}
+          </p>
+        )
+      ) : (
+        <p className="eyebrow">Quick actions</p>
+      )}
       <h2 id="next-step-title">{step.title}</h2>
       {notice ? (
         <p className="next-step-detail" role="status">
           ✓ {notice}
         </p>
       ) : null}
-      {step.detail ? <p className="next-step-detail">{step.detail}</p> : null}
+      {step.detail && !embedded ? <p className="next-step-detail">{step.detail}</p> : null}
       {error ? (
         <p className="field-error" role="alert">
           {error}
@@ -202,7 +212,11 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
           {action.label}
         </Button>
       ) : null}
-      <ol className="next-step-trail" aria-label="Quick actions for the day">
+      <ol
+        className="next-step-trail"
+        aria-label="Quick actions for the day"
+        hidden={embedded || undefined}
+      >
         {TRAIL.map((label, index) => {
           const state =
             step.stage === null || index < step.stage

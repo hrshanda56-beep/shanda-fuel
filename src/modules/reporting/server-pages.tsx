@@ -88,7 +88,7 @@ export function ServerReportsIndex({ search }: { search: PageSearch }) {
     <ServerDataPage
       pathname="/reports"
       search={search}
-      shell={{ pageSubtitle: 'Operational Financial Position' }}
+      shell={{ pageSubtitle: 'Open, share or download a report.' }}
       fallback={
         typeof search.tenantId === 'string' ? (
           <div className="reports-stack wide-workspace">

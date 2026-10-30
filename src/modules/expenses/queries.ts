@@ -219,6 +219,15 @@ export async function getExpenseSummaryFromRequest(
   const context = await readContext(request, input, actor);
   const stationFilter = (column: ReturnType<typeof sql.raw>) =>
     context.stationId ? sql`and ${column} = ${context.stationId}` : sql``;
+  const may = (permissionCode: Parameters<typeof isPermissionGranted>[0]['permissionCode']) =>
+    isPermissionGranted({
+      actor: context.authority.authorization,
+      permissionCode,
+      requestedScope: context.scope,
+    });
+  // Regular costs belong to whoever manages or counts them; a supervisor never sees them, so
+  // they are left out of every figure here, not only hidden on the screen.
+  const seesRecurring = may('expense.recurring.manage') || may('expense.recurring.recognize');
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const recognized = await transaction.execute<{
       classification: string;
@@ -234,6 +243,7 @@ export async function getExpenseSummaryFromRequest(
       where m.tenant_id = ${context.tenantId} and m.legal_entity_id = ${context.legalEntityId}
         ${stationFilter(sql.raw('m.station_id'))}
         and m.recognition_date >= ${input.from} and m.recognition_date <= ${input.to}
+        ${seesRecurring ? sql`` : sql`and m.source_type <> 'RECURRING_COST_RECOGNITION'`}
       group by m.classification, m.category_id, c.code, c.name
       order by m.classification, c.code
     `);
@@ -278,7 +288,9 @@ export async function getExpenseSummaryFromRequest(
       })),
       payables: {
         postedExpensesOutstanding: payables[0]?.expenses ?? '0.0000',
-        recurringObligationsOutstanding: payables[0]?.recurring ?? '0.0000',
+        recurringObligationsOutstanding: seesRecurring
+          ? (payables[0]?.recurring ?? '0.0000')
+          : '0.0000',
       },
       awaitingPostingCount: Number(pending[0]?.count ?? 0),
     };

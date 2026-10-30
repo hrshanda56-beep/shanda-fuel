@@ -1033,8 +1033,13 @@ function AccountMenu({
           tabIndex={-1}
         >
           <div className="account-menu-identity">
-            <strong>{displayName ?? 'Account preferences'}</strong>
-            {displayRole ? <span>{displayRole}</span> : null}
+            <span className="shell-avatar account-menu-avatar" aria-hidden="true">
+              {displayName ? initials(displayName) : <Icon name="users" />}
+            </span>
+            <span className="account-menu-identity-text">
+              <strong>{displayName ?? 'Your account'}</strong>
+              {displayRole ? <span>{displayRole}</span> : null}
+            </span>
           </div>
           <div role="group" aria-label="Theme" className="account-menu-theme">
             <span className="account-menu-label">Theme</span>

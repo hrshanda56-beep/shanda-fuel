@@ -27,13 +27,14 @@ import {
 } from '../../../design-system/primitives';
 import { Icon } from '../../../design-system/icons';
 import { Modal } from '../../../design-system/modal';
+import { ShowMore, useShowMore } from '../../../design-system/show-more';
 import { TableScrollRegion } from '../../../design-system/table';
 import { formatMoney } from '../../../design-system/formatters';
 import { formatTileMoney } from '../../reporting/format';
 import { clientErrorMessage } from '../../../platform/errors/client';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { bankingStatusForDeposit, cashStatusLabelForCustody } from '../status';
-import { CashHandoverPanel, type HandoverSummary } from './cash-handover-panel';
+import { CashHandoverSheet, type HandoverSummary } from './cash-handover-panel';
 import { CashDonut, CashWallet, MASK, sumDecimals, type DonutSlice } from './cash-visuals';
 
 type CashCapabilities = {
@@ -384,6 +385,9 @@ export function CashWorkspace({
   const [amountsHidden, setAmountsHidden] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [sheet, setSheet] = useState<CashSheet | null>(null);
+  const [handoverOpen, setHandoverOpen] = useState(false);
+  const [collectionsShown, setCollectionsShown] = useShowMore();
+  const [depositsShown, setDepositsShown] = useShowMore();
   const [sheetDirty, setSheetDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const intentKeys = useRef(new Map<string, string>());
@@ -773,6 +777,11 @@ export function CashWorkspace({
     depositableCollections.length > 0 &&
     !!summary?.bankAccounts.length;
   const canConfirm = capabilities.confirmDeposit && confirmableDeposits.length > 0;
+  /** Cash can change hands here for anyone who may hand it over, or who has some waiting. */
+  const showHandover =
+    !!summary && (summary.capabilities.submitHandover || summary.handovers.length > 0);
+  const waitingHandovers =
+    summary?.handovers.filter((h) => h.state === 'SUBMITTED' || h.state === 'DISPUTED').length ?? 0;
   const canCollect = capabilities.recordCollection && recordableSources.length > 0;
   const hasAnyAction =
     capabilities.recordCollection ||
@@ -824,7 +833,11 @@ export function CashWorkspace({
           ) : null}
         </div>
       ) : null}
-      <Card as="section" className="panel cash-panel" aria-labelledby="cash-actions-title">
+      <Card
+        as="section"
+        className="panel cash-panel cash-panel-fill"
+        aria-labelledby="cash-actions-title"
+      >
         <div className="panel-heading">
           <div>
             <h2 id="cash-actions-title">Cash on hand</h2>
@@ -856,6 +869,12 @@ export function CashWorkspace({
                 <span className="cash-action-short">{action.shortLabel}</span>
               </Button>
             ))}
+          {showHandover ? (
+            <Button aria-haspopup="dialog" onClick={() => setHandoverOpen(true)}>
+              {summary?.capabilities.submitHandover ? 'Hand over cash' : 'Cash handovers'}
+              {waitingHandovers > 0 ? ` (${waitingHandovers})` : ''}
+            </Button>
+          ) : null}
         </div>
 
         <Modal
@@ -1219,10 +1238,10 @@ export function CashWorkspace({
         ) : null}
       </Card>
 
-      {summary &&
-      context &&
-      (summary.capabilities.submitHandover || summary.handovers.length > 0) ? (
-        <CashHandoverPanel
+      {summary && context && showHandover ? (
+        <CashHandoverSheet
+          open={handoverOpen}
+          onClose={() => setHandoverOpen(false)}
           context={context}
           handovers={summary.handovers}
           locations={summary.locations}
@@ -1259,20 +1278,29 @@ export function CashWorkspace({
           title={historyGroup ? historyGroup.label : 'Cash'}
           presentation="side"
         >
-          <ul className="cash-history-list">
-            {historyItems.map((collection) => (
-              <li key={collection.collectionId}>
-                <div>
-                  <strong>{collection.collectionReference}</strong>
-                  <StatusBadge tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}>
-                    {custodyLabel(collection.custodyState)}
-                  </StatusBadge>
-                </div>
-                <span>{plain(collection.amount)}</span>
-                <small>Still to bank {plain(collection.collectedButUnbanked)}</small>
-              </li>
-            ))}
-          </ul>
+          {historyItems.length === 0 ? (
+            <EmptyState
+              title="Nothing here"
+              message={`No cash is under “${historyGroup?.label ?? 'this heading'}” right now.`}
+            />
+          ) : (
+            <ul className="cash-history-list">
+              {historyItems.map((collection) => (
+                <li key={collection.collectionId}>
+                  <div>
+                    <strong>{collection.collectionReference}</strong>
+                    <StatusBadge
+                      tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
+                    >
+                      {custodyLabel(collection.custodyState)}
+                    </StatusBadge>
+                  </div>
+                  <span>{plain(collection.amount)}</span>
+                  <small>Still to bank {plain(collection.collectedButUnbanked)}</small>
+                </li>
+              ))}
+            </ul>
+          )}
         </Modal>
       </Card>
 
@@ -1299,158 +1327,167 @@ export function CashWorkspace({
                 message="Cash from approved shift reports shows here."
               />
             ) : (
-              <TableScrollRegion label="Station cash collections">
-                <table className="data-table">
-                  <caption className="sr-only">Station cash collections</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Reference</th>
-                      <th scope="col">Collected</th>
-                      <th scope="col">Amount</th>
-                      <th scope="col">Still to bank</th>
-                      <th scope="col">Where it is</th>
-                      <th scope="col">
-                        <span className="sr-only">Actions and details</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.collections.map((collection) => {
-                      const bankable = canBank && Number(collection.availableAtStation) > 0;
-                      const key = `collection-${collection.collectionId}`;
-                      const open = expanded.has(key);
-                      return (
-                        <Fragment key={collection.collectionId}>
-                          <tr
-                            className="row-action"
-                            data-open={open || undefined}
-                            onClick={() => toggleRow(key)}
-                          >
-                            <th scope="row">{collection.collectionReference}</th>
-                            <td data-label="Collected">
-                              {formatWhen(collection.recordedAt, summary?.stationTimezone)}
-                            </td>
-                            <td data-label="Amount">{plain(collection.amount)}</td>
-                            <td data-label="Still to bank">
-                              {plain(collection.collectedButUnbanked)}
-                            </td>
-                            <td data-label="Where it is">
-                              <StatusBadge
-                                tone={collection.custodyState === 'BANKED' ? 'positive' : 'pending'}
-                              >
-                                {custodyLabel(collection.custodyState)}
-                              </StatusBadge>
-                            </td>
-                            <td className="cash-row-actions">
-                              {bankable ? (
-                                <Button
-                                  variant="quiet"
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    openDepositFor(collection);
-                                  }}
+              <>
+                <TableScrollRegion label="Station cash collections">
+                  <table className="data-table">
+                    <caption className="sr-only">Station cash collections</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Reference</th>
+                        <th scope="col">Collected</th>
+                        <th scope="col">Amount</th>
+                        <th scope="col">Still to bank</th>
+                        <th scope="col">Where it is</th>
+                        <th scope="col">
+                          <span className="sr-only">Actions and details</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.collections.slice(0, collectionsShown).map((collection) => {
+                        const bankable = canBank && Number(collection.availableAtStation) > 0;
+                        const key = `collection-${collection.collectionId}`;
+                        const open = expanded.has(key);
+                        return (
+                          <Fragment key={collection.collectionId}>
+                            <tr
+                              className="row-action"
+                              data-open={open || undefined}
+                              onClick={() => toggleRow(key)}
+                            >
+                              <th scope="row">{collection.collectionReference}</th>
+                              <td data-label="Collected">
+                                {formatWhen(collection.recordedAt, summary?.stationTimezone)}
+                              </td>
+                              <td data-label="Amount">{plain(collection.amount)}</td>
+                              <td data-label="Still to bank">
+                                {plain(collection.collectedButUnbanked)}
+                              </td>
+                              <td data-label="Where it is">
+                                <StatusBadge
+                                  tone={
+                                    collection.custodyState === 'BANKED' ? 'positive' : 'pending'
+                                  }
                                 >
-                                  Bank it
-                                </Button>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="cash-toggle"
-                                aria-expanded={open}
-                                aria-controls={`${key}-details`}
-                                aria-label={`${open ? 'Hide' : 'Show'} details for ${collection.collectionReference}`}
-                              >
-                                <Icon name="chevron-down" />
-                              </button>
-                            </td>
-                          </tr>
-                          {open ? (
-                            <tr className="row-detail">
-                              <td colSpan={6}>
-                                <DetailList
-                                  id={`${key}-details`}
-                                  items={[
-                                    {
-                                      label: 'Business date',
-                                      value: formatDay(collection.businessDate),
-                                    },
-                                    {
-                                      label: 'Collected on',
-                                      value: formatWhen(
-                                        collection.recordedAt,
-                                        summary?.stationTimezone,
-                                      ),
-                                    },
-                                    {
-                                      label: 'Received at the station',
-                                      value: collection.receivedAt
-                                        ? formatWhen(
-                                            collection.receivedAt,
-                                            summary?.stationTimezone,
-                                          )
-                                        : 'Not marked as received',
-                                    },
-                                    {
-                                      label: 'Collected from',
-                                      value: locationName(collection.sourceLocationId),
-                                    },
-                                    {
-                                      label: 'Now at',
-                                      value: locationName(collection.currentLocationId),
-                                    },
-                                    { label: 'Total collected', value: plain(collection.amount) },
-                                    {
-                                      label: 'Still at the station',
-                                      value: plain(collection.availableAtStation),
-                                    },
-                                    {
-                                      label: 'Waiting for the bank',
-                                      value: plain(collection.pendingBankConfirmation),
-                                    },
-                                    {
-                                      label: 'Banked (bank confirmed)',
-                                      value: plain(collection.confirmedAmount),
-                                    },
-                                    {
-                                      label: 'Counted in shift report',
-                                      wide: true,
-                                      value: collection.shiftReports?.length
-                                        ? collection.shiftReports.map((report) => (
-                                            <div key={report.reconciliationId}>
-                                              {formatDay(report.businessDate)} ·{' '}
-                                              {plain(report.amount)}
-                                            </div>
-                                          ))
-                                        : 'No shift report linked',
-                                    },
-                                    {
-                                      label: 'Bank deposits',
-                                      wide: true,
-                                      value: collection.deposits?.length
-                                        ? collection.deposits.map((deposit) => (
-                                            <div key={deposit.depositId}>
-                                              {deposit.depositReference} · {plain(deposit.amount)} ·{' '}
-                                              {depositLabel(deposit)} ·{' '}
-                                              {formatWhen(
-                                                deposit.depositedAt,
-                                                summary?.stationTimezone,
-                                              )}
-                                            </div>
-                                          ))
-                                        : 'Not sent to the bank yet',
-                                    },
-                                  ]}
-                                />
+                                  {custodyLabel(collection.custodyState)}
+                                </StatusBadge>
+                              </td>
+                              <td className="cash-row-actions">
+                                {bankable ? (
+                                  <Button
+                                    variant="quiet"
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openDepositFor(collection);
+                                    }}
+                                  >
+                                    Bank it
+                                  </Button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="cash-toggle"
+                                  aria-expanded={open}
+                                  aria-controls={`${key}-details`}
+                                  aria-label={`${open ? 'Hide' : 'Show'} details for ${collection.collectionReference}`}
+                                >
+                                  <Icon name="chevron-down" />
+                                </button>
                               </td>
                             </tr>
-                          ) : null}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </TableScrollRegion>
+                            {open ? (
+                              <tr className="row-detail">
+                                <td colSpan={6}>
+                                  <DetailList
+                                    id={`${key}-details`}
+                                    items={[
+                                      {
+                                        label: 'Business date',
+                                        value: formatDay(collection.businessDate),
+                                      },
+                                      {
+                                        label: 'Collected on',
+                                        value: formatWhen(
+                                          collection.recordedAt,
+                                          summary?.stationTimezone,
+                                        ),
+                                      },
+                                      {
+                                        label: 'Received at the station',
+                                        value: collection.receivedAt
+                                          ? formatWhen(
+                                              collection.receivedAt,
+                                              summary?.stationTimezone,
+                                            )
+                                          : 'Not marked as received',
+                                      },
+                                      {
+                                        label: 'Collected from',
+                                        value: locationName(collection.sourceLocationId),
+                                      },
+                                      {
+                                        label: 'Now at',
+                                        value: locationName(collection.currentLocationId),
+                                      },
+                                      { label: 'Total collected', value: plain(collection.amount) },
+                                      {
+                                        label: 'Still at the station',
+                                        value: plain(collection.availableAtStation),
+                                      },
+                                      {
+                                        label: 'Waiting for the bank',
+                                        value: plain(collection.pendingBankConfirmation),
+                                      },
+                                      {
+                                        label: 'Banked (bank confirmed)',
+                                        value: plain(collection.confirmedAmount),
+                                      },
+                                      {
+                                        label: 'Counted in shift report',
+                                        wide: true,
+                                        value: collection.shiftReports?.length
+                                          ? collection.shiftReports.map((report) => (
+                                              <div key={report.reconciliationId}>
+                                                {formatDay(report.businessDate)} ·{' '}
+                                                {plain(report.amount)}
+                                              </div>
+                                            ))
+                                          : 'No shift report linked',
+                                      },
+                                      {
+                                        label: 'Bank deposits',
+                                        wide: true,
+                                        value: collection.deposits?.length
+                                          ? collection.deposits.map((deposit) => (
+                                              <div key={deposit.depositId}>
+                                                {deposit.depositReference} · {plain(deposit.amount)}{' '}
+                                                · {depositLabel(deposit)} ·{' '}
+                                                {formatWhen(
+                                                  deposit.depositedAt,
+                                                  summary?.stationTimezone,
+                                                )}
+                                              </div>
+                                            ))
+                                          : 'Not sent to the bank yet',
+                                      },
+                                    ]}
+                                  />
+                                </td>
+                              </tr>
+                            ) : null}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </TableScrollRegion>
+                <ShowMore
+                  shown={collectionsShown}
+                  total={summary.collections.length}
+                  onChange={setCollectionsShown}
+                />
+              </>
             )}
           </>
         ) : null}
@@ -1467,164 +1504,171 @@ export function CashWorkspace({
             </div>
           </div>
           {summary?.deposits.length ? (
-            <TableScrollRegion label="Station bank deposits">
-              <table className="data-table">
-                <caption className="sr-only">Station bank deposits</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Reference</th>
-                    <th scope="col">Deposited</th>
-                    <th scope="col">Account</th>
-                    <th scope="col">Amount</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Bank difference</th>
-                    <th scope="col">
-                      <span className="sr-only">Actions and details</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.deposits.map((deposit) => {
-                    const confirmable =
-                      canConfirm &&
-                      confirmableDeposits.some(
-                        (candidate) => candidate.depositId === deposit.depositId,
+            <>
+              <TableScrollRegion label="Station bank deposits">
+                <table className="data-table">
+                  <caption className="sr-only">Station bank deposits</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Reference</th>
+                      <th scope="col">Deposited</th>
+                      <th scope="col">Account</th>
+                      <th scope="col">Amount</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Bank difference</th>
+                      <th scope="col">
+                        <span className="sr-only">Actions and details</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.deposits.slice(0, depositsShown).map((deposit) => {
+                      const confirmable =
+                        canConfirm &&
+                        confirmableDeposits.some(
+                          (candidate) => candidate.depositId === deposit.depositId,
+                        );
+                      const key = `deposit-${deposit.depositId}`;
+                      const open = expanded.has(key);
+                      const account = summary.bankAccounts.find(
+                        (candidate) => candidate.bankAccountId === deposit.bankAccountId,
                       );
-                    const key = `deposit-${deposit.depositId}`;
-                    const open = expanded.has(key);
-                    const account = summary.bankAccounts.find(
-                      (candidate) => candidate.bankAccountId === deposit.bankAccountId,
-                    );
-                    const difference = deposit.confirmationVariance
-                      ? sumDecimals([deposit.confirmationVariance]) === '0.00'
-                        ? 'None'
-                        : plain(deposit.confirmationVariance)
-                      : '—';
-                    return (
-                      <Fragment key={deposit.depositId}>
-                        <tr
-                          className="row-action"
-                          data-open={open || undefined}
-                          onClick={() => toggleRow(key)}
-                        >
-                          <th scope="row">{deposit.depositReference}</th>
-                          <td data-label="Deposited">
-                            {formatWhen(deposit.depositedAt, summary?.stationTimezone)}
-                          </td>
-                          <td data-label="Account">{deposit.bankAccountName}</td>
-                          <td data-label="Amount">{plain(deposit.amount)}</td>
-                          <td data-label="Status">
-                            <StatusBadge
-                              tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}
-                            >
-                              {depositLabel(deposit)}
-                            </StatusBadge>
-                          </td>
-                          <td data-label="Bank difference">{difference}</td>
-                          <td className="cash-row-actions">
-                            {confirmable ? (
-                              <Button
-                                variant="quiet"
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openConfirmFor(deposit.depositId);
-                                }}
+                      const difference = deposit.confirmationVariance
+                        ? sumDecimals([deposit.confirmationVariance]) === '0.00'
+                          ? 'None'
+                          : plain(deposit.confirmationVariance)
+                        : '—';
+                      return (
+                        <Fragment key={deposit.depositId}>
+                          <tr
+                            className="row-action"
+                            data-open={open || undefined}
+                            onClick={() => toggleRow(key)}
+                          >
+                            <th scope="row">{deposit.depositReference}</th>
+                            <td data-label="Deposited">
+                              {formatWhen(deposit.depositedAt, summary?.stationTimezone)}
+                            </td>
+                            <td data-label="Account">{deposit.bankAccountName}</td>
+                            <td data-label="Amount">{plain(deposit.amount)}</td>
+                            <td data-label="Status">
+                              <StatusBadge
+                                tone={deposit.state === 'CONFIRMED' ? 'positive' : 'pending'}
                               >
-                                Confirm
-                              </Button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="cash-toggle"
-                              aria-expanded={open}
-                              aria-controls={`${key}-details`}
-                              aria-label={`${open ? 'Hide' : 'Show'} details for ${deposit.depositReference}`}
-                            >
-                              <Icon name="chevron-down" />
-                            </button>
-                          </td>
-                        </tr>
-                        {open ? (
-                          <tr className="row-detail">
-                            <td colSpan={7}>
-                              <DetailList
-                                id={`${key}-details`}
-                                items={[
-                                  {
-                                    label: 'Deposited on',
-                                    value: formatWhen(
-                                      deposit.depositedAt,
-                                      summary?.stationTimezone,
-                                    ),
-                                  },
-                                  {
-                                    label: 'Cash taken from',
-                                    value: locationName(deposit.sourceLocationId),
-                                  },
-                                  {
-                                    label: 'Bank account',
-                                    value: account
-                                      ? `${account.name} · ${account.bankName} · ${account.accountReferenceMasked}`
-                                      : deposit.bankAccountName,
-                                  },
-                                  {
-                                    label: 'Bank reference',
-                                    value: deposit.bankReference ?? 'Not given yet',
-                                  },
-                                  {
-                                    label: 'Bank expected to confirm by',
-                                    value: formatWhen(
-                                      deposit.expectedConfirmationAt,
-                                      summary?.stationTimezone,
-                                    ),
-                                  },
-                                  {
-                                    label: 'Confirmed on',
-                                    value: deposit.confirmedAt
-                                      ? formatWhen(deposit.confirmedAt, summary?.stationTimezone)
-                                      : 'Not confirmed yet',
-                                  },
-                                  { label: 'Amount deposited', value: plain(deposit.amount) },
-                                  {
-                                    label: 'Amount the bank shows',
-                                    value: deposit.confirmedAmount
-                                      ? plain(deposit.confirmedAmount)
-                                      : 'Not confirmed yet',
-                                  },
-                                  { label: 'Bank difference', value: difference },
-                                  {
-                                    label: 'Cash in this deposit',
-                                    wide: true,
-                                    value: deposit.collections?.length
-                                      ? deposit.collections.map((item) => (
-                                          <div key={item.collectionId}>
-                                            {item.collectionReference} · {plain(item.amount)}
-                                          </div>
-                                        ))
-                                      : '—',
-                                  },
-                                ]}
-                              />
-                              {context?.stationId ? (
-                                <DocumentAttachments
-                                  tenantId={context.organisationId}
-                                  stationId={context.stationId}
-                                  subjectType="BANK_DEPOSIT"
-                                  subjectId={deposit.depositId}
-                                  defaultKind="DEPOSIT_SLIP"
-                                  title="Deposit slip and bank documents"
-                                />
+                                {depositLabel(deposit)}
+                              </StatusBadge>
+                            </td>
+                            <td data-label="Bank difference">{difference}</td>
+                            <td className="cash-row-actions">
+                              {confirmable ? (
+                                <Button
+                                  variant="quiet"
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openConfirmFor(deposit.depositId);
+                                  }}
+                                >
+                                  Confirm
+                                </Button>
                               ) : null}
+                              <button
+                                type="button"
+                                className="cash-toggle"
+                                aria-expanded={open}
+                                aria-controls={`${key}-details`}
+                                aria-label={`${open ? 'Hide' : 'Show'} details for ${deposit.depositReference}`}
+                              >
+                                <Icon name="chevron-down" />
+                              </button>
                             </td>
                           </tr>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </TableScrollRegion>
+                          {open ? (
+                            <tr className="row-detail">
+                              <td colSpan={7}>
+                                <DetailList
+                                  id={`${key}-details`}
+                                  items={[
+                                    {
+                                      label: 'Deposited on',
+                                      value: formatWhen(
+                                        deposit.depositedAt,
+                                        summary?.stationTimezone,
+                                      ),
+                                    },
+                                    {
+                                      label: 'Cash taken from',
+                                      value: locationName(deposit.sourceLocationId),
+                                    },
+                                    {
+                                      label: 'Bank account',
+                                      value: account
+                                        ? `${account.name} · ${account.bankName} · ${account.accountReferenceMasked}`
+                                        : deposit.bankAccountName,
+                                    },
+                                    {
+                                      label: 'Bank reference',
+                                      value: deposit.bankReference ?? 'Not given yet',
+                                    },
+                                    {
+                                      label: 'Bank expected to confirm by',
+                                      value: formatWhen(
+                                        deposit.expectedConfirmationAt,
+                                        summary?.stationTimezone,
+                                      ),
+                                    },
+                                    {
+                                      label: 'Confirmed on',
+                                      value: deposit.confirmedAt
+                                        ? formatWhen(deposit.confirmedAt, summary?.stationTimezone)
+                                        : 'Not confirmed yet',
+                                    },
+                                    { label: 'Amount deposited', value: plain(deposit.amount) },
+                                    {
+                                      label: 'Amount the bank shows',
+                                      value: deposit.confirmedAmount
+                                        ? plain(deposit.confirmedAmount)
+                                        : 'Not confirmed yet',
+                                    },
+                                    { label: 'Bank difference', value: difference },
+                                    {
+                                      label: 'Cash in this deposit',
+                                      wide: true,
+                                      value: deposit.collections?.length
+                                        ? deposit.collections.map((item) => (
+                                            <div key={item.collectionId}>
+                                              {item.collectionReference} · {plain(item.amount)}
+                                            </div>
+                                          ))
+                                        : '—',
+                                    },
+                                  ]}
+                                />
+                                {context?.stationId ? (
+                                  <DocumentAttachments
+                                    tenantId={context.organisationId}
+                                    stationId={context.stationId}
+                                    subjectType="BANK_DEPOSIT"
+                                    subjectId={deposit.depositId}
+                                    defaultKind="DEPOSIT_SLIP"
+                                    title="Deposit slip and bank documents"
+                                  />
+                                ) : null}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </TableScrollRegion>
+              <ShowMore
+                shown={depositsShown}
+                total={summary.deposits.length}
+                onChange={setDepositsShown}
+              />
+            </>
           ) : (
             <EmptyState
               title="No bank deposits yet"

@@ -1390,13 +1390,33 @@ body {
 }
 
 .account-menu-identity {
-  display: grid;
-  gap: var(--space-1);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   padding-bottom: var(--space-3);
   border-bottom: var(--border-width) solid var(--border-subtle);
 }
 
+.account-menu-identity-text {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.account-menu-identity .account-menu-avatar {
+  flex: 0 0 auto;
+  color: var(--palette-white);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+/* Focus moves to the panel on open for screen readers; the panel itself is not a control. */
+.account-menu-panel:focus-visible {
+  outline: none;
+}
+
 .account-menu-identity strong {
+  overflow-wrap: anywhere;
   color: var(--text-primary);
   font-size: var(--font-size-md);
 }

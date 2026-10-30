@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   categoryCodeFromName,
+  categoryRingSlices,
+  withinApprovalLimit,
   categoryShares,
   formatFriendlyDate,
   friendlyError,
@@ -176,5 +178,53 @@ describe('regularCostSoFar (B6)', () => {
 
   it('adds up to the whole monthly amount on the last day of the month', () => {
     expect(regularCostSoFar(rent, month, '2026-10-31')).toEqual({ amount: '3100.0000', days: 31 });
+  });
+});
+
+describe('categoryRingSlices', () => {
+  const share = (categoryId: string, amount: string) => ({
+    categoryId,
+    name: categoryId,
+    amount,
+    percent: 0,
+  });
+
+  it('shows each category with its share of the month', () => {
+    const slices = categoryRingSlices(
+      [share('wages', '116.1300'), share('rent', '58.0600')],
+      '174.1900',
+    );
+    expect(slices.map((slice) => [slice.label, slice.detail, slice.tone])).toEqual([
+      ['wages', '67%', 0],
+      ['rent', '33%', 1],
+    ]);
+  });
+
+  it('gathers the smallest categories into Other once the colours run out', () => {
+    const many = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id, index) =>
+      share(id, `${70 - index * 10}.0000`),
+    );
+    const slices = categoryRingSlices(many, '280.0000');
+    expect(slices).toHaveLength(6);
+    expect(slices[5]).toMatchObject({ label: 'Other', total: '30.0000', tone: 5 });
+  });
+
+  it('says Under 1% for a sliver, and draws nothing when nothing was spent', () => {
+    expect(
+      categoryRingSlices([share('a', '999.0000'), share('b', '1.0000')], '1000.0000')[1]?.detail,
+    ).toBe('Under 1%');
+    expect(categoryRingSlices([], '0.0000')).toEqual([]);
+  });
+});
+
+describe('withinApprovalLimit', () => {
+  it('allows an amount up to and including the limit, exactly', () => {
+    expect(withinApprovalLimit('100.0000', '100')).toBe(true);
+    expect(withinApprovalLimit('100.0001', '100')).toBe(false);
+    expect(withinApprovalLimit('0.1', '0.3')).toBe(true);
+  });
+  it('allows nothing when no limit is set', () => {
+    expect(withinApprovalLimit('1', null)).toBe(false);
+    expect(withinApprovalLimit('1', undefined)).toBe(false);
   });
 });

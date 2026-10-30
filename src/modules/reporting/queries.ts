@@ -5,7 +5,11 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '../../platform/db';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
-import { DEFAULT_ROLE_PERMISSIONS, authorize } from '../../platform/security/permissions';
+import {
+  DEFAULT_ROLE_PERMISSIONS,
+  authorize,
+  isPermissionGranted,
+} from '../../platform/security/permissions';
 import { assertStepUp } from '../../platform/security';
 import { AppError } from '../../platform/errors';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
@@ -1273,6 +1277,19 @@ export async function canViewFinanceReports(request: Request, tenantId: string):
 }
 
 /** Whether the person may download reports, so screens can leave the download options out. */
+async function activeStations(
+  transaction: ReportingTransaction,
+  tenantId: string,
+): Promise<{ id: string; legalEntityId: string }[]> {
+  const rows = await transaction.execute<{ id: string; legal_entity_id: string }>(sql`
+    select id, legal_entity_id
+    from app.stations
+    where tenant_id = ${tenantId}
+      and status in ('ACTIVE', 'ONBOARDING')
+  `);
+  return rows.map((row) => ({ id: row.id, legalEntityId: row.legal_entity_id }));
+}
+
 export async function canExportReports(request: Request, tenantId: string): Promise<boolean> {
   const authority = await resolveTenantExecutionContext({ request, requestedTenantId: tenantId });
   return authority.authorization.roleAssignments.some((assignment) =>
@@ -1287,12 +1304,51 @@ export async function authorizeManagementReportRequest(
   /** A download also needs this permission, on top of the one that lets the report be read. */
   alsoRequire?: ReportPermission,
 ) {
-  const filters = parseManagementReportQuery(input);
-  const read = await reportingAuthority(request, filters);
-  const stations = await reportingStations(read, filters);
-  authorizeStations(read.authority.authorization, filters, stations, permissionCode);
+  const requested = parseManagementReportQuery(input);
+  const read = await reportingAuthority(request, requested);
+  const actor = read.authority.authorization;
+  let filters = requested;
+  let stations = await reportingStations(read, requested);
+  // "All stations" means every station the person may report on. Someone whose access is one
+  // station (a supervisor) has no organisation-wide access, so it narrows to their stations
+  // instead of being refused.
+  if (requested.stationIds.length === 0) {
+    const needed = alsoRequire ? [permissionCode, alsoRequire] : [permissionCode];
+    const tenantWide = needed.every((code) =>
+      isPermissionGranted({
+        actor,
+        permissionCode: code,
+        requestedScope: { tenantId: requested.tenantId, scopeType: 'TENANT' as const },
+      }),
+    );
+    if (!tenantWide) {
+      const own = (
+        await withTenantTransaction(read.authority.transaction, (transaction) =>
+          activeStations(transaction, requested.tenantId),
+        )
+      ).filter((station) =>
+        needed.every((code) =>
+          isPermissionGranted({
+            actor,
+            permissionCode: code,
+            requestedScope: {
+              tenantId: requested.tenantId,
+              scopeType: 'STATION' as const,
+              legalEntityId: station.legalEntityId,
+              stationId: station.id,
+            },
+          }),
+        ),
+      );
+      if (own.length > 0) {
+        stations = own;
+        filters = { ...requested, stationIds: own.map((station) => station.id).sort() };
+      }
+    }
+  }
+  authorizeStations(actor, filters, stations, permissionCode);
   if (alsoRequire) {
-    authorizeStations(read.authority.authorization, filters, stations, alsoRequire);
+    authorizeStations(actor, filters, stations, alsoRequire);
   }
   return { filters, authority: read.authority, stations };
 }

@@ -14,7 +14,6 @@ import {
   StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
-import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
 import { formatLitres, formatMoney } from '@/design-system/formatters';
 import { TankOverview, type InventoryReport } from '@/modules/inventory/ui/tank-overview';
@@ -24,7 +23,7 @@ import {
   type MissingCostSource,
 } from '@/modules/inventory/ui/inventory-workspace';
 
-type Capabilities = { request: boolean; approve: boolean; post: boolean };
+type Capabilities = { request: boolean; approve: boolean; post: boolean; addTank?: boolean };
 type SourceMovement = MissingCostSource & { id: string };
 type Stream = {
   station: { id: string; code: string; name: string };
@@ -260,7 +259,6 @@ export function ValuationOverview({
   }
   if (!data) return null;
 
-  const unvalued = data.streams.filter((stream) => stream.valuationStatus === 'UNVALUED');
   return (
     <div className="valuation-workspace valuation-overview">
       {data.tankReport ? (
@@ -269,42 +267,12 @@ export function ValuationOverview({
           stationId={context.stationId}
           contextHref={contextHref}
           report={data.tankReport}
+          canAddTank={data.capabilities.addTank === true}
+          onRefresh={() => void load()}
+          refreshing={refreshing}
         />
       ) : null}
-      <div className="page-heading">
-        <div>
-          <p>Stock value by tank.</p>
-        </div>
-        <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
-          Refresh
-        </Button>
-      </div>
       {success ? <SuccessState title="Workflow updated" message={success} /> : null}
-      <section className="metric-grid" aria-label="Valuation summary">
-        <MetricCard
-          label="Tanks with a value"
-          value={data.streams.length}
-          meta="Stock value by tank"
-          href="#cost-streams"
-        />
-        <MetricCard
-          label="Unvalued"
-          value={unvalued.length}
-          meta="Needs a cost before sales can be costed"
-          tone={unvalued.length > 0 ? 'critical' : 'default'}
-          href="#cost-streams"
-        />
-        <MetricCard
-          label="Active revaluations"
-          value={
-            data.revaluations.filter(
-              (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
-            ).length
-          }
-          meta="Requested or approved"
-          href="#revaluation-history"
-        />
-      </section>
       {data.streams.length === 0 ? (
         <EmptyState
           layout="block"

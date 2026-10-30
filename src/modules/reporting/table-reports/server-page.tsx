@@ -5,7 +5,7 @@ import { ContextRequiredState } from '@/design-system/primitives';
 import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { parseReportFilters, resolveReportFilters } from '../filters';
 import { businessToday } from '../period';
-import { findTableReport } from './definitions';
+import { TABLE_REPORT_ROW_LIMIT, findTableReport } from './definitions';
 import { canExportReports } from '../queries';
 import { runTableReport } from './run';
 import { TableReportTable } from './ui/table-report-table';
@@ -60,13 +60,12 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
       }}
       render={(data) =>
         data && definition ? (
-          <div className="reports-stack wide-workspace">
+          <div className="reports-stack wide-workspace table-report-page">
             <p>
               <Link href={`/reports?tenantId=${encodeURIComponent(data.tenantId)}`}>
                 ← All reports
               </Link>
             </p>
-            <p className="field-hint">{definition.description}</p>
             {data.range ? (
               <>
                 <TableReportFilteredToolbar
@@ -88,6 +87,7 @@ export function ServerTableReport({ slug, search }: { slug: string; search: Page
                     definition={definition}
                     rows={data.result.rows}
                     truncated={data.result.truncated}
+                    rowLimit={TABLE_REPORT_ROW_LIMIT}
                   />
                 ) : null}
               </>

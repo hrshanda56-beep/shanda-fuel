@@ -197,7 +197,8 @@ it('renders Operations overview without fetching it again on mount', () => {
     }),
   );
   expect(html).not.toContain('Loading operations');
-  expect(html).toContain('Test station');
+  // The hero shows the business date; the station name lives in the page header.
+  expect(html).toContain('18 Oct 2026');
 });
 it('renders an initial daily draft and skips all initial summary fetches', () => {
   const html = renderToStaticMarkup(

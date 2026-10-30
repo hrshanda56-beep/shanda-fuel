@@ -527,7 +527,6 @@ export function OperationsControlRoom({
     (template) => !usedTemplates.has(template.id),
   );
   const selectedShift = overview.shifts[0];
-  const isCurrentDay = day?.id === overview.currentBusinessDayId;
   const openDayId = day?.id ?? crypto.randomUUID();
   const openBusinessDay = overview.actions.OpenBusinessDay;
   const lockBusinessDay = overview.actions.LockBusinessDay;
@@ -549,44 +548,107 @@ export function OperationsControlRoom({
 
   return (
     <div className="operations-control-room" aria-label="Operations control room">
-      <div className="ops-top">
-        <header className="ops-hero">
-          <div>
-            <p className="eyebrow">
-              {overview.organisation.name} · {overview.station.name}
-            </p>
+      {focus === 'operations' ? (
+        <div className="ops-top">
+          <header className="ops-hero">
             <h2>{formatBusinessDate(day ? day.date : overview.currentBusinessDate)}</h2>
-            <p>
-              {focus === 'operations'
-                ? 'Run the shifts and close the day.'
-                : 'Every shift reconciliation for this station, exceptions first.'}
-            </p>
-          </div>
-          <div className="ops-hero-side">
-            <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
-              {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
-            </StatusBadge>
-            {focus === 'reconciliations' && overview.visibility.reconciliations ? (
-              <button
-                type="button"
-                className={`button ${statementOpen ? 'button-secondary' : 'button-primary'}`}
-                aria-pressed={statementOpen}
-                onClick={() => setStatementOpen((current) => !current)}
-              >
-                {statementOpen ? 'Back to overview' : 'View statement'}
-              </button>
+            <div className="ops-hero-side">
+              <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
+                {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
+              </StatusBadge>
+            </div>
+            {focus === 'operations' ? (
+              <div className="ops-hero-details">
+                {day ? (
+                  <dl className="ops-hero-times">
+                    <div>
+                      <dt>Opened</dt>
+                      <dd>
+                        {day.openedAt
+                          ? formatTimestamp(day.openedAt, overview.station.timezone)
+                          : 'Not opened'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Closed</dt>
+                      <dd>
+                        {day.closedAt
+                          ? formatTimestamp(day.closedAt, overview.station.timezone)
+                          : 'Not closed'}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="panel-detail">
+                    No business day yet. Open the station’s current business day to begin.
+                  </p>
+                )}
+                {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void runCommand(
+                        'OpenBusinessDay',
+                        {
+                          tenantId: context.tenantId,
+                          stationId: context.stationId,
+                          businessDayId: openDayId,
+                          expectedVersion: day?.version ?? 0,
+                        },
+                        openDayId,
+                        'Open this business day?',
+                        'Business day opened.',
+                      )
+                    }
+                  >
+                    Open business day
+                  </Button>
+                ) : null}
+                {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
+                  <Button
+                    variant="danger"
+                    disabled={busy || Boolean(overview.lockBlockedReason)}
+                    onClick={() =>
+                      void runCommand(
+                        'LockBusinessDay',
+                        {
+                          tenantId: context.tenantId,
+                          stationId: context.stationId,
+                          businessDayId: day.id,
+                          expectedVersion: day.version,
+                        },
+                        day.id,
+                        'Lock this business day? This is irreversible and prevents ordinary changes.',
+                        'Business day locked.',
+                      )
+                    }
+                  >
+                    Lock business day
+                  </Button>
+                ) : null}
+                {day?.state === 'CLOSED' && overview.lockBlockedReason ? (
+                  <p className="semantic-note" role="status" data-testid="lock-blocked-reason">
+                    <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
+                  </p>
+                ) : null}
+                {day?.state === 'CLOSED' ? (
+                  <p className="semantic-note">
+                    <strong>Locking is permanent.</strong> After it, a change needs a recorded
+                    correction.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
-          </div>
-        </header>
+          </header>
 
-        {focus === 'operations' ? (
           <NextStepCard
             tenantId={context.tenantId}
             stationId={context.stationId}
             onChanged={() => void load()}
           />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {error ? (
         <ErrorState
@@ -626,6 +688,7 @@ export function OperationsControlRoom({
               items={overview.reconciliations}
               timezone={overview.station.timezone}
               statementOpen={statementOpen}
+              onToggleStatement={() => setStatementOpen((current) => !current)}
               tone={tone}
               shiftLabel={shiftLabel}
               formatTimestamp={formatTimestamp}
@@ -705,9 +768,6 @@ export function OperationsControlRoom({
                 ) : (
                   <div className="operations-list">
                     {overview.shifts.map((shift) => {
-                      const reconciliation = overview.reconciliations.find(
-                        (item) => item.shiftId === shift.id,
-                      );
                       const values = {
                         tenantId: context.tenantId,
                         stationId: context.stationId,
@@ -794,25 +854,6 @@ export function OperationsControlRoom({
                                 Close Shift
                               </Button>
                             ) : null}
-                            <a className="text-link" href={dayHref(day.id, shift.id)}>
-                              Open workspace
-                            </a>
-                            {reconciliation ? (
-                              <a
-                                className="text-link"
-                                href={`/operations/reconciliations/${reconciliation.id}?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: shift.id }).toString()}`}
-                              >
-                                Reconciliation
-                              </a>
-                            ) : null}
-                            {reconciliation ? (
-                              <a
-                                className="text-link"
-                                href={`/operations/reconciliations/${reconciliation.id}/report?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
-                              >
-                                Daily report
-                              </a>
-                            ) : null}
                           </div>
                         </article>
                       );
@@ -847,107 +888,9 @@ export function OperationsControlRoom({
               </Card>
             ) : null}
           </div>
-          <div className="operations-layout-side">
-            {focus === 'operations' ? (
-              <Card
-                as="section"
-                className="card panel cash-panel"
-                aria-labelledby="current-day-title"
-              >
-                <div className="panel-heading">
-                  <h2 id="current-day-title">Day controls</h2>
-                </div>
-                {day ? (
-                  <dl className="operational-summary">
-                    <div>
-                      <dt>Opened</dt>
-                      <dd>
-                        {day.openedAt
-                          ? formatTimestamp(day.openedAt, overview.station.timezone)
-                          : 'Not opened'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Closed</dt>
-                      <dd>
-                        {day.closedAt
-                          ? formatTimestamp(day.closedAt, overview.station.timezone)
-                          : 'Not closed'}
-                      </dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <EmptyState
-                    title="No business day yet"
-                    message="Open the station’s current business day to begin."
-                  />
-                )}
-                <div className="form-actions">
-                  {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
-                    <Button
-                      variant="primary"
-                      disabled={busy}
-                      onClick={() =>
-                        void runCommand(
-                          'OpenBusinessDay',
-                          {
-                            tenantId: context.tenantId,
-                            stationId: context.stationId,
-                            businessDayId: openDayId,
-                            expectedVersion: day?.version ?? 0,
-                          },
-                          openDayId,
-                          'Open this business day?',
-                          'Business day opened.',
-                        )
-                      }
-                    >
-                      Open business day
-                    </Button>
-                  ) : null}
-                  {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
-                    <Button
-                      variant="danger"
-                      disabled={busy || Boolean(overview.lockBlockedReason)}
-                      onClick={() =>
-                        void runCommand(
-                          'LockBusinessDay',
-                          {
-                            tenantId: context.tenantId,
-                            stationId: context.stationId,
-                            businessDayId: day.id,
-                            expectedVersion: day.version,
-                          },
-                          day.id,
-                          'Lock this business day? This is irreversible and prevents ordinary changes.',
-                          'Business day locked.',
-                        )
-                      }
-                    >
-                      Lock business day
-                    </Button>
-                  ) : null}
-                </div>
-                {day?.state === 'CLOSED' && overview.lockBlockedReason ? (
-                  <p className="semantic-note" role="status" data-testid="lock-blocked-reason">
-                    <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
-                  </p>
-                ) : null}
-                {day?.state === 'CLOSED' ? (
-                  <p className="semantic-note">
-                    <strong>Locking is permanent.</strong> After it, a change needs a recorded
-                    correction.
-                  </p>
-                ) : null}
-                {isCurrentDay ? (
-                  <p className="panel-detail">This is the station’s current business date.</p>
-                ) : null}
-              </Card>
-            ) : null}
-          </div>
           <Card
             as="section"
-            className="card panel cash-panel operations-layout-wide"
+            className="card panel cash-panel"
             aria-labelledby="approval-queue-title"
           >
             <div className="panel-heading">

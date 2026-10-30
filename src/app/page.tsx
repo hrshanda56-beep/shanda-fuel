@@ -108,12 +108,6 @@ export default async function OverviewPage({
       ? dashboardScopeFromCurrentContext(access.current)
       : undefined;
 
-  // Quick actions are for people who run shifts. Owners, administrators and finance see
-  // Suppliers in their navigation; supervisors do not, so this follows resolved permissions.
-  const managesBusiness =
-    access.status === 'ready' &&
-    Boolean(access.projection?.some((entry) => entry.key === 'suppliers' && entry.visible));
-
   return (
     <AppShell searchPlacement="header" shellAccess={access}>
       <Suspense
@@ -135,7 +129,6 @@ export default async function OverviewPage({
           legalEntityId={validatedContext?.legalEntityId ?? legalEntityId}
           stationId={validatedContext ? validatedContext.stationId : stationId}
           initialContext={initialContext}
-          showQuickActions={!managesBusiness}
           period={dashboardPeriod}
         />
       </Suspense>
@@ -149,7 +142,6 @@ async function DashboardContent({
   legalEntityId,
   stationId,
   initialContext,
-  showQuickActions,
   period,
 }: {
   request: Request | null;
@@ -157,7 +149,6 @@ async function DashboardContent({
   legalEntityId?: string;
   stationId?: string;
   initialContext?: { tenantId: string; legalEntityId?: string; stationId?: string };
-  showQuickActions: boolean;
   period: ResolvedDashboardPeriod;
 }) {
   const scope = tenantId ? { tenantId, legalEntityId, stationId } : initialContext;
@@ -168,7 +159,6 @@ async function DashboardContent({
         legalEntityId={legalEntityId}
         stationId={stationId}
         initialContext={initialContext}
-        showQuickActions={showQuickActions}
       />
     );
   // The chart keeps its own 30-day window; everything else follows the chosen period.
@@ -192,7 +182,6 @@ async function DashboardContent({
         period,
         asOf: new Date().toISOString(),
       }}
-      showQuickActions={showQuickActions}
     />
   );
 }

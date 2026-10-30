@@ -6,6 +6,7 @@ import { observeError } from '../platform/observability';
 
 import { resolveCurrentContext } from '../modules/context/server';
 import type { CurrentContext } from '../modules/context/contracts';
+import { readAuthenticatedAccount } from '../modules/identity/account';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
 import { buildNavigationProjection } from './navigation-projection';
 import { syntheticNavigationProjection, type NavigationProjection } from './navigation';
@@ -79,6 +80,19 @@ export async function getServerNavigationProjection(
   }
 }
 
+/**
+ * The signed-in person's own name, so the account menu says who is signed in. A self-only
+ * read; any failure leaves the menu on its generic wording instead of breaking the page.
+ */
+async function readAccountName(request: Request): Promise<string | undefined> {
+  try {
+    const { user } = await readAuthenticatedAccount(request);
+    return user.name?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type ServerShellAccess =
   | { status: 'signed-out' }
   | { status: 'no-workplace' }
@@ -88,6 +102,8 @@ export type ServerShellAccess =
       /** The same request-verified scope used to build the projection. */
       current: CurrentContext | null;
       resolution?: ContextResolution;
+      /** The signed-in person's name for the account menu; absent when it could not be read. */
+      accountName?: string;
     };
 
 /**
@@ -123,7 +139,14 @@ export const getServerShellAccess = cache(async function getServerShellAccess(
     const projection = await buildServerNavigationProjection(request, resolution.current);
     if (projection === null)
       throw new AppError('FORBIDDEN', 'Navigation access could not be verified');
-    return { status: 'ready' as const, projection, current: resolution.current, resolution };
+    const accountName = await readAccountName(request);
+    return {
+      status: 'ready' as const,
+      projection,
+      current: resolution.current,
+      resolution,
+      ...(accountName ? { accountName } : {}),
+    };
   } catch (error) {
     if (error instanceof AppError && error.code === 'UNAUTHENTICATED')
       return { status: 'signed-out' };

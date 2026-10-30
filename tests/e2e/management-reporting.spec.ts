@@ -23,7 +23,7 @@ test.describe('management reporting surface', () => {
     const pageHeader = page.getByRole('region', { name: 'Page header and work context' });
     await expect(pageHeader.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible();
     await expect(
-      pageHeader.getByText('Operational Financial Position', { exact: true }),
+      pageHeader.getByText('Open, share or download a report.', { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'Choose an organisation to view reports' }),

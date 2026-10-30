@@ -306,3 +306,61 @@ export function amountForInput(value: string | null | undefined): string {
   const exact = new Decimal(value);
   return exact.decimalPlaces() <= 2 ? exact.toFixed(2) : exact.toString();
 }
+
+/** Colours the ring has; any further categories are gathered into one "Other" slice. */
+const MAX_RING_SLICES = 6;
+
+export type CategoryRingSlice = {
+  key: string;
+  label: string;
+  total: string;
+  count: number;
+  /** Replaces the count line under the name: the category's share of the month. */
+  detail: string;
+  tone: number;
+};
+
+function shareWords(amount: Decimal, total: Decimal): string {
+  const percent = amount.div(total).times(100);
+  return percent.lt(1) ? 'Under 1%' : `${percent.toFixed(0)}%`;
+}
+
+/**
+ * The month's spending as ring slices, biggest first. When there are more categories than
+ * colours the smallest are gathered into "Other", so the legend still adds up to the total.
+ */
+export function categoryRingSlices(
+  shares: readonly CategoryShare[],
+  total: string,
+): CategoryRingSlice[] {
+  const whole = new Decimal(total);
+  if (shares.length === 0 || !whole.gt(0)) return [];
+  const kept = shares.length > MAX_RING_SLICES ? shares.slice(0, MAX_RING_SLICES - 1) : shares;
+  const rest = shares.slice(kept.length);
+  const slices = kept.map((row, index) => ({
+    key: row.categoryId,
+    label: row.name,
+    total: row.amount,
+    count: 0,
+    detail: shareWords(new Decimal(row.amount), whole),
+    tone: index,
+  }));
+  if (rest.length > 0) {
+    const other = rest.reduce((sum, row) => sum.add(new Decimal(row.amount)), new Decimal(0));
+    slices.push({
+      key: 'other',
+      label: 'Other',
+      total: other.toFixed(4),
+      count: 0,
+      detail: shareWords(other, whole),
+      tone: kept.length,
+    });
+  }
+  return slices;
+}
+
+/** True when an amount is within a supervisor's limit; no limit means nothing is. Exact. */
+export function withinApprovalLimit(amount: string, limit: string | null | undefined): boolean {
+  if (limit === null || limit === undefined || limit === '') return false;
+  return new Decimal(amount).lte(limit);
+}

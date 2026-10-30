@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { Icon } from '../../../design-system/icons';
 import { formatStatusLabel } from '../../../design-system/formatters';
-import { LoadingState, StatusBadge, type StatusTone } from '../../../design-system/primitives';
+import { LoadingState, type StatusTone } from '../../../design-system/primitives';
 import { CashDonut, sumDecimals, type DonutSlice } from '../../cash/ui/cash-visuals';
 import { formatTileMoney } from '../../reporting/format';
 import {
@@ -94,7 +94,21 @@ function useDetails(items: readonly QueueItem[], tenantId: string, stationId: st
   return { details, loaded: items.every((item) => item.id in details) };
 }
 
-const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+const whole = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
+/** Round axis: five equal steps of 1, 2, 2.5, 5 or 10 times a power of ten that cover the data. */
+function axisScale(max: number): { top: number; ticks: number[] } {
+  const intervals = 5;
+  if (!(max > 0))
+    return { top: intervals, ticks: Array.from({ length: intervals + 1 }, (_, i) => i) };
+  const rough = max / intervals;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const step = ([1, 2, 2.5, 5, 10].find((m) => m * magnitude >= rough) ?? 10) * magnitude;
+  return {
+    top: step * intervals,
+    ticks: Array.from({ length: intervals + 1 }, (_, i) => step * i),
+  };
+}
 
 /** Expected against accounted sales for each shift. Bar heights are presentation only. */
 function SalesBars({
@@ -103,36 +117,38 @@ function SalesBars({
   rows: ReadonlyArray<{ id: string; label: string; expected: string; accounted: string }>;
 }) {
   const values = rows.flatMap((row) => [Number(row.expected), Number(row.accounted)]);
-  const max = Math.max(...values.filter(Number.isFinite), 0);
-  const top = max > 0 ? max : 1;
+  const { top, ticks } = axisScale(Math.max(...values.filter(Number.isFinite), 0));
   const height = (value: string) => `${Math.max((Math.max(Number(value), 0) / top) * 100, 1)}%`;
   return (
     <figure
       className="recon-bars"
+      style={{ '--recon-ticks': ticks.length - 1 } as CSSProperties}
       aria-label={`Sales by shift: ${rows.map((row) => `${row.label} expected ${money(row.expected)}, accounted ${money(row.accounted)}`).join('; ')}`}
     >
+      <p className="recon-bars-unit" aria-hidden="true">
+        Sales in {CURRENCY}
+      </p>
       <div className="recon-bars-plot">
         <div className="recon-bars-axis" aria-hidden="true">
-          <span>{compact.format(Math.round(top))}</span>
-          <span>{compact.format(Math.round(top / 2))}</span>
-          <span>0</span>
+          {[...ticks].reverse().map((tick) => (
+            <span key={tick}>{whole.format(tick)}</span>
+          ))}
         </div>
         <div className="recon-bars-columns">
           {rows.map((row) => (
             <div key={row.id} className="recon-bars-col">
               <div className="recon-bars-pair">
-                <span
-                  className="recon-bar"
-                  data-kind="expected"
-                  style={{ height: height(row.expected) }}
-                  title={`Expected ${money(row.expected)}`}
-                />
-                <span
-                  className="recon-bar"
-                  data-kind="accounted"
-                  style={{ height: height(row.accounted) }}
-                  title={`Accounted ${money(row.accounted)}`}
-                />
+                {(['expected', 'accounted'] as const).map((kind) => (
+                  <div
+                    key={kind}
+                    className="recon-bar-slot"
+                    style={{ height: height(row[kind]) }}
+                    title={`${kind === 'expected' ? 'Expected' : 'Accounted'} ${money(row[kind])}`}
+                  >
+                    <span className="recon-bar-value">{whole.format(Number(row[kind]))}</span>
+                    <span className="recon-bar" data-kind={kind} />
+                  </div>
+                ))}
               </div>
               <span className="recon-bars-label">{row.label}</span>
             </div>
@@ -185,15 +201,24 @@ function LedgerRow({
 
 const nonZero = (value: string | null) => value !== null && Number(value) !== 0;
 
-function StatementShiftBlock({ section }: { section: StatementSection }) {
+function StatementShiftBlock({
+  section,
+  businessDate,
+}: {
+  section: StatementSection;
+  businessDate: string;
+}) {
   // A labelled group, not a region: shifts can share a time label, and repeated
   // landmarks with the same name are not distinguishable to assistive technology.
   const headingId = `recon-ledger-${section.id}`;
   return (
     <div className="recon-ledger" role="group" aria-labelledby={headingId}>
       <div className="recon-ledger-head">
-        <h3 id={headingId}>{section.label}</h3>
-        <span>{formatStatusLabel(section.state)}</span>
+        <div className="recon-ledger-title">
+          <span className="recon-ledger-date">{businessDate}</span>
+          <h3 id={headingId}>{section.label}</h3>
+        </div>
+        <span className="recon-ledger-state">{formatStatusLabel(section.state)}</span>
       </div>
       <table>
         <tbody>
@@ -244,6 +269,7 @@ function StatementView({
   fileStem,
   statement,
   loaded,
+  onBack,
 }: {
   organisation: string;
   station: string;
@@ -251,6 +277,7 @@ function StatementView({
   fileStem: string;
   statement: Statement;
   loaded: boolean;
+  onBack: () => void;
 }) {
   const [preparedAt] = useState(() => new Date());
   const prepared = new Intl.DateTimeFormat('en-GB', {
@@ -259,155 +286,180 @@ function StatementView({
   }).format(preparedAt);
   const { totals } = statement;
   return (
-    <section
-      className="card panel cash-panel recon-statement"
-      aria-labelledby="recon-statement-title"
-    >
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Statement</p>
-          <h2 id="recon-statement-title">Reconciliation statement</h2>
+    <div className="recon-statement recon-statement-grid">
+      <section className="card panel cash-panel" aria-labelledby="recon-statement-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Statement</p>
+            <h2 id="recon-statement-title">Reconciliation statement</h2>
+          </div>
+          <div className="recon-statement-actions">
+            <button type="button" className="button button-secondary" onClick={onBack}>
+              Back to overview
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={!loaded}
+              onClick={() =>
+                download(
+                  statementToCsv({
+                    organisation,
+                    station,
+                    businessDate,
+                    currency: CURRENCY,
+                    statement,
+                  }),
+                  `${fileStem}.csv`,
+                )
+              }
+            >
+              Download CSV
+            </button>
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!loaded}
+              onClick={() => window.print()}
+            >
+              Print or save as PDF
+            </button>
+          </div>
         </div>
-        <div className="recon-statement-actions">
-          <button
-            type="button"
-            className="button button-secondary"
-            disabled={!loaded}
-            onClick={() =>
-              download(
-                statementToCsv({
-                  organisation,
-                  station,
-                  businessDate,
-                  currency: CURRENCY,
-                  statement,
-                }),
-                `${fileStem}.csv`,
-              )
-            }
-          >
-            Download CSV
-          </button>
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={!loaded}
-            onClick={() => window.print()}
-          >
-            Print or save as PDF
-          </button>
-        </div>
-      </div>
 
-      {!loaded ? (
-        <LoadingState label="Loading statement figures" />
-      ) : (
-        <>
-          <dl className="recon-statement-meta">
-            <div>
-              <dt>Organisation</dt>
-              <dd>{organisation}</dd>
-            </div>
-            <div>
-              <dt>Station</dt>
-              <dd>{station}</dd>
-            </div>
-            <div>
-              <dt>Business date</dt>
-              <dd>{businessDate}</dd>
-            </div>
-            <div>
-              <dt>Prepared</dt>
-              <dd>{prepared}</dd>
-            </div>
-          </dl>
+        {!loaded ? (
+          <LoadingState label="Loading statement figures" />
+        ) : (
+          <>
+            <dl className="recon-statement-meta">
+              <div>
+                <dt>Organisation</dt>
+                <dd>{organisation}</dd>
+              </div>
+              <div>
+                <dt>Station</dt>
+                <dd>{station}</dd>
+              </div>
+              <div>
+                <dt>Business date</dt>
+                <dd>{businessDate}</dd>
+              </div>
+              <div>
+                <dt>Prepared</dt>
+                <dd>{prepared}</dd>
+              </div>
+            </dl>
 
-          <table className="recon-summary" aria-label="Statement summary">
-            <thead>
-              <tr>
-                <th scope="col">Shift</th>
-                <th scope="col">Expected</th>
-                <th scope="col">Accounted</th>
-                <th scope="col">Variance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {statement.sections.map((section) => (
-                <tr key={section.id}>
-                  <th scope="row">{section.label}</th>
-                  <td data-label="Expected">{money(section.expectedSales)}</td>
-                  <td data-label="Accounted">{money(section.accountedSales)}</td>
-                  <td
-                    data-label="Variance"
-                    data-tone={nonZero(section.salesVariance) ? 'critical' : undefined}
-                  >
-                    {money(section.salesVariance)}
-                  </td>
+            <table className="recon-summary" aria-label="Statement summary">
+              <thead>
+                <tr>
+                  <th scope="col">Shift</th>
+                  <th scope="col">Expected</th>
+                  <th scope="col">Accounted</th>
+                  <th scope="col">Variance</th>
                 </tr>
-              ))}
-              {statement.missing.map((shift) => (
-                <tr key={shift.id} data-missing="true">
-                  <th scope="row">{shift.label}</th>
-                  <td colSpan={3}>{NOT_AVAILABLE} · figures could not be loaded</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row">{totals.complete ? 'Total' : 'Total of shifts shown'}</th>
-                {totals.expectedSales === null ? (
-                  <td colSpan={3} data-missing="true">
-                    {NOT_AVAILABLE}
-                  </td>
-                ) : (
-                  <>
-                    <td data-label="Expected">{money(totals.expectedSales)}</td>
-                    <td data-label="Accounted">{money(totals.accountedSales)}</td>
+              </thead>
+              <tbody>
+                {statement.sections.map((section) => (
+                  <tr key={section.id}>
+                    <th scope="row">{section.label}</th>
+                    <td data-label="Expected">
+                      <span className="recon-figure">{money(section.expectedSales)}</span>
+                    </td>
+                    <td data-label="Accounted">
+                      <span className="recon-figure">{money(section.accountedSales)}</span>
+                    </td>
                     <td
                       data-label="Variance"
-                      data-tone={nonZero(totals.salesVariance) ? 'critical' : undefined}
+                      data-tone={nonZero(section.salesVariance) ? 'critical' : undefined}
                     >
-                      {money(totals.salesVariance)}
+                      <span className="recon-figure">{money(section.salesVariance)}</span>
                     </td>
-                  </>
-                )}
-              </tr>
-            </tfoot>
-          </table>
+                  </tr>
+                ))}
+                {statement.missing.map((shift) => (
+                  <tr key={shift.id} data-missing="true">
+                    <th scope="row">{shift.label}</th>
+                    <td colSpan={3}>{NOT_AVAILABLE} · figures could not be loaded</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">{totals.complete ? 'Total' : 'Total of shifts shown'}</th>
+                  {totals.expectedSales === null ? (
+                    <td colSpan={3} data-missing="true">
+                      {NOT_AVAILABLE}
+                    </td>
+                  ) : (
+                    <>
+                      <td data-label="Expected">
+                        <span className="recon-figure">{money(totals.expectedSales)}</span>
+                      </td>
+                      <td data-label="Accounted">
+                        <span className="recon-figure">{money(totals.accountedSales)}</span>
+                      </td>
+                      <td
+                        data-label="Variance"
+                        data-tone={nonZero(totals.salesVariance) ? 'critical' : undefined}
+                      >
+                        <span className="recon-figure">{money(totals.salesVariance)}</span>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              </tfoot>
+            </table>
+          </>
+        )}
+      </section>
 
-          {statement.sections.length === 0 ? (
-            <p className="recon-empty">
-              No shift figures to show yet. They appear once a reconciliation has meter readings.
-            </p>
-          ) : (
-            <div className="recon-ledgers">
-              {statement.sections.map((section) => (
-                <StatementShiftBlock key={section.id} section={section} />
-              ))}
+      {loaded ? (
+        <section className="card panel cash-panel" aria-labelledby="recon-shifts-title">
+          <div className="panel-heading">
+            <div>
+              <h2 id="recon-shifts-title">Shift details</h2>
             </div>
-          )}
+          </div>
+          <>
+            {statement.sections.length === 0 ? (
+              <p className="recon-empty">
+                No shift figures to show yet. They appear once a reconciliation has meter readings.
+              </p>
+            ) : (
+              <div className="recon-ledgers">
+                {statement.sections.map((section) => (
+                  <StatementShiftBlock
+                    key={section.id}
+                    section={section}
+                    businessDate={businessDate}
+                  />
+                ))}
+              </div>
+            )}
 
-          {statement.missing.length > 0 ? (
-            <p className="recon-statement-note" data-missing="true" role="note">
-              Figures could not be loaded for {statement.missing.map((s) => s.label).join(', ')}.
-              They are left out of the totals above, not counted as zero, so the totals do not cover
-              the whole day.
+            {statement.missing.length > 0 ? (
+              <p className="recon-statement-note" data-missing="true" role="note">
+                Figures could not be loaded for {statement.missing.map((s) => s.label).join(', ')}.
+                They are left out of the totals above, not counted as zero, so the totals do not
+                cover the whole day.
+              </p>
+            ) : null}
+            {totals.shiftsWithoutCash > 0 ? (
+              <p className="recon-statement-note" data-missing="true" role="note">
+                {totals.shiftsWithoutCash}{' '}
+                {totals.shiftsWithoutCash === 1 ? 'shift has' : 'shifts have'} no counted cash.
+                Marked “{NOT_RECORDED}” above, not counted as zero.
+              </p>
+            ) : null}
+            <p className="recon-statement-note">
+              Every figure is the one the system calculated for that shift. Totals add the shifts
+              together; nothing here changes a record.
             </p>
-          ) : null}
-          {totals.shiftsWithoutCash > 0 ? (
-            <p className="recon-statement-note" data-missing="true" role="note">
-              {totals.shiftsWithoutCash}{' '}
-              {totals.shiftsWithoutCash === 1 ? 'shift has' : 'shifts have'} no counted cash. Marked
-              “{NOT_RECORDED}” above, not counted as zero.
-            </p>
-          ) : null}
-          <p className="recon-statement-note">
-            Every figure is the one the system calculated for that shift. Totals add the shifts
-            together; nothing here changes a record.
-          </p>
-        </>
-      )}
-    </section>
+          </>
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -421,6 +473,7 @@ export function ReconciliationBoard({
   items,
   timezone,
   statementOpen,
+  onToggleStatement,
   tone,
   shiftLabel,
   formatTimestamp,
@@ -435,6 +488,7 @@ export function ReconciliationBoard({
   items: readonly QueueItem[];
   timezone: string;
   statementOpen: boolean;
+  onToggleStatement: () => void;
   tone: (state: string) => StatusTone;
   shiftLabel: (shiftId: string | null) => string;
   formatTimestamp: (value: string | null, timeZone: string) => string;
@@ -452,7 +506,6 @@ export function ReconciliationBoard({
     approved: 0,
   };
   for (const item of items) counts[groupOf(item.state)] += 1;
-  const open = counts.returned + counts.review + counts.draft;
 
   const ordered = useMemo(
     () => [...items].sort((a, b) => shiftLabel(a.shiftId).localeCompare(shiftLabel(b.shiftId))),
@@ -481,6 +534,7 @@ export function ReconciliationBoard({
         fileStem={fileStem}
         statement={statement}
         loaded={loaded}
+        onBack={onToggleStatement}
       />
     );
   }
@@ -520,9 +574,12 @@ export function ReconciliationBoard({
         <section className="card panel cash-panel" aria-labelledby="recon-status-title">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Overview</p>
+              <p className="eyebrow">{businessDate}</p>
               <h2 id="recon-status-title">Reconciliation status</h2>
             </div>
+            <button type="button" className="button button-primary" onClick={onToggleStatement}>
+              View statement
+            </button>
           </div>
           <CashDonut
             slices={slices}
@@ -542,10 +599,7 @@ export function ReconciliationBoard({
 
         <section className="card panel cash-panel" aria-labelledby="recon-sales-title">
           <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Sales</p>
-              <h2 id="recon-sales-title">Expected against accounted</h2>
-            </div>
+            <h2 id="recon-sales-title">Expected against accounted</h2>
           </div>
           {!loaded ? (
             <LoadingState label="Loading shift figures" />
@@ -561,29 +615,21 @@ export function ReconciliationBoard({
 
       <section className="card panel cash-panel recon-queue" aria-labelledby="recon-queue-title">
         <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Review</p>
-            <h2 id="recon-queue-title">Shift reconciliations</h2>
+          <h2 id="recon-queue-title">Shift reconciliations</h2>
+          <div className="recon-tabs" role="group" aria-label="Show reconciliations">
+            {FILTERS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className="recon-tab"
+                aria-pressed={filter === item.value}
+                onClick={() => setFilter(item.value)}
+              >
+                {item.label}
+                <span className="recon-tab-count">{counts[item.value]}</span>
+              </button>
+            ))}
           </div>
-          <span className="recon-queue-open" data-clear={open === 0 || undefined}>
-            <span className="recon-queue-dot" aria-hidden="true" />
-            {open} open
-          </span>
-        </div>
-
-        <div className="recon-tabs" role="group" aria-label="Show reconciliations">
-          {FILTERS.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              className="recon-tab"
-              aria-pressed={filter === item.value}
-              onClick={() => setFilter(item.value)}
-            >
-              {item.label}
-              <span className="recon-tab-count">{counts[item.value]}</span>
-            </button>
-          ))}
         </div>
 
         {visible.length === 0 ? (
@@ -634,9 +680,10 @@ export function ReconciliationBoard({
                       </small>
                     </span>
                     <span className="recon-cell" data-label="Status">
-                      <StatusBadge tone={tone(item.state)}>
+                      <span className="recon-status" data-tone={tone(item.state)}>
+                        <span className="recon-status-dot" aria-hidden="true" />
                         {formatStatusLabel(item.state)}
-                      </StatusBadge>
+                      </span>
                     </span>
                     <span className="recon-cell recon-cell-num" data-label="Expected">
                       {detail ? money(detail.totals.expectedSales) : loaded ? '—' : '…'}

@@ -29,6 +29,7 @@ import { EcoCashMark, MastercardMark, VisaMark } from './provider-logos';
 import { Modal } from '../../../design-system/modal';
 import { Select } from '../../../design-system/forms';
 import { Icon } from '../../../design-system/icons';
+import { ShowMore, useShowMore } from '../../../design-system/show-more';
 import { CashDonut, type DonutSlice } from '@/modules/cash/ui/cash-visuals';
 import { payoutAmounts } from '../status';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
@@ -158,6 +159,8 @@ export function SettlementWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [matchOpen, setMatchOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [payoutsShown, setPayoutsShown] = useShowMore();
+  const [waitingShown, setWaitingShown] = useShowMore();
   const [cardNote, setCardNote] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'exceptions'>('all');
   const [pendingReconciliationId, setPendingReconciliationId] = useState('');
@@ -739,7 +742,7 @@ export function SettlementWorkspace({
                 id="payment"
                 value={paymentId}
                 onChange={(event) => chooseMatch(settlementId, event.target.value)}
-                options={unmatched.map((row) => ({
+                options={unmatched.slice(0, waitingShown).map((row) => ({
                   value: row.paymentId,
                   label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
                 }))}
@@ -852,7 +855,7 @@ export function SettlementWorkspace({
               <span />
             </div>
             <ul className="list-rows" aria-label="Provider payouts">
-              {visibleSettlements.map((row) => {
+              {visibleSettlements.slice(0, payoutsShown).map((row) => {
                 const isPendingReason = pendingReconciliationId === row.settlementId;
                 const open = expandedId === row.settlementId;
                 const hasVariance = !isZeroAmount(row.varianceAmount);
@@ -1059,6 +1062,11 @@ export function SettlementWorkspace({
                 );
               })}
             </ul>
+            <ShowMore
+              shown={payoutsShown}
+              total={visibleSettlements.length}
+              onChange={setPayoutsShown}
+            />
           </div>
         ) : null}
       </Card>
@@ -1128,6 +1136,9 @@ export function SettlementWorkspace({
               </tbody>
             </table>
           </TableScrollRegion>
+        ) : null}
+        {canShowUnmatchedRows ? (
+          <ShowMore shown={waitingShown} total={unmatched.length} onChange={setWaitingShown} />
         ) : null}
         {loading ? <LoadingState label="Loading unmatched payment evidence" /> : null}
         {error ? (

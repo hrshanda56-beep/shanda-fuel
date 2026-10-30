@@ -1,9 +1,7 @@
 'use client';
 import { useContextFetch } from '@/modules/context/client-context';
-import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { formatBusinessDate } from '@/design-system/formatters';
@@ -11,8 +9,9 @@ import { Icon, type IconName } from '@/design-system/icons';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
-import { businessToday, isValidDateOnly } from '@/modules/reporting/period';
+import { businessToday } from '@/modules/reporting/period';
 import { addExact } from '@/modules/reporting/domain';
 import { formatTileLitres, formatTileMoney } from '@/modules/reporting/format';
 
@@ -40,10 +39,7 @@ import type { DashboardSnapshot } from '@/modules/reporting/dashboard-snapshot';
 
 import {
   asAtLabel,
-  DASHBOARD_PERIODS,
-  DASHBOARD_PERIOD_LABELS,
   resolveDashboardPeriod,
-  type DashboardPeriod,
   type ResolvedDashboardPeriod,
 } from './dashboard-period';
 import { PerformanceChart } from './performance-chart';
@@ -129,11 +125,9 @@ export function TodayOverview({
   stationId: urlStationId,
   initialContext,
   initialData,
-  showQuickActions = true,
 }: Scope & {
   initialContext?: Scope;
   initialData?: DashboardInitialData;
-  showQuickActions?: boolean;
 }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
@@ -369,23 +363,12 @@ export function TodayOverview({
 
   return (
     <>
-      {showQuickActions && stationId ? (
-        <NextStepCard tenantId={tenantId} stationId={stationId} />
-      ) : null}
       <div className="today today-dashboard">
         <section
           className="today-section today-figures-section"
           aria-labelledby="today-figures-heading"
         >
           <h2 id="today-figures-heading">Key figures</h2>
-          <PeriodControl period={period} />
-          <p className="today-figures-note">
-            {stationId ? '' : 'All stations · '}Approved figures for {period.phrase}
-            {period.fromDate !== period.toDate
-              ? ` (${formatBusinessDate(period.fromDate)} to ${formatBusinessDate(period.toDate)})`
-              : ` (${formatBusinessDate(period.fromDate)})`}
-            . Stock, cash held and what is owed are shown as they stand now.
-          </p>
           <dl
             className="today-figures"
             // One size for all four cards, from the longest figure shown.
@@ -410,11 +393,6 @@ export function TodayOverview({
               icon="drop"
               state={figureState}
               value={figureValues[1] ?? null}
-              sub={
-                totals && !stationId
-                  ? `${totals.stationCount} ${totals.stationCount === 1 ? 'station' : 'stations'} approved`
-                  : null
-              }
             />
             <Figure
               label="Cash variance"
@@ -422,7 +400,6 @@ export function TodayOverview({
               icon="wallet"
               state={figureState}
               value={figureValues[2] ?? null}
-              sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
               tone={totals ? varianceTone(totals.cashVariance) : undefined}
             />
             <Figure
@@ -431,7 +408,6 @@ export function TodayOverview({
               icon="users"
               state={figureState}
               value={figureValues[3] ?? null}
-              sub={totals ? 'Credit and prepaid accounts' : null}
             />
           </dl>
           {snapshot.status === 'ready' ? (
@@ -481,7 +457,15 @@ export function TodayOverview({
                 }
               />
             ) : (
-              <OperationsRow operations={operations.data} href={dailyHref} />
+              <>
+                <OperationsRow operations={operations.data} href={dailyHref} />
+                <NextStepCard
+                  embedded
+                  tenantId={tenantId}
+                  stationId={stationId}
+                  onChanged={retry}
+                />
+              </>
             )}
           </section>
 
@@ -590,12 +574,6 @@ export function TodayOverview({
   );
 }
 
-const CASH_VARIANCE_WORDS = {
-  none: 'No cash variance',
-  short: 'Cash short',
-  over: 'Cash over',
-} as const;
-
 type DailyReport = {
   filters?: { fromDate?: string };
   missingReportDays?: readonly { stationId: string; businessDate: string }[];
@@ -609,6 +587,17 @@ const FIGURE_CAPTION: Partial<Record<FigureState, string>> = {
   error: 'Unavailable',
   none: 'No approved report yet',
 };
+
+/** Shows a leading currency code ("USD 5,961.45") smaller than the amount so the figure fits one row. */
+function renderFigureValue(value: string) {
+  const match = /^([A-Z]{3})\s+(\S.*)$/.exec(value);
+  if (!match) return value;
+  return (
+    <>
+      <span className="today-figure-currency">{match[1]}</span> {match[2]}
+    </>
+  );
+}
 
 function Figure({
   label,
@@ -643,7 +632,7 @@ function Figure({
           <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
         ) : value !== null ? (
           <>
-            <span className="today-figure-value">{value}</span>
+            <span className="today-figure-value">{renderFigureValue(value)}</span>
             {sub ? <span className="today-figure-caption">{sub}</span> : null}
           </>
         ) : (
@@ -655,85 +644,6 @@ function Figure({
           </>
         )}
       </dd>
-    </div>
-  );
-}
-
-/**
- * Chooses the one period every period figure follows. The choice lives in the page address, so the
- * server reads the right records and the page can be shared or refreshed without losing it.
- */
-function PeriodControl({ period }: { period: ResolvedDashboardPeriod }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const search = useSearchParams();
-  const [from, setFrom] = useState(period.fromDate);
-  const [to, setTo] = useState(period.toDate);
-  const [custom, setCustom] = useState(period.period === 'custom');
-  const [problem, setProblem] = useState<string | null>(null);
-
-  function go(next: DashboardPeriod, range?: { from: string; to: string }) {
-    const params = new URLSearchParams(search?.toString() ?? '');
-    params.set('period', next);
-    if (next === 'custom' && range) {
-      params.set('fromDate', range.from);
-      params.set('toDate', range.to);
-    } else {
-      params.delete('fromDate');
-      params.delete('toDate');
-    }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }
-
-  function applyCustom() {
-    if (!isValidDateOnly(from) || !isValidDateOnly(to) || from > to) {
-      setProblem('Choose a start date that is not after the end date.');
-      return;
-    }
-    setProblem(null);
-    go('custom', { from, to });
-  }
-
-  return (
-    <div className="today-period-control">
-      <div className="today-periods" role="group" aria-label="Period for the key figures">
-        {DASHBOARD_PERIODS.map((option) => (
-          <button
-            key={option}
-            type="button"
-            className="today-period"
-            aria-pressed={period.period === option}
-            data-active={period.period === option || undefined}
-            onClick={() => {
-              if (option === 'custom') {
-                setCustom(true);
-                return;
-              }
-              setCustom(false);
-              setProblem(null);
-              go(option);
-            }}
-          >
-            {DASHBOARD_PERIOD_LABELS[option]}
-          </button>
-        ))}
-      </div>
-      {custom ? (
-        <div className="today-period-custom">
-          <label>
-            From
-            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-          </label>
-          <label>
-            To
-            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-          </label>
-          <Button variant="secondary" size="sm" onClick={applyCustom}>
-            Show these dates
-          </Button>
-          {problem ? <p role="alert">{problem}</p> : null}
-        </div>
-      ) : null}
     </div>
   );
 }

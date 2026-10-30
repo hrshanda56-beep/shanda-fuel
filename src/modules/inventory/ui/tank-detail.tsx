@@ -9,11 +9,14 @@ import { Notice } from '@/design-system/feedback';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
 import { Modal } from '@/design-system/modal';
 import { Button, Card, EmptyState, Field, StatusBadge } from '@/design-system/primitives';
+import { ShowMore, useShowMore } from '@/design-system/show-more';
 import { TableScrollRegion } from '@/design-system/table';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StockSignal } from '../../approvals/operations-alerts';
 import { parseCalibrationText } from '../calibration';
 import type { TankDetail } from '../tank-detail';
+import { TankDrum } from './tank-drum';
+import { fuelKind, tankLevel } from './tank-overview-model';
 import {
   TANK_TABS,
   dipSentence,
@@ -104,6 +107,8 @@ export function TankDetailView({
 
   const availableTabs = TANK_TABS.filter((item) => item.value !== 'settings' || canManage);
   const [tab, setTab] = useState<TankTab>(() => tankTabFrom(initialTab, canManage));
+  const [dipsShown, setDipsShown] = useShowMore();
+  const [movesShown, setMovesShown] = useShowMore();
   const [dipOpen, setDipOpen] = useState(false);
   const [dipLitres, setDipLitres] = useState(
     tank.bookLitres.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''),
@@ -318,6 +323,12 @@ export function TankDetailView({
 
   const percent = fillPercent(tank.bookLitres, tank.capacityLitres);
   const lastDip = dips[0];
+  const level = tankLevel({
+    physicalLitres: null,
+    expectedLitres: tank.bookLitres,
+    capacityLitres: tank.capacityLitres,
+    reorderLevelLitres: tank.reorderLevelLitres,
+  });
   const lastSignal = lastDip ? SIGNAL[lastDip.signal] : null;
   const balances = runningBalances(movements, tank.bookLitres);
 
@@ -339,52 +350,77 @@ export function TankDetailView({
       />
 
       <Card className="tank-hero" data-tone={lastSignal?.tone ?? 'neutral'}>
+        <div
+          className="tank-card tank-hero-tank"
+          data-state={level.state}
+          data-source={level.source}
+          data-fuel={fuelKind(tank.productName, tank.productName)}
+        >
+          <span className="tank-figure">
+            <TankDrum level={level} />
+            <span className="tank-percent">
+              {level.percent === null ? (
+                '—'
+              ) : (
+                <>
+                  {level.percent}
+                  <small>%</small>
+                </>
+              )}
+            </span>
+          </span>
+        </div>
         <div className="tank-hero-main">
-          <p className="tank-hero-label">In the tank now, by the books</p>
           <p className="tank-hero-figure">
             <strong>{formatLitres(tank.bookLitres)}</strong>
             <span> of {formatLitres(tank.capacityLitres)}</span>
           </p>
-          <div
-            className="tank-bar"
-            role="img"
-            aria-label={percent === null ? 'Level not known' : `${percent} percent full`}
-          >
-            <span style={{ width: `${percent ?? 0}%` }} />
+          <div className="tank-hero-verdict">
+            {lastSignal ? (
+              <StatusBadge tone={lastSignal.tone}>
+                {lastSignal.short.charAt(0).toUpperCase() + lastSignal.short.slice(1)}
+              </StatusBadge>
+            ) : (
+              <span className="tank-hero-note">
+                No dip yet. Record one to check the books against the tank.
+              </span>
+            )}
+            {canManage ? (
+              <Button type="button" onClick={() => setDipOpen(true)}>
+                Record a dip
+              </Button>
+            ) : null}
           </div>
-          <p className="tank-hero-note">
-            {percent === null ? 'Level not known. ' : `${percent}% full. `}
-            {lastDip && lastSignal
-              ? `Last checked ${stationDateTime(lastDip.measuredAt, stationTimezone)}: ${lastSignal.short}.`
-              : 'No dip has been recorded yet. Record one to check the books against the tank.'}
-          </p>
         </div>
-        <div className="tank-hero-side">
-          <dl className="tank-hero-stats">
-            <div>
-              <dt>Last measured</dt>
-              <dd>{lastDip ? formatLitres(lastDip.physicalLitres) : '—'}</dd>
-            </div>
-            <div className="tank-hero-diff">
-              <dt>Difference</dt>
-              <dd>{lastDip ? signed(lastDip.varianceLitres) : '—'}</dd>
-            </div>
-          </dl>
-          {canManage ? (
-            <Button type="button" onClick={() => setDipOpen(true)}>
-              Record a dip
-            </Button>
-          ) : null}
-        </div>
+        <dl className="tank-hero-stats">
+          <div>
+            <dt>Last measured</dt>
+            <dd>{lastDip ? formatLitres(lastDip.physicalLitres) : '—'}</dd>
+          </div>
+          <div className="tank-hero-diff">
+            <dt>Difference</dt>
+            <dd>{lastDip ? signed(lastDip.varianceLitres) : '—'}</dd>
+          </div>
+          <div>
+            <dt>Checked</dt>
+            <dd>{lastDip ? stationDateTime(lastDip.measuredAt, stationTimezone) : '—'}</dd>
+          </div>
+        </dl>
       </Card>
 
-      <div className="tank-tabs" role="tablist" aria-label="Tank details">
+      <div
+        className="tank-tabs"
+        role="tablist"
+        aria-label="Tank details"
+        data-solo={canManage ? undefined : 'true'}
+      >
         {availableTabs.map((item) => (
           <button
             key={item.value}
             id={`tank-tab-${item.value}`}
             type="button"
             role="tab"
+            className={item.value === 'settings' ? undefined : 'tank-tab-narrow'}
             aria-selected={tab === item.value}
             aria-controls="tank-tabpanel"
             onClick={() => selectTab(item.value)}
@@ -392,97 +428,109 @@ export function TankDetailView({
             {item.label}
           </button>
         ))}
+        <button
+          type="button"
+          role="tab"
+          className="tank-tab-wide"
+          aria-selected={tab !== 'settings'}
+          aria-controls="tank-tabpanel"
+          onClick={() => selectTab('dips')}
+        >
+          Dips and movements
+        </button>
       </div>
 
       <div id="tank-tabpanel" role="tabpanel" aria-labelledby={`tank-tab-${tab}`}>
-        {tab === 'dips' ? (
-          <Card className="form-panel">
-            <h2>Dips and how they compared</h2>
-            {dips.length === 0 ? (
-              <EmptyState
-                title="No dips yet"
-                message={
-                  canManage
-                    ? 'Press Record a dip to measure this tank and compare it with the books.'
-                    : 'Dips recorded for this tank will show here.'
-                }
-              />
-            ) : (
-              <ul className="tank-timeline">
-                {dips.map((dip) => (
-                  <li key={dip.id}>
-                    <div>
-                      <strong>{formatLitres(dip.physicalLitres)} measured</strong>
-                      <span className="table-secondary">
-                        {stationDateTime(dip.measuredAt, stationTimezone)}
-                        {dip.rawMeasurement
-                          ? ` · ${dip.rawMeasurement} ${dip.measurementUnit ?? ''} on the dipstick`
-                          : ''}
-                      </span>
-                      <span className="table-secondary">
-                        {dipSentence(dip.varianceLitres, dip.signal)}
-                      </span>
-                    </div>
-                    <div className="tank-timeline-side">
-                      <StatusBadge tone={SIGNAL[dip.signal].tone}>
-                        {SIGNAL[dip.signal].label}
-                      </StatusBadge>
-                      {canManage ? (
-                        <Button
-                          type="button"
-                          variant="quiet"
-                          loading={voidingDipId === dip.id}
-                          onClick={() => void voidDip(dip.id)}
-                        >
-                          Void
-                        </Button>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {message && tab === 'dips' ? <Notice tone={message.tone}>{message.text}</Notice> : null}
-          </Card>
-        ) : null}
-
-        {tab === 'movements' ? (
-          <Card className="form-panel">
-            <h2>Stock movements</h2>
-            {movements.length === 0 ? (
-              <EmptyState
-                title="No movements yet"
-                message="Opening stock, deliveries and sales will show here."
-              />
-            ) : (
-              <ul className="tank-timeline">
-                {movements.map((movement, index) => {
-                  const quantity = Number(movement.quantityLitres);
-                  return (
-                    <li key={movement.id}>
+        {tab !== 'settings' ? (
+          <div className="tank-panels" data-tab={tab}>
+            <Card className="form-panel" data-panel="dips">
+              <h2>Dips and how they compared</h2>
+              {dips.length === 0 ? (
+                <EmptyState
+                  title="No dips yet"
+                  message={
+                    canManage
+                      ? 'Press Record a dip to measure this tank and compare it with the books.'
+                      : 'Dips recorded for this tank will show here.'
+                  }
+                />
+              ) : (
+                <ul className="tank-timeline">
+                  {dips.slice(0, dipsShown).map((dip) => (
+                    <li key={dip.id}>
                       <div>
-                        <strong>
-                          {MOVEMENT_LABELS[movement.movementType] ?? movement.movementType}
-                        </strong>
+                        <strong>{formatLitres(dip.physicalLitres)} measured</strong>
                         <span className="table-secondary">
-                          {stationDateTime(movement.effectiveAt, stationTimezone)} ·{' '}
-                          {formatBusinessDate(movement.businessDate)}
+                          {stationDateTime(dip.measuredAt, stationTimezone)}
+                          {dip.rawMeasurement
+                            ? ` · ${dip.rawMeasurement} ${dip.measurementUnit ?? ''} on the dipstick`
+                            : ''}
+                        </span>
+                        <span className="table-secondary">
+                          {dipSentence(dip.varianceLitres, dip.signal)}
                         </span>
                       </div>
-                      <div className="tank-timeline-side tank-movement-side">
-                        <strong data-direction={quantity < 0 ? 'out' : 'in'}>
-                          {signed(movement.quantityLitres)}
-                        </strong>
-                        <span className="table-secondary">
-                          Stock after: {formatLitres(balances[index]!)}
-                        </span>
+                      <div className="tank-timeline-side">
+                        <StatusBadge tone={SIGNAL[dip.signal].tone}>
+                          {SIGNAL[dip.signal].label}
+                        </StatusBadge>
+                        {canManage ? (
+                          <Button
+                            type="button"
+                            variant="quiet"
+                            loading={voidingDipId === dip.id}
+                            onClick={() => void voidDip(dip.id)}
+                          >
+                            Void
+                          </Button>
+                        ) : null}
                       </div>
                     </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
+                  ))}
+                </ul>
+              )}
+              <ShowMore shown={dipsShown} total={dips.length} onChange={setDipsShown} />
+              {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
+            </Card>
+
+            <Card className="form-panel" data-panel="movements">
+              <h2>Stock movements</h2>
+              {movements.length === 0 ? (
+                <EmptyState
+                  title="No movements yet"
+                  message="Opening stock, deliveries and sales will show here."
+                />
+              ) : (
+                <ul className="tank-timeline">
+                  {movements.slice(0, movesShown).map((movement, index) => {
+                    const quantity = Number(movement.quantityLitres);
+                    return (
+                      <li key={movement.id}>
+                        <div>
+                          <strong>
+                            {MOVEMENT_LABELS[movement.movementType] ?? movement.movementType}
+                          </strong>
+                          <span className="table-secondary">
+                            {stationDateTime(movement.effectiveAt, stationTimezone)} ·{' '}
+                            {formatBusinessDate(movement.businessDate)}
+                          </span>
+                        </div>
+                        <div className="tank-timeline-side tank-movement-side">
+                          <strong data-direction={quantity < 0 ? 'out' : 'in'}>
+                            {signed(movement.quantityLitres)}
+                          </strong>
+                          <span className="table-secondary">
+                            Stock after: {formatLitres(balances[index]!)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <ShowMore shown={movesShown} total={movements.length} onChange={setMovesShown} />
+            </Card>
+          </div>
         ) : null}
 
         {tab === 'settings' && canManage ? (

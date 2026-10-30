@@ -140,8 +140,6 @@ test('key figures say when no approved report exists yet', async ({ page }) => {
       'No approved report yet',
     );
   }
-  const note = page.locator('.today-figures-note');
-  await expect(note).toContainText('Approved figures for 08 Oct 2026');
   await expect(page.getByRole('heading', { name: 'Sales performance Litres' })).toBeVisible();
   await expect(page.getByText('No approved sales in this period yet.')).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);
@@ -159,7 +157,7 @@ test('key figures show approved totals with signed variances', async ({ page }) 
   );
   const cash = figures.locator('.today-figure', { hasText: 'Cash variance' });
   await expect(cash).toContainText('−USD 30.85');
-  await expect(cash).toContainText('Cash short');
+  await expect(cash).not.toContainText('Cash short');
   await expect(figures.locator('.today-figure', { hasText: 'Account sales' })).toContainText(
     'USD 100.00',
   );
@@ -190,7 +188,7 @@ test('an approved zero is shown as zero, unlike a day with no approved report', 
   await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
     'USD 0.00',
   );
-  await expect(figures.locator('.today-figure', { hasText: 'Cash variance' })).toContainText(
+  await expect(figures.locator('.today-figure', { hasText: 'Cash variance' })).not.toContainText(
     'No cash variance',
   );
   await expect(figures).not.toContainText('No approved report yet');
